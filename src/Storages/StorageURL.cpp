@@ -339,20 +339,12 @@ public:
     }
 
     /// The exact number of addresses when the pattern fitted into the first batch, an upper bound
-    /// otherwise. It is only used to detect an empty glob and to cap the number of streams.
+    /// otherwise. It is only used to detect an empty glob.
     size_t size()
     {
         std::lock_guard lock(mutex);
         if (exact_size)
             return *exact_size;
-
-        /// The filter pruned an unknown share of the batch. Every stream asks for an address as soon
-        /// as it starts, so starting more of them than the batch holds forces another batch at once -
-        /// and generating it throws when the first batch already reached the limit, failing a query
-        /// whose surviving addresses were all within it. Only the buffered survivors are known to be
-        /// servable without generating more; never zero, since the pattern is not exhausted.
-        if (filter_dag)
-            return std::max<size_t>(1, batch.size() - batch_index);
 
         /// Not exhausted, so at least one more address exists beyond the batch; the query can never
         /// consume more than the limit anyway.
@@ -360,12 +352,41 @@ public:
         return total ? std::min<UInt64>(*total, max_addresses_upper_bound) : max_addresses_upper_bound;
     }
 
+    /// How many streams are worth starting when the caller wants up to `requested` of them. Every
+    /// stream asks for an address as soon as it starts, so starting more of them than there are
+    /// servable addresses forces another batch at once - and generating one past the limit throws,
+    /// failing a query whose surviving addresses were all within it. When a filter pruned some of the
+    /// generated addresses, batches are prefetched until `requested` survivors are buffered, the
+    /// pattern is exhausted, or the limit is reached - so a pattern whose first survivors appear
+    /// after the first batch still gets its parallelism. Rejected addresses count as generated:
+    /// prefetching stops at the limit rather than walking an unbounded pattern.
+    size_t sizeForStreams(size_t requested)
+    {
+        std::lock_guard lock(mutex);
+        if (exact_size)
+            return *exact_size;
+
+        if (!filter_dag)
+        {
+            const auto total = generator.totalCount();
+            return total ? std::min<UInt64>(*total, max_addresses_upper_bound) : max_addresses_upper_bound;
+        }
+
+        while (batch.size() - batch_index < requested && !exhausted && generated < max_addresses_upper_bound)
+            fillBatch();
+
+        /// Never zero: when everything buffered was pruned and the limit is reached, the one stream
+        /// left is the one that asks past the limit and turns that into the error it always was.
+        return std::max<size_t>(1, batch.size() - batch_index);
+    }
+
 private:
-    /// Generates the next portion of addresses and applies the `_path` / `_file` filter to it.
-    /// Leaves `batch` empty only when the pattern is exhausted or everything was filtered out.
+    /// Generates the next portion of addresses, applies the `_path` / `_file` filter to it and
+    /// appends the survivors to `batch`, keeping the buffered unconsumed ones. Appends nothing only
+    /// when the pattern is exhausted or the whole portion was filtered out.
     void fillBatch() TSA_REQUIRES(mutex)
     {
-        batch.clear();
+        batch.erase(batch.begin(), batch.begin() + batch_index);
         batch_index = 0;
 
         /// Never generate more addresses than the limit allows. Asking for one past it is what makes
@@ -375,35 +396,39 @@ private:
         if (target == 0)
             target = 1;
 
+        Strings fresh;
+        fresh.reserve(target);
         String uri;
-        while (batch.size() < target)
+        while (fresh.size() < target)
         {
             if (!generator.next(uri))
                 break;
             ++generated;
-            batch.push_back(uri);
+            fresh.push_back(std::move(uri));
         }
         exhausted = generator.isExhausted();
 
-        if (!filter_dag || batch.empty())
-            return;
-
-        /// The sets of the filter are built on first use: an empty glob must not run the subqueries of
-        /// a `_path IN (...)` predicate, which it did not do when the addresses were materialized up
-        /// front and the filter was skipped for an empty list.
-        if (!filter_actions)
+        if (filter_dag && !fresh.empty())
         {
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, filter_context);
-            filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            /// The sets of the filter are built on first use: an empty glob must not run the subqueries
+            /// of a `_path IN (...)` predicate, which it did not do when the addresses were materialized
+            /// up front and the filter was skipped for an empty list.
+            if (!filter_actions)
+            {
+                VirtualColumnUtils::buildSetsForDAG(*filter_dag, filter_context);
+                filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
+
+            std::vector<String> paths;
+            paths.reserve(fresh.size());
+            for (const auto & fresh_uri : fresh)
+                paths.push_back(Poco::URI(fresh_uri).getPath());
+
+            VirtualColumnUtils::filterByPathOrFile(
+                fresh, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
         }
 
-        std::vector<String> paths;
-        paths.reserve(batch.size());
-        for (const auto & batch_uri : batch)
-            paths.push_back(Poco::URI(batch_uri).getPath());
-
-        VirtualColumnUtils::filterByPathOrFile(
-            batch, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+        batch.insert(batch.end(), std::make_move_iterator(fresh.begin()), std::make_move_iterator(fresh.end()));
     }
 
     std::mutex mutex;
@@ -435,6 +460,11 @@ String StorageURLSource::DisclosedGlobIterator::next()
 size_t StorageURLSource::DisclosedGlobIterator::size()
 {
     return pimpl->size();
+}
+
+size_t StorageURLSource::DisclosedGlobIterator::sizeForStreams(size_t requested)
+{
+    return pimpl->sizeForStreams(requested);
 }
 
 void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
@@ -1506,7 +1536,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return getFailoverOptions(next_uri, max_addresses);
         });
 
-        num_streams = std::min(num_streams, glob_iterator->size());
+        num_streams = std::min(num_streams, glob_iterator->sizeForStreams(num_streams));
     }
     else
     {
@@ -2913,6 +2943,7 @@ SELECT * FROM url_engine_table
 ## Details of Implementation {#details-of-implementation}
 
 - Reads and writes can be parallel
+- Patterns in `{ }` in the URL generate a set of addresses, as described for the [url](/reference/functions/table-functions/url#globs-in-url) table function. The addresses are generated one by one as the query reads them, so [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) limits how many of them a single query may read rather than how large the pattern is.
 - Not supported:
   - `ALTER` and `SELECT...SAMPLE` operations.
   - Indexes.
