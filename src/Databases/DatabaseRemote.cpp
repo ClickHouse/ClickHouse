@@ -934,7 +934,8 @@ struct DatabaseRemoteClusters
 static DatabaseRemoteClusters buildClusters(const String & cluster_description, const String & username, const String & password, bool secure, ContextPtr context)
 {
     size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-    const RemoteDescriptionCaller caller{"Database engine 'Remote'", TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING};
+    const RemoteDescriptionCaller caller{
+        secure ? "Database engine 'RemoteSecure'" : "Database engine 'Remote'", TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING};
     Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses, caller);
 
     HostsByShard names;
