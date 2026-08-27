@@ -153,6 +153,8 @@ void TextSearchQuery::initializeHash()
                 hash_state.update(required_substring);
                 hash_state.update(is_trivial);
                 hash_state.update(required_substring_is_prefix);
+                /// Without it `^lit` and `^lit$` would hash the same, as neither compiles a re2 pattern.
+                hash_state.update(pattern.getMatchKind());
             }
         }
     }
