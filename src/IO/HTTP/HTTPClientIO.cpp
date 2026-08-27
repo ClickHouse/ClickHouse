@@ -39,6 +39,12 @@ constexpr size_t max_transfer_at_once = 1UL << 30;
 constexpr size_t chunk_header_reserve = 18;
 constexpr size_t chunk_footer_size = 2;
 
+/// The scratch buffer a response is read into when the caller provided no memory: in the
+/// external buffer mode the memory arrives with `set()` before every read, but the body of an
+/// error response is drained before the caller ever sees the buffer. The same size the old
+/// `std::iostream` path used for it.
+constexpr size_t scratch_buffer_size = 8192;
+
 /// A port of `Poco::Net::MessageHeader::read`, reading the bytes from the session instead of an
 /// `std::istream`. Keeps the behaviour of the original, including the limits, the folding of
 /// continuation lines and the exceptions it throws.
@@ -285,8 +291,37 @@ HTTPResponseReadBuffer::HTTPResponseReadBuffer(
     , encoding(body_info_.encoding)
     , content_length(body_info_.content_length)
 {
-    if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::NoBody)
+    /// A response without a body, or with an empty one, is complete as soon as its headers have
+    /// been read; a caller is not required to read from a buffer that has nothing in it.
+    if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::NoBody
+        || (encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength && content_length == 0))
         markComplete();
+}
+
+HTTPResponseReadBuffer::~HTTPResponseReadBuffer()
+{
+    /// A chunked body consumed up to the last payload byte but not past the terminating chunk is
+    /// still a complete response: the terminator is on the wire right behind the payload. Reading
+    /// it here lets the pool reuse the connection, which is what the old iostream path did on
+    /// teardown with `HTTPChunkedInputStream::isComplete(true)`. When the next thing on the wire
+    /// is a real chunk instead, the response was abandoned midway and stays incomplete.
+    if (session && !response_complete && encoding == Poco::Net::HTTPClientSession::BodyEncoding::Chunked && !chunked_eof
+        && chunk_left == 0)
+    {
+        try
+        {
+            chunk_left = readChunkLength();
+            if (chunk_left == 0)
+            {
+                skipCRLF();
+                chunked_eof = true;
+                markComplete();
+            }
+        }
+        catch (...) /// NOLINT(bugprone-empty-catch) Ok: the response merely stays incomplete and the connection is dropped
+        {
+        }
+    }
 }
 
 void HTTPResponseReadBuffer::detachSession()
@@ -297,17 +332,36 @@ void HTTPResponseReadBuffer::detachSession()
 
 bool HTTPResponseReadBuffer::nextImpl()
 {
-    /// A response with a body is read into this buffer's own memory, or into the memory the
-    /// caller substituted with `set()`; there has to be some.
-    chassert(!internal_buffer.empty() || encoding == Poco::Net::HTTPClientSession::BodyEncoding::NoBody);
+    if (response_complete)
+        return false;
 
-    const size_t bytes = readBody(internal_buffer.begin(), internal_buffer.size());
+    /// A response with a body is read into this buffer's own memory, or into the memory the
+    /// caller substituted with `set()`. Reading before any was provided - draining the body of
+    /// an error response before it reaches the caller of the external buffer mode - falls back
+    /// to a small scratch buffer.
+    if (internal_buffer.empty())
+    {
+        memory.resize(scratch_buffer_size);
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+    }
+
+    /// A single read returns only the data available on the socket at the moment; reading to
+    /// the end of the buffer keeps the blocks handed downstream - to the filesystem cache, to
+    /// the prefetcher - as large as the buffer, not as large as one `recv`.
+    size_t bytes = 0;
+    while (bytes < internal_buffer.size())
+    {
+        const size_t bytes_read_now = readBody(internal_buffer.begin() + bytes, internal_buffer.size() - bytes);
+        if (!bytes_read_now)
+        {
+            markComplete();
+            break;
+        }
+        bytes += bytes_read_now;
+    }
 
     if (!bytes)
-    {
-        markComplete();
         return false;
-    }
 
     working_buffer = internal_buffer;
     working_buffer.resize(bytes);
@@ -496,6 +550,10 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     } while (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE);
 
     const auto body_info = session.onResponseHeadersReceived(response);
+
+    /// A body shorter than the buffer needs no more memory than its own length.
+    if (body_info.encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength)
+        buf_size = std::min<UInt64>(buf_size, body_info.content_length);
 
     return std::make_unique<HTTPResponseReadBuffer>(session, std::move(session_holder), body_info, buf_size);
 }

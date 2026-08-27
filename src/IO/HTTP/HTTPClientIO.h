@@ -67,6 +67,8 @@ public:
         Poco::Net::HTTPClientSession::BodyInfo body_info_,
         size_t buf_size);
 
+    ~HTTPResponseReadBuffer() override;
+
     /// Stops reading from the session and releases it. The buffer stays usable, but returns no
     /// more data. Used when the session has to be given back before the reader is destroyed.
     void detachSession();
