@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -169,6 +168,23 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
     /// The bucket stores the running extremum directly - no raw-sample preaggregation is needed since combining
     /// is commutative/associative regardless of the samples' arrival order.
     using Bucket = Summary;
+
+    static constexpr UInt16 FORMAT_VERSION = 1;
+
+    /// `getStackSizeForTwoStacks` switches to the two-stack queue once the average number of populated buckets in a
+    /// window reaches this value; below it, recomputing the window each grid point is cheaper. The
+    /// `timeseries_to_grid_two_stack_vs_recompute` example measures this summary directly: its two-stacks
+    /// crossover sits at ~2 populated buckets per window and its 2x point at ~14 (Apple M-class; the
+    /// linear-regression summary lands at 4 and 12 on the same machine), both below the 10/20 the
+    /// linear-regression functions use. Keeping the shared 10/20 is therefore conservative for this summary -
+    /// two-stacks is only enabled where it measures well ahead - and keeps one selector policy across the
+    /// non-invertible functions.
+    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
+
+    /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets (see
+    /// the sibling constant in `AggregateFunctionTimeseriesLinearRegression` for why an average alone is not
+    /// enough).
+    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
 };
 
 
@@ -185,42 +201,10 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtremumOverTime, Traits>;
     using Base::Base;
 
-    /// `createAggregator` switches to the two-stack queue once the average number of populated buckets in a
-    /// window reaches this value; below it, recomputing the window each grid point is cheaper. The
-    /// `timeseries_to_grid_two_stack_vs_recompute` example measures this summary directly: its two-stacks
-    /// crossover sits at ~2 populated buckets per window and its 2x point at ~14 (Apple M-class; the
-    /// linear-regression summary lands at 4 and 12 on the same machine), both below the 10/20 the
-    /// linear-regression functions use. Keeping the shared 10/20 is therefore conservative for this summary -
-    /// two-stacks is only enabled where it measures well ahead - and keeps one selector policy across the
-    /// non-invertible functions.
-    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
-
-    /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets (see
-    /// the sibling constant in `AggregateFunctionTimeseriesLinearRegression` for why an average alone is not
-    /// enough).
-    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
-
-    typename Traits::Aggregator createAggregator(size_t num_populated_buckets) const
+    typename Traits::Aggregator createAggregator(size_t stack_size_for_two_stacks) const
     {
-        /// Recompute folds the populated buckets in each window - on average `buckets_per_window * density`, where
-        /// `density = num_populated_buckets / bucket_count`. Compare that average (not the dense maximum
-        /// `buckets_per_window`) to the threshold, so sparse data, whose windows hold fewer populated buckets,
-        /// stays on the cheaper recompute path without inflating the threshold. The hard cap still forces
-        /// two-stacks for large windows, where a non-uniform spread could hide a locally dense window.
-        const size_t avg_buckets_in_window = Base::bucket_count
-            ? static_cast<size_t>(static_cast<double>(Base::buckets_per_window) * static_cast<double>(num_populated_buckets)
-                / static_cast<double>(Base::bucket_count))
-            : 0;
-        const bool use_two_stacks = avg_buckets_in_window >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS
-            || Base::buckets_per_window >= BPW_TO_FORCE_TWO_STACKS;
-        /// Reserve at most `buckets_per_window`, but capped by `num_populated_buckets` - else a huge window
-        /// (forced onto two-stacks by the hard cap) would `reserve(~INT64_MAX)` and fail to allocate.
-        const size_t stack_size = use_two_stacks ? std::min(Base::buckets_per_window, num_populated_buckets) : 0;
-        return typename Traits::Aggregator{stack_size};
+        return typename Traits::Aggregator{stack_size_for_two_stacks};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 1;
-    static constexpr bool DateTime64Supported = true;
 };
 
 /// Each SQL function as a 3-argument template with its is_max variant baked in, so registration names the

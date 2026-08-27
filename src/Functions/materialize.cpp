@@ -27,11 +27,19 @@ This function can be used to debug this behavior.
 -- verifying that the function throws an error for a non-constant argument.
 
 SELECT countMatches('foobarfoo', 'foo');
-SELECT countMatches('foobarfoo', materialize('foo'));
         )",
         R"(
 2
-Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal type of argument #2 'pattern' of function countMatches, expected constant String, got String
+        )"
+    },
+    {
+        "Turning a constant into a full column",
+        R"(
+SELECT countMatches('foobarfoo', materialize('foo'));
+        )",
+        R"(
+Received exception:
+Code: 44. DB::Exception: A value of illegal type was provided as 2nd argument 'pattern' to function 'countMatches'. Expected: constant String, got: String. (ILLEGAL_COLUMN)
         )"
     }
     };
