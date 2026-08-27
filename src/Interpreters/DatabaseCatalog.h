@@ -133,7 +133,8 @@ public:
     DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
 
     /// Guards the storage under its current name, following a concurrent RENAME. Waits without
-    /// polling sleeps. Returns nullptr on timeout or when `is_alive()` turns false.
+    /// polling sleeps. Returns nullptr on timeout, when `is_alive()` turns false, or right away
+    /// when an exclusive database DDL holds the database lock.
     DDLGuardPtr tryGetDDLGuardForStorage(
         const StoragePtr & storage,
         const Poco::Timespan & timeout,
