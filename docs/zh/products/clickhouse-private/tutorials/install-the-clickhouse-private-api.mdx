@@ -25,7 +25,9 @@ description: "本教程将指导你安装 ClickHouse Private API。它是一个�
 ***
 
 <Steps>
-  <Step title="步骤 1：复制容器镜像" id="step-1-copy-container-images">
+  <Step>
+    ## 步骤 1：复制容器镜像
+
     使用 skopeo 将 Private API 镜像和 Helm 图表复制到你的 ECR。
 
     ```ini
@@ -51,7 +53,9 @@ description: "本教程将指导你安装 ClickHouse Private API。它是一个�
     ***
   </Step>
 
-  <Step title="步骤 2：通过 Helm 安装" id="step-2-install-via-helm">
+  <Step>
+    ## 步骤 2：通过 Helm 安装
+
     Private API 会安装在专用命名空间中。
 
     ```text
@@ -76,7 +80,9 @@ description: "本教程将指导你安装 ClickHouse Private API。它是一个�
     ***
   </Step>
 
-  <Step title="步骤 3：配置身份验证" id="step-3-configure-authentication">
+  <Step>
+    ## 步骤 3：配置身份验证
+
     默认情况下，basic authentication 处于禁用状态。对于生产环境，请通过设置 Helm 配置值启用它：
 
     * `api.basicAuth.enabled=true`
@@ -88,7 +94,9 @@ description: "本教程将指导你安装 ClickHouse Private API。它是一个�
     ***
   </Step>
 
-  <Step title="步骤 4：验证安装" id="step-4-verify-installation">
+  <Step>
+    ## 步骤 4：验证安装
+
     ### 检查 Pod (容器组)
 
     ```bash

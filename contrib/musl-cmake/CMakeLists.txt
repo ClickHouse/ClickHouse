@@ -1499,10 +1499,6 @@ elseif (MUSL_ARCH STREQUAL "aarch64")
         "${MUSL_SOURCE_DIR}/src/signal/restore.c"
         "${MUSL_SOURCE_DIR}/src/signal/sigsetjmp.c"
         "${MUSL_SOURCE_DIR}/src/string/memcpy.c"
-        # memcpy.S handles overlaps and provides memmove as a second entry
-        # point (upstream musl has no aarch64 memmove asm; the generic C
-        # memmove sends only non-overlapping copies to the asm memcpy).
-        "${MUSL_SOURCE_DIR}/src/string/memmove.c"
         "${MUSL_SOURCE_DIR}/src/string/memset.c"
         "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
         "${MUSL_SOURCE_DIR}/src/thread/__unmapself.c"

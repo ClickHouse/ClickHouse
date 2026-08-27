@@ -689,7 +689,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     Block block;
     while (executor.pull(block))
     {
-        if (!block.rows()) // NOLINT(clang-analyzer-cplusplus.Move)
+        if (!block.rows())
             continue;
 
         if (skip_not_intersected)

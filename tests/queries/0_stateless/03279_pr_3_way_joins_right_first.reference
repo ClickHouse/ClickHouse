@@ -1,0 +1,170 @@
+-- { echoOn }
+
+SELECT 'First JOIN RIGHT second JOIN INNER';
+First JOIN RIGHT second JOIN INNER
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+    INNER JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 0
+)
+EXCEPT
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+    INNER JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 1
+);
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+INNER JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+15946245554685685359	800
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+INNER JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+ORDER BY ALL ASC;
+15946245554685685359	800
+SELECT 'First JOIN RIGHT second JOIN LEFT';
+First JOIN RIGHT second JOIN LEFT
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+    LEFT JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 0
+)
+EXCEPT
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+    LEFT JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 1
+);
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+LEFT JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+4384504566508178969	1000
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+LEFT JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+ORDER BY ALL ASC;
+4384504566508178969	1000
+SELECT 'First JOIN RIGHT second JOIN RIGHT';
+First JOIN RIGHT second JOIN RIGHT
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+    RIGHT JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 0
+)
+EXCEPT
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+    RIGHT JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 1
+);
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+RIGHT JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+14642554643314449282	999
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+RIGHT JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+ORDER BY ALL ASC;
+14642554643314449282	999
+SELECT 'First JOIN RIGHT second JOIN FULL';
+First JOIN RIGHT second JOIN FULL
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+    FULL JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 0
+)
+EXCEPT
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+    FULL JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 1
+);
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+FULL JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+3080813655136942892	1199
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+RIGHT JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+FULL JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
+ORDER BY ALL ASC;
+3080813655136942892	1199

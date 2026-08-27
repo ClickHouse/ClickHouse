@@ -143,18 +143,12 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
-    /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
-    /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
-    /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
-    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
-    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
-    void pinOutboundDialectForJSONDialect(const String & outbound_query);
-
     /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
     /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
     /// may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when nothing
     /// was derived from `compatibility`, so the caller can send the client settings without copying them.
     std::optional<Settings> settingsWithoutCompatibilityDerived() const;
+
     void processParsedSingleQuery(
         std::string_view query_,
         ASTPtr parsed_query,
@@ -223,17 +217,6 @@ protected:
     /// regular client and clickhouse-local. For any other specific option
     /// please use processOptions method.
     void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
-    /// Remap the underscore XML spellings of some boolean keys (e.g. <echo_query_id/>) to the
-    /// dashed keys the read sites use, unless the dashed key is already set (e.g. by a CLI
-    /// flag). Call it right after the config file is merged into the client configuration,
-    /// before validateClientConfiguration.
-    void remapClientConfigurationAliases();
-    /// Fail-fast validation of option values that may come from the client config file rather
-    /// than the command line. The config file is loaded after the command line is processed,
-    /// so the CLI-side validation in `addOptionsToTheClientConfiguration` never sees these
-    /// values. Call it right after the config file is merged into the client configuration,
-    /// so that an invalid value cannot let a query start before the error is reported.
-    void validateClientConfiguration();
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments,
@@ -543,11 +526,6 @@ protected:
 
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
-
-    /// True when the current query text was parsed via the `clickhouse_json` dialect JSON path. Captured
-    /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
-    /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
-    bool current_query_parsed_as_json_dialect = false;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;

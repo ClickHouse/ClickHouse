@@ -45,7 +45,9 @@ FIPS를 사용할 경우 **S3 버킷 이름에는 마침표(`.`)를 포함할 �
 ***
 
 <Steps>
-  <Step title="단계 1: FIPS 인증서 생성" id="phase-1-create-fips-certificates">
+  <Step>
+    ## 단계 1: FIPS 인증서 생성
+
     FIPS 준수를 위해서는 FIPS가 활성화된 환경에서 FIPS 승인 알고리즘을 사용해 생성한 TLS 인증서가 필요합니다. 다음 3개 인증서 세트가 필요합니다.
 
     | 인증서    | 개인 키         | 공개 키         | 필수 SAN                                                                                                                                          |
@@ -63,7 +65,9 @@ FIPS를 사용할 경우 **S3 버킷 이름에는 마침표(`.`)를 포함할 �
     ***
   </Step>
 
-  <Step title="단계 2: Kubernetes 필수 구성 요소 설치" id="phase-2-install-kubernetes-prerequisites">
+  <Step>
+    ## 단계 2: Kubernetes 필수 구성 요소 설치
+
     ### VolumeSnapshot CRDs 설치
 
     ```bash
@@ -92,7 +96,9 @@ FIPS를 사용할 경우 **S3 버킷 이름에는 마침표(`.`)를 포함할 �
     ***
   </Step>
 
-  <Step title="단계 3: Operator 설치" id="phase-3-install-operator">
+  <Step>
+    ## 단계 3: Operator 설치
+
     FIPS ECR 엔드포인트 포맷은 `0000000000.dkr-ecr-fips.us-west-2.on.aws`입니다(표준 `.amazonaws.com` 엔드포인트가 아니라는 점에 유의하십시오).
 
     ```text
@@ -124,7 +130,9 @@ FIPS를 사용할 경우 **S3 버킷 이름에는 마침표(`.`)를 포함할 �
     ***
   </Step>
 
-  <Step title="단계 4: 인증서 시크릿 생성" id="phase-4-create-certificate-secrets">
+  <Step>
+    ## 단계 4: 인증서 시크릿 생성
+
     시크릿은 ClickHouse 클러스터가 실행될 동일한 Kubernetes 네임스페이스에 있어야 합니다. 클러스터 이름이 `default-xx-01`이면 네임스페이스는 `ns-default-xx-01`입니다.
 
     먼저 네임스페이스가 있는지 확인한 다음 시크릿을 생성하십시오. **시크릿 이름이나 키 이름은 변경하지 마십시오.**
@@ -151,7 +159,9 @@ FIPS를 사용할 경우 **S3 버킷 이름에는 마침표(`.`)를 포함할 �
     ***
   </Step>
 
-  <Step title="5단계: ClickHouse 클러스터 배포" id="phase-5-deploy-clickhouse-cluster">
+  <Step>
+    ## 5단계: ClickHouse 클러스터 배포
+
     ECR 및 S3에 올바른 FIPS 버전의 엔드포인트를 사용하십시오. FIPS 엔드포인트는 [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/)에서 확인하실 수 있습니다.
 
     ```text expandable
@@ -254,7 +264,9 @@ FIPS를 사용할 경우 **S3 버킷 이름에는 마침표(`.`)를 포함할 �
     ***
   </Step>
 
-  <Step title="단계 6: 설치 확인" id="phase-6-verify-installation">
+  <Step>
+    ## 단계 6: 설치 확인
+
     ### TLS 포트로 포트 포워딩
 
     FIPS 모드에서는 ClickHouse가 기본 포트 9000이 아니라 포트 **9440**에서 TLS를 사용합니다.

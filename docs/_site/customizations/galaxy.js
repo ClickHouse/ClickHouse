@@ -24,9 +24,6 @@
   var FLUSH_INTERVAL_MS = 5000;
   var KEEPALIVE_LIMIT_BYTES = 60 * 1024;
   var ATTRIBUTION_HOSTS = ['clickhouse.cloud', 'console.clickhouse.cloud'];
-  var ATTRIBUTION_TTL_DAYS = 30;
-  var INTERNAL_REFERRER_DOMAINS = ['clickhouse.com', 'clickhouse.cloud'];
-  var initialTouchProcessed = false;
 
   if (window.__clickhouseGalaxyInitialized) return;
   window.__clickhouseGalaxyInitialized = true;
@@ -126,13 +123,7 @@
   function track(event, properties) {
     if (!event) return;
 
-    // Match the marketing website: attribution rides on every Galaxy event,
-    // while explicit event properties win when keys collide.
-    var eventProperties = Object.assign(
-      {},
-      getAttributionProperties(),
-      properties || { interaction: 'click' }
-    );
+    var eventProperties = properties || { interaction: 'click' };
     var interaction = eventProperties.interaction;
     var extraProperties = {};
     for (var key in eventProperties) {
@@ -211,10 +202,6 @@
     return flushInFlight;
   }
 
-  // Evaluate the hard-page landing before any galaxy:ready listener can emit
-  // an event, so the event sees the new last non-direct touch immediately.
-  recordAttributionTouch();
-
   window.galaxy = {
     track: track,
     flushEvents: flushEvents,
@@ -237,39 +224,10 @@
     if (!event.persisted) stopGalaxy();
   });
 
-  function getAttributionProperties() {
-    var params = new URLSearchParams(window.location.search);
-    var stored = storedAttribution() || {};
-
-    function get(key) {
-      var fromUrl = params.get(key);
-      if (fromUrl !== null) return fromUrl;
-      return typeof stored[key] === 'string' ? stored[key] : undefined;
-    }
-
-    var referrer = document.referrer || undefined;
-    var lastTouchReferrer = typeof stored.referrer === 'string'
-      ? stored.referrer
-      : undefined;
-
-    return {
-      utm_source: get('utm_source'),
-      utm_medium: get('utm_medium'),
-      utm_campaign: get('utm_campaign'),
-      utm_term: get('utm_term'),
-      utm_content: get('utm_content'),
-      utm_id: get('utm_id'),
-      gclid: get('gclid'),
-      path: window.location.pathname,
-      referrer: referrer,
-      referrerDomain: getDomain(referrer),
-      lastTouchReferrer: lastTouchReferrer,
-      lastTouchReferrerDomain: getDomain(lastTouchReferrer),
-    };
-  }
-
   function trackPageEvent(action) {
-    track('docs.window.' + action, { interaction: 'trigger' });
+    track('docs.window.' + action, {
+      interaction: 'trigger',
+    });
   }
 
   // Docusaurus hooks tracked load, focus, and blur for every docs and KB page.
@@ -323,7 +281,6 @@
     var path = window.location.pathname;
     if (path !== lastPath) {
       lastPath = path;
-      recordAttributionTouch();
       trackPageEvent('load');
       updateCloudLinks();
     }
@@ -331,58 +288,28 @@
   }
   window.requestAnimationFrame(watchPath);
 
-  // Match the marketing website's last-touch, non-direct, 30-day model.
-  // Campaign parameters replace the previous touch on every route. An
-  // external referrer replaces it only once per hard page load; direct visits
-  // leave the stored touch and its existing expiry unchanged.
-  function recordAttributionTouch() {
-    var params = new URLSearchParams(window.location.search);
-    var values = {};
-    params.forEach(function (value, key) {
-      if (key.indexOf('utm_') === 0 || key === 'gclid') values[key] = value;
-    });
-    if (Object.keys(values).length > 0) {
-      storeAttribution(values);
-    } else if (!initialTouchProcessed) {
-      var referrer = getExternalReferrer();
-      if (referrer) storeAttribution({ referrer: referrer });
-    }
-    initialTouchProcessed = true;
-  }
-
-  function storeAttribution(attribution) {
-    var expiration = new Date();
-    expiration.setDate(expiration.getDate() + ATTRIBUTION_TTL_DAYS);
-    storageSet(window.localStorage, 'ch-utms', JSON.stringify({
-      data: attribution,
-      timestamp: expiration.getTime(),
-    }));
-  }
-
-  function getExternalReferrer() {
-    var referrer = document.referrer;
-    if (!referrer) return null;
-
+  // Preserve the attribution behavior from src/clientModules/utmPersistence:
+  // retain campaign parameters and attach the Galaxy ID and page paths to
+  // links into ClickHouse Cloud.
+  function saveAttribution() {
     try {
-      var hostname = new URL(referrer).hostname;
-      if (hostname === window.location.hostname) return null;
-      for (var i = 0; i < INTERNAL_REFERRER_DOMAINS.length; i++) {
-        var domain = INTERNAL_REFERRER_DOMAINS[i];
-        if (hostname === domain || hostname.endsWith('.' + domain)) return null;
+      var params = new URLSearchParams(window.location.search);
+      var values = {};
+      params.forEach(function (value, key) {
+        if (key.indexOf('utm_') === 0 || key === 'gclid') values[key] = value;
+      });
+      if (Object.keys(values).length > 0) {
+        var expiration = new Date();
+        expiration.setDate(expiration.getDate() + 14);
+        window.localStorage.setItem('ch-utms', JSON.stringify({
+          data: values,
+          timestamp: expiration.getTime(),
+        }));
       }
-      return referrer;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function getDomain(url) {
-    if (!url) return undefined;
-    try {
-      return new URL(url).hostname;
-    } catch (e) {
-      return undefined;
-    }
+      if (!window.localStorage.getItem('origPath')) {
+        window.localStorage.setItem('origPath', window.location.pathname);
+      }
+    } catch (e) {}
   }
 
   function storedAttribution() {
@@ -394,7 +321,7 @@
         window.localStorage.removeItem('ch-utms');
         return null;
       }
-      return parsed.data || null;
+      return parsed.data;
     } catch (e) {
       return null;
     }
@@ -407,9 +334,7 @@
   function updateCloudLinks() {
     if (!isCanonicalDocs) return;
 
-    if (!storageGet(window.localStorage, 'origPath')) {
-      storageSet(window.localStorage, 'origPath', window.location.pathname);
-    }
+    saveAttribution();
     var attribution = storedAttribution();
     var links = document.querySelectorAll('a[href*="clickhouse.cloud"]');
 
@@ -420,7 +345,7 @@
 
         if (attribution) {
           for (var key in attribution) {
-            if (Object.prototype.hasOwnProperty.call(attribution, key) && key !== 'referrer') {
+            if (Object.prototype.hasOwnProperty.call(attribution, key)) {
               url.searchParams.set(key, attribution[key]);
             }
           }

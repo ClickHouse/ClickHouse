@@ -75,8 +75,8 @@ SELECT countMatches('hello 123 world 456 test', '[0-9]+')
 
 ```response title=Response
 ┌─countMatches('hello 123 world 456 test', '[0-9]+')─┐
-│                                                  2 │
-└────────────────────────────────────────────────────┘
+│                                                   2 │
+└─────────────────────────────────────────────────────┘
 ```
 
 <div id="countMatchesCaseInsensitive">
@@ -302,8 +302,8 @@ SELECT extract('test@clickhouse.com', '.*@(.*)$')
 
 ```response title=Response
 ┌─extract('test@clickhouse.com', '.*@(.*)$')─┐
-│ clickhouse.com                             │
-└────────────────────────────────────────────┘
+│ clickhouse.com                            │
+└───────────────────────────────────────────┘
 ```
 
 **إذا لم توجد مطابقة، تُعاد سلسلة فارغة**
@@ -470,8 +470,6 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   باستخدام مُجزِّئ الرموز المحدد للفهرس النصي.
   إذا لم يكن للعمود فهرس نصي معرّف، فسيُستخدم بدلًا منه مُجزِّئ الرموز `splitByNonAlpha`.
   إذا كان الوسيط `needle` من النوع [Array(String)](/ar/reference/data-types/array)، فسيُعامل كل عنصر في المصفوفة على أنه رمز — ولا تُجرى أي عملية إضافية لتجزئته إلى رموز.
-  إذا كان الفهرس النصي يحتوي على [تعبير معالج مسبق](/ar/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) مُعدّ، فسيُطبَّق المعالج المسبق على `needle` (إذا أُعطي كـ `String`) قبل تجزئته إلى رموز.
-  إذا كان الفهرس النصي يحتوي على [تعبير معالج لاحق](/ar/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) مُعدّ، فسيُطبَّق المعالج اللاحق على رموز `needle` ورموز `input` (أي على كليهما بعد التجزئة إلى رموز).
 
 تُتجاهل الرموز المكررة.
 على سبيل المثال، تُعامل needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] بالطريقة نفسها مثل [&#39;ClickHouse&#39;].
@@ -505,7 +503,7 @@ hasAllTokens(input, needles)
 **استخدام أساسي مع سلسلة بحث من نوع String**
 
 ```sql title=Query
-CREATE TABLE doc (
+CREATE TABLE table (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -513,9 +511,9 @@ CREATE TABLE doc (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
+SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -527,17 +525,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 **حدِّد أنماط البحث المطلوب العثور عليها كما هي (من دون تجزئة إلى وحدات) في مصفوفة**
 
 ```sql title=Query
-CREATE TABLE doc (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
+SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -546,20 +534,10 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**أنشئ عبارات البحث باستخدام الدالة `tokens`**
+**أنشئ سلاسل البحث باستخدام الدالة `tokens`**
 
 ```sql title=Query
-CREATE TABLE doc (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -568,19 +546,19 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', 
 └─────────┘
 ```
 
-**استخدم مُجزِّئًا مخصّصًا باستخدام الوسيط الثالث**
+**استخدم مُجزِّئًا مخصصًا عبر المُعامِل الثالث**
 
 ```sql title=Query
 SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                            1 │
+└──────────────────────────────────────────────┘
 ```
 
-**أمثلة استخدام الأعمدة من نوع Array وMap**
+**أمثلة على استخدام أعمدة Array وMap**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -599,24 +577,12 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-**مثال على عمود من نوع Array**
+```response title=Response
+```
+
+**مثال على عمود من نوع المصفوفة**
 
 ```sql title=Query
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 ```
 
@@ -626,24 +592,9 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 └─────────┘
 ```
 
-**مثال باستخدام mapKeys**
+**مثال على mapKeys**
 
 ```sql title=Query
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -656,21 +607,6 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **مثال على mapValues**
 
 ```sql title=Query
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -697,11 +633,9 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 * الوسيط `input` (دائمًا)، و
 * الوسيط `needle` (إذا أُعطي على هيئة [String](/ar/reference/data-types/string))
-  باستخدام مُجزِّئ الرموز المحدد للفهرس النصي.
-  وإذا لم يكن للعمود فهرس نصي معرّف، فسيُستخدم بدلًا من ذلك مُجزِّئ الرموز `splitByNonAlpha`.
+  باستخدام مُقسِّم الرموز المحدد للفهرس النصي.
+  وإذا لم يكن للعمود فهرس نصي معرّف، فسيُستخدم بدلًا من ذلك مُقسِّم الرموز `splitByNonAlpha`.
   وإذا كان الوسيط `needle` من النوع [Array(String)](/ar/reference/data-types/array)، فسيُعامل كل عنصر في المصفوفة على أنه رمز — ولا يحدث أي تجزئة إضافية إلى رموز.
-  وإذا كان الفهرس النصي مهيأً بتعبير [معالج مسبق](/ar/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional)، فسيُطبَّق المعالج المسبق على `needle` (إذا أُعطي على هيئة `String`) قبل التجزئة إلى رموز.
-  وإذا كان الفهرس النصي مهيأً بتعبير [معالج لاحق](/ar/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional)، فسيُطبَّق المعالج اللاحق على رموز `needle` ورموز `input` (أي على كليهما بعد التجزئة إلى رموز).
 
 تُتجاهل الرموز المكررة.
 فعلى سبيل المثال، [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] تُعامل بالطريقة نفسها مثل [&#39;ClickHouse&#39;].
@@ -709,10 +643,10 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 <Note>
   عندما يعرّف الفهرس النصي [معالجًا مسبقًا](/ar/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (على سبيل المثال `lowerUTF8`)، فإن `hasAnyTokens` تطبّقه على `input`، وعندما تكون `needles` من النوع [String](/ar/reference/data-types/string)، على `needles` قبل التجزئة إلى رموز. وعندما تكون `needles` من النوع [Array(String)](/ar/reference/data-types/array)، تمر عناصرها كما هي ولا يُطبَّق عليها المعالج المسبق.
   لا يُطبَّق المعالج المسبق إلا في مسار الفهرس النصي، لذا قد تختلف النتائج بين الاستعلامات التي تستخدم الفهرس النصي والاستعلامات التي لا تستخدمه (مثل `SETTINGS use_skip_indexes = 0`).
-  ويُتسامح مع هذا التباين لتحسين سهولة استخدام البحث بالنص الكامل.
+  ويُتسامح مع هذا التباين لتحسين سهولة استخدام البحث النصي الكامل.
 </Note>
 
-**البنية**
+**الصياغة**
 
 ```sql
 hasAnyTokens(input, needles)
@@ -723,8 +657,8 @@ hasAnyTokens(input, needles)
 **الوسيطات**
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
-* `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
-* `tokenizer` — مُجزِّئ الرموز المستخدم. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، تكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `needles` — التوكنات المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
+* `tokenizer` — أداة تقسيم النص المستخدمة. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، تكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -735,7 +669,7 @@ hasAnyTokens(input, needles)
 **الاستخدام الأساسي مع نمط بحث نصي**
 
 ```sql title=Query
-CREATE TABLE doc (
+CREATE TABLE table (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -743,9 +677,9 @@ CREATE TABLE doc (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
+SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -757,17 +691,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 **حدِّد سلاسل البحث المطلوب البحث عنها كما هي (من دون تجزئة إلى رموز) داخل مصفوفة**
 
 ```sql title=Query
-CREATE TABLE doc (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
+SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -776,20 +700,10 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**توليد أنماط البحث باستخدام الدالة `tokens`**
+**ولِّد أنماط البحث باستخدام الدالة `tokens`**
 
 ```sql title=Query
-CREATE TABLE doc (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -798,7 +712,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
 └─────────┘
 ```
 
-**أمثلة على استخدام أعمدة Array وMap**
+**أمثلة على استخدام الأعمدة من النوع Array وMap**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -815,26 +729,14 @@ ORDER BY id;
 INSERT INTO log VALUES
     (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+```
+
+```response title=Response
 ```
 
 **مثال على عمود من نوع Array**
 
 ```sql title=Query
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 ```
 
@@ -847,21 +749,6 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **مثال على استخدام mapKeys**
 
 ```sql title=Query
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -874,21 +761,6 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **مثال باستخدام mapValues**
 
 ```sql title=Query
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -904,7 +776,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 أُضيف في: v26.4.0
 
-يتحقق مما إذا كان `input` يحتوي على جميع الرموز من `phrase` بترتيب متتالٍ.
+يتحقق مما إذا كان `input` يحتوي على جميع الرموز من `phrase` بترتيب متتابع.
 
 <Note>
   يجب أن يكون للعمود `input` [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) مُعرّف للحصول على أفضل أداء.
@@ -918,14 +790,14 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 <Note>
   عندما يعرّف الفهرس النصي [معالجًا مسبقًا](/ar/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (على سبيل المثال `lowerUTF8`)، تطبّقه `hasPhrase` على كلٍّ من `input` و`phrase` قبل تجزئتهما إلى رموز.
   لا يُطبَّق المعالج المسبق إلا في مسار الفهرس النصي، لذلك قد تختلف النتائج بين الاستعلامات التي تستخدم الفهرس النصي والاستعلامات التي لا تستخدمه (مثل `SETTINGS use_skip_indexes = 0`).
-  يُتسامح مع هذا التباين لتحسين سهولة استخدام البحث بالنص الكامل.
+  يُتسامح مع هذا التباين لتحسين سهولة استخدام البحث النصي الكامل.
 </Note>
 
 بخلاف [`hasToken`](#hasToken) و[`hasAnyTokens`](#hasAnyTokens) و[`hasAllTokens`](#hasAllTokens)، تتطلب `hasPhrase` أن تظهر الرموز بالترتيب نفسه
 ومن دون أي رموز فاصلة بينها. على سبيل المثال، تُرجع `hasPhrase('the quick brown fox', 'quick fox')` القيمة 0
 لأن &quot;brown&quot; تظهر بين &quot;quick&quot; و&quot;fox&quot;.
 
-**البنية**
+**الصياغة**
 
 ```sql
 hasPhrase(input, phrase[, tokenizer])
@@ -933,11 +805,11 @@ hasPhrase(input, phrase[, tokenizer])
 
 **الأسماء المستعارة**: `matchPhrase`
 
-**الوسيطات**
+**المعاملات**
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `phrase` — العبارة المراد البحث عنها. [`const String`](/ar/reference/data-types/string)
-* `tokenizer` — مُجزِّئ الرموز المراد استخدامها. اختياري، والقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — أداة تقسيم النص إلى رموز المراد استخدامها. اختياري، والقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -953,8 +825,8 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick brown')
 
 ```response title=Response
 ┌─hasPhrase('the quick brown fox jumps', 'quick brown')─┐
-│                                                     1 │
-└───────────────────────────────────────────────────────┘
+│                                                      1 │
+└────────────────────────────────────────────────────────┘
 ```
 
 **رموز غير متتالية**
@@ -965,8 +837,8 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 
 ```response title=Response
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
-│                                                   0 │
-└─────────────────────────────────────────────────────┘
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="hasSubsequence">
@@ -1189,11 +1061,6 @@ SELECT hasToken('clickhouse test', 'test')
 
 ينفّذ بحثًا غير حساس لحالة الأحرف عن `needle` داخل `haystack` باستخدام الفهرس tokenbf&#95;v1.
 
-<Note>
-  لهذه الدالة بعض الإشكالات مع مُقسِّمات الرموز غير الافتراضية وتعبيرات المعالجة المسبقة أو اللاحقة.
-  نوصي باستخدام [`hasAnyTokens`](#hasAnyTokens) و[`hasAllTokens`](#hasAllTokens) بدلًا من ذلك.
-</Note>
-
 **الصياغة**
 
 ```sql
@@ -1214,12 +1081,7 @@ hasTokenCaseInsensitive(haystack, needle)
 
 أُضيفت في: v23.1.0
 
-تُجري بحثًا عن needle داخل haystack غير حساس لحالة الأحرف باستخدام فهرس tokenbf&#95;v1. وتُرجع NULL إذا كان needle غير صحيح التكوين.
-
-<Note>
-  لهذه الدالة بعض المحاذير عند استخدامها مع مُقسِّمات الرموز غير الافتراضية أو تعبيرات المعالج التمهيدي أو المعالج اللاحق.
-  نوصي باستخدام [`hasAnyTokens`](#hasAnyTokens) و[`hasAllTokens`](#hasAllTokens) بدلًا من ذلك.
-</Note>
+تُجري بحثًا عن needle داخل haystack دون حساسية لحالة الأحرف باستخدام فهرس tokenbf&#95;v1. وتُرجع NULL إذا كان needle غير صالح التكوين.
 
 **الصيغة**
 
@@ -1376,7 +1238,7 @@ SELECT ilike('ClickHouse', '%house%');
 
 * يشير `%` إلى أي عدد من الأحرف كيفما كانت (بما في ذلك عدم وجود أي أحرف).
 * يشير `_` إلى حرف واحد كيفما كان.
-* تُستخدم `\` لإفلات القيم الحرفية `%` و`_` و`\`.
+* تُستخدم `\` للهروب من الرموز الحرفية `%` و`_` و`\`.
 
 تعتمد المطابقة على UTF-8، فمثلًا يطابق `_` نقطة الترميز Unicode ‏`¥`، التي تُمثَّل في UTF-8 باستخدام بايتين.
 
@@ -1591,8 +1453,8 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 
 ```response title=Response
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
-│                      1 │                        0 │
-└────────────────────────┴──────────────────────────┘
+│                       1 │                         0 │
+└─────────────────────────┴───────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAllIndices">
@@ -2131,13 +1993,13 @@ multiSearchAnyUTF8(haystack, [needle1, needle2, ..., needleN])
 **باعتبار &#39;你好，世界&#39; (&#39;Hello, world&#39;) سلسلة UTF-8، تحقّق مما إذا كانت السلسلة تحتوي على أي من الحرفين 你 أو 界**
 
 ```sql title=Query
-SELECT multiSearchAnyUTF8('你好，世界', ['你', '界']) AS result
+SELECT multiSearchAnyUTF8('你好，世界', ['你', '界'])
 ```
 
 ```response title=Response
-┌─result─┐
-│      1 │
-└────────┘
+┌─multiSearchA⋯你', '界'])─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndex">
@@ -2615,7 +2477,7 @@ SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')
 قُدِّمت في: v20.1.0
 
 يوفّر إصدار UTF-8 من [`ngramDistance`](#ngramDistance).
-يفترض أن سلسلتي `needle` و`haystack` مرمّزتان بترميز UTF-8.
+يفترض أن سلسلتي `needle` و`haystack` مُشفَّرتان بترميز UTF-8.
 يحسب مسافة 3-gram بين سلسلتين بترميز UTF-8.
 كلما كانت القيمة المُعادة أصغر، زاد التشابه بين السلسلتين.
 
@@ -2627,8 +2489,8 @@ ngramDistanceUTF8(haystack, needle)
 
 **الوسائط**
 
-* `haystack` — سلسلة المقارنة الأولى المرمّزة بترميز UTF-8. [`String`](/ar/reference/data-types/string)
-* `needle` — سلسلة المقارنة الثانية المرمّزة بترميز UTF-8. [`String`](/ar/reference/data-types/string)
+* `haystack` — سلسلة المقارنة الأولى المُرمَّزة بـ UTF-8. [`String`](/ar/reference/data-types/string)
+* `needle` — سلسلة المقارنة الثانية المُرمَّزة بـ UTF-8. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -2643,7 +2505,7 @@ SELECT ngramDistanceUTF8('abcde','cde')
 ```
 
 ```response title=Response
-┌─ngramDistanceUTF8('abcde', 'cde')─┐
+┌─ngramDistanceUTF8('abcde','cde')─┐
 │                               0.5 │
 └───────────────────────────────────┘
 ```
@@ -2721,7 +2583,7 @@ SELECT ngramSearchCaseInsensitive('Hello World','hello')
 ```
 
 ```response title=Response
-┌─ngramSearchCaseInsensitive('Hello World', 'hello')─┐
+┌─ngramSearchCaseInsensitive('Hello World','hello')─┐
 │                                                  1 │
 └────────────────────────────────────────────────────┘
 ```

@@ -265,7 +265,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else if (query.kind == ASTDropQuery::Kind::Drop)
                 context_->checkAccess(drop_storage, table_id);
 
-            ddl_guard->releaseTableLock();
+            if (ddl_guard)
+                ddl_guard->releaseTableLock();
             table.reset();
 
             query_to_send.if_empty = false;
@@ -286,16 +287,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else
                 table->checkTableCanBeDetached();
 
-            bool check_ref_deps = false;
-            bool check_loading_deps = false;
-            if (query.permanently)
-            {
-                /// Check dependencies before `flushAndShutdown` so a failed check leaves the storage untouched.
-                check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
-                check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
-                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-            }
-
             table->flushAndShutdown();
             TableExclusiveLockHolder table_lock;
 
@@ -304,6 +295,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             if (query.permanently)
             {
+                /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
+                bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
+                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
                 NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
@@ -338,8 +332,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
-            if (!query.no_access_check)
-                context_->checkAccess(drop_storage, table_id);
+            context_->checkAccess(drop_storage, table_id);
 
             if (table->isDictionary())
             {
@@ -882,6 +875,8 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         drop_query->kind = kind;
         drop_query->sync = sync;
         drop_query->if_exists = true;
+        /// The DDLGuard for this exact name is already held above, and it is not recursive.
+        drop_query->no_ddl_lock = need_ddl_guard;
         ASTPtr ast_drop_query = drop_query;
         /// FIXME We have to use global context to execute DROP query for inner table
         /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege

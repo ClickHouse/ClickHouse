@@ -180,18 +180,18 @@ GCS ClickPipes では、メタデータの検出とデータのインジェス�
 
 ClickPipes には、ほとんどのユースケースの要件を満たす妥当なデフォルト設定が用意されています。さらに細かなチューニングが必要な場合は、以下の設定を調整できます。
 
-| Setting                              | Default value | Description                                                                                                           |
-| ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB          | 1 回の挿入バッチで処理するバイト数。                                                                                                   |
-| `Max file count`                     | 100           | 1 回の挿入バッチで処理するファイルの最大数。                                                                                               |
+| Setting                              | Default value | Description                                                                                                        |
+| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Max insert bytes`                   | 10GB          | 1 回の挿入バッチで処理するバイト数。                                                                                                |
+| `Max file count`                     | 100           | 1 回の挿入バッチで処理するファイルの最大数。                                                                                            |
 | `Max threads`                        | auto(3)       | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings#max_threads)。                                       |
 | `Max insert threads`                 | 1             | ファイル処理に使用する[同時実行される挿入スレッドの最大数](/ja/reference/settings/session-settings#max_insert_threads)。                           |
 | `Min insert block size bytes`        | 1GB           | テーブルに挿入可能な[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings#min_insert_block_size_bytes)。                       |
 | `Max download threads`               | 4             | [同時実行されるダウンロードスレッドの最大数](/ja/reference/settings/session-settings#max_download_threads)。                                |
-| `Object storage polling interval`    | 30s           | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                             |
+| `Object storage polling interval`    | 30s           | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                          |
 | `Parallel distributed insert select` | 2             | [parallel distributed insert select の設定](/ja/reference/settings/session-settings#parallel_distributed_insert_select)。 |
 | `Parallel view processing`           | false         | アタッチされたビューへのプッシュを、[順次ではなく同時実行で](/ja/reference/settings/session-settings#parallel_view_processing)行うかどうか。              |
-| `Use cluster function`               | true          | 複数ノードにまたがってファイルを並列処理するかどうか。                                                                                           |
+| `Use cluster function`               | true          | 複数ノードにまたがってファイルを並列処理するかどうか。                                                                                        |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の詳細設定" size="lg" border />
 

@@ -167,7 +167,7 @@ Resulting in configuration:
 
 It is also possible to replace parts of the configuration by file contents. This can be done in two ways:
 
-- *Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [`include_from`](/reference/settings/server-settings/settings/other#include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](/reference/settings/server-settings/settings/other#macros)).
+- *Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [`include_from`](/reference/settings/server-settings/settings#include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](/reference/settings/server-settings/settings#macros)).
 - *Substituting elements*: If you want to replace the entire element with a substitution, use `include` as the element name. The element name `include` can be combined with the attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced by the contents of the ZooKeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
 
 An example of this is shown below:
@@ -190,7 +190,7 @@ If you want to merge the substituting content with the existing configuration in
 ## Encrypting and hiding configuration {#encryption}
 
 You can use symmetric encryption to encrypt a configuration element, for example, a plaintext password or private key.
-To do so, first configure the [encryption codec](/reference/statements/create/table/codec#encryption-codecs), then add the attribute `encrypted_by` with the name of the encryption codec as the value to the element to encrypt.
+To do so, first configure the [encryption codec](/reference/statements/create/table#encryption-codecs), then add the attribute `encrypted_by` with the name of the encryption codec as the value to the element to encrypt.
 
 Unlike attributes `from_zk`, `from_env` and `incl`, or element `include`, no substitution (i.e. decryption of the encrypted value) is performed in the preprocessed file.
 Decryption happens only at runtime in the server process.

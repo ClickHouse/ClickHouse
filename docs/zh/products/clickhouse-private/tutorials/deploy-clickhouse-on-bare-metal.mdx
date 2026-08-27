@@ -27,7 +27,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
 ***
 
 <Steps>
-  <Step title="阶段 1：安装 Terraform" id="phase-1-install-terraform">
+  <Step>
+    ## 阶段 1：安装 Terraform
+
     ```text
     dnf install -y unzip git
     ```
@@ -60,7 +62,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="阶段 2：下载示例脚本" id="phase-2-download-example-scripts">
+  <Step>
+    ## 阶段 2：下载示例脚本
+
     下载并解压 ClickHouse 提供的示例脚本：
 
     ```text
@@ -73,7 +77,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="阶段 3：配置 AWS 凭证" id="phase-3-configure-aws-credentials">
+  <Step>
+    ## 阶段 3：配置 AWS 凭证
+
     使用你的 AWS IAM 访问密钥和私有访问密钥创建凭证文件：
 
     ```bash
@@ -95,7 +101,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="阶段 4：初始化并应用 Terraform" id="phase-4-initialize-and-apply-terraform">
+  <Step>
+    ## 阶段 4：初始化并应用 Terraform
+
     初始化 RKE2 Terraform 模块。如果要将状态从本地迁移到 S3，请添加 `-migrate-state`。
 
     ```text
@@ -121,7 +129,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="阶段 5：安装 Ansible 依赖项" id="phase-5-install-ansible-dependencies">
+  <Step>
+    ## 阶段 5：安装 Ansible 依赖项
+
     前往 Ansible 目录，安装所需的 Galaxy 角色和集合：
 
     ```bash
@@ -139,7 +149,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="第 6 阶段：部署 RKE2" id="phase-6-provision-rke2">
+  <Step>
+    ## 第 6 阶段：部署 RKE2
+
     ### 验证节点是否就绪
 
     ```text
@@ -177,7 +189,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="阶段 7：配置 cert-manager 和证书" id="phase-7-configure-cert-manager-and-certificates">
+  <Step>
+    ## 阶段 7：配置 cert-manager 和证书
+
     使用 Ansible Playbook 安装 cert-manager、trust-manager，并为 ClickHouse 生成证书：
 
     ```bash
@@ -206,7 +220,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="阶段 8：安装本地存储" id="phase-8-install-local-storage">
+  <Step>
+    ## 阶段 8：安装本地存储
+
     ### 安装 local-path-provisioner
 
     ```bash
@@ -252,7 +268,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="阶段 9：为节点设置标签" id="phase-9-label-nodes">
+  <Step>
+    ## 阶段 9：为节点设置标签
+
     为节点设置 operator 所需的 ClickHouse 组标签和拓扑区域标签：
 
     ```bash
@@ -268,7 +286,9 @@ description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 �
     ***
   </Step>
 
-  <Step title="阶段 10：安装 ClickHouse Operator 和集群" id="phase-10-install-clickhouse-operator-and-cluster">
+  <Step>
+    ## 阶段 10：安装 ClickHouse Operator 和集群
+
     ### 设置环境变量
 
     创建并加载 Helm 变量脚本，并将所有占位符替换为实际值：

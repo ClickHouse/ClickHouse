@@ -34,12 +34,15 @@ Endpoints:
 
 import http.server
 import json
+import threading
 from urllib.parse import urlparse, parse_qs
 
 MOCK_PORT = 18123
 DEFAULT_EMBED_DIM = 4
 
-# Single-threaded `HTTPServer` handles one request at a time, so a plain dict is safe.
+# The server is threaded (see `ThreadingHTTPServer` below) so it can serve the concurrent AI calls a
+# multi-threaded query issues. `_LOCK` guards the shared mutable state against those concurrent handlers.
+_LOCK = threading.Lock()
 LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 
 # Number of upcoming requests to the flaky endpoints (`/v1/chat/flaky`, `/v1/embeddings_flaky`)
@@ -153,12 +156,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/last-request":
-            self._send_json(200, LAST_REQUEST)
+            with _LOCK:
+                snapshot = dict(LAST_REQUEST)
+            self._send_json(200, snapshot)
             return
 
         if parsed.path == "/set-flaky":
             qs = parse_qs(parsed.query)
-            FLAKY["fails_remaining"] = int(qs.get("count", ["0"])[0])
+            with _LOCK:
+                FLAKY["fails_remaining"] = int(qs.get("count", ["0"])[0])
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
@@ -173,13 +179,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length).decode("utf-8") if content_length else ""
 
-        LAST_REQUEST["path"] = parsed.path
-        LAST_REQUEST["body"] = body
-        LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+        with _LOCK:
+            LAST_REQUEST["path"] = parsed.path
+            LAST_REQUEST["body"] = body
+            LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
 
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
-            if FLAKY["fails_remaining"] > 0:
-                FLAKY["fails_remaining"] -= 1
+            with _LOCK:
+                should_fail = FLAKY["fails_remaining"] > 0
+                if should_fail:
+                    FLAKY["fails_remaining"] -= 1
+            if should_fail:
                 # Simulate a transient network failure: close the connection without sending any
                 # response, so the client sees EOF — a Poco network exception — rather than an HTTP
                 # error status. This exercises the network-error retry path, distinct from the HTTP
@@ -214,23 +224,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(400, make_error_response("invalid request", error_type="invalid_request_error"))
             return
 
-        if parsed.path == "/v1/error_control_chars":
-            # An error whose `message` and `type` carry control characters (newline, tab, carriage
-            # return, BEL). The server must not copy these verbatim into the logged exception, so the
-            # AI functions sanitize them; this endpoint lets the test assert that.
-            self._send_json(
-                400,
-                make_error_response("start\nmid\tend\rBEL\x07done", error_type="err\ttype"),
-            )
-            return
-
-        if parsed.path == "/v1/error_nonjson":
-            # A non-JSON error body with control characters. It cannot be parsed as a structured
-            # error, so the AI functions fall back to the truncated raw body -- which must also be
-            # sanitized before it reaches the logs.
-            self._send_raw(500, b"Internal Error:\nstack\ttrace\x07here")
-            return
-
         if parsed.path == "/v1/embeddings":
             self._send_json(200, make_embeddings_response(body))
             return
@@ -258,19 +251,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_raw(self, status, body_bytes, content_type="text/plain"):
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body_bytes)))
-        self.end_headers()
-        self.wfile.write(body_bytes)
-
     def log_message(self, format, *args):
         pass  # suppress request logs
 
 
+class MockServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    # Absorb a burst of simultaneous connections from a multi-threaded query. The default backlog of
+    # 5 overflows when several pipeline threads each open a connection at once, dropping SYNs and
+    # making the client's connect time out.
+    request_queue_size = 128
+
+
 if __name__ == "__main__":
-    server = http.server.HTTPServer(("0.0.0.0", MOCK_PORT), Handler)
+    server = MockServer(("0.0.0.0", MOCK_PORT), Handler)
     try:
         server.serve_forever()
     finally:

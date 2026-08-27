@@ -26,7 +26,9 @@ Pour une vue d’ensemble conceptuelle du fonctionnement d’Hydra, consultez [H
 * L’accès au registre Helm et au chart `onprem-clickhouse-cluster`
 
 <Steps>
-  <Step title="1. Identifier le cluster parent" id="1-identify-the-parent-cluster">
+  <Step>
+    ## 1. Identifier le cluster parent
+
     Avant de créer un enfant, notez le **nom** et l’**espace de noms** du cluster parent. Le parent doit être en cours d’exécution -- les enfants ne peuvent pas être provisionnés si le parent est arrêté, terminé ou mis en veille.
 
     Pour un cluster nommé `default-xx-01`, les valeurs par défaut sont :
@@ -37,7 +39,9 @@ Pour une vue d’ensemble conceptuelle du fonctionnement d’Hydra, consultez [H
     | Espace de noms | `ns-default-xx-01` |
   </Step>
 
-  <Step title="2. Créer une instance enfant" id="2-create-a-child-instance">
+  <Step>
+    ## 2. Créer une instance enfant
+
     <Warning>
       Chaque instance ClickHouseCluster doit résider dans son propre espace de noms. Ne déployez pas d’instance enfant dans le même espace de noms que le parent. L’Operator suppose une seule instance ClickHouseCluster par espace de noms, et ne pas respecter cette règle entraîne une dégradation des clusters.
     </Warning>
@@ -64,7 +68,9 @@ Pour une vue d’ensemble conceptuelle du fonctionnement d’Hydra, consultez [H
     * Exposera son propre point de terminaison de service Kubernetes
   </Step>
 
-  <Step title="3. Créer un enfant en lecture seule (facultatif)" id="3-create-a-read-only-child-optional">
+  <Step>
+    ## 3. Créer un enfant en lecture seule (facultatif)
+
     Pour créer un enfant capable d’interroger les données sans pouvoir y écrire, ajoutez le flag `isReadonly` :
 
     ```bash
@@ -83,7 +89,9 @@ Pour une vue d’ensemble conceptuelle du fonctionnement d’Hydra, consultez [H
     Les enfants en lecture seule conviennent aux charges de travail de reporting, de tableaux de bord ou d’analytics pour lesquelles l’accès en écriture n’est pas nécessaire.
   </Step>
 
-  <Step title="4. Vérifier l’instance enfant" id="4-verify-the-child-instance">
+  <Step>
+    ## 4. Vérifier l’instance enfant
+
     Une fois l’enfant déployé, vérifiez qu’il est en cours d’exécution :
 
     ```bash

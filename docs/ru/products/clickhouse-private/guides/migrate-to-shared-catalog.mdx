@@ -24,11 +24,15 @@ Shared Catalog предоставляет несколько преимущес�
 Прежде чем начинать миграцию, убедитесь, что выполнены следующие предварительные требования:
 
 <Steps>
-  <Step title="1. Не менее 2 реплик сервера" id="1-at-least-2-server-replicas">
+  <Step>
+    ### 1. Не менее 2 реплик сервера
+
     Operator выполняет поэтапное обновление, чтобы перевести базы данных на новый движок базы данных Shared. Установите значение `server.replicas` в helm равным 2 или больше.
   </Step>
 
-  <Step title="2. Все базы данных используют движок Replicated" id="2-all-databases-use-the-replicated-engine">
+  <Step>
+    ### 2. Все базы данных используют движок Replicated
+
     Все базы данных (кроме `system`) должны использовать движок базы данных Replicated. Проверьте это с помощью:
 
     ```sql
@@ -43,7 +47,9 @@ Shared Catalog предоставляет несколько преимущес�
     Запрос не должен возвращать ни одной строки.
   </Step>
 
-  <Step title="3. Все таблицы используют нереплицируемые движки таблиц" id="3-all-tables-use-non-replicated-table-engines">
+  <Step>
+    ### 3. Все таблицы используют нереплицируемые движки таблиц
+
     Ни одна таблица (кроме таблиц в `system`) не должна использовать реплицируемые или устаревшие движки таблиц. Проверьте это с помощью:
 
     ```sql
@@ -59,7 +65,9 @@ Shared Catalog предоставляет несколько преимущес�
     Запрос не должен возвращать ни одной строки.
   </Step>
 
-  <Step title="4. Отсутствуют таблицы в состоянии detached" id="4-no-detached-tables-exist">
+  <Step>
+    ### 4. Отсутствуют таблицы в состоянии detached
+
     ```sql
     SELECT * FROM system.detached_tables
     ```
@@ -75,15 +83,19 @@ Shared Catalog предоставляет несколько преимущес�
 </div>
 
 <Warning>
-  Для инстансов Hydra сначала выполните миграцию родительского инстанса, а затем — дочерних. После миграции родительского инстанса повторите приведенные ниже шаги для каждого дочернего инстанса.
+  Для экземпляров Hydra сначала выполните миграцию родительского экземпляра, а затем — дочерних. После миграции родительского экземпляра повторите приведенные ниже шаги для каждого дочернего экземпляра.
 </Warning>
 
 <Steps>
-  <Step title="1. Включите конфигурацию Shared Catalog" id="1-enable-shared-catalog-configuration">
+  <Step>
+    ### 1. Включите конфигурацию Shared Catalog
+
     Установите `featureFlags.enableSharedCatalog` в `true` в значениях Helm. Это включает конфигурацию, но не запускает миграцию баз данных. Если развернуть кластер ClickHouse с этим флагом, установленным в `true`, не выполнив миграцию существующих реплицируемых баз данных, кластер ClickHouse не сможет запуститься.
   </Step>
 
-  <Step title="2. Добавьте маркеры миграции" id="2-add-the-migration-markers">
+  <Step>
+    ### 2. Добавьте маркеры миграции
+
     Установите `featureFlags.migrateToSharedCatalog` в `true` в значениях Helm. Это:
 
     * Добавляет в ClickHouse настройку `shared_database_catalog.migration_from_database_replicated`, указывая, что при работе в режиме Shared Catalog следует ожидать существующие базы данных `Replicated`
@@ -92,17 +104,23 @@ Shared Catalog предоставляет несколько преимущес�
     После развертывания Operator запустит поэтапное обновление узлов сервера. Это также изменит типы всех баз данных на `Shared`.
   </Step>
 
-  <Step title="3. Дождитесь, пока status станет Ready" id="3-wait-for-the-status-to-be-ready">
+  <Step>
+    ### 3. Дождитесь, пока status станет Ready
+
     ```bash
     kubectl get ClickHouseCluster <instance-name>
     ```
   </Step>
 
-  <Step title="4. Удалите маркеры миграции" id="4-remove-the-migration-markers">
+  <Step>
+    ### 4. Удалите маркеры миграции
+
     Когда status станет Ready, установите `featureFlags.migrateToSharedCatalog` в `false` в значениях Helm. Поскольку все базы данных уже мигрированы на тип `Shared` вместо `Replicated`, настройки миграции больше не нужны.
   </Step>
 
-  <Step title="5. Убедитесь, что все базы данных мигрированы" id="5-verify-all-databases-are-migrated">
+  <Step>
+    ### 5. Убедитесь, что все базы данных мигрированы
+
     Убедитесь, что все несистемные базы данных используют движок Shared:
 
     ```sql
@@ -114,7 +132,7 @@ Shared Catalog предоставляет несколько преимущес�
       AND (engine != 'Shared')
     ```
 
-    Запрос не должен вернуть ни одной строки. На этом этапе ваш инстанс мигрирован на Shared Catalog.
+    Запрос не должен вернуть ни одной строки. На этом этапе ваш экземпляр мигрирован на Shared Catalog.
   </Step>
 </Steps>
 
@@ -125,15 +143,21 @@ Shared Catalog предоставляет несколько преимущес�
 Если при работе с Shared Catalog возникнут какие-либо проблемы, можно откатиться к предыдущему состоянию:
 
 <Steps>
-  <Step title="1. Удалите маркеры миграции" id="1-remove-the-migration-markers">
+  <Step>
+    ### 1. Удалите маркеры миграции
+
     Установите `featureFlags.migrateToSharedCatalog` в `false` в значениях Helm.
   </Step>
 
-  <Step title="2. Удалите настройки Shared Catalog" id="2-remove-the-shared-catalog-settings">
+  <Step>
+    ### 2. Удалите настройки Shared Catalog
+
     Установите `featureFlags.enableSharedCatalog` в `false` в значениях Helm. Это приведёт к тому, что Operator откатит изменения.
   </Step>
 
-  <Step title="3. Удалите каталог в Keeper" id="3-remove-the-catalog-in-keeper">
+  <Step>
+    ### 3. Удалите каталог в Keeper
+
     Выполните проброс порта для подключения к Keeper и запустите сеанс keeper-client (с помощью `clickhouse keeper-client`).
 
     После запуска сеанса выполните следующие команды:
@@ -150,7 +174,9 @@ Shared Catalog предоставляет несколько преимущес�
     Это удалит из Keeper всё состояние Shared Catalog.
   </Step>
 
-  <Step title="4. Проверьте откат" id="4-verify-rollback">
+  <Step>
+    ### 4. Проверьте откат
+
     Убедитесь, что все несистемные базы данных снова используют движок Replicated:
 
     ```sql

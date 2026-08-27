@@ -7,8 +7,6 @@ keywords: ['ClickHouse Cloud', 'compatibility']
 doc_type: 'guide'
 ---
 
-import CloudUnsupportedFeatures from '/snippets/_cloud_unsupported_features.mdx';
-
 This guide provides an overview of what to expect functionally and operationally in ClickHouse Cloud. While ClickHouse Cloud is based on the open-source ClickHouse distribution, there may be some differences in architecture and implementation. You may find this blog on [how we built ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year) interesting and relevant to read as background.
 
 ## ClickHouse Cloud architecture {#clickhouse-cloud-architecture}
@@ -41,7 +39,7 @@ ClickHouse Cloud is a highly-available, replicated service by default, built on 
 
 `Replicated*` engines are converted to the same `Shared*` equivalents. The substitution is visible in `SHOW CREATE TABLE`, which reports the `Shared*` engine even though your statement specified the plain variant.
 
-The following table engines are also supported and used as written. The supported `MySQL` table engine is distinct from the unsupported `MySQL` database engine:
+The following engines are also supported and used as written:
 
 - URL
 - View
@@ -113,8 +111,10 @@ The following are default settings for ClickHouse Cloud services. In some cases,
 The default value of the `max_parts_in_total` setting for MergeTree tables has been lowered from 100,000 to 10,000. The reason for this change is that we observed that a large number of data parts is likely to cause a slow startup time of services in the cloud. A large number of parts usually indicate a choice of too granular partition key, which is typically done accidentally and should be avoided. The change of default will allow the detection of these cases earlier.
 
 #### `max_concurrent_queries: 1,000` {#max_concurrent_queries-1000}
-Increased this per-server setting from the default of `100` to `1000` to allow for more concurrency.
-This results in `number of replicas * 1,000` concurrent queries for a service. A single-replica service supports up to `1000` concurrent queries regardless of tier. Multi-replica services on the Scale and Enterprise tiers support up to `1000` concurrent queries per replica.
+Increased this per-server setting from the default of `100` to `1000` to allow for more concurrency. 
+This will result in `number of replicas * 1,000` concurrent queries for the offered tier services. 
+`1000` concurrent queries for Basic tier service limited to a single replica and `1000+` for Scale and Enterprise, 
+depending on the number of replicas configured.
 
 #### `max_table_size_to_drop: 1,000,000,000,000` {#max_table_size_to_drop-1000000000000}
 Increased this setting from 50GB to allow for dropping of tables/partitions up to 1TB.
@@ -124,10 +124,6 @@ ClickHouse Cloud is tuned for variable workloads, and for that reason most syste
 
 ### Advanced security administration {#advanced-security-administration}
 As part of creating the ClickHouse service, we create a default database, and the default user that has broad permissions to this database. This initial user can create additional users and assign their permissions to this database. Beyond this, the ability to enable the following security features within the database using Kerberos, LDAP, or SSL X.509 certificate authentication aren't supported at this time.
-
-## List of unsupported features {#list-of-unsupported-features}
-
-<CloudUnsupportedFeatures />
 
 ## Roadmap {#roadmap}
 

@@ -131,7 +131,8 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
+    return name == other.name
+        && definition_ast->formatIgnoringRedundantParentheses() == other.definition_ast->formatIgnoringRedundantParentheses();
 }
 
 namespace
@@ -380,8 +381,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
     auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
-    /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
-    mut_context->setSetting("optimize_respect_aliases", true);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
@@ -395,7 +394,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         auto query_tree = buildQueryTree(result.query_ast, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
-        query_node.getJoinTreeNode() = std::make_shared<TableNode>(analyzer_storage, mut_context);
+        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
 
         QueryTreePassManager query_tree_pass_manager(mut_context);
         addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
@@ -807,7 +806,7 @@ String ProjectionsDescription::toString() const
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 ProjectionsDescription ProjectionsDescription::parse(

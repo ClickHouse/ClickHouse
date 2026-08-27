@@ -34,7 +34,9 @@ import JSONSupport from '/snippets/ja/_json_support.mdx';
 <br />
 
 <Steps>
-  <Step title="Docker でデプロイ" id="deploy-with-docker">
+  <Step>
+    ### Docker でデプロイ
+
     ローカルモードでは、HyperDX UI がポート 8080 で起動します。
 
     ```shell
@@ -42,12 +44,14 @@ import JSONSupport from '/snippets/ja/_json_support.mdx';
     ```
   </Step>
 
-  <Step title="HyperDX UI にアクセス" id="navigate-to-hyperdx-ui">
+  <Step>
+    ### HyperDX UI にアクセス
+
     HyperDX UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開いてください。
 
-    **このデプロイモードでは認証が有効になっていないため、ユーザーの作成は求められません。**
+    **このデプロイモードでは認証が有効になっていないため、ユーザー作成は求められません。**
 
-    ClickHouse Cloud などの外部 ClickHouse クラスターに接続します。
+    ClickHouse Cloud など、外部の ClickHouse クラスターに接続します。
 
     <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="ログインを作成" size="md" />
 

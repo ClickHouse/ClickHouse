@@ -60,6 +60,7 @@ workflow = Workflow.Config(
     jobs=[
         JobConfigs.style_check,
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
+        JobConfigs.docs_job,
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
         JobConfigs.ci_tests.set_run_after(CORE_BLOCKING_JOB_NAMES),
@@ -72,7 +73,7 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(REGULAR_BUILD_NAMES)
-            for job in JobConfigs.release_build_jobs_with_examples
+            for job in JobConfigs.release_build_jobs
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
@@ -191,8 +192,6 @@ workflow = Workflow.Config(
             for job in JobConfigs.clickbench_jobs
         ],
         JobConfigs.llvm_coverage_job,
-        # TODO: stabilize and remove set_allow_failure
-        JobConfigs.build_profile_diff_job.set_allow_failure(),
         JobConfigs.sqllogic_test_master_job.set_run_after(
             CORE_BLOCKING_JOB_NAMES
         ),
@@ -209,12 +208,12 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
-        ArtifactConfigs.clickhouse_examples,
         *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_info_file,
         ArtifactConfigs.toolchain_pgo_bolt_amd,

@@ -22,8 +22,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -53,24 +51,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-const QueryPlan::Node * findNonSerializableStep(
-    const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore)
-{
-    std::vector<const QueryPlan::Node *> stack;
-    if (root)
-        stack.push_back(root);
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (node->step && !node->step->isSerializable() && !(ignore && ignore(*node->step)))
-            return node;
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-    return nullptr;
-}
-
 namespace
 {
 
@@ -79,10 +59,20 @@ namespace
 /// message instead of late, mid-execution, with a generic error.
 void assertFragmentSerializable(const QueryPlan & fragment, const String & stage_name)
 {
-    if (const auto * node = findNonSerializableStep(fragment.getRootNode()))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan cannot distribute this query: step '{}' in stage '{}' is not "
-            "serializable for remote execution", node->step->getName(), stage_name);
+    std::vector<const QueryPlan::Node *> stack;
+    if (fragment.getRootNode())
+        stack.push_back(fragment.getRootNode());
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->step && !node->step->isSerializable())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan cannot distribute this query: step '{}' in stage '{}' is not "
+                "serializable for remote execution", node->step->getName(), stage_name);
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
 }
 
 }
@@ -803,11 +793,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
 
-    /// Reject unsupported sets before the optimization passes: second-pass index analysis can
-    /// synchronously execute a set subquery, and no set should be built for a rejected query.
-    if (optimization_settings.make_distributed_plan)
-        validateSetsForDistributedPlan(*root);
-
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
@@ -816,14 +801,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
-
-    /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
-    /// their values with the worker tasks, so the non-serializable `CreatingSetsStep` expansion
-    /// must not reach the fragment cut. `convertToDistributed` adds the sets back to the
-    /// initiator plan (or to the collapsed plan when it becomes a single local stage).
-    if (optimization_settings.make_distributed_plan)
-        return;
-
     /// `addStepsToBuildSets` is invoked before `resolveMaterializingCTEs` so
     /// that `DelayedCreatingSetsStep::makePlansForSets` (and any synchronous
     /// `buildSetInplace` / `buildOrderedSetInplace` it triggers via the
@@ -847,10 +824,6 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
-    /// fragments never carry their placeholder steps; the sets are added back below.
-    auto delayed_sets = extractSetsForDistributedPlan(root);
-
     SharedHeader result_header = root->step->getOutputHeader();
 
     QueryPlan::Nodes old_nodes = std::move(nodes);
@@ -862,7 +835,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
     {
         auto it = distributed_plan.stage_depends_on.find(stage.first);
         const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
-        LOG_TEST(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
+        LOG_TRACE(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
@@ -875,23 +848,9 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// QueryPlanResourceHolder's move-assignment appends rhs into lhs without dropping existing entries.
         resources = std::move(preserved_resources);
 
-        /// The distributed `optimize` deferred set/CTE expansion; a collapsed plan executes
-        /// locally, so add the detached sets back and expand them the ordinary way (sets already
-        /// built during planning are reused).
-        if (!delayed_sets.empty() && optimization_settings.build_sets)
-            addStep(std::make_unique<DelayedCreatingSetsStep>(
-                getCurrentHeader(),
-                std::move(delayed_sets),
-                optimization_settings.network_transfer_limits,
-                optimization_settings.prepared_sets_cache));
-
         QueryPlanOptimizationSettings local_settings = optimization_settings;
         local_settings.make_distributed_plan = false;
         QueryPlanOptimizations::optimizeTreeSecondPass(local_settings, *root, nodes, *this);
-        if (local_settings.build_sets)
-            QueryPlanOptimizations::addStepsToBuildSets(local_settings, *this, *root, nodes);
-        if (local_settings.materialize_ctes)
-            QueryPlanOptimizations::resolveMaterializingCTEs(local_settings, *this, *root, nodes);
     }
     else
     {
@@ -968,9 +927,6 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
             Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
-            /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
-            /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
-            read_result_from.addTransform(makeSkipZeroRowChunksTransform(result_header));
             QueryPipelineBuilder builder;
             builder.init(std::move(read_result_from));
             return builder;
@@ -993,33 +949,6 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         QueryPlanResourceHolder preserved_resources = std::move(resources);
         *this = std::move(read_from_distributed);
         resources = std::move(preserved_resources);
-
-        /// Sets that planning did not build (e.g. an `IN` whose result is used as a value) are
-        /// added here and expanded the ordinary way, so this pipeline builds them before the
-        /// distributed source sends the worker tasks with their values. The cache is skipped:
-        /// a cached set has no values.
-        bool has_sets_to_build = false;
-        for (const auto & future_set : delayed_sets)
-            has_sets_to_build |= future_set && !future_set->get();
-        if (has_sets_to_build && optimization_settings.build_sets)
-        {
-            for (const auto & future_set : delayed_sets)
-                if (future_set)
-                    future_set->prepareForDistributedPlan(context);
-
-            addStep(std::make_unique<DelayedCreatingSetsStep>(
-                getCurrentHeader(),
-                std::move(delayed_sets),
-                optimization_settings.network_transfer_limits,
-                /*prepared_sets_cache_=*/nullptr));
-
-            /// The build plans execute on the initiator: expand them with local settings, so a
-            /// source that was not converted, and any sets nested inside it, expand locally.
-            QueryPlanOptimizationSettings sets_expansion_settings = optimization_settings;
-            sets_expansion_settings.prepared_sets_cache = nullptr;
-            sets_expansion_settings.make_distributed_plan = false;
-            QueryPlanOptimizations::addStepsToBuildSets(sets_expansion_settings, *this, *root, nodes);
-        }
 
         /// In-memory exchanges (execute_locally) must outlive the executor: the result reader drains
         /// final_result after the driver has finished. Remove them when the pipeline resources go away.

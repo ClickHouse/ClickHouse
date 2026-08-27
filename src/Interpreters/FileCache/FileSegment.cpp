@@ -25,7 +25,6 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
-    extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
@@ -56,7 +55,6 @@ namespace FailPoints
 {
     extern const char cache_filesystem_failure[];
     extern const char cache_filesystem_failure_non_errno[];
-    extern const char file_segment_pause_before_write[];
 }
 
 String toString(FileSegmentKind kind)
@@ -99,13 +97,13 @@ FileSegment::FileSegment(
     {
         /// EMPTY is used when file segment is not in cache and
         /// someone will _potentially_ want to download it (after calling getOrSetDownloader()).
-        case State::EMPTY:
+        case (State::EMPTY):
         {
             chassert(key_metadata.lock());
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
-        case State::DOWNLOADED:
+        case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
             /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
@@ -120,7 +118,7 @@ FileSegment::FileSegment(
             chassert(key_metadata.lock());
             break;
         }
-        case State::DETACHED:
+        case (State::DETACHED):
         {
             break;
         }
@@ -418,9 +416,6 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 
 void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 {
-    /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
-    FailPointInjection::pauseFailPoint(FailPoints::file_segment_pause_before_write);
-
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
     auto file_segment_path = getPath();
     DownloadState * download = nullptr;
@@ -579,7 +574,7 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
     chassert(getCurrentWriteOffset() == offset_in_file + size);
 }
 
-FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
+FileSegment::State FileSegment::wait(size_t offset)
 {
     OpenTelemetry::SpanHolder span("FileSegment::wait");
     span.addAttribute("clickhouse.key", key().toString());
@@ -615,19 +610,14 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset();
         };
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
         while (true)
         {
             if (query_status)
                 query_status->throwIfKilled();
-            const auto now = std::chrono::steady_clock::now();
-            if (now >= deadline)
-            {
-                ProfileEvents::increment(ProfileEvents::FileSegmentWaitTimeouts);
+            if (cv.wait_for(lk, std::chrono::seconds(1), downloaded))
                 break;
-            }
-            const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
-            if (cv.wait_for(lk, slice, downloaded))
+            if (std::chrono::steady_clock::now() >= deadline)
                 break;
         }
     }

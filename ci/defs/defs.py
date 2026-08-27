@@ -6,8 +6,6 @@ TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_P
 
 SYNC = "CH Inc sync"
 
-GH_AUTH_TRUSTED_LAMBDA_NAME = "mint-token-trusted-lambda-terraform"
-
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
@@ -50,6 +48,12 @@ azure_secret = Secret.Config(
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
+chcache_secret = Secret.Config(
+    name="chcache_password",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
+)
+
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
@@ -71,6 +75,7 @@ SECRETS = [
         region="us-east-1",
     ),
     azure_secret,
+    chcache_secret,
     Secret.Config(
         name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -129,6 +134,12 @@ DOCKERS = [
         name="clickhouse/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/fasttest"],
+    ),
+    Docker.Config(
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
+        platforms=[Docker.Platforms.AMD],
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
@@ -231,12 +242,6 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/mysql-js-client",
         path="./ci/docker/integration/mysql_js_client",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/wasm-builder",
-        path="./ci/docker/integration/wasm_builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -373,6 +378,8 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
+    SIGN_MACOS = "Sign macOS binary"
+    DOCS = "Docs check"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
@@ -385,7 +392,6 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
-    BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
@@ -428,8 +434,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-22"
-    COMPILER_CPP = "clang++-22"
+    COMPILER_C = "clang-21"
+    COMPILER_CPP = "clang++-21"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
@@ -461,6 +467,10 @@ class ArtifactNames:
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
+    CH_AMD_DARWIN_PLAIN = "CH_AMD_DARWIN_PLAIN"
+    CH_ARM_DARWIN_PLAIN = "CH_ARM_DARWIN_PLAIN"
+    CH_AMD_DARWIN_SIGNED = "CH_AMD_DARWIN_SIGNED"
+    CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
@@ -496,7 +506,6 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
-    CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
@@ -610,6 +619,27 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_CFI,
         ]
     )
+    clickhouse_darwin_plain_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        compress_zst=True,
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ArtifactNames.CH_ARM_DARWIN_PLAIN,
+        ]
+    )
+    clickhouse_darwin_signed_zips = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-macos.zip",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_SIGNED,
+            ArtifactNames.CH_ARM_DARWIN_SIGNED,
+        ]
+    )
     llvm_profdata_file = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
@@ -695,11 +725,6 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
-    )
-    clickhouse_examples = Artifact.Config(
-        name=ArtifactNames.CLICKHOUSE_EXAMPLES,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/src/Examples/clickhouse-examples",
     )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,

@@ -502,7 +502,7 @@ Write some queries that join the `taxi_zone_dictionary` with your `trips` table.
     Notice the output of the above `JOIN` query is the same as the query before it that used `dictGetOrDefault` (except that the `Unknown` values aren't included). Behind the scenes, ClickHouse is actually calling the `dictGet` function for the `taxi_zone_dictionary` dictionary, but the `JOIN` syntax is more familiar for SQL developers.
 </Note>
 
-2. This query returns rows for the 1000 trips with the highest tip amount, then performs an inner join of each row with the dictionary:
+2. This query returns rows for the the 1000 trips with the highest tip amount, then performs an inner join of each row with the dictionary:
     ```sql
     SELECT *
     FROM trips

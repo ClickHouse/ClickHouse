@@ -445,6 +445,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     bool cleanup,
     MergeTreeData::MergingParams merging_params,
     MergeTreeTransactionPtr txn,
+    bool need_prefix,
     ProjectionDescriptionRawPtr projection,
     IMergeTreeDataPart * parent_part,
     const String & suffix)
@@ -468,6 +469,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         cleanup,
         std::move(merging_params),
+        need_prefix,
         projection,
         parent_part,
         nullptr,
@@ -488,7 +490,8 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     ContextMutablePtr context,
     const MergeTreeTransactionPtr & txn,
     ReservationSharedPtr space_reservation,
-    TableLockHolder & holder)
+    TableLockHolder & holder,
+    bool need_prefix)
 {
     /// Building the mutation pipeline can run nested blocking pipelines via `CompletedPipelineExecutor` -
     /// most notably `KeyCondition::buildOrderedSetInplace` materializing the right side of `x IN (subquery)`
@@ -515,7 +518,8 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
         txn,
         data,
         *this,
-        merges_blocker);
+        merges_blocker,
+        need_prefix);
 }
 
 MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart(

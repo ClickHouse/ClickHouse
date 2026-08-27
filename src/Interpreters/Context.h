@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
@@ -94,6 +93,7 @@ class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class AsynchronousMetrics;
+class BackgroundSchedulePool;
 class MergeList;
 class MovesList;
 class ReplicatedFetchList;
@@ -148,8 +148,6 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
-class DistributedCacheLog;
-class DistributedCacheServerLog;
 class FilesystemReadPrefetchesLog;
 class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
@@ -284,6 +282,9 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
+
+class AIQuotaTracker;
+using AIQuotaTrackerPtr = std::shared_ptr<AIQuotaTracker>;
 
 /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
 /// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
@@ -434,11 +435,6 @@ protected:
     /// Max block numbers in partitions to read from MergeTree tables.
     /// Saved separately for each table uuid used in the query.
     std::unordered_map<UUID, PartitionIdToMaxBlockPtr> partition_id_to_max_block;
-
-    /// A pinned point-in-time storage snapshot to read instead of taking a fresh one, keyed by table uuid.
-    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE` to populate the view from the exact data
-    /// captured at the moment the view was subscribed to new inserts. See InterpreterCreateQuery.
-    std::unordered_map<UUID, StorageSnapshotPtr> pinned_storage_snapshots;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -597,9 +593,8 @@ protected:
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
 
-    /// Defined out of line: a definition in the header gives every shared object its own copy.
-    static ContextPtr global_context_instance;
-    static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
+    inline static ContextPtr global_context_instance;
+    inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
@@ -638,6 +633,9 @@ protected:
     /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
     /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
+
+    /// AI-function quota usage for the current query, shared by every AI function call in it.
+    mutable AIQuotaTrackerPtr ai_quota_tracker;
 
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
@@ -762,17 +760,13 @@ public:
     String getPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
+    String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
     String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
     DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const;
-
-    /// Remove a qualified name from the per-query storage cache. Called after this query renames or
-    /// exchanges a table so its own later lookups of the affected names re-resolve to the current
-    /// tables instead of the version pinned before the swap.
-    void dropStorageCacheEntry(const StorageID & id) const;
 
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
@@ -794,7 +788,6 @@ public:
         LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
-        LINUX_RSEQ_UNAVAILABLE,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
         MAX_ACTIVE_PARTS,
         MAX_ATTACHED_DATABASES,
@@ -845,6 +838,7 @@ public:
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
+    void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
@@ -1616,24 +1610,12 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
-    /// Create the pool if needed and return it. Returns a `shared_ptr` (not a reference) so a
-    /// caller keeping the pool around cannot outlive it: `shutdown` clears the members while
-    /// background tasks may still hold their pool.
-    BackgroundSchedulePoolPtr getBufferFlushSchedulePool() const;
-    BackgroundSchedulePoolPtr getSchedulePool() const;
-    BackgroundSchedulePoolPtr getMessageBrokerSchedulePool() const;
-    BackgroundSchedulePoolPtr getDistributedSchedulePool() const;
-    BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
-    BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
-
-    /// Return the pool only if it has already been created, null otherwise, so that reading
-    /// `system.background_schedule_pool` does not instantiate one.
-    BackgroundSchedulePoolPtr getBufferFlushSchedulePoolIfExists() const;
-    BackgroundSchedulePoolPtr getSchedulePoolIfExists() const;
-    BackgroundSchedulePoolPtr getMessageBrokerSchedulePoolIfExists() const;
-    BackgroundSchedulePoolPtr getDistributedSchedulePoolIfExists() const;
-    BackgroundSchedulePoolPtr getIcebergSchedulePoolIfExists() const;
-    BackgroundSchedulePoolPtr getStreamingSchedulePoolIfExists() const;
+    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
+    BackgroundSchedulePool & getSchedulePool() const;
+    BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
+    BackgroundSchedulePool & getDistributedSchedulePool() const;
+    BackgroundSchedulePool & getIcebergSchedulePool() const;
+    BackgroundSchedulePool & getStreamingSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1651,9 +1633,6 @@ public:
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     void reloadClusterConfig() const;
-
-    bool isDistributedCacheServer() const;
-    void setDistributedCacheServer();
 
     Compiler & getCompiler();
 
@@ -1687,10 +1666,6 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
-#if ENABLE_DISTRIBUTED_CACHE
-    std::shared_ptr<DistributedCacheLog> getDistributedCacheLog() const;
-    std::shared_ptr<DistributedCacheServerLog> getDistributedCacheServerLog() const;
-#endif
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
@@ -1801,7 +1776,6 @@ public:
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks
-        DISTRIBUTED_CACHE, /// clickhouse-distributed-cache
     };
 
     ApplicationType getApplicationType() const;
@@ -1950,6 +1924,8 @@ public:
 
     ReverseLookupCache & getReverseLookupCache() const;
 
+    AIQuotaTrackerPtr getAIQuotaTracker() const;
+
     /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
     /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
@@ -1957,11 +1933,6 @@ public:
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
-
-    /// A pinned storage snapshot to be returned by the table's getStorageSnapshot instead of a fresh one.
-    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE`.
-    void setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot);
-    StorageSnapshotPtr getPinnedStorageSnapshot(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
 

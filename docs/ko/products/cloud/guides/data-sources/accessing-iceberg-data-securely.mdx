@@ -25,15 +25,25 @@ ClickHouse Cloud는 ARN 기반 AWS IAM 신뢰 관계를 사용하여 객체 스�
 </div>
 
 <Steps>
-  <Step title="1. ClickHouse Cloud 계정에 로그인합니다." id="login" />
+  <Step>
+    ### 1. ClickHouse Cloud 계정에 로그인합니다.
+  </Step>
 
-  <Step title="2. Iceberg 데이터를 쿼리할 ClickHouse 서비스를 선택합니다." id="select-service" />
+  <Step>
+    ### 2. Iceberg 데이터를 쿼리할 ClickHouse 서비스를 선택합니다.
+  </Step>
 
-  <Step title={<>3. <strong>설정</strong> 탭으로 이동합니다.</>} id="settings-tab" />
+  <Step>
+    ### 3. **설정** 탭으로 이동합니다.
+  </Step>
 
-  <Step title={<>4. <strong>Network security information</strong>까지 아래로 스크롤합니다.</>} id="network-security-information" />
+  <Step>
+    ### 4. **Network security information** 섹션까지 아래로 스크롤합니다.
+  </Step>
 
-  <Step title={<>5. <strong>서비스 역할 ID(IAM)</strong> 값을 복사합니다.</>} id="service-role-iam-value">
+  <Step>
+    ### 5. **Service role ID (IAM)** 값을 복사합니다.
+
     이 ARN은 Iceberg 데이터에 액세스할 AWS IAM 역할의 신뢰 정책에 필요합니다.
 
     <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="ClickHouse 서비스 IAM 역할 ARN 가져오기" border />
@@ -45,14 +55,20 @@ ClickHouse Cloud는 ARN 기반 AWS IAM 신뢰 관계를 사용하여 객체 스�
 </div>
 
 <Steps>
-  <Step title="1. AWS에 로그인한 후 IAM 서비스로 이동합니다." id="aws-iam-service" />
+  <Step>
+    ### 1. AWS에 로그인한 후 IAM 서비스로 이동합니다.
+  </Step>
 
-  <Step title="2. Roles를 선택한 다음 Create role을 선택합니다." id="create-role">
+  <Step>
+    ### 2. Roles를 선택한 다음 Create role을 선택합니다.
+
     `Trusted entity type`에서 `Custom trust policy`를 선택하고 3단계의 값을 입력합니다.
   </Step>
 
-  <Step title="3. 신뢰 정책과 IAM 정책을 추가합니다." id="add-trust-iam-policies">
-    `{service-role-id}`를 ClickHouse 인스턴스의 서비스 역할 ID(IAM)로 바꾸십시오.
+  <Step>
+    ### 3. 신뢰 정책과 IAM 정책을 추가합니다.
+
+    `{service-role-id}`를 ClickHouse 인스턴스의 Service Role ID (IAM)로 바꾸십시오.
 
     ```json
     {
@@ -106,7 +122,9 @@ ClickHouse Cloud는 ARN 기반 AWS IAM 신뢰 관계를 사용하여 객체 스�
     </Note>
   </Step>
 
-  <Step title="4. 역할 생성을 완료합니다." id="finish-role-creation">
+  <Step>
+    ### 4. 역할 생성을 완료합니다.
+
     a. Next를 클릭한 다음 권한 할당 화면에서 다시 Next를 클릭합니다.
 
     b. 이름(예: `iceberg-role-for-clickhouse`)과 설명을 추가합니다.
@@ -118,7 +136,9 @@ ClickHouse Cloud는 ARN 기반 AWS IAM 신뢰 관계를 사용하여 객체 스�
     e. `Create role`을 선택합니다.
   </Step>
 
-  <Step title={<>5. 생성이 완료되면 새 <strong>IAM Role Arn</strong>을 복사합니다.</>} id="copy-role-arn" />
+  <Step>
+    ### 5. 생성이 완료되면 새 **IAM Role Arn**을 복사합니다.
+  </Step>
 </Steps>
 
 <div id="configure-iceberg-access">

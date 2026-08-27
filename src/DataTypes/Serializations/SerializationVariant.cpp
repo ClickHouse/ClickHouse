@@ -80,17 +80,6 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
             new_state->variant_states.push_back(variant_state ? variant_state->clone() : nullptr);
         return new_state;
     }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (discriminators_state)
-            callback(discriminators_state);
-        for (const auto & variant_state : variant_states)
-        {
-            if (variant_state)
-                callback(variant_state);
-        }
-    }
 };
 
 SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_)
@@ -1145,7 +1134,7 @@ bool SerializationVariant::tryDeserializeVariantFromField(
         }
         if (variant_column.size() > prev_size)
         {
-            variant_column.popBack(variant_column.size() - prev_size);
+            variant_column.popBack(1);
         }
     }
 

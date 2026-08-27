@@ -15,7 +15,6 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -70,13 +69,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
-bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
@@ -100,23 +98,6 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
             || typeid_cast<const RollupStep *>(step)
             || typeid_cast<const CubeStep *>(step)
             || typeid_cast<const ExtremesStep *>(step))
-            return true;
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-    return false;
-}
-
-/// True if the plan already contains a logical exchange step, i.e. the tryMakeDistributed*
-/// transforms (the only source of exchanges) already ran on it.
-bool planContainsLogicalExchange(const QueryPlan::Node & root)
-{
-    std::vector<const QueryPlan::Node *> stack = {&root};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
             return true;
         for (const auto * child : node->children)
             stack.push_back(child);
@@ -519,25 +500,11 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 /// Replaces SortingStep step with a subtree like this:
 ///
 ///   GatherExchange (merge sorted streams)
-///     LimitStep (only for a top-N sort)
-///       SortingStep
-///         ScatterExchange (any partitioning)
+///     SortingStep
+///       ScatterExchange (any partitioning)
 ///
 /// NOTE: GatherExchange step is aware of sort descripiton and merges multiple sorted streams into one sorted stream.
-/// The `LimitStep` restates the bound `SortingStep::serialize` drops, so the worker still sees a top-N read.
-
-/// Find if the LimitStep must read till end (setting exact_rows_before_limit)
-static bool mustReadTillEnd(const Stack & stack)
-{
-    for (const auto & frame : stack)
-        if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()))
-            if (limit->alwaysReadTillEnd())
-                return true;
-
-    return false;
-}
-
-void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a sorting step?
     auto * sorting_step = typeid_cast<SortingStep *>(node.step.get());
@@ -564,23 +531,12 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
     new_sorting_node.step = std::move(node.step);
     new_sorting_node.children = {&exchange_scatter_node};
 
-    QueryPlan::Node * gather_input = &new_sorting_node;
-
-    if (const size_t local_limit = mustReadTillEnd(stack) ? 0 : sorting_step->getLimit())
-    {
-        auto & limit_node = nodes.emplace_back();
-        limit_node.step = std::make_unique<LimitStep>(new_sorting_node.step->getOutputHeader(), local_limit, 0);
-        limit_node.step->setStepDescription("local top-N");
-        limit_node.children = {&new_sorting_node};
-        gather_input = &limit_node;
-    }
-
     /// Add merge sorted gather exchange step above sorting
     QueryPlan::Node gather_node;
-    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(gather_input->step->getOutputHeader(), bucket_count, sort_description);
+    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_sorting_node.step->getOutputHeader(), bucket_count, sort_description);
     exchange_gather_step->setStepDescription(fmt::format("sorted by ({})", dumpSortDescription(sort_description)), optimization_settings.max_step_description_length);
     gather_node.step = std::move(exchange_gather_step);
-    gather_node.children = {gather_input};
+    gather_node.children = {&new_sorting_node};
 
     /// Replace sorting node with gather node
     node = std::move(gather_node);
@@ -922,9 +878,6 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             std::vector<std::unique_ptr<QueryPlan>> child_plans{};
             std::unordered_map<String, DistributedQueryTask> list_of_shards{};
             std::unordered_map<String, String> depends_on_stages{};
-            /// True if the tasks in list_of_shards produce copies of the same data (the case right
-            /// after a BroadcastExchange) rather than a partition of it.
-            bool shards_are_copies = false;
         };
 
         std::vector<Frame> stack;
@@ -933,7 +886,6 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         std::unique_ptr<QueryPlan> current_plan = std::make_unique<QueryPlan>();
         std::unordered_map<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
         std::unordered_map<String, String> current_stage_depends_on;
-        bool current_shards_are_copies = false;
 
         while (!stack.empty())
         {
@@ -954,13 +906,9 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// First child, take its list of shards
                     frame.list_of_shards = std::move(current_list_of_shards);
                     current_list_of_shards = {};
-                    frame.shards_are_copies = current_shards_are_copies;
                 }
                 else
                 {
-                    /// The outputs stay copies only if every input is a copy; one partitioned input
-                    /// (e.g. the probe side of a broadcast join) makes the per-bucket results distinct.
-                    frame.shards_are_copies = frame.shards_are_copies && current_shards_are_copies;
                     /// Check that child plan has the same list of shards
                     if (frame.list_of_shards.size() != current_list_of_shards.size())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Different list of shards in child plans {} and {}, last child plan: \n{}",
@@ -1012,12 +960,6 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                 if (exchange_step && !optimization_settings.distributed_plan_single_stage)
                 {
-                    if (frame.shards_are_copies)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Exchange step {} consumes the output buckets of a broadcast exchange; "
-                            "they are copies of the same data and re-distributing them would duplicate rows",
-                            frame.node->step->getName());
-
                     /// Make unique name for the exchange
                     const String stage_name = "stage_" + std::to_string(exchange_id);
                     ExchangeDescription exchange_description;
@@ -1090,7 +1032,6 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(send_and_receive_steps.second));
                     frame.list_of_shards = std::move(destination_stage_tasks);
-                    frame.shards_are_copies = typeid_cast<const BroadcastExchangeStep *>(exchange_step) != nullptr;
                 }
                 else
                 {
@@ -1158,7 +1099,6 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
             current_stage_depends_on = std::move(frame.depends_on_stages);
             current_list_of_shards = std::move(frame.list_of_shards);
-            current_shards_are_copies = frame.shards_are_copies;
 
             LOG_TEST(logger, "Current plan:\n{}\nshard count: {}\n",
                 dumpQueryPlanShort(*current_plan), current_list_of_shards.size());
