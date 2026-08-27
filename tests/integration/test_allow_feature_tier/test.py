@@ -29,12 +29,29 @@ instance_with_merge_tree_constraint = cluster.add_instance(
     stay_alive=True,
 )
 
+# Two replicas of one `Replicated` database that disagree on which settings are allowed: the first one
+# allows every tier, the second one refuses EXPERIMENTAL settings.
+permissive_replica = cluster.add_instance(
+    "permissive_replica",
+    main_configs=["configs/allow_feature_tier.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+strict_replica = cluster.add_instance(
+    "strict_replica",
+    main_configs=["configs/allow_feature_tier_1.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+
 feature_tier_path = "/etc/clickhouse-server/config.d/allow_feature_tier.xml"
 feature_tier_1_path = "/etc/clickhouse-server/config.d/allow_feature_tier_1.xml"
 
 # These settings are used as examples of their tier. If one changes tier in the future, please replace
 # it with another setting of the same tier. If there is none, feel free to comment out the affected test.
-EXPERIMENTAL_SETTING = "allow_experimental_time_series_table"  # also in configs/users.d/users.xml
+EXPERIMENTAL_SETTING = (
+    "allow_experimental_time_series_table"  # also in configs/users.d/users.xml
+)
 BETA_SETTING = "allow_experimental_lightweight_update"
 
 # A `MergeTree` setting is written by its bare name in a table's own `SETTINGS` or `ALTER ... MODIFY
@@ -196,33 +213,27 @@ def test_allow_feature_tier_in_mergetree_settings(start_cluster):
     assert MERGE_TREE_EXPERIMENTAL_SETTING in output
 
     # Creating a different table should not be possible
-    output, error = instance.query_and_get_answer_with_error(
-        f"""
+    output, error = instance.query_and_get_answer_with_error(f"""
         CREATE TABLE test_experimental_new (uid String, version UInt32, is_deleted UInt8)
         ENGINE = ReplacingMergeTree(version, is_deleted)
         ORDER by (uid)
         SETTINGS {MERGE_TREE_EXPERIMENTAL_SETTING}=1;
-    """
-    )
+    """)
     assert output == ""
     assert EXPERIMENTAL_BLOCKED in error
 
     # Creating a different table and altering its settings to enable experimental should not be possible either
-    output, error = instance.query_and_get_answer_with_error(
-        """
+    output, error = instance.query_and_get_answer_with_error("""
         CREATE TABLE test_experimental_new (uid String, version UInt32, is_deleted UInt8)
         ENGINE = ReplacingMergeTree(version, is_deleted)
         ORDER by (uid);
-    """
-    )
+    """)
     assert output == ""
     assert error == ""
 
-    output, error = instance.query_and_get_answer_with_error(
-        f"""
+    output, error = instance.query_and_get_answer_with_error(f"""
         ALTER TABLE test_experimental_new MODIFY setting {MERGE_TREE_EXPERIMENTAL_SETTING}=1
-    """
-    )
+    """)
     assert output == ""
     assert EXPERIMENTAL_BLOCKED in error
     instance.query("DROP TABLE IF EXISTS test_experimental_new")
@@ -396,7 +407,9 @@ def test_allow_feature_tier_with_merge_tree_prefixed_profile_elements(start_clus
     assert "0" == get_current_tier_value(instance)
 
     def drop_objects():
-        instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_merge_tree_element")
+        instance.query(
+            "DROP SETTINGS PROFILE IF EXISTS profile_with_merge_tree_element"
+        )
         instance.query("DROP USER IF EXISTS user_with_merge_tree_element")
 
     drop_objects()
@@ -415,7 +428,9 @@ def test_allow_feature_tier_with_merge_tree_prefixed_profile_elements(start_clus
         assert error == ""
 
         element = get_profile_element(
-            instance, "profile_with_merge_tree_element", MERGE_TREE_PRODUCTION_SETTING_IN_PROFILE
+            instance,
+            "profile_with_merge_tree_element",
+            MERGE_TREE_PRODUCTION_SETTING_IN_PROFILE,
         )
         assert str(MERGE_TREE_PRODUCTION_MIN) in element
         assert str(MERGE_TREE_PRODUCTION_MAX) in element
@@ -445,9 +460,12 @@ def test_allow_feature_tier_with_merge_tree_prefixed_profile_elements(start_clus
         # The server boots with those objects in place
         instance.restart_clickhouse()
         assert tier == get_current_tier_value(instance)
-        assert "1" == instance.query(
-            "SELECT count() FROM system.settings_profiles WHERE name = 'profile_with_merge_tree_element'"
-        ).strip()
+        assert (
+            "1"
+            == instance.query(
+                "SELECT count() FROM system.settings_profiles WHERE name = 'profile_with_merge_tree_element'"
+            ).strip()
+        )
 
         drop_objects()
         instance.replace_in_config(feature_tier_path, tier, "0")
@@ -461,7 +479,9 @@ def test_merge_tree_constraint_in_config_with_feature_tier(start_cluster):
     assert "1" == get_current_tier_value(node)
     assert "1" == node.query("SELECT 1").strip()
 
-    element = get_profile_element(node, "default", MERGE_TREE_PRODUCTION_SETTING_IN_PROFILE)
+    element = get_profile_element(
+        node, "default", MERGE_TREE_PRODUCTION_SETTING_IN_PROFILE
+    )
     assert str(MERGE_TREE_PRODUCTION_MIN) in element
     assert str(MERGE_TREE_PRODUCTION_MAX) in element
 
@@ -479,16 +499,24 @@ def test_merge_tree_constraint_in_config_with_feature_tier(start_cluster):
     assert "1" == node.query("SELECT 1").strip()
 
 
-def test_server_level_merge_tree_settings_are_not_blocked_by_feature_tier(start_cluster):
+def test_server_level_merge_tree_settings_are_not_blocked_by_feature_tier(
+    start_cluster,
+):
     # `compatibility` and the `merge_tree` config section can change the value of EXPERIMENTAL/BETA settings.
     # They are set by the server, not by a query, so they must not make every table creation fail
     node = instance_with_merge_tree_constraint
-    assert "24.10" == node.query(
-        "SELECT value FROM system.settings WHERE name = 'compatibility'"
-    ).strip()
-    assert "1" == node.query(
-        f"SELECT value FROM system.merge_tree_settings WHERE name = '{MERGE_TREE_EXPERIMENTAL_SETTING_IN_CONFIG}'"
-    ).strip()
+    assert (
+        "24.10"
+        == node.query(
+            "SELECT value FROM system.settings WHERE name = 'compatibility'"
+        ).strip()
+    )
+    assert (
+        "1"
+        == node.query(
+            f"SELECT value FROM system.merge_tree_settings WHERE name = '{MERGE_TREE_EXPERIMENTAL_SETTING_IN_CONFIG}'"
+        ).strip()
+    )
 
     for tier in ["1", "2"]:
         if tier != "1":
@@ -732,7 +760,9 @@ def test_merge_tree_constraint_applies_to_the_alias_of_the_setting(start_cluster
 
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_constraint")
     instance.query("DROP USER IF EXISTS user_with_const_constraint")
-    instance.query(f"CREATE SETTINGS PROFILE profile_with_const_constraint SETTINGS {canonical} CONST")
+    instance.query(
+        f"CREATE SETTINGS PROFILE profile_with_const_constraint SETTINGS {canonical} CONST"
+    )
     instance.query(
         "CREATE USER user_with_const_constraint IDENTIFIED WITH no_password "
         "SETTINGS PROFILE 'profile_with_const_constraint'"
@@ -747,6 +777,44 @@ def test_merge_tree_constraint_applies_to_the_alias_of_the_setting(start_cluster
 
     instance.query("DROP USER IF EXISTS user_with_const_constraint")
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_constraint")
+
+
+def test_merge_tree_setting_is_the_same_setting_when_stored_under_the_alias(
+    start_cluster,
+):
+    # The mirror of the test below: the value is stored under the alias, and the canonical name has to find
+    # it. Neither name is privileged, so whichever one a profile used, the other reads and resets the same
+    # setting
+    assert "0" == get_current_tier_value(instance)
+    canonical = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING_CANONICAL
+    alias = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING
+
+    instance.query("DROP USER IF EXISTS user_with_alias_stored_setting")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_alias_stored_setting")
+    instance.query(
+        f"CREATE SETTINGS PROFILE profile_with_alias_stored_setting SETTINGS {alias} = 1 CONST"
+    )
+    instance.query(
+        "CREATE USER user_with_alias_stored_setting IDENTIFIED WITH no_password "
+        "SETTINGS PROFILE 'profile_with_alias_stored_setting'"
+    )
+
+    for name in [alias, canonical]:
+        output, error = instance.query_and_get_answer_with_error(
+            f"SELECT 1 SETTINGS {name} = 1", user="user_with_alias_stored_setting"
+        )
+        assert output.strip() == "1", name
+        assert error == "", name
+
+    for name in [alias, canonical]:
+        output, error = instance.query_and_get_answer_with_error(
+            f"SELECT 1 SETTINGS {name} = 0", user="user_with_alias_stored_setting"
+        )
+        assert output == ""
+        assert "should not be changed" in error, name
+
+    instance.query("DROP USER IF EXISTS user_with_alias_stored_setting")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_alias_stored_setting")
 
 
 def test_merge_tree_setting_is_the_same_setting_under_either_name(start_cluster):
@@ -785,3 +853,51 @@ def test_merge_tree_setting_is_the_same_setting_under_either_name(start_cluster)
 
     instance.query("DROP USER IF EXISTS user_with_const_aliased_setting")
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_aliased_setting")
+
+
+def test_alter_replays_on_a_replica_that_would_not_have_allowed_it(start_cluster):
+    # A `Replicated` database runs the ALTER again on every other replica. The replica that took the query
+    # from the user is the one that decides whether it is allowed; the others must apply it even when their
+    # own `allow_feature_tier` is stricter, or the database replication queue stops and the replicas end up
+    # with different table metadata.
+    database = "database_of_replicas_with_different_tiers"
+    table = f"{database}.table_altered_on_one_replica"
+
+    assert "0" == get_current_tier_value(permissive_replica)
+    assert "1" == get_current_tier_value(strict_replica)
+
+    for replica_name, replica in [("one", permissive_replica), ("two", strict_replica)]:
+        replica.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        replica.query(
+            f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard_one', '{replica_name}')"
+        )
+
+    permissive_replica.query(
+        f"CREATE TABLE {table} (a UInt64) ENGINE = ReplicatedMergeTree ORDER BY a"
+    )
+
+    # Allowed on this replica because it allows every tier. A `Replicated` database reports one row per
+    # replica, and both must say `OK`: the stricter replica has to accept the change too.
+    output, error = permissive_replica.query_and_get_answer_with_error(
+        f"ALTER TABLE {table} MODIFY SETTING {MERGE_TREE_EXPERIMENTAL_SETTING} = 1"
+    )
+    assert error == ""
+    statuses = [line.split("\t")[2] for line in output.strip().split("\n")]
+    assert statuses == ["OK", "OK"], output
+
+    # The stricter replica applies the same ALTER. `SYSTEM SYNC DATABASE REPLICA` fails if the entry did
+    # not go through, so reaching the assertion already means the queue is not stuck.
+    strict_replica.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    assert MERGE_TREE_EXPERIMENTAL_SETTING in strict_replica.query(
+        f"SHOW CREATE TABLE {table}"
+    )
+
+    # The stricter replica still refuses the same ALTER when a user sends it there directly
+    output, error = strict_replica.query_and_get_answer_with_error(
+        f"ALTER TABLE {table} MODIFY SETTING {MERGE_TREE_EXPERIMENTAL_SETTING} = 0"
+    )
+    assert output == ""
+    assert EXPERIMENTAL_BLOCKED in error
+
+    for replica in [permissive_replica, strict_replica]:
+        replica.query(f"DROP DATABASE IF EXISTS {database} SYNC")

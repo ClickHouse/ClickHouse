@@ -223,8 +223,8 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
         if (element.writability)
             new_value = *element.writability;
 
-        /// Not `Settings::resolveName`: it leaves a `merge_tree_`-prefixed name alone, and `set` stored the
-        /// constraint under the canonical name.
+        /// `set` stores a constraint under the canonical name of the setting, so look it up by that name.
+        /// `Settings::resolveName` would not do: it does not know the `merge_tree_` prefix.
         auto setting_name = resolveSettingName(element.setting_name);
         auto it = constraints.find(setting_name);
         if (it != constraints.end())
@@ -270,9 +270,16 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
         /// Custom settings have no declared default: resetting one removes it. There cannot be a
         /// value constraint for such a setting, but an existing value must still pass the readonly
         /// and source checks. Do not check an absent custom setting, preserving its no-op behavior.
-        /// A `merge_tree_`-prefixed name may be stored under either of its spellings, so look for both.
+        /// The value may be stored under any name of the setting, so look for all of them.
         Field current_value;
-        if (current_settings.tryGet(name, current_value) || current_settings.tryGet(resolveSettingName(name), current_value))
+        bool has_current_value = current_settings.tryGet(name, current_value);
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+        {
+            if (has_current_value)
+                break;
+            has_current_value = current_settings.tryGet(equivalent_name, current_value);
+        }
+        if (has_current_value)
         {
             SettingChange change{name, current_value};
             getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, THROW_ON_VIOLATION, source);
@@ -307,49 +314,84 @@ void SettingsConstraints::checkOrClamp(const Settings & current_settings, Settin
     });
 }
 
+/// The value a setting holds now.
+///
+/// `Settings` keeps a `merge_tree_`-prefixed name as a custom setting, under the exact name that wrote it.
+/// So a value written as `merge_tree_allow_experimental_block_number_column` is not found by looking up
+/// `merge_tree_enable_block_number_column`, its other name for the same setting. Look under every name.
+template <typename SettingsT>
+bool getCurrentValueOfSetting(const SettingsT & current_settings, const String & name, Field & out_value)
+{
+    if (current_settings.tryGet(name, out_value))
+        return true;
+
+    if constexpr (std::is_same_v<SettingsT, Settings>)
+    {
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+        {
+            if (current_settings.tryGet(equivalent_name, out_value))
+                return true;
+        }
+    }
+    return false;
+}
+
+/// The value in the type of the setting. `Settings::castValueUtil` returns a `merge_tree_`-prefixed value
+/// unchanged, because it is a custom setting there, so resolve the real setting and use its type.
+template <typename SettingsT>
+Field castValueOfSetting(const String & name, const Field & value)
+{
+    if constexpr (std::is_same_v<SettingsT, Settings>)
+        return settingCastValueUtil(name, value);
+    else
+        return SettingsT::castValueUtil(name, value);
+}
+
 /// Casts `change.value` to the setting's declared type and returns the result. Returns Null if we should skip the setting: either because
 /// the value is unchanged (when `ignore_unchanged_settings` is false) or because the cast failed (when `throw_on_failure` is false).
 template <typename SettingsT>
 Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure)
 {
     Field current_value;
-    bool has_current_value = current_settings.tryGet(change.name, current_value);
-
-    if constexpr (std::is_same_v<SettingsT, Settings>)
-    {
-        /// A `merge_tree_`-prefixed name is carried through `Settings` as a custom setting, so its value is
-        /// stored under the spelling that wrote it and without the setting's declared type. Read the
-        /// canonical spelling as well, and compare in the declared type, so that writing a setting through
-        /// one of its names is recognized as the same setting written through another.
-        auto canonical_name = resolveSettingName(change.name);
-        if (!has_current_value && canonical_name != change.name)
-            has_current_value = current_settings.tryGet(canonical_name, current_value);
-
-        if (!ignore_unchanged_settings && has_current_value
-            && settingCastValueUtil(canonical_name, change.value) == settingCastValueUtil(canonical_name, current_value))
-            return {};
-    }
+    bool has_current_value = getCurrentValueOfSetting(current_settings, change.name, current_value);
 
     if (!ignore_unchanged_settings && has_current_value && change.value == current_value)
         return {};
 
-    Field new_value;
-    if (throw_on_failure)
-        new_value = SettingsT::castValueUtil(change.name, change.value);
-    else
+    /// Put the value into the type of the setting. This throws when the value does not fit, as
+    /// `max_threads = 'abc'` does not. Callers that clamp a value instead of failing the query pass
+    /// `throw_on_failure = false`, and for them the change is dropped instead.
+    auto cast_value = [&](const Field & value, Field & out) -> bool
     {
+        if (throw_on_failure)
+        {
+            out = castValueOfSetting<SettingsT>(change.name, value);
+            return true;
+        }
         try
         {
-            new_value = SettingsT::castValueUtil(change.name, change.value);
+            out = castValueOfSetting<SettingsT>(change.name, value);
+            return true;
         }
         catch (const Exception &)
         {
-            return {};
+            return false;
         }
-    }
+    };
 
-    if (!ignore_unchanged_settings && has_current_value && new_value == current_value)
+    Field new_value;
+    if (!cast_value(change.value, new_value))
         return {};
+
+    if (!ignore_unchanged_settings && has_current_value)
+    {
+        /// Compare in the type of the setting. A profile with `merge_tree_enable_block_number_column = 1`
+        /// stores a Bool, the same 1 in a query arrives as a UInt64, and comparing them as they are would
+        /// make a change that keeps the value look like a real one.
+        Field cast_current_value;
+        if (cast_value(current_value, cast_current_value) && new_value == cast_current_value)
+            return {};
+    }
 
     return new_value;
 }
@@ -392,8 +434,12 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
 
     if (ignore_unchanged_settings)
     {
+        /// Compare in the type of the setting, as above. Casting cannot fail here: a value the setting
+        /// cannot take is refused when it is written, both in the users configuration file and by
+        /// `CREATE SETTINGS PROFILE`.
         Field current_value;
-        if (current_settings.tryGet(change.name, current_value) && new_value == current_value)
+        if (getCurrentValueOfSetting(current_settings, change.name, current_value)
+            && new_value == castValueOfSetting<Settings>(change.name, current_value))
             return true;
     }
 
@@ -547,9 +593,9 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
 
 SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
 {
-    /// The cache holds the aliases that a constraint was declared with, which is not necessarily the alias
-    /// a query uses. `Settings::resolveName`, applied by the caller, leaves a `merge_tree_`-prefixed name
-    /// alone, so such a name still has to be resolved the way `set` resolved it before storing.
+    /// The cache only knows the names constraints were declared with, which need not be the name a query
+    /// uses. The caller has applied `Settings::resolveName` already, and that leaves a `merge_tree_`-prefixed
+    /// name as it is, so resolve such a name here the way `set` resolved it before storing the constraint.
     String canonical_merge_tree_name;
     auto resolved_name = resolveSettingNameWithCache(setting_name);
     if (resolved_name.starts_with(MERGE_TREE_SETTINGS_PREFIX))
@@ -570,7 +616,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly")
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
-    /// Not `current_settings.getTier`: a `merge_tree_`-prefixed name belongs to `MergeTreeSettings`.
+    /// Not `current_settings.getTier`: a `merge_tree_`-prefixed name is a `MergeTreeSettings` setting.
     if (isAnyTierRestricted())
     {
         if (auto tier_checker = getTierChecker(setting_name, settingGetTier(resolved_name)))
@@ -592,8 +638,8 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     return Checker(it->second, Settings::resolveName);
 }
 
-/// Whether `allow_feature_tier` restricts anything at all. Checked before looking a tier up, because it
-/// usually restricts nothing.
+/// Whether `allow_feature_tier` restricts anything at all. It usually does not, so this is checked before
+/// looking up which tier a setting belongs to.
 bool SettingsConstraints::isAnyTierRestricted() const
 {
     return access_control
@@ -601,8 +647,8 @@ bool SettingsConstraints::isAnyTierRestricted() const
             || !access_control->getAllowBetaTierSettings());
 }
 
-/// The single place enforcing `allow_feature_tier`, for every kind of setting. Callers only reach it for
-/// settings a query really changes, so a value the server itself put in effect is never refused.
+/// The one place that enforces `allow_feature_tier`, for every kind of setting. Callers reach it only for
+/// a setting a query really changes, so a value the server itself set is never refused.
 std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(std::string_view setting_name, SettingsTierType tier) const
 {
     if (!access_control)
@@ -629,7 +675,7 @@ std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(
 
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
 {
-    /// The canonical name, because that is what `set` stored the constraint under.
+    /// The canonical name, because `set` stored the constraint under that one.
     auto full_name = settingFullName<MergeTreeSettings>(MergeTreeSettings::resolveName(short_name));
     auto it = constraints.find(full_name);
     if (it == constraints.end())

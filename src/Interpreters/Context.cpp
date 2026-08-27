@@ -3639,11 +3639,10 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
     for (const String & name : names)
     {
         settings->setDefaultValue(name);
-        /// A `merge_tree_`-prefixed name is a custom setting here, stored under the spelling that wrote it,
-        /// so resetting one of its names has to clear the value the other name would have written.
-        auto canonical_name = resolveSettingName(name);
-        if (canonical_name != name)
-            settings->setDefaultValue(canonical_name);
+        /// `Settings` stores a `merge_tree_`-prefixed name as a custom setting, under the exact name that
+        /// wrote it. Resetting one name of a setting therefore has to clear what its other names wrote.
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+            settings->setDefaultValue(equivalent_name);
     }
 }
 
