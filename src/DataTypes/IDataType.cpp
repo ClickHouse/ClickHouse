@@ -1,8 +1,6 @@
 #include <cstddef>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnReplicated.h>
 
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
@@ -16,8 +14,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
-#include <DataTypes/Serializations/SerializationLowCardinality.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <DataTypes/Serializations/SerializationDetached.h>
@@ -90,19 +86,10 @@ MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
-    auto kind_stack = serialization.getKindStack();
-    auto column = createColumn();
-    for (auto kind : kind_stack)
-    {
-        if (kind == ISerialization::Kind::SPARSE)
-            column = ColumnSparse::create(std::move(column));
-        else if (kind == ISerialization::Kind::REPLICATED)
-            column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
-        else if (kind == ISerialization::Kind::LOW_CARDINALITY)
-            column = createEmptyLowCardinalityColumn(*this, /*is_native=*/false);
-    }
-
-    return column;
+    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
+    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
+    /// the ColumnConst produced by the quantized-vector codebook serialization.
+    return serialization.wrapColumnForDeserialization(createColumn());
 }
 
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
@@ -378,8 +365,6 @@ SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr s
             serialization = SerializationDetached::create(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)
             serialization = SerializationReplicated::create(serialization);
-        else if (canBeInsideLowCardinality() && kind == ISerialization::Kind::LOW_CARDINALITY)
-            serialization = SerializationLowCardinality::create(getPtr(), /*is_native_low_cardinality=*/false);
     }
 
     return serialization;

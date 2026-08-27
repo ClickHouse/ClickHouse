@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -154,6 +155,13 @@ static ColumnPtr recursiveRemoveLowCardinalityImpl(const ColumnPtr & column, boo
     {
         if (remove_native || !column_low_cardinality->isNativeLowCardinality())
             res = column_low_cardinality->convertToFullColumn();
+    }
+    else if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        const auto & nested = column_replicated->getNestedColumn();
+        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        if (nested.get() != nested_no_lc.get())
+            res = ColumnReplicated::create(nested_no_lc, column_replicated->getIndexesColumn());
     }
 
     if (res != column)

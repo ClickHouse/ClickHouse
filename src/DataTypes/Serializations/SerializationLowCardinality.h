@@ -29,6 +29,8 @@ public:
 
     KindStack getKindStack() const override;
 
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
+
     bool supportsPooling() const override { return dict_inner_serialization->supportsPooling(); }
 
     void enumerateStreams(
@@ -58,8 +60,7 @@ public:
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-            ColumnPtr & column,
-            size_t rows_offset,
+            IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,

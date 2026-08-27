@@ -3,6 +3,7 @@
 #include <string_view>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
+#include <base/types.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray_fwd.h>
@@ -34,6 +35,7 @@ class IDataType;
 class Block;
 class ReadBuffer;
 struct StoredBlock;
+class RowDataStore;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -87,6 +89,21 @@ struct ColumnsWithRowNumbers
     /// `columns` and `row_numbers` must have same size
     VectorWithMemoryTracking<const StoredBlock *> columns;
     VectorWithMemoryTracking<UInt32> row_numbers;
+    /// Whether `columns` contains any nullptr entry.
+    bool has_defaults = false;
+};
+
+struct RowStorePointers
+{
+    /// Either `ptrs` or `base_ptr` should be used.
+    /// Pre-resolved pointers into `RowDataStore` rows, one entry per output row.
+    /// A nullptr entry is interpreted as a default value.
+    VectorWithMemoryTracking<const char *> ptrs;
+    /// Whether `ptrs` contains any nullptr entry.
+    bool has_defaults = false;
+    /// A contiguous run of rows: row `i` is `base_ptr + i * row_length`.
+    const char * base_ptr = nullptr;
+    size_t row_length = 0;
 };
 
 /// Helper throw functions so Column headers don't need to include Exception.h.
@@ -782,12 +799,24 @@ public:
         const IColumn * const * block_columns,
         const ColumnReplicated * const * block_replicated);
 
+    /// Fills column values from row-store referenced by a RowRefList.
+    virtual void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map);
+
+    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores)
+    {
+        fillFromRowRefsWithRowStore(type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, /*null_map=*/ nullptr);
+    }
+
     /// Fills column values from list of blocks and row numbers
-    /// A nullptr in the list is interpreted as a default value
     virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
-    /// Same as above but assumes every entry in the list is non-null
-    virtual void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
+    /// Fills column values from pre-resolved row-store pointers.
+    virtual void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map);
+
+    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
+    {
+        fillFromRowStorePtrs(type, row_store_ptrs, field_offset, field_size, begin, count, /*null_map=*/ nullptr);
+    }
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -1078,12 +1107,14 @@ private:
         const IColumn * const * block_columns,
         const ColumnReplicated * const * block_replicated) override;
 
+    /// Fills column values from row-store referenced by a RowRefList
+    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map) override;
+
     /// Fills column values from list of columns and row numbers
-    /// A nullptr in the list is interpreted as a default value
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
-    /// Same as above but assumes every entry in the list is non-null
-    void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
+    /// Fills column values from pre-resolved row-store pointers
+    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;

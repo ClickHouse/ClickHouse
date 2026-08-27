@@ -103,7 +103,7 @@ ColumnPtr readColumnForValidation(const ISerialization & serialization, const ID
     {
         size_t batch = std::min(rows_left, max_rows_per_batch);
         size_t size_before = column->size();
-        serialization.deserializeBinaryBulk(*column, istr, 0, batch, 0.0);
+        serialization.deserializeBinaryBulk(*column, istr, batch, 0.0);
         rows_left -= batch;
         if (column->size() - size_before < batch) /// reached EOF mid-batch
             break;
