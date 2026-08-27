@@ -723,7 +723,7 @@ void KeeperClient::connectToKeeper()
         /// Explicit --tls-* command line options take precedence; otherwise fall back to the
         /// <openSSL><client> section of the config file (the same keys clickhouse-server uses).
         String tls_key_file = config().getString("tls-key-file", loaded_config.getString("openSSL.client.privateKeyFile", ""));
-        String tls_cert_file = config().getString("tls-cert-file", loaded_config.getString("openSSL.client.certificateFile", ""));
+        String tls_cert_file = config().getString("tls-cert-file", loaded_config.getString("openSSL.client.certificateFile", tls_key_file));
         String tls_ca_file = config().getString("tls-ca-file", loaded_config.getString("openSSL.client.caConfig", ""));
 
         Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
