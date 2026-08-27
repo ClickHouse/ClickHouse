@@ -24,11 +24,14 @@ public:
         UInt64 max_bytes_before_external_distinct = 0;
         double max_bytes_ratio_before_external_distinct = 0.;
 
-        /// The spill-related members are consumed only when external DISTINCT is enabled, so the
-        /// default-constructed struct leaves them without meaningful values.
+        /// The spill-related members are consumed only when external DISTINCT is enabled, but they
+        /// must hold valid values even in the default-constructed struct: internal DISTINCT steps
+        /// built with it (e.g. the set transfer of a distributed plan) are serialized through
+        /// updatePlanSettings, and e.g. the buffer size is a non-zero plan setting. The defaults
+        /// mirror the defaults of the corresponding query settings.
         size_t min_free_disk_space = 0;
-        String temporary_files_codec = {};
-        UInt64 temporary_files_buffer_size = 0;
+        String temporary_files_codec = "LZ4";
+        UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
         /// External DISTINCT disabled (e.g. deduplication during merges, which must not depend on
         /// query-level settings or query memory tracking).
