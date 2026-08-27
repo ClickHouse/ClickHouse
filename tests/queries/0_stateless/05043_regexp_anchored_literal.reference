@@ -122,6 +122,83 @@ Vectorized match and like
 0
 0
 0
+non-constant pattern, matched row by row
+	^abc	0
+ab	^abc	0
+abc	^abc	1
+abcabc	^abc	1
+abcabcx	^abc	1
+abcx	^abc	1
+xabc	^abc	0
+xabcabc	^abc	0
+	^abc$	0
+ab	^abc$	0
+abc	^abc$	1
+abcabc	^abc$	0
+abcabcx	^abc$	0
+abcx	^abc$	0
+xabc	^abc$	0
+xabcabc	^abc$	0
+	abc$	0
+ab	abc$	0
+abc	abc$	1
+abcabc	abc$	1
+abcabcx	abc$	0
+abcx	abc$	0
+xabc	abc$	1
+xabcabc	abc$	1
+\0\0\0\0\0\0\0\0	^abc	0
+ab\0\0\0\0\0\0	^abc	0
+abc\0\0\0\0\0	^abc	1
+abcabc\0\0	^abc	1
+abcabcx\0	^abc	1
+abcx\0\0\0\0	^abc	1
+xabc\0\0\0\0	^abc	0
+xabcabc\0	^abc	0
+\0\0\0\0\0\0\0\0	^abc$	0
+ab\0\0\0\0\0\0	^abc$	0
+abc\0\0\0\0\0	^abc$	0
+abcabc\0\0	^abc$	0
+abcabcx\0	^abc$	0
+abcx\0\0\0\0	^abc$	0
+xabc\0\0\0\0	^abc$	0
+xabcabc\0	^abc$	0
+\0\0\0\0\0\0\0\0	abc$	0
+ab\0\0\0\0\0\0	abc$	0
+abc\0\0\0\0\0	abc$	0
+abcabc\0\0	abc$	0
+abcabcx\0	abc$	0
+abcx\0\0\0\0	abc$	0
+xabc\0\0\0\0	abc$	0
+xabcabc\0	abc$	0
+^abc	1
+^abc$	0
+^abcabc$	1
+abc$	1
+	%abc	0
+ab	%abc	0
+abc	%abc	1
+abcabc	%abc	1
+abcabcx	%abc	0
+abcx	%abc	0
+xabc	%abc	1
+xabcabc	%abc	1
+	abc	0
+ab	abc	0
+abc	abc	1
+abcabc	abc	0
+abcabcx	abc	0
+abcx	abc	0
+xabc	abc	0
+xabcabc	abc	0
+	abc%	0
+ab	abc%	0
+abc	abc%	1
+abcabc	abc%	1
+abcabcx	abc%	1
+abcx	abc%	1
+xabc	abc%	0
+xabcabc	abc%	0
 The merge table function matches table names with a regexp: exact, prefix, suffix
 1
 1

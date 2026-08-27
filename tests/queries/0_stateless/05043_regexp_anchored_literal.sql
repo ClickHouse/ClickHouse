@@ -72,6 +72,13 @@ SELECT match(f, '^abc') FROM (SELECT toFixedString(s, 8) AS f FROM (SELECT array
 SELECT match(f, 'abc$') FROM (SELECT toFixedString(s, 8) AS f FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s)) ORDER BY f;
 SELECT match(f, '^abc$') FROM (SELECT toFixedString(s, 8) AS f FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s)) ORDER BY f;
 
+SELECT 'non-constant pattern, matched row by row';
+
+SELECT s, p, match(s, p) FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s, arrayJoin(['^abc', 'abc$', '^abc$']) AS p) ORDER BY p, s;
+SELECT f, p, match(f, p) FROM (SELECT toFixedString(s, 8) AS f, p FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s, arrayJoin(['^abc', 'abc$', '^abc$']) AS p)) ORDER BY p, f;
+SELECT p, match('abcabc', p) FROM (SELECT arrayJoin(['^abc', 'abc$', '^abc$', '^abcabc$']) AS p) ORDER BY p;
+SELECT s, p, s LIKE p FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s, arrayJoin(['abc%', '%abc', 'abc']) AS p) ORDER BY p, s;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
