@@ -293,9 +293,9 @@ spec:
 
 A mesclagem é por chave: somente os valores que você define são substituídos, e as chaves geradas que forem
 omitidas (caminhos de certificado, configuração de CA) são preservadas. Consulte as
-[`openSSL` configurações do servidor](/pt-BR/reference/settings/server-settings/settings#openssl)
+[`openSSL` configurações do servidor](/pt-BR/reference/settings/server-settings/settings/other#openssl)
 para ver as opções disponíveis e
-[Configuração → Configuração extra embutida](/pt-BR/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
+[Configuration → Configuração extra embutida](/pt-BR/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 para entender como `extraConfig` é mesclado.
 
 <div id="troubleshoot">
@@ -328,7 +328,7 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
   ## Veja também
 </div>
 
-* [Configuração → Configuração de TLS/SSL](/pt-BR/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — referência de campos
-* [Configuração → `additionalPorts`](/pt-BR/products/kubernetes-operator/guides/configuration#additional-ports) — portas reservadas
-* [Referência da API → ClusterTLSSpec](/pt-BR/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [configurações do servidor `openSSL`](/pt-BR/reference/settings/server-settings/settings#openssl) — opções de TLS que você pode sobrescrever via `extraConfig`
+* [Configuration → Configuração de TLS/SSL](/pt-BR/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — referência de campos
+* [Configuration → `additionalPorts`](/pt-BR/products/kubernetes-operator/guides/configuration#additional-ports) — portas reservadas
+* [API Reference → ClusterTLSSpec](/pt-BR/products/kubernetes-operator/reference/api-reference#clustertlsspec)
+* [configurações do servidor `openSSL`](/pt-BR/reference/settings/server-settings/settings/other#openssl) — opções de TLS que você pode sobrescrever via `extraConfig`

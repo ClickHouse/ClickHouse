@@ -12,7 +12,7 @@ keywords: ['WHERE']
 如果存在 `WHERE` 子句，其后必须跟一个 `UInt8` 类型的表达式。
 表达式求值结果为 `0` 的行会被排除，不再参与后续转换或最终结果。
 
-`WHERE` 子句后的表达式通常会结合[比较运算符](/zh/reference/operators/index#comparison-operators)和[逻辑运算符](/zh/reference/operators/index#operators-for-working-with-data-sets)使用，或者使用众多[常规函数](/zh/reference/functions/regular-functions/regular-functions-index)中的一种。
+`WHERE` 子句后的表达式通常会结合[比较运算符](/zh/reference/operators/index#comparison-operators)和[逻辑运算符](/zh/reference/operators/index#operators-for-working-with-data-sets)使用，或者使用众多[常规函数](/zh/reference/functions/regular-functions/overview)中的一种。
 
 如果底层表引擎支持，系统在计算 `WHERE` 表达式时会利用索引和分区裁剪能力。
 

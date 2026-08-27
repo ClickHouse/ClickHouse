@@ -204,6 +204,7 @@ The build job names are exactly as they appear in the CI Report:
 - `Build (riscv64)` - RISC-V 64-bit
 - `Build (s390x)` - IBM System/390 64-bit
 - `Build (loongarch64)` - LoongArch 64-bit
+- `Build (wasm64)` - WebAssembly 64-bit, through Emscripten. Experimental: builds the `clickhouse` binary and verifies that `clickhouse local` executes queries under Node.js ≥ 24 (the module also runs in browsers, but CI does not verify that yet)
 
 If the job succeeds, build results will be available in the `<repo_root>/ci/tmp/build` directory.
 
@@ -224,6 +225,10 @@ Runs [stateless functional tests](/resources/develop-contribute/contribute/tests
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/resources/develop-contribute/contribute/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
 Download the binary from [CI build checks page](/get-started/setup/self-managed/advanced), or build it locally.
+
+In pull requests, most sanitizer jobs whose name ends with `selected tests` do not run the whole test suite.
+They run only the tests selected for the change: the tests the pull request adds or modifies, the tests that already failed in this pull request, and the tests covering the changed lines according to the coverage database.
+The MSan/WasmEdge jobs continue to run the full suite because the existing Wasm UDF tests are not MSan-compatible. The whole suite also runs in the debug and plain binary configurations, the builds with sanitizers are exercised by the [stress test](#stress-test), and the master branch runs the whole suite in every configuration.
 
 ## Integration tests {#integration-tests}
 

@@ -73,9 +73,14 @@ def test_direct_read_from_inactive_table_is_not_a_logical_error(kafka_cluster):
             # minute), runs `partialShutdown` and, since Keeper is unreachable, fails to
             # reactivate: from this line on the table stays inactive while the network
             # partition holds.
+            # The nominal detection latency is bounded by the check period plus the
+            # Keeper connection timeouts, but on an overloaded CI host (sanitizer
+            # builds, busy schedule pool) it has been seen exceeding 180 seconds, so
+            # the timeout is generous. The wait returns as soon as the line appears,
+            # so a healthy run does not pay for the margin.
             instance.wait_for_log_line(
                 f"{kafka_table}.*Failed to establish a new ZK connection. Will try again",
-                timeout=180,
+                timeout=600,
             )
 
             error = instance.query_and_get_error(

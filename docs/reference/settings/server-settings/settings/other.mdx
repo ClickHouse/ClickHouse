@@ -149,14 +149,14 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+## config-file {#config-file}
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Points to the server config file.
+
 ## config_reload_interval_ms {#config_reload_interval_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Yes" />
 How often clickhouse will reload config and check for new changes
-
-## config-file {#config-file}
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Points to the server config file.
 
 ## core_dump {#core_dump}
 
@@ -480,23 +480,30 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
-If true, ClickHouse doesn't write defaults for empty SQL security statement in `CREATE VIEW` queries.
+If true, a `CREATE VIEW` or `CREATE MATERIALIZED VIEW` query that specifies neither `DEFINER` nor `SQL SECURITY` is stored as written, and the view gets an empty SQL security type. Specifying `DEFINER` alone counts as `SQL SECURITY DEFINER`, so such a query is unaffected by this setting. A normal view with an empty SQL security type runs with the permissions of the invoker. For a materialized view with an explicitly specified target table, the access checks on the target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.
+
+If false, the defaults from the [`default_normal_view_sql_security`](/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/reference/settings/session-settings#default_materialized_view_sql_security), and [`default_view_definer`](/reference/settings/session-settings#default_view_definer) settings are written into the view definition at creation time. With the default values of those settings, a materialized view created with neither clause records the creating user as its definer and runs with that user's permissions.
+
+Refreshable materialized views always receive the defaults, regardless of this setting.
 
 <Note>
-This setting is only necessary for the migration period and will become obsolete in 24.4
+Changing this setting affects only views created afterwards; the stored definitions of existing views stay unchanged.
 </Note>
 
 ## include_from {#include_from}
 
-<SettingsInfoBlock type="String" default_value="/etc/metrika.xml" changeable_without_restart="No" />
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 The path to the file with substitutions. Both XML and YAML formats are supported.
 
 For more information, see the section [Configuration files](/concepts/features/configuration/server-config/configuration-files).
+Empty by default, which means that no substitutions file is used. Before version 26.8 the file `/etc/metrika.xml` was used implicitly whenever it existed; if you rely on it, specify the path explicitly.
+
+Note that configuration files that are loaded separately from the main server configuration — the users' configuration (e.g. `users.xml` when it is not included in the main file) and XML dictionary configurations — read the `include_from` element from their own contents, not from the server configuration. Each such file that relies on substitutions needs its own `include_from` element.
 
 **Example**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
 ## insert_deduplication_version {#insert_deduplication_version}
@@ -846,7 +853,7 @@ For more information, see the section [Creating replicated tables](/reference/en
 
 ## message_queue_disable_insertion {#message_queue_disable_insertion}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views
 
 ## metric_log {#metric_log}
 

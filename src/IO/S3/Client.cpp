@@ -88,6 +88,8 @@ namespace ErrorCodes
 namespace S3
 {
 
+static constexpr size_t MAX_CACHES_BY_ENDPOINT_AND_BUCKET = 10000;
+
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
     , log(getLogger("S3ClientRetryStrategy"))
@@ -386,7 +388,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
 void Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
-    auto [it, inserted] = cache->region_for_bucket_cache.emplace(bucket, region);
+    auto [it, inserted] = cache->region_for_bucket_cache.insert_or_assign(bucket, region);
     if (inserted)
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
@@ -827,8 +829,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 // update ClickHouse-specific attempt number in the request
                 // to help choose the right timeouts on the HTTP client which depends on retry attempt number
-                auto clickhouse_request_attempt = getClickhouseAttemptNumber(request_);
-                setClickhouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
+                auto clickhouse_request_attempt = getClickHouseAttemptNumber(request_);
+                setClickHouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
@@ -1161,9 +1163,10 @@ size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
     return it->second.second;
 }
 
-void ClientCacheRegistry::pruneExpiredCachesLocked()
+void ClientCacheRegistry::pruneUnusedCachesLocked()
 {
-    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.expired(); });
+    /// The registry itself is the only owner left, so no client can observe the cache disappearing.
+    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.use_count() == 1; });
 }
 
 std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket)
@@ -1175,16 +1178,15 @@ std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const s
     UInt128 key = hash.get128();
 
     std::lock_guard lock(cache_by_key_mutex);
-    if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
-    {
-        if (auto cached = it->second.lock(); cached)
-            return cached;
-        cache_by_endpoint_bucket.erase(it);
-    }
-    auto cache = std::make_shared<ClientCache>();
-    cache_by_endpoint_bucket[key] = cache;
 
-    pruneExpiredCachesLocked();
+    if (cache_by_endpoint_bucket.size() >= MAX_CACHES_BY_ENDPOINT_AND_BUCKET)
+        pruneUnusedCachesLocked();
+
+    if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
+        return it->second;
+
+    auto cache = std::make_shared<ClientCache>();
+    cache_by_endpoint_bucket.emplace(key, cache);
 
     return cache;
 }
@@ -1211,7 +1213,9 @@ void ClientCacheRegistry::clearCacheForAll()
 
     {
         std::lock_guard lock(cache_by_key_mutex);
-        pruneExpiredCachesLocked();
+        pruneUnusedCachesLocked();
+        for (const auto & [_, cache] : cache_by_endpoint_bucket)
+            cache->clearCache();
     }
 }
 

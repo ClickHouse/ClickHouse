@@ -178,7 +178,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 <Note>
   值 `0` 表示你可以不受任何限制地删除分区。
 
-  此限制不适用于 drop table 和 truncate table，参见 [max&#95;table&#95;size&#95;to&#95;drop](/zh/reference/settings/session-settings#max_table_size_to_drop)
+  此限制不适用于 drop table 和 truncate table，参见 [max&#95;table&#95;size&#95;to&#95;drop](/zh/reference/settings/session-settings/max#max_table_size_to_drop)
 </Note>
 
 **示例**
@@ -228,8 +228,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 另请参见：
 
-* [`max_temporary_data_on_disk_size_for_user`](/zh/reference/settings/session-settings#max_temporary_data_on_disk_size_for_user)
-* [`max_temporary_data_on_disk_size_for_query`](/zh/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query)
+* [`max_temporary_data_on_disk_size_for_user`](/zh/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
+* [`max_temporary_data_on_disk_size_for_query`](/zh/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 
 <div id="max_unexpected_parts_loading_thread_pool_size">
   ## max_unexpected_parts_loading_thread_pool_size
@@ -252,8 +252,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   * [`max_concurrent_queries`](/zh/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)
   * [`max_concurrent_insert_queries`](/zh/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries)
   * [`max_concurrent_select_queries`](/zh/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)
-  * [`max_concurrent_queries_for_user`](/zh/reference/settings/session-settings#max_concurrent_queries_for_user)
-  * [`max_concurrent_queries_for_all_users`](/zh/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+  * [`max_concurrent_queries_for_user`](/zh/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user)
+  * [`max_concurrent_queries_for_all_users`](/zh/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
 
   这样调整是为了避免在 server 刚启动后立即触及这些限制。
 </Note>
