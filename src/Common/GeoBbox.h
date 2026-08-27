@@ -623,6 +623,17 @@ inline bool isDeferredGeometryKindType(const IDataType & type)
     return typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner);
 }
 
+/// Whether `type` is no geometry at all: neither a named geometry kind (`geoKindNameOfType`, which
+/// also reports a WKB-carrying `String` under the name `String`), nor an unnamed one resolvable by
+/// shape (`structuralGeoKindName`), nor a `Dynamic`/`Variant` whose kind is only known per row.
+/// Those three are handled by the kind checks in `extractSpatialPredicateNodeBbox`; everything else
+/// -- a number, a `FixedString`, a `Date`, a `Tuple` of the wrong arity -- is what
+/// `rejectsNonGeometryArgument` speaks about.
+inline bool isNonGeometryType(const IDataType & type)
+{
+    return geoKindNameOfType(type).empty() && structuralGeoKindName(type).empty() && !isDeferredGeometryKindType(type);
+}
+
 }
 
 inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunctionBase & function, size_t arg_index)
@@ -767,6 +778,23 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     for (const auto * child : node.children)
     {
         const size_t this_arg_index = arg_index++;
+
+        /// Checked for EVERY child, whatever its node type: a predicate that accepts only geometry
+        /// arguments (`polygonsIntersectCartesian`/`polygonsWithinCartesian`) still builds for a
+        /// number, a `FixedString`, or any other non-geometry type and only raises
+        /// `Unknown geometry type ...` from `callOnGeometryDataType` once a block is evaluated. Both
+        /// paths below would otherwise let that through: a non-geometry INPUT falls to
+        /// `has_extra_non_constant`, and a non-geometry constant is declined by
+        /// `extractBboxFromFieldValue` as "not geometry-shaped" without poisoning `acc.valid`. Either
+        /// way the node is downgraded to `NoInfo`/`NotApplicable` and a sibling conjunct's bbox can
+        /// prune every granule away, turning the exception into a silent `0`.
+        if (child->result_type && node.function_base->rejectsNonGeometryArgument(this_arg_index)
+            && GeoBboxDetail::isNonGeometryType(*child->result_type))
+        {
+            any_kind_rejected = true;
+            continue;
+        }
+
         if (child->type == ActionsDAG::ActionType::INPUT)
         {
             /// Checked for EVERY input, accepted or not: `accept_input` rejecting a `Dynamic`/

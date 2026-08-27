@@ -519,6 +519,22 @@ public:
             != GeoBboxDetail::geoKindRepresentationName(kind_name);
     }
 
+    /// A constant at an argument declared `Point` really is one, so the generic
+    /// `Tuple(Float64, Float64)` shape `tryExtractConstGeoField` flattens it to -- identical for
+    /// `CAST((0., 0.) AS Point)` and for a bare `(0., 0.)` literal, and otherwise opaque to
+    /// `extractBboxFromFieldValue` -- can be read as a zero-area bbox here. Without this the UDF
+    /// declared as `(p Point, rect Ring)` lost pruning on the indexed `rect` column for every query
+    /// spelling its point argument as a constant, since the node came back as
+    /// `NodeBboxStatus::NoInfo`. Answered from the declared representation, so it also covers a
+    /// `Variant(Tuple(Float64, Float64))`/`Dynamic` constant, which the adaptors forward here.
+    bool treatsConstTupleAsPoint(size_t arg_index) const override
+    {
+        const auto & expected_arguments = user_defined_function->getArguments();
+        if (arg_index >= expected_arguments.size())
+            return false;
+        return GeoBboxDetail::declaredGeoRepresentationName(*expected_arguments[arg_index]) == "Point";
+    }
+
     /// Every rejection above is decided by `getReturnTypeImpl` from the argument's `DataType`, before
     /// a single row is read, so a lenient `Variant`/`Dynamic` adaptor turns it into NULL rather than
     /// an exception. See `IFunctionBase::rejectsColumnGeometryKindDuringBuild`.

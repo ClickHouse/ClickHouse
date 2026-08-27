@@ -82,6 +82,12 @@ public:
             || kind_name == "MultiPoint" || kind_name == "String";
     }
 
+    /// Every argument must be a geometry: `callOnGeometryDataType` dispatches on the argument's
+    /// actual type and raises `Unknown geometry type ...` for anything that is not one -- a number,
+    /// a `FixedString`, a `Date` -- but only while EXECUTING, so bbox pruning has to fail closed for
+    /// it, exactly as for an explicitly rejected geometry kind above.
+    bool rejectsNonGeometryArgument(size_t /*arg_index*/) const override { return true; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnUInt8::create();

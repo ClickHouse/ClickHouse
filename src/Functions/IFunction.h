@@ -286,6 +286,22 @@ public:
       */
     virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
 
+    /** For a function where `isSpatialPredicate()` is true: is an argument at `arg_index` whose type is
+      * no geometry at all -- a number, a `FixedString`, a `Date`, anything both `geoKindNameOfType` and
+      * `structuralGeoKindName` (`Common/GeoBbox.h`) report no kind for -- guaranteed to make this
+      * predicate raise once it is evaluated? `polygonsIntersectCartesian`/`polygonsWithinCartesian`
+      * accept such a call at BUILD time and only refuse it inside `callOnGeometryDataType` while
+      * EXECUTING, with `Unknown geometry type ...`, so bbox pruning must fail closed for it exactly as
+      * it does for an explicitly rejected geometry kind -- otherwise a sibling conjunct's bbox can
+      * prune every granule away and turn that exception into a silent `0`.
+      *
+      * Default: false, which is right both for a predicate that rejects a non-geometry argument while
+      * BUILDING (`pointInPolygon`'s `getReturnTypeImpl` does, and an exception raised during analysis
+      * cannot be pruned away in the first place) and for one that legitimately takes non-geometry
+      * auxiliary arguments (a WASM UDF's `within_distance(geom, const_poly, 100)`).
+      */
+    virtual bool rejectsNonGeometryArgument(size_t /*arg_index*/) const { return false; }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -517,6 +533,9 @@ public:
     /// See IFunctionBase::treatsConstTupleAsPoint.
     virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
 
+    /// See IFunctionBase::rejectsNonGeometryArgument.
+    virtual bool rejectsNonGeometryArgument(size_t /*arg_index*/) const { return false; }
+
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.
@@ -747,6 +766,9 @@ public:
 
     /// See IFunctionBase::treatsConstTupleAsPoint.
     virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
+
+    /// See IFunctionBase::rejectsNonGeometryArgument.
+    virtual bool rejectsNonGeometryArgument(size_t /*arg_index*/) const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
