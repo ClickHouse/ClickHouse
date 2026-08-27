@@ -18,7 +18,6 @@
 #include <vector>
 
 #include <IO/WriteBufferFromString.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {

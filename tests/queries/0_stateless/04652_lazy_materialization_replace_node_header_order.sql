@@ -25,13 +25,9 @@ SELECT 'no lazy step in coordinator plan (distributed):', countIf(explain LIKE '
 FROM (EXPLAIN SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4
       SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1);
 
--- Lazy materialization replaces the `LimitStep` node with a `JoinLazyColumnsStep` subplan whose
--- header follows the main/lazy split, not the projection. `make_distributed_plan` rebuilds the
--- plan bottom-up and re-derives every header, so a replacement that lost the replaced node's
--- header order raised `LOGICAL_ERROR` `Cannot add step Expression to QueryPlan because it has
--- incompatible header with root step JoinLazyColumnsStep` (historical: the coordinator no longer
--- applies lazy materialization under `make_distributed_plan`; these queries now pin that the
--- exchange-free FINAL shape distributes and returns correct results).
+-- A `FINAL PREWHERE ... LIMIT` plan gets no exchange under `make_distributed_plan`, so it ships
+-- as one serialized fragment. These queries pin that this shape executes through the distributed
+-- machinery without an exception and returns the same rows as the local plan.
 SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, log_comment = '04652_distributed';
 
