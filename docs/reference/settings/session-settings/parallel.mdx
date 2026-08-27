@@ -38,10 +38,12 @@ Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTre
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100000"},{"label": "The threshold no longer chooses between the `hash` and `parallel_hash` algorithms. When a hash join is used and an estimate of the right table size is available, it decides whether the join may run in parallel. Below the threshold, single-threaded execution; at or above it, multiple threads when `max_threads` > 1. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "100000"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-4","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100000"},{"label": "The threshold no longer chooses between the `hash` and `parallel_hash` algorithms. When a hash join is used, it decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "100000"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-4","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-When a hash join is used and an estimate of the right table size is available, this threshold decides whether the join may run in parallel.
-Below the threshold, the join runs with a simpler single-threaded execution; at or above it, it can use multiple threads (when `max_threads` > 1).
+When a hash join is used, this threshold decides whether the join may run in parallel.
+If an estimate of the right table size is available and it is below the threshold, the join uses a simpler single-threaded layout.
+At or above the threshold, and also when there is no row-count estimate, the join can use multiple threads (when `max_threads` > 1).
+Without an estimate the right side cannot be ruled small, so a large value of this setting does not force a serial build.
 
 ## parallel_non_joined_rows_processing {#parallel_non_joined_rows_processing}
 

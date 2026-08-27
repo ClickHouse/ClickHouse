@@ -8489,8 +8489,10 @@ When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=val
 Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
 )", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When a hash join is used and an estimate of the right table size is available, this threshold decides whether the join may run in parallel.
-Below the threshold, the join runs with a simpler single-threaded execution; at or above it, it can use multiple threads (when `max_threads` > 1).
+When a hash join is used, this threshold decides whether the join may run in parallel.
+If an estimate of the right table size is available and it is below the threshold, the join uses a simpler single-threaded layout.
+At or above the threshold, and also when there is no row-count estimate, the join can use multiple threads (when `max_threads` > 1).
+Without an estimate the right side cannot be ruled small, so a large value of this setting does not force a serial build.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.

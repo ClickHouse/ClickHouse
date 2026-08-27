@@ -100,7 +100,7 @@ namespace DB
     \
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, "Enable collecting hash table statistics to optimize memory allocation", 0) \
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before join", 0) \
-    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, "When a hash join is used and an estimate of the right table size is available, this threshold decides whether the join may run in parallel. Below the threshold, the join runs with a simpler single-threaded execution; at or above it, it can use multiple threads (when `max_threads` > 1).", 0) \
+    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, "When a hash join is used, this threshold decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1.", 0) \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.", 0) \
     DECLARE(Bool, allow_experimental_join_right_table_sorting, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.", 0) \
     DECLARE(Bool, allow_dynamic_type_in_join_keys, false, "Allows using Dynamic type in JOIN keys", 0) \

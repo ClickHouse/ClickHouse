@@ -1,3 +1,18 @@
+--- INNER nullable right ---
+0
+0
+--- LEFT nullable right ---
+0
+0
+--- RIGHT nullable right (exercises NotJoinedHash partition iteration) ---
+0
+0
+--- FULL nullable right ---
+0
+0
+--- ASOF LEFT nullable timestamp ---
+0
+0
 --- exact rows: INNER ---
 1	l1	1	r1
 2	l2	2	r2

@@ -1311,6 +1311,7 @@ namespace
 {
 
 /// The kinds whose non-joined-rows handling can cope with keys spread over several buckets.
+/// Strictness is not a separate gate: SEMI / ANTI / ASOF use the same kind (LEFT / INNER / RIGHT / FULL).
 bool parallelLayoutKindSupported(JoinKind kind)
 {
     return kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full;

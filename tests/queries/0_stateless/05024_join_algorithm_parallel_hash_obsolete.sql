@@ -103,6 +103,8 @@ INSERT INTO t05024_al SELECT number, toDateTime(number) FROM numbers(100);
 INSERT INTO t05024_ar SELECT number, toDateTime(number) FROM numbers(200);
 
 SELECT 'pipeline_asof_parallel';
+-- ASOF is `JoinKind::Left` here. `preferParallelHashLayout` keys off kind, so ASOF (and SEMI / ANTI)
+-- use the parallel layout when the threshold allows it.
 SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
