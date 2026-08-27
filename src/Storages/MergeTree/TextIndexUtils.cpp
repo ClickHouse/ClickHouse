@@ -257,6 +257,9 @@ bool canReuseTextIndexForMerge(
     const IMergeTreeDataPart & part,
     const MergeTreeReaderSettings & reader_settings)
 {
+    if (part.rows_count == 0)
+        return true;
+
     auto format = index->getDeserializedFormat(part, index->getFileName());
     if (!format)
         return false;
