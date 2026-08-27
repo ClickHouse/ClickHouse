@@ -76,7 +76,9 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
 }
 
 /// projections are stored but not estimated yet, so report them instead of dropping them
-void appendProjectionCandidates(WhatIfResult & result, const HypotheticalObjectStore & store, const StorageID & table_id)
+void appendProjectionCandidates(
+    WhatIfResult & result, const HypotheticalObjectStore & store, const StorageID & table_id,
+    const StorageMetadataPtr & metadata, const ContextPtr & context)
 {
     for (const auto & projection : store.getProjectionsForTable(table_id))
     {
@@ -85,6 +87,19 @@ void appendProjectionCandidates(WhatIfResult & result, const HypotheticalObjectS
         r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
         r.status = WhatIfCandidateResult::NotApplicable;
         r.not_applicable_reason = "EXPLAIN WHATIF does not estimate hypothetical projections yet";
+
+        /// rebuild from the stored AST so an ALTER since CREATE surfaces as schema drift
+        try
+        {
+            ProjectionDescription::getProjectionFromAST(
+                projection.definition_ast, metadata->getColumns(), &metadata->partition_key, context);
+        }
+        catch (const Exception &)
+        {
+            r.not_applicable_reason = "Hypothetical projection no longer matches the current table schema: "
+                + getCurrentExceptionMessage(false);
+        }
+
         result.candidates.push_back(std::move(r));
     }
 }
@@ -102,7 +117,7 @@ void appendNoCandidatesRow(WhatIfResult & result)
 
 /// nothing was scanned, so every candidate gets the same reason
 WhatIfResult buildResultWithoutScan(
-    const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason)
+    const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason, const ContextPtr & context)
 {
     WhatIfResult result;
     result.database = data.getStorageID().getDatabaseName();
@@ -116,7 +131,8 @@ WhatIfResult buildResultWithoutScan(
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
-    appendProjectionCandidates(result, store, data.getStorageID());
+    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+    appendProjectionCandidates(result, store, data.getStorageID(), metadata, context);
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
     return result;
@@ -357,7 +373,7 @@ WhatIfResult estimateHypotheticalIndexes(
         {
             /// Empty table -> ReadNothing, report a zero baseline
             if (mt->getActivePartsCount() == 0)
-                return buildResultWithoutScan(*mt, store, "Table is empty, so there is no data to estimate a benefit");
+                return buildResultWithoutScan(*mt, store, "Table is empty, so there is no data to estimate a benefit", local_context);
 
             /// The plan answers the query without reading the table's parts at all: a trivial
             /// count, a minmax_count or exact-count projection, or a projection that selected no
@@ -380,7 +396,8 @@ WhatIfResult estimateHypotheticalIndexes(
             }
 
             return buildResultWithoutScan(
-                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read");
+                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read",
+                local_context);
         }
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -547,7 +564,7 @@ WhatIfResult estimateHypotheticalIndexes(
         result.candidates.push_back(std::move(combined));
     }
 
-    appendProjectionCandidates(result, store, data.getStorageID());
+    appendProjectionCandidates(result, store, data.getStorageID(), read_step->getStorageMetadata(), context);
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);

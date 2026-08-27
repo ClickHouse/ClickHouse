@@ -55,6 +55,29 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'still one:', count() FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl';
 "
 
+# the INDEX ... TYPE ... form of a projection declaration, same as real ADD PROJECTION accepts
+echo "--- the INDEX form of a projection declaration is accepted ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_idx ON t_hypo_proj_ddl INDEX b TYPE basic;
+    SELECT name, type FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl' AND name = 'p_idx';
+"
+
+echo "--- WITH SETTINGS survives into the system table ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_set ON t_hypo_proj_ddl (SELECT a, b ORDER BY b) WITH SETTINGS (index_granularity = 64);
+    SELECT name, settings FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl' AND name = 'p_set';
+"
+
+echo "--- a projection invalidated by ALTER reports schema drift ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_hypo_proj_drift;
+    CREATE TABLE t_hypo_proj_drift (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;
+    INSERT INTO t_hypo_proj_drift SELECT number, number % 100, number FROM numbers(100);
+    CREATE HYPOTHETICAL PROJECTION p_c ON t_hypo_proj_drift (SELECT a, c ORDER BY c);
+    ALTER TABLE t_hypo_proj_drift DROP COLUMN c SETTINGS mutations_sync = 2;
+    EXPLAIN WHATIF SELECT a FROM t_hypo_proj_drift WHERE b = 1;
+" 2>&1 | grep -oE 'reason: +Hypothetical projection no longer matches the current table schema' | awk '{$1=$1; print}'
+
 echo "--- a name taken by a real projection is rejected ---"
 $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL PROJECTION p_real ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);" 2>&1 | grep -m1 -oE 'BAD_ARGUMENTS'
 
@@ -80,4 +103,4 @@ $CLICKHOUSE_CLIENT -q "
 echo "--- with nothing defined the report says so ---"
 $CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;" 2>&1 | grep -oE 'No hypothetical indexes or projections defined.*' | head -1
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_ddl; DROP TABLE IF EXISTS t_hypo_proj_log;"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_ddl; DROP TABLE IF EXISTS t_hypo_proj_log; DROP TABLE IF EXISTS t_hypo_proj_drift;"

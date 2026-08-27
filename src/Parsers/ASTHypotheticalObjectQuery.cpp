@@ -1,5 +1,6 @@
 #include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <IO/Operators.h>
@@ -90,12 +91,27 @@ void ASTHypotheticalObjectQuery::formatQueryImpl(
         chassert(projection_decl);
         const auto & declaration = projection_decl->as<const ASTProjectionDeclaration &>();
 
-        std::string nl_or_nothing = settings.one_line ? "" : "\n";
-        ostr << settings.nl_or_ws << indent_str << "(" << nl_or_nothing;
-        FormatStateStacked frame_nested = frame;
-        ++frame_nested.indent;
-        declaration.query->format(ostr, settings, state, frame_nested);
-        ostr << nl_or_nothing << indent_str << ")";
+        if (declaration.query)
+        {
+            std::string nl_or_nothing = settings.one_line ? "" : "\n";
+            ostr << settings.nl_or_ws << indent_str << "(" << nl_or_nothing;
+            FormatStateStacked frame_nested = frame;
+            ++frame_nested.indent;
+            declaration.query->format(ostr, settings, state, frame_nested);
+            ostr << nl_or_nothing << indent_str << ")";
+        }
+
+        if (declaration.index)
+        {
+            ostr << " INDEX ";
+            declaration.index->format(ostr, settings, state, frame);
+        }
+
+        if (declaration.type)
+        {
+            ostr << " TYPE ";
+            declaration.type->format(ostr, settings, state, frame);
+        }
 
         if (declaration.with_settings)
         {

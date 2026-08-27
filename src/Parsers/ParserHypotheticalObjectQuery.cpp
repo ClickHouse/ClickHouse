@@ -9,60 +9,12 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserProjectionSelectQuery.h>
-#include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 
 namespace DB
 {
-
-namespace
-{
-
-/// `(SELECT ...) [WITH SETTINGS (...)]` — the body of a projection declaration, without the leading
-/// name. The name and the target table are parsed by the caller, so that
-/// `CREATE HYPOTHETICAL PROJECTION name ON table (...)` reads the same way as the index statement
-bool parseProjectionBody(IParser::Pos & pos, Expected & expected, const String & name, ASTPtr & node)
-{
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
-    ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
-    ParserProjectionSelectQuery query_p;
-    ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
-
-    if (!s_lparen.ignore(pos, expected))
-        return false;
-
-    ASTPtr query;
-    if (!query_p.parse(pos, query, expected))
-        return false;
-
-    if (!s_rparen.ignore(pos, expected))
-        return false;
-
-    ASTPtr with_settings;
-    if (s_with_settings.ignore(pos, expected))
-    {
-        if (!s_lparen.ignore(pos, expected))
-            return false;
-        if (!settings_p.parse(pos, with_settings, expected))
-            return false;
-        if (!s_rparen.ignore(pos, expected))
-            return false;
-    }
-
-    auto projection = make_intrusive<ASTProjectionDeclaration>();
-    projection->name = name;
-    projection->set(projection->query, query);
-    if (with_settings)
-        projection->set(projection->with_settings, with_settings);
-    node = projection;
-    return true;
-}
-
-}
 
 bool ParserHypotheticalObjectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -116,7 +68,7 @@ bool ParserHypotheticalObjectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
         if (query->object_kind == ASTHypotheticalObjectQuery::Projection)
         {
             ASTPtr projection_decl;
-            if (!parseProjectionBody(pos, expected, object_name->as<ASTIdentifier &>().name(), projection_decl))
+            if (!parseProjectionDeclarationBody(pos, expected, object_name->as<ASTIdentifier &>().name(), projection_decl))
                 return false;
 
             query->projection_decl = projection_decl;

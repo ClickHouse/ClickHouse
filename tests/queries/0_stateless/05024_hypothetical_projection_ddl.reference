@@ -12,6 +12,12 @@ indexes:	0
 0
 --- IF NOT EXISTS / IF EXISTS ---
 still one:	1
+--- the INDEX form of a projection declaration is accepted ---
+p_idx	normal
+--- WITH SETTINGS survives into the system table ---
+p_set	{'index_granularity':'64'}
+--- a projection invalidated by ALTER reports schema drift ---
+reason: Hypothetical projection no longer matches the current table schema
 --- a name taken by a real projection is rejected ---
 BAD_ARGUMENTS
 --- duplicate without IF NOT EXISTS is rejected ---

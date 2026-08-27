@@ -1,12 +1,15 @@
 #include <Storages/System/StorageSystemHypotheticalProjections.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -20,6 +23,8 @@ ColumnsDescription StorageSystemHypotheticalProjections::getColumnsDescription()
         {"name",     std::make_shared<DataTypeString>(), "Projection name"},
         {"type",     std::make_shared<DataTypeString>(), "Projection type (normal or aggregate)"},
         {"query",    std::make_shared<DataTypeString>(), "Projection SELECT query"},
+        {"settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+                     "Projection settings from WITH SETTINGS"},
     };
 }
 
@@ -57,6 +62,19 @@ void StorageSystemHypotheticalProjections::fillData(
             res_columns[col++]->insert(declaration->query->formatForLogging());
         else
             res_columns[col++]->insertDefault();
+
+        Map settings_map;
+        if (declaration && declaration->with_settings)
+        {
+            for (const auto & change : declaration->with_settings->changes)
+            {
+                Tuple pair;
+                pair.push_back(change.name);
+                pair.push_back(fieldToString(change.value));
+                settings_map.push_back(std::move(pair));
+            }
+        }
+        res_columns[col++]->insert(settings_map);
     }
 }
 
