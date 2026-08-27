@@ -74,15 +74,16 @@ def _followed(cluster):
     )
 
 
-def test_301_redirect_target_is_host_filtered(cluster):
+@pytest.mark.parametrize("bucket", ["bucket", "virtual"])
+def test_301_redirect_target_is_host_filtered(cluster, bucket):
     node = cluster.instances["node"]
 
-    # The s3() endpoint (resolver:8080) is allow-listed, but it 301-redirects to its own
-    # raw IP, which is NOT allow-listed. The redirect target must be rejected.
+    # The endpoint is allow-listed, but its redirect target is not. For the virtual-hosted
+    # case, only the normalized service endpoint is allow-listed, not the bucket host.
     # NOSIGN keeps the request anonymous so it reaches the redirect rather than being refused by the
     # server-managed S3 credential restriction (this test is about the host filter, not credentials).
     error = node.query_and_get_error(
-        "SELECT * FROM s3('http://resolver:8080/bucket/key', NOSIGN, 'TSV', 'x String') "
+        f"SELECT * FROM s3('http://resolver:8080/{bucket}/key', NOSIGN, 'TSV', 'x String') "
         "SETTINGS s3_max_redirects=5"
     )
     assert "not allowed in configuration file" in error, (

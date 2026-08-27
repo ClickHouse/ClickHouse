@@ -752,7 +752,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
-        client_configuration.remote_host_filter.checkURL(Poco::URI(new_uri->endpoint));
+        client_configuration.remote_host_filter.checkURL(new_uri->uri);
 
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI

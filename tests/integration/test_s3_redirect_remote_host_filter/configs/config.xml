@@ -1,7 +1,8 @@
 <clickhouse>
-    <!-- Allow the resolver name, but not the raw-IP target used by the host-filter test. -->
+    <!-- Allow the resolver and normalized service endpoint, but not either request target. -->
     <remote_url_allow_hosts>
         <host>resolver:8080</host>
+        <host>s3.resolver:8080</host>
     </remote_url_allow_hosts>
     <!-- Keep retries low so the test fails fast. -->
     <s3_retry_attempts>1</s3_retry_attempts>
