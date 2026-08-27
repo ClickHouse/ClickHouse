@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
+            {"output_format_pretty_named_tuples_as_subcolumns", false, true, "New setting to display named Tuple columns in Pretty formats split into subcolumns, with the names of the elements in additional header lines."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -93,7 +94,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
             {"enable_parallel_single_level_merge", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."},
             {"ai_function_text_default_credentials", "", "", "New setting"},
-            {"output_format_pretty_named_tuples_as_subcolumns", false, true, "New setting to display named Tuple columns in Pretty formats split into subcolumns, with the names of the elements in additional header lines."},
             {"ai_function_embedding_default_credentials", "", "", "New setting"},
             {"shrink_over_allocated_columns_min_waste_ratio", 1.0, 1.0, "New setting to shrink over-allocated columns to fit on INSERT to reduce peak memory usage. Disabled by default (1.0)."},
             {"shrink_over_allocated_columns_min_waste_bytes", 16 * 1024 * 1024, 16 * 1024 * 1024, "New setting: minimum absolute wasted memory in a column for it to be shrunk to fit on INSERT."},
