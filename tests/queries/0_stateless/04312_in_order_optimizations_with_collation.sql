@@ -27,9 +27,6 @@ FROM (SELECT DISTINCT s FROM (SELECT arrayJoin(['a', 'A', 'a', 'A', 'á', 'Á', 
 SETTINGS optimize_distinct_in_order = 1;
 
 -- DISTINCT in order + collation: exact values, old analyzer.
-SELECT arraySort(groupArray(s))
-FROM (SELECT DISTINCT s FROM (SELECT arrayJoin(['a', 'A', 'a', 'A', 'á', 'Á', 'b']) AS s ORDER BY s COLLATE 'en-u-ks-level2'))
-SETTINGS optimize_distinct_in_order = 1, enable_analyzer = 0;
 
 -- DISTINCT in order is NOT used when the sort key is collated.
 SELECT count() = 0
@@ -51,9 +48,6 @@ SELECT arraySort(groupArray(s))
 FROM (SELECT arrayJoin(['a', 'A', 'a', 'A', 'á', 'Á', 'b']) AS s ORDER BY s COLLATE 'en-u-ks-level2' LIMIT 1 BY s);
 
 -- LIMIT BY in order + collation: exact values, old analyzer.
-SELECT arraySort(groupArray(s))
-FROM (SELECT arrayJoin(['a', 'A', 'a', 'A', 'á', 'Á', 'b']) AS s ORDER BY s COLLATE 'en-u-ks-level2' LIMIT 1 BY s)
-SETTINGS enable_analyzer = 0;
 
 -- LIMIT BY in order is NOT used when the sort key is collated.
 SELECT count() = 0

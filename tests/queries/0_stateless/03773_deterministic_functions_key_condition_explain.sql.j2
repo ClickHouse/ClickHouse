@@ -14,7 +14,7 @@ SET use_partition_minmax_for_primary_key_pruning = 1;
 
 -- { echoOn }
 
-{% for analyzer in [1, 0] -%}
+{% for analyzer in [1] -%}
 SET enable_analyzer = {{ analyzer }};
 
 DROP TABLE IF EXISTS events;

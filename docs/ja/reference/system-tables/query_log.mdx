@@ -27,8 +27,31 @@ ClickHouse はテーブルからデータを自動的に削除しません。詳
 
 `system.query_log` テーブルには、2 種類のクエリが記録されます。
 
-1. クライアントから直接実行された初期クエリ。
-2. 他のクエリによって開始された子クエリ (分散クエリ実行用) 。これらのクエリでは、親クエリに関する情報が `initial_*` カラムに表示されます。
+1. 初期 (最上位) クエリ。
+2. 分散実行用のクエリやビュー評価などの内部サブクエリを含む、他のクエリによって開始された子クエリ。これらのクエリでは、元の初期クエリに関する情報が `initial_*` カラムに表示されます。
+
+<Tip>
+  **デフォルトで初期クエリをフィルタリングする**
+
+  通常、`system.query_log` をクエリする際は常に `is_initial_query = 1` を追加してください。これにより子クエリが除外され、個々の処理ステップが初期クエリとは別にカウントされなくなります。このフィルターは、クエリがクライアントによって送信されたことを意味するものではありません。サーバー内部の処理も初期クエリになる場合があるためです。
+
+  ID を保持する子クエリとともに初期クエリをトレースする必要がある場合は、代わりに `initial_query_id` を使用します。初期クエリでは `initial_query_id` と `query_id` の値が同じですが、同じチェーン内の子クエリは初期クエリの `initial_query_id` を保持し、それぞれ独自の `query_id` を持ちます。初期クエリによって生成されるすべての処理がこのように相関付けられるわけではありません。リモート [`QueryRunner`](/ja/reference/engines/table-engines/special/query-runner#cluster-mode) の送出と同様に、サーバーによって送出された処理は、新しい `initial_query_id` を持つ新しい初期クエリチェーンを開始する場合があります。
+
+  ```sql
+  SELECT
+      hostname,
+      type,
+      query_id,
+      initial_query_id,
+      is_initial_query,
+      query
+  FROM system.query_log
+  WHERE initial_query_id = '<query_id_of_initial_query>'
+  ORDER BY event_time_microseconds;
+  ```
+
+  相関付けられた子クエリが他のノードで実行される可能性がある場合は、たとえば [`clusterAllReplicas`](/ja/reference/functions/table-functions/cluster) を使用して、すべてのノードで `system.query_log` をクエリします。
+</Tip>
 
 各クエリは、クエリのステータス (`type` カラムを参照) に応じて、`query_log` テーブルに 1 行または 2 行を作成します。
 
@@ -75,19 +98,19 @@ ClickHouse はテーブルからデータを自動的に削除しません。詳
 * `exception_code` ([Int32](/ja/reference/data-types/int-uint)) — 例外コード。
 * `exception` ([String](/ja/reference/data-types/string)) — 例外メッセージ。
 * `stack_trace` ([String](/ja/reference/data-types/string)) — スタックトレース。クエリが正常に完了した場合は、空文字列です。
-* `is_initial_query` ([UInt8](/ja/reference/data-types/int-uint)) — クエリタイプ。設定可能な値: 1 — クエリがクライアントによって開始されたことを示します、0 — 分散クエリ実行の一部として、別のクエリによって開始されたことを示します。
+* `is_initial_query` ([UInt8](/ja/reference/data-types/int-uint)) — クエリが初期クエリかどうか。設定可能な値: 1 — 初期 (最上位) クエリ、0 — 分散クエリ実行用のクエリおよび内部サブクエリを含む、別のクエリによって開始された子クエリ。
 * `connection_address` ([IPv6](/ja/reference/data-types/ipv6)) — 接続元のクライアント IP アドレス。プロキシ経由で接続している場合は、プロキシのアドレスになります。
 * `connection_port` ([UInt16](/ja/reference/data-types/int-uint)) — 接続元のクライアントポートです。プロキシ経由で接続している場合は、プロキシのポートになります。
 * `user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 現在のクエリを実行したユーザー名。
 * `query_id` ([String](/ja/reference/data-types/string)) — クエリの識別子。
 * `address` ([IPv6](/ja/reference/data-types/ipv6)) — クエリの実行に使用された IP アドレス。プロキシ経由で接続され、`auth_use_forwarded_address` が設定されている場合、これはプロキシではなくクライアントのアドレスになります。
 * `port` ([UInt16](/ja/reference/data-types/int-uint)) — クエリの実行に使用されたクライアントのポート。プロキシ経由で接続しており、`auth_use_forwarded_address` が設定されている場合、これはプロキシではなくクライアント側のポートになります。
-* `initial_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 分散クエリ実行時に最初のクエリを実行したユーザー名。
-* `initial_query_id` ([String](/ja/reference/data-types/string)) — 最初のクエリの ID (分散クエリの実行時) 。
-* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 親クエリの送信元IPアドレス。
-* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 親クエリの実行に使用されたクライアントのポート。
-* `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 元のクエリの開始時刻 (分散クエリ実行時) 。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — マイクロ秒精度の初期クエリ開始時刻 (分散クエリ実行時) 。
+* `initial_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 同じクエリチェーン内の初期クエリを実行したユーザー名。
+* `initial_query_id` ([String](/ja/reference/data-types/string)) — 同じクエリチェーン内の初期クエリの ID。
+* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 同じクエリチェーン内の初期クエリが開始された送信元 IP アドレス。
+* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 同じクエリチェーン内の初期クエリが開始されたクライアントポート。
+* `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 同じクエリチェーン内の初期クエリの開始時刻。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — マイクロ秒精度で記録される、同じクエリチェーン内の初期クエリの開始時刻。
 * `authenticated_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — セッション内で認証されたユーザー名。
 * `interface` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始元となったインターフェイス。設定可能な値: 1 — TCP、2 — HTTP。
 * `is_secure` ([UInt8](/ja/reference/data-types/int-uint)) — クエリがセキュアなインターフェイス経由で実行されたかどうかを示すフラグ
@@ -150,7 +173,13 @@ ClickHouse はテーブルからデータを自動的に削除しません。詳
 **基本的な例**
 
 ```sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT *
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_start_time DESC
+LIMIT 1
+FORMAT Vertical;
 ```
 
 ```text

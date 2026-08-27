@@ -22,22 +22,24 @@ SET enable_parallel_replicas = 0; -- The descriptors are not serialized with the
 
 SET join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 1, join_runtime_filter_from_fixed_hash_table = 1;
--- Pinned to the default: the probe sides below are 20000 rows, so a randomized higher value skips
--- the filter entirely and nothing is published.
-SET join_runtime_filter_min_probe_rows = 1000;
+-- The join order optimizer may put the small table on the probe side (for example when
+-- `query_plan_optimize_join_order_randomize` is on and `query_plan_join_swap_table` is `false`, so the
+-- sides cannot be swapped back). The estimated probe size is then below the default threshold and no
+-- runtime filter is created at all, which is not what this test is about.
+SET join_runtime_filter_min_probe_rows = 0;
 
 
 -- Nullable probe + non-Nullable build: the common type Nullable(Int32) forces a cast on the build key.
 SELECT '-- nullable probe, plain build';
 SELECT count() FROM t_probe_nullable p INNER JOIN t_build_i32 b ON p.k = b.k
-    SETTINGS log_comment = '04613_publish_nullable_probe';
+    SETTINGS log_comment = '04614_publish_nullable_probe';
 SELECT count() FROM t_probe_nullable p INNER JOIN t_build_i32 b ON p.k = b.k
     SETTINGS join_runtime_filter_from_fixed_hash_table = 0;
 
 -- Wider probe type: the common type Int32 forces a cast on the UInt8 build key.
 SELECT '-- wider probe, narrow build';
 SELECT count() FROM t_probe_i32 p INNER JOIN t_build_u8 b ON p.k = b.k
-    SETTINGS log_comment = '04613_publish_width_cast';
+    SETTINGS log_comment = '04614_publish_width_cast';
 SELECT count() FROM t_probe_i32 p INNER JOIN t_build_u8 b ON p.k = b.k
     SETTINGS join_runtime_filter_from_fixed_hash_table = 0;
 
@@ -50,7 +52,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
       AND message LIKE '%Published shared fixed-hash-table runtime filter%'
       AND query_id IN (
           SELECT query_id FROM system.query_log
-          WHERE log_comment LIKE '04613_publish_%' AND current_database = currentDatabase()
+          WHERE log_comment LIKE '04614_publish_%' AND current_database = currentDatabase()
                 AND type = 'QueryFinish' AND event_date >= yesterday());
 
 DROP TABLE t_build_i32;

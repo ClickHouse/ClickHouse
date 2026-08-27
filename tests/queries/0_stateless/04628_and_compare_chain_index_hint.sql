@@ -9,7 +9,7 @@ SET optimize_and_compare_chain_max_hash_work = 5000000;
 
 DROP TABLE IF EXISTS t_chain_hint;
 CREATE TABLE t_chain_hint (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 1024;
+    SETTINGS index_granularity = 1024, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_chain_hint SELECT number, number + 1 FROM numbers(65536);
 
 -- The derived comparison appears wrapped in `indexHint` in the analyzed tree.
@@ -50,7 +50,7 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a
 SELECT 'join_derived_stays_plain';
 DROP TABLE IF EXISTS t_chain_hint_r;
 CREATE TABLE t_chain_hint_r (c UInt64, d UInt64) ENGINE = MergeTree ORDER BY c
-    SETTINGS index_granularity = 1024;
+    SETTINGS index_granularity = 1024, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_chain_hint_r SELECT number, number + 2 FROM numbers(65536);
 SELECT count() FROM (EXPLAIN QUERY TREE
     SELECT count() FROM t_chain_hint AS l JOIN t_chain_hint_r AS r ON l.a = r.c WHERE l.b < r.d AND r.d < 100)

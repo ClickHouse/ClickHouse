@@ -20,7 +20,7 @@ SET query_plan_optimize_join_order_randomize = 0;
 
 SET use_statistics = 0; -- statistics does not override estimation from cache
 
-set join_algorithm = 'direct,parallel_hash,hash'; -- default
+set join_algorithm = 'direct,parallel_hash,hash,ie_join'; -- default
 set parallel_hash_join_threshold = 100001;
 
 -- Pretend the right table is small so the first run is planned as `HashJoin`, even though it actually has 1e6 rows.

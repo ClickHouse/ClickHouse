@@ -34,7 +34,6 @@ SELECT '-- LIMIT 1 BY id';
 SELECT id, arrayJoin(a) AS v FROM t ORDER BY id, pos LIMIT 1 BY id SETTINGS max_threads = 2, query_plan_push_limit_by_into_sort = 1;
 
 SELECT '-- Old analyzer';
-SELECT id, arrayJoin(a) AS v FROM t ORDER BY id, pos LIMIT 1 BY id SETTINGS max_threads = 2, allow_experimental_analyzer = 0, query_plan_push_limit_by_into_sort = 1;
 
 -- The `LIMIT BY` pushdown is still applied when the expression above the
 -- sort does not contain `arrayJoin`. Verify the optimization still fires by

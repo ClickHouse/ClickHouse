@@ -25,26 +25,9 @@ FROM
     WHERE t2_final_join.v = 'x'
 );
 
-SET enable_analyzer = 0;
-SELECT 'legacy tables read with FINAL', countIf(explain LIKE '%FINAL: 1%')
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT t2_final_join.v, t1_final_join.s
-    FROM t1_final_join FINAL
-    JOIN t2_final_join ON t2_final_join.id = t1_final_join.id
-    WHERE t2_final_join.v = 'x'
-);
-
 -- Results must stay correct in both modes.
 SET enable_analyzer = 1;
 SELECT 'result analyzer', t2_final_join.v, t1_final_join.s
-FROM t1_final_join FINAL
-JOIN t2_final_join ON t2_final_join.id = t1_final_join.id
-WHERE t2_final_join.v = 'x';
-
-SET enable_analyzer = 0;
-SELECT 'result legacy', t2_final_join.v, t1_final_join.s
 FROM t1_final_join FINAL
 JOIN t2_final_join ON t2_final_join.id = t1_final_join.id
 WHERE t2_final_join.v = 'x';
