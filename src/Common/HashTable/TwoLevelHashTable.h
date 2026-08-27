@@ -18,8 +18,23 @@
 template <size_t initial_size_degree = 8>
 struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
 {
+    using Base = HashTableGrowerWithPrecalculation<initial_size_degree>;
+
     /// Increase the size of the hash table.
     void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
+
+    /// From the hash value, get the cell number in the hash table.
+    ///
+    /// Unlike in the single-level grower, masking the hash value directly is not good enough here: the bucket
+    /// is taken from the high bits of the same hash value (see `getBucketFromHash`), so bucket and cell
+    /// together select a fixed set of bits out of it. `HashCRC32` is affine over GF(2), so for keys varying in
+    /// few bits - dense integers, strided integers, packed pairs of narrow columns - that selection degenerates
+    /// into a rank-deficient linear map and whole groups of keys land on a single cell. Multiplying by an odd
+    /// constant destroys the affine structure and makes any key distribution behave like a random one.
+    ///
+    /// We mask the high half of the product, because the low bits of a product depend only on the low bits of
+    /// its argument: masking those would just permute the cells and preserve every collision.
+    size_t place(size_t x) const { return Base::place((x * 0x9E3779B97F4A7C15ULL) >> 32); }
 };
 
 template

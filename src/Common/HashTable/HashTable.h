@@ -760,7 +760,9 @@ protected:
 
         size_t getCollisionChainLength() const
         {
-            return container->grower.place((ptr - container->buf) - container->grower.place(getHash()));
+            /// Wrap around explicitly instead of going through `place`: `place` maps a hash to a cell, which
+            /// is not necessarily masking (see `TwoLevelHashTableGrower`), while here we wrap a distance.
+            return ((ptr - container->buf) - container->grower.place(getHash())) & (container->grower.bufSize() - 1);
         }
 
         /**
