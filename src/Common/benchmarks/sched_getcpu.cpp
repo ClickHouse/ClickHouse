@@ -67,7 +67,7 @@ bool rseqUsable()
 
 void BM_sched_getcpu_current(benchmark::State & state)
 {
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
         benchmark::DoNotOptimize(sched_getcpu());
 }
 BENCHMARK(BM_sched_getcpu_current);
