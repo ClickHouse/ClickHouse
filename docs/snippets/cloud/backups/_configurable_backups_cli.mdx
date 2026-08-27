@@ -79,7 +79,7 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## Set a backup start time {#set-a-backup-start-time}
 
-`--backup-start-time` takes a daily start time in UTC (`HH:MM`). Start time and frequency are mutually exclusive; start time takes precedence, and the API only accepts a `--backup-period-hours` of `24` or `48` in combination with it:
+`--backup-start-time` takes a daily start time in UTC, on the hour (`HH:00`). Start time and frequency are mutually exclusive; start time takes precedence and requires a backup period of `24` or `48` hours — the CLI rejects any other combination. Setting a start time without passing `--backup-period-hours` defaults the period to 24 hours:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
@@ -96,7 +96,7 @@ clickhousectl cloud service backup-config update "$CH_ID" \
 }
 ```
 
-Passing a start time while the period is any other value fails with `customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set` — the same restriction then applies to later period changes. Once set, the start time cannot be removed through the CLI or API, only changed to a different time.
+While a start time is stored, a later update that changes only `--backup-period-hours` to a value other than `24` or `48` fails at the API with `customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set`. Once set, the start time cannot be removed through the CLI or API, only changed to a different time.
 
 <Note>
 Changing the backup schedule can cause higher monthly charges for storage as some of the backups might not be covered in the default backups for the service. See ["Understanding backup cost"](/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
