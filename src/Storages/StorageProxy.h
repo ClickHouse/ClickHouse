@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <base/isSharedPtrUnique.h>
 #include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -15,6 +16,10 @@ public:
     explicit StorageProxy(const StorageID & table_id_) : IStorage(table_id_) {}
 
     virtual StoragePtr getNested() const = 0;
+
+    /// Whether anything other than this proxy holds the wrapped storage. A reference taken through
+    /// `getNested` is invisible to a drop that only counts references to the proxy.
+    virtual bool isNestedInUse() const { return false; }
 
     /// The wrapped storage if it already exists, or null. Never creates it, so an observer
     /// iterating every table cannot trigger a load.
@@ -321,6 +326,16 @@ std::shared_ptr<T> castStorage(const StoragePtr & storage, StorageResolution res
         return nullptr;
     auto resolved = resolution == StorageResolution::Load ? resolveStorageProxyLoading(storage) : resolveStorageProxy(storage);
     return std::dynamic_pointer_cast<T>(resolved);
+}
+
+/// Whether a table is held only by the catalog, and so can be dropped. A proxy is unused only when
+/// the storage it wraps is unused too.
+inline bool isTableUnused(const StoragePtr & storage)
+{
+    if (!isSharedPtrUnique(storage))
+        return false;
+    const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+    return !proxy || !proxy->isNestedInUse();
 }
 
 /// False only while a proxy has not created the storage it wraps, which is where a lazily loaded

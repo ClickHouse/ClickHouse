@@ -17,6 +17,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1526,7 +1527,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
 
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
-    while (!isSharedPtrUnique(dropped_table.table))
+    while (!isTableUnused(dropped_table.table))
     {
         if (throw_if_cancelled)
             throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED if the query has been killed
@@ -1558,7 +1559,7 @@ std::tuple<size_t, size_t> DatabaseCatalog::getDroppedTablesCountAndInuseCount()
     size_t in_use_count = 0;
     for (const auto & item : tables_marked_dropped)
     {
-        bool in_use = item.table && !isSharedPtrUnique(item.table);
+        bool in_use = item.table && !isTableUnused(item.table);
         in_use_count += in_use;
     }
     return {tables_marked_dropped.size(), in_use_count};
@@ -1583,7 +1584,7 @@ DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
 
     for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end();)
     {
-        bool in_use = it->table && !isSharedPtrUnique(it->table);
+        bool in_use = it->table && !isTableUnused(it->table);
         bool old_enough = it->drop_time <= current_time;
         if (!in_use && old_enough)
         {
@@ -1744,7 +1745,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = getStoreDirPath(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+        auto table_merge_tree = castStorage<MergeTreeData>(table.table, StorageResolution::Peek);
         if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 

@@ -3,6 +3,7 @@
 #include <functional>
 
 #include <Storages/StorageProxy.h>
+#include <base/isSharedPtrUnique.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -60,6 +61,12 @@ public:
     {
         std::lock_guard lock{nested_mutex};
         return nested;
+    }
+
+    bool isNestedInUse() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested && !isSharedPtrUnique(nested);
     }
 
     StoragePtr getNested() const override

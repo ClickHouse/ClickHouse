@@ -13,6 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
@@ -493,7 +494,7 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
     LOG_DEBUG(log, "There are {} detached tables. Start searching non used tables.", detached_tables.size());
     while (it != detached_tables.end())
     {
-        if (isSharedPtrUnique(it->second))
+        if (isTableUnused(it->second))
         {
             not_in_use.emplace(it->first, it->second);
             it = detached_tables.erase(it);

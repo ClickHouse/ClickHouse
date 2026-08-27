@@ -3,6 +3,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
+#include <base/isSharedPtrUnique.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -39,6 +40,12 @@ public:
     {
         std::lock_guard lock{nested_mutex};
         return nested;
+    }
+
+    bool isNestedInUse() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested && !isSharedPtrUnique(nested);
     }
 
     StoragePtr getNestedImpl() const
