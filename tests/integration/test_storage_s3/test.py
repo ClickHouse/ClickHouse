@@ -60,7 +60,10 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "restricted_dummy",
-            main_configs=["configs/config_for_test_remote_host_filter.xml"],
+            main_configs=[
+                "configs/config_for_test_remote_host_filter.xml",
+                "configs/remote_servers.xml",
+            ],
             user_configs=["configs/allow_server_credentials.xml"],
             with_minio=True,
         )
@@ -790,6 +793,11 @@ def test_remote_host_filter(started_cluster):
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
     query = "DESCRIBE TABLE s3('http://{}:{}/{}/test.csv', 'CSV')".format(
+        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
+    )
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
+
+    query = "SELECT count() FROM s3Cluster('cluster', 'http://{}:{}/{}/test.csv', 'CSV')".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
     )
     assert "not allowed in configuration file" in instance.query_and_get_error(query)

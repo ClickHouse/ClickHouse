@@ -90,8 +90,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
 
     if (sample_path.empty()
         && context_->getSettingsRef()[Setting::use_hive_partitioning]
@@ -331,4 +331,3 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 }
 
 }
-
