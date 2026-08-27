@@ -62,12 +62,16 @@ Names metadataStreamColumns(const StreamSettings & stream_settings, const Storag
     return columns;
 }
 
-/// User-requested columns + the commit-order key and the prewhere and row filter inputs.
-Names dataStreamColumns(Names columns, const PrewhereInfoPtr & prewhere_info, const FilterDAGInfoPtr & row_level_filter)
+/// User-requested columns + the commit-order key + watermark column + prewhere inputs + row filter inputs.
+Names dataStreamColumns(Names columns, const StreamSettings & stream_settings, const PrewhereInfoPtr & prewhere_info, const FilterDAGInfoPtr & row_level_filter)
 {
     for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
         if (!std::ranges::contains(columns, aux_name))
             columns.push_back(aux_name);
+
+    if (stream_settings.watermark)
+        if (!std::ranges::contains(columns, stream_settings.watermark->column))
+            columns.push_back(stream_settings.watermark->column);
 
     if (prewhere_info)
     {
@@ -154,7 +158,7 @@ Pipe buildPartitionReadingPipeline(
     const auto & row_level_filter = reading_context.row_level_filter;
     const auto & output_header = reading_context.output_header;
 
-    const auto columns_to_read = dataStreamColumns(reading_context.user_requested_columns, prewhere_info, row_level_filter);
+    const auto columns_to_read = dataStreamColumns(reading_context.user_requested_columns, stream_settings, prewhere_info, row_level_filter);
     auto plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, columns_to_read);
     if (!plan)
         return {};
@@ -182,6 +186,11 @@ Pipe buildPartitionReadingPipeline(
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
     {
+        ActionsDAG time_attribute_dag(plan->getCurrentHeader()->getColumnsWithTypeAndName());
+        const auto & alias_node = time_attribute_dag.addAlias(time_attribute_dag.findInOutputs(stream_settings.watermark->column), TimeAttributeColumn::name);
+        time_attribute_dag.getOutputs().push_back(&alias_node);
+        plan->addStep(std::make_unique<ExpressionStep>(plan->getCurrentHeader(), std::move(time_attribute_dag)));
+
         const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
         chassert(metadata_plan);

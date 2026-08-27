@@ -132,9 +132,6 @@ Names filterStreamingVirtualColumns(Names columns)
     if (auto it = std::find(columns.begin(), columns.end(), TimeAttributeColumn::name); it != columns.end())
         columns.erase(it);
 
-    if (auto it = std::find(columns.begin(), columns.end(), WatermarkColumn::name); it != columns.end())
-        columns.erase(it);
-
     return columns;
 }
 
