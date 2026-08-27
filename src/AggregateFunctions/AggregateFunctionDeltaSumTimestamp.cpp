@@ -103,7 +103,7 @@ public:
         return false;
     }
 
-    void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & place_data = this->data(place);
         auto & rhs_data = this->data(rhs);
@@ -256,11 +256,11 @@ void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory & facto
 Adds the difference between consecutive rows.
 If the difference is negative, it is ignored.
 
-This function is primarily for [materialized views](/reference/statements/create/view#materialized-view) that store data ordered by some time bucket-aligned timestamp, for example, a `toStartOfMinute` bucket.
+This function is primarily for [materialized views](/sql-reference/statements/create/view#materialized-view) that store data ordered by some time bucket-aligned timestamp, for example, a `toStartOfMinute` bucket.
 Because the rows in such a materialized view will all have the same timestamp, it is impossible for them to be merged in the correct order, without storing the original, unrounded timestamp value.
 The `deltaSumTimestamp` function keeps track of the original `timestamp` of the values it's seen, so the values (states) of the function are correctly computed during merging of parts.
 
-To calculate the delta sum across an ordered collection you can simply use the [`deltaSum`](/reference/functions/aggregate-functions/deltaSum) function.
+To calculate the delta sum across an ordered collection you can simply use the [`deltaSum`](/sql-reference/aggregate-functions/reference/deltasum) function.
     )";
     FunctionDocumentation::Syntax syntax = "deltaSumTimestamp(value, timestamp)";
     FunctionDocumentation::Arguments arguments = {

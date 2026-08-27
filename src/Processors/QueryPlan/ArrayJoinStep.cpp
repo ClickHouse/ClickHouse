@@ -14,6 +14,7 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -87,7 +88,7 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 }
@@ -99,22 +100,12 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         flags |= 1;
     if (is_unaligned)
         flags |= 2;
-    /// Carried here rather than through serializeSettings: a step's settings object only ever holds
-    /// the names that same step writes, and readers that predate this bit ignore it and keep doing
-    /// eager replication, which is the correct fallback for a performance-only flag.
-    if (enable_lazy_columns_replication)
-        flags |= 4;
 
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(array_join.columns.size(), ctx.out);
     for (const auto & column : array_join.columns)
         writeStringBinary(column, ctx.out);
-}
-
-QueryPlanStepPtr ArrayJoinStep::clone() const
-{
-    return std::make_unique<ArrayJoinStep>(*this);
 }
 
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
@@ -124,7 +115,6 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
-    bool enable_lazy_columns_replication = bool(flags & 4);
 
     UInt64 num_columns = 0;
     readVarUInt(num_columns, ctx.in);
@@ -141,7 +131,7 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
         std::move(array_join),
         is_unaligned,
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
-        enable_lazy_columns_replication);
+        ctx.settings[QueryPlanSerializationSetting::enable_lazy_columns_replication]);
 }
 
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);

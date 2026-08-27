@@ -95,8 +95,6 @@ void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & fa
     FunctionDocumentation::Description description = R"(
 Sorts time series data by timestamp in ascending order.
 
-If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
-
 :::note
 This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
 :::
@@ -109,12 +107,11 @@ timeSeriesGroupArray(timestamp, value)
         {"value", "Value of the time series corresponding to the timestamp.", {"(U)Int*", "Float*", "Decimal"}},
     };
     FunctionDocumentation::Parameters parameters = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples `(timestamp, value)` sorted by timestamp in ascending order.", {"Array(Tuple(T1, T2))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples `(timestamp, value)` sorted by timestamp in ascending order. If there are multiple values for the same timestamp then the function chooses the greatest of these values.", {"Array(Tuple(T1, T2))"}};
     FunctionDocumentation::Examples examples = {
     {
         "Basic usage with individual values",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -136,7 +133,6 @@ FROM
     {
         "Passing multiple samples of timestamps and values as arrays of equal size",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

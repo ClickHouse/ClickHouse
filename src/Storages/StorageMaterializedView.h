@@ -33,19 +33,12 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
-    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
-    /// Unlike `supportsPrewhere()`, this defaults to `supportsPrewhere()` rather than to something
-    /// forwarding would match, so a target that supports PREWHERE but refuses the automatic
-    /// WHERE -> PREWHERE move (`Distributed`, or a `Merge` over one) would have that refusal
-    /// silently dropped by the view.
-    bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     /// readImpl forwards the already-analyzed query tree straight to the target table, so the
     /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
-    bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
@@ -53,11 +46,6 @@ public:
 
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
-
-    /// Forward the size guard onto the inner target table that `dropInnerTableIfAny`
-    /// will actually drop, so `CREATE OR REPLACE MATERIALIZED VIEW` cannot delete an
-    /// over-limit inner table that plain `DROP TABLE mv` would refuse.
-    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 

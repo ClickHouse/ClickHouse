@@ -25,7 +25,6 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
-#include <Functions/DateTimeTransforms.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
@@ -49,11 +48,6 @@
 #include <arrow/util/key_value_metadata.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <base/unaligned.h>
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
-#include <cctz/time_zone.h>
-#pragma clang diagnostic pop
 
 
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
@@ -895,59 +889,20 @@ static ColumnWithTypeAndName readColumnWithBooleanData(const std::shared_ptr<arr
 }
 
 static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name,
-                                                      const DataTypePtr & raw_type_hint, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+                                                      const DataTypePtr & type_hint, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
-    /// The hint is the raw header type, so it may be wrapped in LowCardinality and/or Nullable.
-    /// Strip the wrappers, otherwise e.g. a LowCardinality(DateTime64(9)) target would skip the
-    /// range checks below and the later context-less cast would clamp out-of-range values with
-    /// the default overflow mode instead of honoring `date_time_overflow_behavior`.
-    const DataTypePtr type_hint = raw_type_hint ? removeNullable(recursiveRemoveLowCardinality(raw_type_hint)) : nullptr;
-
     DataTypePtr internal_type;
-    bool check_date32_range = false;
     bool check_date_range = false;
-    bool check_datetime_range = false;
-    bool check_datetime64_range = false;
-    Int32 datetime64_min_day = 0;
-    Int32 datetime64_max_day = 0;
 
     if (type_hint && isNumber(type_hint))
     {
         /// If requested type is a number, read as raw number without checking if it's a valid date.
         internal_type = std::make_shared<DataTypeInt32>();
     }
-    else if (type_hint && isDate(*type_hint))
-    {
-        /// Arrow date32 can represent days outside the Date range [0, 65535]. The later cast of the
-        /// intermediate column to Date narrows the day number to UInt16 without checks, so validate
-        /// the range here, honoring `date_time_overflow_behavior` the same way as the Date32 branch.
-        internal_type = std::make_shared<DataTypeInt32>();
-        check_date_range = true;
-    }
-    else if (type_hint && isDateTime(*type_hint))
-    {
-        /// The later cast of the intermediate Date32 column to DateTime is context-less, so
-        /// `date_time_overflow_behavior` does not reach it and a day number whose midnight does not
-        /// fit into DateTime wraps to an unrelated timestamp. Validate the range here against the
-        /// same [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses.
-        internal_type = std::make_shared<DataTypeDate32>();
-        check_datetime_range = true;
-    }
-    else if (type_hint && isDateTime64(*type_hint))
-    {
-        /// The later cast of the intermediate Date32 column to DateTime64 is context-less as well, so it silently
-        /// clamps whole seconds that the target scale cannot represent. Validate the day number here against the
-        /// window the scale can represent - at scale 9 that ends at `2262-04-11`, far below the Date32 upper bound.
-        const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
-        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
-        std::tie(datetime64_min_day, datetime64_max_day) = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
-        internal_type = std::make_shared<DataTypeDate32>();
-        check_datetime64_range = true;
-    }
     else
     {
         internal_type = std::make_shared<DataTypeDate32>();
-        check_date32_range = true;
+        check_date_range = true;
     }
 
     auto internal_column = internal_type->createColumn();
@@ -959,34 +914,25 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     {
         const auto & chunk = checkedCast<arrow::Date32Array>(*(arrow_column->chunk(chunk_i)), column_name);
 
-        if (check_date32_range || check_date_range || check_datetime_range || check_datetime64_range)
+        if (check_date_range)
         {
-            const Int32 min_day = check_datetime64_range ? datetime64_min_day : check_date32_range ? DATE_LUT_MIN_EXTEND_DAY_NUM : 0;
-            const Int32 max_day = check_date_range ? DATE_LUT_MAX_DAY_NUM
-                : check_datetime_range ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
-                : check_datetime64_range ? datetime64_max_day
-                : DATE_LUT_MAX_EXTEND_DAY_NUM;
-            const String target_type_name = check_date_range ? "Date"
-                : check_datetime_range ? "DateTime"
-                : check_datetime64_range ? type_hint->getName()
-                : "Date32";
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
-                if (days_num > max_day || days_num < min_day)
+                if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
                 {
                     switch (date_time_overflow_behavior)
                     {
                         case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                            days_num = (days_num < min_day) ? min_day : max_day;
+                            days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
                             break;
                         default:
                         /// Prior to introducing `date_time_overflow_behavior`, this function threw an error in case value was out of range.
                         /// In order to leave this behavior as default, we also throw when `date_time_overflow_mode == ignore`, as it is the setting's default value
                         /// (As we want to make this backwards compatible, not break any workflows.)
                             throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                            "Input value {} of a column \"{}\" is out of allowed {} range, which is [{}, {}]",
-                                            days_num, column_name, target_type_name, min_day, max_day};
+                                            "Input value {} of a column \"{}\" is out of allowed Date32 range, which is [{}, {}]",
+                                            days_num,column_name, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
                     }
                 }
 
@@ -1027,77 +973,6 @@ static ColumnWithTypeAndName readColumnWithDate64Data(const std::shared_ptr<arro
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-/// Arrow permits a timestamp's timezone to be a fixed numeric UTC offset (e.g. "+05:30",
-/// "-08:00", "00:00") or the non-IANA marker "fixed" as well as an IANA name. cctz (and therefore
-/// DataTypeDateTime64) cannot load offset-named zones, so such strings used to throw "Cannot load
-/// time zone". Normalize only those two intended forms: a full [+|-]HH:MM[:SS] offset (the minute
-/// component is mandatory) and the "fixed" marker. Everything else (misspelled IANA names, bare-hour
-/// strings like "12" or "+05") is passed through unchanged so DataTypeDateTime64 still rejects
-/// genuinely-malformed producer metadata with "Cannot load time zone" instead of silently masking it.
-static String normalizeArrowTimezone(const String & timezone)
-{
-    if (timezone.empty())
-        return timezone;
-
-    cctz::time_zone tz;
-    if (cctz::load_time_zone(timezone, &tz))
-        return timezone;
-
-    /// "fixed" is a non-IANA marker some Arrow producers emit; values are UTC instants regardless.
-    if (timezone == "fixed")
-        return "UTC";
-
-    /// Parse a fixed offset of the form [+|-]HH:MM or [+|-]HH:MM:SS (sign optional, defaults to +).
-    std::string_view sv = timezone;
-    int sign = 1;
-    if (!sv.empty() && (sv.front() == '+' || sv.front() == '-'))
-    {
-        sign = sv.front() == '-' ? -1 : 1;
-        sv.remove_prefix(1);
-    }
-
-    auto parse_two_digits = [](std::string_view & s, int & out) -> bool
-    {
-        if (s.size() < 2 || !isdigit(static_cast<unsigned char>(s[0])) || !isdigit(static_cast<unsigned char>(s[1])))
-            return false;
-        out = (s[0] - '0') * 10 + (s[1] - '0');
-        s.remove_prefix(2);
-        return true;
-    };
-
-    int hours = 0;
-    int minutes = 0;
-    int seconds = 0;
-    /// Require a full [+|-]HH:MM offset: the minute component is mandatory. A bare hour such as
-    /// "12" or "+05" is not a valid fixed-offset spelling, so it must pass through and be rejected
-    /// rather than silently become Fixed/UTC+12:00:00 and shift displayed values.
-    bool ok = parse_two_digits(sv, hours) && !sv.empty() && sv.front() == ':';
-    if (ok)
-    {
-        sv.remove_prefix(1);
-        ok = parse_two_digits(sv, minutes);
-        if (ok && !sv.empty() && sv.front() == ':')
-        {
-            sv.remove_prefix(1);
-            ok = parse_two_digits(sv, seconds);
-        }
-    }
-
-    /// Not a parseable offset: pass through unchanged and let DataTypeDateTime64 reject it.
-    /// Reject leftovers, out-of-range fields, and offsets beyond cctz's supported +/-24h range.
-    if (!ok || !sv.empty() || minutes >= 60 || seconds >= 60
-        || (hours * 3600 + minutes * 60 + seconds) > 24 * 3600)
-        return timezone;
-
-    String name = fmt::format("Fixed/UTC{}{:02}:{:02}:{:02}", sign < 0 ? '-' : '+', hours, minutes, seconds);
-
-    /// Final guard: only return the normalized name if cctz can actually load it; otherwise pass
-    /// the original through so the error surfaces rather than being silently masked.
-    if (cctz::load_time_zone(name, &tz))
-        return name;
-    return timezone;
-}
-
 static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, bool empty_timezone_as_utc)
 {
     const auto & arrow_type = static_cast<const arrow::TimestampType &>(*(arrow_column->type()));
@@ -1105,7 +980,6 @@ static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<a
     String timezone = arrow_type.timezone();
     if (timezone.empty() && empty_timezone_as_utc)
         timezone = "UTC";
-    timezone = normalizeArrowTimezone(timezone);
     auto internal_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
@@ -1128,7 +1002,7 @@ static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow:
 {
     const auto & arrow_type = static_cast<const TimeType &>(*(arrow_column->type()));
     const UInt8 scale = arrow_type.unit() * 3;
-    auto internal_type = std::make_shared<DataTypeTime64>(scale);
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
     auto internal_column = internal_type->createColumn();
     validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<TimeArray>(chunk, column_name); });
     internal_column->reserve(arrow_column->length());
@@ -1141,7 +1015,7 @@ static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow:
         const auto & chunk = checkedCast<TimeArray>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            assert_cast<DataTypeTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
+            assert_cast<DataTypeDateTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
         }
     }
 
@@ -1295,7 +1169,7 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
     return nullmap_column;
 }
 
-static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, GeoColumnMetadata geo_metadata, bool precise_float_parsing)
+static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, GeoColumnMetadata geo_metadata)
 {
     DataTypePtr type = getGeoDataType(geo_metadata.type);
     MutableColumnPtr column = type->createColumn();
@@ -1339,7 +1213,7 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
                     result_object = parseWKBFormat(in_buffer);
                     break;
                 case GeoEncoding::WKT:
-                    result_object = parseWKTFormat(in_buffer, precise_float_parsing);
+                    result_object = parseWKTFormat(in_buffer);
                     break;
             }
             appendObjectToGeoColumn(result_object, geo_metadata.type, *column);
@@ -1891,11 +1765,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             if (geo_metadata && settings.allow_geoparquet_parser)
             {
-                return readColumnWithGeoData(arrow_column, column_name, *geo_metadata, settings.format_settings.precise_float_parsing);
+                return readColumnWithGeoData(arrow_column, column_name, *geo_metadata);
             }
             if (type_hint && type_hint->getName() == "Geometry" && settings.allow_geoparquet_parser)
             {
-                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed, std::nullopt}, settings.format_settings.precise_float_parsing);
+                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed});
             }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         }
@@ -2280,7 +2154,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     {
                         field_name = it->second;
                         size_t pos = field_name.rfind('.');
-                        /// Get the ClickHouse field as the last element of the name.
+                        /// Get the Clickhouse field as the last element of the name.
                         /// For example, if we converted parquet "a.b" to clickhouse "c.d", the resulting field name would be "d".
                         if (pos != std::string::npos)
                             field_name = field_name.substr(pos + 1);

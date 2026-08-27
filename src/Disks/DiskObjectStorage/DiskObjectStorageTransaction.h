@@ -40,20 +40,7 @@ protected:
     std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
     std::unordered_map<Location, StoredObjects> written_blobs;
 
-    /// Execute the operation right away if the metadata storage applies operations eagerly,
-    /// otherwise queue it until commit.
-    void addOperation(std::function<void(MetadataTransactionPtr tx)> op);
-
 public:
-    /// Record locations still missing the blob, for blobs without a per-file metadata node.
-    void recordBlobReplication(const StoredObject & object, const Locations & missing_locations);
-
-    /// Register a blob for background removal, committed atomically with this transaction.
-    void submitBlobForRemoval(const std::string & remote_path);
-
-    /// The metadata transaction this disk transaction executes against.
-    MetadataTransactionPtr getMetadataTransaction() const { return metadata_transaction; }
-
     DiskObjectStorageTransaction(
         ClusterConfigurationPtr cluster_,
         MetadataStoragePtr metadata_storage_,
@@ -81,10 +68,6 @@ public:
     void createFile(const String & path) override;
 
     void truncateFile(const String & path, size_t size) override;
-
-    void incrementBlobRefCount(const std::string & blob) override;
-
-    void decrementBlobRefCount(const std::string & blob) override;
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 
