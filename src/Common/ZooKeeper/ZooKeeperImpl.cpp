@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <ranges>
 
 #include <Common/OpenTelemetryTracingContext.h>
@@ -900,10 +901,18 @@ void ZooKeeper::sendThread()
                     bool callback_registered = false;
                     /// If set, reject the request with this error instead of sending it.
                     std::optional<Error> reject_error;
+                    const auto assert_request_window_exit = [&]
+                    {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+                        const bool unwinding = std::uncaught_exceptions() > 0;
+                        chassert(unwinding == !reject_error.has_value());
+#endif
+                    };
                     SCOPE_EXIT({
                         if (callback_registered || !info.callback)
                             return;
                         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+                        assert_request_window_exit();
                         try
                         {
                             ZooKeeperResponsePtr response = info.request->makeResponse();
