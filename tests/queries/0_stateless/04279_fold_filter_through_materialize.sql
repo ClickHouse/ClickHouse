@@ -177,3 +177,15 @@ SELECT count() FROM numbers(1) WHERE materialize(tuple('1')) = tuple(toUInt8(1))
 SELECT 'same-typed tuple folded', countIf(explain LIKE '%Filter column: 1%')
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple('1', 2)) = tuple('1', 2));
 SELECT count() FROM numbers(1) WHERE materialize(tuple('1', 2)) = tuple('1', 2);
+
+-- unary `not` depends only on its argument value, so it folds through `materialize` like the
+-- binary logical operators
+SELECT 'not folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE NOT materialize(0));
+SELECT count() FROM numbers(100) WHERE NOT materialize(0);
+SELECT count() FROM numbers(100) WHERE NOT materialize(1);
+SELECT 'not over all-const and folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE NOT and(materialize(1), materialize(0)));
+SELECT count() FROM numbers(100) WHERE NOT and(materialize(1), materialize(0));
+-- `not` of NULL is NULL, which is not decisive and filters everything out
+SELECT count() FROM numbers(100) WHERE NOT materialize(CAST(NULL AS Nullable(UInt8)));

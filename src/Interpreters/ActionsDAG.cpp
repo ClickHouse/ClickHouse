@@ -991,7 +991,7 @@ using FoldCache = std::unordered_map<const ActionsDAG::Node *, std::optional<Fol
 const std::unordered_set<std::string> & foldablePredicateFunctions()
 {
     static const std::unordered_set<std::string> functions{
-        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or"};
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or", "not"};
     return functions;
 }
 
