@@ -60,4 +60,16 @@ SELECT total_rows, isNotNull(total_bytes) FROM system.tables WHERE database = cu
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.tablefunc08;
 SELECT total_rows, isNotNull(total_bytes) FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc08';
 
+-- A resolved table function answers with the nested storage's own data paths.
+INSERT INTO FUNCTION file(currentDatabase() || '_02888_data_paths.tsv', TSVWithNamesAndTypes, 'x UInt64')
+    SELECT number FROM numbers(3) SETTINGS engine_file_truncate_on_insert = 1;
+-- No structure argument, so the nested storage is built lazily and the header supplies both the
+-- column name and its type.
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc09 (x UInt64) AS file(currentDatabase() || '_02888_data_paths.tsv', TSVWithNamesAndTypes);
+SELECT notEmpty(data_paths) FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.tablefunc09;
+SELECT notEmpty(data_paths) FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
+
+-- Not covered: `lifetime_rows`/`lifetime_bytes` (only `Buffer` reports them) and a forwarded lock (only a `timeSeries*` target holds one).
+
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
