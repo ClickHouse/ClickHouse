@@ -504,6 +504,45 @@ def test_partition_by(started_cluster):
         fs.delete(f"/{dir}", recursive=True)
 
 
+def test_globbed_path_partition_by_round_trips(started_cluster):
+    # A globbed path with `PARTITION BY` and no explicit `partition_strategy` keeps
+    # the pre-26.6 behavior: no strategy, `PARTITION BY` ignored. The strategy is
+    # recoverable from the path shape alone, so nothing is persisted and the table
+    # survives DETACH/ATTACH (the metadata-load path used at server startup).
+    table_name = f"test_hdfs_glob_round_trip_{uuid.uuid4().hex}"
+    path = f"hdfs://hdfs1:9000/{table_name}/*.parquet"
+
+    try:
+        node1.query(
+            f"CREATE TABLE {table_name} (d Date, x UInt64) "
+            f"ENGINE = HDFS('{path}', 'Parquet') PARTITION BY d"
+        )
+
+        create_query = node1.query(f"SHOW CREATE TABLE {table_name}")
+        assert "partition_strategy" not in create_query
+
+        node1.query(f"DETACH TABLE {table_name}")
+        node1.query(f"ATTACH TABLE {table_name}")
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_plain_path_wildcard_default_is_rejected(started_cluster):
+    # A plain path under `file_like_engine_default_partition_strategy = 'wildcard'`
+    # resolves the implicit strategy to 'none', but HDFS engine arguments can not
+    # persist `partition_strategy = 'none'`, so on reload the same definition would
+    # silently switch to the 'hive' strategy. Such a CREATE must fail instead.
+    table_name = f"test_hdfs_plain_wildcard_default_{uuid.uuid4().hex}"
+    path = f"hdfs://hdfs1:9000/{table_name}/data.parquet"
+
+    error = node1.query_and_get_error(
+        f"CREATE TABLE {table_name} (d Date, x UInt64) "
+        f"ENGINE = HDFS('{path}', 'Parquet') PARTITION BY d",
+        settings={"file_like_engine_default_partition_strategy": "wildcard"},
+    )
+    assert "can not persist" in error
+
+
 def test_seekable_formats(started_cluster):
 
     table_function = (
