@@ -100,6 +100,26 @@ ${CH} -q "SELECT groupArray(a) FROM icebergLocal('${ICE}16/', 'Parquet', 'a Null
 # what every column in it is built from, so a name left out of it stays rejected either way.
 ${CH} -q "SELECT groupArray(a), countIf(zzz IS NULL) FROM icebergLocal('${ICE}16/', 'Parquet', 'a Nullable(Int64), zzz Nullable(String)')" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
 
+# A subcolumn of a column the metadata DOES declare is not a missing column either: it reaches the
+# read as one flat name with no storage parent recorded, while its value lives in the parent the block
+# already carries. No structure argument is involved, so this is the evolved read's own contract.
+echo "-- iceberg: a subcolumn of a column the metadata declares is not a missing column"
+batch <<SQL
+SET allow_experimental_insert_into_iceberg = 1;
+CREATE TABLE ice20 (a Int64, t Tuple(x Int64)) ENGINE = IcebergLocal('${ICE}20/', 'Parquet');
+INSERT INTO ice20 SELECT number, tuple(number + 100) FROM numbers(3);
+CREATE TABLE ice21 (a Int64, t Tuple(x Int64)) ENGINE = IcebergLocal('${ICE}21/', 'Parquet');
+INSERT INTO ice21 SELECT number, tuple(number + 100) FROM numbers(3);
+ALTER TABLE ice20 RENAME COLUMN a TO renamed_a;
+-- The parent carries the written values and the rename puts the data file's schema id behind the
+-- current one, so neither arm below can pass for want of a value or of an evolved read.
+SELECT groupArray(a), groupArray(t), count() FROM (SELECT renamed_a AS a, t FROM ice20 ORDER BY a);
+-- The same subcolumn of the same shape without evolution reads its values, which is what makes the
+-- rejection below specific to the evolved read rather than to the expression.
+SELECT groupArray(x), count() FROM (SELECT t.x AS x FROM icebergLocal('${ICE}21/', 'Parquet') ORDER BY x);
+SELECT groupArray(x), count() FROM (SELECT t.x AS x FROM icebergLocal('${ICE}20/', 'Parquet') ORDER BY x); -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+SQL
+
 # An added column is emitted by the evolution transform itself rather than synthesized here, so it
 # reaches `AddingDefaultsTransform` at a position the reader's missing-value bitmask does not
 # describe. A declared `DEFAULT` on such a column is what selects that transform, so these arms
@@ -214,8 +234,10 @@ SYSTEM FLUSH LOGS processors_profile_log;
 SELECT count() > 0 FROM system.processors_profile_log WHERE initial_query_id = '${QID_NOSTRUCT}' AND query_id != initial_query_id;
 SELECT countIf(name = 'PartialSortingTransform') FROM system.processors_profile_log WHERE initial_query_id = '${QID_NOSTRUCT}' AND query_id != initial_query_id;
 -- The same read WITH a user structure still reaches the worker, which proves the arm above is not
--- green merely because nothing was dispatched.
+-- green merely because nothing was dispatched, and its own sort count is the paired contrast: a
+-- structure the user passed clears the key, so the worker has to sort.
 SELECT count() > 0 FROM system.processors_profile_log WHERE initial_query_id = '${QID_STRUCT}' AND query_id != initial_query_id;
+SELECT countIf(name = 'PartialSortingTransform') > 0 FROM system.processors_profile_log WHERE initial_query_id = '${QID_STRUCT}' AND query_id != initial_query_id;
 SELECT '-- iceberg cluster: a worker keeps declared columns that the metadata does not have';
 -- Keeping the key and keeping the columns are two separate decisions: clearing the key must not
 -- also discard the declared columns, or the snapshot would overwrite them and a column that exists

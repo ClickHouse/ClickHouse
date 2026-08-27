@@ -22,6 +22,9 @@ zzz UInt64 DEFAULT 42
 [0,1,2]
 Code: 10
 Code: 10
+-- iceberg: a subcolumn of a column the metadata declares is not a missing column
+[0,1,2]	[(100),(101),(102)]	3
+[100,101,102]	3
 -- iceberg: a declared DEFAULT on a column added by schema evolution reads the file's values
 3	3
 3	3
@@ -53,6 +56,7 @@ Code: 10
 -- iceberg cluster: a worker keeps the metadata sorting key when only the initiator injected a structure
 1
 0
+1
 1
 -- iceberg cluster: a worker keeps declared columns that the metadata does not have
 2	2	Nullable(String)

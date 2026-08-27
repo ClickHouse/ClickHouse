@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -1432,12 +1433,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// A data lake schema transform emits exactly the lake's own schema, so a requested column
         /// that no schema declares is absent from the block and reads as a default. It has to exist
         /// before the fallback filters below, which may reference it.
-        NameSet synthesized_columns;
         if (schema_changed)
         {
             const Block & header_after_transform = builder.getHeader();
             NamesAndTypesList columns_with_synthesized;
             NameSet seen_names;
+            bool has_synthesized_columns = false;
             /// The inputs of a stripped filter are not in `requested_columns`, which is
             /// post-`PREWHERE`, yet the fallback filters below evaluate against them.
             NamesAndTypesList wanted_columns = read_from_format_info.requested_columns;
@@ -1455,6 +1456,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (stripped_prewhere_info)
                 add_filter_inputs(stripped_prewhere_info->prewhere_actions);
 
+            /// A required filter input reaches here as one flat name, so a subcolumn arrives as
+            /// `t.x` with no storage parent recorded. Its value lives in the parent column, which
+            /// the block carries, so it is not a missing column.
+            auto names_a_subcolumn_of_a_present_column = [](const Block & block, const String & column_name)
+            {
+                for (auto [parent, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+                    if (const auto * elem = block.findByName(parent); elem && elem->type->tryGetSubcolumnType(subcolumn))
+                        return true;
+                return false;
+            };
+
             for (const auto & wanted_column : wanted_columns)
             {
                 /// Keyed by name in storage: several requested subcolumns can share one parent.
@@ -1466,11 +1478,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 /// column rather than a missing one, and filters on it are evaluated there. It is
                 /// kept out of the list below too, which is what any column in it is created from.
                 const bool emitted = header_after_transform.has(name_in_storage);
-                if (!emitted && initial_header.has(name_in_storage))
+                if (!emitted
+                    && (initial_header.has(name_in_storage)
+                        || names_a_subcolumn_of_a_present_column(header_after_transform, name_in_storage)
+                        || names_a_subcolumn_of_a_present_column(initial_header, name_in_storage)))
                     continue;
                 columns_with_synthesized.emplace_back(name_in_storage, wanted_column.getTypeInStorage());
                 if (!emitted)
-                    synthesized_columns.emplace(name_in_storage);
+                    has_synthesized_columns = true;
             }
 
             /// The transform emits the lake's own types, but a fallback filter below was planned
@@ -1497,7 +1512,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     columns_to_align.emplace_back(name_in_storage, type_to_align_to);
             }
 
-            if (!synthesized_columns.empty() || !columns_to_align.empty())
+            if (has_synthesized_columns || !columns_to_align.empty())
             {
                 Block header_to_synthesize_from = header_after_transform;
                 if (!columns_to_align.empty())
@@ -1520,7 +1535,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     });
                 }
 
-                if (!synthesized_columns.empty())
+                if (has_synthesized_columns)
                 {
                     for (const auto & column : header_to_synthesize_from)
                         if (seen_names.emplace(column.name).second)
