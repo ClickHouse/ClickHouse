@@ -1,0 +1,10 @@
+AggregateFunction(uniqForEach, Array(UInt8))
+AggregateFunction(uniqMap, Map(UInt8, UInt8))
+AggregateFunction(1, uniqForEach, Array(UInt64))
+[3,100315]
+[3,100315]
+AggregateFunction(1, uniqMap, Map(UInt8, UInt64))
+{0:50000,1:50000}
+{0:50000,1:50000}
+AggregateFunction(uniqForEach, Array(UInt64))
+[3,100315]
