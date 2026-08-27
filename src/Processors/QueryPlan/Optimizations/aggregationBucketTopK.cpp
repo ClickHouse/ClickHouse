@@ -39,13 +39,16 @@ const String * traceThroughExpression(const ExpressionStep & expression, const S
 /// does, which excludes floating point (the merge ignores NaNs, and which NaN order matches it
 /// depends on the direction) and types whose single-value state falls back to `Field` ordering
 /// with quirks (nothing nullable can appear: the plan only sees non-nullable results here).
+/// `String` and `FixedString` are also excluded: the merge peeks every cell's partial value
+/// into a column up front, and for them that is an extra full copy of the ordering payload
+/// before anything is pruned - a memory regression the fixed-width scalars do not have.
 bool isThresholdTopKValueType(MergedValueBound bound, const DataTypePtr & type)
 {
     WhichDataType which(type);
     if (bound == MergedValueBound::Subadditive)
         return which.isUInt64();
     return which.isInt() || which.isUInt() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()
-        || which.isDecimal() || which.isEnum() || which.isString() || which.isFixedString();
+        || which.isDecimal() || which.isEnum();
 }
 
 }
