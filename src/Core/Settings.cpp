@@ -9173,7 +9173,8 @@ Enabling it automatically adjusts settings that control features not supported b
 )", PRIVATE_PREVIEW) \
 DECLARE(Bool, distributed_plan_fallback_to_local_execution, true, R"(
 When a query plan contains a step that does not support distributed execution, log the reason and execute the query on the initiator instead of throwing an exception. Disable to get an exception instead.
-)", EXPERIMENTAL) \
+Only takes effect when the `make_distributed_plan` is enabled.
+)", 0) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
