@@ -11,6 +11,7 @@
 #include <Parsers/IAST.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/Streaming/Utils.h>
 
 #include <QueryPipeline/QueryPipeline.h>
@@ -40,6 +41,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
+}
+
 namespace
 {
 
@@ -65,6 +72,8 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
     info.query_tree.reset();
     info.table_expression.reset();
     info.planner_context.reset();
+
+    info.storage_limits = std::make_shared<StorageLimitsList>();
 
     info.prewhere_info.reset();
     info.filter_actions_dag.reset();
@@ -138,6 +147,39 @@ Names filterStreamingVirtualColumns(Names columns)
     return columns;
 }
 
+bool isReadLimitReached(const std::shared_ptr<const StorageLimitsList> & storage_limits, const ContextPtr & context)
+{
+    if (!storage_limits)
+        return false;
+
+    const auto process_list_elem = context->getProcessListElement();
+    if (!process_list_elem)
+        return false;
+
+    const auto progress = process_list_elem->getProgressIn();
+    for (const auto & limits : *storage_limits)
+    {
+        if (limits.local_limits.mode == LimitsMode::LIMITS_TOTAL)
+        {
+            const bool within_limits = limits.local_limits.size_limits.check(
+                progress.read_rows, progress.read_bytes, "rows or bytes to read",
+                ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES);
+
+            if (!within_limits)
+                return true;
+        }
+
+        const bool within_limits = limits.leaf_limits.check(
+            progress.read_rows, progress.read_bytes, "rows or bytes to read on leaf node",
+            ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES);
+
+        if (!within_limits)
+            return true;
+    }
+
+    return false;
+}
+
 }
 
 MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
@@ -153,6 +195,7 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
     , header(std::move(header_))
     , subscription(std::move(subscription_))
     , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
+    , storage_limits(query_info_.storage_limits)
     , reading_context{
           .storage = storage_,
           .query_info = makeStreamingSelectQueryInfo(query_info_),
@@ -169,7 +212,7 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
 {
 }
 
-IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
+IProcessor::Status MergeTreeCommitOrderSource::handleReadRoundStep()
 {
     auto & output = outputs.front();
     auto & input = inputs.front();
@@ -210,7 +253,21 @@ IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
     return Status::PortFull;
 }
 
-IProcessor::Status MergeTreeCommitOrderSource::handleShutdown()
+IProcessor::Status MergeTreeCommitOrderSource::handleReadRoundShutdown()
+{
+    read_state.finalizeReadRound();
+    finished_rounds += 1;
+    LOG_TEST(log, "Finished read round #{}", finished_rounds);
+
+    if (!isReadLimitReached(storage_limits, reading_context.context))
+        return Status::Ready;
+
+    LOG_DEBUG(log, "The read limit is reached - finishing the stream after {} read rounds", finished_rounds);
+    outputs.front().finish();
+    return handleUpstreamShutdown();
+}
+
+IProcessor::Status MergeTreeCommitOrderSource::handleUpstreamShutdown()
 {
     auto & output = outputs.front();
     chassert(output.isFinished());
@@ -299,20 +356,17 @@ IProcessor::Status MergeTreeCommitOrderSource::prepare()
 
     const bool is_upstream_finished = outputs.front().isFinished();
     if (is_upstream_finished)
-        return handleShutdown();
+        return handleUpstreamShutdown();
 
     const bool has_running_sub_pipeline = !inputs.empty() && inputs.front().isConnected() && !inputs.front().isFinished();
     if (has_running_sub_pipeline)
-        if (auto sub_pipeline_status = handleRunningPipeline(); sub_pipeline_status != Status::Finished)
+        if (const auto sub_pipeline_status = handleReadRoundStep(); sub_pipeline_status != Status::Finished)
             return sub_pipeline_status;
 
     const bool has_unfinalized_pipeline = !pending_round.has_value() && read_state.readRoundInProgress();
     if (has_unfinalized_pipeline)
-    {
-        read_state.finalizeReadRound();
-        finished_rounds += 1;
-        LOG_TEST(log, "Finished read round #{}", finished_rounds);
-    }
+        if (const auto shutdown_status = handleReadRoundShutdown(); shutdown_status != Status::Ready)
+            return shutdown_status;
 
     const auto [safe_block_numbers, subscription_updated] = subscription->snapshot();
     const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);

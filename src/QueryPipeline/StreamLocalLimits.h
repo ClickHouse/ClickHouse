@@ -44,5 +44,6 @@ struct StorageLimits
 };
 
 using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using StorageLimitsListPtr = std::shared_ptr<const StorageLimitsList>;
 
 }

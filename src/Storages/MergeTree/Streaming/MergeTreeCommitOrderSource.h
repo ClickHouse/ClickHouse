@@ -24,8 +24,9 @@ namespace DB
 /// Read-round loop streaming source.
 class MergeTreeCommitOrderSource final : public IProcessor
 {
-    Status handleRunningPipeline();
-    Status handleShutdown();
+    Status handleReadRoundStep();
+    Status handleReadRoundShutdown();
+    Status handleUpstreamShutdown();
     Status handleReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
     Status handleBoundedReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
 
@@ -57,6 +58,7 @@ private:
     const SharedHeader header;
     const MergeTreeBoundsSubscriptionPtr subscription;
     const StreamSettings stream_settings;
+    const StorageLimitsListPtr storage_limits;
     const ReadRoundContext reading_context;
     const LoggerPtr log;
 

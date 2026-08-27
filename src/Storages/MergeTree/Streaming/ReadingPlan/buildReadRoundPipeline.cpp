@@ -128,6 +128,7 @@ QueryPlanPtr buildPartitionCommitOrderReadPlan(
         sort_desc.emplace_back(BlockNumberColumn::name, 1);
         sort_desc.emplace_back(BlockOffsetColumn::name, 1);
         SortingStep::Settings sort_settings(context->getSettingsRef());
+        sort_settings.size_limits = {};
         plan->addStep(std::make_unique<SortingStep>(
             plan->getCurrentHeader(),
             std::move(sort_desc),
