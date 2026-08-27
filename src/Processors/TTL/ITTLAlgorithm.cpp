@@ -51,8 +51,10 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     return block_copy.getByName(result_column).column->convertToFullColumnIfSparse();
 }
 
-/// The single place that knows how a TTL result column maps to Unix timestamps. Every TTL
-/// algorithm and `TTLDeleteFilterTransform` go through here, so a new result type is added once.
+/// Shared by every TTL algorithm and by `TTLDeleteFilterTransform`, so a new result type is added
+/// once for all of them. Not shared with the insert path: `MergeTreeDataWriter::updateTTLInfo` and
+/// `updateTTLInfoConst` fold the same types into `MergeTreeDataPartTTLInfo` without building an
+/// array, and still need the new type too.
 void ITTLAlgorithm::extractTimestamps(
     const IColumn * column, size_t num_rows, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps)
 {

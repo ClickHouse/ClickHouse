@@ -77,7 +77,8 @@ void TTLColumnAlgorithm::execute(Block & block)
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
     const size_t rows = block.rows();
-    extractTimestamps(ttl_column.get(), rows);
+    PaddedPODArray<Int64> timestamps;
+    extractTimestamps(ttl_column.get(), rows, timestamps);
 
     const IColumn * values_column = column_with_type.column.get();
     MutableColumnPtr result_column = values_column->cloneEmpty();

@@ -26,7 +26,8 @@ void TTLDeleteAlgorithm::execute(Block & block)
     /// algorithm runs on every merge of a value-combining mode, where the common case is that
     /// nothing expires - and then the block is handed on untouched.
     const size_t rows = block.rows();
-    extractTimestamps(ttl_column.get(), rows);
+    PaddedPODArray<Int64> timestamps;
+    extractTimestamps(ttl_column.get(), rows, timestamps);
 
     IColumn::Filter filter(rows);
     size_t removed = 0;

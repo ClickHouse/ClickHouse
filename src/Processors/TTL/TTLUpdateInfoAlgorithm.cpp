@@ -25,7 +25,8 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
     const size_t rows = block.rows();
-    extractTimestamps(ttl_column.get(), rows);
+    PaddedPODArray<Int64> timestamps;
+    extractTimestamps(ttl_column.get(), rows, timestamps);
 
     for (size_t i = 0; i < rows; ++i)
         new_ttl_info.update(timestamps[i]);

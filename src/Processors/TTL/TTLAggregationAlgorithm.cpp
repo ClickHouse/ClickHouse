@@ -158,7 +158,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
         auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
-        extractTimestamps(ttl_column.get(), block.rows());
+        PaddedPODArray<Int64> timestamps;
+        extractTimestamps(ttl_column.get(), block.rows(), timestamps);
 
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
@@ -241,7 +242,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
     {
         auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
         auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
-        extractTimestamps(ttl_column_after_aggregation.get(), block.rows());
+        PaddedPODArray<Int64> timestamps;
+        extractTimestamps(ttl_column_after_aggregation.get(), block.rows(), timestamps);
         for (size_t i = 0; i < block.rows(); ++i)
         {
             bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);

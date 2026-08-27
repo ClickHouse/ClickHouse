@@ -35,9 +35,10 @@ public:
     bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
     bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
 
-    /// Resolve the column type once and fill `timestamps` for the whole block. This is the only
-    /// place in the TTL code that knows how a TTL result column maps to a Unix timestamp.
-    /// `MergeTreeDataWriter` still has its own copy - see the note on that in the PR.
+    /// Resolve the column type once and fill `timestamps` for the whole block. Every TTL algorithm
+    /// and `TTLDeleteFilterTransform` map a TTL result column to Unix timestamps through here.
+    /// The insert path does not: `MergeTreeDataWriter::updateTTLInfo` / `updateTTLInfoConst` dispatch
+    /// over the same types separately, so a new TTL result type has to be added there as well.
     static void extractTimestamps(
         const IColumn * column, size_t num_rows, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps);
 
@@ -51,14 +52,13 @@ protected:
     bool isTTLExpired(time_t ttl) const;
 
     /// Fill `timestamps` from `column` using this algorithm's time zone. Call it once per block,
-    /// then index `timestamps` in the row loop.
-    void extractTimestamps(const IColumn * column, size_t num_rows)
+    /// then index `timestamps` in the row loop. The buffer stays owned by the caller: the transforms
+    /// keep one algorithm object per TTL rule alive for the whole merge, and `execute` runs them one
+    /// after another, so a member would pin one array per rule for no benefit.
+    void extractTimestamps(const IColumn * column, size_t num_rows, PaddedPODArray<Int64> & timestamps) const
     {
         extractTimestamps(column, num_rows, date_lut, timestamps);
     }
-
-    /// Reused across the blocks of one merge, so the per-block extraction does not reallocate.
-    PaddedPODArray<Int64> timestamps;
 
     const TTLExpressions ttl_expressions;
     const TTLDescription description;
