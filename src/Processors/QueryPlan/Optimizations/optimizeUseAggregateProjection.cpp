@@ -750,7 +750,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());
 
-    /// Only select the projection where distinct columns are a subset of projection columns.
+    /// Only select a projection that can compute every column of the output header.
     for (const auto * projection : agg_projections)
     {
         /// Skip projections whose WHERE condition is not implied by the query's filter.
