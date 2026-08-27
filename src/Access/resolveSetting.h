@@ -67,6 +67,20 @@ inline SettingsTierType settingGetTier(std::string_view full_name)
     });
 }
 
+/// The value a setting has when nothing sets it.
+///
+/// A `merge_tree_`-prefixed name is not a `Settings` setting, so its default has to be read from
+/// `MergeTreeSettings`: the default of `merge_tree_max_avg_part_size_for_too_many_parts` is the default of
+/// `max_avg_part_size_for_too_many_parts`, which is 0.
+inline Field settingDefaultValue(std::string_view full_name)
+{
+    return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)
+    {
+        static const T defaults;
+        return defaults.get(short_name);
+    });
+}
+
 inline bool settingIsBuiltin(std::string_view full_name)
 {
     return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)

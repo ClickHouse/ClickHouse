@@ -79,6 +79,13 @@ MERGE_TREE_PRODUCTION_VALUE = 1073741824
 # Allowed by configs/custom_settings_prefix.xml
 CUSTOM_SETTING = "custom_setting_of_this_test"
 
+# Must match configs/users.d/merge_tree_constraint.xml. The default of this setting is below the minimum
+# the profile declares, so resetting it to the default is refused.
+MERGE_TREE_SETTING_WITH_A_FORBIDDEN_DEFAULT = (
+    MERGE_TREE_SETTINGS_PREFIX + "index_granularity"
+)
+MERGE_TREE_FORBIDDEN_DEFAULT_MIN = 16384
+
 EXPERIMENTAL_BLOCKED = "Changes to EXPERIMENTAL settings are disabled"
 BETA_BLOCKED = "Changes to BETA settings are disabled"
 
@@ -901,3 +908,35 @@ def test_alter_replays_on_a_replica_that_would_not_have_allowed_it(start_cluster
 
     for replica in [permissive_replica, strict_replica]:
         replica.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+
+
+def test_reset_of_a_merge_tree_setting_cannot_escape_its_constraint(start_cluster):
+    # `SET ... = DEFAULT` drops the value, so it has to be checked against the real default of the
+    # setting, the same way a reset of a plain setting is. The default of this one is 8192, below the
+    # minimum the profile declares, so the reset has to be refused. Otherwise the constraint is escaped
+    # by dropping the setting instead of by writing a value it forbids.
+    node = instance_with_merge_tree_constraint
+    name = MERGE_TREE_SETTING_WITH_A_FORBIDDEN_DEFAULT
+
+    assert MERGE_TREE_FORBIDDEN_DEFAULT_MIN == int(
+        node.query(f"SELECT getSetting('{name}')").strip()
+    )
+
+    # Writing a value below the minimum is refused
+    output, error = node.query_and_get_answer_with_error(
+        f"SELECT 1 SETTINGS {name} = 1024"
+    )
+    assert output == ""
+    assert "shouldn't be less than" in error, error
+
+    # Resetting to the default, which is below the same minimum, has to be refused too
+    output, error = node.query_and_get_answer_with_error(f"SET {name} = DEFAULT")
+    assert output == ""
+    assert "shouldn't be less than" in error, error
+
+    # A setting whose default satisfies the constraint can still be reset
+    output, error = node.query_and_get_answer_with_error(
+        f"SET {MERGE_TREE_PRODUCTION_SETTING_IN_PROFILE} = DEFAULT"
+    )
+    assert output == ""
+    assert error == "", error

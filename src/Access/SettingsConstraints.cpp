@@ -258,12 +258,16 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
 {
     /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
     /// check also deliberately permits a reset that does not change the value.
-    const Settings defaults;
+    ///
+    /// A `merge_tree_`-prefixed name is not a `Settings` setting, but it names a `MergeTreeSettings` one,
+    /// which has a default too. Without this the reset was checked against the value the setting already
+    /// had, which always passes. So a profile declaring `merge_tree_index_granularity MIN 16384` was
+    /// escaped by `SET merge_tree_index_granularity = DEFAULT`, dropping it to the default of 8192.
     for (const auto & name : names)
     {
-        if (Settings::hasBuiltin(name))
+        if (settingIsBuiltin(name))
         {
-            check(current_settings, SettingChange{name, defaults.get(name)}, source);
+            check(current_settings, SettingChange{name, settingDefaultValue(name)}, source);
             continue;
         }
 
