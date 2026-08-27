@@ -58,7 +58,7 @@ ClickHouse supports several JOIN algorithms that trade off between speed and mem
 Each algorithm has varying support for JOIN types. A full list of supported join types for each algorithm can be found [here](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 </Note>
 
-You can let ClickHouse choose the best algorithm by setting `join_algorithm = 'auto'`, or explicitly control it based on your workload. The default value is `direct,hash,ie_join`, so ClickHouse uses a direct join when the right-hand side is a dictionary or key-value engine and otherwise uses the hash join (`parallel_hash` is an obsolete alias of `hash` and does not select parallelism). If you need to select a join algorithm to optimize for performance or memory overhead, we recommend [this guide](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+You can let ClickHouse choose the best algorithm by setting `join_algorithm = 'auto'`, or explicitly control it based on your workload. The default value is `direct,hash,ie_join`, so ClickHouse uses a direct join when the right-hand side is a dictionary or key-value engine, prefers `hash` when applicable, and falls back to `ie_join` for eligible inequality-only joins (`parallel_hash` is an obsolete alias of `hash` and does not select parallelism). If you need to select a join algorithm to optimize for performance or memory overhead, we recommend [this guide](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 
 For optimal performance:
 
