@@ -79,6 +79,9 @@ public:
         /// serialize `unique_key`, which would allow replicas to diverge silently.
         bool supports_unique_key = false;
         bool supports_sql_security = false;
+        /// Whether a table of this engine can be deferred behind `StorageTableProxy` in a database
+        /// with `lazy_load_tables`. Opting in also means listing its class in the storage-cast check.
+        bool supports_deferred_load = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -118,6 +121,7 @@ public:
         .supports_schema_inference = false,
         .supports_unique_key = false,
         .supports_sql_security = false,
+        .supports_deferred_load = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});
@@ -148,6 +152,10 @@ public:
     std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
+    /// Null for an unregistered engine, so a caller that only wants to inspect an engine named in a
+    /// `CREATE` query does not have to handle `UNKNOWN_STORAGE` itself.
+    const StorageFeatures * tryGetStorageFeatures(const String & storage_name) const;
 
 private:
     Storages storages;

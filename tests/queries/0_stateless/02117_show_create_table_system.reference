@@ -1176,6 +1176,7 @@ CREATE TABLE system.table_engines
     `supports_ttl` UInt8,
     `supports_replication` UInt8,
     `supports_deduplication` UInt8,
+    `supports_deferred_load` UInt8,
     `supports_parallel_insert` UInt8,
     `description` String,
     `syntax` String,

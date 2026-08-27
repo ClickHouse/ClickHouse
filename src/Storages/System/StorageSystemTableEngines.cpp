@@ -24,6 +24,8 @@ ColumnsDescription StorageSystemTableEngines::getColumnsDescription()
         {"supports_ttl", std::make_shared<DataTypeUInt8>(), "Flag that indicates if table engine supports TTL."},
         {"supports_replication", std::make_shared<DataTypeUInt8>(), "Flag that indicates if table engine supports data replication."},
         {"supports_deduplication", std::make_shared<DataTypeUInt8>(), "Flag that indicates if table engine supports data deduplication."},
+        {"supports_deferred_load", std::make_shared<DataTypeUInt8>(),
+            "Flag that indicates if a table of this engine can be loaded on first access in a database with `lazy_load_tables`."},
         {"supports_parallel_insert", std::make_shared<DataTypeUInt8>(),
             "Flag that indicates if table engine supports parallel insert (see max_insert_threads setting)."
         },
@@ -59,6 +61,7 @@ void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPt
         res_columns[i++]->insert(pair.second.features.supports_ttl);
         res_columns[i++]->insert(pair.second.features.supports_replication);
         res_columns[i++]->insert(pair.second.features.supports_deduplication);
+        res_columns[i++]->insert(pair.second.features.supports_deferred_load);
         res_columns[i++]->insert(pair.second.features.supports_parallel_insert);
         res_columns[i++]->insert(documentation.description);
         res_columns[i++]->insert(documentation.syntaxAsString());

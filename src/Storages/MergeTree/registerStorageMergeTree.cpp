@@ -1196,6 +1196,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_ttl = true,
         .supports_parallel_insert = true,
         .supports_unique_key = true,
+        .supports_deferred_load = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 

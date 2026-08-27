@@ -31,6 +31,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
@@ -443,9 +444,17 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
         return false;
 
-    /// Only the MergeTree family is deferred. Message queues start consuming in `startup` and
-    /// engines like Set are reached by a concrete-type cast, neither of which survives a proxy.
-    if (!query.storage || !query.storage->engine || !query.storage->engine->name.ends_with("MergeTree"))
+    if (!query.storage || !query.storage->engine)
+        return false;
+
+    /// An engine opts in with `supports_deferred_load`. Unregistered engines are not deferred, so
+    /// the real error surfaces from the factory when the table is created.
+    const auto * features = StorageFactory::instance().tryGetStorageFeatures(query.storage->engine->name);
+    if (!features || !features->supports_deferred_load)
+        return false;
+
+    /// The columns of a replicated table with no column list would have to be read from ZooKeeper.
+    if (!query.columns_list || !query.columns_list->columns)
         return false;
 
     return true;

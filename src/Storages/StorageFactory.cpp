@@ -269,6 +269,13 @@ std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(c
 }
 
 
+const StorageFactory::StorageFeatures * StorageFactory::tryGetStorageFeatures(const String & storage_name) const
+{
+    auto it = storages.find(storage_name);
+    return it == storages.end() ? nullptr : &it->second.features;
+}
+
+
 const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const String & storage_name) const
 {
     auto it = storages.find(storage_name);
