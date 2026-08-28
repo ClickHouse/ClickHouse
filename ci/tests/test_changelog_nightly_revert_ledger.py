@@ -158,8 +158,15 @@ def test_revert_of_revert_arrives_after_the_entry_was_deleted(monkeypatch):
     # The cancelled revert no longer licenses the deletion of the fix.
     assert reverts["credits"] == {"114911": "114912"}
     assert reverts["restore"] == {"109946": FIX}
-    assert reverts["missing"] == {"109946": FIX}
-    assert reverts["context"] == {"109946": (["114911"], ["114912"])}
+    assert reverts["missing"] == [
+        {
+            "prs": ["109946"],
+            "siblings": [],
+            "line": FIX,
+            "removed_by": ["114911"],
+            "reapplied_by": ["114912"],
+        }
+    ]
     assert reverts["unresolved"] == []
     # An edit that leaves the entry out is rejected...
     assert not_restored(reverts, changelog([])) == ["109946"]
@@ -219,8 +226,7 @@ def test_branch_without_a_ledger_keeps_the_previous_behaviour(monkeypatch):
     assert reverts == {
         "credits": {},
         "restore": {},
-        "missing": {},
-        "context": {},
+        "missing": [],
         "unresolved": [],
         "ledger": [],
     }
@@ -306,5 +312,177 @@ def test_restoring_uses_the_newest_recorded_bullet(monkeypatch):
         ],
     )
     assert reverts["restore"] == {"109946": reapplied}
-    assert reverts["missing"] == {"109946": reapplied}
+    assert [group["line"] for group in reverts["missing"]] == [reapplied]
     assert reapplied in cl._edit_prompt(VERSION, reverts)
+
+
+MERGED = (
+    "* The default value of `max_insert_threads` changed from `1` to `auto`. "
+    "[#109000](https://github.com/ClickHouse/ClickHouse/pull/109000) "
+    "([Someone](https://github.com/someone)). "
+    "[#109006](https://github.com/ClickHouse/ClickHouse/pull/109006) "
+    "([Someone](https://github.com/someone))."
+)
+SOLO = (
+    "* The default value of `max_insert_threads` changed from `1` to `auto`. "
+    "[#109006](https://github.com/ClickHouse/ClickHouse/pull/109006) "
+    "([Someone](https://github.com/someone))."
+)
+MERGED_TITLE = "The default value of `max_insert_threads`"
+REVERT_OF_MERGED = (
+    "* NO CL ENTRY: 'Revert \"Revert \"%s\"\"'. "
+    "[#115001](https://github.com/ClickHouse/ClickHouse/pull/115001) "
+    "([Someone](https://github.com/someone))." % MERGED_TITLE
+)
+
+
+def test_restoring_into_a_merged_bullet_names_the_surviving_siblings(monkeypatch):
+    """A merge (skill section 7) puts several pull requests on one bullet. When
+    only one of them is reverted, the bullet stays in the file carrying the
+    others, so the restoration has to put the link back into that bullet — the
+    recorded line cannot be pasted as a second bullet."""
+    PULL_REQUESTS["115000"] = {
+        "title": f'Revert "{MERGED_TITLE}"',
+        "body": "Reverts ClickHouse/ClickHouse#109000",
+    }
+    PULL_REQUESTS["115001"] = {
+        "title": f'Revert "Revert "{MERGED_TITLE}""',
+        "body": "Reverts ClickHouse/ClickHouse#115000",
+    }
+    # The bullet #109000 is recorded from is the merged one, siblings included.
+    assert cl.entry_line(changelog([MERGED]), "109000") == MERGED
+
+    reverts = analyze(
+        monkeypatch,
+        changelog([SOLO], [REVERT_OF_MERGED]),
+        [
+            f"Changelog-deleted-entry: 109000 {MERGED}",
+            f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+        ],
+    )
+    assert reverts["restore"] == {"109000": MERGED}
+    assert reverts["missing"] == [
+        {
+            "prs": ["109000"],
+            "siblings": ["109006"],
+            "line": MERGED,
+            "removed_by": ["115000"],
+            "reapplied_by": ["115001"],
+        }
+    ]
+    prompt = cl._edit_prompt(VERSION, reverts)
+    assert "That bullet also carries `#109006`" in prompt
+    assert "do not paste the line above as a second bullet" in prompt
+
+
+def test_a_merged_bullet_is_restored_once_for_all_its_pull_requests(monkeypatch):
+    """When the whole merged bullet was deleted, both of its pull requests are
+    recorded against the same line: that is one entry to bring back, not two."""
+    reverts = analyze(
+        monkeypatch,
+        changelog([], [REVERT_OF_MERGED]),
+        [
+            f"Changelog-deleted-entry: 109000 {MERGED}",
+            f"Changelog-deleted-entry: 109006 {MERGED}",
+            f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+            f'Changelog-revert: 115000 109006 Revert "{MERGED_TITLE}"',
+        ],
+    )
+    assert reverts["missing"] == [
+        {
+            "prs": ["109000", "109006"],
+            "siblings": [],
+            "line": MERGED,
+            "removed_by": ["115000"],
+            "reapplied_by": ["115001"],
+        }
+    ]
+    prompt = cl._edit_prompt(VERSION, reverts)
+    assert prompt.count(MERGED) == 1
+    assert "`#109000`, `#109006`, deleted when `#115000` reverted them" in prompt
+
+
+def test_a_duplicated_attribution_is_rejected():
+    """What `verify_edit` needs on top of "the link is present": pasting the
+    recorded merged bullet back next to the surviving one satisfies that check
+    but attributes `#109006` twice."""
+    before = changelog([SOLO])
+    pasted = changelog([SOLO, MERGED])
+    merged_back = changelog([MERGED])
+    assert cl.duplicate_attributions(before) == set()
+    assert cl.duplicate_attributions(pasted) == {"109006"}
+    assert cl.duplicate_attributions(merged_back) == set()
+    # Both restorations carry the link the earlier check looks for ...
+    assert "/pull/109000)" in pasted and "/pull/109000)" in merged_back
+    # ... only the duplicate-free one is acceptable.
+    assert cl.duplicate_attributions(pasted) - cl.duplicate_attributions(before)
+    assert not (
+        cl.duplicate_attributions(merged_back) - cl.duplicate_attributions(before)
+    )
+
+
+def run_verify_edit(monkeypatch, tmp_path, old_text, new_text, reverts):
+    """`verify_edit` against a working tree of one file, with the git plumbing
+    stubbed out: `base_sha` holds `old_text`, the checkout holds `new_text`."""
+    (tmp_path / cl.CHANGELOG_FILE).write_text(new_text, encoding="utf-8")
+
+    def fake_get_output(command, strict=False, verbose=False, retries=1, delay=2):
+        if command.startswith("git diff --name-only"):
+            return cl.CHANGELOG_FILE
+        assert command.startswith("git show"), command
+        return old_text
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cl.Shell, "get_output", staticmethod(fake_get_output))
+    monkeypatch.setattr(cl, "_sha", lambda ref: "base")
+    monkeypatch.setattr(cl, "_untracked_files", lambda: set())
+    return cl.verify_edit(VERSION, "base", reverts)
+
+
+def test_verify_edit_accepts_only_the_exact_merged_bullet_restoration(
+    monkeypatch, tmp_path
+):
+    """End to end for the merged-bullet path: `#109000` and `#109006` shared a
+    bullet, `#109000` was reverted and dropped from it, and the revert has now
+    been reverted. Leaving `#109000` out is rejected, pasting the recorded
+    bullet next to the surviving one is rejected, merging the link back in
+    passes."""
+    PULL_REQUESTS.setdefault(
+        "115000",
+        {
+            "title": f'Revert "{MERGED_TITLE}"',
+            "body": "Reverts ClickHouse/ClickHouse#109000",
+        },
+    )
+    PULL_REQUESTS.setdefault(
+        "115001",
+        {
+            "title": f'Revert "Revert "{MERGED_TITLE}""',
+            "body": "Reverts ClickHouse/ClickHouse#115000",
+        },
+    )
+    old_text = changelog([SOLO], [REVERT_OF_MERGED])
+    reverts = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 109000 {MERGED}",
+            f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+        ],
+    )
+
+    left_out = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([SOLO]), reverts
+    )
+    assert left_out is not None and "still missing (['109000'])" in left_out
+
+    pasted = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([SOLO, MERGED]), reverts
+    )
+    assert pasted is not None and "attributes pull requests twice" in pasted
+    assert "['109006']" in pasted
+
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([MERGED]), reverts)
+        is None
+    )

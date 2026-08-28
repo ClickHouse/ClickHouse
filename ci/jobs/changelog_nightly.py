@@ -477,6 +477,45 @@ def entry_line(text, pr):
     return fallback
 
 
+def group_restorations(restore, text):
+    """Group the entries to restore by the bullet they were recorded from.
+
+    A merge (skill section 7) puts several pull requests on one bullet, so one
+    recorded line can be the record of more than one of them: it has to be
+    restored once, not once per pull request. `siblings` are the other pull
+    requests attributed on that line which are still in `text` — the bullet
+    is therefore still there, and the restoration has to put the missing links
+    back into it instead of pasting a copy of the line and duplicating them."""
+    groups = {}
+    for pr, line in restore.items():
+        groups.setdefault(line, []).append(pr)
+    out = []
+    for line, prs in groups.items():
+        siblings = set(PR_ATTRIBUTION_RE.findall(line)) - set(prs)
+        out.append(
+            {
+                "prs": sorted(prs, key=int),
+                "siblings": sorted(
+                    (p for p in siblings if f"/pull/{p})" in text), key=int
+                ),
+                "line": line,
+            }
+        )
+    return sorted(out, key=lambda group: int(group["prs"][0]))
+
+
+def duplicate_attributions(text):
+    """Pull requests attributed more than once in `text`. The generator emits
+    one attribution per entry and a merge appends the merged pull requests'
+    links to a single bullet, so a repetition means the same entry was written
+    twice — which is what restoring a merged bullet by pasting the recorded
+    line next to the one that already carries its siblings produces."""
+    counts = {}
+    for pr in PR_ATTRIBUTION_RE.findall(text):
+        counts[pr] = counts.get(pr, 0) + 1
+    return {pr for pr, count in counts.items() if count > 1}
+
+
 def analyze_reverts(text):
     """Everything the editing step needs to know about reverts, resolved
     against the branch's ledger so that a chain spread over several nightly
@@ -488,10 +527,11 @@ def analyze_reverts(text):
     `restore`    - pull request -> the bullet an earlier run deleted whose
                    revert has since been reverted, so the change ships after
                    all and the entry has to be in the file;
-    `missing`    - the subset of `restore` that is not in `text` yet, i.e. the
-                   work the editing agent has to do;
-    `context`    - pull request -> (the reverts that removed it, the reverts
-                   that re-applied it), to explain `missing` in the prompt;
+    `missing`    - the work the editing agent has to do: the part of `restore`
+                   that is not in `text` yet, grouped by the bullet it was
+                   recorded from (one merged bullet covers several pull
+                   requests) and annotated with the reverts that removed and
+                   re-applied it;
     `unresolved` - the reverts of this raw block whose target stayed unknown;
     `ledger`     - the trailer lines to record on the edit commit.
     """
@@ -513,30 +553,36 @@ def analyze_reverts(text):
     # current raw blocks (they hold only the newest revert) could tell the
     # agent that, which is why the ledger keeps the text.
     restore = {pr: line for pr, line in deleted.items() if pr not in credits}
-    context = {
-        pr: (
-            sorted(reverted_by.get(pr, ()), key=int),
-            sorted(
-                {
-                    reapply
-                    for remover in reverted_by.get(pr, ())
-                    for reapply in reverted_by.get(remover, ())
-                    if reapply not in cancelled
-                },
-                key=int,
-            ),
+
+    def removed_by(prs):
+        return sorted({r for pr in prs for r in reverted_by.get(pr, ())}, key=int)
+
+    def reapplied_by(prs):
+        return sorted(
+            {
+                reapply
+                for remover in removed_by(prs)
+                for reapply in reverted_by.get(remover, ())
+                if reapply not in cancelled
+            },
+            key=int,
         )
-        for pr in restore
-    }
-    return {
-        "credits": credits,
-        "restore": restore,
-        "missing": {
+
+    missing = group_restorations(
+        {
             pr: line
             for pr, line in restore.items()
             if f"/pull/{pr})" not in text
         },
-        "context": context,
+        text,
+    )
+    for group in missing:
+        group["removed_by"] = removed_by(group["prs"])
+        group["reapplied_by"] = reapplied_by(group["prs"])
+    return {
+        "credits": credits,
+        "restore": restore,
+        "missing": missing,
         "unresolved": unresolved,
         "ledger": [
             f"{REVERT_TRAILER} {pr} {target} {titles[pr]}".rstrip()
@@ -773,15 +819,25 @@ def _edit_prompt(version, reverts, previous_error=None):
     restore = ""
     if reverts["missing"]:
         entries = "\n".join(
-            f"   - `#{pr}`, deleted when {_pr_list(reverts['context'][pr][0])} "
-            f"reverted it, re-applied by {_pr_list(reverts['context'][pr][1])}. "
-            f"Its bullet when it was deleted:\n     {line}"
-            for pr, line in sorted(
-                reverts["missing"].items(), key=lambda kv: int(kv[0])
+            f"   - {_pr_list(group['prs'])}, deleted when "
+            f"{_pr_list(group['removed_by'])} reverted "
+            f"{'them' if len(group['prs']) > 1 else 'it'}, re-applied by "
+            f"{_pr_list(group['reapplied_by'])}. The bullet when it was "
+            f"deleted:\n     {group['line']}"
+            + (
+                f"\n     That bullet also carries {_pr_list(group['siblings'])}, "
+                f"which {'are' if len(group['siblings']) > 1 else 'is'} still in "
+                f"{CHANGELOG_FILE}: the bullet is therefore still there, so put "
+                f"the missing link back into it — do not paste the line above as "
+                f"a second bullet, and do not repeat "
+                f"{_pr_list(group['siblings'])}."
+                if group["siblings"]
+                else ""
             )
+            for group in reverts["missing"]
         )
         restore = f"""
-Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each of them back into the in-progress section, with the link of the pull request that re-applied it appended, and do not add a bullet for the reverts themselves. The bullet does not say which category it came from: use the `Changelog category` of its own pull request (`gh pr view <N> --json body`).
+Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section — once, even where it covers several pull requests — with the link of the pull request that re-applied it appended, and do not add a bullet for the reverts themselves. The bullet does not say which category it came from: use the `Changelog category` of its own pull request (`gh pr view <N> --json body`). No pull request may end up attributed twice in the section.
 {entries}
 """
     retry = ""
@@ -870,7 +926,8 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     if not extract_toc_line(text, version):
         return f"Table-of-contents line for {version} is missing after edit"
     old_text = Shell.get_output(f"git show {base_sha}:{CHANGELOG_FILE}", strict=True)
-    if extract_in_progress_section(text, anchor) is None:
+    section = extract_in_progress_section(text, anchor)
+    if section is None:
         return "In-progress section disappeared after edit"
     # Entries must survive the edit: previously accumulated entries (the
     # skill only deletes one when a revert cancels it, section 2; merges keep
@@ -906,6 +963,21 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
             f"Entries deleted by an earlier run for a revert that was itself "
             f"reverted are still missing ({not_restored}); those changes ship "
             f"in this release, so their entries have to be restored"
+        )
+    # A restored bullet may have been a merged one (skill section 7), carrying
+    # pull requests that were never deleted and are still in the section.
+    # Pasting the recorded line back wholesale duplicates them, and the check
+    # above cannot see it - the link it looks for is present either way.
+    # Duplicates that predate the edit are none of this run's business.
+    duplicated = sorted(
+        duplicate_attributions(section)
+        - duplicate_attributions(extract_in_progress_section(old_text, anchor) or "")
+    )
+    if duplicated:
+        return (
+            f"The edit attributes pull requests twice in the in-progress "
+            f"section ({duplicated}); an entry was written a second time "
+            f"instead of being merged into the bullet that already carries it"
         )
     _, old_tail = split_at_first_released_section(old_text, anchor)
     _, new_tail = split_at_first_released_section(text, anchor)
