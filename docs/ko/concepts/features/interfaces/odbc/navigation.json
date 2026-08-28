@@ -1,5 +1,5 @@
 {
-  "group": "ODBC 드라이버",
+  "group": "ODBC driver",
   "pages": [
     "ko/concepts/features/interfaces/odbc/index"
   ]

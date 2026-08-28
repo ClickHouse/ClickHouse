@@ -1511,7 +1511,7 @@ ClickHouse 可以使用内部帧格式压缩 `Native` stream 中的列数据。�
 <img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="压缩帧字段和压缩大小边界" width="1568" height="206" loading="lazy" />
 
 <div id="method-byte-values">
-  ### 方法字节值
+  ### method 字节值
 </div>
 
 这三种编解码器是服务器在整个流的 `Native` 分帧中使用的：HTTP `compress=1` 输出始终使用 `LZ4`，而原生 TCP 协议则根据 `network_compression_method` 使用 `LZ4`、`ZSTD` 或 `NONE`。通用的 `Native` client 只需要生成和处理这几种编解码器。
@@ -1522,7 +1522,7 @@ ClickHouse 可以使用内部帧格式压缩 `Native` stream 中的列数据。�
 | `0x82` | LZ4  | 主体采用 **LZ4 块格式**——*不是* LZ4 frame format。没有 magic number。 |
 | `0x90` | ZSTD | 主体是原始的 zstd 单帧 stream (标准 zstd magic number 是主体的一部分) 。   |
 
-方法字节还会编码 [column-level codecs](/zh/reference/statements/create/table/codec)。这些编解码器是按列应用在 MergeTree 的 磁盘路径上，而不是用于整个流的分帧；但 `decompress=1` 的 HTTP 输入路径会从每个帧的方法字节中读取编解码器，因此这些字节都可能合法地出现在输入中。因此，符合规范的 解码器 必须识别整个已分配的取值空间，并在遇到尚未实现的字节时拒绝处理，而不是误读主体。它们的主体内容取决于具体编解码器，不属于这个通用帧约定的范围：
+method 字节还会编码 [column-level codecs](/zh/reference/statements/create/table/codec)。这些编解码器是按列应用在 MergeTree 的 磁盘路径上，而不是用于整个流的分帧；但 `decompress=1` 的 HTTP 输入路径会从每个帧的method 字节中读取编解码器，因此这些字节都可能合法地出现在输入中。因此，符合规范的 解码器 必须识别整个已分配的取值空间，并在遇到尚未实现的字节时拒绝处理，而不是误读主体。它们的主体内容取决于具体编解码器，不属于这个通用帧约定的范围：
 
 | 字节     | 方法                              |
 | ------ | ------------------------------- |
@@ -1540,9 +1540,9 @@ ClickHouse 可以使用内部帧格式压缩 `Native` stream 中的列数据。�
 | `0x9e` | `Quantized`                     |
 | `0x9f` | `ZXC`                           |
 
-`0x9c` (`ALP`) 是一种用于 `Float32` 和 `Float64` 的 **Experimental** 无损编解码器 (自适应无损浮点压缩) 。只有在设置了 `enable_alp_codec` 设置时，才能使用 `CODEC(ALP)` 创建表；但在解压时始终接受该方法字节，以确保之前写入的数据仍然可读。`0x9d` (`SZ3`) 是一种 **Experimental** 的、有误差边界的*有损*编解码器，用于 `Float32`、`Float64` 以及这些类型的 `Array`。只有在设置了 `enable_sz3_codec` 设置时，才能使用 `CODEC(SZ3)` 创建表；但在解压时始终接受该方法字节，以确保之前写入的数据仍然可读。`0x9f` (`ZXC`) 是一种 **Experimental** 的非对称 LZ 编解码器：压缩较慢，但解压非常快，压缩比介于 `LZ4` 和 `ZSTD` 之间。只有在设置了 `enable_zxc_codec` 设置时，才能使用 `CODEC(ZXC)` 创建表；但在解压时始终接受该方法字节，以确保之前写入的数据仍然可读。字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器；它们现已保留，不会复用。
+`0x9c` (`ALP`) 是一种用于 `Float32` 和 `Float64` 的 **beta** 无损编解码器 (自适应无损浮点压缩) 。只有在设置了 `enable_alp_codec` 设置时，才能使用 `CODEC(ALP)` 创建表；但在解压时始终接受该method 字节，以确保之前写入的数据仍然可读。`0x9d` (`SZ3`) 是一种 **Experimental** 的、有误差边界的*有损*编解码器，用于 `Float32`、`Float64` 以及这些类型的 `Array`。只有在设置了 `enable_sz3_codec` 设置时，才能使用 `CODEC(SZ3)` 创建表；但在解压时始终接受该method 字节，以确保之前写入的数据仍然可读。`0x9f` (`ZXC`) 是一种 **Experimental** 的非对称 LZ 编解码器：压缩较慢，但解压非常快，压缩比介于 `LZ4` 和 `ZSTD` 之间。只有在设置了 `enable_zxc_codec` 设置时，才能使用 `CODEC(ZXC)` 创建表；但在解压时始终接受该method 字节，以确保之前写入的数据仍然可读。字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器；它们现已保留，不会复用。
 
-`0x9e` (`Quantized`) 是一种用于稠密向量列 (`Array(Float32)` 及类似类型) 的 **Experimental** 列编解码器。和 `NONE` 一样，它是直通的——全精度主体会原样存储——但它的存在会附加一种 serialization，用于写入一个紧凑的量化伴随 stream，以加速向量搜索。只有在设置了 `enable_quantized_codec` 设置时，才能使用 `CODEC(Quantized(...))` 创建表，并且在解压时始终接受该方法字节。
+`0x9e` (`Quantized`) 是一种用于稠密向量列 (`Array(Float32)` 及类似类型) 的 **Experimental** 列编解码器。和 `NONE` 一样，它是直通的——全精度主体会原样存储——但它的存在会附加一种 serialization，用于写入一个紧凑的量化伴随 stream，以加速向量搜索。只有在设置了 `enable_quantized_codec` 设置时，才能使用 `CODEC(Quantized(...))` 创建表，并且在解压时始终接受该method 字节。
 
 <div id="checksum">
   ### 校验和
