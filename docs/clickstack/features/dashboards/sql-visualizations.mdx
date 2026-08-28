@@ -23,7 +23,7 @@ From there:
 
 1. Select a **ClickHouse connection** to run the query against.
 2. Optionally select a **Source** — this enables dashboard-level filters to be applied to your chart via the `$__filters` macro.
-3. Write your SQL query in the editor, using query parameters and macros to integrate with the dashboard time range and filters.
+3. Write your SQL query in the editor, using query parameters and macros to integrate with the dashboard time range, filters, and variables.
 4. Click the **play** button to preview results, then **Save**.
 
 ## Query parameters {#query-parameters}
@@ -108,6 +108,20 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 When a **Source** is selected on the chart and dashboard filters are active, `$__filters` expands to the corresponding SQL `WHERE` conditions. When no source is selected or no filters are applied, it expands to `(1=1)`, so it is always safe to include in a `WHERE` clause.
 
+Only filters with **Broadcast filter condition** enabled are applied by `$__filters`. Filters exposed as variables are referenced explicitly, as described below.
+
+### Dashboard variable macros {#dashboard-variables}
+
+When a dashboard filter is [available as a variable](/clickstack/features/dashboards/overview#dashboard-variables), its selected values can be referenced anywhere in the query. These macros are only available on tiles belonging to a dashboard that declares at least one variable.
+
+| Macro                                          | Description                                                                                                              |
+|------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `$__filter($<variable>)`                        | Expands to `toString(<filter expression>) IN ($variable)` when values are selected for `variable`, and `1=1` otherwise.  |
+| `$__filter(<expression>, $<variable>)`          | Expands to `<expression> IN ($variable)` when values are selected for `variable`, and `1=1` otherwise.                   |
+| `$__conditionalAll(<condition>, $<variable>)`   | Expands to `<condition>` when the variable has a selection, `1=1` otherwise.                                             |
+
+A variable's values can also be interpolated directly as `$name` or `${name}`, with an optional format — `${name:sqlstring}` (the default), `${name:csv}`, or `${name:regex}`. In the default format a direct reference renders as `NULL` before anything is selected, so prefer the macros above wherever a predicate is expected.
+
 ## How query results are plotted {#how-results-are-plotted}
 
 ClickStack automatically maps result columns to chart elements based on column types. The mapping rules differ by chart type.
@@ -182,6 +196,22 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
+### Line chart — using dashboard variables {#example-line-chart-variables}
+
+Given a dashboard with a `service` variable on `ServiceName` and a `severity` variable on `SeverityText`, this query scopes the chart to the current service selection and excludes the selected severities. Both macros expand to `1=1` while their variable has no selection, so the chart renders unfiltered until the viewer picks a value.
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
 ### Stacked bar chart — error count by severity {#example-stacked-bar}
 
 ```sql
@@ -246,3 +276,5 @@ The single numeric value `total_errors` from the first row is displayed.
 - SQL-based visualizations must be exactly one SQL query - multiple queries are not supported.
 - The SQL editor provides autocomplete suggestions for both query parameters and macros.
 - A source must be selected to apply dashboard filters to SQL-based visualizations. The source should match the table being queried, for accurate filtering.
+- Dashboard variables need no source — the values come from the dashboard's filter dropdowns, not from the tile's own source.
+- Alerts on a SQL tile that references a dashboard variable evaluate with every variable in its empty state, not the values selected on the dashboard.
