@@ -30,6 +30,11 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (dag.hasStatefulFunctions())
         return 0;
 
+    /// A query-scope non-deterministic function (rand, ...) is computed once and replicated before the join;
+    /// lowering would move it into the post-join filter/expression and evaluate it per expanded row.
+    if (dag.hasNonDeterministic())
+        return 0;
+
     auto extracted = dag.extractFirstArrayJoin();
     if (!extracted)
         return 0;
