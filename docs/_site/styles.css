@@ -217,17 +217,26 @@ body[data-scroll-locked] {
 .ch-agent-prompt-prompt-area {
     flex: 1 1 auto;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: auto;
     padding: 6px 10px;
     border: 1px solid var(--agent-prompt-border);
     border-radius: 6px;
     background: var(--agent-prompt-bg);
+    scrollbar-width: thin;
+}
+
+.ch-agent-prompt-prompt-area::-webkit-scrollbar {
+    height: 6px;
+}
+
+.ch-agent-prompt-prompt-area::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: #FCFF74;
 }
 
 .prose .ch-agent-prompt-prompt-text,
 .ch-agent-prompt-prompt-text {
     display: block;
-    overflow-x: auto;
     padding: 0;
     border: 0;
     background: transparent;
@@ -235,25 +244,12 @@ body[data-scroll-locked] {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size: 0.8125rem;
     white-space: nowrap;
-    scrollbar-width: thin;
-}
-
-.ch-agent-prompt-prompt-text::-webkit-scrollbar {
-    height: 6px;
-}
-
-.ch-agent-prompt-prompt-text::-webkit-scrollbar-thumb {
-    border-radius: 3px;
-    background: #FCFF74;
 }
 
 .ch-agent-prompt-copy-button {
-    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
     gap: 6px;
-    min-width: 8.25rem;
     padding: 7px 12px;
     border: 1px solid var(--agent-accent);
     border-radius: 6px;
@@ -262,29 +258,7 @@ body[data-scroll-locked] {
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 600;
-    white-space: nowrap;
     transition: background-color 120ms ease, transform 80ms ease;
-}
-
-.ch-agent-prompt-copy-label {
-    display: grid;
-    justify-items: center;
-}
-
-.ch-agent-prompt-copy-label span {
-    grid-area: 1 / 1;
-}
-
-.ch-agent-prompt-copy-label span:last-child {
-    visibility: hidden;
-}
-
-.ch-agent-prompt-copy-button.is-copied .ch-agent-prompt-copy-label span:first-child {
-    visibility: hidden;
-}
-
-.ch-agent-prompt-copy-button.is-copied .ch-agent-prompt-copy-label span:last-child {
-    visibility: visible;
 }
 
 .ch-agent-prompt-copy-button:hover {
@@ -304,23 +278,18 @@ body[data-scroll-locked] {
 .ch-agent-prompt-sub-row {
     display: flex;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     padding-left: 2px;
-    padding-right: 2px;
     font-size: 0.8125rem;
     line-height: 1.4;
 }
 
 .ch-agent-prompt-description {
-    flex: 1 1 auto;
-    min-width: 0;
     color: var(--agent-text-muted);
 }
 
 .prose a.ch-agent-prompt-repository-link,
 .ch-agent-prompt-repository-link {
-    flex-shrink: 0;
     color: #135BE6 !important;
     font-weight: 600;
 }
