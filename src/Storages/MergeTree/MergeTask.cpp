@@ -512,6 +512,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
         for (const auto & where_ttl : global_ctx->metadata_snapshot->getRowsWhereTTLs())
             add_ttl_expression_columns(where_ttl);
+
+        /// The TTL step also rebuilds MOVE / RECOMPRESS infos on this same stream, so their
+        /// expression inputs must survive into the horizontal phase too.
+        for (const auto & move_ttl : global_ctx->metadata_snapshot->getMoveTTLs())
+            add_ttl_expression_columns(move_ttl);
+
+        for (const auto & recompression_ttl : global_ctx->metadata_snapshot->getRecompressionTTLs())
+            add_ttl_expression_columns(recompression_ttl);
     }
 
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
@@ -980,10 +988,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
+    /// Pre-patch recompression infos must not pick the output codec (a patch can move the TTL
+    /// either way); the recalculated infos let a later recompression merge apply it instead.
+    IMergeTreeDataPart::TTLInfos codec_ttl_infos;
+    if (!ctx->recalculate_ttl_for_patches)
+        codec_ttl_infos = global_ctx->new_data_part->ttl_infos;
     auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->metadata_snapshot,
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        global_ctx->new_data_part->ttl_infos,
+        codec_ttl_infos,
         global_ctx->time_of_merge);
     global_ctx->compression_codec = std::move(part_compression_codec.codec);
     global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
