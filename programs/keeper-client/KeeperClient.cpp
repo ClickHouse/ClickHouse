@@ -802,7 +802,7 @@ void KeeperClient::connectToKeeper()
             /// for the lifetime of the process - which for invalidCertificateHandler.name would
             /// mean relaxed certificate handling outliving its removal by the operator.
             config().remove("openSSL");
-            
+
             copyConfigSubtree(*clickhouse_config.configuration, config(), "openSSL");
 
             if (config().has("tls-key-file"))
