@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
