@@ -83,13 +83,13 @@
 
     <fill_query>
         INSERT INTO json_subcolumn_serialization_cache
-        SELECT number, toJSONString(map('p511', number))
+        SELECT number, toJSONString(map('p510', number, 'p511', number))
         FROM numbers(96)
         SETTINGS max_partitions_per_insert_block = 96
     </fill_query>
 
     <!-- The declared typed path avoids dynamic-path type resolution and isolates serialization lookup. -->
-    <query>SELECT json.p511 FROM json_subcolumn_serialization_cache FORMAT Null</query>
+    <query>SELECT json.p510, json.p511 FROM json_subcolumn_serialization_cache FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS json_subcolumn_serialization_cache</drop_query>
 </test>
