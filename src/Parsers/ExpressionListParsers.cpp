@@ -184,51 +184,9 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
         else
             function->name = "in";
 
-        if (type == SubqueryFunctionType::ANY && function_equals)
+        if ((type == SubqueryFunctionType::ANY && function_equals)
+            || (type == SubqueryFunctionType::ALL && function_not_equals))
         {
-            return true;
-        }
-
-        if (type == SubqueryFunctionType::ALL && function_not_equals)
-        {
-            /// `x != ALL (empty set)` must be TRUE even when `x` is NULL, whereas `NULL NOT IN (empty set)`
-            /// is NULL with `transform_null_in = 0`. Keep the `NOT IN` rewrite for non-empty sets and add an
-            /// explicit empty-set guard.
-            auto subquery_node = function->children[0]->children[1]->clone();
-            auto table_expression = make_intrusive<ASTTableExpression>();
-            table_expression->subquery = std::move(subquery_node);
-            table_expression->children.push_back(table_expression->subquery);
-
-            auto tables_in_select_element = make_intrusive<ASTTablesInSelectQueryElement>();
-            tables_in_select_element->table_expression = std::move(table_expression);
-            tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
-
-            auto tables_in_select = make_intrusive<ASTTablesInSelectQuery>();
-            tables_in_select->children.push_back(std::move(tables_in_select_element));
-
-            auto select_exp_list = make_intrusive<ASTExpressionList>();
-            select_exp_list->children.push_back(makeASTFunction("count", make_intrusive<ASTAsterisk>()));
-
-            auto select_query = make_intrusive<ASTSelectQuery>();
-            select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
-            select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
-
-            auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-            select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
-            select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
-            select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
-
-            auto is_empty = makeASTFunction("equals",
-                make_intrusive<ASTSubquery>(std::move(select_with_union_query)),
-                make_intrusive<ASTLiteral>(UInt64{0}));
-
-            /// Mutate ast in place to become: or(is_empty, x NOT IN subquery)
-            auto comparison = ast->clone();
-            auto * or_node = assert_cast<ASTFunction *>(ast.get());
-            or_node->name = "or";
-            or_node->arguments = make_intrusive<ASTExpressionList>();
-            or_node->arguments->children = {std::move(is_empty), std::move(comparison)};
-            or_node->children = {or_node->arguments};
             return true;
         }
 
