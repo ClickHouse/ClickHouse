@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 # Accepts an explicit STATISTICS clause on a column that is not physically stored, so it can create
 # the state the current version refuses. Tables carrying it must stay usable after an upgrade.
@@ -20,7 +21,7 @@ node = cluster.add_instance(
 _ILLEGAL_STATISTICS = "ILLEGAL_STATISTICS"
 _ZK_PATH = "/clickhouse/databases/rdb_stats"
 
-# One table per ALTER case: each case consumes the grandfathered state, and the current version
+# One table per ALTER case: a case can consume the grandfathered state, and the current version
 # cannot recreate it, so the cases cannot share a table.
 _ALTER_TABLES = [
     "t_clear",
@@ -28,6 +29,7 @@ _ALTER_TABLES = [
     "t_rename_plain",
     "t_drop_readd",
     "t_drop_then_rename",
+    "t_materialize",
 ]
 
 
@@ -192,6 +194,45 @@ def test_alter_refuses_state_it_produces_itself(upgraded):
     )
     # The refusal left the table as it was.
     _assert_grandfathered("t_drop_readd")
+
+
+def test_materialize_statistics_leaves_no_unfinished_mutation(upgraded):
+    """`MATERIALIZE STATISTICS` over a legacy definition must not queue work it can never do.
+
+    Statistics of a column that is not stored cannot be built from any part, so a mutation queued
+    for one has nothing to retry against and stays in `system.mutations` for good.
+    """
+    pending = (
+        "SELECT count() FROM system.mutations "
+        "WHERE database = currentDatabase() AND table = 't_materialize' AND NOT is_done"
+    )
+
+    # `ALL` passes over the column that is not stored instead of refusing, so it is queued and
+    # finishes. Assert an entry exists as well as that none is pending, otherwise a command that was
+    # never queued at all would read the same.
+    node.query(
+        "ALTER TABLE t_materialize MATERIALIZE STATISTICS ALL",
+        settings={"mutations_sync": 2},
+    )
+    assert (
+        node.query(
+            "SELECT count() > 0, countIf(NOT is_done) FROM system.mutations "
+            "WHERE database = currentDatabase() AND table = 't_materialize'"
+        ).strip()
+        == "1\t0"
+    )
+
+    # Naming the column explicitly is refused before any mutation is queued today, and becomes a
+    # logged no-op once that synchronous check is removed (#115769), so both are accepted. It is
+    # left asynchronous so a failure surfaces as an unfinished mutation, not as an error string.
+    _, error = node.query_and_get_answer_with_error(
+        "ALTER TABLE t_materialize MATERIALIZE STATISTICS b"
+    )
+    if error:
+        assert _ILLEGAL_STATISTICS in error, error
+    assert_eq_with_retry(node, pending, "0", retry_count=60, sleep_time=1)
+
+    _assert_grandfathered("t_materialize")
 
 
 def test_replicated_database_recovery_accepts_stored_definition(upgraded):
