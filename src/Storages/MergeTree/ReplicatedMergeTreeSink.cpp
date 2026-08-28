@@ -635,6 +635,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     /// A part adopted from detached/ may have been merged under other semantics, so a non-zero
     /// level would wrongly mark its ORDER BY keys as collapsed and let FINAL skip collapsing them.
     part->info.level = 0;
+    part->info.use_legacy_max_level = false;
     part->info.mutation = 0;
     part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
     std::vector<DeduplicationHash> deduplication_hashes;

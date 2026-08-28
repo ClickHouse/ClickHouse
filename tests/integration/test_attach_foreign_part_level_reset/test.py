@@ -99,7 +99,6 @@ def test_attach_foreign_part_resets_level(
     part = active_part("src")
     assert int(active_part("src", "level")) > 0, f"{part} is not a merged part"
     assert one_row("SELECT count() FROM src") == str(SOURCE_ROWS)
-    source_files_hash = active_part("src", "hash_of_all_files")
 
     node.query(
         f"CREATE TABLE dst (a UInt32{extra_columns}) ENGINE = {engine} ORDER BY a"
@@ -119,8 +118,32 @@ def test_attach_foreign_part_resets_level(
 
     assert active_part("dst", "level") == "0"
     assert one_row("SELECT count() FROM dst FINAL") == str(DISTINCT_KEYS)
-    # Attaching the hard-linked copy must not have rewritten the still-live source part.
-    assert active_part("src", "hash_of_all_files") == source_files_hash
+    # Attaching the hard-linked copy must not have rewritten the still-live source part. CHECK TABLE
+    # reads src's files off disk and compares them with its recorded checksums. hash_of_all_files is
+    # computed from the in-memory checksums, which are not reloaded here, so it cannot observe this.
+    assert active_part("src") == part
+    assert (
+        one_row("CHECK TABLE src SETTINGS check_query_single_value_result = 1") == "1"
+    )
+
+    # A level field of 4294967295 is the legacy spelling of MAX_LEVEL: it parses to MAX_LEVEL and the
+    # spelling is remembered so that the name round-trips. Forcing the level therefore has to clear
+    # that too, or the name is written back with the legacy value and parses as collapsed again.
+    prefix, level_field = part.rsplit("_", 1)
+    assert part.count("_") == 3 and level_field.isdigit(), part
+    legacy_part = f"{prefix}_4294967295"
+    exec_in_container(
+        f"cp -rl {active_part('src', 'path').rstrip('/')} {dst_path}detached/{legacy_part}"
+    )
+    node.query(f"ALTER TABLE dst ATTACH PART '{legacy_part}'")
+    assert (
+        one_row(
+            "SELECT count() FROM system.parts WHERE database = 'default' AND table = 'dst'"
+            " AND active AND (level != 0 OR name LIKE '%4294967295')"
+        )
+        == "0"
+    )
+    assert one_row("SELECT count() FROM dst FINAL") == str(DISTINCT_KEYS)
 
     node.query("SYSTEM START MERGES dst")
     node.query("OPTIMIZE TABLE dst FINAL")

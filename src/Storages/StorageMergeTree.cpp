@@ -3609,7 +3609,11 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
         {
             auto lock = lockParts();
             if (reset_level)
+            {
                 part->info.level = 0;
+                /// The legacy spelling of the level is only meaningful together with MAX_LEVEL.
+                part->info.use_legacy_max_level = false;
+            }
             /// Mutation versions are numbered per table, so a carried-over one would name a version this table never reached.
             part->info.mutation = 0;
             auto block_holder = fillNewPartName(part, lock);
@@ -3766,6 +3770,7 @@ std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAnd
     /// A part adopted from detached/ may have been merged under other semantics, so a non-zero
     /// level would wrongly mark its ORDER BY keys as collapsed and let FINAL skip collapsing them.
     part->info.level = 0;
+    part->info.use_legacy_max_level = false;
     part->setName(part->getNewName(part->info));
 
     return block_holder;
