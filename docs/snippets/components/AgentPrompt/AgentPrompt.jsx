@@ -49,7 +49,7 @@ export const AgentPrompt = ({
         </div>
         <button
           type="button"
-          className="ch-agent-prompt-copy-button"
+          className={`ch-agent-prompt-copy-button${copied ? " is-copied" : ""}`}
           onClick={handleCopy}
           aria-label={copied ? "Copied" : "Copy prompt"}
         >
@@ -83,7 +83,10 @@ export const AgentPrompt = ({
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
             </svg>
           )}
-          <span>{copied ? "Copied" : "Copy Prompt"}</span>
+          <span className="ch-agent-prompt-copy-label">
+            <span>Copy Prompt</span>
+            <span>Copied</span>
+          </span>
         </button>
       </div>
       {(description || repositoryUrl) && (
