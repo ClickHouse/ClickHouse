@@ -429,6 +429,17 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         return nullptr;
     }
 
+    /// Iceberg requires one partition value per field of the spec the manifest was written with.
+    /// This holds whether or not any of those fields ended up in the partition key.
+    if (parsed_entry->partition_key_value.size() != partition_spec_fields_count)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg manifest partition tuple for file '{}' has {} values but the manifest's partition "
+            "spec defines {} fields",
+            parsed_entry->file_path_key,
+            parsed_entry->partition_key_value.size(),
+            partition_spec_fields_count);
+
     /// Compute inherited/resolved fields
 
     Int64 resolved_snapshot_id = 0;

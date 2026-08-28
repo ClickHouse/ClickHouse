@@ -98,10 +98,6 @@ public:
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
-    /// Number of fields in the partition spec this manifest was written with. The partition key
-    /// can be narrower: a field whose source column or transform cannot be modelled is left out
-    /// of it, while every manifest entry still carries one partition value per spec field.
-    size_t getPartitionSpecFieldsCount() const { return partition_spec_fields_count; }
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
     std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;

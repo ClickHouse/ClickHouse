@@ -3,8 +3,8 @@
 201
 --- A1 manifest tuple longer than the spec ---
 ICEBERG_SPECIFICATION_VIOLATION
-5
-201
+ICEBERG_SPECIFICATION_VIOLATION
+ICEBERG_SPECIFICATION_VIOLATION
 --- A2 manifest tuple shorter than the spec ---
 ICEBERG_SPECIFICATION_VIOLATION
 --- A3 partition key narrower than the tuple is not a violation ---

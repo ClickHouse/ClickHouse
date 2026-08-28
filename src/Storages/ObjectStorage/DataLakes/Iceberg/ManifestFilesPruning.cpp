@@ -6,7 +6,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Common/logger_useful.h>
@@ -116,8 +115,6 @@ ManifestFilesPruner::ManifestFilesPruner(
         return;
     }
 
-    partition_spec_fields_count = manifest_file.getPartitionSpecFieldsCount();
-
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
     transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
@@ -194,17 +191,6 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
     const auto & partition_value = entry->parsed_entry->partition_key_value;
-
-    /// Iceberg requires one partition value per field of the spec the manifest was written with.
-    /// This holds whether or not any of those fields ended up in the partition key.
-    if (partition_spec_fields_count.has_value() && partition_value.size() != *partition_spec_fields_count)
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg manifest partition tuple for data file '{}' has {} values but the manifest's "
-            "partition spec defines {} fields",
-            entry->parsed_entry->file_path_key,
-            partition_value.size(),
-            *partition_spec_fields_count);
 
     if (partition_key_condition.has_value())
     {
