@@ -18,6 +18,10 @@
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SSLManager.h>
+#include <Common/SipHash.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <map>
 #endif
 
 #include <algorithm>
@@ -91,22 +95,79 @@ String stripSecureScheme(const String & host)
 }
 
 #if USE_SSL
-/// Copy a subtree of `from` into `to`, preserving full key paths.
-void copyConfigSubtree(
-    const Poco::Util::AbstractConfiguration & from,
-    Poco::Util::AbstractConfiguration & to,
-    const String & path)
+/// Walk `path` and its descendants in `from`, invoking `callback(full_key, value)` for each leaf.
+template <typename F>
+void forEachConfigLeaf(const Poco::Util::AbstractConfiguration & from, const String & path, F && callback)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     from.keys(path, keys);
     if (keys.empty())
     {
         if (from.has(path))
-            to.setString(path, from.getString(path));
+            callback(path, from.getString(path));
         return;
     }
     for (const auto & key : keys)
-        copyConfigSubtree(from, to, path + "." + key);
+        forEachConfigLeaf(from, path + "." + key, callback);
+}
+
+/// Copy a subtree of `from` into `to`, preserving full key paths.
+void copyConfigSubtree(
+    const Poco::Util::AbstractConfiguration & from,
+    Poco::Util::AbstractConfiguration & to,
+    const String & path)
+{
+    forEachConfigLeaf(from, path, [&](const String & key, const String & value) { to.setString(key, value); });
+}
+
+/// Fingerprint the TLS material SSLManager will use: every openSSL.client setting plus the
+/// contents of the key, certificate and CA files. Contents rather than timestamps, because
+/// rotation tooling commonly rewrites files atomically and mtime granularity can hide an update.
+UInt128 fingerprintTLSMaterial(const Poco::Util::AbstractConfiguration & config)
+{
+    SipHash hash;
+
+    /// Sorted, so an unchanged configuration always produces the same fingerprint
+    /// regardless of the order keys() returns.
+    std::map<String, String> settings;
+    forEachConfigLeaf(config, "openSSL.client",
+        [&](const String & key, const String & value) { settings.emplace(key, value); });
+
+    for (const auto & [key, value] : settings)
+    {
+        hash.update(key);
+        hash.update('\0');
+        hash.update(value);
+        hash.update('\0');
+    }
+
+    for (const auto * key : {"openSSL.client.privateKeyFile",
+                             "openSSL.client.certificateFile",
+                             "openSSL.client.caConfig"})
+    {
+        String path = config.getString(key, "");
+        std::error_code ec;
+        /// caConfig may name a directory of hashed CA files; only regular files are hashed.
+        if (path.empty() || !fs::is_regular_file(path, ec))
+            continue;
+
+        try
+        {
+            ReadBufferFromFile in(path);
+            String contents;
+            readStringUntilEOF(contents, in);
+            hash.update(contents);
+        }
+        catch (...)
+        {
+            /// Unreadable now; mark it so that becoming readable later counts as a change
+            /// and SSLManager gets a chance to report the real error.
+            hash.update('\x01');
+        }
+        hash.update('\0');
+    }
+
+    return hash.get128();
 }
 #endif
 
@@ -721,7 +782,6 @@ void KeeperClient::connectToKeeper()
     }
 
 #if USE_SSL
-    if (!ssl_context_initialized)
     {
         /// Also treat hosts that already carry the `secure://` scheme as requesting a secure
         /// connection, e.g. `--host secure://node1` without a separate `--secure` flag.
@@ -759,10 +819,23 @@ void KeeperClient::connectToKeeper()
             if (!config().has("openSSL.client.loadDefaultCAFile"))
                 config().setString("openSSL.client.loadDefaultCAFile", "true");
 
-            /// Force initialization here so configuration errors surface now rather than on the
-            /// first handshake, and so an unknown handler name fails fast.
-            Poco::Net::SSLManager::instance().defaultClientContext();
-            ssl_context_initialized = true;
+            /// connectToKeeper() reloads config.xml on every reconnect, so the TLS material may
+            /// have changed since the context was built - renewed certificates, edited settings.
+            /// Rebuild when it has, and only when it has: an unconditional rebuild would re-run
+            /// the passphrase handler on every reconnect, and the default KeyConsoleHandler reads
+            /// from stdin, which in tests-mode is the command stream.
+            UInt128 fingerprint = fingerprintTLSMaterial(config());
+            if (ssl_material_fingerprint != fingerprint)
+            {
+                /// Drop the cached context and the handler subscriptions so the next
+                /// defaultClientContext() re-runs initDefaultContext(false). Sockets that are
+                /// already open keep their own refcounted Context and are unaffected.
+                if (ssl_material_fingerprint)
+                    Poco::Net::SSLManager::instance().shutdown();
+
+                Poco::Net::SSLManager::instance().defaultClientContext();
+                ssl_material_fingerprint = fingerprint;
+            }
         }
     }
 #endif
