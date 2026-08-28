@@ -51,7 +51,7 @@ void collectFilterConjuncts(const ActionsDAG::Node * node, FilterConjuncts & con
 
 std::optional<Float64> estimateNotNullFilterSelectivity(const QueryPlan::Node & node, const ActionsDAG::Node & predicate)
 {
-    /// Only filter immediately above a scan can be promoted.
+    /// Only filter immediately above a scan can be executed.
     const auto * reading = typeid_cast<ReadFromMergeTree *>(node.children.front()->step.get());
     if (!reading)
         return {};
@@ -120,7 +120,7 @@ bool isSubsumedByOtherFilterConjunct(const ActionsDAG::Node & column, const Acti
         }
         catch (const Exception &)
         {
-            /// Don't promote filters when it can not be proven that they are not subsumed by other filters.
+            /// Don't execute filters when it can not be proven that they are not subsumed by other filters.
             return true;
         }
     }
@@ -129,13 +129,13 @@ bool isSubsumedByOtherFilterConjunct(const ActionsDAG::Node & column, const Acti
 }
 
 /// Select planner-only markers wrapping NOT NULL filters with a low enough estimated selectivity that they are worth executing.
-std::unordered_set<const ActionsDAG::Node *> collectPromotableNotNullFilters(const QueryPlan::Node & node, const FilterConjuncts & conjuncts, const QueryPlanOptimizationSettings & settings)
+std::unordered_set<const ActionsDAG::Node *> collectExecutableNotNullFilters(const QueryPlan::Node & node, const FilterConjuncts & conjuncts, const QueryPlanOptimizationSettings & settings)
 {
-    std::unordered_set<const ActionsDAG::Node *> to_promote;
-    if (!settings.query_plan_promote_planner_only_not_null_filters)
-        return to_promote;
+    std::unordered_set<const ActionsDAG::Node *> to_execute;
+    if (!settings.allow_derived_not_null_filters_execution)
+        return to_execute;
 
-    NameSet promoted_columns;
+    NameSet to_execute_columns;
     for (const auto * planner_only_marker : conjuncts.planner_only_conjuncts)
     {
         const auto * predicate = planner_only_marker->children.front();
@@ -149,20 +149,20 @@ std::unordered_set<const ActionsDAG::Node *> collectPromotableNotNullFilters(con
         if (!isNullableOrLowCardinalityNullable(column->result_type))
             continue;
 
-        /// There could be multiple filters for the same column, promote only one.
-        if (!promoted_columns.insert(column->result_name).second)
+        /// There could be multiple filters for the same column, execute only one.
+        if (!to_execute_columns.insert(column->result_name).second)
             continue;
 
-        /// Avoid promoting filters that are subsumed by existing filters and won't add any selectivity.
+        /// Avoid executing filters that are subsumed by existing filters and won't add any selectivity.
         if (isSubsumedByOtherFilterConjunct(*column, conjuncts.other_conjuncts))
             continue;
 
         auto selectivity = estimateNotNullFilterSelectivity(node, *predicate);
-        if (selectivity && *selectivity <= settings.query_plan_max_selectivity_for_promoting_not_null_filters)
-            to_promote.insert(planner_only_marker);
+        if (selectivity && *selectivity <= settings.max_selectivity_for_not_null_filters_execution)
+            to_execute.insert(planner_only_marker);
     }
 
-    return to_promote;
+    return to_execute;
 }
 
 }
@@ -187,11 +187,11 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
     if (conjuncts.planner_only_conjuncts.empty())
         return;
 
-    auto to_promote = collectPromotableNotNullFilters(node, conjuncts, settings);
+    auto to_execute = collectExecutableNotNullFilters(node, conjuncts, settings);
 
     const auto input_header = filter->getInputHeaders().front();
 
-    /// Promoted markers are replaced by the filter they wrap, the remaining ones are dropped.
+    /// Executable markers are replaced by the filter they wrap, the remaining ones are dropped.
     ActionsDAG::NodeMapping node_map;
     ActionsDAG new_actions_dag = actions_dag.clone(node_map);
 
@@ -202,7 +202,7 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
         const auto * new_conjunct = node_map.at(conjunct);
         if (!isPlannerOnlyFilter(*conjunct))
             new_conjuncts.push_back(new_conjunct);
-        else if (to_promote.contains(conjunct))
+        else if (to_execute.contains(conjunct))
             new_conjuncts.push_back(new_conjunct->children.front());
     }
 

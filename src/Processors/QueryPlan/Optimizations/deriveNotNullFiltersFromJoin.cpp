@@ -8,48 +8,11 @@
 #include <Functions/FunctionPlannerOnlyFilter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-#include <algorithm>
-
 namespace DB::QueryPlanOptimizations
 {
 
 namespace
 {
-
-/// Which inputs of the join have their non-matching rows dropped. Only those sides may receive a derived filter.
-std::pair<bool, bool> droppedSides(const JoinOperator & join_operator)
-{
-    const auto kind = join_operator.kind;
-
-    switch (join_operator.strictness)
-    {
-        case JoinStrictness::All:
-        case JoinStrictness::Any:
-        case JoinStrictness::Anti:
-            /// An ANTI join can not use null-extended join keys on the non-preserved side to filter any rows.
-            return {isInnerOrRight(kind), isInnerOrLeft(kind)};
-        case JoinStrictness::Semi:
-            return {isLeftOrRight(kind), isLeftOrRight(kind)};
-        default:
-            return {false, false};
-    }
-}
-
-/// Conditions that are always false when either argument is NULL.
-bool isNullRejectingCondition(JoinConditionOperator op)
-{
-    switch (op)
-    {
-        case JoinConditionOperator::Equals:
-        case JoinConditionOperator::Less:
-        case JoinConditionOperator::LessOrEquals:
-        case JoinConditionOperator::Greater:
-        case JoinConditionOperator::GreaterOrEquals:
-            return true;
-        default:
-            return false;
-    }
-}
 
 void collectDroppedNullableColumns(const JoinActionRef & side, NameSet & left_columns, NameSet & right_columns, bool drop_left, bool drop_right)
 {
@@ -116,7 +79,25 @@ size_t tryDeriveNotNullFiltersFromJoin(QueryPlan::Node * node, QueryPlan::Nodes 
     if (!join || node->children.size() != 2)
         return 0;
 
-    auto [drop_left, drop_right] = droppedSides(join->getJoinOperator());
+    /// Which inputs of the join have their non-matching rows dropped. Only those sides may receive a derived filter.
+    auto [drop_left, drop_right] = [&]() -> std::pair<bool, bool>
+    {
+        const auto & join_operator = join->getJoinOperator();
+        const auto kind = join_operator.kind;
+
+        switch (join_operator.strictness)
+        {
+            case JoinStrictness::All:
+            case JoinStrictness::Any:
+            case JoinStrictness::Anti:
+                /// An ANTI join can not use null-extended join keys on the non-preserved side to filter any rows.
+                return {isInnerOrRight(kind), isInnerOrLeft(kind)};
+            case JoinStrictness::Semi:
+                return {isLeftOrRight(kind), isLeftOrRight(kind)};
+            default:
+                return {false, false};
+        }
+    }();
 
     /// A JoinStepLogicalLookup child must stay directly below the join.
     if (typeid_cast<JoinStepLogicalLookup *>(node->children[0]->step.get()))
@@ -127,12 +108,28 @@ size_t tryDeriveNotNullFiltersFromJoin(QueryPlan::Node * node, QueryPlan::Nodes 
     if (!drop_left && !drop_right)
         return 0;
 
+    /// Conditions that are always false when either argument is NULL.
+    auto is_null_rejecting_condition = [](JoinConditionOperator op)
+    {
+        switch (op)
+        {
+            case JoinConditionOperator::Equals:
+            case JoinConditionOperator::Less:
+            case JoinConditionOperator::LessOrEquals:
+            case JoinConditionOperator::Greater:
+            case JoinConditionOperator::GreaterOrEquals:
+                return true;
+            default:
+                return false;
+        }
+    };
+
     NameSet left_columns;
     NameSet right_columns;
     for (const auto & expr : join->getJoinOperator().expression)
     {
         auto [op, lhs, rhs] = expr.asBinaryPredicate();
-        if (!isNullRejectingCondition(op))
+        if (!is_null_rejecting_condition(op))
             continue;
 
         collectDroppedNullableColumns(lhs, left_columns, right_columns, drop_left, drop_right);

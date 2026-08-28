@@ -828,7 +828,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     optimization_settings.query_plan_optimize_join_order_randomize = 0;
     optimization_settings.convert_join_to_in = false;
     optimization_settings.convert_outer_join_to_inner_join = false;
-    optimization_settings.query_plan_convert_outer_join_to_inner_join_by_join_predicates = false;
+    optimization_settings.derive_not_null_filters_from_joins = false;
     optimization_settings.convert_any_join_to_semi_or_anti_join = false;
     optimization_settings.merge_filter_into_join_condition = false;
     optimization_settings.top_k_through_join = false;

@@ -245,7 +245,7 @@ inline const auto & getOptimizations()
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
-        {tryDeriveNotNullFiltersFromJoin, "deriveNotNullFiltersFromJoin", &QueryPlanOptimizationSettings::query_plan_convert_outer_join_to_inner_join_by_join_predicates},
+        {tryDeriveNotNullFiltersFromJoin, "deriveNotNullFiltersFromJoin", &QueryPlanOptimizationSettings::derive_not_null_filters_from_joins},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryFuseFilterIntoArrayJoin, "fuseFilterIntoArrayJoin", &QueryPlanOptimizationSettings::fuse_filter_into_array_join},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},

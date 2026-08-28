@@ -81,7 +81,7 @@ struct QueryPlanOptimizationSettings
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
     UInt64 top_k_optimization_observation_rows = 65536;
-    bool query_plan_convert_outer_join_to_inner_join_by_join_predicates;
+    bool derive_not_null_filters_from_joins;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -112,7 +112,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
-    bool query_plan_promote_planner_only_not_null_filters;
+    bool allow_derived_not_null_filters_execution;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -242,7 +242,7 @@ struct QueryPlanOptimizationSettings
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
 
-    double query_plan_max_selectivity_for_promoting_not_null_filters;
+    double max_selectivity_for_not_null_filters_execution;
 };
 
 }

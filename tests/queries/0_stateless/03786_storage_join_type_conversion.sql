@@ -2,7 +2,7 @@ SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
-SET query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0; -- Disables the creation of planner only filters that affect how the plan looks
+SET query_plan_derive_not_null_filters_from_joins = 0; -- Disables the creation of planner only filters that affect how the plan looks
 
 CREATE TABLE t1__fuzz_0 (`x` Nullable(UInt32), `str` String) ENGINE = Memory;
 CREATE TABLE right_join__fuzz_0 (`x` UInt32, `s` String) ENGINE = Join(`ALL`, RIGHT, x);

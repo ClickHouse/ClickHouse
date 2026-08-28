@@ -8709,18 +8709,19 @@ Enable transforming the payload of a hash join into a row-major layout.
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0) \
-    DECLARE(Bool, query_plan_convert_outer_join_to_inner_join_by_join_predicates, true, R"(
-Allow to convert `OUTER JOIN` to `INNER JOIN` if another `JOIN` after `OUTER JOIN` always filters default values.
+    DECLARE(Bool, query_plan_derive_not_null_filters_from_joins, true, R"(
+Derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions.
 
-Only join clauses over bare columns are used (`col1` <op> `col2`, where <op> is one of `=`, `<`, `<=`, `>`, `>=`).
+Only conditions comparing two columns directly are considered (`col1` <op> `col2`, where <op> is one of `=`, `<`, `<=`, `>`, `>=`). Conditions over expressions, such as `col1` + 1 <op> `col2`, are ignored.
 
-Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
+The derived filters allow converting `OUTER JOIN` to `INNER JOIN`. This setting is only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
+
+The derived filters are not executed unless `query_plan_execute_derived_not_null_filters` is enabled.
 )", 0) \
-    DECLARE(Bool, query_plan_promote_planner_only_not_null_filters, true, R"(
-Allow `col IS NOT NULL` filters derived by the planner to be promoted to executable filters.
-Such filters are derived when `query_plan_convert_outer_join_to_inner_join_by_join_predicates` is enabled.
+    DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
+Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
 )", 0) \
-    DECLARE(Double, query_plan_max_selectivity_for_promoting_not_null_filters, 0.5, R"(
+    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.5, R"(
 The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
 )", 0) \
     \

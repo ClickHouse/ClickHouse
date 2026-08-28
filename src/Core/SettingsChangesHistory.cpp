@@ -59,6 +59,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"query_plan_derive_not_null_filters_from_joins", false, true, "New setting to derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
+            {"query_plan_allow_derived_not_null_filters_execution", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be executed."},
+            {"query_plan_max_selectivity_for_not_null_filters_execution", 0.5, 0.5, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."}
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -165,9 +168,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
             {"enable_function_early_short_circuit", false, false, "New setting"},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
-            {"query_plan_convert_outer_join_to_inner_join_by_join_predicates", false, true, "New setting to control converting `OUTER JOIN` to `INNER JOIN` if another `JOIN` after `OUTER JOIN` always filters default values. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
-            {"query_plan_promote_planner_only_not_null_filters", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be promoted to executable filters."},
-            {"query_plan_max_selectivity_for_promoting_not_null_filters", 0.5, 0.5, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter."}
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.7",
