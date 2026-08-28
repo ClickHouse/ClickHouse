@@ -1265,9 +1265,13 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             std::min(
                 poll_interval * 1000000,
                 static_cast<UInt64>(receive_timeout.totalMicroseconds())));
-    /// ... but wake up often enough to keep the client's live metrics fresh while it is slow
-    /// to send the next data packet - the per-packet flush happens only when packets arrive.
-    timeout_us = std::min(timeout_us, std::max(min_timeout_us, interactive_delay));
+    /// ... but wake up often enough to keep the client's live metrics fresh while it is slow to
+    /// send the next data packet. Sessions the flush cannot serve keep the blocking poll.
+    if (!state.skipping_data
+        && client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT
+        && query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && state.query_context->getSettingsRef()[Setting::send_profile_events])
+        timeout_us = std::min(timeout_us, std::max(min_timeout_us, interactive_delay));
 
     Stopwatch watch;
 
