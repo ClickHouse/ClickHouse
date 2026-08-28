@@ -49,5 +49,13 @@ SELECT 'join equality and <>:', countIf(explain LIKE '%Filter%(rows: ~2999999.0,
         allow_experimental_correlated_subqueries = 1
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
+-- The `Distinct` above `INTERSECT DISTINCT` is bounded by the smallest input (3000000, the
+-- dim side) even when the distinct key `k + v` has no NDV statistics; without the bound the
+-- estimate would fall back to 10% of the 600000000-row left input.
+SELECT 'intersect distinct bound:', countIf(explain LIKE '%Distinct%(rows: ~3000000.0%') > 0 FROM (
+    EXPLAIN estimates = 1 SELECT count() FROM (SELECT k + v FROM t_filter_sel INTERSECT DISTINCT SELECT k FROM t_filter_dim)
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
 DROP TABLE t_filter_dim;
 DROP TABLE t_filter_sel;
