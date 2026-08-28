@@ -14,3 +14,7 @@ substream
 data_compressed_bytes
 data_uncompressed_bytes
 codec_block_counts
+Non-MergeTree source table, without SELECT on it
+ACCESS_DENIED
+Non-MergeTree source table, with SELECT on it
+BAD_ARGUMENTS
