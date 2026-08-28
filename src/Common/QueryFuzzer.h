@@ -73,8 +73,8 @@ public:
     static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 
     /// Remember the `{name:Type}` placeholders a parameterized view declares, so a later call
-    /// through the parameterized-view syntax can bind all of them. A view definition is executed
-    /// unfuzzed as well, so the caller has to report that one too.
+    /// through the parameterized-view syntax can bind all of them. Report every definition the
+    /// server accepted, including the unfuzzed one: what a name holds is only known once it ran.
     void rememberViewParameters(const ASTCreateQuery & create);
 
     UInt64 getSeed() const { return seed; }

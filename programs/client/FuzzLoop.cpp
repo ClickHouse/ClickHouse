@@ -203,9 +203,6 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
     }
     else if (const auto * create = orig_ast->as<ASTCreateQuery>())
     {
-        /// This definition is executed as it is below, so it is the fuzzer's only chance to learn
-        /// the placeholders of a corpus view: a view has no column list, so it is never re-fuzzed.
-        fuzzer.rememberViewParameters(*create);
         if (QueryFuzzer::isSuitableForFuzzing(*create))
             this_query_runs = create_query_fuzzer_runs;
         else
@@ -442,6 +439,12 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             }
         }
 #endif
+        /// Only a definition the server accepted describes a table that exists. Report every one of
+        /// them, so a name that stops being a parameterized view stops being called as one.
+        if (!have_error)
+            if (const auto * create = ast_to_process->as<ASTCreateQuery>())
+                fuzzer.rememberViewParameters(*create);
+
         // The server is still alive, so we're going to continue fuzzing.
         // Determine what we're going to use as the starting AST.
         if (have_error)

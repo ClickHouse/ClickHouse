@@ -2300,7 +2300,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     }
 
     create.setTable(new_name);
-    rememberViewParameters(create);
 
     SipHash sip_hash;
     sip_hash.update(original_name);
@@ -3527,15 +3526,20 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
 
 void QueryFuzzer::rememberViewParameters(const ASTCreateQuery & create)
 {
-    if (!create.is_ordinary_view || !create.select)
-        return;
-
     /// Read the placeholders off the body instead of asking `getQueryParameters`: `hasQueryParameters`
     /// memoizes its answer, and the memo survives the clone a fuzzed definition is made from, so it
     /// can predate the placeholders this fuzzer just injected.
-    const auto parameters = analyzeReceiveQueryParamsWithType(ASTPtr(create.select));
+    NameToNameMap parameters;
+    if (create.is_ordinary_view && create.select)
+        parameters = analyzeReceiveQueryParamsWithType(ASTPtr(create.select));
+
+    /// Whatever this name held before, it now holds what was just created: a name that stopped being
+    /// a parameterized view - replaced by a plain view, or by a table - must stop being called as one.
     if (parameters.empty())
+    {
+        view_parameters.erase(create.getTable());
         return;
+    }
 
     /// Sorted, so the values the call binds do not depend on the hash order of the names.
     ViewParameters sorted_parameters(parameters.begin(), parameters.end());
@@ -3786,7 +3790,6 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
             auto it = original_table_name_to_fuzzed.find(original_name);
             if (it != original_table_name_to_fuzzed.end())
                 it->second.erase(table_name);
-            view_parameters.erase(table_name);
         }
     };
 
