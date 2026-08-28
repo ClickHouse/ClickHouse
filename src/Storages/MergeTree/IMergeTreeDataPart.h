@@ -182,7 +182,9 @@ public:
     ///   raw storage existence - right for the repair paths that must see the dead files, wrong
     ///   for reporting to the user;
     /// - every substream of the layout the reader would choose must be present, so a multistream
-    ///   index (`text`) with a lost `.dct.idx` / `.pst.idx` is not reported as materialized.
+    ///   index (`text`) with a lost `.dct.idx` / `.pst.idx` is not reported as materialized;
+    /// - each substream needs its marks file too (`MergeTreeIndexReader` loads marks for every
+    ///   stream it opens), under the same plain/hashed/packed ownership rules as the data file.
     bool hasMaterializedSecondaryIndex(const IMergeTreeIndex & skip_index) const;
 
     /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)

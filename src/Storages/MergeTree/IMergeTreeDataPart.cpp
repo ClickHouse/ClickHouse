@@ -3277,9 +3277,17 @@ bool IMergeTreeDataPart::hasMaterializedSecondaryIndex(const IMergeTreeIndex & s
     /// stored as `.idx` plus `.dct.idx` / `.pst.idx` and optionally `.pos.idx`) counts as
     /// materialized only when the part owns all of them - otherwise the first query using the
     /// index would throw on the missing sibling stream.
+    ///
+    /// For each substream the reader also loads a marks file
+    /// (`MergeTreeIndexReader::makeIndexReaderStream` creates a `MergeTreeMarksLoader` from
+    /// `index_granularity_info.getMarksFilePath`), so a substream whose marks file the part does
+    /// not own is just as unusable as one whose data file is missing.
+    const String marks_extension = getMarksFileExtension();
     for (const auto & substream : format.substreams)
     {
-        if (!partOwnsIndexFile(*this, file_name + substream.suffix, substream.extension))
+        const String substream_name = file_name + substream.suffix;
+        if (!partOwnsIndexFile(*this, substream_name, substream.extension)
+            || !partOwnsIndexFile(*this, substream_name, marks_extension))
             return false;
     }
 
