@@ -307,10 +307,15 @@ void listFilesWithRegexpMatchingImpl(
     {
         try
         {
-            /// Throwing overload on purpose: it is the existence check the `catch` below relies on
-            /// to skip a suffix that does not resolve. The PARENT is resolved rather than the whole
-            /// candidate, which keeps that check and doubles as the deduplication key.
-            const fs::path parent_canonical = fs::canonical(fs::path(path_for_ls + for_match).parent_path());
+            /// We use fs::canonical to resolve the canonical path and check if the file does exists
+            /// but the result path will be fs::absolute.
+            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+            /// The throwing overload on purpose: it is the existence check the `catch` below relies
+            /// on to skip a suffix that does not resolve. The WHOLE candidate is resolved rather
+            /// than only its parent: a `..` behind a symlink can make the raw path resolve while
+            /// the normalized path below names a missing lexical sibling, and that sibling must
+            /// still be returned so the reader reports it as absent instead of silently skipping.
+            (void)fs::canonical(path_for_ls + for_match);
             /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
             /// survive here: the check and the reader would name different files.
             const fs::path absolute_path = fs::absolute(path_for_ls + for_match).lexically_normal();
@@ -321,11 +326,7 @@ void listFilesWithRegexpMatchingImpl(
             /// directory); in that case keep the byte count at zero but still return the path.
             std::error_code size_ec;
             const size_t file_size = fs::file_size(absolute_path, size_ec);
-            /// `fs::file_size` fails for a directory as well as for a missing file, so a
-            /// non-regular target keeps its zero byte count but is still returned, as before.
-            if (size_ec && !fs::exists(absolute_path))
-                return;
-            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size, &parent_canonical);
+            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
         }
         catch (const std::exception &) // NOLINT
         {
