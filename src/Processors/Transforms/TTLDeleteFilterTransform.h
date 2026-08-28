@@ -58,7 +58,7 @@ private:
 
     /// Convert a typed TTL column into a uniform Int64 timestamp array.
     /// Resolves the concrete column type once, then extracts all values in a tight loop.
-    void extractTimestamps(const IColumn * ttl_column, size_t num_rows);
+    void extractTimestamps(const IColumn * ttl_column);
 };
 
 }
