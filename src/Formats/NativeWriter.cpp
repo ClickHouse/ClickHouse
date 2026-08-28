@@ -12,6 +12,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
@@ -49,6 +50,14 @@ ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
         for (auto & element : columns)
             element = materializeObjectTypedPaths(element);
         return ColumnTuple::create(columns);
+    }
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        auto nested = materializeObjectTypedPaths(nullable->getNestedColumnPtr());
+        if (nested.get() == nullable->getNestedColumnPtr().get())
+            return column;
+        return ColumnNullable::create(std::move(nested), nullable->getNullMapColumnPtr());
     }
 
     if (typeid_cast<const ColumnObject *>(column.get()))

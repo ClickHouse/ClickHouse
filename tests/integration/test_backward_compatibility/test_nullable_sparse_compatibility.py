@@ -39,3 +39,39 @@ def test_old_client_compatible(start_cluster):
     old_node.query(
         f"SELECT * FROM remote('{upstream_node.ip_address}', default, test_sparse)",
     )
+
+
+def test_nullable_json_typed_path_old_client_compatible(start_cluster):
+    upstream_node.query("DROP TABLE IF EXISTS test_sparse_nullable_json")
+    upstream_node.query(
+        """
+        CREATE TABLE test_sparse_nullable_json
+        (
+            id UInt64,
+            j Nullable(JSON(x Nullable(String), max_dynamic_paths = 0))
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            ratio_of_defaults_for_sparse_serialization = 0.5,
+            serialization_info_version = 'with_subcolumns',
+            nullable_serialization_version = 'allow_sparse'
+        """
+    )
+    upstream_node.query(
+        """
+        INSERT INTO test_sparse_nullable_json
+        SELECT
+            number,
+            CAST(multiIf(number = 0, '{"x":"rare"}', number = 1, NULL, '{}'),
+                'Nullable(JSON(x Nullable(String), max_dynamic_paths = 0))')
+        FROM numbers(100)
+        """
+    )
+
+    assert old_node.query(
+        f"""
+        SELECT count(), countIf(j.x = 'rare')
+        FROM remote('{upstream_node.ip_address}', default, test_sparse_nullable_json)
+        """
+    ) == "100\t1\n"
