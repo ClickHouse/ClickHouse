@@ -1,5 +1,6 @@
 import pytest
 
+from helpers.ci_logs_export import without_sender_user
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -414,7 +415,11 @@ def test_introspection():
     instance.query("GRANT SELECT ON test.table TO A")
     instance.query("GRANT CREATE ON *.* TO B WITH GRANT OPTION")
 
-    assert instance.query("SHOW USERS") == TSV(["A", "B", "default"])
+    # The CI logs export adds the `ci_logs_sender` user to every instance, see
+    # helpers/ci_logs_export.py
+    assert without_sender_user(instance.query("SHOW USERS")) == TSV(
+        ["A", "B", "default"]
+    )
     assert instance.query("SHOW CREATE USERS A") == TSV(
         ["CREATE USER A IDENTIFIED WITH no_password"]
     )
@@ -427,7 +432,7 @@ def test_introspection():
             "CREATE USER B IDENTIFIED WITH no_password",
         ]
     )
-    assert instance.query("SHOW CREATE USERS") == TSV(
+    assert without_sender_user(instance.query("SHOW CREATE USERS")) == TSV(
         [
             "CREATE USER A IDENTIFIED WITH no_password",
             "CREATE USER B IDENTIFIED WITH no_password",
@@ -456,7 +461,7 @@ def test_introspection():
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
         ]
     )
-    assert instance.query("SHOW GRANTS FOR ALL") == TSV(
+    assert without_sender_user(instance.query("SHOW GRANTS FOR ALL")) == TSV(
         [
             "GRANT SELECT ON test.`table` TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
@@ -477,7 +482,7 @@ def test_introspection():
     assert instance.query("SHOW GRANTS FOR ALL", user="B") == TSV(
         ["GRANT CREATE ON *.* TO B WITH GRANT OPTION"]
     )
-    assert instance.query("SHOW GRANTS FOR ALL") == TSV(
+    assert without_sender_user(instance.query("SHOW GRANTS FOR ALL")) == TSV(
         [
             "GRANT SELECT ON test.`table` TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
@@ -498,8 +503,8 @@ def test_introspection():
         "GRANT CREATE ON *.* TO B WITH GRANT OPTION\n"
         "GRANT ALL ON *.* TO default WITH GRANT OPTION\n"
     )
-    assert expected_access1 in instance.query("SHOW ACCESS")
-    assert expected_access2 in instance.query("SHOW ACCESS")
+    assert expected_access1 in without_sender_user(instance.query("SHOW ACCESS"))
+    assert expected_access2 in without_sender_user(instance.query("SHOW ACCESS"))
 
     assert instance.query(
         "SELECT name, storage, auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except from system.users WHERE name IN ('A', 'B') ORDER BY name"

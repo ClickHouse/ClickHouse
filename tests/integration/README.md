@@ -149,7 +149,7 @@ Use debug mode to attach a low-level debugger to the ClickHouse server inside in
 
 ## Logs Export to the CI Logs Cluster
 
-In CI, the system log tables (`system.query_log`, `system.text_log`, ...) of every server started by the tests are exported to the CI Logs cluster, augmented with `test_name` and `node_name` columns (see `helpers/ci_logs_export.py`). The export is enabled by the `CLICKHOUSE_CI_LOGS_HOST` environment variable, which `ci/jobs/integration_test_job.py` sets from the CI secrets. To use it in a local run, export `CLICKHOUSE_CI_LOGS_HOST`, `CLICKHOUSE_CI_LOGS_USER`, `CLICKHOUSE_CI_LOGS_PASSWORD` (and optionally `CLICKHOUSE_CI_LOGS_PORT`, `CLICKHOUSE_CI_LOGS_SECURE=0` for a plain-TCP destination) before running the tests.
+In CI, the system log tables (`system.query_log`, `system.text_log`, ...) of every server started by the tests are exported to the CI Logs cluster, augmented with `test_name` and `node_name` columns (see `helpers/ci_logs_export.py`). The export runs as the dedicated `ci_logs_sender` user (`tests/config/users.d/ci_logs_sender.yaml`, installed into the instance `users.d` and used as the `DEFINER` of the exporting materialized views), whose profile pins the settings of the export regardless of the settings of the query that triggered it. The export is enabled by the `CLICKHOUSE_CI_LOGS_HOST` environment variable, which `ci/jobs/integration_test_job.py` sets from the CI secrets. To use it in a local run, export `CLICKHOUSE_CI_LOGS_HOST`, `CLICKHOUSE_CI_LOGS_USER`, `CLICKHOUSE_CI_LOGS_PASSWORD` (and optionally `CLICKHOUSE_CI_LOGS_PORT`, `CLICKHOUSE_CI_LOGS_SECURE=0` for a plain-TCP destination) before running the tests.
 
 ## Troubleshooting
 

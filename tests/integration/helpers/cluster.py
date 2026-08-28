@@ -132,26 +132,6 @@ DEFAULT_THREAD_FUZZER_SETTINGS = {
 
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-# The images whose instances run the binary under test: the base integration
-# test image, and the images derived from it (`FROM clickhouse/integration-test`
-# in ci/docker/integration/*/Dockerfile), each with the environment variable
-# that carries its tag. Keep in sync with `IMAGE_TAG_ENV_VARIABLE` in
-# ci/jobs/scripts/integration_tests_configs.py.
-CURRENT_BINARY_IMAGE_TAG_ENV = {
-    "clickhouse/integration-test": "DOCKER_BASE_TAG",
-    "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
-}
-
-
-def current_binary_image_tag(image):
-    """The tag at which `image` runs the binary under test, or None if the image
-    is not one of the current-binary integration test images."""
-    variable = CURRENT_BINARY_IMAGE_TAG_ENV.get(image)
-    if variable is None:
-        return None
-    return os.environ.get(variable, "latest")
-
-
 SANITIZER_SIGN = "=================="
 
 CLICKHOUSE_START_COMMAND = (
@@ -5198,7 +5178,7 @@ class ClickHouseInstance:
             ci_logs_export.is_enabled()
             and not cluster.with_dolor
             and not with_installed_binary
-            and tag == current_binary_image_tag(image)
+            and ci_logs_export.runs_binary_under_test(image, tag)
             and config_root_name == "clickhouse"
         )
 

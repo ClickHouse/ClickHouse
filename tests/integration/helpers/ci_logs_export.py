@@ -14,7 +14,8 @@ after the cluster is started:
     so every flushed log block is forwarded to the CI Logs cluster.
 
 The views are created with `DEFINER = ci_logs_sender`, a dedicated user with a
-pinned profile (see SENDER_USER_CONFIG), so the export runs with its own short
+pinned profile (the same tests/config/users.d/ci_logs_sender.yaml the functional
+tests install, see SENDER_USER_CONFIG), so the export runs with its own short
 timeouts and async-insert settings instead of the settings of the test query
 that happened to trigger the log flush.
 
@@ -40,6 +41,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -74,10 +76,33 @@ DEFAULT_EXTRA_COLUMNS_EXPRESSION = (
 # `replace="replace"` (the config.d/users.d files are merged in the
 # alphabetical order).
 CLUSTER_CONFIG_NAME = "zzz_system_logs_export.xml"
-USERS_CONFIG_NAME = "zzz_ci_logs_sender.xml"
+USERS_CONFIG_NAME = "zzz_ci_logs_sender.yaml"
 
-# The user the `_watcher` materialized views run as, see SENDER_USER_CONFIG.
+# The user the `_watcher` materialized views run as, and the config that defines
+# it together with its profile. That config is the one the functional tests,
+# `clickbench`, `sqlstorm` and the fuzzers install (tests/config/install.sh and
+# ci/jobs/scripts/fuzzer/run-fuzzer.sh copy the same file), and it is installed
+# here rather than copied into this module so that the pinned settings and their
+# readonly constraints cannot drift between the two export paths.
 SENDER_USER = "ci_logs_sender"
+SENDER_USER_CONFIG = os.path.join(
+    os.path.dirname(__file__), "..", "..", "config", "users.d", "ci_logs_sender.yaml"
+)
+
+# The images whose instances run the binary under test: the base integration
+# test image, and the images derived from it (`FROM clickhouse/integration-test`
+# in ci/docker/integration/*/Dockerfile), each with the environment variable
+# that carries its tag. An instance of any other image
+# (`clickhouse/clickhouse-server` at an old release tag,
+# `clickhouse/python-bottle` for a mock HTTP service) runs something else and
+# may not support the configs and the DDL the export needs.
+# Keep in sync with `IMAGES_ENV` in
+# ci/jobs/scripts/integration_tests_configs.py; both the map and the derived
+# images are checked by ci/tests/test_ci_logs_export_images.py.
+CURRENT_BINARY_IMAGE_TAG_ENV = {
+    "clickhouse/integration-test": "DOCKER_BASE_TAG",
+    "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
+}
 
 CLUSTER_CONFIG_TEMPLATE = """<clickhouse>
     <remote_servers>
@@ -93,61 +118,6 @@ CLUSTER_CONFIG_TEMPLATE = """<clickhouse>
             </shard>
         </{cluster}>
     </remote_servers>
-</clickhouse>
-"""
-
-# The dedicated profile and user for the export, the XML counterpart of
-# tests/config/users.d/ci_logs_sender.yaml (which serves the functional tests).
-# The `_watcher` views are created with `DEFINER = ci_logs_sender`, so the
-# INSERTs into the CI Logs cluster run with these settings instead of the
-# settings of whatever query triggered the log flush. The constraints are what
-# makes it stick: without them the triggering query's values (e.g. the default
-# 300 seconds of `send_timeout`, which turns a slow remote cluster into a slow
-# server shutdown) override the profile.
-SENDER_USER_CONFIG = """<clickhouse>
-    <profiles>
-        <ci_logs_sender>
-            <!-- The async sends block the table shutdown for the timeout, and
-                 the default of 300 seconds is too big and may lead to hangs;
-                 the INSERTs are retried anyway. -->
-            <send_timeout>15</send_timeout>
-            <receive_timeout>15</receive_timeout>
-            <!-- Async INSERT, to reduce the amount of parts -->
-            <async_insert>1</async_insert>
-            <wait_for_async_insert>0</wait_for_async_insert>
-            <async_insert_busy_timeout_min_ms>1000</async_insert_busy_timeout_min_ms>
-            <async_insert_busy_timeout_max_ms>5000</async_insert_busy_timeout_max_ms>
-            <!-- Avoid polluting caches -->
-            <enable_filesystem_cache_on_write_operations>0</enable_filesystem_cache_on_write_operations>
-            <write_through_distributed_cache>0</write_through_distributed_cache>
-            <!-- Override the local default limit -->
-            <max_memory_usage_for_user>0</max_memory_usage_for_user>
-            <!-- Force INSERT in background -->
-            <distributed_foreground_insert>0</distributed_foreground_insert>
-            <constraints>
-                <send_timeout><readonly/></send_timeout>
-                <receive_timeout><readonly/></receive_timeout>
-                <async_insert><readonly/></async_insert>
-                <wait_for_async_insert><readonly/></wait_for_async_insert>
-                <async_insert_busy_timeout_min_ms><readonly/></async_insert_busy_timeout_min_ms>
-                <async_insert_busy_timeout_max_ms><readonly/></async_insert_busy_timeout_max_ms>
-                <enable_filesystem_cache_on_write_operations><readonly/></enable_filesystem_cache_on_write_operations>
-                <write_through_distributed_cache><readonly/></write_through_distributed_cache>
-                <max_memory_usage_for_user><readonly/></max_memory_usage_for_user>
-                <distributed_foreground_insert><readonly/></distributed_foreground_insert>
-            </constraints>
-        </ci_logs_sender>
-    </profiles>
-    <users>
-        <ci_logs_sender>
-            <profile>ci_logs_sender</profile>
-            <no_password/>
-            <networks>
-                <ip>::1</ip>
-                <ip>127.0.0.1</ip>
-            </networks>
-        </ci_logs_sender>
-    </users>
 </clickhouse>
 """
 
@@ -238,8 +208,28 @@ def write_instance_config(config_d_dir):
 def write_instance_users_config(users_d_dir):
     """Add the `ci_logs_sender` profile and user to the instance config, see
     SENDER_USER_CONFIG."""
-    with open(os.path.join(users_d_dir, USERS_CONFIG_NAME), "w") as f:
-        f.write(SENDER_USER_CONFIG)
+    shutil.copyfile(SENDER_USER_CONFIG, os.path.join(users_d_dir, USERS_CONFIG_NAME))
+
+
+def runs_binary_under_test(image, tag):
+    """Whether the containers of this image and tag run the ClickHouse binary
+    built for the commit under test, see CURRENT_BINARY_IMAGE_TAG_ENV."""
+    variable = CURRENT_BINARY_IMAGE_TAG_ENV.get(image)
+    if variable is None:
+        return False
+    return tag == os.environ.get(variable, "latest")
+
+
+def without_sender_user(query_result):
+    """Drop the lines that mention the `ci_logs_sender` user or its profile from
+    the result of an access-control introspection query (`SHOW USERS`,
+    `SHOW CREATE USERS`, `SHOW GRANTS FOR ALL`, `SHOW PROFILES`,
+    `SHOW ACCESS`, ...). The export installs them on every instance when it is
+    enabled and on none when it is not, so a test that asserts the complete
+    access-control state of an instance has to ignore them."""
+    return "\n".join(
+        line for line in query_result.split("\n") if SENDER_USER not in line
+    )
 
 
 def docker_compose_environment_section():
