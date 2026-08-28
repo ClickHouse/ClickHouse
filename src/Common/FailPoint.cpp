@@ -84,6 +84,7 @@ static struct InitFiu
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \

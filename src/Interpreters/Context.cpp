@@ -100,6 +100,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -279,6 +280,10 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -294,6 +299,7 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
     extern const SettingsBool filesystem_cache_allow_background_download;
     extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
@@ -7933,6 +7939,8 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_settings.wait_for_concurrent_download_timeout_milliseconds
+        = settings_ref[Setting::filesystem_cache_wait_for_concurrent_download_timeout_milliseconds];
     res.filesystem_cache_settings.allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
     res.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage
         = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
@@ -8125,6 +8133,24 @@ ReverseLookupCache & Context::getReverseLookupCache() const
             ReverseLookupCache::DEFAULT_SIZE_RATIO);
     }
     return *query_context->reverse_lookup_cache;
+}
+
+AIQuotaTrackerPtr Context::getAIQuotaTracker() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = query_context->getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->ai_quota_tracker)
+    {
+        query_context->ai_quota_tracker = std::make_shared<AIQuotaTracker>(
+            settings_ref[Setting::ai_function_max_input_tokens_per_query],
+            settings_ref[Setting::ai_function_max_output_tokens_per_query],
+            settings_ref[Setting::ai_function_max_api_calls_per_query],
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+    }
+    return query_context->ai_quota_tracker;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
