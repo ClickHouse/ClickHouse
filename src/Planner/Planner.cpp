@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -1737,10 +1738,26 @@ void addWindowSteps(QueryPlan & query_plan,
             /// would produce incomplete data and cause the pipeline to get stuck.
             sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
+            /// The sort scatters rows across threads by the hash of the partition columns it is given,
+            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
+            /// the two disagree the scatter would split one logical partition across threads, so such
+            /// windows sort in a single merged stream instead.
+            SortDescription scatter_partition_by = window_description.partition_by;
+            const auto & sort_input_header = query_plan.getCurrentHeader();
+            for (const auto & partition_column : window_description.partition_by)
+            {
+                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
+                        *sort_input_header->getByName(partition_column.column_name).type))
+                {
+                    scatter_partition_by.clear();
+                    break;
+                }
+            }
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window_description.full_sort_description,
-                window_description.partition_by,
+                scatter_partition_by,
                 0 /*limit*/,
                 sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", max_step_description_length);
@@ -2389,12 +2406,31 @@ void Planner::buildPlanForUnionNode()
         /// Add distinct transform
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+        /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
+        /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
+        /// already narrow their output to one stream, so a preliminary step there is pure overhead.
+        const bool add_pre_distinct = union_mode == SelectUnionMode::UNION_DISTINCT && preliminaryDistinctIsUseful(max_threads);
+
+        if (add_pre_distinct)
+        {
+            auto pre_distinct_step = std::make_unique<DistinctStep>(
+                query_plan.getCurrentHeader(),
+                limits,
+                0 /*limit hint*/,
+                query_plan.getCurrentHeader()->getNames(),
+                true /*pre distinct*/);
+            pre_distinct_step->setStepDescription("Preliminary DISTINCT");
+            query_plan.addStep(std::move(pre_distinct_step));
+        }
+
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
             limits,
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);
+        if (add_pre_distinct)
+            distinct_step->setStepDescription("DISTINCT");
         query_plan.addStep(std::move(distinct_step));
     }
 
