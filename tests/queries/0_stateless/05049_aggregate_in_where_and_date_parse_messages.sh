@@ -19,8 +19,10 @@ echo '=== an aggregate in WHERE names the clause that does accept it'
 # in WHERE that the user never wrote.
 run "SELECT count() AS c FROM numbers(10) WHERE c > 1"
 run "SELECT count() FROM numbers(10) WHERE count() > 1"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t (x UInt32) ORDER BY x"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t; CREATE TABLE t (x UInt32) ORDER BY x"
 run "SELECT count() FROM t PREWHERE count() > 1"
+# The old analyzer has its own copy of the check and now gives the same advice.
+run "SELECT count() AS c FROM numbers(10) WHERE c > 1 SETTINGS enable_analyzer = 0"
 
 # HAVING, which is what the hint suggests, works.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() AS c FROM numbers(10) HAVING c > 1"
@@ -34,3 +36,5 @@ run "SELECT toDate('abcd-01-02')"
 # Delimiters other than `-` are accepted, which is why the message names the canonical format
 # rather than claiming that a particular character is required.
 ${CLICKHOUSE_CLIENT} -q "SELECT toDate('2020!01!02')"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t"

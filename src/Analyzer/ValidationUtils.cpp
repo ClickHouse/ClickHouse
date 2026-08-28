@@ -1,4 +1,5 @@
 #include <Analyzer/ValidationUtils.h>
+#include <Interpreters/GetAggregatesVisitor.h>
 
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ArrayJoinNode.h>
@@ -276,9 +277,8 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
     /// `SELECT count() AS c FROM t WHERE c > 1` is the common shape: the alias is expanded before this
     /// check, so the user is told about an aggregate in WHERE that they never wrote. Name the clause that
-    /// does accept it.
-    static const String use_having_hint = ". Aggregate functions are not allowed in WHERE and PREWHERE, "
-        "because they are computed after filtering; use HAVING to filter by the result of an aggregation";
+    /// does accept it. The text is shared with the old analyzer's copy of the check.
+    static const String use_having_hint = AGGREGATE_IN_WHERE_HINT;
 
     if (query_node_typed.hasWhere())
     {
