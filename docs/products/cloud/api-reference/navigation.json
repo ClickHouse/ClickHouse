@@ -74,6 +74,7 @@
       {
         "group": "Service",
         "pages": [
+          "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
           "POST /v1/organizations/{organizationId}/services",
           "GET /v1/organizations/{organizationId}/services/{serviceId}",
@@ -117,7 +118,7 @@
     ]
   },
   {
-    "group": "OpenAPI",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

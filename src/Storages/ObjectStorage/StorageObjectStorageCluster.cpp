@@ -23,6 +23,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
 #include <Common/FailPoint.h>
+#include <base/sleep.h>
 namespace DB
 {
 namespace Setting
