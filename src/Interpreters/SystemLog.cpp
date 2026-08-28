@@ -349,6 +349,27 @@ String escapeStringForRegexp(const String & s)
 
 }
 
+std::vector<SystemLogTableMetadata> getSystemLogTableMetadata()
+{
+    std::vector<SystemLogTableMetadata> result;
+
+#define ADD_SYSTEM_LOG_METADATA(log_type, member, descr) \
+    { \
+        auto columns = log_type::Element::getColumnsDescription(); \
+        columns.setAliases(log_type::Element::getNamesAndAliases()); \
+        result.push_back({#member, descr, std::move(columns)}); \
+    }
+
+    LIST_OF_ALL_SYSTEM_LOGS(ADD_SYSTEM_LOG_METADATA)
+#if CLICKHOUSE_CLOUD
+    LIST_OF_CLOUD_SYSTEM_LOGS(ADD_SYSTEM_LOG_METADATA)
+#endif
+
+#undef ADD_SYSTEM_LOG_METADATA
+
+    return result;
+}
+
 
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
