@@ -93,14 +93,12 @@ DROP TABLE IF EXISTS t_04700_r2;
 RESTORE TABLE t_04700 AS t_04700_r2 FROM Memory('04700_so_def') FORMAT Null;
 SELECT count() AS rows_with_structure_only_defaulted FROM t_04700_r2;
 
--- A core setting reset through the same clause still reaches the query context. Without that, a tiny
--- `max_execution_time` would abort the backup below, which is what the first arm shows.
--- The limit is compared as `totalMicroseconds() * 1000`, so 1us is below any elapsed time the first
--- check can observe: the first arm then aborts by construction rather than by a timing margin.
-SET max_execution_time = 0.000001, timeout_overflow_mode = 'throw';
-BACKUP TABLE t_04700 TO Memory('04700_slow') FORMAT Null; -- { serverError TIMEOUT_EXCEEDED }
-BACKUP TABLE t_04700 TO Memory('04700_reset') SETTINGS max_execution_time = DEFAULT FORMAT Null;
-SET max_execution_time = DEFAULT, timeout_overflow_mode = DEFAULT;
+-- The same for a core setting, which is delivered to the query context and not to the settings layer: a
+-- tiny `max_execution_time` in the clause aborts the backup, and resetting the same name in the same
+-- clause puts it back to the declared default, so the backup completes. The budget is below any elapsed
+-- time the first check can observe, so the first arm aborts by construction.
+BACKUP TABLE t_04700 TO Memory('04700_slow') SETTINGS max_execution_time = 0.000001 FORMAT Null; -- { serverError TIMEOUT_EXCEEDED }
+BACKUP TABLE t_04700 TO Memory('04700_reset') SETTINGS max_execution_time = 0.000001, max_execution_time = DEFAULT FORMAT Null;
 
 DROP TABLE t_04700_r1;
 DROP TABLE t_04700_r2;
