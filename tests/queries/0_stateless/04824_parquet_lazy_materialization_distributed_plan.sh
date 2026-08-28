@@ -51,12 +51,44 @@ ${CLICKHOUSE_CLIENT} "${SETTINGS_COMMON[@]}" --make_distributed_plan=0 \
 ${CLICKHOUSE_CLIENT} "${SETTINGS_COMMON[@]}" --make_distributed_plan=0 \
     --query "SELECT k, s FROM ${TABLE_FN} ORDER BY k LIMIT 3"
 
+# `ReadFromObjectStorageStep` is serializable only in the private build, so the two builds take
+# different routes for the same query and the expectations differ per build:
+#   * private: the read can ship, so the plan is distributed - `tryMakeDistributedSorting` splits
+#     the sort under a `GatherExchange` and the lazy pass does not descend below it, so the plan
+#     carries the exchange and no lazy read step;
+#   * open-source: the read cannot ship, so the pre-pass decision falls back to local execution -
+#     the plan carries no exchange, and lazy materialization applies to it as to any local plan.
+# Either way the invariant holds: a lazy read step never sits in a plan that gets shipped.
+IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
+
 # `make_distributed_plan` is set on the inner query only: on the outer query it would try to
 # distribute the read from the EXPLAIN subquery itself, which is not a serializable step.
-echo "-- make_distributed_plan = 1: the sort is exchange-split, no lazy read step in the plan"
-${CLICKHOUSE_CLIENT} "${SETTINGS_COMMON[@]}" \
-    --query "SELECT countIf(explain LIKE '%LazilyReadFromObjectStorage%'), countIf(explain LIKE '%GatherExchange%') >= 1 FROM (EXPLAIN SELECT s FROM ${TABLE_FN} ORDER BY k LIMIT 3 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0)"
+plan_shape() # $1: EXPLAIN prefix
+{
+    ${CLICKHOUSE_CLIENT} "${SETTINGS_COMMON[@]}" \
+        --query "SELECT concat('lazy_materialization:', toString(countIf(explain LIKE '%LazilyReadFromObjectStorage%') > 0)),
+                        concat('distributed_exchanges:', toString(countIf(explain LIKE '%GatherExchange%') > 0))
+                 FROM ($1 SELECT s FROM ${TABLE_FN} ORDER BY k LIMIT 3 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0)"
+}
 
-echo "-- make_distributed_plan = 1: the distributed conversion succeeds (every fragment is serializable)"
+check_plan_shape() # $1: label, $2: EXPLAIN prefix
+{
+    local expected shape
+    if [ "$IS_CLOUD" = 1 ]; then
+        expected=$(printf 'lazy_materialization:0\tdistributed_exchanges:1')
+    else
+        expected=$(printf 'lazy_materialization:1\tdistributed_exchanges:0')
+    fi
+    shape=$(plan_shape "$2")
+    [ "$shape" = "$expected" ] && echo "$1: ok" || echo "$1: FAIL: expected '$expected', got '$shape'"
+}
+
+echo "-- make_distributed_plan = 1: lazy read step and exchanges never coexist"
+check_plan_shape "plan" "EXPLAIN"
+check_plan_shape "distributed plan" "EXPLAIN distributed = 1"
+
+# Executing it covers what the plan greps cannot: distributed execution in the private build, the
+# fallback path in the open-source one. The rows must match the non-distributed query above.
+echo "-- make_distributed_plan = 1: the query runs and returns the same rows"
 ${CLICKHOUSE_CLIENT} "${SETTINGS_COMMON[@]}" \
-    --query "SELECT countIf(explain LIKE '%LazilyReadFromObjectStorage%') FROM (EXPLAIN distributed = 1 SELECT s FROM ${TABLE_FN} ORDER BY k LIMIT 3 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0)"
+    --query "SELECT k, s FROM ${TABLE_FN} ORDER BY k LIMIT 3 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0"
