@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
@@ -12,6 +13,8 @@ namespace DB
 
 class Block;
 class WriteBuffer;
+class IFramingFormat;
+enum class FramedPacketKind : uint8_t;
 
 /** Output format have three inputs and no outputs. It writes data from WriteBuffer.
   *
@@ -51,6 +54,17 @@ public:
     /// Passed values are deltas, that must be summarized.
     virtual void onProgress(const Progress & progress);
 
+    /// Hand the final progress - carrying the final counters (`result_rows` / `result_bytes` /
+    /// `memory_usage`) computed after the query finished - to the framing format (see `setFraming`),
+    /// which writes it as the last `progress` packet of its own (deferred) finalization, after the
+    /// trailing logs and profile events are drained, so a successful framed stream really ends with
+    /// it. For a pulling query the output format is finalized by the pipeline before those counters
+    /// are known, so `onProgress` would drop the update (it writes only while the format is not
+    /// finalized); this bypasses that guard. No-op when there is no framing. The passed value is a
+    /// delta, added to the accumulated progress. Must be called before the framing format is
+    /// finalized (`getFraming()->finalize()`).
+    void writeFinalProgress(const Progress & progress);
+
     /// Set initial progress values on initialization of the format, before it starts writing the data.
     void setProgress(Progress progress);
 
@@ -71,6 +85,23 @@ public:
 
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}
+
+    /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
+    /// packets (progress, logs, profile events, exceptions) in the output stream. The format must
+    /// have been created over the framing format's payload buffer. When set, the format notifies
+    /// the framing format on packet boundaries, and progress is routed to the framing format
+    /// instead of the `writeProgress` method. Not compatible with parallel formatting.
+    /// `for_exception` attaches the framing to serialize only an exception packet, so the deferred
+    /// totals/extremes check (which matters only for data packets) is skipped.
+    void setFraming(const std::shared_ptr<IFramingFormat> & framing_, bool for_exception = false);
+    const std::shared_ptr<IFramingFormat> & getFraming() const { return framing; }
+
+    /// By default the output format finalizes the framing format (which writes the trailing logs,
+    /// profile events and the exception packet, then closes the stream) as part of its own
+    /// finalization. Deferring it lets the caller finalize the framing format later - after the
+    /// query-finish logging - so those trailing server logs are captured too. When deferred, the
+    /// caller is responsible for calling `getFraming()->finalize()`.
+    void deferFramingFinalize() { framing_finalize_deferred = true; }
 
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
@@ -195,6 +226,11 @@ protected:
     bool has_input = false;
     bool finished = false;
     bool finalized = false;
+    bool framing_finalize_deferred = false;
+    /// The framing was attached only to serialize an exception packet (see `setFraming`'s
+    /// `for_exception`). In this case the real output format must not write anything into the payload
+    /// buffer on finalization, so that no empty format skeleton leaks as a `data` packet.
+    bool framing_exception_only = false;
 
     /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
     bool auto_flush = false;
@@ -211,7 +247,20 @@ protected:
     /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
     std::mutex writing_mutex;
 
+    std::shared_ptr<IFramingFormat> framing;
+
 private:
+    /// Write the postponed progress update (to the framing format if it is set), under the writing mutex.
+    void writeProgressIfNeededUnlocked();
+
+    /// Notify the framing format of a packet boundary of the given kind. Format-owned buffers (for
+    /// example the UTF-8 validation adaptor's `WriteBufferValidUTF8`) may still hold a tail of the
+    /// bytes written for this part of the output; drain them into the framing payload first (such
+    /// formats override `flushImpl`), otherwise those bytes would surface in the payload only at a
+    /// later flush and be emitted under the next boundary's packet kind (and a stream with a single
+    /// small block would not be delivered until finalization at all).
+    void writeFramingPayloadBoundary(FramedPacketKind kind);
+
     size_t rows_read_before = 0;
     bool are_totals_written = false;
 

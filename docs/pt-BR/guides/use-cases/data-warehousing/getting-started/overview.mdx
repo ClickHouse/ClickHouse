@@ -1,6 +1,6 @@
 ---
 title: 'Primeiros passos com lagos de dados'
-sidebarTitle: 'Primeiros passos'
+sidebarTitle: 'Visão geral'
 slug: /use-cases/data-lake/getting-started
 description: 'Uma introdução prática para consultar, acelerar e gravar novamente dados em formatos de tabela abertos com ClickHouse.'
 keywords: ['lago de dados', 'lakehouse', 'primeiros passos', 'iceberg', 'delta lake', 'hudi', 'paimon']
@@ -17,9 +17,11 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 As capturas de tela neste guia são do [ClickHouse Cloud](https://console.clickhouse.cloud) Console SQL. Todas as consultas funcionam tanto no Cloud quanto em implantações autogerenciadas.
 
+O ClickHouse oferece três maneiras de ler formatos de tabela abertos: funções de tabela, motores de tabela e o motor de banco de dados [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake). **Se as suas tabelas estiverem em um catálogo de dados** (Glue, Unity Catalog, REST e outros), conecte-se com `DataLakeCatalog` para acessar todas as suas tabelas Iceberg/Delta por meio de uma única função. As seções abaixo sobre função de tabela e motor de tabela são mais indicadas para consultas ad hoc ou quando você conhece um caminho de armazenamento específico e não usa um catálogo.
+
 <Steps>
   <Step title="Consulte dados do Iceberg diretamente" id="query-directly">
-    A forma mais rápida de começar é com a função de tabela [`icebergS3()`](/pt-BR/reference/functions/table-functions/iceberg) — aponte-a para uma tabela Iceberg no S3 e consulte imediatamente, sem precisar de configuração.
+    A forma mais rápida de começar — especialmente para consultas ad hoc ou quando você não usa um catálogo — é a função de tabela [`icebergS3()`](/pt-BR/reference/functions/table-functions/iceberg). Aponte-a para uma tabela Iceberg no S3 e consulte imediatamente, sem precisar de configuração.
 
     Inspecione o esquema:
 
@@ -47,7 +49,7 @@ As capturas de tela neste guia são do [ClickHouse Cloud](https://console.clickh
   </Step>
 
   <Step title="Crie um engine de tabela persistente" id="table-engine">
-    Para acessos recorrentes, crie uma tabela usando o engine de tabela Iceberg para que você não precise passar o path toda vez. Os dados permanecem no S3 — nenhum dado é duplicado:
+    Se você não usa um catálogo, mas vai consultar o mesmo path repetidamente, crie uma tabela usando o engine de tabela Iceberg para não precisar passar o path todas as vezes. Os dados permanecem no S3 — nenhum dado é duplicado:
 
     ```sql
     CREATE TABLE hits_iceberg
@@ -72,7 +74,13 @@ As capturas de tela neste guia são do [ClickHouse Cloud](https://console.clickh
   </Step>
 
   <Step title="Conectar a um catálogo" id="connect-catalog">
-    A maioria das organizações gerencia tabelas Iceberg por meio de um catálogo de dados para centralizar os metadados das tabelas e a descoberta de dados. O ClickHouse oferece suporte à conexão com seu catálogo usando o mecanismo de banco de dados [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake), expondo todas as tabelas do catálogo como um banco de dados no ClickHouse. Essa é a opção mais escalável, pois, à medida que novas tabelas Iceberg são criadas, elas ficam sempre acessíveis no ClickHouse sem exigir trabalho adicional.
+    Se a sua organização usa um catálogo de dados, este é o caminho de integração que recomendamos. Os catálogos centralizam os metadados das tabelas e a descoberta — em vez de gerenciar uma definição de tabela para cada path de armazenamento, conecte-se uma vez com o mecanismo de banco de dados [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake). Cada tabela no catálogo aparece como uma tabela do ClickHouse, incluindo tabelas adicionadas upstream depois que você cria a conexão.
+
+    <Warning>
+      **Recomendado quando você usa um catálogo**
+
+      Use `DataLakeCatalog` para cargas de trabalho de produção com Glue, Unity Catalog, REST e outros [catálogos compatíveis](/pt-BR/guides/use-cases/data-warehousing/reference/index). As funções de tabela e os motores de tabela funcionam quando você conhece um path específico, mas não permanecem sincronizados à medida que seu catálogo cresce e exigem credenciais ou paths separados para cada tabela.
+    </Warning>
 
     Veja um exemplo de conexão com o [AWS Glue](/pt-BR/guides/use-cases/data-warehousing/glue-catalog):
 
@@ -106,7 +114,7 @@ As capturas de tela neste guia são do [ClickHouse Cloud](https://console.clickh
   </Step>
 
   <Step title="Faça uma consulta" id="issue-query">
-    Independentemente do método usado acima — função de tabela, engine de tabela ou catálogo — o mesmo ClickHouse SQL pode ser usado em todos eles:
+    Independentemente do método usado acima — função de tabela, engine de tabela ou `DataLakeCatalog` — o mesmo ClickHouse SQL pode ser usado em todos eles. Em produção, com um catálogo, faça consultas por meio do banco de dados `DataLakeCatalog`; os outros exemplos continuam úteis para testes rápidos e acesso baseado em path:
 
     ```sql
     -- Table function
@@ -229,8 +237,8 @@ As capturas de tela neste guia são do [ClickHouse Cloud](https://console.clickh
 
 Agora que você viu todo o fluxo de trabalho, aprofunde-se em cada área:
 
+* [Conectando-se a catálogos](/pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Recomendado para workloads com suporte de catálogo; passo a passo completo do Unity Catalog com Delta e Iceberg
 * [Consultas diretas](/pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly) — Os quatro formatos, variantes de cluster, motores de tabela, cache
-* [Conectando-se a catálogos](/pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Passo a passo completo do Unity Catalog com Delta e Iceberg
 * [Acelerando analytics](/pt-BR/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — Otimização de schema, indexação, demo de ganho de velocidade de ~40x
 * [Gravando em lagos de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/writing-data) — Escritas brutas, escritas agregadas, mapeamento de tipos
 * [Matriz de suporte](/pt-BR/guides/use-cases/data-warehousing/support-matrix) — Comparação de recursos entre formatos e backends de armazenamento

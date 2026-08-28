@@ -1,19 +1,19 @@
 ---
 slug: /deletes/overview
-title: 'نظرة عامة على الحذف'
+title: 'نظرة عامة على حذف البيانات'
 description: 'كيفية حذف البيانات في ClickHouse'
-keywords: ['حذف', 'اقتطاع', 'إسقاط', 'حذف خفيف الوزن']
+keywords: ['حذف', 'truncate', 'drop', 'الحذف الخفيف']
 doc_type: 'guide'
 ---
 
-توجد عدة طرق لحذف البيانات في ClickHouse، ولكل منها مزاياها وخصائص الأداء الخاصة بها. ينبغي اختيار الطريقة المناسبة بناءً على نموذج البيانات لديك وكمية البيانات التي تنوي حذفها.
+توجد عدة طرق لحذف البيانات في ClickHouse، ولكل منها مزاياها وخصائص أداء مختلفة. ينبغي اختيار الطريقة المناسبة بناءً على نموذج البيانات لديك وكمية البيانات التي تنوي حذفها.
 
-| الطريقة                                                                   | الصياغة                      | متى تُستخدم                                                                                                                                                                  |
-| ------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [حذف خفيف الوزن](/ar/concepts/features/operations/delete/lightweight-delete) | `DELETE FROM [table]`        | يُستخدم عند حذف كميات صغيرة من البيانات. تُستبعَد الصفوف فورًا من جميع استعلامات SELECT اللاحقة، لكنها في البداية لا تُزال من القرص، بل تُعلَّم داخليًا فقط على أنها محذوفة. |
-| [حذف بالطفرة](/ar/reference/statements/alter/delete)                         | `ALTER TABLE [table] DELETE` | يُستخدم عندما يجب حذف البيانات من القرص فورًا (على سبيل المثال، لأغراض الامتثال). ويؤثر سلبًا على أداء استعلامات SELECT.                                                     |
-| [اقتطاع الجدول](/ar/reference/statements/truncate)                           | `TRUNCATE TABLE [db.table]`  | يزيل جميع البيانات من الجدول بكفاءة.                                                                                                                                         |
-| [إسقاط القسم](/ar/reference/statements/alter/partition#drop-partitionpart)   | `DROP PARTITION`             | يزيل جميع البيانات من القسم بكفاءة.                                                                                                                                          |
+| الطريقة                                                                 | الصياغة                      | متى تُستخدم                                                                                                                                                                 |
+| ----------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [الحذف الخفيف](/ar/concepts/features/operations/delete/lightweight-delete) | `DELETE FROM [table]`        | يُستخدم عند حذف كميات صغيرة من البيانات. تُستبعد الصفوف فورًا من جميع استعلامات SELECT اللاحقة، لكنها في البداية لا تُزال من القرص، بل تُعلَّم داخليًا فقط على أنها محذوفة. |
+| [الحذف بالتعديل](/ar/reference/statements/alter/delete)                       | `ALTER TABLE [table] DELETE` | يُستخدم عندما يجب حذف البيانات من القرص فورًا (على سبيل المثال، لأغراض الامتثال). ويؤثر سلبًا في أداء SELECT.                                                               |
+| [تفريغ الجدول](/ar/reference/statements/truncate)                          | `TRUNCATE TABLE [db.table]`  | يزيل جميع البيانات من الجدول بكفاءة.                                                                                                                                        |
+| [حذف التقسيم](/ar/reference/statements/alter/partition#drop-partitionpart) | `DROP PARTITION`             | يزيل جميع البيانات من القسم بكفاءة.                                                                                                                                         |
 
 فيما يلي ملخص للطرق المختلفة لحذف البيانات في ClickHouse:
 
@@ -37,46 +37,46 @@ DELETE FROM posts WHERE toYear(CreationDate) = 2018
 اطّلع على المزيد حول [عمليات الحذف خفيفة الوزن](/ar/concepts/features/operations/delete/lightweight-delete).
 
 <div id="delete-mutations">
-  ## طفرات الحذف
+  ## عمليات الحذف بالطفرة
 </div>
 
-يمكن تنفيذ طفرات الحذف باستخدام الأمر `ALTER TABLE ... DELETE`، على سبيل المثال:
+يمكن تنفيذ عمليات الحذف بالطفرة باستخدام الأمر `ALTER TABLE ... DELETE`، على سبيل المثال.
 
 ```sql
 -- delete all data from 2018 with a mutation. Not recommended.
 ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
 ```
 
-يمكن تنفيذ هذه العمليات إما بشكل متزامن (وهو السلوك الافتراضي إذا كانت الجداول non-replicated) أو بشكل غير متزامن (وفقًا للإعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync)). وهذه العمليات كثيفة جدًا من ناحية I/O، إذ تعيد كتابة جميع الأجزاء التي تطابق تعبير `WHERE`. ولا تتسم هذه العملية بالذرية؛ إذ تُستبدل الأجزاء بالأجزاء المعدّلة بمجرد أن تصبح جاهزة، وسيعرض استعلام `SELECT` الذي يبدأ تنفيذه أثناء طفرة بيانات من الأجزاء التي عُدّلت بالفعل إلى جانب بيانات من الأجزاء التي لم تُعدّل بعد. ويمكن للمستخدمين تتبّع حالة التقدّم عبر جدول [system.mutations](/ar/reference/system-tables/mutations#monitoring-mutations). وهذه عمليات كثيفة من ناحية I/O، لذا ينبغي استخدامها بحذر لأنها قد تؤثر في أداء `SELECT` على مستوى cluster.
+يمكن تنفيذ هذه العمليات إما بشكل متزامن (وهو السلوك الافتراضي إذا كانت غير مكررة) أو بشكل غير متزامن (بحسب الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings/mutations#mutations_sync)). وهذه عمليات كثيفة جدًا من ناحية I/O، إذ تعيد كتابة جميع الأجزاء التي تطابق تعبير `WHERE`. ولا تتمتع هذه العملية بخاصية الذرية، إذ تُستبدل الأجزاء بأجزاء خضعت لـ طفرة بمجرد أن تصبح جاهزة، وسيطّلع استعلام `SELECT` الذي يبدأ تنفيذه أثناء طفرة على بيانات من الأجزاء التي خضعت لـ طفرة بالفعل، إلى جانب بيانات من الأجزاء التي لم تخضع لها بعد. ويمكن للمستخدمين تتبّع حالة التقدّم عبر جدول [system.mutations](/ar/reference/system-tables/mutations#monitoring-mutations). وهذه عمليات كثيفة من ناحية I/O، لذا ينبغي استخدامها بحذر لأنها قد تؤثر في أداء `SELECT` على مستوى الـ cluster.
 
-اقرأ المزيد عن [delete mutations](/ar/reference/statements/alter/delete).
+اقرأ المزيد عن [عمليات الحذف بالطفرة](/ar/reference/statements/alter/delete).
 
 <div id="truncate-table">
-  ## اقتطاع الجدول
+  ## تفريغ الجدول
 </div>
 
-إذا كان من الضروري حذف جميع البيانات من جدول، فاستخدم الأمر `TRUNCATE TABLE` الموضح أدناه. وهذه عملية خفيفة الوزن.
+إذا كنت بحاجة إلى حذف جميع البيانات من جدول، فاستخدم الأمر `TRUNCATE TABLE` الموضح أدناه. وهذه عملية منخفضة التكلفة.
 
 ```sql
 TRUNCATE TABLE posts
 ```
 
-اطّلع على المزيد حول [TRUNCATE TABLE](/ar/reference/statements/truncate).
+اقرأ المزيد عن [TRUNCATE TABLE](/ar/reference/statements/truncate).
 
 <div id="drop-partition">
-  ## إسقاط القسم
+  ## حذف التقسيم
 </div>
 
-إذا كنت قد حدّدت مفتاح تقسيم مخصّصًا لبياناتك، فيمكن حذف الأقسام بكفاءة. تجنّب استخدام مفاتيح تقسيم عالية التفرّد.
+إذا كنت قد حدّدت مفتاح تقسيم مخصّصًا لبياناتك، فيمكن حذف التقسيمات بكفاءة. تجنّب التقسيم ذي الكاردينالية العالية.
 
 ```sql
 ALTER TABLE posts (DROP PARTITION '2008')
 ```
 
-اطّلع على المزيد حول [DROP PARTITION](/ar/reference/statements/alter/partition).
+اقرأ المزيد عن [DROP PARTITION](/ar/reference/statements/alter/partition).
 
 <div id="more-resources">
-  ## موارد إضافية
+  ## مراجع إضافية
 </div>
 
-* [التعامل مع التحديثات والحذف في ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+* [التعامل مع التحديثات وعمليات الحذف في ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

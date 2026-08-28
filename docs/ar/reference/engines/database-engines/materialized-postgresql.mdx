@@ -258,6 +258,24 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 
 لا يتحكم هذا الإعداد إلا في أنواع الأعمدة التي يحددها استنتاج النوع عند إنشاء الجداول المتداخلة، لذا يجب تحديده عند تنفيذ `CREATE DATABASE`. ولا يمكن تغييره بعد ذلك باستخدام `ALTER DATABASE ... MODIFY SETTING` (إذ تحتفظ الجداول المتداخلة التي أُنشئت بالفعل بأنواع أعمدتها الثابتة، ويُرفض مثل هذا التغيير)؛ أعد إنشاء قاعدة البيانات لتغييره. ولا ينطبق هذا على محرك الجداول `MaterializedPostgreSQL`، حيث تُصرَّح أنواع الأعمدة صراحةً.
 
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+تُمرَّر معلمات TLS/SSL إلى `libpq`، ويمكن توفيرها عبر [مجموعة مُسمّاة](/ar/concepts/features/configuration/server-config/named-collections) أو كوسيطات مفتاح-قيمة تُلحق بالمحرك: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`؛ عند عدم تعيينه، يُستخدم الإعداد الافتراضي `prefer` في `libpq`)، بالإضافة إلى الشهادات والمفتاح بإحدى صيغتين. تشير `sslrootcert` (شهادة CA) و`sslcert` (شهادة العميل) و`sslkey` (المفتاح الخاص للعميل) إلى مسارات ملفات محلية على الخادم، ولا تُقبل إلا من مجموعة مُسمّاة معرّفة في ملف تهيئة الخادم. أما `sslrootcert_pem` و`sslcert_pem` و`sslkey_pem` فتقبل المحتوى الحرفي للملف المقابل بدلاً من ذلك، ويمكن تحديدها من SQL، وتُخفى في السجلات واستعلامات `SHOW` مثل كلمة المرور.
+
+مثال على الاتصال بخادم PostgreSQL يفرض TLS مع التحقق من شهادة الخادم:
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
+تُعد معلمات TLS/SSL جزءًا من معلمات الاتصال بـ PostgreSQL، وتُحدَّد عند إنشاء قاعدة البيانات؛ ولتغييرها، أعد إنشاء قاعدة البيانات.
+
 <div id="notes">
   ## ملاحظات
 </div>
