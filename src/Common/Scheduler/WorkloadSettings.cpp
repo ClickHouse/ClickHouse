@@ -259,9 +259,9 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             else if (name == "scheduler")
             {
                 scheduler = value.safeGet<String>();
-                if (*scheduler != "fifo" && *scheduler != "fair")
+                if (*scheduler != "fifo" && *scheduler != "fair" && *scheduler != "las")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unknown workload setting 'scheduler' value '{}' (expected 'fifo' or 'fair')", *scheduler);
+                        "Unknown workload setting 'scheduler' value '{}' (expected 'fifo', 'fair' or 'las')", *scheduler);
             }
             else if (name == "max_io_requests" || name == "max_requests")
                 max_io_requests = getNotNegativeInt64(name, value);

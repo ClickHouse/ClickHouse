@@ -143,6 +143,27 @@ TEST(RequestQueue, FairWeightLoweringByAge)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{101, 201, 202, 102}));
 }
 
+/// las: the query that has attained the least service is served first.
+TEST(RequestQueue, LasFavoursLeastAttained)
+{
+    Fixture f(SchedulerAlgorithm::Las); // IOByte, base = 1 MiB
+    auto * a = f.makeQuery();
+    auto * b = f.makeQuery();
+    const ResourceCost big = 4 * 1024 * 1024; // > base, so the level rises after one service
+
+    f.enqueue(1, a, big);
+    // Serve A once so it accrues attained service (moving it to a higher MLFQ level).
+    {
+        auto [r, _] = f.queue->dequeueRequest();
+        ASSERT_TRUE(r);
+        EXPECT_EQ(static_cast<TestRequest *>(r)->id, 1);
+    }
+    f.enqueue(2, a, big); // A: attained ~4 MiB → level >= 1
+    f.enqueue(3, b, big); // B: attained 0 → level 0
+    // B (least attained) is served before A's next request.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{3, 2}));
+}
+
 /// The swap hook migrates all pending requests to the new algorithm; none are lost, and the
 /// node identity is unchanged.
 TEST(RequestQueue, SwapSchedulerKeepsRequests)
@@ -166,7 +187,7 @@ TEST(RequestQueue, SwapSchedulerKeepsRequests)
 /// Cancellation from the middle works for both algorithms; counters update.
 TEST(RequestQueue, CancelFromMiddle)
 {
-    for (auto algo : {SchedulerAlgorithm::Fifo, SchedulerAlgorithm::Fair})
+    for (auto algo : {SchedulerAlgorithm::Fifo, SchedulerAlgorithm::Fair, SchedulerAlgorithm::Las})
     {
         Fixture f(algo);
         auto * a = f.makeQuery();
@@ -184,7 +205,7 @@ TEST(RequestQueue, CancelFromMiddle)
 /// max_waiting_queries is enforced on the total pending count for both algorithms.
 TEST(RequestQueue, MaxWaitingQueries)
 {
-    for (auto algo : {SchedulerAlgorithm::Fifo, SchedulerAlgorithm::Fair})
+    for (auto algo : {SchedulerAlgorithm::Fifo, SchedulerAlgorithm::Fair, SchedulerAlgorithm::Las})
     {
         Fixture f(algo, CostUnit::IOByte, /*max_queued*/ 2);
         auto * a = f.makeQuery();

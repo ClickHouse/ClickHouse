@@ -10,6 +10,7 @@
 #include <boost/intrusive/set.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -35,7 +36,7 @@ enum class SchedulerAlgorithm
 {
     Fifo, /// First-come-first-served
     Fair, /// Weighted fair queueing (SFQ) with per-query weight lowering
-    // Las (Least-Attained-Service, MLFQ-bucketed) is added in this PR after the starvation-guard decision.
+    Las, /// Least-Attained-Service, MLFQ-bucketed (favours short queries; can starve long ones)
 };
 
 inline SchedulerAlgorithm parseSchedulerAlgorithm(const String & name)
@@ -44,7 +45,9 @@ inline SchedulerAlgorithm parseSchedulerAlgorithm(const String & name)
         return SchedulerAlgorithm::Fifo;
     if (name == "fair")
         return SchedulerAlgorithm::Fair;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload scheduler '{}' (expected 'fifo' or 'fair')", name);
+    if (name == "las")
+        return SchedulerAlgorithm::Las;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload scheduler '{}' (expected 'fifo', 'fair' or 'las')", name);
 }
 
 /// Pluggable ordering strategy owned by a `RequestQueue`. It owns only the container of pending
@@ -240,6 +243,113 @@ private:
     const CostUnit unit;
     const void * leaf; /// Identifies this leaf in the per-query context's per-resource map
     double system_vruntime = 0.0;
+    UInt64 next_seq = 0;
+    Set requests;
+};
+
+/// `las` — practical Least-Attained-Service, MLFQ-bucketed. Serves the query that has attained the
+/// least service in this resource first (best mean latency under heavy-tailed query sizes),
+/// coarsened into geometric levels (`level = floor(log2(1 + attained/base))`) so a query drops one
+/// level each time its attained service doubles — bounding reordering churn. Lowest level served
+/// first, FIFO within a level. Pure: there is no starvation guard, so a long-running query can be
+/// starved by a continuous stream of short ones — use `fair` when a no-starvation guarantee is
+/// needed. Requests with no query context are treated as level 0 (least attained) and stay FIFO.
+class LasAlgorithm final : public ISchedulingAlgorithm
+{
+public:
+    LasAlgorithm(CostUnit unit_, const void * leaf_)
+        : leaf(leaf_)
+        , base(baseQuantum(unit_))
+    {
+    }
+
+    void push(ResourceRequest * request) override
+    {
+        Int64 attained = 0;
+        if (auto * ctx = request->scheduling_context)
+            attained = ctx->getResourceState(leaf).attained_cost;
+        request->scheduling_key = {levelOf(attained), next_seq++};
+        requests.insert(*request);
+    }
+
+    ResourceRequest * pop() override
+    {
+        if (requests.empty())
+            return nullptr;
+        auto it = requests.begin();
+        ResourceRequest * request = &*it;
+        requests.erase(it);
+        if (auto * ctx = request->scheduling_context)
+        {
+            auto & state = ctx->getResourceState(leaf);
+            state.attained_cost += request->cost;
+            state.last_activity_ns = clock_gettime_ns();
+        }
+        return request;
+    }
+
+    bool erase(ResourceRequest * request) override
+    {
+        if (!request->scheduling_hook.is_linked())
+            return false;
+        requests.erase(requests.iterator_to(*request));
+        return true;
+    }
+
+    ResourceRequest * popWorst() override
+    {
+        if (requests.empty())
+            return nullptr;
+        auto it = std::prev(requests.end());
+        ResourceRequest * request = &*it;
+        requests.erase(it);
+        return request;
+    }
+
+    void pullAll(std::vector<ResourceRequest *> & out) override
+    {
+        while (!requests.empty())
+        {
+            auto it = requests.begin();
+            out.push_back(&*it);
+            requests.erase(it);
+        }
+    }
+
+    bool empty() const override { return requests.empty(); }
+
+private:
+    /// Internal per-resource quantum used as the bucketing unit (not exposed as a SQL setting).
+    static ResourceCost baseQuantum(CostUnit unit_)
+    {
+        switch (unit_)
+        {
+            case CostUnit::CPUNanosecond: return 10'000'000; // ~10 ms CPU lease quantum
+            case CostUnit::IOByte: return 1'048'576; // 1 MiB
+            case CostUnit::QuerySlot: return 1;
+            case CostUnit::MemoryByte: return 1;
+        }
+        return 1;
+    }
+
+    double levelOf(Int64 attained) const
+    {
+        if (attained <= 0)
+            return 0.0;
+        return std::floor(std::log2(1.0 + static_cast<double>(attained) / static_cast<double>(base)));
+    }
+
+    struct ByKey
+    {
+        bool operator()(const ResourceRequest & lhs, const ResourceRequest & rhs) const noexcept
+        {
+            return lhs.scheduling_key < rhs.scheduling_key;
+        }
+    };
+    using Set = boost::intrusive::set<ResourceRequest, ResourceRequest::SchedulingHook, boost::intrusive::compare<ByKey>>;
+
+    const void * leaf; /// Identifies this leaf in the per-query context's per-resource map
+    const ResourceCost base;
     UInt64 next_seq = 0;
     Set requests;
 };
@@ -452,6 +562,8 @@ private:
                 return std::make_unique<FifoAlgorithm>();
             case SchedulerAlgorithm::Fair:
                 return std::make_unique<FairAlgorithm>(unit_, leaf_);
+            case SchedulerAlgorithm::Las:
+                return std::make_unique<LasAlgorithm>(unit_, leaf_);
         }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected scheduler algorithm");
     }
