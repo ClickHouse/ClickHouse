@@ -160,8 +160,9 @@ The rule is applied to every expression list, including the ones whose order doe
 function: `SELECT a - b` and `SELECT b - a` also get the same hash. The function is therefore lossy on purpose - use it to group a workload by
 shape, for example over `system.query_log`, and never to decide that two queries may be substituted for each other.
 
-Sorting reaches the expression lists that hang off the AST children. A few constructs keep sub-expressions outside them - the lambda of an
-`APPLY` column transformer and the `WHERE` of `SHOW COLUMNS` / `SHOW INDEXES`, for example - and those are hashed in the order they were written.
+Sorting reaches the expression lists that hang off the AST children. A few constructs keep sub-expressions outside them - the columns of
+`OPTIMIZE ... DEDUPLICATE BY`, the lambda of an `APPLY` column transformer, the `WHERE` of `SHOW COLUMNS` / `SHOW INDEXES` - and those are
+hashed in the order they were written.
 
 The argument is parsed as ClickHouse SQL under the current session's [`max_query_size`](/operations/settings/settings#max_query_size),
 [`max_parser_depth`](/operations/settings/settings#max_parser_depth), [`max_parser_backtracks`](/operations/settings/settings#max_parser_backtracks)
