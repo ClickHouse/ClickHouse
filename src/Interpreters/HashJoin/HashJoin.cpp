@@ -393,6 +393,23 @@ static Block rightColumnsToAddWithSeveralDisjuncts(const TableJoin & table_join,
     return columns_to_add;
 }
 
+namespace
+{
+
+const char * joinTypeName(HashJoin::Type type)
+{
+    switch (type)
+    {
+#define M(NAME) \
+    case HashJoin::Type::NAME: return #NAME;
+        APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+    }
+    return "";
+}
+
+}
+
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader right_sample_block_,
@@ -551,13 +568,13 @@ HashJoin::HashJoin(
 
     data->type = use_parallel_layout ? toTwoLevelType(*selected_join_method) : *selected_join_method;
 
-    LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, typeName(data->type));
+    LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, joinTypeName(data->type));
     LOG_TEST(
         log,
         "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id,
         TableJoin::formatClauses(table_join->getClauses(), true),
-        typeName(data->type),
+        joinTypeName(data->type),
         kind,
         strictness,
         right_sample_block.dumpStructure());
@@ -2780,7 +2797,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & sou
             instance_log_id,
             range,
             key_count,
-            typeName(data->type));
+            joinTypeName(data->type));
 }
 
 bool HashJoin::canConvertToFixedHashMap() const
