@@ -13,7 +13,12 @@ MOCK_PORT = 8080
 REMOTE_STORAGE_ROOT = "/var/lib/clickhouse/user_files/unity_gcs_storage"
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", with_minio=True)
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
+    with_minio=True,
+)
 
 
 def copy_directory_to_container(local_root, container_id, remote_root):
@@ -46,7 +51,10 @@ def started_cluster():
         start_mock_servers(
             cluster,
             SCRIPT_DIR,
-            [("unity_gcs_mock.py", "resolver", str(MOCK_PORT), [REMOTE_STORAGE_ROOT])],
+            [
+                ("unity_gcs_mock.py", "resolver", str(MOCK_PORT), [REMOTE_STORAGE_ROOT]),
+                ("gcp_oauth_mock.py", "resolver", "80"),
+            ],
         )
         yield cluster
     finally:
@@ -78,5 +86,13 @@ def test_gcs_vended_credentials_fall_back_from_delta_kernel(started_cluster):
     assert result == "1\n2\n3\n"
     if has_delta_kernel:
         assert node.contains_in_log(
-            "Using the native Delta Lake metadata reader because Delta Kernel does not support Authorization headers"
+            "Using the native Delta Lake metadata reader because Delta Kernel does not support bearer authentication"
         )
+
+
+def test_gcp_oauth_falls_back_from_delta_kernel(started_cluster):
+    result = node.query(
+        "SELECT value FROM deltaLake(gcs_delta) ORDER BY value",
+        settings={"allow_delta_kernel_rs": 1},
+    )
+    assert result == "1\n2\n3\n"

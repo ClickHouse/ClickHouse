@@ -1,0 +1,10 @@
+<clickhouse>
+    <named_collections>
+        <gcs_delta>
+            <url>http://resolver:8080/bucket/table</url>
+            <http_client>gcp_oauth</http_client>
+            <service_account>default</service_account>
+            <metadata_service>resolver</metadata_service>
+        </gcs_delta>
+    </named_collections>
+</clickhouse>

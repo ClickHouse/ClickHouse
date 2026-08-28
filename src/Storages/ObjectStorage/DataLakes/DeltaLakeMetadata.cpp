@@ -704,7 +704,7 @@ static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_t
 }
 
 #if USE_DELTA_KERNEL_RS
-static bool hasAuthorizationHeader(const StorageObjectStorageConfigurationPtr & configuration)
+static bool usesBearerAuthentication(const StorageObjectStorageConfigurationPtr & configuration)
 {
 #if USE_AWS_S3
     if (configuration->getType() != ObjectStorageType::S3)
@@ -714,7 +714,11 @@ static bool hasAuthorizationHeader(const StorageObjectStorageConfigurationPtr & 
     if (!s3_configuration)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected S3 configuration for S3 object storage");
 
-    const auto headers = s3_configuration->getAuthSettings().getHeaders();
+    const auto & auth_settings = s3_configuration->getAuthSettings();
+    if (Poco::icompare(auth_settings[S3AuthSetting::http_client].value, "gcp_oauth") == 0)
+        return true;
+
+    const auto headers = auth_settings.getHeaders();
     return std::ranges::any_of(headers, [](const HTTPHeaderEntry & header)
     {
         return Poco::icompare(header.name, "Authorization") == 0;
@@ -744,13 +748,13 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
 #if USE_DELTA_KERNEL_RS
     const auto locked_configuration = configuration.lock();
     const bool delta_kernel_enabled = isDeltaKernelEnabled(local_context, locked_configuration->getType());
-    const bool has_authorization_header = hasAuthorizationHeader(locked_configuration);
-    if (delta_kernel_enabled && !has_authorization_header)
+    const bool uses_bearer_authentication = usesBearerAuthentication(locked_configuration);
+    if (delta_kernel_enabled && !uses_bearer_authentication)
     {
         return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
-    if (delta_kernel_enabled && has_authorization_header)
-        LOG_DEBUG(getLogger("DeltaLakeMetadata"), "Using the native Delta Lake metadata reader because Delta Kernel does not support Authorization headers");
+    if (delta_kernel_enabled && uses_bearer_authentication)
+        LOG_DEBUG(getLogger("DeltaLakeMetadata"), "Using the native Delta Lake metadata reader because Delta Kernel does not support bearer authentication");
 #endif
     const auto & settings = local_context->getSettingsRef();
     if (settings[Setting::delta_lake_snapshot_version].value != -1)
