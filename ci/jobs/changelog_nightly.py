@@ -338,7 +338,7 @@ def raw_strict_prs_and_reverts(text):
 # revert on a third. By then the deleted entry is gone from CHANGELOG.md and
 # the intervening revert is gone from the raw blocks, so neither the editing
 # agent nor the verification can reconstruct the chain from the current state
-# of the file. These trailers on the edit commits are that memory - like
+# of the file. These trailers on the edit commits are that memory — like
 # `Changelog-generated-up-to:`, the branch carries its own state and the pull
 # request diff stays clean:
 #   `Changelog-revert: <revert> <reverted> <title of the revert>`
@@ -403,7 +403,7 @@ def resolve_revert_targets(revert_prs, known_titles=None):
 def revert_net_effect(targets):
     """Reduce revert chains to their net effect: a revert that is itself
     reverted grants no deletion credit for its target, because the target
-    ships in the release (`#109946` <- `#114911` <- `#114912`: the fix
+    ships in the release (`#109946` ← `#114911` ← `#114912`: the fix
     `#109946` stays, only the entry of the cancelled revert `#114911` may go).
     A revert always has a higher pull request number than what it reverts, so
     walking the reverts in descending order settles every chain in one pass, at
@@ -825,8 +825,8 @@ def disappeared_entries(old_text, text, anchor):
 def revert_licensed_deletions(base_sha, version):
     """The entries the verified edit deleted, each with the bullet it had
     before, for the ledger: when the revert that licensed the deletion is
-    itself reverted - possibly weeks later, when nothing in the file or in the
-    raw blocks remembers the entry - it has to be restorable."""
+    itself reverted — possibly weeks later, when nothing in the file or in
+    the raw blocks remembers the entry — it has to be restorable."""
     old_text = Shell.get_output(f"git show {base_sha}:{CHANGELOG_FILE}", strict=True)
     deletions = {}
     for pr in disappeared_entries(old_text, _read_changelog(), _anchor_id(version)):
@@ -885,8 +885,8 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
         )
     # The mirror image of the check above, and the reason the ledger exists:
     # an entry an earlier run deleted for a revert that has since been
-    # reverted itself has to be back in the file. Nothing here disappeared -
-    # the entry went away days ago - so only the ledger can tell.
+    # reverted itself has to be back in the file. Nothing here disappeared —
+    # the entry went away days ago — so only the ledger can tell.
     not_restored = sorted(
         pr for pr in reverts["restore"] if f"/pull/{pr})" not in text
     )
