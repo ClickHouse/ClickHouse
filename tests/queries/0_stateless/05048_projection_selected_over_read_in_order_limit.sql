@@ -15,6 +15,8 @@ SET read_in_order_use_virtual_row = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_remove_unused_columns = 1;
+SET optimize_move_to_prewhere = 1;
+SET use_top_k_dynamic_filtering = 0;
 
 DROP TABLE IF EXISTS repro_proj_order;
 
