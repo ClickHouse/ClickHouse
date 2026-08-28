@@ -2475,6 +2475,8 @@ ENGINE = MergeTree
 ORDER BY a
 ```
 
+Statistics require a physically stored column. An `ALIAS` or `EPHEMERAL` column is not written to any part, so declaring statistics on one is rejected.
+
 We can also manipulate statistics with `ALTER` statements:
 
 ```sql
