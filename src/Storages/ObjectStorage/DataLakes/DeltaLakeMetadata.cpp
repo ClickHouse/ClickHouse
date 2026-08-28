@@ -75,6 +75,11 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
 
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString http_client;
+}
+
 
 namespace
 {
