@@ -248,6 +248,22 @@ SpanHolder::~SpanHolder()
     finish(std::chrono::system_clock::now());
 }
 
+ParentSpanGuard::ParentSpanGuard(UInt64 span_id_)
+{
+    TracingContextOnThread & trace_context = *current_trace_context;
+    if (!span_id_ || !trace_context.isTraceEnabled())
+        return;
+    old_span_id = trace_context.span_id;
+    trace_context.span_id = span_id_;
+    active = true;
+}
+
+ParentSpanGuard::~ParentSpanGuard()
+{
+    if (active)
+        current_trace_context->span_id = old_span_id;
+}
+
 bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String & error)
 {
     trace_id = 0;
@@ -389,7 +405,8 @@ TracingContextHolder::TracingContextHolder(
     std::string_view _operation_name,
     TracingContext _parent_trace_context,
     const Settings * settings_ptr,
-    const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
+    const std::weak_ptr<OpenTelemetrySpanLog> & _span_log,
+    UInt64 _initial_span_id)
 {
     /// Use try-catch to make sure the ctor is exception safe.
     /// If any exception is raised during the construction, the tracing is not enabled on current thread.
@@ -441,7 +458,7 @@ TracingContextHolder::TracingContextHolder(
 
         this->root_span.trace_id = _parent_trace_context.trace_id;
         this->root_span.parent_span_id = _parent_trace_context.span_id;
-        this->root_span.span_id = TracingContext::generateSpanId();
+        this->root_span.span_id = _initial_span_id ? _initial_span_id : TracingContext::generateSpanId();
         this->root_span.operation_name = _operation_name;
         this->root_span.start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();

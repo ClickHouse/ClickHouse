@@ -30,7 +30,8 @@ public:
         bool suspend_when_query_sent_,
         bool read_packet_type_separately_,
         OpenTelemetry::SpanAttributes initial_span_attributes_ = {},
-        UInt64 initial_span_start_time_us_ = 0);
+        UInt64 initial_span_start_time_us_ = 0,
+        UInt64 initial_span_id_ = 0);
 
     ~RemoteQueryExecutorReadContext() override;
 

@@ -551,6 +551,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         sync_fragment_span_log = trace_context.span_log;
     }
 
+    /// On the synchronous path the fragment span is a detached object; make it the current
+    /// parent for the send so the CLIENT span descends from the fragment span.
+    OpenTelemetry::ParentSpanGuard fragment_parent_guard(sync_fragment_span ? sync_fragment_span->span_id : 0);
+
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
 
@@ -782,12 +786,16 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         /// Hand it over to the read context: the fiber span continues it with the same start time and attributes.
         OpenTelemetry::SpanAttributes initial_span_attributes;
         UInt64 initial_span_start_time_us = 0;
+        UInt64 initial_span_id = 0;
         if (OpenTelemetry::CurrentContext().isTraceEnabled())
         {
             if (sync_fragment_span)
             {
                 initial_span_attributes = std::move(sync_fragment_span->attributes);
                 initial_span_start_time_us = sync_fragment_span->start_time_us;
+                /// The CLIENT span sent during the synchronous send already references this id
+                /// as its parent; the fiber span must keep it, or the remote subtree is orphaned.
+                initial_span_id = sync_fragment_span->span_id;
                 sync_fragment_span.reset();
                 sync_fragment_span_log = {};
             }
@@ -808,7 +816,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             /*suspend_when_query_sent*/ false,
             read_packet_type_separately,
             std::move(initial_span_attributes),
-            initial_span_start_time_us);
+            initial_span_start_time_us,
+            initial_span_id);
     }
 
     while (true)

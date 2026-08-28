@@ -12,12 +12,14 @@ AsyncTaskExecutor::AsyncTaskExecutor(
     std::unique_ptr<AsyncTask> task_,
     String operation_name_,
     OpenTelemetry::SpanAttributes initial_span_attributes_,
-    UInt64 initial_span_start_time_us_)
+    UInt64 initial_span_start_time_us_,
+    UInt64 initial_span_id_)
     : task(std::move(task_))
     , operation_name(std::move(operation_name_))
     , parent_trace_context(OpenTelemetry::CurrentContext())
     , span_attributes(std::move(initial_span_attributes_))
     , initial_span_start_time_us(initial_span_start_time_us_)
+    , initial_span_id(initial_span_id_)
 {
 }
 
@@ -111,12 +113,20 @@ struct AsyncTaskExecutor::Routine
     void operator()(SuspendCallback suspend_callback)
     {
         /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
-        OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
+        /// A non-zero initial span id continues a span opened before the executor existed: spans created
+        /// during the synchronous send already reference it as their parent, so the fiber span must keep it.
+        OpenTelemetry::TracingContextHolder trace_context_holder(
+            executor.operation_name,
+            executor.parent_trace_context,
+            std::exchange(executor.initial_span_id, 0ULL));
 
-        /// Assigns the caller's start time so the span covers the work done before the executor existed.
-        /// A synchronous query may send preceding asynchronous reading.
+        /// A non-zero initial start time hands over a span opened before the executor existed
+        /// Otherwise keep the current time set by the holder. The exchange makes the handover one-shot
         if (trace_context_holder.root_span.isTraceEnabled())
-            trace_context_holder.root_span.start_time_us = std::exchange(executor.initial_span_start_time_us, 0ULL);
+        {
+            if (UInt64 initial_start_time_us = std::exchange(executor.initial_span_start_time_us, 0ULL))
+                trace_context_holder.root_span.start_time_us = initial_start_time_us;
+        }
 
         /// Copy the buffered attributes onto the span right before it is finished
         SCOPE_EXIT({ executor.flushSpanAttributes(trace_context_holder.root_span); });

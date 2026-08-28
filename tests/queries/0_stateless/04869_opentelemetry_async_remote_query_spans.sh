@@ -85,6 +85,23 @@ for async_send in 0 1; do
         format TSV
     "
 
+    # The CLIENT span must descend from the fragment span, so the remote subtree is
+    # attributable to a shard. On the synchronous sending path the fragment span is a
+    # detached object, so this pins the ParentSpanGuard / span-id handover wiring.
+    ${CLICKHOUSE_CLIENT} -q "
+        with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
+        select if(count() >= 1, 'CLIENT span parents under fragment span: OK',
+                                'CLIENT span parents under fragment span: FAIL')
+        from system.opentelemetry_span_log client_span,
+             system.opentelemetry_span_log fragment_span
+        where client_span.finish_date >= yesterday() and client_span.trace_id = t
+          and fragment_span.finish_date >= yesterday() and fragment_span.trace_id = t
+          and client_span.operation_name = 'Connection::sendQuery()' and client_span.kind = 'CLIENT'
+          and fragment_span.operation_name = 'RemoteQueryExecutor::execute'
+          and client_span.parent_span_id = fragment_span.span_id
+        format TSV
+    "
+
     # The remote 'query' span must be reachable from the initiator through the CLIENT span:
     # query <- TCPHandler (SERVER) <- Connection::sendQuery() (CLIENT).
     ${CLICKHOUSE_CLIENT} -q "
@@ -141,6 +158,35 @@ for async_send in 0 1; do
         format TSV
     "
 done
+
+# Fully synchronous path (async_socket_for_remote=0): the fragment span lives and dies as a
+# detached object, so the CLIENT span parentage depends solely on the ParentSpanGuard.
+echo "=== async_socket_for_remote=0 ==="
+
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+
+${CLICKHOUSE_CLIENT} \
+    --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
+    --async_socket_for_remote=0 \
+    --async_query_sending_for_remote=0 \
+    --use_hedged_requests=0 \
+    --query "select * from remote('127.0.0.2', system, one) format Null"
+
+poll_spans "$(trace_counts_query "$trace_id")" "1 1 1" || exit 1
+
+${CLICKHOUSE_CLIENT} -q "
+    with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
+    select if(count() >= 1, 'CLIENT span parents under fragment span: OK',
+                            'CLIENT span parents under fragment span: FAIL')
+    from system.opentelemetry_span_log client_span,
+         system.opentelemetry_span_log fragment_span
+    where client_span.finish_date >= yesterday() and client_span.trace_id = t
+      and fragment_span.finish_date >= yesterday() and fragment_span.trace_id = t
+      and client_span.operation_name = 'Connection::sendQuery()' and client_span.kind = 'CLIENT'
+      and fragment_span.operation_name = 'RemoteQueryExecutor::execute'
+      and client_span.parent_span_id = fragment_span.span_id
+    format TSV
+"
 
 # ConnectionEstablisherAsync and PacketReceiver (hedged requests) are Linux-only and are
 # covered separately by 04926_opentelemetry_hedged_remote_query_spans.
