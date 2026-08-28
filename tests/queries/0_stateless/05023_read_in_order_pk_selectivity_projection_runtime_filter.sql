@@ -28,6 +28,9 @@ SET join_runtime_filter_blocks_to_skip_before_reenabling = 0;
 SET enable_join_runtime_filters = 1;
 SET query_plan_join_swap_table = 'false';
 SET query_plan_optimize_join_order_randomize = 0;
+-- A spilling hash join does not preserve the left side order, so read-in-order is not
+-- propagated through it; disable automatic spilling to keep the in-order plan under test.
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 
 -- The filter on `path` makes the projection win index analysis below the JOIN, and the retained
 -- runtime filter exempts the read from the guard: the projection read stays in order, no full sort.
