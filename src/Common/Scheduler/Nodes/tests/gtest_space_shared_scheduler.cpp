@@ -7,7 +7,9 @@
 #include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
 #include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/MemoryTracker.h>
+#include <Processors/IProcessor.h>
 
 #include <algorithm>
 #include <array>
@@ -1273,6 +1275,88 @@ TEST(SchedulerSpaceShared, RecoveryLaneRunsBeforeSuctionBackstop)
 
     EXPECT_EQ(heavy.pressureCount(), 2u);
     EXPECT_EQ(heavy.killCount(), 1u);
+}
+
+
+class ManualSpillProcessor final : public IProcessor
+{
+public:
+    ManualSpillProcessor(Int64 spillable_bytes_, bool spill_succeeds_)
+        : spillable_bytes(spillable_bytes_)
+        , spill_succeeds(spill_succeeds_)
+    {
+        spillable = true;
+    }
+
+    String getName() const override { return "ManualSpillProcessor"; }
+
+    ProcessorMemoryStats getMemoryStats() override
+    {
+        return {.spillable_memory_bytes = spillable_bytes, .need_reserved_memory_bytes = 0};
+    }
+
+    bool spillOnSize(size_t bytes) override
+    {
+        ++spill_calls;
+        last_spill_size = bytes;
+        return spill_succeeds;
+    }
+
+    size_t spillCallCount() const { return spill_calls; }
+    size_t lastSpillSize() const { return last_spill_size; }
+
+private:
+    Int64 spillable_bytes;
+    bool spill_succeeds;
+    size_t spill_calls = 0;
+    size_t last_spill_size = 0;
+};
+
+
+/// Worker wakeups and memory-sync calls cannot advance pressure. Suction becomes eligible only
+/// after the selected processor explicitly finishes the forced spill attempt.
+TEST(SchedulerSpaceShared, ExplicitSpillCompletionControlsSuctionPriority)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor processor(4096, /*spill_succeeds_=*/ true);
+    scheduler.registerProcessor(&processor);
+
+    const auto first_request = scheduler.requestForcedSpill();
+    ASSERT_GT(first_request.epoch, 0u);
+    EXPECT_FALSE(first_request.inject_priority);
+    EXPECT_EQ(scheduler.getForcedSpillResult(first_request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+
+    /// Re-observing the same blocked request before reclaim completion must not inject priority.
+    const auto repeated_request = scheduler.requestForcedSpill();
+    EXPECT_EQ(repeated_request.epoch, first_request.epoch);
+    EXPECT_FALSE(repeated_request.inject_priority);
+
+    scheduler.checkAndSpill(&processor);
+    EXPECT_EQ(processor.spillCallCount(), 1u);
+    EXPECT_EQ(processor.lastSpillSize(), 4096u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(first_request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+
+    const auto suction_request = scheduler.requestForcedSpill();
+    EXPECT_EQ(suction_request.epoch, first_request.epoch);
+    EXPECT_TRUE(suction_request.inject_priority);
+}
+
+
+/// A query with no registered spillable processor has a concrete no-candidate result. It reaches
+/// the suction/eviction backstop without a timer and without pretending a worker sync reclaimed data.
+TEST(SchedulerSpaceShared, NoSpillCandidateReachesSuctionBackstop)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+
+    const auto spill_request = scheduler.requestForcedSpill();
+    EXPECT_FALSE(spill_request.inject_priority);
+    EXPECT_EQ(scheduler.getForcedSpillResult(spill_request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
+
+    const auto suction_request = scheduler.requestForcedSpill();
+    EXPECT_TRUE(suction_request.inject_priority);
 }
 
 

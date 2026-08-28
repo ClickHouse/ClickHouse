@@ -32,6 +32,7 @@ public:
     bool trySuspendIncrease(ResourceAllocation & allocation) override;
     void notifyRecoveryProgress(ResourceAllocation & allocation) override;
     void retrySuspendedIncreases() override;
+    bool hasSuspendedIncrease() const override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;

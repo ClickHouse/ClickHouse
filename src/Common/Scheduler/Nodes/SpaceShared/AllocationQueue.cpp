@@ -68,14 +68,9 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
         pending_allocations.push_back(allocation);
         pending_allocations_size += initial_size;
         SCHED_DBG("{} -- insert(id={}, size={}, pending={})", basename, allocation.unique_id, initial_size, pending_allocations.size());
-        /// A suspended running increase remains linked in `increasing_allocations`, but it is
-        /// ineligible. Wake the scheduler when this pending allocation is now the first visible
-        /// request; otherwise it can wait forever for an unrelated event.
-        const bool has_eligible_running_increase = std::any_of(
-            increasing_allocations.begin(), increasing_allocations.end(),
-            [](const ResourceAllocation & running) { return !running.isIncreaseSuspended(); });
-        if (&allocation == &*pending_allocations.begin() && !has_eligible_running_increase)
-            scheduleActivation();
+        /// Every arrival is a scheduler event. Besides making late fitting work visible, this
+        /// avoids reading scheduler-thread-only suspension flags from a query thread.
+        scheduleActivation();
     }
     else // Zero-cost allocations are not blocked - enqueue into running allocations directly
     {
@@ -104,8 +99,8 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
     // and then shrunk back to zero must not be re-admitted on a later grow.
     allocation.increase.prepare(increase_size, allocation.admitted ? IncreaseRequest::Kind::Regular : IncreaseRequest::Kind::Initial);
     increasing_allocations.insert(allocation);
-    if (&allocation == &*increasing_allocations.begin())
-        scheduleActivation();
+    /// A later fitting increase can become the first eligible request while an older one is parked.
+    scheduleActivation();
 }
 
 void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size)
@@ -171,6 +166,11 @@ void AllocationQueue::retrySuspendedIncreases()
     memory_growth_suspension_retry_requested = true;
     memory_growth_suspension_changed = true;
     scheduleActivation();
+}
+
+bool AllocationQueue::hasSuspendedIncrease() const
+{
+    return suspended_growth != nullptr;
 }
 
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)

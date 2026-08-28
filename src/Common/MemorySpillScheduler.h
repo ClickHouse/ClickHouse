@@ -24,16 +24,37 @@ class MemorySpillScheduler
 public:
     using Ptr = std::shared_ptr<MemorySpillScheduler>;
 
+    enum class ForcedSpillOutcome : UInt8
+    {
+        Pending,
+        Progress,
+        NoProgress,
+    };
+
+    struct ForcedSpillRequest
+    {
+        UInt64 epoch = 0;
+        bool inject_priority = false;
+    };
+
+    struct ForcedSpillResult
+    {
+        ForcedSpillOutcome outcome = ForcedSpillOutcome::Pending;
+        Int64 reclaimed_bytes = 0;
+    };
+
     explicit MemorySpillScheduler(bool enable_ = false) : enable(enable_) {}
     ~MemorySpillScheduler() = default;
 
     void checkAndSpill(IProcessor * processor);
+    void registerProcessor(IProcessor * processor);
     void remove(IProcessor * processor);
 
     /// Inject query-level memory pressure from the reservation scheduler. The first pressure
-    /// round requests a forced spill. A second round without an intervening approval asks the
-    /// allocation scheduler to protect this query's growth and resolve it through normal eviction.
-    bool requestForcedSpill();
+    /// round requests a forced spill. Only explicit completion of that attempt allows the second
+    /// round to inject suction priority and resolve the conflict through normal victim selection.
+    ForcedSpillRequest requestForcedSpill();
+    ForcedSpillResult getForcedSpillResult(UInt64 epoch) const;
     void finishMemoryPressure();
 
 private:
@@ -47,7 +68,10 @@ private:
 
     /// Monotonic epochs avoid losing a spill request when a different processor observes it first.
     std::atomic<UInt64> forced_spill_request_epoch = 0;
+    std::atomic<UInt64> forced_spill_claimed_epoch = 0;
     std::atomic<UInt64> forced_spill_completed_epoch = 0;
+    std::atomic<ForcedSpillOutcome> forced_spill_outcome = ForcedSpillOutcome::Pending;
+    std::atomic<Int64> forced_spill_reclaimed_bytes = 0;
     std::atomic<UInt64> pressure_round = 0;
 
     // When there is no need to spill, return nullptr. otherwise return top_processor;

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <mutex>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/MemorySpillScheduler.h>
@@ -21,23 +22,107 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
     if (processor == selected_processor)
     {
         if (force_spill)
-            forced_spill_completed_epoch.store(forced_epoch, std::memory_order_release);
-        processor->spillOnSize(stats.spillable_memory_bytes);
+        {
+            UInt64 claimed_epoch = forced_spill_claimed_epoch.load(std::memory_order_acquire);
+            while (claimed_epoch < forced_epoch
+                && !forced_spill_claimed_epoch.compare_exchange_weak(
+                    claimed_epoch, forced_epoch, std::memory_order_acq_rel, std::memory_order_acquire))
+            {
+            }
+            if (claimed_epoch >= forced_epoch)
+                return;
+        }
+
+        const Int64 memory_before = force_spill ? getCurrentQueryMemoryUsage() : 0;
+        const bool spill_succeeded = processor->spillOnSize(stats.spillable_memory_bytes);
+
+        if (force_spill)
+        {
+            const Int64 memory_after = getCurrentQueryMemoryUsage();
+            const Int64 reclaimed_bytes = std::max<Int64>(memory_before - memory_after, 0);
+
+            /// Publish only while this is still the active episode. `finishMemoryPressure` and a
+            /// later request are serialized by the same mutex, so a slow old spill cannot complete
+            /// a newer episode.
+            std::lock_guard lock(mutex);
+            if (forced_spill_request_epoch.load(std::memory_order_acquire) == forced_epoch
+                && pressure_round.load(std::memory_order_acquire) != 0)
+            {
+                forced_spill_reclaimed_bytes.store(reclaimed_bytes, std::memory_order_relaxed);
+                forced_spill_outcome.store(
+                    spill_succeeded || reclaimed_bytes > 0
+                        ? ForcedSpillOutcome::Progress
+                        : ForcedSpillOutcome::NoProgress,
+                    std::memory_order_relaxed);
+                forced_spill_completed_epoch.store(forced_epoch, std::memory_order_release);
+            }
+        }
     }
 }
 
-bool MemorySpillScheduler::requestForcedSpill()
+void MemorySpillScheduler::registerProcessor(IProcessor * processor)
 {
-    forced_spill_request_epoch.fetch_add(1, std::memory_order_release);
-    /// One reclaim attempt is the recovery lane. Reaching the same pressure point again is the
-    /// event-driven suction signal: stop admitting competing growth and resolve this query.
-    return pressure_round.fetch_add(1, std::memory_order_acq_rel) + 1 >= 2;
+    if (!processor->isSpillable())
+        return;
+    std::lock_guard lock(mutex);
+    processor_stats.try_emplace(processor);
+    updateTopProcessor();
+}
+
+MemorySpillScheduler::ForcedSpillRequest MemorySpillScheduler::requestForcedSpill()
+{
+    std::lock_guard lock(mutex);
+
+    const UInt64 current_round = pressure_round.load(std::memory_order_acquire);
+    const UInt64 requested_epoch = forced_spill_request_epoch.load(std::memory_order_acquire);
+    const UInt64 completed_epoch = forced_spill_completed_epoch.load(std::memory_order_acquire);
+
+    if (current_round == 0)
+    {
+        const UInt64 new_epoch = requested_epoch + 1;
+        pressure_round.store(1, std::memory_order_release);
+        forced_spill_outcome.store(ForcedSpillOutcome::Pending, std::memory_order_relaxed);
+        forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
+        forced_spill_request_epoch.store(new_epoch, std::memory_order_release);
+
+        /// An empty registered set is an explicit no-candidate result, not a timeout or a count of
+        /// worker wakeups. Pipelines register spillable processors before execution.
+        if (processor_stats.empty())
+        {
+            forced_spill_claimed_epoch.store(new_epoch, std::memory_order_relaxed);
+            forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
+            forced_spill_completed_epoch.store(new_epoch, std::memory_order_release);
+        }
+        return {.epoch = new_epoch, .inject_priority = false};
+    }
+
+    /// Do not turn repeated observations into priority while the actual reclaim attempt is still
+    /// pending. Only its explicit completion can advance the pressure episode.
+    if (completed_epoch < requested_epoch)
+        return {.epoch = requested_epoch, .inject_priority = false};
+
+    pressure_round.store(2, std::memory_order_release);
+    return {.epoch = requested_epoch, .inject_priority = true};
+}
+
+MemorySpillScheduler::ForcedSpillResult MemorySpillScheduler::getForcedSpillResult(UInt64 epoch) const
+{
+    if (epoch == 0 || forced_spill_completed_epoch.load(std::memory_order_acquire) < epoch)
+        return {};
+    return {
+        .outcome = forced_spill_outcome.load(std::memory_order_relaxed),
+        .reclaimed_bytes = forced_spill_reclaimed_bytes.load(std::memory_order_relaxed),
+    };
 }
 
 void MemorySpillScheduler::finishMemoryPressure()
 {
+    std::lock_guard lock(mutex);
     pressure_round.store(0, std::memory_order_release);
     const UInt64 requested = forced_spill_request_epoch.load(std::memory_order_acquire);
+    forced_spill_claimed_epoch.store(requested, std::memory_order_relaxed);
+    forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
+    forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
     forced_spill_completed_epoch.store(requested, std::memory_order_release);
 }
 
@@ -98,6 +183,8 @@ IProcessor * MemorySpillScheduler::selectSpilledProcessor(
 
     if (!force_spill && current_mem_used + max_reserved_memory_bytes < limit)
         return nullptr;
+    if (force_spill && top_processor && processor_stats.at(top_processor).spillable_memory_bytes == 0)
+        return current_processor;
     return top_processor;
 }
 }

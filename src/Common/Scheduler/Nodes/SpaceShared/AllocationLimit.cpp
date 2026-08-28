@@ -158,6 +158,20 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
+
+    bool detached_suspended_subtree = false;
+    if (update.detached && suspended_growth)
+    {
+        for (ISchedulerNode * node = &suspended_growth->allocation.queue; node; node = node->parent)
+        {
+            if (node == update.detached)
+            {
+                detached_suspended_subtree = true;
+                break;
+            }
+        }
+    }
+
     apply(update);
     bool reapply_constraint = false;
     if (update.attached)
@@ -179,10 +193,16 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         // next `setIncrease(..., reapply_constraint=true)` below picks a fresh victim. The
         // previously-issued `killAllocation` is harmless if its target has already cleaned up.
         allocation_to_kill = nullptr;
-        suspended_growth = nullptr;
-        suspended_growth_retry_pending = false;
-        memory_growth_suspension_start_epoch = 0;
-        memory_growth_suspension_beneficiaries = 0;
+        /// A topology update is not a pressure-resolution event. Preserve the episode when an
+        /// unrelated sibling detaches; clear it only when its owning subtree is the one removed.
+        if (detached_suspended_subtree)
+        {
+            suspended_growth->allocation.onGrowthPressureResolved();
+            suspended_growth = nullptr;
+            suspended_growth_retry_pending = false;
+            memory_growth_suspension_start_epoch = 0;
+            memory_growth_suspension_beneficiaries = 0;
+        }
         reapply_constraint = true;
     }
     // Publish the decrease BEFORE evaluating the increase: the eviction decision in `setIncrease` skips
@@ -312,6 +332,11 @@ void AllocationLimit::retrySuspendedIncreases()
 {
     if (child)
         child->retrySuspendedIncreases();
+}
+
+bool AllocationLimit::hasSuspendedIncrease() const
+{
+    return suspended_growth || (child && child->hasSuspendedIncrease());
 }
 
 void AllocationLimit::clearMemoryGrowthSuspension()

@@ -127,6 +127,14 @@ void FairAllocation::retrySuspendedIncreases()
         child->retrySuspendedIncreases();
 }
 
+bool FairAllocation::hasSuspendedIncrease() const
+{
+    return std::any_of(children.begin(), children.end(), [](const auto & item)
+    {
+        return item.second->hasSuspendedIncrease();
+    });
+}
+
 void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());

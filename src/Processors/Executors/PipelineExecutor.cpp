@@ -145,6 +145,11 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
 
         throw;
     }
+    if (auto group = CurrentThread::getGroup())
+    {
+        for (const auto & processor : processors)
+            group->memory_spill_scheduler->registerProcessor(processor.get());
+    }
     if (process_list_element)
     {
         // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw

@@ -99,7 +99,8 @@ private:
 
     std::weak_ptr<MemorySpillScheduler> memory_spill_scheduler;
     bool growth_recovery_active = false;
-    bool recovery_checkpoint_armed = false;
+    UInt64 recovery_epoch = 0;
+    UInt64 reported_recovery_epoch = 0;
 
     /// Helper struct. Holds postponed ProfileEvents increments to be executed from a query thread.
     struct Metrics

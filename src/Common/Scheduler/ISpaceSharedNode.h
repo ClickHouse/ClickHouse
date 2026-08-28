@@ -95,6 +95,10 @@ public:
     /// Composite nodes forward this to their children; queues perform the reset on activation.
     virtual void retrySuspendedIncreases() = 0;
 
+    /// Reports whether this subtree contains a parked increase. Precedence policies use this as a
+    /// barrier: hiding a high-precedence request for reclaim must not expose lower-precedence work.
+    virtual bool hasSuspendedIncrease() const { return false; }
+
     /// Returns allocation to be killed from this node or its children to approve a `killer` increase request.
     /// NOTE: It is important to keep killing order opposite to acquire ordering.
     /// This means that allocation policies of every node should have:

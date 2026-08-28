@@ -936,6 +936,11 @@ private:
             child->retrySuspendedIncreases();
     }
 
+    bool hasSuspendedIncrease() const override
+    {
+        return child && child->hasSuspendedIncrease();
+    }
+
     void propagateUpdateSchedulingSettings() override
     {
         if (parent)

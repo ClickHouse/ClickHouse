@@ -134,6 +134,14 @@ void PrecedenceAllocation::retrySuspendedIncreases()
         child->retrySuspendedIncreases();
 }
 
+bool PrecedenceAllocation::hasSuspendedIncrease() const
+{
+    return std::any_of(children.begin(), children.end(), [](const auto & item)
+    {
+        return item.second->hasSuspendedIncrease();
+    });
+}
+
 void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
@@ -184,6 +192,18 @@ bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRe
         return child.increase && !child.increase->allocation.isIncreaseSuspended();
     });
     increase_child = eligible == increasing_children.end() ? nullptr : &*eligible;
+
+    /// Suspension is an internal reclaim state, not permission to cross a workload-policy boundary.
+    /// A parked branch therefore remains a barrier to strictly lower-precedence children.
+    for (const auto & [_, child] : children)
+    {
+        if (child->hasSuspendedIncrease()
+            && (!increase_child || child->info.precedence < increase_child->info.precedence))
+        {
+            increase_child = nullptr;
+            break;
+        }
+    }
     increase = increase_child ? increase_child->increase : nullptr;
     return old_increase != increase;
 }

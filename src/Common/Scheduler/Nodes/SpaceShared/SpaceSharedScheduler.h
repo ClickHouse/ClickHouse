@@ -131,6 +131,11 @@ public:
             child->retrySuspendedIncreases();
     }
 
+    bool hasSuspendedIncrease() const override
+    {
+        return child && child->hasSuspendedIncrease();
+    }
+
     ResourceAllocation * selectAllocationToKill(IncreaseRequest &, ResourceCost, String &) override
     {
         chassert(false);

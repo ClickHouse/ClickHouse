@@ -117,7 +117,8 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
 {
     ResourceCost pending_increase = 0;
     ResourceCost pending_decrease = 0;
-    bool notify_recovery_progress = false;
+    std::shared_ptr<MemorySpillScheduler> recovery_scheduler;
+    UInt64 observed_recovery_epoch = 0;
     {
         std::unique_lock lock(mutex);
 
@@ -130,8 +131,8 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
 
         if (increase_enqueued && growth_recovery_active)
         {
-            notify_recovery_progress = recovery_checkpoint_armed;
-            recovery_checkpoint_armed = true;
+            recovery_scheduler = memory_spill_scheduler.lock();
+            observed_recovery_epoch = recovery_epoch;
         }
 
         // Make sure reservation size is always respected.
@@ -163,8 +164,25 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     else if (pending_decrease > 0)
         queue.decreaseAllocation(*this, pending_decrease);
 
-    if (notify_recovery_progress)
-        queue.notifyRecoveryProgress(*this);
+    if (recovery_scheduler && observed_recovery_epoch != 0)
+    {
+        const auto result = recovery_scheduler->getForcedSpillResult(observed_recovery_epoch);
+        if (result.outcome != MemorySpillScheduler::ForcedSpillOutcome::Pending)
+        {
+            bool notify_recovery_progress = false;
+            {
+                std::unique_lock lock(mutex);
+                if (growth_recovery_active && recovery_epoch == observed_recovery_epoch
+                    && reported_recovery_epoch < observed_recovery_epoch)
+                {
+                    reported_recovery_epoch = observed_recovery_epoch;
+                    notify_recovery_progress = true;
+                }
+            }
+            if (notify_recovery_progress)
+                queue.notifyRecoveryProgress(*this);
+        }
+    }
 
     {
         std::unique_lock lock(mutex);
@@ -175,9 +193,6 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
             auto increase_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationIncreaseMicroseconds);
             cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size || growth_recovery_active; });
         }
-
-        if (increase_enqueued && growth_recovery_active)
-            recovery_checkpoint_armed = true;
 
         metrics.apply();
         throwIfNeeded();
@@ -201,14 +216,14 @@ ResourceAllocation::GrowthPressureAction MemoryReservation::onGrowthPressure()
     if (!scheduler)
         return GrowthPressureAction::Yield;
 
-    const bool protect = scheduler->requestForcedSpill();
+    const auto spill_request = scheduler->requestForcedSpill();
     {
         std::unique_lock lock(mutex);
-        growth_recovery_active = !protect;
-        recovery_checkpoint_armed = false;
+        growth_recovery_active = !spill_request.inject_priority;
+        recovery_epoch = spill_request.epoch;
         cv.notify_all();
     }
-    return protect ? GrowthPressureAction::Protect : GrowthPressureAction::Yield;
+    return spill_request.inject_priority ? GrowthPressureAction::Protect : GrowthPressureAction::Yield;
 }
 
 void MemoryReservation::onGrowthPressureResolved()
@@ -217,7 +232,8 @@ void MemoryReservation::onGrowthPressureResolved()
     {
         std::unique_lock lock(mutex);
         growth_recovery_active = false;
-        recovery_checkpoint_armed = false;
+        recovery_epoch = 0;
+        reported_recovery_epoch = 0;
         scheduler = memory_spill_scheduler.lock();
         cv.notify_all();
     }
