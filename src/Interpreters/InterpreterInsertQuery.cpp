@@ -449,7 +449,10 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        auto counting = std::make_shared<CountingTransform>(in_header, CountingTransform::InsertSource::Direct, context->getQuota(), context->getNormalizedQueryHash());
+        /// Background streaming pushes (`no_destination`) skip the write into the immediate
+        /// destination table and only feed the attached views, so they must not count as Direct.
+        auto insert_source = no_destination ? CountingTransform::InsertSource::Other : CountingTransform::InsertSource::Direct;
+        auto counting = std::make_shared<CountingTransform>(in_header, insert_source, context->getQuota(), context->getNormalizedQueryHash());
         counting->setProcessListElement(context->getProcessListElement());
         counting->setProgressCallback(context->getProgressCallback());
 
@@ -958,7 +961,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        auto counting = std::make_shared<CountingTransform>(insert_header, CountingTransform::InsertSource::Direct, context->getQuota(), context->getNormalizedQueryHash());
+        /// Background streaming pushes (`no_destination`, e.g. `Kafka`, `NATS`, `RabbitMQ`, `FileLog`,
+        /// `ObjectStorageQueue`) skip the write into the immediate destination table and only feed the
+        /// attached views (possibly discarding the data in a `NullSink` when there are none), so they
+        /// must not count as Direct.
+        auto insert_source = no_destination ? CountingTransform::InsertSource::Other : CountingTransform::InsertSource::Direct;
+        auto counting = std::make_shared<CountingTransform>(insert_header, insert_source, context->getQuota(), context->getNormalizedQueryHash());
         counting->setProcessListElement(context->getProcessListElement());
         counting->setProgressCallback(context->getProgressCallback());
         add_head_transform(std::move(counting));
