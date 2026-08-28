@@ -134,6 +134,7 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
         w.writeString("execute_command_name", execute_command_name);
     if (!remove_property.empty())
         w.writeString("remove_property", remove_property);
+
     w.writeChild("col_decl", col_decl);
     w.writeChild("column", column);
     w.writeChild("order_by", order_by);
@@ -206,6 +207,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     snapshot_name = r.getString("snapshot_name");
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
+
     /// `order_by`, `sample_by`, `predicate`, `ttl`, `settings_resets`, `execute_args` and similar
     /// are arbitrary expressions/lists with no single parser-produced node type, so they are
     /// restored generically.

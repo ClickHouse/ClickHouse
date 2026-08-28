@@ -19,11 +19,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-bool CodecPathLess::operator()(const CodecPath & lhs, const CodecPath & rhs) const
-{
-    return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
-}
-
 ColumnCodecDescription::ColumnCodecDescription(const ColumnCodecDescription & other)
 {
     *this = other;
@@ -89,7 +84,10 @@ bool ColumnCodecDescription::operator==(const ColumnCodecDescription & rhs) cons
     return true;
 }
 
-ResolvedCodecPath resolveCodecPath(const DataTypePtr & root_type, const CodecPath & input)
+namespace
+{
+
+CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath & input)
 {
     DataTypePtr current = root_type;
     CodecPath result;
@@ -104,7 +102,9 @@ ResolvedCodecPath resolveCodecPath(const DataTypePtr & root_type, const CodecPat
         result.push_back(tuple->getNameByPosition(*position + 1));
         current = tuple->getElements()[*position];
     }
-    return {std::move(result), std::move(current)};
+    return result;
+}
+
 }
 
 CodecPath getCodecPath(const ISerialization::SubstreamPath & path)
@@ -180,44 +180,6 @@ void collectTupleCodecs(
     }
 }
 
-void collectTupleCodecPatch(
-    const ASTPtr & type_ast,
-    const DataTypePtr & logical_type,
-    CodecPath & path,
-    std::vector<size_t> & positions,
-    ColumnCodecPatch & result)
-{
-    const auto * tuple_ast = type_ast ? type_ast->as<ASTTupleDataType>() : nullptr;
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(logical_type.get());
-    if (!tuple_ast || !tuple_type)
-        return;
-    auto arguments = tuple_ast->getArguments();
-    if (!arguments)
-        return;
-    for (size_t i = 0; i < arguments->children.size(); ++i)
-    {
-        path.push_back(tuple_type->getNameByPosition(i + 1));
-        positions.push_back(i);
-        const auto & subtype = tuple_type->getElements()[i];
-        const bool remove = i < tuple_ast->element_codec_removals.size() && tuple_ast->element_codec_removals[i];
-        if (i < tuple_ast->element_codecs.size() && tuple_ast->element_codecs[i])
-        {
-            if (remove)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple element cannot set and remove CODEC");
-            if (tryExtractQuantizedCodecParams(tuple_ast->element_codecs[i]))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Quantized codec on tuple elements is not supported yet because its custom serialization must be path-aware");
-            result.declarations.set(path, tuple_ast->element_codecs[i]);
-        }
-        else if (remove)
-            result.removals.push_back({path, positions});
-        collectTupleCodecPatch(arguments->children[i], subtype, path, positions, result);
-        positions.pop_back();
-        path.pop_back();
-    }
-}
-
 size_t countTupleCodecAnnotations(const ASTPtr & type_ast)
 {
     const auto * data_type = type_ast ? type_ast->as<ASTDataType>() : nullptr;
@@ -246,7 +208,7 @@ size_t countTupleCodecRemovals(const ASTPtr & type_ast)
     return count;
 }
 
-using DeclarationTypes = std::map<CodecPath, std::vector<DataTypePtr>, CodecPathLess>;
+using DeclarationTypes = std::map<CodecPath, std::vector<DataTypePtr>>;
 
 void collectEffectiveDeclarationTypes(
     const DataTypePtr & type,
@@ -280,10 +242,10 @@ ColumnCodecDescription validateEffectivePolicy(
         canonical_policy.setRoot(policy.getRoot());
     for (const auto & [declaration_path, ast] : policy.getSubcolumns())
     {
-        auto resolved_path = resolveCodecPath(logical_type, declaration_path);
-        if (canonical_policy.getSubcolumns().contains(resolved_path.path))
+        auto canonical_path = canonicalizeCodecPath(logical_type, declaration_path);
+        if (canonical_policy.getSubcolumns().contains(canonical_path))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate codec declaration for tuple subcolumn");
-        canonical_policy.set(std::move(resolved_path.path), ast);
+        canonical_policy.set(std::move(canonical_path), ast);
     }
 
     DeclarationTypes declaration_types;
@@ -376,23 +338,6 @@ ColumnCodecDescription codecDescriptionFromAST(
             ErrorCodes::BAD_ARGUMENTS,
             "Tuple element codec declarations through non-Tuple wrapper types are not supported");
     return validateEffectivePolicy(result, logical_type, settings);
-}
-
-
-ColumnCodecPatch codecPatchFromAST(
-    const ASTColumnDeclaration & declaration,
-    const DataTypePtr & logical_type)
-{
-    ColumnCodecPatch result;
-    CodecPath path;
-    std::vector<size_t> positions;
-    collectTupleCodecPatch(declaration.getType(), logical_type, path, positions, result);
-    const size_t extracted = result.declarations.getSubcolumns().size() + result.removals.size();
-    if (countTupleCodecAnnotations(declaration.getType()) + countTupleCodecRemovals(declaration.getType()) != extracted)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Tuple element codec operations through non-Tuple wrapper types are not supported");
-    return result;
 }
 
 void applyCodecDescriptionToAST(ASTColumnDeclaration & declaration, const ColumnCodecDescription & codec)

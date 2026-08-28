@@ -46,6 +46,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -54,6 +55,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
+#include <algorithm>
 #include <ranges>
 #include <set>
 #include <vector>
@@ -159,6 +161,82 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot specify PRIMARY KEY in ALTER TABLE ... {}. The primary key can only be defined when the table is created",
             alter_name);
+}
+
+size_t countTupleCodecPatchOperations(const ASTPtr & type_ast)
+{
+    const auto * data_type = type_ast ? type_ast->as<ASTDataType>() : nullptr;
+    if (!data_type)
+        return 0;
+
+    size_t count = 0;
+    if (const auto * tuple = type_ast->as<ASTTupleDataType>())
+    {
+        count += std::count_if(
+            tuple->element_codecs.begin(), tuple->element_codecs.end(), [](const auto & codec) { return codec != nullptr; });
+        count += std::count(tuple->element_codec_removals.begin(), tuple->element_codec_removals.end(), true);
+    }
+    if (auto arguments = data_type->getArguments())
+        for (const auto & argument : arguments->children)
+            count += countTupleCodecPatchOperations(argument);
+    return count;
+}
+
+void collectTupleCodecPatch(
+    const ASTPtr & type_ast,
+    const DataTypePtr & logical_type,
+    CodecPath & path,
+    std::vector<size_t> & positions,
+    ColumnCodecDescription & declarations,
+    std::vector<AlterCommand::TupleCodecRemoval> & removals)
+{
+    const auto * tuple_ast = type_ast ? type_ast->as<ASTTupleDataType>() : nullptr;
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(logical_type.get());
+    if (!tuple_ast || !tuple_type)
+        return;
+
+    auto arguments = tuple_ast->getArguments();
+    if (!arguments)
+        return;
+
+    for (size_t i = 0; i < arguments->children.size(); ++i)
+    {
+        path.push_back(tuple_type->getNameByPosition(i + 1));
+        positions.push_back(i);
+        const auto & subtype = tuple_type->getElements()[i];
+        const bool remove = i < tuple_ast->element_codec_removals.size() && tuple_ast->element_codec_removals[i];
+        if (i < tuple_ast->element_codecs.size() && tuple_ast->element_codecs[i])
+        {
+            if (remove)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple element cannot set and remove CODEC");
+            if (tryExtractQuantizedCodecParams(tuple_ast->element_codecs[i]))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Quantized codec on tuple elements is not supported yet because its custom serialization must be path-aware");
+            declarations.set(path, tuple_ast->element_codecs[i]);
+        }
+        else if (remove)
+            removals.push_back({path, positions});
+
+        collectTupleCodecPatch(arguments->children[i], subtype, path, positions, declarations, removals);
+        positions.pop_back();
+        path.pop_back();
+    }
+}
+
+void extractTupleCodecPatch(
+    const ASTColumnDeclaration & declaration,
+    const DataTypePtr & logical_type,
+    ColumnCodecDescription & declarations,
+    std::vector<AlterCommand::TupleCodecRemoval> & removals)
+{
+    CodecPath path;
+    std::vector<size_t> positions;
+    collectTupleCodecPatch(declaration.getType(), logical_type, path, positions, declarations, removals);
+    if (countTupleCodecPatchOperations(declaration.getType()) != declarations.getSubcolumns().size() + removals.size())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Tuple element codec operations through non-Tuple wrapper types are not supported");
 }
 
 }
@@ -287,11 +365,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.codec = ast_col_decl.getCodec();
 
         if (command.data_type)
-        {
-            auto patch = codecPatchFromAST(ast_col_decl, command.data_type);
-            command.declared_codec = std::move(patch.declarations);
-            command.codec_removals = std::move(patch.removals);
-        }
+            extractTupleCodecPatch(ast_col_decl, command.data_type, command.declared_codec, command.codec_removals);
 
         if (ast_col_decl.getSettings())
             command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
@@ -700,7 +774,7 @@ static String formatTupleCodecPath(const CodecPath & path)
 }
 
 static std::optional<CodecPath> getPositionalCodecPredecessor(
-    const TupleCodecRemoval & removal,
+    const AlterCommand::TupleCodecRemoval & removal,
     const DataTypePtr & old_type,
     const DataTypePtr & new_type)
 {
@@ -744,13 +818,13 @@ static std::optional<CodecPath> getPositionalCodecPredecessor(
 static void applyTupleCodecPatch(
     ColumnCodecDescription & policy,
     const ColumnCodecDescription & declarations,
-    const std::vector<TupleCodecRemoval> & removals,
+    const std::vector<AlterCommand::TupleCodecRemoval> & removals,
     const DataTypePtr & old_type,
     const DataTypePtr & new_type,
     const String & column_name)
 {
     const auto original_policy = policy.clone();
-    std::set<CodecPath, CodecPathLess> translated_removals;
+    std::set<CodecPath> translated_removals;
     for (const auto & removal : removals)
     {
         CodecPath declaration_path;

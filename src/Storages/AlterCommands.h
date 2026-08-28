@@ -155,6 +155,15 @@ struct AlterCommand
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
     ColumnCodecDescription declared_codec;
+
+    /// One explicit tuple-element `REMOVE CODEC` operation from a typed `MODIFY COLUMN` declaration.
+    struct TupleCodecRemoval
+    {
+        /// Canonical path in the resulting logical type.
+        CodecPath path;
+        /// Element identity by position, used when the same ALTER renames tuple elements.
+        std::vector<size_t> positions;
+    };
     std::vector<TupleCodecRemoval> codec_removals;
 
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING

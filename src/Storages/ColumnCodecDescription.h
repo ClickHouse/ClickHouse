@@ -10,29 +10,42 @@
 #include <map>
 #include <vector>
 
+/** Compression codecs are storage metadata of an owning column, but one logical column can produce
+  * many serialization streams. In particular, elements of a `Tuple` can select codecs independently.
+  *
+  * This file defines the column-level codec policy: an optional declaration for the whole column,
+  * and optional declarations for logical tuple-element paths. None of this state is part of
+  * `IDataType` identity or column values.
+  */
 namespace DB
 {
 
 class ASTColumnDeclaration;
 
+/// A logical path of `Tuple` element names relative to the owning top-level column.
 using CodecPath = std::vector<String>;
 
-struct CodecPathLess
-{
-    bool operator()(const CodecPath & lhs, const CodecPath & rhs) const;
-};
-
+/** The complete codec policy of one owning column.
+  *
+  * A root declaration applies to the column as a whole. A declaration associated with a tuple path
+  * overrides the root or a less-specific ancestor for streams belonging to that element. A stream
+  * with no applicable declaration uses the part default codec.
+  */
 class ColumnCodecDescription
 {
 public:
+    /// The codec source selected for one logical path after applying inheritance.
     struct Resolved
     {
         ASTPtr ast;
+        /// Path on which the winning declaration is stored; empty for a root declaration or part default.
         CodecPath declaration_path;
+        /// True when the stream follows the part default, including an explicit `CODEC(Default)` declaration.
         bool uses_part_default = true;
     };
 
-    using SubcolumnCodecs = std::map<CodecPath, ASTPtr, CodecPathLess>;
+    /// Explicit tuple-element declarations belonging to this column.
+    using SubcolumnCodecs = std::map<CodecPath, ASTPtr>;
 
     ColumnCodecDescription() = default;
     ColumnCodecDescription(const ColumnCodecDescription & other);
@@ -65,27 +78,6 @@ private:
     SubcolumnCodecs subcolumns;
 };
 
-struct ResolvedCodecPath
-{
-    CodecPath path;
-    DataTypePtr type;
-};
-
-struct TupleCodecRemoval
-{
-    /// Canonical path in the resulting logical type.
-    CodecPath path;
-    /// Zero-based tuple positions from the owner to the annotated element.
-    std::vector<size_t> positions;
-};
-
-struct ColumnCodecPatch
-{
-    ColumnCodecDescription declarations;
-    std::vector<TupleCodecRemoval> removals;
-};
-
-ResolvedCodecPath resolveCodecPath(const DataTypePtr & root_type, const CodecPath & input);
 CodecPath getCodecPath(const ISerialization::SubstreamPath & path);
 CodecPath getCodecPathForStream(
     const NameAndTypePair & written_column,
@@ -101,12 +93,6 @@ ColumnCodecDescription codecDescriptionFromAST(
     const ASTColumnDeclaration & declaration,
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings);
-
-/// Extracts ALTER-only tuple-element operations. The root operation remains represented by the
-/// ordinary `ASTColumnDeclaration` codec/remove fields.
-ColumnCodecPatch codecPatchFromAST(
-    const ASTColumnDeclaration & declaration,
-    const DataTypePtr & logical_type);
 
 void applyCodecDescriptionToAST(
     ASTColumnDeclaration & declaration,
