@@ -985,8 +985,10 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         if (part->info.getDataVersion() < version)
         {
             /// A part of a still-open transaction may be rolled back and never enter the real
-            /// scope; it joins the byte weight only once its creation is committed.
-            if (part->version && !part->version->getInfo().isCreated())
+            /// scope; it joins the byte weight only once its creation is committed - except the
+            /// mutation's own transaction's parts, which it already sees and rewrites.
+            if (part->version && !part->version->getInfo().isCreated()
+                && part->version->getInfo().creation_tid != prepared.entry.tid)
                 continue;
             prepared.entry.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
         }
@@ -1434,18 +1436,26 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         return {};
 
     std::vector<PartVersionWithName> part_versions_with_names;
-    std::vector<Int64> uncommitted_part_versions;
+    struct UncommittedPart
+    {
+        PartVersionWithName part;
+        TransactionID creation_tid;
+    };
+    std::vector<UncommittedPart> uncommitted_parts;
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
     for (const auto & part : data_parts)
     {
         /// Same rule as `startMutation`: a still-open transaction's part stays out of every
         /// mutation's visible scope - and out of the byte denominator - until it is committed.
-        /// Its existence is still unknown remaining work, though: the versions are kept so the
-        /// affected mutations report neither done nor a definite progress while the outcome is open.
+        /// Its existence is still pending work, though: kept aside with its transaction, so a
+        /// mutation of the same transaction counts it as known scope (it already sees and
+        /// rewrites it) while every other mutation reports neither done nor a definite progress.
         if (part->version && !part->version->getInfo().isCreated())
         {
-            uncommitted_part_versions.push_back(part->info.getDataVersion());
+            uncommitted_parts.push_back(
+                {PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info},
+                 part->version->getInfo().creation_tid});
             continue;
         }
         part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info});
@@ -1504,6 +1514,32 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
         }
+
+        /// An uncommitted lower block can still add a part to this mutation's scope, and another
+        /// transaction's lower-version part is pending work whose outcome is unknown
+        /// (`MergeTreeSink::commitPart` releases its committing-block holder before the outer
+        /// transaction commits, so only the part itself marks it) - either way,
+        /// nothing-visible-left does not mean done yet. The mutation's own transaction's parts are
+        /// different: it sees and rewrites them, so they join the counted scope like any other.
+        bool has_uncommitted_part_in_scope = false;
+        for (const auto & uncommitted : uncommitted_parts)
+        {
+            if (uncommitted.part.version >= static_cast<Int64>(mutation_version))
+                continue;
+            if (uncommitted.creation_tid == entry.tid)
+            {
+                parts_to_do_names.push_back(uncommitted.part.name);
+                bytes_to_do += uncommitted.part.bytes_on_disk;
+                entry.initial_bytes_to_do.account(uncommitted.part.info, uncommitted.part.bytes_on_disk);
+                if (std::find(parts_in_progress_names.begin(), parts_in_progress_names.end(), uncommitted.part.name)
+                        != parts_in_progress_names.end())
+                    if (auto it = mutating_part_progress.find(uncommitted.part.name); it != mutating_part_progress.end())
+                        bytes_in_flight_done += static_cast<Float64>(uncommitted.part.bytes_on_disk) * it->second;
+            }
+            else
+                has_uncommitted_part_in_scope = true;
+        }
+
         /// The denominator is the byte weight the mutation's scope had when each part entered
         /// it (re-measured from what remains after a restart), so finished parts keep their
         /// pre-mutation weight whatever size the rewrite left behind.
@@ -1513,14 +1549,6 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
             0.0, 1.0);
 
-        /// An uncommitted lower block can still add a part to this mutation's scope, and a
-        /// still-open transaction's lower-version part is pending work whose outcome is unknown
-        /// (`MergeTreeSink::commitPart` releases its committing-block holder before the outer
-        /// transaction commits, so only the part itself marks it) - either way,
-        /// nothing-visible-left does not mean done yet.
-        const bool has_uncommitted_part_in_scope = std::any_of(
-            uncommitted_part_versions.begin(), uncommitted_part_versions.end(),
-            [&](Int64 version) { return version < mutation_version; });
         const bool mutation_is_done = parts_to_do_names.empty()
             && (lowest_uncommitted_insert_block >= mutation_version)
             && !has_uncommitted_part_in_scope;

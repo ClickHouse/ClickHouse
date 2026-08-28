@@ -65,3 +65,40 @@ echo "${rb_state:-FAIL: mutation never finished after the rollback}"
 
 $CLICKHOUSE_CLIENT -q "SELECT k, v FROM t_mut_rolled_back ORDER BY k"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_mut_rolled_back SYNC"
+
+# The mutation's own transaction sees its uncommitted part and will rewrite it, so that part is
+# known scope, not unknown work: with merges stopped, both parts count and progress is a number.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_mut_same_tx SYNC"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_mut_same_tx (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_mut_same_tx VALUES (1, 1)"
+
+tx 3 "BEGIN TRANSACTION" > /dev/null
+tx 3 "INSERT INTO t_mut_same_tx SETTINGS async_insert = 0 VALUES (2, 2)" > /dev/null
+
+$CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_mut_same_tx"
+# A transactional mutation always waits for completion, so it runs asynchronously while the
+# merges-stopped state is observed.
+tx_async 3 "ALTER TABLE t_mut_same_tx UPDATE v = v + 1 WHERE 1" > /dev/null
+
+same_tx_state=""
+for _ in {1..300}; do
+    same_tx_state=$($CLICKHOUSE_CLIENT -q "SELECT is_done, parts_to_do, bytes_to_do > 0, progress FROM system.mutations WHERE database = currentDatabase() AND table = 't_mut_same_tx'")
+    [ -n "$same_tx_state" ] && break
+    sleep 0.2
+done
+echo "${same_tx_state:-FAIL: same-transaction mutation never appeared}"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_mut_same_tx"
+tx_wait 3 > /dev/null
+tx 3 "COMMIT" > /dev/null
+
+same_tx_done=""
+for _ in {1..300}; do
+    same_tx_done=$($CLICKHOUSE_CLIENT -q "SELECT is_done, progress FROM system.mutations WHERE database = currentDatabase() AND table = 't_mut_same_tx' AND is_done")
+    [ -n "$same_tx_done" ] && break
+    sleep 0.2
+done
+echo "${same_tx_done:-FAIL: same-transaction mutation never finished}"
+
+$CLICKHOUSE_CLIENT -q "SELECT k, v FROM t_mut_same_tx ORDER BY k"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_mut_same_tx SYNC"
