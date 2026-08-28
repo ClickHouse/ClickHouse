@@ -114,7 +114,9 @@ private:
     std::unique_ptr<Impl> impl;
 
     IDataPartStorage & part_storage;
-    UInt64 entries_added = 0;
+    /// Both are read only from the `USE_ROCKSDB` paths; the stub build leaves them at their
+    /// initial value.
+    [[maybe_unused]] UInt64 entries_added = 0;
     [[maybe_unused]] bool finalized = false;
 };
 

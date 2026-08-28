@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxnCommit.h>
 
+#include "config.h"
+
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -45,6 +47,7 @@ namespace ErrorCodes
 {
 extern const int ABORTED;
 extern const int LOGICAL_ERROR;
+extern const int SUPPORT_IS_DISABLED;
 extern const int VIOLATED_CONSTRAINT;
 }
 
@@ -239,8 +242,13 @@ ProbeTargetPartPtr UniqueKeyTxnCommit::InsertCommit::makeSSTProbeTarget(const Me
             ErrorCodes::LOGICAL_ERROR,
             "UNIQUE KEY part {} has {} rows but no dense index; cannot probe for duplicates",
             target->name, target->rows_count);
+#if USE_ROCKSDB
     return std::make_shared<SSTProbeTargetPart>(
         target.get(), store.readLatestBitmap(target->info), openSSTReaderFromPath(*sst_path));
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "UNIQUE KEY duplicate probing requires RocksDB support (USE_ROCKSDB=1)");
+#endif
 }
 
 static Block filterBlockByMask(const Block & block, const IColumn::Filter & keep)
@@ -492,6 +500,7 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
     if (merged_part.rows_count == 0)
         return nullptr;
 
+#if USE_ROCKSDB
     const Names & unique_key_column_names = metadata_snapshot->getUniqueKeyColumns();
     const UInt64 max_encoded_size = storage.getContext()->getSettingsRef()[Setting::unique_key_max_encoded_size];
 
@@ -530,6 +539,10 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
     }
 
     return self_kills->empty() ? nullptr : self_kills;
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "UNIQUE KEY merge reconciliation requires RocksDB support (USE_ROCKSDB=1)");
+#endif
 }
 
 void UniqueKeyTxnCommit::merge(
