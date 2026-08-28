@@ -634,3 +634,60 @@ def test_populate_from_deferred_source(engine):
             POPULATE AS SELECT n, count() AS c FROM {DB}.src GROUP BY n"""
     )
     assert int(node.query(f"SELECT sum(c) FROM {DB}.mv")) == 100
+
+
+# Endless generators, which a `SELECT *` would never come back from.
+ENDLESS_SYSTEM_TABLES = {"numbers", "numbers_mt", "zeros", "zeros_mt", "generate_series", "primes"}
+
+
+def test_no_system_table_loads_a_lazy_table(started_cluster):
+    """Reading a system table is an observation, so none of them may materialize a table. This walks
+    every system table rather than the few known to reach into storages, so a column added later that
+    resolves the proxy is caught here instead of in production."""
+    node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
+    node.query(f"CREATE DATABASE {DB} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    try:
+        node.query(
+            f"""
+            CREATE TABLE {DB}.t (d Date, id UInt64, s String,
+                INDEX idx_s s TYPE bloom_filter GRANULARITY 1,
+                PROJECTION p (SELECT s, count() GROUP BY s))
+            ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY id;
+            INSERT INTO {DB}.t VALUES ('2026-01-01', 1, 'a');
+            {RELOAD}
+            """
+        )
+        assert loaded("t") == "0"
+
+        names = [
+            name
+            for name in node.query(
+                "SELECT name FROM system.tables WHERE database = 'system' ORDER BY name"
+            ).split()
+            if name not in ENDLESS_SYSTEM_TABLES
+        ]
+        assert len(names) > 50, names
+
+        def read_all(table):
+            # Some refuse to be read without a predicate, and a new endless one must not hang the
+            # test, neither of which is what this checks.
+            node.query(
+                f"SELECT * FROM system.{table} FORMAT Null SETTINGS max_execution_time = 30",
+                ignore_error=True,
+            )
+
+        for name in names:
+            read_all(name)
+        if loaded("t") == "0":
+            return
+
+        # Something materialized it, so go again and name every table that does.
+        loaders = []
+        for name in names:
+            node.query(RELOAD)
+            read_all(name)
+            if loaded("t") != "0":
+                loaders.append(name)
+        assert not loaders, f"these system tables loaded the table: {loaders}"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
