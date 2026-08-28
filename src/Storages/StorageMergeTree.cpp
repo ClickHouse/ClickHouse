@@ -838,6 +838,11 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             max_volume_index = std::max(max_volume_index, volume_index);
         }
 
+        /// Pre-patch move infos must not pick the destination (a patch can move the TTL either
+        /// way); the infos recalculated by the merge let the background mover relocate the part.
+        if (!future_part->patch_parts.empty())
+            ttl_infos.moves_ttl.clear();
+
         reserved_space = storage.balancedReservation(
             metadata_snapshot,
             total_size,

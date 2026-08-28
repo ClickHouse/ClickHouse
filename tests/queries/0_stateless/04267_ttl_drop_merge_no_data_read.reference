@@ -36,3 +36,9 @@ RegularMerge	0	200
 -- Case 13: blocked TTL merge still recalculates patched infos
 100
 1
+-- Case 14: vertical TTL merge keeps move/recompress inputs readable
+1000
+Vertical
+-- Case 15: patched merge does not recompress on pre-patch infos
+LZ4
+1

@@ -272,6 +272,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             backQuote(future_merged_part->name), backQuote(entry.new_part_name));
     }
 
+    /// Pre-patch move infos must not pick the destination (a patch can move the TTL either way);
+    /// the infos recalculated by the merge let the background mover relocate the part instead.
+    if (!patch_parts.empty())
+        ttl_infos.moves_ttl.clear();
+
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
     ReservationSharedPtr reserved_space = storage.balancedReservation(
         metadata_snapshot,

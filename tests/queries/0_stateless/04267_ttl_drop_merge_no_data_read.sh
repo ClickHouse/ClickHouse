@@ -741,3 +741,109 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_blocked;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_blocked;"
+
+# -------------------------------------------------------------------
+# Case 14: vertical TTL merge keeps move/recompress inputs readable
+#
+# The TTL step of a vertical merge (canVerticalTTLDelete) runs on the
+# horizontal stream, which used to carry only the rows-TTL inputs; the
+# MOVE/RECOMPRESS rebuild then failed with NOT_FOUND_COLUMN_IN_BLOCK.
+# Patch-forced TTL steps ride the same stream, so they need this too.
+# -------------------------------------------------------------------
+echo "-- Case 14: vertical TTL merge keeps move/recompress inputs readable"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_vertical_recompress
+    (
+        id UInt64,
+        event_time DateTime,
+        d2 DateTime,
+        pad String
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 SECOND, d2 + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(3))
+    SETTINGS
+        min_bytes_for_wide_part = 1,
+        vertical_merge_algorithm_min_rows_to_activate = 1,
+        vertical_merge_algorithm_min_columns_to_activate = 1;
+
+    SYSTEM STOP MERGES t_ttl_vertical_recompress;
+
+    -- Half the rows are already expired, half survive, in both parts.
+    INSERT INTO t_ttl_vertical_recompress
+        SELECT number, if(number % 2 = 0, now() - INTERVAL 1 HOUR, now() + INTERVAL 10 HOUR), now(), repeat('x', 100) FROM numbers(1000);
+    INSERT INTO t_ttl_vertical_recompress
+        SELECT number + 1000, if(number % 2 = 0, now() - INTERVAL 1 HOUR, now() + INTERVAL 10 HOUR), now(), repeat('y', 100) FROM numbers(1000);
+
+    SYSTEM START MERGES t_ttl_vertical_recompress;
+
+    OPTIMIZE TABLE t_ttl_vertical_recompress FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_vertical_recompress;"
+
+# The merge that dropped the expired rows really ran the vertical algorithm.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT merge_algorithm
+    FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_vertical_recompress' AND event_type = 'MergeParts'
+    ORDER BY event_time DESC
+    LIMIT 1;
+"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_vertical_recompress;"
+
+# -------------------------------------------------------------------
+# Case 15: patched merge does not recompress on pre-patch infos
+#
+# The output codec used to be chosen from the aggregated pre-patch
+# recompression infos; a patch moving the TTL input into the future then
+# recompressed prematurely. The codec must come from the table default and
+# the recalculated infos must reflect the patched values.
+# -------------------------------------------------------------------
+echo "-- Case 15: patched merge does not recompress on pre-patch infos"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_recompress
+    (
+        id UInt64,
+        d2 DateTime
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL d2 + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(3))
+    SETTINGS
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_recompress;
+
+    -- The recompression TTL is satisfied when the part is written...
+    INSERT INTO t_ttl_patch_recompress SELECT number, now() - INTERVAL 2 DAY FROM numbers(100);
+
+    -- ...but a lightweight update moves 10 inputs back into the future.
+    UPDATE t_ttl_patch_recompress SET d2 = now() WHERE id < 10
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM START MERGES t_ttl_patch_recompress;
+
+    OPTIMIZE TABLE t_ttl_patch_recompress FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "
+    SELECT default_compression_codec
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_recompress' AND active AND rows = 100;
+"
+
+# The recalculated recompression info reflects the patched values, so a later
+# recompression merge applies the codec once the TTL is really due.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT any(recompression_ttl_info.max[1]) > now()
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_recompress' AND active AND rows = 100;
+"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_recompress;"
