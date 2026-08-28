@@ -24,6 +24,7 @@ EMPTY_MEMBER_FILE="${WORK_DIR}/empty-member.parquet"
 MAGIC_PADDING_FILE="${WORK_DIR}/magic-padding.parquet"
 OVERFLOW_FILE="${WORK_DIR}/overflow.parquet"
 SPLIT_MEMBER_FILE="${WORK_DIR}/split-member.parquet"
+TRUNCATED_TRAILER_FILE="${WORK_DIR}/truncated-trailer.parquet"
 
 # One fully dictionary-encoded `gzip`-compressed string column in a single row group. Checksums, the
 # page index and the bloom filter are disabled so that the only offsets to fix up after the padding
@@ -38,10 +39,10 @@ ${CLICKHOUSE_LOCAL} --query="
         engine_file_truncate_on_insert = 1, max_block_size = 1000000;
 "
 
-python3 - "${DATA_FILE}" "${PADDED_FILE}" "${EMPTY_MEMBER_FILE}" "${MAGIC_PADDING_FILE}" "${OVERFLOW_FILE}" "${SPLIT_MEMBER_FILE}" <<'PYEOF'
+python3 - "${DATA_FILE}" "${PADDED_FILE}" "${EMPTY_MEMBER_FILE}" "${MAGIC_PADDING_FILE}" "${OVERFLOW_FILE}" "${SPLIT_MEMBER_FILE}" "${TRUNCATED_TRAILER_FILE}" <<'PYEOF'
 import gzip, struct, sys
 
-src, padded_dst, empty_member_dst, magic_padding_dst, overflow_dst, split_member_dst = sys.argv[1:]
+src, padded_dst, empty_member_dst, magic_padding_dst, overflow_dst, split_member_dst, truncated_trailer_dst = sys.argv[1:]
 PADDING = 4096
 
 # --- minimal Thrift compact protocol walker (records the byte range of every scalar integer field) ---
@@ -171,6 +172,11 @@ make_file(overflow_dst, compressed_payload + gzip.compress(b"overflow"))
 plain_payload = gzip.decompress(compressed_payload)
 split_at = len(plain_payload) // 2
 make_file(split_member_dst, gzip.compress(plain_payload[:split_at]) + gzip.compress(plain_payload[split_at:]))
+
+# The opposite of padding: the page ends right after the DEFLATE payload, with the 8-byte gzip
+# trailer (`CRC32` + `ISIZE`) cut off. The payload fills the declared output exactly, so the
+# missing trailer is only noticed while validating it, and the page must be rejected cleanly.
+make_file(truncated_trailer_dst, compressed_payload[:-8])
 PYEOF
 
 echo "the padded file reads back exactly like the original"
@@ -189,6 +195,9 @@ echo "members that collectively fill the page read back exactly"
 ${CLICKHOUSE_LOCAL} --query="
     select (select (groupBitXor(cityHash64(s)), count()) from file('${DATA_FILE}', Parquet))
          = (select (groupBitXor(cityHash64(s)), count()) from file('${SPLIT_MEMBER_FILE}', Parquet))"
+
+echo "a page whose gzip trailer is cut off is rejected"
+${CLICKHOUSE_LOCAL} --query="select sum(length(s)) from file('${TRUNCATED_TRAILER_FILE}', Parquet)" 2>&1 | grep -c 'the gzip member is not properly terminated'
 
 echo "a second gzip member beyond the declared output is rejected"
 ${CLICKHOUSE_LOCAL} --query="select sum(length(s)) from file('${OVERFLOW_FILE}', Parquet)" 2>&1 | grep -c 'Compressed page uncompresses to more than the declared'
