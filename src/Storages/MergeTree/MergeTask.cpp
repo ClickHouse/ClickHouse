@@ -638,15 +638,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
-    /// A pending patch can change TTL inputs (e.g. push event_time into the future), so the source
-    /// parts' pre-patch infos can neither prove expiry nor feed TTLTransform's drop-all fast path.
-    if (global_ctx->metadata_snapshot->hasAnyTTL() && !global_ctx->future_part->patch_parts.empty())
-    {
-        global_ctx->new_data_part->ttl_infos = {};
-        ctx->need_remove_expired_values = true;
-        ctx->force_ttl = true;
-    }
-
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
@@ -655,6 +646,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
+    }
+
+    /// A pending patch can change rows/column TTL inputs, so the pre-patch maxima must not feed
+    /// TTLTransform's drop-all/drop-column fast paths; everything is re-evaluated row-level instead.
+    /// Only the maxima are reset: recompression/move infos stay advisory, and a TTL-blocked merge
+    /// (no TTLStep at all) keeps the aggregated infos rather than committing empty ones.
+    if (ctx->need_remove_expired_values && !global_ctx->future_part->patch_parts.empty())
+    {
+        global_ctx->new_data_part->ttl_infos.table_ttl.max = 0;
+        for (auto & [column_name, column_info] : global_ctx->new_data_part->ttl_infos.columns_ttl)
+            column_info.max = 0;
+        ctx->force_ttl = true;
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
