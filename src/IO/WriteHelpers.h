@@ -870,7 +870,7 @@ inline void writeDateTime64FractionalText(typename DecimalType::NativeType fract
                 last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
+        size_t new_scale = ((last_non_zero_pos / 3) + 1) * 3;
         writeString(&data[0], new_scale, buf);
     }
     else
@@ -1094,7 +1094,7 @@ inline void writeTime64FractionalText(typename DecimalType::NativeType fractiona
                 last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
+        size_t new_scale = ((last_non_zero_pos / 3) + 1) * 3;
         writeString(&data[0], new_scale, buf);
     }
     else
