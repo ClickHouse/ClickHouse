@@ -126,3 +126,8 @@ FROM
     FROM values('ts_arr Array(UInt32), val_arr Array(Float64)', ([95], [3.]), ([95], [5.]))
 )
 SETTINGS max_threads = 1;
+
+SELECT 'Float32 input still yields a Float64 result:';
+
+SELECT toTypeName(timeSeriesStddevToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [3, 5]::Array(Float32)));
+SELECT timeSeriesStdvarToGrid(100, 100, 1, 10)([92, 98, 98]::Array(UInt32), [1, 3, 5]::Array(Float32));

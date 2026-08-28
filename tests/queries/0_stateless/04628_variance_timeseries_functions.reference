@@ -37,3 +37,6 @@ NaN survives when all values at the timestamp are NaN:
 [nan]
 Partial states sharing a timestamp deduplicate on merge:
 [0]
+Float32 input still yields a Float64 result:
+Array(Nullable(Float64))
+[4]

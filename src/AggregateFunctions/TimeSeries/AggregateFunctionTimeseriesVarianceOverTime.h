@@ -22,6 +22,9 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
+    /// Population variance/stddev are documented as Float64 regardless of the stored value type,
+    /// matching the ordinary varPop/stddevPop family.
+    using ResultValueType = Float64;
 
     static String getName()
     {
@@ -118,7 +121,7 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<Float64> getResult(TimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (combined.count == 0)
@@ -138,9 +141,9 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
                 variance = 0.0;
 
             if constexpr (is_stddev)
-                return static_cast<ValueType>(std::sqrt(variance));
+                return std::sqrt(variance);
             else
-                return static_cast<ValueType>(variance);
+                return variance;
         }
     };
 
