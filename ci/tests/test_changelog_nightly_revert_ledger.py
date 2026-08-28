@@ -185,6 +185,7 @@ def test_revert_of_revert_arrives_after_the_entry_was_deleted(monkeypatch):
         {
             "prs": ["109946"],
             "siblings": [],
+            "withheld": [],
             "category": BUG_FIX,
             "line": FIX,
             "removed_by": ["114911"],
@@ -251,6 +252,7 @@ def test_branch_without_a_ledger_keeps_the_previous_behaviour(monkeypatch):
         "credits": {},
         "restore": {},
         "missing": [],
+        "withheld": {},
         "unresolved": [],
         "ledger": [],
     }
@@ -389,6 +391,7 @@ def test_restoring_into_a_merged_bullet_names_the_surviving_siblings(monkeypatch
         {
             "prs": ["109000"],
             "siblings": ["109006"],
+            "withheld": [],
             "category": BUG_FIX,
             "line": MERGED,
             "removed_by": ["115000"],
@@ -417,6 +420,7 @@ def test_a_merged_bullet_is_restored_once_for_all_its_pull_requests(monkeypatch)
         {
             "prs": ["109000", "109006"],
             "siblings": [],
+            "withheld": [],
             "category": BUG_FIX,
             "line": MERGED,
             "removed_by": ["115000"],
@@ -912,6 +916,139 @@ def test_an_already_duplicated_entry_cannot_gain_another_copy(monkeypatch, tmp_p
     assert (
         run_verify_edit(
             monkeypatch, tmp_path, old_text, changelog([FIX, FIX]), reverts
+        )
+        is None
+    )
+
+
+# `#109000` and `#109006` shared a bullet; both were reverted, `#115000` taking
+# out `#109000` and `#115100` taking out `#109006`. Only the first revert has
+# been reverted, so only `#109000` comes back.
+SPLIT_LEDGER = [
+    f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {MERGED}",
+    f"Changelog-deleted-entry: 109006 [{BUG_FIX}] {MERGED}",
+    f'Changelog-revert: 115100 109006 Revert "{MERGED_TITLE} follow-up"',
+    f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+]
+
+
+def _merged_revert_prs():
+    PULL_REQUESTS.setdefault(
+        "115000",
+        {
+            "title": f'Revert "{MERGED_TITLE}"',
+            "body": "Reverts ClickHouse/ClickHouse#109000",
+        },
+    )
+    PULL_REQUESTS.setdefault(
+        "115001",
+        {
+            "title": f'Revert "Revert "{MERGED_TITLE}""',
+            "body": "Reverts ClickHouse/ClickHouse#115000",
+        },
+    )
+
+
+def test_a_still_reverted_sibling_is_not_resurrected(monkeypatch, tmp_path):
+    """Only `#109000` has been re-applied, but the bullet recorded for it also
+    attributes `#109006`, whose revert still stands. Replaying the line
+    unchanged would advertise a change that is out of the release."""
+    _merged_revert_prs()
+    old_text = changelog([], [REVERT_OF_MERGED])
+    reverts = analyze(monkeypatch, old_text, SPLIT_LEDGER)
+    assert reverts["restore"] == {"109000": (BUG_FIX, MERGED)}
+    assert reverts["withheld"] == {"109006": "115100"}
+    assert [group["withheld"] for group in reverts["missing"]] == [["109006"]]
+    prompt = cl._edit_prompt(VERSION, reverts)
+    assert "Leave `#109006` off that bullet" in prompt
+
+    pasted = run_verify_edit(
+        monkeypatch,
+        tmp_path,
+        old_text,
+        changelog([with_reapply(MERGED, "115001")]),
+        reverts,
+    )
+    assert pasted is not None
+    assert "whose revert still stands" in pasted
+    assert "#109006 (reverted by #115100)" in pasted
+
+    # `#109000` back on its own, `#109006` left off: accepted.
+    trimmed = (
+        "* The default value of `max_insert_threads` changed from `1` to `auto`. "
+        "[#109000](https://github.com/ClickHouse/ClickHouse/pull/109000) "
+        "([Someone](https://github.com/someone))."
+    )
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(trimmed, "115001")]),
+            reverts,
+        )
+        is None
+    )
+
+
+def test_a_recorded_bullet_may_not_be_restored_as_two(monkeypatch, tmp_path):
+    """The whole merged bullet comes back, so both of its pull requests are
+    restored - on one bullet. Splitting it undoes the merge of skill section 7
+    and lets each half lose the re-applying link separately."""
+    _merged_revert_prs()
+    old_text = changelog([], [REVERT_OF_MERGED])
+    reverts = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {MERGED}",
+            f"Changelog-deleted-entry: 109006 [{BUG_FIX}] {MERGED}",
+            f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+            f'Changelog-revert: 115000 109006 Revert "{MERGED_TITLE}"',
+        ],
+    )
+    assert [group["prs"] for group in reverts["missing"]] == [["109000", "109006"]]
+
+    halves = [
+        with_reapply(
+            "* The default value of `max_insert_threads` changed from `1` to "
+            "`auto`. "
+            "[#109000](https://github.com/ClickHouse/ClickHouse/pull/109000) "
+            "([Someone](https://github.com/someone)).",
+            "115001",
+        ),
+        # The second half even carries the re-apply link, so only the
+        # one-bullet rule catches this.
+        with_reapply(
+            "* The default value of `max_insert_threads` changed from `1` to "
+            "`auto`. "
+            "[#109006](https://github.com/ClickHouse/ClickHouse/pull/109006) "
+            "([Someone](https://github.com/someone)).",
+            "115001",
+        ),
+    ]
+    split = run_verify_edit(monkeypatch, tmp_path, old_text, changelog(halves), reverts)
+    assert split is not None
+    assert "were split across several" in split
+    assert "`#109000`, `#109006` on 2 bullets" in split
+
+    # And the second half without the link is caught too, on its own bullet.
+    lopsided = run_verify_edit(
+        monkeypatch,
+        tmp_path,
+        old_text,
+        changelog([halves[0], halves[1].split(" [#115001]")[0]]),
+        reverts,
+    )
+    assert lopsided is not None
+
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(MERGED, "115001")]),
+            reverts,
         )
         is None
     )

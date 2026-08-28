@@ -529,7 +529,7 @@ def entry_placement(text, pr):
     return "", ""
 
 
-def group_restorations(restore, section):
+def group_restorations(restore, section, withheld=()):
     """Group the entries to restore by the bullet they were recorded from.
 
     A merge (skill section 7) puts several pull requests on one bullet, so one
@@ -542,19 +542,27 @@ def group_restorations(restore, section):
     `section` is the in-progress section, not the whole file: the same pull
     request legitimately appears in an already-released section further down
     (published in the last release, or backported), and a sibling that
-    survives only there is no bullet to merge into."""
+    survives only there is no bullet to merge into.
+
+    `withheld` are the pull requests whose deletion a revert still licenses.
+    A recorded merged bullet can attribute one of those - the bullet covered
+    several pull requests, they were all deleted, and only some have been
+    re-applied - and putting the line back unchanged would resurrect a change
+    that is still out of the release. They are reported per group so that the
+    prompt can ask for those attributions to be left off."""
     groups = {}
     for pr, (category, line) in restore.items():
         groups.setdefault((category, line), []).append(pr)
     out = []
     for (category, line), prs in groups.items():
-        siblings = set(PR_ATTRIBUTION_RE.findall(line)) - set(prs)
+        others = set(PR_ATTRIBUTION_RE.findall(line)) - set(prs)
         out.append(
             {
                 "prs": sorted(prs, key=int),
                 "siblings": sorted(
-                    (p for p in siblings if is_attributed(section, p)), key=int
+                    (p for p in others if is_attributed(section, p)), key=int
                 ),
+                "withheld": sorted((p for p in others if p in withheld), key=int),
                 "category": category,
                 "line": line,
             }
@@ -593,6 +601,11 @@ def analyze_reverts(text, anchor):
                    recorded from (one merged bullet covers several pull
                    requests) and annotated with the reverts that removed and
                    re-applied it;
+    `withheld`   - pull request -> the uncancelled revert that still licenses
+                   the deletion of its recorded entry, so it must not be in
+                   the section: neither left there nor brought back as part of
+                   a merged bullet that is being restored for another pull
+                   request;
     `unresolved` - the reverts of this raw block whose target stayed unknown;
     `ledger`     - the trailer lines to record on the edit commit.
     """
@@ -640,6 +653,11 @@ def analyze_reverts(text, anchor):
     # into. This is not the question `disappeared_entries` asks of a raw entry
     # that never made it in, where a released copy is a legitimate reason for
     # it not to be in this section at all.
+    # The other side of `restore`: a recorded entry whose revert still stands
+    # stays out. Worth stating separately because a merged bullet mixes the
+    # two - the same recorded line can hold an entry to bring back and one
+    # that has to be left off.
+    withheld = {pr: credits[pr] for pr in deleted if pr in credits}
     missing = group_restorations(
         {
             pr: record
@@ -647,6 +665,7 @@ def analyze_reverts(text, anchor):
             if not is_attributed(section, pr)
         },
         section,
+        withheld,
     )
     for group in missing:
         group["removed_by"] = removed_by(group["prs"])
@@ -655,6 +674,7 @@ def analyze_reverts(text, anchor):
         "credits": credits,
         "restore": restore,
         "missing": missing,
+        "withheld": withheld,
         "unresolved": unresolved,
         "ledger": [
             f"{REVERT_TRAILER} {pr} {target} {titles[pr]}".rstrip()
@@ -885,6 +905,14 @@ def _pr_list(prs):
     return ", ".join(f"`#{pr}`" for pr in prs) or "an earlier revert"
 
 
+def _them(prs):
+    return "them" if len(prs) > 1 else "it"
+
+
+def _they_are(prs):
+    return "those changes are" if len(prs) > 1 else "that change is"
+
+
 def _edit_prompt(version, reverts, previous_error=None):
     anchor = _anchor_id(version)
     strict = "\n".join(f"   - {c}" for c in sorted(STRICT_RETENTION_CATEGORIES))
@@ -900,17 +928,26 @@ def _edit_prompt(version, reverts, previous_error=None):
             + (
                 f"\n     That bullet also carries {_pr_list(group['siblings'])}, "
                 f"which {'are' if len(group['siblings']) > 1 else 'is'} still in "
-                f"{CHANGELOG_FILE}: the bullet is therefore still there, so put "
-                f"the missing link back into it — do not paste the line above as "
-                f"a second bullet, and do not repeat "
+                f"the in-progress section: the bullet is therefore still there, "
+                f"so put the missing link back into it — do not paste the line "
+                f"above as a second bullet, and do not repeat "
                 f"{_pr_list(group['siblings'])}."
                 if group["siblings"]
+                else ""
+            )
+            + (
+                f"\n     Leave {_pr_list(group['withheld'])} off that bullet: "
+                f"the line above attributes {_them(group['withheld'])} because "
+                f"the entries were merged, but "
+                f"{_they_are(group['withheld'])} still reverted and out of the "
+                f"release. Keep the prose that describes what does ship."
+                if group["withheld"]
                 else ""
             )
             for group in reverts["missing"]
         )
         restore = f"""
-Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section — once, even where it covers several pull requests — under the `#### <Category>` header named with it, with the link of the pull request that re-applied it appended, and do not add a bullet for the reverts themselves. Use that category as given: it is where the entry was when it was deleted, which is a decision of the earlier edit (an entry promoted out of `NOT FOR CHANGELOG` or moved between categories does not go back to the category of its pull request). No pull request may end up attributed twice in the section.
+Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section as a single bullet — one bullet carrying all of the pull requests listed with it, never one bullet each — under the `#### <Category>` header named with it, with the link of the pull request that re-applied it appended, and do not add a bullet for the reverts themselves. Use that category as given: it is where the entry was when it was deleted, which is a decision of the earlier edit (an entry promoted out of `NOT FOR CHANGELOG` or moved between categories does not go back to the category of its pull request). No pull request may end up attributed twice in the section.
 {entries}
 """
     retry = ""
@@ -1072,22 +1109,55 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
             f"({sorted(misplaced)}); a restoration keeps the category the "
             f"entry had when it was deleted"
         )
+    # One recorded bullet comes back as one bullet. It covered several pull
+    # requests because an earlier edit merged them (skill section 7), and
+    # splitting it now duplicates the prose and undoes that merge - and each
+    # half can then lose the re-applying link separately.
+    split = [
+        f"{_pr_list(group['prs'])} on {len(bullets)} bullets"
+        for group in reverts["missing"]
+        for bullets in [{entry_placement(section, pr)[1] for pr in group["prs"]}]
+        if len(bullets) > 1
+    ]
+    if split:
+        return (
+            f"Restored entries that shared one bullet were split across "
+            f"several ({sorted(split)}); a recorded bullet comes back as one "
+            f"bullet carrying all of its pull requests"
+        )
     # The entry comes back because a pull request re-applied the change, and
     # skill section 2.5 records that pull request on the entry - otherwise the
     # only trace of the re-apply is gone from the release, since its own revert
     # bullet is deleted. Checked on the bullet the entry landed on, not merely
     # somewhere in the section.
-    unrecorded = []
+    unrecorded = set()
     for group in reverts["missing"]:
-        bullet = entry_placement(section, group["prs"][0])[1]
-        for reapply in group["reapplied_by"]:
-            if not is_attributed(bullet, reapply):
-                unrecorded.append(f"#{reapply} on the entry of #{group['prs'][0]}")
+        for pr in group["prs"]:
+            bullet = entry_placement(section, pr)[1]
+            for reapply in group["reapplied_by"]:
+                if not is_attributed(bullet, reapply):
+                    unrecorded.add(f"#{reapply} on the entry of #{pr}")
     if unrecorded:
         return (
             f"Restored entries do not record the pull request that re-applied "
             f"the change ({sorted(unrecorded)}); its link is appended to the "
             f"entry, so both pull request numbers stay in the changelog"
+        )
+    # The mirror of the restoration: an entry whose revert still stands has no
+    # place in the section. It is not only a matter of not putting it back -
+    # a recorded merged bullet can attribute it next to an entry that *is*
+    # being restored, and replaying that line unchanged advertises a change
+    # that is out of the release.
+    resurrected = sorted(
+        f"#{pr} (reverted by #{revert})"
+        for pr, revert in reverts["withheld"].items()
+        if is_attributed(section, pr)
+    )
+    if resurrected:
+        return (
+            f"Entries whose revert still stands are in the in-progress "
+            f"section ({resurrected}); those changes are not in the release, "
+            f"so they have no entry"
         )
     # A restored bullet may have been a merged one (skill section 7), carrying
     # pull requests that were never deleted and are still in the section.
