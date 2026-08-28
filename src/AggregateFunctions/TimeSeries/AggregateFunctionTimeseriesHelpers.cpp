@@ -1199,7 +1199,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.9428090,1.2990381,0.5,0,0,1.4142135]                                       │
+│ [NULL,NULL,0,0.94280905,1.299038,0.5,0,0,1.4142135]                                       │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -1218,7 +1218,7 @@ SELECT timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
         )",
         R"(
 ┌─timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.9428090,1.2990381,0.5,0,0,1.4142135]                                         │
+│ [NULL,NULL,0,0.94280905,1.299038,0.5,0,0,1.4142135]                                         │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -1286,7 +1286,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.8888889,1.6875,0.25,0,0,2]                                                 │
+│ [NULL,NULL,0,0.8888889,1.6875,0.25,0,0,2]                                                │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -1305,7 +1305,7 @@ SELECT timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
         )",
         R"(
 ┌─timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.8888889,1.6875,0.25,0,0,2]                                                   │
+│ [NULL,NULL,0,0.8888889,1.6875,0.25,0,0,2]                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
