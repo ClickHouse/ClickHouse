@@ -1058,7 +1058,7 @@ def test_a_recorded_bullet_may_not_be_restored_as_two(monkeypatch, tmp_path):
     ]
     split = run_verify_edit(monkeypatch, tmp_path, old_text, changelog(halves), reverts)
     assert split is not None
-    assert "were split across several" in split
+    assert "shared one bullet are on several" in split
     assert "`#109000`, `#109006` on 2 bullets" in split
 
     # And the second half without the link is caught too, on its own bullet.
@@ -1538,3 +1538,85 @@ def test_a_promotable_entry_cancelled_in_one_run_is_still_recorded(monkeypatch):
     prompt = cl._edit_prompt(VERSION, reverts)
     assert PROMOTABLE in prompt
     assert "offered rather than required" in prompt
+
+
+def test_a_revert_spanning_two_releases_keeps_its_entry(monkeypatch, tmp_path):
+    """`#116100` undoes a change of this release *and* one that shipped in an
+    earlier one. The second half is user-visible (skill section 2, case 5), so
+    the revert is a real entry: it may not disappear along with the entry it
+    cancels here."""
+    PULL_REQUESTS["116100"] = {
+        "title": "Revert the two settings changes",
+        "body": (
+            "Reverts ClickHouse/ClickHouse#109946\n"
+            "Reverts ClickHouse/ClickHouse#90000"
+        ),
+    }
+    revert = _entry("116100", "Two settings are no longer enabled by default")
+    old_text = changelog([], raw_sections=[(STRICT, [FIX]), (STRICT, [revert])])
+    reverts = analyze(monkeypatch, old_text, [])
+    assert reverts["credits"] == {"109946": "116100", "90000": "116100"}
+    # Not exempt: one of its targets is not part of this cycle.
+    assert reverts["cancelling"] == []
+
+    both_gone = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([]), reverts
+    )
+    assert both_gone is not None
+    assert "Entries disappeared in the edit without a matching revert" in both_gone
+    assert "['116100']" in both_gone
+
+    # The cancelled entry goes, the revert's own entry stays.
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([revert]), reverts)
+        is None
+    )
+
+
+def test_a_restoration_merges_into_the_surviving_bullet(monkeypatch, tmp_path):
+    """`#109000` and `#109006` shared a bullet; `#109000` was reverted and
+    dropped from it, and the surviving bullet still carries `#109006`. Restoring
+    `#109000` as a second bullet with the same prose duplicates the entry even
+    though no attribution repeats - it has to go back into the bullet that
+    survived."""
+    _merged_revert_prs()
+    old_text = changelog([SOLO], [REVERT_OF_MERGED])
+    reverts = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {MERGED}",
+            f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+        ],
+    )
+    assert [group["siblings"] for group in reverts["missing"]] == [["109006"]]
+
+    beside = changelog(
+        [
+            SOLO,
+            with_reapply(
+                "* The default value of `max_insert_threads` changed from `1` "
+                "to `auto`. "
+                "[#109000](https://github.com/ClickHouse/ClickHouse/pull/109000) "
+                "([Someone](https://github.com/someone)).",
+                "115001",
+            ),
+        ]
+    )
+    # No attribution repeats, so only the shared-bullet rule catches it.
+    assert max(cl.attribution_counts(beside).values()) == 1
+    split = run_verify_edit(monkeypatch, tmp_path, old_text, beside, reverts)
+    assert split is not None
+    assert "shared one bullet are on several" in split
+    assert "`#109000`, `#109006` on 2 bullets" in split
+
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(MERGED, "115001")]),
+            reverts,
+        )
+        is None
+    )

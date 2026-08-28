@@ -799,7 +799,12 @@ def analyze_reverts(text, anchor):
         | set(deleted)
         | set(targets)
     )
-    cancelling = {pr for pr in targets if targets[pr] & cycle_entries}
+    # Every target, not any: a revert that undoes something of this release
+    # *and* something from an earlier one is still a user-visible change for
+    # the second half, so its own entry has to survive.
+    cancelling = {
+        pr for pr in targets if targets[pr] and targets[pr] <= cycle_entries
+    }
     # Which pull requests have to carry which re-applying links. Asked of every
     # entry that ships and was ever reverted, not only of the restorations:
     # when the whole chain arrives in one raw block the entry never left the
@@ -1341,17 +1346,40 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
             f"({sorted(misplaced)}); a restoration keeps the category the "
             f"entry had when it was deleted"
         )
+    # A restored bullet may have been a merged one (skill section 7), carrying
+    # pull requests that were never deleted and are still in the section.
+    # Pasting the recorded line back wholesale duplicates them, and the check
+    # above cannot see it - the link it looks for is present either way.
+    # Duplicates that predate the edit are none of this run's business.
+    before = attribution_counts(extract_in_progress_section(old_text, anchor) or "")
+    allowance = reverts["reapply_allowance"]
+    duplicated = sorted(
+        f"#{pr} {count} times"
+        for pr, count in attribution_counts(section).items()
+        if count > max(1, before.get(pr, 0), allowance.get(pr, 0))
+    )
+    if duplicated:
+        return (
+            f"The edit attributes pull requests more than once in the "
+            f"in-progress section ({duplicated}); an entry was written again "
+            f"instead of being merged into the bullet that already carries it"
+        )
     # One recorded bullet comes back as one bullet. It covered several pull
     # requests because an earlier edit merged them (skill section 7), and
     # splitting it now duplicates the prose and undoes that merge - and each
     # half can then lose the re-applying link separately.
     split = [
-        f"{_pr_list(group['prs'])} on {len(bullets)} bullets"
+        f"{_pr_list(shared)} on {len(bullets)} bullets"
         for group in reverts["missing"]
+        # The siblings too: they are the pull requests of the same recorded
+        # bullet that never left, so the restoration has to land on *their*
+        # bullet. Without them, re-adding a trimmed copy of the prose beside
+        # the surviving bullet passes every other check.
+        for shared in [group["prs"] + group["siblings"]]
         for bullets in [
             {
                 entry_placement(section, pr)[1]
-                for pr in group["prs"]
+                for pr in shared
                 if is_attributed(section, pr)
             }
         ]
@@ -1359,9 +1387,9 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     ]
     if split:
         return (
-            f"Restored entries that shared one bullet were split across "
-            f"several ({sorted(split)}); a recorded bullet comes back as one "
-            f"bullet carrying all of its pull requests"
+            f"Pull requests that shared one bullet are on several "
+            f"({sorted(split)}); a recorded bullet comes back as one bullet "
+            f"carrying all of them, merged into the one that survived"
         )
     # The entry comes back because a pull request re-applied the change, and
     # skill section 2.5 records that pull request on the entry - otherwise the
@@ -1399,24 +1427,6 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
             f"Entries whose revert still stands are in the in-progress "
             f"section ({resurrected}); those changes are not in the release, "
             f"so they have no entry"
-        )
-    # A restored bullet may have been a merged one (skill section 7), carrying
-    # pull requests that were never deleted and are still in the section.
-    # Pasting the recorded line back wholesale duplicates them, and the check
-    # above cannot see it - the link it looks for is present either way.
-    # Duplicates that predate the edit are none of this run's business.
-    before = attribution_counts(extract_in_progress_section(old_text, anchor) or "")
-    allowance = reverts["reapply_allowance"]
-    duplicated = sorted(
-        f"#{pr} {count} times"
-        for pr, count in attribution_counts(section).items()
-        if count > max(1, before.get(pr, 0), allowance.get(pr, 0))
-    )
-    if duplicated:
-        return (
-            f"The edit attributes pull requests more than once in the "
-            f"in-progress section ({duplicated}); an entry was written again "
-            f"instead of being merged into the bullet that already carries it"
         )
     _, old_tail = split_at_first_released_section(old_text, anchor)
     _, new_tail = split_at_first_released_section(text, anchor)
