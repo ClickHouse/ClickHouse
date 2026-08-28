@@ -134,8 +134,13 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
         return false;
 
     allocation.memory_growth_suspension_attempted = true;
-    if (allocation.increase.kind == IncreaseRequest::Kind::Regular && !suspended_growth)
-        suspended_growth = &allocation;
+    if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
+    {
+        if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
+            return false;
+        if (!suspended_growth)
+            suspended_growth = &allocation;
+    }
 
     allocation.memory_growth_suspended = true;
     memory_growth_suspension_changed = true;
@@ -143,6 +148,20 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
     /// `AllocationLimit` may make this decision while an `AllocationQueue` decrease is being propagated.
     scheduleActivation();
     return true;
+}
+
+void AllocationQueue::notifyRecoveryProgress(ResourceAllocation & allocation)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable || suspended_growth != &allocation)
+        return;
+
+    /// This is the query's explicit recovery checkpoint after it ran spill/release work. Re-open
+    /// the constrained subtree so the external controller can either request another reclaim or
+    /// inject suction priority. No parent traversal happens on the query thread.
+    memory_growth_suspension_retry_requested = true;
+    memory_growth_suspension_changed = true;
+    scheduleActivation();
 }
 
 void AllocationQueue::retrySuspendedIncreases()
@@ -282,6 +301,8 @@ void AllocationQueue::approveIncrease()
     apply(*increase);
     allocation.allocated += increase->size;
     allocation.last_increase_approval_epoch = increase->approval_epoch;
+    if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
+        allocation.onGrowthPressureResolved();
 
     if (suspended_growth == &allocation)
     {
@@ -565,7 +586,10 @@ bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
 void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
 {
     if (suspended_growth)
+    {
+        suspended_growth->onGrowthPressureResolved();
         suspended_growth->memory_growth_suspended = false;
+    }
     suspended_growth = nullptr;
     memory_growth_suspension_retry_requested = false;
 

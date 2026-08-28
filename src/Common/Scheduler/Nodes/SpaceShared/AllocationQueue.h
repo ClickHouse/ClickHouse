@@ -30,6 +30,7 @@ public:
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
     bool trySuspendIncrease(ResourceAllocation & allocation) override;
+    void notifyRecoveryProgress(ResourceAllocation & allocation) override;
     void retrySuspendedIncreases() override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;

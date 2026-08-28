@@ -12,6 +12,8 @@ class MemoryTracker;
 namespace DB
 {
 
+class MemorySpillScheduler;
+
 /// `MemoryReservation` bridges a running query and the memory scheduler: the scheduler caps each
 /// workload's memory while the query's `MemoryTracker` stays the source of truth. It backs:
 ///   CREATE RESOURCE memory (MEMORY RESERVATION)
@@ -55,6 +57,9 @@ public:
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
 
+    /// Pipeline threads bind the query-scoped spill controller once their ThreadGroup exists.
+    void setMemorySpillScheduler(const std::shared_ptr<MemorySpillScheduler> & scheduler);
+
 private:
     void throwIfNeeded();
 
@@ -68,6 +73,9 @@ private:
     void increaseApproved(const IncreaseRequest & increase) override;
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;
+    GrowthPressureAction onGrowthPressure() override;
+    void onGrowthPressureResolved() override;
+    bool isGrowthRecoveryActive() override;
 
     const ResourceCost reserved_size; // value of `reserve_memory` query setting
 
@@ -86,6 +94,10 @@ private:
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost actual_size = 0; // real size of the resource used by the allocation
     ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued (for accurate rollback)
+
+    std::weak_ptr<MemorySpillScheduler> memory_spill_scheduler;
+    bool growth_recovery_active = false;
+    bool recovery_checkpoint_armed = false;
 
     /// Helper struct. Holds postponed ProfileEvents increments to be executed from a query thread.
     struct Metrics

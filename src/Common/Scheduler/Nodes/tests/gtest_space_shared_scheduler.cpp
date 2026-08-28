@@ -580,7 +580,57 @@ struct ManualAllocation : public ResourceAllocation
         return allocated_size;
     }
 
+    void protectAfterPressureRounds(size_t rounds)
+    {
+        std::unique_lock lock(mutex);
+        protection_round = rounds;
+    }
+
+    void waitPressureCount(size_t count)
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return total_pressure_events >= count; });
+    }
+
+    size_t pressureCount()
+    {
+        std::unique_lock lock(mutex);
+        return total_pressure_events;
+    }
+
+    void recoveryCheckpoint()
+    {
+        queue.notifyRecoveryProgress(*this);
+    }
+
 private: // interaction with the scheduler thread
+    GrowthPressureAction onGrowthPressure() override
+    {
+        std::unique_lock lock(mutex);
+        if (protection_round == 0)
+            return GrowthPressureAction::Yield;
+        ++current_pressure_round;
+        ++total_pressure_events;
+        const bool protect = current_pressure_round >= protection_round;
+        recovery_active = !protect;
+        cv.notify_all();
+        return protect ? GrowthPressureAction::Protect : GrowthPressureAction::Yield;
+    }
+
+    void onGrowthPressureResolved() override
+    {
+        std::unique_lock lock(mutex);
+        current_pressure_round = 0;
+        recovery_active = false;
+        cv.notify_all();
+    }
+
+    bool isGrowthRecoveryActive() override
+    {
+        std::unique_lock lock(mutex);
+        return recovery_active;
+    }
+
     void increaseApproved(const IncreaseRequest & increase) override
     {
         std::unique_lock lock(mutex);
@@ -623,6 +673,10 @@ private: // interaction with the scheduler thread
     bool removed = false;
     size_t kills = 0;
     ResourceCost allocated_size = 0;
+    size_t protection_round = 0;
+    size_t current_pressure_round = 0;
+    size_t total_pressure_events = 0;
+    bool recovery_active = false;
 };
 
 
@@ -761,6 +815,7 @@ TEST(SchedulerSpaceShared, BeneficiaryBlockedOnGrowthCanEvictSuspendedAllocation
     r.registerResource();
 
     ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.protectAfterPressureRounds(2);
 
     std::promise<void> entered;
     std::promise<void> release;
@@ -775,6 +830,7 @@ TEST(SchedulerSpaceShared, BeneficiaryBlockedOnGrowthCanEvictSuspendedAllocation
     EXPECT_EQ(heavy.killCount(), 0u);
 
     small->increaseAsync(2000); // 8000 + 1000 + 2000 > 10000: the winner itself can no longer progress.
+    heavy.recoveryCheckpoint(); // External reclaim controller reports that its protected pass made no room.
     heavy.waitKills(1);
     EXPECT_EQ(heavy.killCount(), 1u);
 }
@@ -1127,10 +1183,9 @@ TEST(SchedulerSpaceShared, BlockedGrowthWithoutBeneficiaryStillKills)
 
 
 
-/// A long-lived allocation can yield the same blocked growth more than once. Every partial release
-/// retries that growth; while it still cannot fit, it must be parked again instead of being killed.
-/// Smaller reservations must keep flowing through every suspension round.
-TEST(SchedulerSpaceShared, LongLivedGrowthCanBeParkedRepeatedly)
+/// A repeated no-progress event raises query-scoped priority outside the allocation hierarchy.
+/// The protected request then uses the existing in-scope victim policy; it does not bypass the limit.
+TEST(SchedulerSpaceShared, RepeatedSuspensionInjectsExternalPriority)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -1138,42 +1193,64 @@ TEST(SchedulerSpaceShared, LongLivedGrowthCanBeParkedRepeatedly)
     AllocationQueue * queue = r.addQueue("/queue");
     r.registerResource();
 
-    ManualAllocation heavy(queue, "heavy", 6000);
-    auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 3000);
+    ManualAllocation heavy(queue, "heavy", 4000);
+    heavy.protectAfterPressureRounds(2);
+    auto victim = std::make_unique<ManualAllocation>(queue, "victim", 5000);
 
     std::promise<void> entered;
     std::promise<void> release;
     t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
     entered.get_future().get();
 
-    heavy.increaseAsync(6000); // Impossible even if every other allocation releases its memory.
+    heavy.increaseAsync(4000);
     auto anchor = std::make_unique<ManualAllocation>(queue, "anchor", 500, /* wait_for_admission = */ false);
     release.set_value();
 
     anchor->waitSynced();
+    heavy.waitPressureCount(1);
     ASSERT_EQ(heavy.killCount(), 0u);
+    ASSERT_EQ(victim->killCount(), 0u);
 
-    constexpr std::array<ResourceCost, 4> releases{200, 300, 400, 500};
-    for (size_t round = 0; round < releases.size(); ++round)
-    {
-        releaser->decreaseAsync(releases[round]); // Retries and re-parks the blocked heavy growth.
-        releaser->waitSynced();
-        ASSERT_EQ(heavy.killCount(), 0u) << "round=" << round;
+    /// A real resource-state change retries the same parked growth. The external controller now
+    /// injects protection, so existing in-scope eviction chooses the larger competing allocation.
+    victim->decreaseAsync(100);
+    victim->waitSynced();
+    victim->waitKills(1);
 
-        ManualAllocation fitting(queue, fmt::format("fitting_{}", round), 100);
-        EXPECT_EQ(fitting.size(), 100);
-        EXPECT_EQ(fitting.killCount(), 0u);
-    }
+    EXPECT_EQ(heavy.pressureCount(), 2u);
+    EXPECT_EQ(heavy.killCount(), 0u);
+    EXPECT_EQ(victim->killCount(), 1u);
 
-    EXPECT_EQ(heavy.size(), 6000);
-    EXPECT_EQ(releaser->size(), 1600);
+    victim.reset();
+    heavy.waitSynced();
 
-    /// Every other productive allocation must finish before suspension is exhausted. The impossible
-    /// growth must then reach
-    /// the existing last-resort eviction path.
-    releaser.reset();
-    anchor.reset();
+    EXPECT_EQ(heavy.size(), 8000);
+    EXPECT_EQ(anchor->size(), 500);
+    EXPECT_EQ(heavy.killCount(), 0u);
+}
+
+
+/// With no beneficiary, an externally managed recovery lane gets one query-progress checkpoint
+/// before eviction. This is the path that lets a single-threaded query reach forced spilling.
+TEST(SchedulerSpaceShared, RecoveryLaneRunsBeforeSuctionBackstop)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.protectAfterPressureRounds(2);
+    heavy.increaseAsync(5000);
+
+    heavy.waitPressureCount(1);
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    heavy.recoveryCheckpoint();
     heavy.waitKills(1);
+
+    EXPECT_EQ(heavy.pressureCount(), 2u);
     EXPECT_EQ(heavy.killCount(), 1u);
 }
 

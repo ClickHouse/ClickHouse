@@ -70,6 +70,11 @@ struct WorkloadResources
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
         }
+        if (reservation)
+        {
+            if (auto group = CurrentThread::getGroup())
+                reservation->setMemorySpillScheduler(group->memory_spill_scheduler);
+        }
     }
 
     WorkloadResources(WorkloadResources && other) = default;

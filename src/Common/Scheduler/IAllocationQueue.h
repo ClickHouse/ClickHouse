@@ -43,6 +43,10 @@ public:
     /// a parent constraint may call it while an `AllocationQueue` mutex is held during decrease propagation.
     virtual bool trySuspendIncrease(ResourceAllocation & allocation) = 0;
 
+    /// Query-thread recovery checkpoint after parked growth was allowed to run releasing work.
+    /// Implementations must only schedule a retry; they must not synchronously traverse parents.
+    virtual void notifyRecoveryProgress(ResourceAllocation & allocation) = 0;
+
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.

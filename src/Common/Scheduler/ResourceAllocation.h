@@ -25,6 +25,12 @@ class AllocationLimit;
 class ResourceAllocation : public boost::noncopyable
 {
 public:
+    enum class GrowthPressureAction : UInt8
+    {
+        Yield,
+        Protect,
+    };
+
     explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {})
         : queue(queue_), id(id_), increase(*this), decrease(*this)
     {}
@@ -44,6 +50,12 @@ public:
     /// IMPORTANT: it is called from the scheduler thread and must be fast,
     /// just triggering procedure, not doing the kill itself.
     virtual void killAllocation(const std::exception_ptr & reason) = 0;
+
+    /// External query-level pressure controller. The allocation scheduler only consumes the
+    /// decision; reclaim/spill policy and accumulated suction priority live outside its hierarchy.
+    virtual GrowthPressureAction onGrowthPressure() { return GrowthPressureAction::Yield; }
+    virtual void onGrowthPressureResolved() {}
+    virtual bool isGrowthRecoveryActive() { return false; }
 
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.

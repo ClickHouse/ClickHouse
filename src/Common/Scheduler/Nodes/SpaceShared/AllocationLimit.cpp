@@ -235,7 +235,8 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     /// The hierarchy has exhausted every visible alternative. Keep the growth parked while work admitted
     /// by this suspension is still productive. With no beneficiary left, eviction is the last resort.
     if (!new_increase && suspended_growth && !suspended_growth_retry_pending && decrease == nullptr
-        && memory_growth_suspension_beneficiaries == 0 && !allocation_to_kill)
+        && memory_growth_suspension_beneficiaries == 0 && !allocation_to_kill
+        && !suspended_growth->allocation.isGrowthRecoveryActive())
         selectAndKill(*suspended_growth);
 
     if (!reapply_constraint && increase == new_increase)
