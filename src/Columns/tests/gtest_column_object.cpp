@@ -36,17 +36,24 @@ TEST(ColumnObject, CreateEmpty)
 
 TEST(ColumnObject, HasOnlyTypeDefaults)
 {
-    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a UInt32)");
-    auto col = type->createColumn();
-    auto & object = assert_cast<ColumnObject &>(*col);
+    auto static_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a UInt32)");
+    auto static_column = static_type->createColumn();
+    auto & static_object = assert_cast<ColumnObject &>(*static_column);
 
-    ASSERT_TRUE(object.hasOnlyTypeDefaults());
-    object.insert(Object{});
-    object.insert(Object{{"a", Field{0u}}});
-    ASSERT_TRUE(object.hasOnlyTypeDefaults());
+    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
+    static_object.insert(Object{});
+    static_object.insert(Object{{"a", Field{0u}}});
+    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
 
-    object.insert(Object{{"b", Field{1u}}});
-    ASSERT_FALSE(object.hasOnlyTypeDefaults());
+    auto dynamic_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1)");
+    auto dynamic_column = dynamic_type->createColumn();
+    auto & dynamic_object = assert_cast<ColumnObject &>(*dynamic_column);
+
+    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
+    dynamic_object.insert(Object{});
+    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
+    dynamic_object.insert(Object{{"a", Field{0u}}});
+    ASSERT_FALSE(dynamic_object.hasOnlyTypeDefaults());
 }
 
 TEST(ColumnObject, GetName)
