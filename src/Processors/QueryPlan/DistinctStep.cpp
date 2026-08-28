@@ -229,82 +229,88 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (!pre_distinct && !skip_stream_merging)
         pipeline.resize(1);
 
-    const size_t external_threshold = getMaxBytesBeforeExternalDistinct(
-        settings.max_bytes_before_external_distinct, settings.max_bytes_ratio_before_external_distinct);
-
-    /// Only the hash-based DISTINCT can spill: the DISTINCT over a sorted prefix (see below) keeps at
-    /// most one range of equal prefix values in memory. The final DISTINCT can spill to disk. The
-    /// preliminary DISTINCT never spills: it is best-effort, so under memory pressure it just clears
-    /// its set and lets the duplicates through to the final DISTINCT (see the pass-through threshold
-    /// below).
-    if (!pre_distinct && distinct_sort_desc.empty() && external_threshold
-        && canUseExternalDistinct(*pipeline.getSharedHeader(), columns))
+    /// When the stream is sorted by a prefix of the distinct columns, deduplicate by ranges of equal
+    /// prefix values, hashing only the remaining columns within a range (and with no remaining columns,
+    /// keeping one row per range without hashing at all). This holds at most one range in memory, so
+    /// none of the external DISTINCT machinery below applies to it.
+    if (!distinct_sort_desc.empty())
     {
-        TemporaryDataOnDiskScopePtr tmp_data_on_disk;
-        if (auto tmp_data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
-            tmp_data_on_disk = tmp_data->childScope(
-                {.current_metric = CurrentMetrics::TemporaryFilesForDistinct,
-                 .bytes_compressed = ProfileEvents::ExternalDistinctCompressedBytes,
-                 .bytes_uncompressed = ProfileEvents::ExternalDistinctUncompressedBytes,
-                 .num_files = ProfileEvents::ExternalDistinctWritePart},
-                settings.temporary_files_buffer_size,
-                settings.temporary_files_codec);
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
 
-        if (tmp_data_on_disk)
-        {
-            pipeline.addSimpleTransform(
-                [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                {
-                    if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                        return nullptr;
-
-                    return std::make_shared<ExternalDistinctTransform>(
-                        header,
-                        settings.set_size_limits,
-                        limit_hint,
-                        columns,
-                        external_threshold,
-                        tmp_data_on_disk,
-                        settings.min_free_disk_space,
-                        settings.max_block_size);
-                });
-            return;
-        }
-
-        /// External DISTINCT is armed by default via the ratio setting, and that default must not break
-        /// environments without temporary data storage. Only an explicit request for external DISTINCT
-        /// is an error here; otherwise fall through to the in-memory transform.
-        if (settings.max_bytes_before_external_distinct)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external DISTINCT is not provided");
+                return std::make_shared<DistinctSortedStreamTransform>(
+                    header, settings.set_size_limits, limit_hint, distinct_sort_desc, columns);
+            });
+        return;
     }
 
-    if (external_threshold && !pre_distinct && distinct_sort_desc.empty() && settings.max_bytes_before_external_distinct)
-        LOG_DEBUG(
-            getLogger("DistinctStep"),
-            "External DISTINCT is not used: the DISTINCT columns do not support it "
-            "(all key columns must be comparable and at least one must be non-constant)");
+    /// The hash-based DISTINCT. Whether it spills is one decision for both roles of the step: the final
+    /// DISTINCT spills itself, while a preliminary DISTINCT uses it as a proxy for its final sibling
+    /// (a separate step whose actual transform choice cannot be observed from here, but which dispatches
+    /// on the same conditions).
+    const size_t external_threshold = getMaxBytesBeforeExternalDistinct(
+        settings.max_bytes_before_external_distinct, settings.max_bytes_ratio_before_external_distinct);
+    const bool columns_support_spilling = canUseExternalDistinct(*pipeline.getSharedHeader(), columns);
+    const auto shared_tmp_data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk();
+    const bool final_distinct_spills
+        = external_threshold != 0 && columns_support_spilling && shared_tmp_data != nullptr;
+
+    if (!pre_distinct && final_distinct_spills)
+    {
+        auto tmp_data_on_disk = shared_tmp_data->childScope(
+            {.current_metric = CurrentMetrics::TemporaryFilesForDistinct,
+             .bytes_compressed = ProfileEvents::ExternalDistinctCompressedBytes,
+             .bytes_uncompressed = ProfileEvents::ExternalDistinctUncompressedBytes,
+             .num_files = ProfileEvents::ExternalDistinctWritePart},
+            settings.temporary_files_buffer_size,
+            settings.temporary_files_codec);
+
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<ExternalDistinctTransform>(
+                    header,
+                    settings.set_size_limits,
+                    limit_hint,
+                    columns,
+                    external_threshold,
+                    tmp_data_on_disk,
+                    settings.min_free_disk_space,
+                    settings.max_block_size);
+            });
+        return;
+    }
+
+    if (!pre_distinct && settings.max_bytes_before_external_distinct != 0 && external_threshold != 0)
+    {
+        if (!columns_support_spilling)
+            LOG_DEBUG(
+                getLogger("DistinctStep"),
+                "External DISTINCT is not used: the DISTINCT columns do not support it "
+                "(all key columns must be comparable and at least one must be non-constant)");
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external DISTINCT is not provided");
+    }
 
     /// A preliminary DISTINCT may shed its set under memory pressure only when the final DISTINCT is
-    /// able to spill for the same columns (otherwise shedding just moves the memory to an in-memory
-    /// final DISTINCT). A sorted pre-distinct does not take the threshold: its transform deduplicates
-    /// by ranges and holds no growing set.
-    const UInt64 pass_through_threshold
-        = (pre_distinct && distinct_sort_desc.empty() && canUseExternalDistinct(*pipeline.getSharedHeader(), columns))
-        ? external_threshold
-        : 0;
+    /// expected to spill: shedding never grows the final set (the first occurrence of every value passes
+    /// the preliminary step either way), but it does convert the parallel per-stream deduplication into
+    /// serial re-hashing of the duplicates on the single-stream final, which is only worth it when the
+    /// final is memory-bounded by the spilling.
+    const UInt64 pass_through_threshold = (pre_distinct && final_distinct_spills) ? external_threshold : 0;
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
-
-            /// When the stream is sorted by a prefix of the distinct columns, deduplicate by
-            /// ranges of equal prefix values, hashing only the remaining columns within a range
-            /// (and with no remaining columns, keeping one row per range without hashing at all).
-            if (!distinct_sort_desc.empty())
-                return std::make_shared<DistinctSortedStreamTransform>(
-                    header, settings.set_size_limits, limit_hint, distinct_sort_desc, columns);
 
             return std::make_shared<DistinctTransform>(
                 header, settings.set_size_limits, limit_hint, columns,
