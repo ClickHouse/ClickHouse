@@ -1858,6 +1858,10 @@ void IMergeTreeDataPart::loadInvalidatedSystemColumns()
     if (parent_part)
         return;
 
+    /// Patch parts must never have invalidated system columns: _block_number and _block_offset are their payload.
+    if (info.isPatch())
+        return;
+
     if (auto file_buf = readFileIfExists(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
         invalidated_system_columns = readInvalidatedSystemColumns(*file_buf);
 }
