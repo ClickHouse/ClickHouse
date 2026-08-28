@@ -26,7 +26,6 @@ constexpr int32_t SQL_BIT = -7;
 constexpr int32_t SQL_TINYINT = -6;
 constexpr int32_t SQL_BIGINT = -5;
 constexpr int32_t SQL_BINARY = -2;
-constexpr int32_t SQL_NUMERIC = 2;
 constexpr int32_t SQL_DECIMAL = 3;
 constexpr int32_t SQL_INTEGER = 4;
 constexpr int32_t SQL_SMALLINT = 5;
@@ -44,8 +43,9 @@ constexpr int32_t SQL_SEARCHABLE_FULL = 3;
 
 /// Ordered by `data_type` ascending, then `type_name` (protocol requirement).
 /// `Enum8` and `Enum16` are omitted because Arrow exports their numeric codes
-/// without a standard mapping back to the ClickHouse labels.
-constexpr std::array<XdbcTypeInfoRow, 23> type_info_rows = {{
+/// without a standard mapping back to the ClickHouse labels. Wide integers are
+/// omitted because Arrow exports their in-memory bytes as fixed-size binary.
+constexpr std::array<XdbcTypeInfoRow, 19> type_info_rows = {{
     {.type_name = "UUID",
      .data_type = SQL_GUID,
      .column_size = 36,
@@ -87,32 +87,6 @@ constexpr std::array<XdbcTypeInfoRow, 23> type_info_rows = {{
      .create_params = "length",
      .case_sensitive = true,
      .searchable = SQL_SEARCHABLE_FULL},
-    {.type_name = "Int128",
-     .data_type = SQL_NUMERIC,
-     .column_size = 39,
-     .searchable = SQL_SEARCHABLE_BASIC,
-     .numeric = true,
-     .num_prec_radix = 10},
-    {.type_name = "Int256",
-     .data_type = SQL_NUMERIC,
-     .column_size = 77,
-     .searchable = SQL_SEARCHABLE_BASIC,
-     .numeric = true,
-     .num_prec_radix = 10},
-    {.type_name = "UInt128",
-     .data_type = SQL_NUMERIC,
-     .column_size = 39,
-     .searchable = SQL_SEARCHABLE_BASIC,
-     .numeric = true,
-     .unsigned_attribute = true,
-     .num_prec_radix = 10},
-    {.type_name = "UInt256",
-     .data_type = SQL_NUMERIC,
-     .column_size = 78,
-     .searchable = SQL_SEARCHABLE_BASIC,
-     .numeric = true,
-     .unsigned_attribute = true,
-     .num_prec_radix = 10},
     {.type_name = "Decimal",
      .data_type = SQL_DECIMAL,
      .column_size = 76,

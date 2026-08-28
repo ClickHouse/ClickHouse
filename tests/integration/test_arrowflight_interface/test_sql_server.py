@@ -301,10 +301,6 @@ def test_get_xdbc_type_info():
         "Int64",
         "UInt64",
         "FixedString",
-        "Int128",
-        "Int256",
-        "UInt128",
-        "UInt256",
         "Decimal",
         "Int32",
         "UInt32",
@@ -669,6 +665,34 @@ def test_type_metadata_preserves_existing_metadata():
     assert metadata[b"ARROW:extension:name"] == b"arrow.uuid"
     assert metadata[b"ARROW:extension:metadata"] == b""
     assert metadata[b"PARQUET:logical_type"] == b"UUID"
+
+
+def test_wide_integer_type_metadata_is_clickhouse_only():
+    """Wide integers keep their binary wire type without claiming XDBC numeric support."""
+    client = get_client()
+    flight_info = client.execute(
+        "SELECT toInt128(-1) AS int128_col, toUInt256(1) AS uint256_col"
+    )
+    table = client.do_get(flight_info.endpoints[0].ticket).read_all()
+
+    expected = {
+        "int128_col": (pa.binary(16), b"Int128"),
+        "uint256_col": (pa.binary(32), b"UInt256"),
+    }
+    for name, (arrow_type, clickhouse_type_name) in expected.items():
+        field = table.schema.field(name)
+        metadata = _field_metadata(field)
+        assert field.type == arrow_type
+        assert len(table.column(name)[0].as_py()) == arrow_type.byte_width
+        assert FLIGHT_SQL_TYPE_NAME not in metadata
+        assert FLIGHT_SQL_PRECISION not in metadata
+        assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+    type_info = client.do_get(client.get_xdbc_type_info().endpoints[0].ticket).read_all()
+    catalog_names = {
+        type_info.column("type_name")[i].as_py() for i in range(type_info.num_rows)
+    }
+    assert catalog_names.isdisjoint({"Int128", "UInt128", "Int256", "UInt256"})
 
 
 def test_unsupported_type_metadata_policy():
