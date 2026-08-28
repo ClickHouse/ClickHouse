@@ -3555,6 +3555,23 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
+
+        /// The aggregation algorithm recomputes bounds only for the rows it rolled up, so with
+        /// the pre-patch GROUP BY entries invalidated the merged part would keep none and later
+        /// TTL passes would skip it; recalculate every family per row from the final stream.
+        if (ctx->recalculate_ttl_for_patches && global_ctx->metadata_snapshot->hasAnyGroupByTTL())
+        {
+            auto ttl_calc_step = std::make_unique<TTLCalcStep>(
+                merge_parts_query_plan.getCurrentHeader(),
+                global_ctx->context,
+                *global_ctx->data,
+                global_ctx->metadata_snapshot,
+                global_ctx->new_data_part,
+                global_ctx->time_of_merge,
+                /*force_=*/ true);
+            ttl_calc_step->setStepDescription("TTL info recalculation step");
+            merge_parts_query_plan.addStep(std::move(ttl_calc_step));
+        }
     }
     else if (ctx->recalculate_ttl_for_patches)
     {
