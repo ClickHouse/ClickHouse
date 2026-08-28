@@ -151,7 +151,7 @@ FROM
 (
     EXPLAIN indexes = 1
     SELECT count() FROM json_index_tokens_in WHERE data.lc IN ('alpha', 'gamma')
-    SETTINGS force_data_skipping_indices = 'json_tokens'
+    SETTINGS force_data_skipping_indices = 'json_tokens', query_plan_direct_read_from_text_index = 0
 )
 WHERE explain LIKE '%mode: Any%';
 
