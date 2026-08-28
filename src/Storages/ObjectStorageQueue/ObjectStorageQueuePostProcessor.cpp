@@ -542,13 +542,17 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         if (!copied)
                         {
                             const String src_bucket = s3_storage->getObjectsNamespace();
-                            const auto source_info = S3::getObjectInfo(
+                            auto source_info = S3::getObjectInfo(
                                 *src_client,
                                 src_bucket,
                                 object_from.remote_path,
                                 /*version_id=*/ {},
-                                /*with_metadata=*/ true,
-                                /*with_tags=*/ !move_if_none_match.empty() && settings.after_processing_move_preserve_tags);
+                                /*with_metadata=*/ true);
+                            /// The moved source is deleted afterwards, so its tags must really be
+                            /// read or the move must fail; HeadObject's TagCount can be hidden from
+                            /// least-privilege credentials, so ask directly instead of deferring.
+                            if (!move_if_none_match.empty() && settings.after_processing_move_preserve_tags)
+                                source_info.tags = S3::getObjectTags(*src_client, src_bucket, object_from.remote_path);
                             /// See moveWithinBucket(): lets a later attempt recognize its own committed
                             /// copy; an unguarded copy keeps the native header/metadata preservation instead.
                             const auto provenance = move_if_none_match.empty()

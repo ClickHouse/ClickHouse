@@ -86,11 +86,10 @@ namespace
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
 
-        /// A caller asking for tags needs the set or an error - `{}` has to mean "the object carries
-        /// no tags", not "tag information unavailable". HeadObject only reports TagCount when the
-        /// credentials are allowed to read tags at all, so deferring GetObjectTagging until a nonzero
-        /// TagCount lets least-privilege credentials pass a tagged object off as untagged.
-        if (with_tags)
+        /// GetObjectTagging is skipped when HeadObject already reports zero tags; callers needing
+        /// "the set or an error" (guarded moves) must call getObjectTags() themselves, since
+        /// HeadObject's TagCount can be hidden from least-privilege credentials.
+        if (with_tags && result.GetTagCount() > 0)
             object_info.tags = getObjectTags(client, bucket, key, version_id);
 
         return {object_info, {}};

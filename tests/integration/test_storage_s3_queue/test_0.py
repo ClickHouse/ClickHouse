@@ -1225,9 +1225,10 @@ def test_move_after_processing_recognizes_own_copy_across_attempts(started_clust
             "keeper_path": keeper_path,
             "after_processing_retries": 0,
             # The first attempt marks the file processed despite its unfinished move, so the retry
-            # below comes solely from the TTL eviction re-listing the untouched source; polling stays
-            # flat and fast so every wait window sees the transitions immediately.
-            "tracked_file_ttl_sec": 1,
+            # below comes solely from the TTL eviction re-listing the untouched source. The TTL is
+            # wide enough that eviction cannot fire before the frozen mid-checks detach the queue;
+            # polling stays flat and fast so every wait window sees the transitions immediately.
+            "tracked_file_ttl_sec": 10,
             "cleanup_interval_min_ms": 100,
             "cleanup_interval_max_ms": 200,
             "polling_min_timeout_ms": 100,
@@ -1242,34 +1243,34 @@ def test_move_after_processing_recognizes_own_copy_across_attempts(started_clust
     node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_move_copy")
     try:
         create_mv(node, table_name, dst_table_name)
+        # Wait only for the committed copy: the ONCE failpoint then killed the first attempt right
+        # before the source removal, and after_processing_retries = 0 ends that attempt for good.
         for _ in range(1000):
-            if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            if count_minio_objects(started_cluster, bucket, processed_prefix) == 1:
                 break
             time.sleep(0.1)
-        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
-
-        # The first attempt committed its copy and was aborted before the removal.
-        for _ in range(100):
-            if (
-                count_minio_objects(started_cluster, bucket, processed_prefix) == 1
-                and count_minio_objects(started_cluster, bucket, files_path) == 1
-            ):
-                break
-            time.sleep(0.1)
-        assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
-        assert count_minio_objects(started_cluster, bucket, files_path) == 1
+        # Freeze the queue before the TTL eviction can start the second attempt, so the first
+        # attempt's terminal state is asserted without racing the retry.
+        node.query(f"DETACH TABLE {table_name}")
     finally:
         node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert count_minio_objects(started_cluster, bucket, files_path) == 1
 
     # Nothing of the first attempt remains, and the destination provenance records the unchanged
     # source version: the retried move finishes by removing the source instead of refusing it as a
     # foreign collision.
+    node.query(f"ATTACH TABLE {table_name}")
     for _ in range(1000):
         if count_minio_objects(started_cluster, bucket, files_path) == 0:
             break
         time.sleep(0.1)
     assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
     assert count_minio_objects(started_cluster, bucket, files_path) == 0
+    # The eviction re-listed the untouched source as a brand-new file, so it was ingested again.
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 2
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])

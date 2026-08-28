@@ -650,10 +650,12 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    const auto source_info = S3::getObjectInfo(
-        *current_client, uri.bucket, object_from.remote_path, /*version_id=*/ {}, /*with_metadata=*/ false,
-        /*with_tags=*/ !write_settings.object_storage_write_if_none_match.empty()
-            && write_settings.object_storage_copy_preserve_source_tags);
+    auto source_info = S3::getObjectInfo(
+        *current_client, uri.bucket, object_from.remote_path, /*version_id=*/ {}, /*with_metadata=*/ false);
+    /// The moved source is deleted afterwards, so its tags must really be read or the move must
+    /// fail; HeadObject's TagCount can be hidden from least-privilege credentials, so ask directly.
+    if (!write_settings.object_storage_write_if_none_match.empty() && write_settings.object_storage_copy_preserve_source_tags)
+        source_info.tags = S3::getObjectTags(*current_client, uri.bucket, object_from.remote_path);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
