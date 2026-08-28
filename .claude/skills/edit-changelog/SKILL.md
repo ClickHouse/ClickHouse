@@ -139,6 +139,10 @@ section. For each:
    the entry from the original PR with `gh pr view <N> --json title,body`; do
    not leave the release without it.
 
+   The link of the PR that re-applied the change goes on the restored entry,
+   as in the main rule above: its own revert bullet is deleted, so that link
+   is the only trace of the re-apply left in the release.
+
    Restore it under the category it was in, which is not necessarily the one
    its PR declares: the entry may have been promoted out of `NOT FOR
    CHANGELOG` (§3) or moved (§6) by the edit that first added it, and

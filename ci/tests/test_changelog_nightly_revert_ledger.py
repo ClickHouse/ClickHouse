@@ -66,13 +66,23 @@ BUG_FIX = "Bug Fix (user-visible misbehavior in an official stable release)"
 LEDGER_DELETED = f"Changelog-deleted-entry: 109946 [{BUG_FIX}] {FIX}"
 
 
-def changelog(entries, raw_bullets=None, released=()):
-    """A minimal CHANGELOG.md: table of contents, an optional raw block, the
-    in-progress section, and one already-released section (`released`)."""
+def changelog(entries, raw_bullets=None, released=(), raw_category="NO CL ENTRY"):
+    """A minimal CHANGELOG.md: table of contents, an optional raw block (under
+    `raw_category`), the in-progress section, and one already-released section
+    (`released`)."""
     raw = ""
     if raw_bullets is not None:
         raw = "\n".join(
-            [cl.RAW_BEGIN, "", "#### NO CL ENTRY", "", *raw_bullets, "", cl.RAW_END, ""]
+            [
+                cl.RAW_BEGIN,
+                "",
+                f"#### {raw_category}",
+                "",
+                *raw_bullets,
+                "",
+                cl.RAW_END,
+                "",
+            ]
         )
     return "\n".join(
         [
@@ -112,6 +122,16 @@ def analyze(monkeypatch, text, ledger=()):
         cl, "Info", lambda: type("I", (), {"repo_name": "ClickHouse/ClickHouse"})()
     )
     return cl.analyze_reverts(text, ANCHOR)
+
+
+def with_reapply(line, pr):
+    """The bullet with the re-applying pull request's link appended, which is
+    what skill section 2.5 asks for and what `verify_edit` requires of a
+    restoration."""
+    return (
+        f"{line} [#{pr}](https://github.com/ClickHouse/ClickHouse/pull/{pr}) "
+        "([Someone](https://github.com/someone))."
+    )
 
 
 def not_restored(reverts, text):
@@ -415,16 +435,16 @@ def test_a_duplicated_attribution_is_rejected():
     before = changelog([SOLO])
     pasted = changelog([SOLO, MERGED])
     merged_back = changelog([MERGED])
-    assert cl.duplicate_attributions(before) == set()
-    assert cl.duplicate_attributions(pasted) == {"109006"}
-    assert cl.duplicate_attributions(merged_back) == set()
+    assert cl.attribution_counts(before)["109006"] == 1
+    assert cl.attribution_counts(pasted)["109006"] == 2
+    assert cl.attribution_counts(merged_back)["109006"] == 1
     # Both restorations carry the link the earlier check looks for ...
     assert "/pull/109000)" in pasted and "/pull/109000)" in merged_back
     # ... only the duplicate-free one is acceptable.
-    assert cl.duplicate_attributions(pasted) - cl.duplicate_attributions(before)
-    assert not (
-        cl.duplicate_attributions(merged_back) - cl.duplicate_attributions(before)
+    assert cl.attribution_counts(pasted)["109006"] > max(
+        1, cl.attribution_counts(before).get("109006", 0)
     )
+    assert cl.attribution_counts(merged_back)["109006"] == 1
 
 
 def run_verify_edit(monkeypatch, tmp_path, old_text, new_text, reverts):
@@ -484,13 +504,24 @@ def test_verify_edit_accepts_only_the_exact_merged_bullet_restoration(
     assert "['109000']" in left_out
 
     pasted = run_verify_edit(
-        monkeypatch, tmp_path, old_text, changelog([SOLO, MERGED]), reverts
+        monkeypatch,
+        tmp_path,
+        old_text,
+        changelog([SOLO, with_reapply(MERGED, "115001")]),
+        reverts,
     )
-    assert pasted is not None and "attributes pull requests twice" in pasted
-    assert "['109006']" in pasted
+    assert pasted is not None
+    assert "attributes pull requests more than once" in pasted
+    assert "#109006 2 times" in pasted
 
     assert (
-        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([MERGED]), reverts)
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(MERGED, "115001")]),
+            reverts,
+        )
         is None
     )
 
@@ -625,7 +656,11 @@ def test_a_released_copy_does_not_stand_in_for_the_restoration(
 
     assert (
         run_verify_edit(
-            monkeypatch, tmp_path, old_text, changelog([FIX], released=[FIX]), reverts
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(FIX, "114912")], released=[FIX]),
+            reverts,
         )
         is None
     )
@@ -684,15 +719,16 @@ def test_a_promoted_entry_is_restored_under_the_category_it_was_moved_to(
     assert "which sat under `#### Improvement`" in cl._edit_prompt(VERSION, reverts)
 
     # Back under `Improvement`: accepted.
+    restored = with_reapply(PROMOTED, "115701")
     assert (
         run_verify_edit(
-            monkeypatch, tmp_path, old_text, improvement_changelog([PROMOTED]), reverts
+            monkeypatch, tmp_path, old_text, improvement_changelog([restored]), reverts
         )
         is None
     )
     # Back under the category of its own pull request instead: rejected.
     wrong = run_verify_edit(
-        monkeypatch, tmp_path, old_text, changelog([PROMOTED]), reverts
+        monkeypatch, tmp_path, old_text, changelog([restored]), reverts
     )
     assert wrong is not None
     assert "wrong category" in wrong
@@ -732,7 +768,11 @@ def test_an_inline_mention_does_not_stand_in_for_the_restoration(
     # The real entry alongside the mentioning bullet is accepted.
     assert (
         run_verify_edit(
-            monkeypatch, tmp_path, old_text, changelog([MENTIONING, FIX]), reverts
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([MENTIONING, with_reapply(FIX, "114912")]),
+            reverts,
         )
         is None
     )
@@ -771,3 +811,107 @@ def test_a_sibling_only_mentioned_inline_is_not_a_bullet_to_merge_into(monkeypat
     )
     assert [group["siblings"] for group in reverts["missing"]] == [[]]
     assert "That bullet also carries" not in cl._edit_prompt(VERSION, reverts)
+
+
+def test_an_inline_mention_does_not_preserve_a_raw_entry():
+    """The retention side of the same distinction: a strict raw entry is not
+    kept by another bullet mentioning its pull request in prose. Without this,
+    the edit passes and `revert_licensed_deletions` has no attributed bullet to
+    snapshot, so the entry is unrecoverable as well as gone."""
+    old_text = changelog(
+        [],
+        [FIX],
+        raw_category="Bug Fix (user-visible misbehavior in an official stable release)",
+    )
+    # Only a mention of #109946, inside a bullet attributed to #120000.
+    mention_only = changelog([MENTIONING])
+    assert "/pull/109946)" in mention_only
+    assert cl.disappeared_entries(old_text, mention_only, ANCHOR) == {"109946"}
+    assert cl.entry_placement(mention_only, "109946") == ("", "")
+    # The real entry keeps it.
+    assert cl.disappeared_entries(old_text, changelog([FIX]), ANCHOR) == set()
+
+
+def test_dropping_an_inline_mention_is_not_losing_an_entry():
+    """The other direction: an entry is an attribution, so rewording a bullet
+    and dropping the inline reference it made to another pull request does not
+    count as losing that pull request's entry."""
+    old_text = changelog([MENTIONING])
+    reworded = changelog(
+        [
+            "* Speed up the parser. "
+            "[#120000](https://github.com/ClickHouse/ClickHouse/pull/120000) "
+            "([Someone](https://github.com/someone))."
+        ]
+    )
+    assert cl.disappeared_entries(old_text, reworded, ANCHOR) == set()
+
+
+def test_a_restoration_records_the_pull_request_that_reapplied_it(
+    monkeypatch, tmp_path
+):
+    """Skill section 2.5: the re-applying pull request's link is appended to the
+    restored entry. Its own revert bullet is deleted, so that link is the only
+    trace of the re-apply left in the release."""
+    old_text = changelog([], [REVERT_OF_REVERT])
+    reverts = analyze(monkeypatch, old_text, [LEDGER_REVERT, LEDGER_DELETED])
+    assert [group["reapplied_by"] for group in reverts["missing"]] == [["114912"]]
+
+    bare = run_verify_edit(monkeypatch, tmp_path, old_text, changelog([FIX]), reverts)
+    assert bare is not None
+    assert "do not record the pull request that re-applied the change" in bare
+    assert "#114912 on the entry of #109946" in bare
+
+    # The link has to be on the restored entry, not merely somewhere near it.
+    elsewhere = run_verify_edit(
+        monkeypatch,
+        tmp_path,
+        old_text,
+        changelog(
+            [
+                FIX,
+                "* Unrelated. "
+                "[#114912](https://github.com/ClickHouse/ClickHouse/pull/114912) "
+                "([Someone](https://github.com/someone)).",
+            ]
+        ),
+        reverts,
+    )
+    assert elsewhere is not None
+    assert "do not record the pull request that re-applied the change" in elsewhere
+
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(FIX, "114912")]),
+            reverts,
+        )
+        is None
+    )
+
+
+def test_an_already_duplicated_entry_cannot_gain_another_copy(monkeypatch, tmp_path):
+    """The duplicate guard compares counts, not the set of duplicated pull
+    requests: an entry that was already written twice must not be allowed a
+    third copy just because it was already in the set."""
+    old_text = changelog([FIX, FIX], [REVERT_OF_REVERT])
+    reverts = analyze(monkeypatch, old_text, [])
+    assert cl.attribution_counts(changelog([FIX, FIX]))["109946"] == 2
+
+    third = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([FIX, FIX, FIX]), reverts
+    )
+    assert third is not None
+    assert "attributes pull requests more than once" in third
+    assert "#109946 3 times" in third
+
+    # Staying at the count it came in with is tolerated: this edit did not
+    # introduce it, and the retention rule forbids removing an entry.
+    assert (
+        run_verify_edit(
+            monkeypatch, tmp_path, old_text, changelog([FIX, FIX]), reverts
+        )
+        is None
+    )

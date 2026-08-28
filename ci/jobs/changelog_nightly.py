@@ -562,16 +562,18 @@ def group_restorations(restore, section):
     return sorted(out, key=lambda group: int(group["prs"][0]))
 
 
-def duplicate_attributions(text):
-    """Pull requests attributed more than once in `text`. The generator emits
-    one attribution per entry and a merge appends the merged pull requests'
-    links to a single bullet, so a repetition means the same entry was written
-    twice — which is what restoring a merged bullet by pasting the recorded
-    line next to the one that already carries its siblings produces."""
+def attribution_counts(text):
+    """How many times each pull request is attributed in `text`. The generator
+    emits one attribution per entry and a merge appends the merged pull
+    requests' links to a single bullet, so anything above one means the same
+    entry was written more than once — which is what restoring a merged bullet
+    by pasting the recorded line next to the one that already carries its
+    siblings produces. Counted rather than collected as a set: an entry that
+    was already duplicated must not be allowed to gain a third copy."""
     counts = {}
     for pr in PR_ATTRIBUTION_RE.findall(text):
         counts[pr] = counts.get(pr, 0) + 1
-    return {pr for pr, count in counts.items() if count > 1}
+    return counts
 
 
 def analyze_reverts(text, anchor):
@@ -948,16 +950,25 @@ def disappeared_entries(old_text, text, anchor):
     runs had already accumulated in the in-progress section, or one of this
     run's raw entries from a strict-retention category.
 
+    An entry means an attribution, `[#N](.../pull/N) ([Author](...))`, not any
+    link: a bullet attributed to another pull request that mentions `#N` in its
+    prose is not `#N`'s entry and does not preserve it — nor is dropping such a
+    mention the loss of an entry.
+
     Membership is checked against the whole file rather than the section: an
     entry may legitimately sit in an already-released section (a pull request
     merged into the last release branch after the cycle start appears in the
     range but was already published), and it may have been moved to another
-    category."""
+    category. That leniency is for a raw entry that never made it into this
+    release; where a *recorded* entry has to come back, the question is asked
+    of the in-progress section, see `analyze_reverts`."""
     old_section = extract_in_progress_section(old_text, anchor) or ""
     section = extract_in_progress_section(text, anchor) or ""
-    removed = extract_pr_links(old_section) - extract_pr_links(section)
+    removed = set(PR_ATTRIBUTION_RE.findall(old_section)) - set(
+        PR_ATTRIBUTION_RE.findall(section)
+    )
     strict_prs, _ = raw_strict_prs_and_reverts(old_text)
-    return removed | {pr for pr in strict_prs if f"/pull/{pr})" not in text}
+    return removed | {pr for pr in strict_prs if not is_attributed(text, pr)}
 
 
 def revert_licensed_deletions(base_sha, version):
@@ -1061,19 +1072,38 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
             f"({sorted(misplaced)}); a restoration keeps the category the "
             f"entry had when it was deleted"
         )
+    # The entry comes back because a pull request re-applied the change, and
+    # skill section 2.5 records that pull request on the entry - otherwise the
+    # only trace of the re-apply is gone from the release, since its own revert
+    # bullet is deleted. Checked on the bullet the entry landed on, not merely
+    # somewhere in the section.
+    unrecorded = []
+    for group in reverts["missing"]:
+        bullet = entry_placement(section, group["prs"][0])[1]
+        for reapply in group["reapplied_by"]:
+            if not is_attributed(bullet, reapply):
+                unrecorded.append(f"#{reapply} on the entry of #{group['prs'][0]}")
+    if unrecorded:
+        return (
+            f"Restored entries do not record the pull request that re-applied "
+            f"the change ({sorted(unrecorded)}); its link is appended to the "
+            f"entry, so both pull request numbers stay in the changelog"
+        )
     # A restored bullet may have been a merged one (skill section 7), carrying
     # pull requests that were never deleted and are still in the section.
     # Pasting the recorded line back wholesale duplicates them, and the check
     # above cannot see it - the link it looks for is present either way.
     # Duplicates that predate the edit are none of this run's business.
+    before = attribution_counts(extract_in_progress_section(old_text, anchor) or "")
     duplicated = sorted(
-        duplicate_attributions(section)
-        - duplicate_attributions(extract_in_progress_section(old_text, anchor) or "")
+        f"#{pr} {count} times"
+        for pr, count in attribution_counts(section).items()
+        if count > max(1, before.get(pr, 0))
     )
     if duplicated:
         return (
-            f"The edit attributes pull requests twice in the in-progress "
-            f"section ({duplicated}); an entry was written a second time "
+            f"The edit attributes pull requests more than once in the "
+            f"in-progress section ({duplicated}); an entry was written again "
             f"instead of being merged into the bullet that already carries it"
         )
     _, old_tail = split_at_first_released_section(old_text, anchor)
