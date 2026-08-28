@@ -272,16 +272,8 @@ bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & f
     if (!node.tryGetConstant(const_value, const_type) || const_value.getType() != Field::Types::String)
         return false;
 
-    /// Descriptions are canonical, so spelling variants and registered aliases of one tokenizer are
-    /// equal, while parameters still distinguish e.g. ngrams(3) from ngrams(4).
     auto argument_tokenizer = TokenizerFactory::instance().get(const_value.safeGet<String>());
     if (argument_tokenizer->getDescription() != tokenizer->getDescription())
-        return false;
-
-    /// Only hasPhrase gets a postprocessed haystack as its tokens joined by a space and splits them
-    /// again. Whether an explicit separator list reproduces the stored sequence depends on the
-    /// postprocessed token values, which planning does not know.
-    if (function_name == "hasPhrase" && has_postprocessor && tokenizer->getType() == ITokenizer::Type::SplitByString)
         return false;
 
     return true;
