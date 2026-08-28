@@ -187,9 +187,11 @@ Chunk NATSSource::generateImpl()
         /// while the subscription it arrived on is still alive.
         /// Emitting no rows is not the same as having consumed nothing: `consume` takes a message
         /// before it is parsed, and `nats_skip_broken_messages` turns a message that yields no rows
-        /// into an ordinary outcome. Returning such a message to the broker would undo the skip and
-        /// show the same malformed input again, so the recovery waits for a cycle that starts with
-        /// nothing consumed either.
+        /// into an ordinary outcome. Such a message is not waiting to be inserted, so the recovery
+        /// does not have to wait for it: `markLastConsumedSkipped` moves it aside as soon as it
+        /// turns out to have produced nothing, and it is acknowledged rather than handed back, which
+        /// keeps the skip instead of showing the same malformed input again. What the guard below
+        /// waits for is a message that still owes rows to this query.
         /// `unsubscribe_on_destroy` keeps its previous value: a background streaming consumer must
         /// stay subscribed when this source is destroyed, so the next streaming cycle keeps
         /// consuming where this one left off. Only a consumer this source subscribed from an
@@ -215,7 +217,15 @@ Chunk NATSSource::generateImpl()
             buf = consumer->consume();
 
         if (buf)
+        {
             new_rows = executor.execute(*buf);
+
+            /// A message that parsed into no rows is one `nats_skip_broken_messages` passed over
+            /// (with `handle_error_mode = 'stream'` a malformed message still yields its error row).
+            /// Nothing is waiting for it, so it must not hold back a reconnect recovery.
+            if (new_rows == 0)
+                consumer->markLastConsumedSkipped();
+        }
         else if (!wait_for_flush_interval)
             break;
 

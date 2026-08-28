@@ -67,10 +67,17 @@ public:
     void ackConsumed();
     void dropConsumed();
 
-    /// True while this consumer holds messages it has handed out but nothing has acknowledged yet.
-    /// A message enters this set as soon as `consume` returns it, before it is parsed, so it stays
-    /// true for a message that produced no rows - which `nats_skip_broken_messages` makes an
-    /// ordinary outcome rather than an error.
+    /// Move the message `consume` returned last out of the set of messages that still owe rows:
+    /// it was parsed into none, which `nats_skip_broken_messages` makes an ordinary outcome rather
+    /// than an error. Such a message is never going to produce a row, so it is acknowledged rather
+    /// than handed back when the subscription it arrived on has to be replaced - returning it would
+    /// undo the skip and show the same malformed input again.
+    void markLastConsumedSkipped();
+
+    /// True while this consumer holds messages it has handed out and which may still turn into rows
+    /// nothing has acknowledged yet. A message enters this set as soon as `consume` returns it,
+    /// before it is parsed, and leaves it again through `markLastConsumedSkipped` once it turns out
+    /// to have yielded no rows.
     bool hasConsumedMessages() const { return !consumed_messages.empty(); }
 
     /// Throw away leftovers of a subscription that is already gone, which is all that can be done
@@ -119,6 +126,9 @@ protected:
     virtual bool needsAck() const { return false; }
 
 private:
+    /// Acknowledge every message in `messages` and clear it.
+    void ackMessages(std::vector<NatsMsgPtr> & messages);
+
     std::shared_ptr<ConcurrentBoundedQueue<MessageData>> loadReceived() const;
     void storeReceived(std::shared_ptr<ConcurrentBoundedQueue<MessageData>> queue);
 
@@ -138,6 +148,10 @@ private:
     std::shared_ptr<ConcurrentBoundedQueue<MessageData>> received;
     MessageData current;
     std::vector<NatsMsgPtr> consumed_messages;
+    /// Messages that were consumed and parsed into no rows. They are acknowledged together with
+    /// `consumed_messages`, but they are never handed back to the broker: nothing is waiting for
+    /// them to be inserted.
+    std::vector<NatsMsgPtr> skipped_messages;
 };
 
 }
