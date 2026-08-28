@@ -114,6 +114,7 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
@@ -850,48 +851,6 @@ int readNumber(const String & path)
     return result;
 }
 
-/// Tells the filesystem type the given directory resides on - e.g. "ext4" or "xfs" -, by picking the
-/// longest matching mount point from /proc/self/mounts, the same way the mount point scan inside
-/// `sanityChecks` does. Returns an empty string when no mount point covers `directory`.
-String getDirectoryFilesystemType(const std::string & directory)
-{
-    std::error_code ec;
-    const String canonical_directory = fs::canonical(directory, ec).string();
-    String filesystem_type_of_directory;
-    size_t longest_mount_point_match = 0;
-
-    ReadBufferFromFile mounts_file("/proc/self/mounts");
-    while (!mounts_file.eof())
-    {
-        String line;
-        readStringUntilNewlineInto(line, mounts_file);
-        if (!mounts_file.eof())
-            mounts_file.ignore();
-
-        /// Fields: device, mount point, filesystem type. Skip mount points with escaped characters.
-        size_t p1 = line.find(' ');
-        size_t p2 = (p1 == String::npos) ? String::npos : line.find(' ', p1 + 1);
-        size_t p3 = (p2 == String::npos) ? String::npos : line.find(' ', p2 + 1);
-        if (p3 == String::npos)
-            continue;
-        String mount_point = line.substr(p1 + 1, p2 - p1 - 1);
-        String fs_type = line.substr(p2 + 1, p3 - p2 - 1);
-        if (mount_point.contains('\\'))
-            continue;
-
-        const bool contains_directory = canonical_directory == mount_point
-            || (canonical_directory.starts_with(mount_point)
-                && (mount_point == "/" || canonical_directory[mount_point.size()] == '/'));
-        if (contains_directory && mount_point.size() >= longest_mount_point_match)
-        {
-            longest_mount_point_match = mount_point.size();
-            filesystem_type_of_directory = fs_type;
-        }
-    }
-
-    return filesystem_type_of_directory;
-}
-
 #endif
 
 void sanityChecks(Server & server, const ServerSettings & server_settings)
@@ -974,75 +933,16 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             kernel_warning = PreformattedMessage::create(
                 "Linux kernel version {} is too old: IPv6 packets can be dropped randomly. Consider upgrading the kernel.",
                 linux_version.toString());
-        else if (linux_version >= VersionNumber{4, 16, 0} && linux_version < VersionNumber{4, 16, 4})
-        {
-            /// The corruption bug lives in ext4, so warn only when a directory ClickHouse writes
-            /// to resides on ext4 - or when that cannot be told (an unreadable /proc/self/mounts
-            /// must not trade the false alarm for a blind spot). The disk objects are not probed
-            /// (getDisksMap() is lazy and would start object-storage disks right here, and a
-            /// disk's getPath() cannot be told apart from a remote object prefix), but the
-            /// configured strings can be: every path/metadata_path declared under
-            /// storage_configuration.disks joins <path> in the probe, along with each disk's
-            /// synthesized default metadata directory <path>/disks/<name>/ (a mount there escapes
-            /// <path>'s own probe). A directory the disk will only create later is probed through
-            /// its nearest existing ancestor - the filesystem it will be created on.
-            std::vector<String> probe_paths{data_path};
-            const auto add_probe_path = [&](const String & configured)
-            {
-                if (configured.empty())
-                    return;
-                fs::path candidate(configured);
-                std::error_code ec;
-                while (!candidate.empty() && candidate != candidate.parent_path() && !fs::is_directory(candidate, ec))
-                    candidate = candidate.parent_path();
-                if (!candidate.empty() && fs::is_directory(candidate, ec))
-                    probe_paths.push_back(candidate.string());
-            };
-            if (server.config().has("storage_configuration.disks"))
-            {
-                Poco::Util::AbstractConfiguration::Keys disk_names;
-                server.config().keys("storage_configuration.disks", disk_names);
-                for (const auto & disk_name : disk_names)
-                {
-                    add_probe_path(server.config().getString("storage_configuration.disks." + disk_name + ".path", ""));
-                    const String metadata_path
-                        = server.config().getString("storage_configuration.disks." + disk_name + ".metadata_path", "");
-                    if (!metadata_path.empty())
-                        add_probe_path(metadata_path);
-                    else
-                        add_probe_path(data_path + "disks/" + disk_name + "/");
-                }
-            }
-
-            String affected_path;
-            String undetermined_path;
-            for (const auto & probe_path : probe_paths)
-            {
-                const String fs_type = getDirectoryFilesystemType(probe_path);
-                if (fs_type == "ext4")
-                {
-                    affected_path = probe_path;
-                    break;
-                }
-                if (fs_type.empty() && undetermined_path.empty())
-                    undetermined_path = probe_path;
-            }
-            if (!affected_path.empty())
-                kernel_warning = PreformattedMessage::create(
-                    "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4) "
-                    "and the directory {} resides on ext4. Consider upgrading the kernel.",
-                    linux_version.toString(), affected_path);
-            else if (!undetermined_path.empty())
-                kernel_warning = PreformattedMessage::create(
-                    "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4) "
-                    "and the filesystem of {} could not be determined. Consider upgrading the kernel.",
-                    linux_version.toString(), undetermined_path);
-        }
         else if (linux_version >= VersionNumber{5, 5, 0} && linux_version < VersionNumber{5, 6, 13})
             kernel_warning = PreformattedMessage::create(
                 "Linux kernel version {} has broken nested epoll_wait (fixed in 5.6.13). Consider upgrading the kernel.",
                 linux_version.toString());
         server.context()->addOrUpdateWarningMessage(Context::WarningType::LINUX_KERNEL_WITH_KNOWN_ISSUES, kernel_warning);
+
+        /// The 4.16.0-4.16.3 ext4 corruption warning lives with the disks: every local disk and
+        /// filesystem cache checks its own constructor-normalized root, so here only the server's
+        /// data path is probed.
+        warnIfAffectedByExt4CorruptionKernelBug(data_path, "the server's data path");
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {

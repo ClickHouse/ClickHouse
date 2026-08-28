@@ -13,6 +13,7 @@
 #include <Interpreters/FileCache/FileCacheUtils.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 #include <base/hex.h>
 #include <Common/callOnce.h>
 #include <Common/Exception.h>
@@ -331,6 +332,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                write_cache_per_user_directory)
     , check_cache_probability(settings[FileCacheSetting::check_cache_probability])
 {
+    /// The cache root is a real local write location; check it like a disk root (see #18794).
+    warnIfAffectedByExt4CorruptionKernelBug(getBasePath(), fmt::format("the path of filesystem cache '{}'", cache_name));
+
     CachePriorityCreatorFunction creator_function;
     switch (settings[FileCacheSetting::cache_policy].value)
     {
