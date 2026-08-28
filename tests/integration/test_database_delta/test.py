@@ -1574,12 +1574,16 @@ def test_register_existing_delta_table_requires_kernel(started_cluster):
             },
         )
 
-        # Onboarding it into the catalog with the kernel disabled must fail explicitly.
+        # Onboarding it into the catalog with the kernel disabled must fail explicitly. The create-table
+        # setting is enabled so the failure is the kernel requirement, not the experimental-feature gate.
         error = node1.query_and_get_error(
             f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
-            settings={"allow_experimental_delta_kernel_rs": 0},
+            settings={
+                "allow_experimental_delta_kernel_rs": 0,
+                "allow_delta_lake_create_table": 1,
+            },
         )
-        assert "allow_experimental_delta_kernel_rs" in error, error
+        assert "allow_delta_kernel_rs" in error, error
     finally:
         node1.query(
             f"DROP DATABASE IF EXISTS {db_name}",
