@@ -2,6 +2,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -280,6 +281,45 @@ std::pair<Field, DataTypePtr> resolveNested(const Field & field, const DataTypeP
         return {Field(std::move(resolved_elements)), std::make_shared<DataTypeArray>(element_type)};
     }
 
+    else if (field.getType() == Field::Types::Map)
+    {
+        /// A map field is a list of key/value pairs, each a two-element tuple.
+        const auto & elements = field.safeGet<Map>();
+        const auto * reference_map = reference ? typeid_cast<const DataTypeMap *>(reference.get()) : nullptr;
+        DataTypePtr pair_reference;
+        if (reference_map)
+            pair_reference = std::make_shared<DataTypeTuple>(
+                DataTypes{reference_map->getKeyType(), reference_map->getValueType()});
+
+        Map resolved_elements;
+        DataTypes resolved_types;
+        resolved_elements.reserve(elements.size());
+        resolved_types.reserve(elements.size());
+        for (const auto & element : elements)
+        {
+            auto [resolved, type] = resolveNested(element, pair_reference, any_resolved);
+            if (!type)
+                return {};
+            resolved_elements.push_back(std::move(resolved));
+            resolved_types.push_back(std::move(type));
+        }
+
+        /// A map holds one key type and one value type, so the pairs have to meet in a common one.
+        auto pair_type = resolved_types.empty() ? pair_reference : tryGetLeastSupertype(resolved_types);
+        const auto * pair_tuple = pair_type ? typeid_cast<const DataTypeTuple *>(pair_type.get()) : nullptr;
+        if (!pair_tuple || pair_tuple->getElements().size() != 2)
+            return {};
+        for (auto & element : resolved_elements)
+        {
+            Field converted = tryConvertFieldToType(element, *pair_type);
+            if (converted.isNull() && !element.isNull())
+                return {};
+            element = std::move(converted);
+        }
+        return {Field(std::move(resolved_elements)),
+                std::make_shared<DataTypeMap>(pair_tuple->getElement(0), pair_tuple->getElement(1))};
+    }
+
     /// Nothing to resolve it against: keep the default.
     Field resolved = field.resolveNumberLiteral();
     return {resolved, applyVisitor(FieldToDataType(), resolved)};
@@ -314,7 +354,8 @@ std::pair<Field, DataTypePtr> resolveNestedNumberLiteralsForComparison(
     const Field & field, const DataTypePtr & reference_type)
 {
     /// A bare literal goes through the scalar path.
-    if (field.getType() != Field::Types::Tuple && field.getType() != Field::Types::Array)
+    if (field.getType() != Field::Types::Tuple && field.getType() != Field::Types::Array
+        && field.getType() != Field::Types::Map)
         return {};
     if (!hasNestedNumberLiteral(field))
         return {};

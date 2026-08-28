@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/resolveNumberLiteral.h>
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -997,10 +998,81 @@ static DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_t
         return nullptr;
 
     auto type = removeNullable(removeLowCardinality(left_type));
-    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type))
+    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type) || isMap(*type))
         return type;
 
     return nullptr;
+}
+
+/// The `Field` a constant was built from, with its number literals still unresolved. A bracket or
+/// paren literal keeps them in the original AST; the `array`/`tuple`/`map` spellings are folded, so
+/// they keep them in the arguments of the folded function. False when there is nothing to recover.
+static bool tryGetUnresolvedConstantField(const QueryTreeNodePtr & node, Field & out)
+{
+    const auto * constant = node->as<ConstantNode>();
+    if (!constant)
+        return false;
+
+    if (constant->hasNumberLiteralText())
+    {
+        out = NumberLiteral(constant->getNumberLiteralText());
+        return true;
+    }
+
+    if (const auto & original_ast = constant->getOriginalAST())
+    {
+        const auto * literal = original_ast->as<ASTLiteral>();
+        if (literal && fieldHasNumberLiteral(literal->value))
+        {
+            out = literal->value;
+            return true;
+        }
+    }
+
+    const auto * source = constant->hasSourceExpression() ? constant->getSourceExpression()->as<FunctionNode>() : nullptr;
+    if (!source)
+        return false;
+
+    const auto & function_name = source->getFunctionName();
+    if (function_name != "array" && function_name != "tuple" && function_name != "map")
+        return false;
+
+    Array collected;
+    bool any_unresolved = false;
+    for (const auto & argument : source->getArguments().getNodes())
+    {
+        Field element;
+        if (tryGetUnresolvedConstantField(argument, element))
+            any_unresolved = true;
+        else if (const auto * argument_constant = argument->as<ConstantNode>())
+            element = argument_constant->getValue();
+        else
+            return false;
+        collected.push_back(std::move(element));
+    }
+
+    if (!any_unresolved)
+        return false;
+
+    if (function_name == "array")
+    {
+        out = std::move(collected);
+    }
+    else if (function_name == "tuple")
+    {
+        out = Tuple(collected.begin(), collected.end());
+    }
+    else
+    {
+        if (collected.size() % 2 != 0)
+            return false;
+        Map pairs;
+        pairs.reserve(collected.size() / 2);
+        for (size_t i = 0; i < collected.size(); i += 2)
+            pairs.push_back(Tuple{collected[i], collected[i + 1]});
+        out = std::move(pairs);
+    }
+    return true;
 }
 
 /// Parse one set element against the type it is compared with. Null type keeps the default.
@@ -1030,33 +1102,18 @@ static void resolveNumberLiteralElementsForIn(QueryTreeNodes & array_elements, c
     for (auto & element : array_elements)
     {
         const auto * constant = element->as<ConstantNode>();
-        if (!constant)
-            continue;
-
-        /// A composite element (`(x, y) IN ((1.1, 2))`) keeps its literals only in the original AST.
-        String text = constant->hasNumberLiteralText() ? constant->getNumberLiteralText() : String{};
         Field original;
-        if (!text.empty())
-        {
-            original = NumberLiteral(text);
-        }
-        else
-        {
-            const auto & original_ast = constant->getOriginalAST();
-            const auto * literal = original_ast ? original_ast->as<ASTLiteral>() : nullptr;
-            if (!literal)
-                continue;
-            original = literal->value;
-        }
+        if (!constant || !tryGetUnresolvedConstantField(element, original))
+            continue;
 
         auto [parsed_field, target_type] = resolveNumberLiteralAgainst(original, reference_type);
         if (!target_type)
             continue;
 
         auto resolved = std::make_shared<ConstantNode>(parsed_field, target_type);
-        if (!text.empty())
-            resolved->setNumberLiteralText(std::move(text));
-        else
+        if (constant->hasNumberLiteralText())
+            resolved->setNumberLiteralText(constant->getNumberLiteralText());
+        if (constant->getOriginalAST())
             resolved->setOriginalAST(constant->getOriginalAST());
         element = std::move(resolved);
     }
@@ -1075,65 +1132,37 @@ static void resolveNumberLiteralsInConstantInSet(QueryTreeNodePtr & in_second_ar
     if (!reference_type)
         return;
 
+    Field unresolved;
+    if (!tryGetUnresolvedConstantField(in_second_argument, unresolved))
+        return;
+
     const auto & original_ast = in_second_argument->getOriginalAST();
-    const auto * literal = original_ast ? original_ast->as<ASTLiteral>() : nullptr;
-    if (!literal)
+    auto rebuild = [&](Field field, const DataTypePtr & type)
     {
-        /// A list of arrays (`[x] IN ([1.1], [9])`) is not one literal, so read the elements back
-        /// from the arguments of the folded tuple.
-        const auto * constant = in_second_argument->as<ConstantNode>();
-        auto * source = constant->hasSourceExpression() ? constant->getSourceExpression()->as<FunctionNode>() : nullptr;
-        if (!source || source->getFunctionName() != "tuple")
-            return;
-
-        auto elements = source->getArguments().getNodes();
-        resolveNumberLiteralElementsForIn(elements, left_type);
-
-        Tuple resolved_elements;
-        DataTypes resolved_types;
-        resolved_elements.reserve(elements.size());
-        resolved_types.reserve(elements.size());
-        for (const auto & element : elements)
-        {
-            const auto * element_constant = element->as<ConstantNode>();
-            if (!element_constant)
-                return;
-            resolved_elements.push_back(element_constant->getValue());
-            resolved_types.push_back(element_constant->getResultType());
-        }
-
-        auto resolved_type = std::make_shared<DataTypeTuple>(std::move(resolved_types));
-        if (resolved_type->equals(*in_second_argument->getResultType()))
-            return;
-
-        auto resolved_node = std::make_shared<ConstantNode>(Field(std::move(resolved_elements)), resolved_type);
-        resolved_node->setOriginalAST(original_ast);
+        auto resolved_node = std::make_shared<ConstantNode>(std::move(field), type);
+        if (original_ast)
+            resolved_node->setOriginalAST(original_ast);
         in_second_argument = std::move(resolved_node);
-        return;
-    }
-    const auto literal_type = literal->value.getType();
-    if (literal_type != Field::Types::Tuple && literal_type != Field::Types::Array)
-        return;
+    };
 
-    /// `(x, y) IN ((1.1, 2))` and `[x] IN ([1.1])` collapse to one literal that is a single element,
-    /// not a list. Trying it whole first is safe: it only resolves against the same shape, and a real
-    /// list has a composite element where that shape wants a number.
-    if (auto [whole_field, whole_type] = resolveNumberLiteralAgainst(literal->value, reference_type); whole_type)
+    /// `(x, y) IN ((1.1, 2))` and `[x] IN ([1.1])` collapse to one composite that is a single set
+    /// element, not a list. Trying it whole first is safe: it only resolves against the same shape,
+    /// and a real list has a composite element where that shape wants a number.
+    if (auto [whole_field, whole_type] = resolveNumberLiteralAgainst(unresolved, reference_type); whole_type)
     {
-        auto resolved_node = std::make_shared<ConstantNode>(whole_field, whole_type);
-        resolved_node->setOriginalAST(original_ast);
-        in_second_argument = std::move(resolved_node);
+        rebuild(std::move(whole_field), whole_type);
         return;
     }
 
-    if (literal_type != Field::Types::Tuple)
+    /// Not a single element, so the composite is the list of them: a tuple for `x IN (1.1, 2.2)`, an
+    /// array for `x IN array(1.1)` where the array itself is the set.
+    const bool is_array_list = unresolved.getType() == Field::Types::Array;
+    if (unresolved.getType() != Field::Types::Tuple && !is_array_list)
         return;
 
-    const auto & elements = literal->value.safeGet<Tuple>();
-    /// Checked before the rebuild below, which copies every element of a possibly huge IN list.
-    if (std::none_of(elements.begin(), elements.end(), fieldHasNumberLiteral))
-        return;
-
+    const auto & elements = is_array_list
+        ? static_cast<const FieldVector &>(unresolved.safeGet<Array>())
+        : static_cast<const FieldVector &>(unresolved.safeGet<Tuple>());
     Tuple resolved_elements;
     DataTypes resolved_types;
     resolved_elements.reserve(elements.size());
@@ -1159,10 +1188,24 @@ static void resolveNumberLiteralsInConstantInSet(QueryTreeNodePtr & in_second_ar
     if (!any_element_resolved)
         return;
 
-    auto resolved_node = std::make_shared<ConstantNode>(
-        Field(std::move(resolved_elements)), std::make_shared<DataTypeTuple>(std::move(resolved_types)));
-    resolved_node->setOriginalAST(original_ast);
-    in_second_argument = std::move(resolved_node);
+    if (is_array_list)
+    {
+        auto element_type = tryGetLeastSupertype(resolved_types);
+        if (!element_type)
+            return;
+        Array array_elements(resolved_elements.begin(), resolved_elements.end());
+        for (auto & element : array_elements)
+        {
+            Field converted = tryConvertFieldToType(element, *element_type);
+            if (converted.isNull() && !element.isNull())
+                return;
+            element = std::move(converted);
+        }
+        rebuild(Field(std::move(array_elements)), std::make_shared<DataTypeArray>(element_type));
+        return;
+    }
+
+    rebuild(Field(std::move(resolved_elements)), std::make_shared<DataTypeTuple>(std::move(resolved_types)));
 }
 
 /// converts tuple to array with proper type handling
@@ -2771,20 +2814,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             for (size_t i = 0; i < 2; ++i)
             {
                 const auto * const_node = function_arguments[i]->as<ConstantNode>();
-                if (!const_node)
-                    continue;
-                const auto & original_ast = const_node->getOriginalAST();
-                const auto * literal = original_ast ? original_ast->as<ASTLiteral>() : nullptr;
-                if (!literal)
+                Field unresolved;
+                if (!const_node || !tryGetUnresolvedConstantField(function_arguments[i], unresolved))
                     continue;
 
                 auto [resolved_field, resolved_type]
-                    = resolveNestedNumberLiteralsForComparison(literal->value, argument_types[1 - i]);
+                    = resolveNestedNumberLiteralsForComparison(unresolved, argument_types[1 - i]);
                 if (!resolved_type)
                     continue;
 
                 auto new_constant = std::make_shared<ConstantNode>(resolved_field, resolved_type);
-                new_constant->setOriginalAST(original_ast);
+                if (const_node->getOriginalAST())
+                    new_constant->setOriginalAST(const_node->getOriginalAST());
                 function_arguments[i] = new_constant;
                 argument_columns[i].column = new_constant->getColumn();
                 argument_columns[i].type = resolved_type;

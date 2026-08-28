@@ -118,10 +118,67 @@ DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_arg_type
         return nullptr;
 
     auto type = removeNullable(removeLowCardinality(left_arg_type));
-    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type))
+    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type) || isMap(*type))
         return type;
 
     return nullptr;
+}
+
+/// The `Field` an expression stands for, with its number literals still unresolved. A bracket or
+/// paren literal holds them directly; the `array`/`tuple`/`map` spellings hold them in their
+/// arguments. False when there is nothing to recover.
+bool tryGetUnresolvedLiteralField(const ASTPtr & node, Field & out)
+{
+    if (const auto * literal = node->as<ASTLiteral>())
+    {
+        if (!fieldHasNumberLiteral(literal->value))
+            return false;
+        out = literal->value;
+        return true;
+    }
+
+    const auto * function = node->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return false;
+    if (function->name != "array" && function->name != "tuple" && function->name != "map")
+        return false;
+
+    Array collected;
+    bool any_unresolved = false;
+    for (const auto & argument : function->arguments->children)
+    {
+        Field element;
+        if (tryGetUnresolvedLiteralField(argument, element))
+            any_unresolved = true;
+        else if (const auto * argument_literal = argument->as<ASTLiteral>())
+            element = argument_literal->value;
+        else
+            return false;
+        collected.push_back(std::move(element));
+    }
+
+    if (!any_unresolved)
+        return false;
+
+    if (function->name == "array")
+    {
+        out = std::move(collected);
+    }
+    else if (function->name == "tuple")
+    {
+        out = Tuple(collected.begin(), collected.end());
+    }
+    else
+    {
+        if (collected.size() % 2 != 0)
+            return false;
+        Map pairs;
+        pairs.reserve(collected.size() / 2);
+        for (size_t i = 0; i < collected.size(); i += 2)
+            pairs.push_back(Tuple{collected[i], collected[i + 1]});
+        out = std::move(pairs);
+    }
+    return true;
 }
 
 /// Build the column and type of a set element holding number literals, parsing them from their
@@ -132,11 +189,11 @@ bool tryBuildNumberLiteralSetElement(
     if (!reference_type)
         return false;
 
-    const auto * literal = element->as<ASTLiteral>();
-    if (!literal)
+    Field unresolved;
+    if (!tryGetUnresolvedLiteralField(element, unresolved))
         return false;
 
-    auto [parsed_field, target_type] = resolveNumberLiteralSetElement(literal->value, reference_type);
+    auto [parsed_field, target_type] = resolveNumberLiteralSetElement(unresolved, reference_type);
     if (!target_type)
         return false;
 
@@ -157,11 +214,11 @@ bool tryBuildNumberLiteralSet(
     if (tryBuildNumberLiteralSetElement(right_arg, reference_type, out_column, out_type))
         return true;
 
-    const auto * literal = right_arg->as<ASTLiteral>();
-    if (!literal || literal->value.getType() != Field::Types::Tuple)
+    Field unresolved;
+    if (!tryGetUnresolvedLiteralField(right_arg, unresolved) || unresolved.getType() != Field::Types::Tuple)
         return false;
 
-    const auto & elements = literal->value.safeGet<Tuple>();
+    const auto & elements = unresolved.safeGet<Tuple>();
     /// Checked before the rebuild below, which copies every element of a possibly huge IN list.
     if (std::none_of(elements.begin(), elements.end(), fieldHasNumberLiteral))
         return false;
@@ -207,6 +264,16 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
     if (!func)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IN: empty function AST for constant set");
 
+    /// `array(...)`/`tuple(...)` is a single set element when the left-hand side has the same shape
+    /// (`[x] IN (array(1.1))`), and a list of elements otherwise. Try it whole first, so its literals
+    /// are retargeted against the left-hand side instead of being read as separate elements.
+    {
+        ColumnPtr whole_column;
+        DataTypePtr whole_type;
+        if (tryBuildNumberLiteralSetElement(func, number_literal_reference_type, whole_column, whole_type))
+            return {whole_column, whole_type};
+    }
+
     const auto & args = func->arguments->children;
 
     /// An empty `tuple()` is not handled here: `ColumnTuple::create` rejects a zero-column tuple, so it
@@ -249,8 +316,17 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
-            /// An `array` right-hand side is a value expression with a type of its own, so its
-            /// number literals keep the default `Float64` resolution, like in the analyzer.
+            /// Reaching here means the array is the set rather than one element, so its items are
+            /// retargeted individually, like the elements of a tuple list.
+            ColumnPtr literal_column;
+            DataTypePtr literal_type;
+            if (tryBuildNumberLiteralSetElement(arg, number_literal_reference_type, literal_column, literal_type))
+            {
+                element_columns.emplace_back(literal_column->convertToFullColumnIfConst());
+                element_types.emplace_back(std::move(literal_type));
+                continue;
+            }
+
             const auto value = evaluateConstantExpressionAsColumn(arg, context);
             element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
             element_types.emplace_back(value.getType());
@@ -1874,15 +1950,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             {
                 for (size_t i = 0; i < 2; ++i)
                 {
-                    const auto * lit = args[i]->as<ASTLiteral>();
-                    if (!lit)
+                    Field unresolved;
+                    if (!tryGetUnresolvedLiteralField(args[i], unresolved))
                         continue;
                     const auto * other = index.tryGetNode(argument_names[1 - i]);
                     if (!other || !other->result_type)
                         continue;
 
                     auto [resolved, target_type]
-                        = resolveNestedNumberLiteralsForComparison(lit->value, other->result_type);
+                        = resolveNestedNumberLiteralsForComparison(unresolved, other->result_type);
                     if (!target_type)
                         continue;
 
