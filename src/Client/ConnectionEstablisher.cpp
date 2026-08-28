@@ -247,12 +247,16 @@ void ConnectionEstablisherAsync::processAsyncEvent(int fd, Poco::Timespan socket
 
 void ConnectionEstablisherAsync::clearAsyncEvent()
 {
-    timeout_descriptor.reset();
+    /// Unregister the socket before anything that can throw. If it were left registered, the next
+    /// `processAsyncEvent` would add a descriptor that is already in the epoll set and fail with
+    /// `EEXIST`. See `RemoteQueryExecutorReadContext::clearAsyncEvent` for the same rule.
     if (socket_fd != -1)
     {
         epoll.remove(socket_fd);
         socket_fd = -1;
     }
+
+    timeout_descriptor.reset();
 }
 
 bool ConnectionEstablisherAsync::checkBeforeTaskResume()
