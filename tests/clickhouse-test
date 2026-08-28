@@ -2113,13 +2113,8 @@ def is_old_analyzer_used(args):
     )
 
 
-# Reported from the parent, once per test-executing process rather than once per spawn:
-# `cache_ignore_args` keeps its state in a per-function closure, so the cache is per
-# process, and `run_single_test` is reached both from the forked parallel workers
-# (`run_tests_process`) and directly from the parent for the sequential tests - so a
-# suite with both emits this up to `--jobs + 1` times. A per-spawn report from preexec_fn
-# would land in the per-test stderr file (the wrapper's stderr since the stdio fix) only
-# to be truncated by the test command's own `2> {stderr}`, and would repeat once per test.
+# Reported from the parent: the same message from `preexec_fn` would go to the per-test
+# stderr file, which the test command's own `2> {stderr}` then truncates.
 @cache_ignore_args
 def report_cgroups_unavailable():
     print("Cgroups are not available, memory limit will not be applied", file=sys.stderr)
@@ -3731,9 +3726,8 @@ class TestCase:
             ),
         }
 
-        # Both streams are truncating redirects. (`2>` used to be `2>>` on the path where
-        # `--database` is not given, to preserve the per-test database creation output that
-        # was written to the same file; see fe90c979b59c, which made both paths use `2>`.)
+        # >> append to stderr (but not stdout since it is not used there),
+        # because there are also output of per test database creation
         pattern = "{test} > {stdout} 2> {stderr}"
 
         tests_env = os.environ.copy()
@@ -3756,16 +3750,14 @@ class TestCase:
             cgroup_name = f"clickhouse-test-{os.getpid()}"
             preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
 
-        # A per-test wrapper must not inherit our stdout or stderr: it is in its own
-        # session, so one that outlives us would wedge the CI pipeline we head (the
-        # workers and the bookkeeping manager keep our stdout by design). A fatal
-        # `preexec_fn` exits before bash execs, so `> {stdout}` never creates this file
-        # and the post-`wait` normalization would raise. See tests/clickhouse-test-process-management.md.
+        # Pre-create both files: a fatal `preexec_fn` exits before bash execs, so the
+        # command's own redirects never run and the post-`wait` normalization would raise.
+        # See tests/clickhouse-test-process-management.md for the mechanism.
         open(self.stdout_file, "wb").close()
-        # Truncate, so a retried attempt does not inherit the previous one's diagnostics.
         open(self.stderr_file, "wb").close()
-        # Append: the command's own `2> {stderr}` holds a second descriptor on this path
-        # with its own offset, so a non-append write here would overwrite the test's output.
+        # A per-test wrapper must not inherit our stdout or stderr: it is in its own session,
+        # so one that outlives us would wedge the CI pipeline we head. `ab` because the
+        # command's own `2> {stderr}` holds a second descriptor with its own offset.
         with open(self.stderr_file, "ab") as wrapper_stderr:
             # pylint:disable-next=consider-using-with; TODO: fix
             proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn,
