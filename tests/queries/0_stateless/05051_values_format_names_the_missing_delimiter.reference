@@ -14,6 +14,10 @@ Code: 46. Function with name `notafunction` does not exist. In scope notafunctio
 --- (*, 'Alice', '2020-01-02', 7)
 Code: 1. Unqualified matcher * cannot be resolved. There are no table sources. In scope *
 
+=== the optional trailing comma before ) is accepted for an expression too, as it is for a literal
+1	Alice	2020-01-02	7
+2	Bob	2020-01-03	8
+
 === valid rows, including an expression and several rows at once
 1	Alice	2020-01-02	7
 2	Bob	2020-01-03	8
