@@ -1112,7 +1112,6 @@ std::optional<ZooKeeperMultiRequest::OperationType> ZooKeeperMultiRequest::getOp
     {
         case OpNum::Create:
         case OpNum::Create2:
-        case OpNum::CreateContainer:
         case OpNum::CreateTTL:
         case OpNum::CreateIfNotExists:
         case OpNum::Remove:
