@@ -13,6 +13,7 @@
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
+#include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/AsyncLoader.h>
@@ -50,6 +51,7 @@ namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_keeper_path;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_replication_slot;
 }
 
 namespace FailPoints
@@ -155,6 +157,16 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         throw Exception(ErrorCodes::FAULT_INJECTED,
             "Injected failure of the MaterializedPostgreSQL database startup");
     });
+
+    /// A refused DROP DATABASE removed some of the nested tables of a database with a user-managed
+    /// replication slot, which cannot be repaired automatically (see `recoverAfterRefusedDrop`). Refuse to
+    /// resume replication rather than replicate a silently truncated set of tables while the slot advances.
+    if (manual_repair_required)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Replication of database {} cannot be resumed: a refused DROP DATABASE has removed some of its nested "
+            "tables and they cannot be reloaded automatically, because the replication slot is user-managed. Drop "
+            "the database and recreate it with a freshly created replication slot and the snapshot exported with it",
+            backQuote(TSA_SUPPRESS_WARNING_FOR_READ(database_name)));
 
     replication_handler = makeReplicationHandler();
 
@@ -1133,8 +1145,36 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapsh
     /// (otherwise the reloaded snapshot would be appended to their pre-drop contents, resurrecting
     /// the rows PostgreSQL deleted while replication was down) and reloads a snapshot from an
     /// empty slot.
+    ///
+    /// This is impossible for a user-managed replication slot (`materialized_postgresql_replication_slot`):
+    /// the slot belongs to the user, so the create-style startup neither drops nor recreates it and there is
+    /// no fresh exported snapshot to load - it would reuse the original `materialized_postgresql_snapshot`
+    /// token, which the documentation explicitly allows the user to invalidate (by ending the exporting
+    /// PostgreSQL transaction) once the initial sync is confirmed. Forcing a create-style startup there would
+    /// first clear the nested tables that survived the partial drop and only then fail to load them back.
+    /// Fail close instead: keep the attach-style recovery, which touches no data, and refuse to resume
+    /// replication until the operator repairs the database. Resuming would be worse than refusing: the tables
+    /// the refused drop removed would be silently skipped while the shared slot's `confirmed_flush_lsn`
+    /// advances past their changes, so their data would be lost for good.
     if (force_resnapshot)
-        is_attach = false;
+    {
+        if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
+        {
+            manual_repair_required = true;
+
+            LOG_ERROR(log,
+                "A refused DROP DATABASE has already removed some of the nested tables, and this database uses a "
+                "user-managed replication slot `{}`, for which the missing tables cannot be reloaded automatically "
+                "(a new snapshot cannot be exported from a slot this server does not manage, and the original "
+                "`materialized_postgresql_snapshot` token is not guaranteed to be valid anymore). Replication will "
+                "not be resumed, so that the changes of the removed tables are not skipped while the replication "
+                "slot advances past them. Drop the database and recreate it with a freshly created replication slot "
+                "and the snapshot exported with it",
+                (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value);
+        }
+        else
+            is_attach = false;
+    }
 
     if (replication_handler && replication_handler->isStopped())
     {
@@ -1747,6 +1787,8 @@ The TLS/SSL parameters are part of the PostgreSQL connection parameters, which a
 ### Refused `DROP DATABASE` {#refused-drop-database}
 
 A `DROP DATABASE` that fails (for example because a nested table cannot be removed) never leaves the database silently dead: replication is rebuilt in the background and the database keeps replicating as if the statement had never been issued, so the drop can simply be retried. Such a failure can happen after some of the replicated tables have already been removed. The recovery then reloads a fresh snapshot of every table, clearing the tables that survived the failed drop first, so the database converges to the exact current state of PostgreSQL instead of keeping rows that were deleted in PostgreSQL while replication was down.
+
+This automatic repair is not possible for a user-managed replication slot (see [`materialized_postgresql_replication_slot`](#materialized-postgresql-replication-slot) and the section below): a snapshot cannot be exported from a slot ClickHouse does not manage, and the snapshot identifier passed in [`materialized_postgresql_snapshot`](#materialized-postgresql-snapshot) is only valid as long as the exporting PostgreSQL transaction is open. If a failed `DROP DATABASE` of such a database has already removed some of the replicated tables, replication is not resumed - the removed tables would be silently skipped while the replication slot advances past their changes, losing their data. The refusal is reported in the server log and the database has to be dropped and recreated with a freshly created replication slot and the snapshot exported with it.
 
 ### Failover of the logical replication slot {#logical-replication-slot-failover}
 

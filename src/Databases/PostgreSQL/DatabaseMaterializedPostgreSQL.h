@@ -167,6 +167,14 @@ private:
     /// leak its running consumer.
     bool synchronization_started = false;
 
+    /// Set when a refused `DROP DATABASE` removed some of the nested tables of a database with a
+    /// user-managed `materialized_postgresql_replication_slot`, for which they cannot be reloaded
+    /// automatically (no snapshot can be exported from a slot this server does not manage, and the
+    /// original `materialized_postgresql_snapshot` token may already be invalid). `startSynchronization`
+    /// then refuses to resume replication instead of replicating the surviving subset of tables while
+    /// the slot advances past the changes of the removed ones. Guarded by `handler_mutex`.
+    bool manual_repair_required = false;
+
     BackgroundSchedulePoolTaskHolder startup_task;
     std::atomic<bool> shutdown_called = false;
 
