@@ -3,12 +3,16 @@
 
 #if USE_AVRO
 
+#include <bit>
 #include <compare>
-#include <limits>
+#include <cstring>
 #include <optional>
 #include <unordered_set>
 
 #include <base/arithmeticOverflow.h>
+
+#include <Common/TransformEndianness.h>
+#include <Core/DecimalFunctions.h>
 
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -52,6 +56,57 @@ using namespace DB;
 
 namespace
 {
+    /// Iceberg serializes a decimal bound as its unscaled value in two's complement big endian form,
+    /// using the minimum number of bytes needed (see the single value serialization appendix of the
+    /// spec). Sign extend it to the full width of the column's native type and let
+    /// `transformEndianness` do the byte order, so the same code covers every decimal width.
+    template <typename DecimalType>
+    std::optional<DB::Field> decodeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound)
+    {
+        using NativeType = typename DecimalType::NativeType;
+
+        /// A bound wider than its own type is malformed: the value it spells cannot be held by the
+        /// column, so there is no bound to return.
+        if (str.empty() || str.size() > sizeof(NativeType))
+            return std::nullopt;
+
+        NativeType unscaled_value;
+        auto * bytes = reinterpret_cast<char *>(&unscaled_value);
+        /// Fill with the sign byte, then place the bound in the least significant bytes.
+        memset(bytes, (str[0] & 0x80) ? 0xFF : 0x00, sizeof(NativeType));
+        memcpy(bytes + sizeof(NativeType) - str.size(), str.data(), str.size());
+        DB::transformEndianness<std::endian::native, std::endian::big>(unscaled_value);
+
+        /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
+        /// are stored rounded, without fractional part. What is more strange
+        /// the integer part is rounded mathematically correctly according to fractional part.
+        /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
+        /// I've checked two implementations: Spark and Amazon Athena and both of them
+        /// do this.
+        ///
+        /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
+        /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
+        /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
+        /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
+        ///
+        /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
+        /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
+        /// but at least it doesn't lead to incorrect results.
+        if (scale)
+        {
+            /// The bound comes from the manifest and is not checked against the declared precision,
+            /// so widening it by one integral unit can still leave the type.
+            NativeType scaler = DB::DecimalUtils::scaleMultiplier<NativeType>(scale);
+            if (lower_bound)
+                scaler = -scaler;
+
+            if (common::addOverflow(unscaled_value, scaler, unscaled_value))
+                return std::nullopt;
+        }
+
+        return DB::DecimalField<DecimalType>(unscaled_value, scale);
+    }
+
     /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
     /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
     std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
@@ -60,75 +115,18 @@ namespace
         auto column = non_nullable_type->createColumn();
         if (DB::WhichDataType(non_nullable_type).isDecimal())
         {
-            /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
-            /// using the minimum number of bytes for the value
-            /// Our decimal binary representation is little endian
-            /// so we cannot reuse our default code for parsing it.
-            ///
-            /// Only `Decimal32` and `Decimal64` become a bound below, and both fit into `Int64`.
-            /// Anything wider is rejected here, before the decoding: neither its unscaled value nor
-            /// its scaler (10^scale, which leaves `Int64` at scale 19) is representable.
-            const auto * decimal32_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type);
-            const auto * decimal64_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type);
-            if (!decimal32_type && !decimal64_type)
-                return std::nullopt;
+            const UInt32 scale = DB::getDecimalScale(*non_nullable_type);
 
-            /// A bound wider than its own type is malformed, and the value it spells is out of range
-            /// for that type, so there is no bound to return.
-            const size_t max_bytes = decimal32_type ? sizeof(Int32) : sizeof(Int64);
-            if (str.empty() || str.size() > max_bytes)
-                return std::nullopt;
+            if (DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
+                return decodeDecimalBound<DB::Decimal32>(str, scale, lower_bound);
+            if (DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
+                return decodeDecimalBound<DB::Decimal64>(str, scale, lower_bound);
+            if (DB::checkDecimal<DB::Decimal128>(*non_nullable_type))
+                return decodeDecimalBound<DB::Decimal128>(str, scale, lower_bound);
+            if (DB::checkDecimal<DB::Decimal256>(*non_nullable_type))
+                return decodeDecimalBound<DB::Decimal256>(str, scale, lower_bound);
 
-            /// Convert from big-endian two's complement. The accumulation is unsigned so that the
-            /// shifts stay defined, and the sign extension is skipped for a value that already fills
-            /// all 64 bits, where the shift width would leave the type.
-            UInt64 bits = 0;
-            for (const auto byte : str)
-                bits = (bits << 8) | static_cast<UInt8>(byte);
-
-            /// Add sign
-            if ((str[0] & 0x80) && str.size() < sizeof(UInt64))
-                bits |= ~UInt64(0) << (str.size() * 8);
-
-            Int64 unscaled_value = static_cast<Int64>(bits);
-
-            /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
-            /// are stored rounded, without fractional part. What is more strange
-            /// the integer part is rounded mathematically correctly according to fractional part.
-            /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
-            /// I've checked two implementations: Spark and Amazon Athena and both of them
-            /// do this.
-            ///
-            /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
-            /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
-            /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
-            /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
-            ///
-            /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
-            /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
-            /// but at least it doesn't lead to incorrect results.
-            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
-            {
-                /// The scale of a `Decimal32` is at most 9 and of a `Decimal64` at most 18, so the
-                /// scaler itself fits; the bound it widens comes from the manifest and is not checked
-                /// against the declared precision, so the sum can still leave the type.
-                Int64 scaler = lower_bound ? -10 : 10;
-                while (--scale)
-                    scaler *= 10;
-
-                if (common::addOverflow(unscaled_value, scaler, unscaled_value))
-                    return std::nullopt;
-            }
-
-            if (decimal32_type)
-            {
-                if (unscaled_value < std::numeric_limits<Int32>::min() || unscaled_value > std::numeric_limits<Int32>::max())
-                    return std::nullopt;
-
-                return DB::DecimalField<DB::Decimal32>(static_cast<Int32>(unscaled_value), decimal32_type->getScale());
-            }
-
-            return DB::DecimalField<DB::Decimal64>(unscaled_value, decimal64_type->getScale());
+            return std::nullopt;
         }
         else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
         {
