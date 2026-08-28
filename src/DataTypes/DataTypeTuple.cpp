@@ -12,9 +12,6 @@
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/Serializations/SerializationWrapper.h>
-#include <DataTypes/Serializations/SerializationReplicated.h>
-#include <DataTypes/Serializations/SerializationDetached.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -34,7 +31,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
@@ -205,43 +201,6 @@ MutableColumnPtr DataTypeTuple::createColumn() const
     MutableColumns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
         tuple_columns[i] = elems[i]->createColumn();
-    return ColumnTuple::create(std::move(tuple_columns));
-}
-
-MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
-{
-    /// If we read subcolumn of nested Tuple or this Tuple is a subcolumn, it may be wrapped to SerializationWrapper
-    /// several times to allow to reconstruct the substream path name.
-    /// Here we don't need substream path name, so we drop first several wrapper serializations.
-    const auto * current_serialization = &serialization;
-    while (const auto * serialization_wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
-        current_serialization = serialization_wrapper->getNested().get();
-
-    /// We can have Replicated serialization over Tuple.
-    if (const auto * serialization_replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
-        return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
-
-    /// We can have Detached serialization over Tuple (for parallel blocks marshalling).
-    /// Create the inner column; SerializationDetached::deserializeBinaryBulkWithMultipleStreams
-    /// will wrap it in ColumnBLOB during deserialization.
-    if (const auto * serialization_detached = typeid_cast<const SerializationDetached *>(current_serialization))
-        return createColumn(*serialization_detached->getNested());
-
-    const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
-    if (!serialization_tuple)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
-
-    if (elems.empty())
-        return IDataType::createColumn(serialization);
-
-    const auto & element_serializations = serialization_tuple->getElementsSerializations();
-
-    size_t size = elems.size();
-    chassert(element_serializations.size() == size);
-    MutableColumns tuple_columns(size);
-    for (size_t i = 0; i < size; ++i)
-        tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]->getNested());
-
     return ColumnTuple::create(std::move(tuple_columns));
 }
 

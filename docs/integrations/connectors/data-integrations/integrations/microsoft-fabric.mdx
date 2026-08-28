@@ -1,0 +1,273 @@
+---
+sidebarTitle: 'Microsoft Fabric'
+slug: /integrations/microsoft-fabric
+description: 'ClickHouse for Microsoft Fabric is an acceleration layer for OneLake, delivering sub-second, cost-efficient analytics on your OneLake data without leaving Fabric.'
+keywords: ['clickhouse', 'microsoft fabric', 'onelake', 'workload', 'power bi', 'mcp']
+title: 'ClickHouse for Microsoft Fabric'
+doc_type: 'guide'
+hidden: true
+integration:
+  - support_level: 'core'
+  - category: 'data_integration'
+---
+
+import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge/>
+
+## Overview {#overview}
+
+The ClickHouse workload for Microsoft Fabric is an acceleration layer for OneLake. It brings ClickHouse, the fastest open-source analytical database, directly into your Fabric workspace as a native workload.
+
+Your data already lives in OneLake. The workload lets you sync selected tables into a dedicated ClickHouse Cloud service and query them with sub-second response times, at high concurrency, on cost-efficient dedicated compute. OneLake stays the source of truth throughout.
+
+Common use cases:
+
+* **AI agents**: give agents governed, read-only SQL access to your data through MCP, from Copilot Studio, Azure AI Foundry, GitHub Copilot, and any MCP-compatible tool
+* **Interactive analytics**: dashboards and data exploration over billions of rows with millisecond query latency
+* **Customer-facing applications**: serve real-time analytical queries at petabyte scale for application consumption
+
+<Frame>
+  ![ClickHouse workload page in the Microsoft Fabric workload hub](/images/integrations/tools/data-integration/microsoft-fabric/fabric-01-workload-hub-card.webp)
+</Frame>
+
+The workload is available in the Microsoft Fabric workload hub. For security, privacy, and compliance details, see the [vendor attestation](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
+
+## Provisioning {#provisioning}
+
+To create a ClickHouse item:
+
+1. In your Fabric workspace, select **+ New item**
+2. Search for **ClickHouse** and select it
+3. Name the item and select **Create**
+
+<Frame>
+  ![Setting up ClickHouse: creating the Cloud organization and provisioning the service](/images/integrations/tools/data-integration/microsoft-fabric/fabric-02-provisioning-canvas.webp)
+</Frame>
+
+The first time a ClickHouse item is created in a workspace, a Fabric administrator with billing rights installs the workload and accepts the [terms of service](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf). Workspace members then have access.
+
+Services are provisioned in the ClickHouse Cloud Azure region nearest to your Fabric capacity region. See [supported regions](/products/cloud/reference/supported-regions). For details on where data is stored and processed, see the [data residency section of the attestation](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
+
+## ClickHouse Cloud trial {#clickhouse-cloud-trial}
+
+Creating your first ClickHouse item starts a trial automatically. The trial organization and a dedicated service are provisioned with your Microsoft Entra identity.
+
+The trial includes:
+
+* Trial credits valid for 30 days
+* A dedicated service on the [ClickHouse Scale tier](https://clickhouse.com/docs/products/cloud/features/cloud-tiers)
+* Service idling enabled by default, so an inactive trial service does not consume compute credits while paused
+
+When the trial ends or the credits run out, convert to a paid organization through the [ClickHouse Cloud offer on Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
+
+## Syncing data from OneLake {#syncing-data-from-onelake}
+
+The Sync flow is how OneLake tables get into ClickHouse:
+
+1. Open your ClickHouse item and select **Sync**
+2. Select **Sync from OneLake** and pick a Lakehouse from your workspace
+3. Select the tables you want to accelerate
+4. Select **Save and sync** to start a point-in-time sync of your data
+
+<Frame>
+  ![Sync configuration creating a new destination table with sorting key](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
+</Frame>
+
+You can create a destination table with inferred data types and default configuration based on the schema discovered in OneLake. If you'd prefer more control over the table definition, you can create a table ahead of time and use an existing table as the destination.
+
+<Frame>
+  ![Sync column mapping from a OneLake source table to an existing ClickHouse table](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
+</Frame>
+
+Sync status is shown per table. Once a table finishes, it is immediately queryable from the SQL console. Large tables sync in the background, so you can keep working while they load.
+
+<Note>
+In public preview, only a point-in-time snapshot copy is supported. More replication options are planned for future releases.
+</Note>
+
+### Powered by ClickPipes {#powered-by-clickpipes}
+
+Each synced table is powered by a [ClickPipe](/integrations/clickpipes/home), the managed ingestion service of ClickHouse Cloud:
+
+1. The workload reads the table directly from OneLake using your authorized credentials
+2. A ClickPipe streams the data into a table in your ClickHouse service, mapping types from OneLake to ClickHouse types
+
+### Cost {#cost}
+
+Syncing data from OneLake to ClickHouse is free during the Microsoft Fabric public preview. Billing starts when the Fabric workload reaches general availability. Pricing details will be published when the workload reaches GA.
+
+## SQL console and saved queries {#sql-console-and-saved-queries}
+
+The embedded SQL console lets you query your ClickHouse data without leaving Fabric.
+
+<Frame>
+  ![Embedded ClickHouse SQL console querying the synced NYC taxi table](/images/integrations/tools/data-integration/microsoft-fabric/fabric-05-sql-console.webp)
+</Frame>
+
+### Saved queries {#saved-queries}
+
+Save any query with a name to reuse it later. Saved queries are stored with the item, so everyone in the workspace works from the same set.
+
+### Go further with ClickHouse SQL {#go-further-with-clickhouse-sql}
+
+ClickHouse offers far more than fast SELECTs: materialized views that pre-compute answers as data arrives, full-text search, approximate aggregations, and hundreds of specialized functions. To learn more about all the ClickHouse offers, check out [ClickHouse best practices](/concepts/best-practices/index), [materialized views](/concepts/features/materialized-views/index), and [example use cases](/guides/use-cases/index).
+
+## Connecting your data {#connecting-your-data}
+
+The **Connect** screen provides copy-paste instructions for everything that can reach your service.
+
+* **Analytics and BI**: Power BI desktop and service, Fabric notebooks with the Python client and more
+* **Agents and AI**: the ClickHouse MCP server for Copilot Studio, Azure AI Foundry, and GitHub Copilot
+* **Build and interfaces**: HTTPS, JDBC/ODBC, and official ClickHouse clients (Python, Node.js, Java, Go, C#, Rust and more)
+
+<Frame>
+  ![Connect screen showing Power BI connection details for the ClickHouse service](/images/integrations/tools/data-integration/microsoft-fabric/fabric-06-connect-power-bi.webp)
+</Frame>
+
+MCP access is opt-in per service and read-only. Enabling it exposes a governed endpoint that agents can query with SQL. They get the same sub-second answers as the console, without touching your Fabric capacity. See [enabling the remote MCP server](/products/cloud/features/ai-ml/remote-mcp#enabling) for setup steps and the [ClickHouse MCP server reference](/products/cloud/features/ai-ml/remote-mcp#available-tools) for the available tools.
+
+## Administration and management {#administration-and-management}
+
+### Open in ClickHouse Cloud {#open-in-clickhouse-cloud}
+
+Select **Open in ClickHouse Cloud** to open the full ClickHouse Cloud console, signed in with your Microsoft identity. You can sync data into ClickHouse and run any SQL statements from the Fabric workload, but for any administrative tasks you'll need to enter the Cloud Console to manage the service.
+
+<Frame>
+  ![ClickHouse Cloud console service settings reached from the workload](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
+</Frame>
+
+### Scaling {#scaling}
+
+Services scale vertically and horizontally within configured bounds. Adjust minimum and maximum replica sizes in the Cloud console under **Settings**. For predictable latency-sensitive workloads, pin the minimum replica size to keep the service warm. See [automatic scaling](/products/cloud/features/autoscaling/overview) for details.
+
+### Idling {#idling}
+
+Idling pauses compute when the service receives no queries, and resumes automatically when the next query arrives, after a short start-up delay. Trial services are created with idling enabled.
+
+* Keep idling **on** for development and intermittent workloads to minimize cost
+* Turn idling **off** for production dashboards, applications, and agents that need consistent millisecond latency
+
+Configure idling in the Cloud console on the **Settings** page. See [automatic idling](/products/cloud/features/autoscaling/idling) for the full behavior.
+
+### Monitoring the service {#monitoring-the-service}
+
+Service health, query performance, and resource usage are monitored from the ClickHouse Cloud console. See [ClickHouse Cloud monitoring](/guides/use-cases/observability/cloud-monitoring) for the built-in monitoring capabilities and integration options. For platform-wide health and incident history, see [status.clickhouse.com](https://status.clickhouse.com).
+
+### Monitoring ClickPipes {#monitoring-clickpipes}
+
+Each sync from OneLake runs as a ClickPipe. Track sync progress, throughput, and errors on the [ClickPipes page](/integrations/clickpipes/monitoring) in the ClickHouse Cloud console.
+
+## Mapping to ClickHouse Cloud {#mapping-to-clickhouse-cloud}
+
+The workload is powered by [ClickHouse Cloud](https://clickhouse.com/cloud) running on Azure. Three mappings define how Fabric concepts connect to ClickHouse concepts:
+
+| Fabric          | ClickHouse Cloud | Relationship                                                          |
+|-----------------|------------------|-----------------------------------------------------------------------|
+| Workspace       | Organization     | 1:1, created when the first ClickHouse item is created in a workspace |
+| ClickHouse item | Service          | 1:1, fixed at item creation                                           |
+| User            | User             | 1:1, created the first time a user opens a ClickHouse item            |
+
+**Workspace to organization.** Each Fabric workspace maps to exactly one ClickHouse Cloud organization. The organization is created automatically the first time someone creates a ClickHouse item in the workspace. Access is scoped to your Microsoft Entra tenant, and data cannot be shared across tenants through the workload.
+
+**Item to service.** Each ClickHouse item in your workspace maps to exactly one dedicated ClickHouse service. Creating an item provisions the service, and deleting the item deletes the service. The service is dedicated infrastructure. Your queries never compete with other tenants, and heavy query load never consumes your Fabric capacity.
+
+**Users.** When a member of the Fabric workspace opens a ClickHouse item for the first time, a ClickHouse user is provisioned automatically on the ClickHouse Cloud organization mapped to the workspace.
+
+## Support {#support}
+
+Support for the ClickHouse workload is provided by ClickHouse. All details, including severity levels and response times, can be found in the [ClickHouse support program](https://clickhouse.com/support/program). You can open a case from there or directly in the ClickHouse Cloud console. For platform status and incident history, see [status.clickhouse.com](https://status.clickhouse.com).
+
+## Azure Marketplace {#azure-marketplace}
+
+The workload is monetized through the [ClickHouse Cloud offer on Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud):
+
+* When your trial ends, the upgrade flow in the workload takes you through the marketplace purchase for your organization. Usage is then billed pay-as-you-go through your Azure account. See [Azure Marketplace PAYG billing](/products/cloud/reference/billing/marketplace/azure-marketplace-payg) for details.
+* Completing a marketplace purchase requires the billing permission of the ClickHouse organization, which workspace administrators hold. An organization administrator can grant it to other users in the Cloud console.
+
+## Getting started tutorial {#getting-started-tutorial}
+
+This walkthrough uses the built-in sample data of Fabric, so you can try the workload without bringing your own dataset.
+
+### Load the sample data {#load-the-sample-data}
+
+In your Fabric workspace, select **+ New item** and select **Sample lakehouse** to add the **Public holidays** sample. Confirm the `publicholidays` table appears under Tables.
+
+<Frame>
+  ![Public holidays sample table in a Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+</Frame>
+
+### Create a ClickHouse item and sync {#create-a-clickhouse-item-and-sync}
+
+1. Create a ClickHouse item in the same workspace, as described in [provisioning](#provisioning)
+2. Open **Sync**, pick your Lakehouse, and select the `publicholidays` table
+3. Order by the columns you filter on most: `countryOrRegion, date`
+4. Start the sync and the data populates shortly. A table this size finishes in seconds
+
+### Query the data {#query-the-data}
+
+Open the SQL console and try:
+
+```sql
+-- Which countries have the most holidays?
+SELECT countryOrRegion, count() AS holidays
+FROM publicholidays
+GROUP BY countryOrRegion
+ORDER BY holidays DESC
+LIMIT 10;
+```
+
+```sql
+-- Paid time off vs. observance days by year
+SELECT
+    toYear(date) AS year,
+    countIf(isPaidTimeOff) AS paid_days,
+    count() AS all_days
+FROM publicholidays
+GROUP BY year
+ORDER BY year;
+```
+
+Save the first query as **Holidays by country** to see saved queries in action.
+
+### Connect to MCP {#connect-to-mcp}
+
+1. On the **Connect** screen, enable **MCP** for the service
+2. Register the ClickHouse MCP server with the MCP client of your choice, as described in [getting started with the remote MCP server](/products/cloud/features/ai-ml/remote-mcp#getting-started)
+3. Ask: *"Which country has the most public holidays in 2026, and how many are paid time off?"*
+
+The agent answers by running governed, read-only SQL against your synced table.
+
+## Known limitations {#known-limitations}
+
+The ClickHouse workload is in public preview. The limitations below are the current state, not the destination; most are on the roadmap.
+
+### Data movement {#data-movement}
+
+* **Copies are point-in-time snapshots.** There is no scheduled or continuous replication yet. To refresh a table with the latest OneLake data, re-run the sync. Updates and deletes in the source table are not propagated to the ClickHouse copy.
+* **Lakehouse tables only.** Sync reads tables from a Lakehouse in the same workspace. 
+* **No write-back to OneLake.** Data flows one way, from OneLake into ClickHouse. Writing query results back to OneLake is planned.
+
+### Service management {#service-management}
+
+* **One service per item, fixed at creation.** You cannot attach an existing ClickHouse Cloud service to a Fabric item, and you cannot connect the workload to an existing ClickHouse Cloud organization.
+* **Service deletion from the ClickHouse Cloud console leaves the Fabric item orphaned and unrecoverable.** Deleting a Fabric item deletes its service, but the reverse path is currently unsupported.
+* **Service configuration lives in the Cloud console.** Scaling, idling, and backups are managed from ClickHouse Cloud, not from Fabric item settings.
+
+### Access and identity {#access-and-identity}
+
+* **Role changes apply on next open.** Your ClickHouse organization role is mapped from your Fabric workspace role each time you open a ClickHouse item. Fabric cannot notify ClickHouse of role changes, so a changed workspace role does not take effect immediately.
+* **Removing or downgrading a user in Fabric does not revoke their ClickHouse access.** Because roles are only applied when a user opens a ClickHouse item, a user who is removed from the workspace or downgraded may retain their existing access on the ClickHouse Cloud side, and if they never open the item again that change never propagates at all. To revoke access immediately and reliably, remove the user from the organization in the ClickHouse Cloud console.
+* **Workspace-level access.** Everyone in the workspace can use its ClickHouse items. Granular, per-table permission sync from OneLake is currently not supported.
+* **Console SSO requires an email on your Entra profile.** ClickHouse Cloud users need an email address; if your Microsoft Entra profile has none set, signing in to the Cloud console will fail.
+
+## Reference {#reference}
+
+* [Vendor attestation](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)
+* [ClickHouse Cloud on Microsoft Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)
+* [Azure Marketplace PAYG billing](/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Supported regions](/products/cloud/reference/supported-regions)
+* [ClickPipes pricing dimensions](/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage)
+* [Support program](https://clickhouse.com/support/program)
+* [Service status](https://status.clickhouse.com)
+* [Terms of service](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf)
