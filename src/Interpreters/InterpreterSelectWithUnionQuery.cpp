@@ -320,9 +320,25 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         if (query.union_mode == SelectUnionMode::UNION_DISTINCT)
         {
             /// Add distinct transform
+            DistinctStep::Settings distinct_settings(settings);
+
+            /// UNION concatenates its branches' streams instead of merging them, so a preliminary
+            /// DISTINCT runs in parallel and shrinks what the final single-stream DISTINCT must merge.
+            if (preliminaryDistinctIsUseful(max_threads))
+            {
+                auto pre_distinct_step = std::make_unique<DistinctStep>(
+                    query_plan.getCurrentHeader(),
+                    distinct_settings,
+                    0,
+                    result_header->getNames(),
+                    true);
+                pre_distinct_step->setStepDescription("Preliminary DISTINCT");
+                query_plan.addStep(std::move(pre_distinct_step));
+            }
+
             auto distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentHeader(),
-                DistinctStep::Settings(settings),
+                std::move(distinct_settings),
                 0,
                 result_header->getNames(),
                 false);

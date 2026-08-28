@@ -66,6 +66,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+bool preliminaryDistinctIsUseful(size_t max_threads)
+{
+    return max_threads > 1;
+}
+
 /// The min-combination of the absolute and the ratio thresholds, the same as for external GROUP BY
 /// (Aggregator::Params::getMaxBytesBeforeExternalGroupBy).
 static size_t getMaxBytesBeforeExternalDistinct(size_t max_bytes_before_external_distinct, double max_bytes_ratio_before_external_distinct)
