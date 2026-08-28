@@ -19,6 +19,7 @@
         "products/managed-postgres/high-availability",
         "products/managed-postgres/read-replicas",
         "products/managed-postgres/backup-and-restore",
+        "products/managed-postgres/branching",
         "products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
@@ -64,7 +65,8 @@
         "products/managed-postgres/monitoring/dashboard",
         "products/managed-postgres/monitoring/metrics",
         "products/managed-postgres/monitoring/prometheus",
-        "products/managed-postgres/monitoring/query-insights"
+        "products/managed-postgres/monitoring/query-insights",
+        "products/managed-postgres/monitoring/notifications"
       ]
     },
     {

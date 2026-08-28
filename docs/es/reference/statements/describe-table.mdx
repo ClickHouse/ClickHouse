@@ -21,13 +21,13 @@ La sentencia `DESCRIBE` devuelve una fila por cada columna de la tabla con los s
 * `default_type` — Una cláusula utilizada en la [expresión predeterminada](/es/reference/statements/create/table) de la columna: `DEFAULT`, `MATERIALIZED` o `ALIAS`. Si no hay ninguna expresión predeterminada, se devuelve una cadena vacía.
 * `default_expression` — Una expresión especificada después de la cláusula `DEFAULT`.
 * `comment` — Un [comentario de columna](/es/reference/statements/alter/column#comment-column).
-* `codec_expression` — Un [codec](/es/reference/statements/create/table#column_compression_codec) aplicado a la columna.
+* `codec_expression` — Un [codec](/es/reference/statements/create/table/codec) aplicado a la columna.
 * `ttl_expression` — Una expresión [TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
-* `is_subcolumn` — Un indicador cuyo valor es `1` para las subcolumnas internas. Solo se incluye en el resultado si la descripción de subcolumnas está habilitada mediante la configuración [describe&#95;include&#95;subcolumns](/es/reference/settings/session-settings#describe_include_subcolumns).
+* `is_subcolumn` — Un indicador cuyo valor es `1` para las subcolumnas internas. Solo se incluye en el resultado si la descripción de subcolumnas está habilitada mediante la configuración [describe&#95;include&#95;subcolumns](/es/reference/settings/session-settings/describe-include#describe_include_subcolumns).
 
 Todas las columnas de las estructuras de datos [Nested](/es/reference/data-types/nested-data-structures/index) se describen por separado. El nombre de cada columna lleva como prefijo el nombre de la columna padre y un punto.
 
-Para mostrar las subcolumnas internas de otros tipos de datos, use la configuración [describe&#95;include&#95;subcolumns](/es/reference/settings/session-settings#describe_include_subcolumns).
+Para mostrar las subcolumnas internas de otros tipos de datos, use la configuración [describe&#95;include&#95;subcolumns](/es/reference/settings/session-settings/describe-include#describe_include_subcolumns).
 
 **Ejemplo**
 
@@ -81,4 +81,4 @@ Este uso devuelve metadatos sobre las columnas de resultados de la consulta o su
 
 **Véase también**
 
-* Ajuste [describe&#95;include&#95;subcolumns](/es/reference/settings/session-settings#describe_include_subcolumns).
+* Ajuste [describe&#95;include&#95;subcolumns](/es/reference/settings/session-settings/describe-include#describe_include_subcolumns).

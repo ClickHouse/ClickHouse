@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1037333",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1077744",
       "email": "support@clickhouse.com"
     }
   },
@@ -372,7 +372,7 @@
     "/v1/organizations/{organizationId}/prometheus": {
       "get": {
         "summary": "Get organization metrics",
-        "description": "Returns prometheus metrics for all services in an organization.",
+        "description": "Deprecated. Use the Prometheus service discovery endpoint (/v1/organizations/{organizationId}/prometheus/discovery) instead. This endpoint is not available for new organizations; contact ClickHouse support to request access. Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted.",
         "operationId": "organizationPrometheusGet",
         "parameters": [
           {
@@ -459,12 +459,115 @@
             }
           }
         },
+        "deprecated": true,
+        "tags": [
+          "Prometheus"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/prometheus/discovery": {
+      "get": {
+        "summary": "List Prometheus scrape targets",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
+        "operationId": "organizationPrometheusDiscoveryGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filtered_metrics",
+            "description": "Whether discovered targets scrape a filtered list of metrics. Sets the filtered_metrics parameter on each discovered target. Defaults to true.",
+            "schema": {
+              "type": "string",
+              "format": "boolean"
+            },
+            "example": "true"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PrometheusDiscoveryTargetGroup"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "tags": [
           "Prometheus"
         ],
-        "x-mint": {
-          "content": "Returns prometheus metrics for all services in an organization."
-        }
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/roles": {
@@ -1253,6 +1356,131 @@
             "position": "after"
           }
         ]
+      }
+    },
+    "/v1/organizations/{organizationId}/serviceProfiles": {
+      "get": {
+        "summary": "List available service profiles",
+        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure. The list is empty when the organization tier does not include custom hardware profiles.",
+        "operationId": "serviceProfilesList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization to list available profiles for.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region_id",
+            "description": "Region to list profiles for, e.g. us-east-1.",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "byoc_id",
+            "description": "ID of the BYOC infrastructure to list profiles for. BYOC profiles are only returned when this is set.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceProfile"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-mint": {
+          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure. The list is empty when the organization tier does not include custom hardware profiles."
+        }
       }
     },
     "/v1/organizations/{organizationId}/services": {
@@ -2294,7 +2522,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/state": {
       "patch": {
         "summary": "Update service state",
-        "description": "Starts or stop service",
+        "description": "Starts, stops, or wakes a service. The `start` and `stop` commands require the `control-plane:service:manage` permission on the service. The `awake` command requires only `control-plane:service:view` and applies to an idle service; it does not start a stopped service.",
         "operationId": "instanceStateUpdate",
         "parameters": [
           {
@@ -2410,7 +2638,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Starts or stop service"
+          "content": "Starts, stops, or wakes a service. The `start` and `stop` commands require the `control-plane:service:manage` permission on the service. The `awake` command requires only `control-plane:service:view` and applies to an idle service; it does not start a stopped service."
         }
       }
     },
@@ -7099,6 +7327,236 @@
         }
       }
     },
+    "/v1/organizations/{organizationId}/activeBalances": {
+      "get": {
+        "summary": "Get organization active prepaid balances",
+        "description": "DEPRECATED. Use the `/v1/organizations/{organizationId}/creditBalances` endpoint instead. <br /><br /> Returns the active prepaid credit balances for the organization, each with its own balance ID and remaining credits, along with the total remaining credits across all active balances. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first, and the returned page is capped at `limit` (default and maximum 100). When `totalCount` exceeds the number of returned balances, page with `limit`/`offset` to retrieve them all. `totalRemainingPrepaidCredits` always covers every active balance, not just the returned page.",
+        "operationId": "activeBalancesGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ActiveBalances"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/creditBalances": {
+      "get": {
+        "summary": "Get organization active credit balances",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the active credit balances for the organization, each with its own balance ID, type and remaining credits, along with the total remaining credits across all of them. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first. The list is always present and is empty when the organization has no active balances.",
+        "operationId": "creditBalancesGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/CreditBalances"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Billing"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes": {
       "get": {
         "summary": "List ClickPipes",
@@ -7969,7 +8427,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes/schemaDiscovery": {
       "post": {
         "summary": "Discover ClickPipe source schema",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Infers the schema (field names and ClickHouse data types) of a streaming ClickPipe source without creating a pipe. Supported for Kafka, Kinesis sources.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Infers the schema (field names and ClickHouse data types) of a ClickPipe source without creating a pipe. Supported for Kafka, Kinesis, Pub/Sub, and object storage sources. Object storage inference runs on the destination service, which must be running.",
         "operationId": "clickPipeSchemaDiscovery",
         "parameters": [
           {
@@ -9346,7 +9804,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts": {
       "get": {
         "summary": "ClickStack: List Alerts",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves alerts for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves alerts for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When `totalCount` exceeds the number of returned items, page with `limit`/`offset` to retrieve them all.",
         "operationId": "clickStackListAlerts",
         "parameters": [
           {
@@ -9367,6 +9825,27 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
             }
           }
         ],
@@ -10594,7 +11073,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks": {
       "get": {
         "summary": "ClickStack: List Webhooks",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves webhooks for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves webhooks for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When `totalCount` exceeds the number of returned items, page with `limit`/`offset` to retrieve them all.",
         "operationId": "clickStackListWebhooks",
         "parameters": [
           {
@@ -10615,6 +11094,27 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
             }
           }
         ],
@@ -11718,7 +12218,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches": {
       "get": {
         "summary": "ClickStack: List Saved Searches",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves saved searches for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves saved searches for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When `totalCount` exceeds the number of returned items, page with `limit`/`offset` to retrieve them all.",
         "operationId": "clickStackListSavedSearches",
         "parameters": [
           {
@@ -11739,6 +12239,27 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
             }
           }
         ],
@@ -14565,6 +15086,196 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/PostgresSlowQueryPatternDetail"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Postgres"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/postgres/{postgresId}/logs": {
+      "get": {
+        "summary": "List Postgres server logs",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns PostgreSQL server log entries for a Postgres service within the given time window, most recent first by default (override with `sort_order`). Results are paginated with `limit`/`offset`; advance `offset` until a page returns fewer than `limit` entries to read the full window. The time range must not exceed 30 days, and `to_date` must be after `from_date`.",
+        "operationId": "postgresLogsGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "postgresId",
+            "description": "ID of the requested Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_date",
+            "description": "Inclusive start of the time window (RFC 3339 date-time).",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "description": "Inclusive end of the time window (RFC 3339 date-time).",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "body_contains",
+            "description": "Case-sensitive substring the log body must contain.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "description": "Filter to log entries with this PostgreSQL severity (for example, ERROR, WARNING, LOG).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "description": "Sort order. One of `asc` or `desc`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000,
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PostgresLogEntry"
+                      }
                     }
                   }
                 }
@@ -19236,16 +19947,8 @@
             "type": "boolean"
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE organization tiers.",
-            "type": "string",
-            "enum": [
-              "v1-default",
-              "v1-highmem-xs",
-              "v1-highmem-s",
-              "v1-highmem-m",
-              "v1-highmem-l",
-              "v1-highmem-xl"
-            ]
+            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "type": "string"
           },
           "transparentDataEncryptionKeyId": {
             "description": "The ID of the Transparent Data Encryption key used for the service. This is only available if hasTransparentDataEncryption is true.",
@@ -19608,6 +20311,51 @@
           "endpointServiceId": {
             "description": "Unique identifier of the interface endpoint you created in your VPC with the AWS(Service Name) or GCP(Target Service) resource",
             "type": "string"
+          }
+        }
+      },
+      "PrometheusDiscoveryLabels": {
+        "properties": {
+          "__scheme__": {
+            "description": "URL scheme Prometheus must scrape the target with.",
+            "type": "string"
+          },
+          "__metrics_path__": {
+            "description": "Path of the per-service Prometheus metrics endpoint.",
+            "type": "string"
+          },
+          "__param_filtered_metrics": {
+            "description": "Value passed as the filtered_metrics query parameter on each scrape.",
+            "type": "string",
+            "format": "boolean"
+          },
+          "clickhouse_org_id": {
+            "description": "Organization ID the service belongs to.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "clickhouse_service_id": {
+            "description": "Service ID.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "clickhouse_discovery_service_name": {
+            "description": "Service name.",
+            "type": "string"
+          }
+        }
+      },
+      "PrometheusDiscoveryTargetGroup": {
+        "properties": {
+          "targets": {
+            "type": "array",
+            "description": "Host (and port) of the ClickHouse Cloud API.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "$ref": "#/components/schemas/PrometheusDiscoveryLabels"
           }
         }
       },
@@ -22458,7 +23206,7 @@
       "ClickPipeMongoDBSource": {
         "properties": {
           "uri": {
-            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...).",
+            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...). Embedded credentials are redacted from API responses, so the returned value can differ from what was submitted.",
             "type": "string",
             "example": "mongodb+srv://cluster0.example.mongodb.net/mydb"
           },
@@ -22516,7 +23264,7 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "uri": {
-            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...).",
+            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...). Embedded credentials are redacted from API responses, so the returned value can differ from what was submitted.",
             "type": "string",
             "example": "mongodb+srv://cluster0.example.mongodb.net/mydb"
           },
@@ -22576,7 +23324,7 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "uri": {
-            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...).",
+            "description": "MongoDB connection URI (mongodb:// or mongodb+srv://). Credentials are redacted in responses; a masked value is never saved as a credential, so a real credential equal to [REDACTED] cannot be set. To change the connection, send the full URI with real credentials; omit this field or resend the redacted value to leave it unchanged.",
             "type": [
               "string",
               "null"
@@ -23174,6 +23922,11 @@
             "maximum": 2,
             "example": 2
           },
+          "kafka_read_committed": {
+            "description": "Kafka Read Committed. Whether Kafka consumers read only committed messages",
+            "type": "boolean",
+            "example": false
+          },
           "object_storage_use_cluster_function": {
             "description": "use cluster function. Whether to use ClickHouse cluster function for distributed processing",
             "type": [
@@ -23442,7 +24195,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "Optional. Roles to grant to the ClickHouse user that ClickPipe creates. If omitted, the user is granted the default role (`default_role`). Add your custom roles here if required.",
+            "description": "Optional. Roles to grant to the ClickHouse user that ClickPipe creates. If omitted, the user is granted the default role (`default_role`). Add your custom roles here if required. The role names `clickpipes` and `clickpipes_system` are reserved for internal use and cannot be assigned.",
             "items": {
               "type": "string"
             }
@@ -23582,6 +24335,11 @@
             "maximum": 2,
             "example": 2
           },
+          "kafka_read_committed": {
+            "description": "Kafka Read Committed. Whether Kafka consumers read only committed messages",
+            "type": "boolean",
+            "example": false
+          },
           "object_storage_use_cluster_function": {
             "description": "use cluster function. Whether to use ClickHouse cluster function for distributed processing",
             "type": [
@@ -23616,6 +24374,26 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/ClickPipePostKinesisSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pubsub": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipePostPubSubSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "objectStorage": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipePostObjectStorageSource"
               },
               {
                 "type": "null"
@@ -23689,6 +24467,7 @@
             "type": "string",
             "enum": [
               "create_organization",
+              "delete_organization",
               "organization_update_name",
               "transfer_service_in",
               "transfer_service_out",
@@ -23730,7 +24509,6 @@
               "service_update_autoscaling_replicas",
               "service_update_max_allowable_replicas",
               "service_update_backup_configuration",
-              "service_update_snapshot_configuration",
               "service_restore_backup",
               "service_update_release_channel",
               "service_update_gpt_usage_consent",
@@ -23740,7 +24518,72 @@
               "service_maintenance_start",
               "service_maintenance_end",
               "service_update_core_dump",
-              "backup_delete"
+              "service_update_autoscaling_schedule",
+              "service_update_query_endpoints",
+              "service_update_direct_connection",
+              "service_update_sql_console_jwt_auth",
+              "service_update_snapshot_configuration",
+              "service_update_collector_ip_access_list",
+              "service_update_mysql_interface",
+              "service_update_upgrade_window",
+              "service_delete_upgrade_window",
+              "service_trigger_failover",
+              "service_trigger_recovery",
+              "service_mcp_enabled",
+              "service_mcp_disabled",
+              "service_upgrade",
+              "service_scaled_down_for_tier_change",
+              "service_encryption_key_check_failed",
+              "service_encryption_key_rotation_failed",
+              "service_encryption_key_rotated",
+              "service_stop_encryption_key_inaccessible",
+              "service_restart_encryption_key_rotation",
+              "backup_delete",
+              "backup_bucket_create",
+              "backup_bucket_update",
+              "backup_bucket_delete",
+              "backup_bucket_archive",
+              "warehouse_update_name",
+              "warehouse_update_release_channel",
+              "role_create",
+              "role_update",
+              "role_delete",
+              "role_resources_delete",
+              "organization_member_remove_roles",
+              "scim_user_profile_update",
+              "scim_group_create",
+              "scim_group_update",
+              "scim_group_delete",
+              "organization_saml_connection_delete",
+              "datadog_integration_create",
+              "datadog_integration_delete",
+              "organization_update_spend_alert",
+              "organization_update_core_dumps",
+              "organization_update_private_endpoints",
+              "organization_update_pci_compliance",
+              "organization_update_hipaa_status",
+              "transfer_credits_in",
+              "transfer_credits_out",
+              "promo_code_claim",
+              "schema_advisor_seed",
+              "schema_advisor_generate_plan",
+              "schema_advisor_approve_plan",
+              "schema_advisor_start_deployment",
+              "schema_advisor_start_benchmark",
+              "schema_advisor_run_benchmark",
+              "schema_advisor_start_promotion",
+              "schema_advisor_exchange_tables",
+              "schema_advisor_drop_sandbox",
+              "udf_create",
+              "udf_update",
+              "udf_delete",
+              "udf_version_create",
+              "udf_version_delete",
+              "udf_attach",
+              "udf_detach",
+              "udf_update_services",
+              "udf_redeploy",
+              "udf_rebuild"
             ]
           },
           "actorType": {
@@ -23797,6 +24640,34 @@
               "service-role-changed",
               "roles-v2-changed"
             ]
+          },
+          "targetRoleIds": {
+            "type": "array",
+            "description": "For role and actor-role activities: IDs of the affected roles.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetRoleNames": {
+            "type": "array",
+            "description": "For role and actor-role activities: names of the affected roles, when recorded.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetActorIds": {
+            "type": "array",
+            "description": "For 'organization_member_update_roles' and 'organization_member_remove_roles' activities: IDs of the affected actors (e.g. 'user/<id>').",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetResourceIds": {
+            "type": "array",
+            "description": "For 'role_resources_delete' activities: IDs of the deleted resources the roles referenced.",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -30553,7 +31424,8 @@
             "enum": [
               "services-per-organization",
               "postgres-services-per-organization",
-              "replicas-per-warehouse"
+              "replicas-per-warehouse",
+              "api-keys-per-organization"
             ],
             "example": "services-per-organization"
           },
@@ -30600,6 +31472,122 @@
           "value",
           "adjustable"
         ]
+      },
+      "ServiceProfile": {
+        "properties": {
+          "profile": {
+            "description": "Profile name to pass as `profile` when creating a service (e.g. 'v1-standard-byoc-4').",
+            "type": "string"
+          },
+          "cpuCores": {
+            "description": "Number of vCPUs per replica.",
+            "type": "number"
+          },
+          "memoryGi": {
+            "description": "Memory per replica in GiB. When creating a BYOC service with this profile, minReplicaMemoryGb and maxReplicaMemoryGb must both equal this value.",
+            "type": "number"
+          }
+        }
+      },
+      "ActiveBalance": {
+        "properties": {
+          "id": {
+            "description": "Unique ID of the prepaid balance.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "remainingPrepaidCredits": {
+            "description": "Remaining credits available on this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "totalAmount": {
+            "description": "Total credits granted on this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "amountSpent": {
+            "description": "Credits spent from this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "startDate": {
+            "description": "Date the balance became active. ISO-8601, based on the UTC timezone.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "expirationDate": {
+            "description": "Date the balance expires. ISO-8601, based on the UTC timezone.",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ActiveBalances": {
+        "properties": {
+          "totalRemainingPrepaidCredits": {
+            "description": "Total remaining credits across all active prepaid balances, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "prepaidBalances": {
+            "type": "array",
+            "description": "List of active prepaid balances for the organization.",
+            "items": {
+              "$ref": "#/components/schemas/ActiveBalance"
+            }
+          }
+        }
+      },
+      "CreditBalance": {
+        "properties": {
+          "id": {
+            "description": "Unique ID of the balance.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "description": "Type of the balance.",
+            "type": "string",
+            "enum": [
+              "prepaid",
+              "trial"
+            ]
+          },
+          "remainingCredits": {
+            "description": "Remaining credits available on this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "totalAmount": {
+            "description": "Total credits granted on this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "amountSpent": {
+            "description": "Credits spent from this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "startDate": {
+            "description": "Date the balance became active. ISO-8601, based on the UTC timezone.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "expirationDate": {
+            "description": "Date the balance expires. ISO-8601, based on the UTC timezone.",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CreditBalances": {
+        "properties": {
+          "totalRemainingCredits": {
+            "description": "Total remaining credits across all active balances, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "balances": {
+            "type": "array",
+            "description": "List of active balances for the organization. Empty when the organization has none.",
+            "items": {
+              "$ref": "#/components/schemas/CreditBalance"
+            }
+          }
+        }
       },
       "ServiceClickhouseSetting": {
         "properties": {
@@ -31206,7 +32194,68 @@
           "r8gd.12xlarge",
           "r8gd.16xlarge",
           "r8gd.24xlarge",
-          "r8gd.48xlarge"
+          "r8gd.48xlarge",
+          "c4a-highmem-4",
+          "c4a-highmem-8",
+          "c4a-highmem-16",
+          "c4a-highmem-32",
+          "c4a-highmem-48",
+          "c4a-highmem-64",
+          "c4a-highmem-72",
+          "c4a-standard-4",
+          "c4a-standard-8",
+          "c4a-standard-16",
+          "c4a-standard-32",
+          "c4a-standard-48",
+          "c4a-standard-64",
+          "c4a-standard-72",
+          "c4-highmem-4",
+          "c4-highmem-8",
+          "c4-highmem-16",
+          "c4-highmem-24",
+          "c4-highmem-32",
+          "c4-highmem-48",
+          "c4-highmem-96",
+          "c4-highmem-144",
+          "c4-highmem-192",
+          "c4-highmem-288",
+          "c4-standard-4",
+          "c4-standard-8",
+          "c4-standard-16",
+          "c4-standard-24",
+          "c4-standard-32",
+          "c4-standard-48",
+          "c4-standard-96",
+          "c4-standard-144",
+          "c4-standard-192",
+          "c4-standard-288",
+          "c4d-highmem-8",
+          "c4d-highmem-16",
+          "c4d-highmem-32",
+          "c4d-highmem-48",
+          "c4d-highmem-64",
+          "c4d-highmem-96",
+          "c4d-highmem-192",
+          "c4d-highmem-384",
+          "c4d-standard-8",
+          "c4d-standard-16",
+          "c4d-standard-32",
+          "c4d-standard-48",
+          "c4d-standard-64",
+          "c4d-standard-96",
+          "c4d-standard-192",
+          "c4d-standard-384",
+          "z3-highlssd-8",
+          "z3-highlssd-16",
+          "z3-highlssd-22",
+          "z3-highlssd-32",
+          "z3-highlssd-44",
+          "z3-highlssd-88",
+          "z3-standardlssd-14",
+          "z3-standardlssd-22",
+          "z3-standardlssd-44",
+          "z3-standardlssd-88",
+          "z3-standardlssd-176"
         ]
       },
       "pgHaType": {
@@ -31221,7 +32270,8 @@
       "pgProvider": {
         "type": "string",
         "enum": [
-          "aws"
+          "aws",
+          "gcp"
         ],
         "title": "Cloud provider",
         "description": "The cloud provider for a Postgres service."
@@ -32005,6 +33055,28 @@
           "recentExecutions"
         ]
       },
+      "PostgresLogEntry": {
+        "properties": {
+          "timestamp": {
+            "description": "Time the entry was logged (RFC 3339).",
+            "type": "string",
+            "format": "date-time"
+          },
+          "severity": {
+            "description": "PostgreSQL severity of the entry (for example, LOG, WARNING, ERROR, FATAL, PANIC).",
+            "type": "string"
+          },
+          "body": {
+            "description": "Raw log entry body as emitted by PostgreSQL. Structured bodies are returned as a JSON-encoded string.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timestamp",
+          "severity",
+          "body"
+        ]
+      },
       "UpgradeWindow": {
         "properties": {
           "weekday": {
@@ -32320,16 +33392,8 @@
             }
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE organization tiers.",
-            "type": "string",
-            "enum": [
-              "v1-default",
-              "v1-highmem-xs",
-              "v1-highmem-s",
-              "v1-highmem-m",
-              "v1-highmem-l",
-              "v1-highmem-xl"
-            ]
+            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "type": "string"
           },
           "complianceType": {
             "description": "Type of regulatory compliance for service.",
@@ -32695,16 +33759,8 @@
             "type": "boolean"
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE organization tiers.",
-            "type": "string",
-            "enum": [
-              "v1-default",
-              "v1-highmem-xs",
-              "v1-highmem-s",
-              "v1-highmem-m",
-              "v1-highmem-l",
-              "v1-highmem-xl"
-            ]
+            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "type": "string"
           },
           "transparentDataEncryptionKeyId": {
             "description": "The ID of the Transparent Data Encryption key used for the service. This is only available if hasTransparentDataEncryption is true.",
@@ -33320,7 +34376,25 @@
                 "type": "integer",
                 "exclusiveMinimum": 0
               },
+              "memoryLimitMib": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1048576
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "sendChunkHeader": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deterministic": {
+                "description": "Marks the UDF as deterministic so ClickHouse can reuse cached query results. Only set this when the UDF always returns the same result for the same arguments.",
                 "default": false,
                 "type": "boolean"
               },
@@ -33441,7 +34515,25 @@
                 "type": "integer",
                 "exclusiveMinimum": 0
               },
+              "memoryLimitMib": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1048576
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "sendChunkHeader": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deterministic": {
+                "description": "Marks the UDF as deterministic so ClickHouse can reuse cached query results. Only set this when the UDF always returns the same result for the same arguments.",
                 "default": false,
                 "type": "boolean"
               },
@@ -33561,7 +34653,25 @@
                 "type": "integer",
                 "exclusiveMinimum": 0
               },
+              "memoryLimitMib": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1048576
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "sendChunkHeader": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deterministic": {
+                "description": "Marks the UDF as deterministic so ClickHouse can reuse cached query results. Only set this when the UDF always returns the same result for the same arguments.",
                 "default": false,
                 "type": "boolean"
               },
@@ -33677,7 +34787,25 @@
                 "type": "integer",
                 "exclusiveMinimum": 0
               },
+              "memoryLimitMib": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1048576
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "sendChunkHeader": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deterministic": {
+                "description": "Marks the UDF as deterministic so ClickHouse can reuse cached query results. Only set this when the UDF always returns the same result for the same arguments.",
                 "default": false,
                 "type": "boolean"
               },
@@ -33727,6 +34855,48 @@
           }
         ],
         "type": "object"
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "totalRecords": {
+            "description": "Total number of records available.",
+            "type": "integer"
+          },
+          "currentCursor": {
+            "description": "Cursor for the current page. Null for the first page.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextCursor": {
+            "description": "Cursor for the next page. Null if there are no more results.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "description": "Maximum number of records returned per page.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalRecords",
+          "currentCursor",
+          "nextCursor",
+          "limit"
+        ],
+        "additionalProperties": false
       },
       "UdfAttachment": {
         "type": "object",
@@ -33783,48 +34953,6 @@
         "required": [
           "items",
           "pagination"
-        ],
-        "additionalProperties": false
-      },
-      "Pagination": {
-        "type": "object",
-        "properties": {
-          "totalRecords": {
-            "description": "Total number of records available.",
-            "type": "integer"
-          },
-          "currentCursor": {
-            "description": "Cursor for the current page. Null for the first page.",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "nextCursor": {
-            "description": "Cursor for the next page. Null if there are no more results.",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "limit": {
-            "description": "Maximum number of records returned per page.",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "totalRecords",
-          "currentCursor",
-          "nextCursor",
-          "limit"
         ],
         "additionalProperties": false
       },
@@ -33938,8 +35066,26 @@
               }
             ]
           },
+          "memoryLimitMib": {
+            "description": "Maximum memory, in MiB, available to each UDF sandbox process. Null uses the sandbox default.",
+            "default": null,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sendChunkHeader": {
             "description": "Whether ClickHouse sends a row-count chunk header.",
+            "type": "boolean"
+          },
+          "deterministic": {
+            "description": "Whether ClickHouse may reuse cached query results for this UDF.",
             "type": "boolean"
           },
           "format": {
@@ -33998,7 +35144,9 @@
           "commandReadTimeout",
           "commandWriteTimeout",
           "maxCommandExecutionTime",
+          "memoryLimitMib",
           "sendChunkHeader",
+          "deterministic",
           "format",
           "sandboxType",
           "sandboxVersion",

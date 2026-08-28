@@ -1,8 +1,8 @@
 ---
-description: 'Clickhouse-disks のドキュメント'
+description: 'clickhouse-disks のドキュメント'
 sidebarTitle: 'clickhouse-disks'
 slug: /operations/utilities/clickhouse-disks
-title: 'Clickhouse-disks'
+title: 'clickhouse-disks'
 doc_type: 'reference'
 ---
 
@@ -14,7 +14,7 @@ ClickHouse のディスクに対して、ファイルシステムのような操
 
 * `--config-file, -C` -- ClickHouse の config ファイルのパス。デフォルトは `/etc/clickhouse-server/config.xml` です。
 * `--save-logs` -- 実行したコマンドの進行状況を `/var/log/clickhouse-server/clickhouse-disks.log` に記録します。
-* `--log-level` -- 記録するイベントの[種類](/ja/reference/settings/server-settings/settings#logger)。デフォルトは `none` です。
+* `--log-level` -- 記録するイベントの[種類](/ja/reference/settings/server-settings/settings/other#logger)。デフォルトは `none` です。
 * `--disk` -- `mkdir, move, read, write, remove` コマンドで使用するディスク。デフォルトは `default` です。
 * `--query, -q` -- 対話型モードを起動せずに実行できる単一のクエリ
 * `--help, -h` -- すべてのオプションとコマンドを説明付きで表示します
@@ -36,7 +36,7 @@ config で利用可能なすべてのディスクは、遅延初期化されま�
 2. **`default` ディスク**: このディスクは、設定の `clickhouse/path` パラメータで指定されたディレクトリ (デフォルト値は `/var/lib/clickhouse`) でローカルファイルシステムにマウントされます。初期パスは `/` に設定されます。
 
 <div id="clickhouse-disks-state">
-  ## Clickhouse-disks の状態
+  ## clickhouse-disks の状態
 </div>
 
 追加された各ディスクごとに、このユーティリティは現在のディレクトリ (通常のファイルシステムと同様のもの) を保持します。ユーザーは現在のディレクトリを変更したり、ディスクを切り替えたりできます。
