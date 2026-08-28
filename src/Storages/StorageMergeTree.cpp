@@ -1524,7 +1524,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         bool has_uncommitted_part_in_scope = false;
         for (const auto & uncommitted : uncommitted_parts)
         {
-            if (uncommitted.part.version >= static_cast<Int64>(mutation_version))
+            if (uncommitted.part.version >= mutation_version)
                 continue;
             if (uncommitted.creation_tid == entry.tid)
             {
