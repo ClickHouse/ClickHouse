@@ -5376,29 +5376,42 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
 
-    /// Queue engines put `_block_number` and `_block_offset` into their sorting key, so these columns must
-    /// stay materialized for the lifetime of the table. `CREATE` force-enables the corresponding settings;
-    /// forbid turning them off later, the same way `ALTER MODIFY ORDER BY` is forbidden. A `RESET SETTING`
-    /// is rejected as well, because the default value of both settings is `0`.
-    if (merging_params.is_queue)
+    /// A sorting key over `_block_number` / `_block_offset` (the queue engines always have one, and a
+    /// regular MergeTree may declare one explicitly) requires these columns to stay materialized for
+    /// the lifetime of the table: merges materialize them only while the corresponding settings are
+    /// enabled (`MergeTask::enabledBlockNumberColumn` / `enabledBlockOffsetColumn`), so disabling a
+    /// setting the sorting key depends on would leave the next merge unable to compute the key.
+    /// `CREATE` validates the pairing; forbid breaking it later, the same way `ALTER MODIFY ORDER BY`
+    /// is forbidden for the queue engines. A `RESET SETTING` is rejected as well, because the default
+    /// value of both settings is `0`.
     {
+        NameSet sorting_key_required_columns;
+        if (const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false); metadata_snapshot->hasSortingKey())
+            for (const auto & column_name : metadata_snapshot->getSortingKey().expression->getRequiredColumns())
+                sorting_key_required_columns.insert(column_name);
+
         for (const auto & command : commands)
         {
-            for (const auto * setting_name : {"enable_block_number_column", "enable_block_offset_column"})
+            for (const auto & [setting_name, column_name] : {
+                std::pair{"enable_block_number_column", BlockNumberColumn::name},
+                std::pair{"enable_block_offset_column", BlockOffsetColumn::name}})
             {
+                if (!merging_params.is_queue && !sorting_key_required_columns.contains(column_name))
+                    continue;
+
                 if (command.type == AlterCommand::MODIFY_SETTING)
                 {
                     Field value;
                     UInt64 enabled = 1;
                     if (command.settings_changes.tryGet(setting_name, value) && value.tryGet<UInt64>(enabled) && enabled == 0)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting '{}' cannot be disabled for the MergeTreeQueue engine, "
+                            "Setting '{}' cannot be disabled, "
                             "because it is required by the sorting key of the table", setting_name);
                 }
                 else if (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains(setting_name))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Setting '{}' cannot be reset for the MergeTreeQueue engine, "
+                        "Setting '{}' cannot be reset, "
                         "because it is required by the sorting key of the table", setting_name);
                 }
             }

@@ -484,13 +484,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// `createTableFromAST`), and `SECONDARY_CREATE` (DDL replay in `Replicated` databases, `RESTORE`)
     /// also replays previously validated definitions - those must stay loadable regardless of the
     /// current settings.
-    const bool is_fresh_queue_definition = args.mode <= LoadingStrictnessLevel::CREATE
+    const bool is_fresh_table_definition = args.mode <= LoadingStrictnessLevel::CREATE
         || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
 
     /// The queue engines are experimental: their on-disk layout and the commit-order contract may
     /// still change. Existing metadata must load regardless of the setting.
     if (merging_params.is_queue
-        && is_fresh_queue_definition
+        && is_fresh_table_definition
         && !local_settings[Setting::allow_experimental_merge_tree_queue])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -755,7 +755,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// partition, which breaks both the queue cursor and point lookups by the key. Until the
             /// engine contract covers partitioning, reject `PARTITION BY` in a fresh definition
             /// (replayed metadata still loads).
-            if (args.storage_def->partition_by && is_fresh_queue_definition)
+            if (args.storage_def->partition_by && is_fresh_table_definition)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "PARTITION BY is not supported for the {} engine, because block numbers are allocated "
                     "per partition and the commit-order key `(_block_number, _block_offset)` would no longer "
@@ -1256,8 +1256,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// so accepting them here would make CREATE succeed and a later INSERT fail.
     /// `_block_number` and `_block_offset` are the only materializable virtual
     /// columns; their settings are merge-time invariants and must be enabled before
-    /// a regular MergeTree can use them in its sorting key.
-    if (!merging_params.is_queue && args.mode <= LoadingStrictnessLevel::CREATE)
+    /// a regular MergeTree can use them in its sorting key. A full-definition
+    /// `ATTACH` is CREATE-like user input and must pass the same validation
+    /// (`is_fresh_table_definition` above); replayed metadata still loads.
+    if (!merging_params.is_queue && is_fresh_table_definition)
     {
         for (const auto & column_name : metadata.sorting_key.expression->getRequiredColumns())
         {
@@ -1288,6 +1290,35 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS,
                 "Sorting key cannot use reader-only virtual column {}",
                 backQuote(column_name));
+        }
+
+        /// The real `_block_number` of an insert is assigned only when the part is committed, so
+        /// a level-0 part writes its primary index with a placeholder and the index is repaired
+        /// when it is loaded (`IMergeTreeDataPart::correctVirtualColumnsInIndex`). That repair can
+        /// only reconstruct the bare column: a key expression over `_block_number` (for example
+        /// `_block_number + 1`, or one that mixes it with real columns) cannot be recomputed from
+        /// the stored index values, and the part would keep an index built from the placeholder,
+        /// silently breaking key-condition pruning. Reject such keys instead.
+        const auto & sorting_key_elements = metadata.sorting_key.expression_list_ast->children;
+        for (size_t i = 0; i < sorting_key_elements.size(); ++i)
+        {
+            if (i < metadata.sorting_key.column_names.size()
+                && metadata.sorting_key.column_names[i] == BlockNumberColumn::name)
+                continue;
+
+            std::function<bool(const IAST &)> mentions_block_number = [&](const IAST & ast) -> bool
+            {
+                if (const auto * identifier = ast.as<ASTIdentifier>())
+                    return identifier->name() == BlockNumberColumn::name;
+                return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return mentions_block_number(*child); });
+            };
+
+            if (mentions_block_number(*sorting_key_elements[i]))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Sorting key can use `_block_number` only as a bare key column, not inside an expression: "
+                    "its real value is assigned when the insert commits, and the primary index of a part written "
+                    "with a placeholder can be repaired only for the bare column");
         }
     }
 

@@ -2,3 +2,7 @@ the experimental gate applies to a full-definition ATTACH
 SUPPORT_IS_DISABLED
 PARTITION BY is rejected in a full-definition ATTACH
 BAD_ARGUMENTS
+a reader-only virtual column in the sorting key is rejected in a full-definition ATTACH
+BAD_ARGUMENTS
+a sorting key over disabled block columns is rejected in a full-definition ATTACH
+BAD_ARGUMENTS
