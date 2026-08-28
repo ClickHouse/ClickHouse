@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
+#include <Common/saturatedDuration.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -25,6 +26,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
+#include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -702,7 +704,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {
@@ -2232,6 +2234,12 @@ static BlockIO executeQueryImpl(
     if (query_span && query_span->trace_id != UUID{})
         LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
+    /// A trace started by sampling (`opentelemetry_start_trace_probability`) exists only in the thread-local context.
+    /// Write the sampled context back, so that everything that forwards `ClientInfo` to secondary queries (remote and distributed
+    /// queries, DDL entries) carries the trace even where the ambient context is not available.
+    if (query_span && query_span->isTraceEnabled() && context->getClientTraceContext().trace_id == UUID{})
+        context->setClientTraceContext(OpenTelemetry::CurrentContext());
+
     /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
 
@@ -2917,7 +2925,7 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::wait_for_async_insert])
                 {
-                    auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+                    auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(
                         std::move(result.future),
                         timeout,
@@ -3119,7 +3127,7 @@ static BlockIO executeQueryImpl(
                     if (checkCanWriteQueryResultCache(out_ast, context))
                     {
                             auto created_at = std::chrono::system_clock::now();
-                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                            auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
