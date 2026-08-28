@@ -111,3 +111,25 @@ WHERE has(data.tags, CAST(toDateTime('2040-03-03 03:00:00') AS Dynamic))
 SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_json_all_values_array_dynamic;
+
+DROP TABLE IF EXISTS t_json_all_values_variant;
+
+CREATE TABLE t_json_all_values_variant
+(
+    data JSON(v Variant(UInt64, String)),
+    INDEX idx_values JSONAllValues(data) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_json_all_values_variant VALUES ('{"v":42}');
+
+-- A raw `Variant` predicate must preserve the row-level type mismatch instead of pruning the granule.
+SELECT startsWith(data.v, 'zzz') FROM t_json_all_values_variant; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- An explicit String cast has the same representation as `JSONAllValues` and remains indexable.
+SELECT count() FROM t_json_all_values_variant WHERE startsWith(data.v::String, 'zzz')
+SETTINGS force_data_skipping_indices = 'idx_values';
+
+DROP TABLE t_json_all_values_variant;

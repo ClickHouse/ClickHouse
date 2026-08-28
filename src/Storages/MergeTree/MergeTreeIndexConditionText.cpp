@@ -940,6 +940,7 @@ static bool matchesNodeToJSONAllValuesIndex(
 
     const auto * node_dag = node.getDAGNode();
     return node_dag
+        && !isVariant(node_dag->result_type)
         && hasKnownJSONAllValuesSerialization(node_dag->result_type)
         && hasStableJSONAllValuesSerialization(node_dag->result_type)
         && tryMatchJSONSubcolumnToIndex(node.getColumnName(), header, "JSONAllValues").has_value();
