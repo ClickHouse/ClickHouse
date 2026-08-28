@@ -15,6 +15,7 @@ const contentTypes = new Map([
   ['.webp', 'image/webp'],
   ['.woff', 'font/woff'],
   ['.woff2', 'font/woff2'],
+  ['.xml', 'application/xml; charset=utf-8'],
 ]);
 
 export function staticContentType(filePath) {

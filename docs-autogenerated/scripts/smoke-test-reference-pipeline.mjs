@@ -203,20 +203,27 @@ async function main() {
       snapshotVersionDirectory,
       'docs/reference/_search/26.8.json',
     );
+    const snapshotSitemapPath = path.join(
+      snapshotVersionDirectory,
+      'docs/reference/versions/26.8/sitemap.xml',
+    );
     const snapshotAssetPath = path.join(snapshotVersionDirectory, '_astro/frozen.js');
     await Promise.all([
       mkdir(path.dirname(snapshotPagePath), { recursive: true }),
       mkdir(path.dirname(snapshotSearchPath), { recursive: true }),
+      mkdir(path.dirname(snapshotSitemapPath), { recursive: true }),
       mkdir(path.dirname(snapshotAssetPath), { recursive: true }),
     ]);
     await Promise.all([
       writeFile(snapshotPagePath, '<h1>Frozen Parquet</h1>'),
       writeFile(snapshotSearchPath, '{"records":[]}'),
+      writeFile(snapshotSitemapPath, '<urlset></urlset>'),
       writeFile(snapshotAssetPath, 'export const frozen = true;'),
     ]);
     for (const [requestUrl, expectedPath] of [
       ['/docs/reference/versions/26.8/formats/Parquet/Parquet', snapshotPagePath],
       ['/docs/reference/_search/26.8.json', snapshotSearchPath],
+      ['/docs/reference/versions/26.8/sitemap.xml', snapshotSitemapPath],
       ['/_astro/frozen.js', snapshotAssetPath],
     ]) {
       requireValue(
@@ -314,6 +321,25 @@ async function main() {
         path.join(versionedGeneratedDirectory, 'public/docs/reference/_search/26.8.json'),
       )
     ).records;
+    const sitemapIndex = await readFile(
+      path.join(generatedDirectory, 'public/sitemap.xml'),
+      'utf8',
+    );
+    const latestSitemap = await readFile(
+      path.join(generatedDirectory, 'public/docs/reference/sitemap.xml'),
+      'utf8',
+    );
+    const versionedSitemap = await readFile(
+      path.join(
+        versionedGeneratedDirectory,
+        'public/docs/reference/versions/26.8/sitemap.xml',
+      ),
+      'utf8',
+    );
+    const docsLayout = await readFile(
+      path.join(projectDirectory, 'src/layouts/DocsLayout.astro'),
+      'utf8',
+    );
     const alterModifyQueryPage = await readFile(
       path.join(
         generatedDirectory,
@@ -406,6 +432,35 @@ async function main() {
           && to.startsWith('/docs/reference/versions/26.8/')
         )),
       'The second bundle was not prepared as an isolated versioned site',
+    );
+    requireValue(
+      sitemapIndex.includes('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+        && sitemapIndex.includes(
+          '<loc>https://clickhouse.com/docs/reference/sitemap.xml</loc>',
+        )
+        && sitemapIndex.includes(
+          '<loc>https://clickhouse.com/docs/reference/versions/26.8/sitemap.xml</loc>',
+        ),
+      'The root sitemap index does not point to latest and immutable version sitemaps',
+    );
+    requireValue(
+      latestSitemap.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+        && latestSitemap.includes('<loc>https://clickhouse.com/docs/reference</loc>')
+        && latestSitemap.includes(
+          '<loc>https://clickhouse.com/docs/reference/statements/select</loc>',
+        )
+        && !latestSitemap.includes('/docs/reference/versions/26.8/'),
+      'The latest sitemap does not contain only current canonical reference routes',
+    );
+    requireValue(
+      versionedSitemap.includes('<loc>https://clickhouse.com/docs/reference/versions/26.8</loc>')
+        && versionedSitemap.includes(
+          '<loc>https://clickhouse.com/docs/reference/versions/26.8/statements/select</loc>',
+        )
+        && docsLayout.includes(
+          `manifest.channel !== 'latest' && <meta name="robots" content="noindex,follow" />`,
+        ),
+      'The immutable version is missing its sitemap or page-level `noindex` directive',
     );
 
     requireValue(

@@ -5,6 +5,8 @@ import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { referenceSitemapFiles } from './lib/reference-sitemaps.mjs';
+
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectDirectory = path.resolve(scriptDirectory, '..');
 const repositoryDirectory = path.resolve(projectDirectory, '..');
@@ -747,6 +749,7 @@ async function main() {
   );
   const headerNavigation = await headerNavigationConfig(sourceSiteConfig);
   const versionConfig = versionsConfig(bundleCatalog);
+  const sitemapFiles = referenceSitemapFiles(manifest, routes, versionConfig);
   const configuredPages = new Set();
   const collectConfiguredPages = (entries) => {
     for (const entry of entries) {
@@ -854,6 +857,11 @@ async function main() {
       path.join(stagingDirectory, 'public/docs/reference/_versions/versions.json'),
       versionConfig,
     ),
+    ...sitemapFiles.map(async ({ route, content }) => {
+      const destination = path.join(stagingDirectory, 'public', route.replace(/^\/+/, ''));
+      await mkdir(path.dirname(destination), { recursive: true });
+      await writeFile(destination, content, 'utf8');
+    }),
   ]);
 
   await Promise.all([
