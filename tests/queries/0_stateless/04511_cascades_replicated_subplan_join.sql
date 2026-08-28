@@ -32,6 +32,7 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
+SET query_plan_merge_expression_into_join = 1;
 SET query_plan_remove_unused_columns = 1;
 SET enable_join_transitive_predicates = 1;
 SET param__internal_cascades_cluster_node_count = 4;
