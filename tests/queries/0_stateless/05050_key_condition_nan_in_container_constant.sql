@@ -79,9 +79,10 @@ CREATE TABLE a_stored_nan (a Array(Float64)) ENGINE = MergeTree ORDER BY a SETTI
 INSERT INTO a_stored_nan VALUES ([nan, 1.]), ([2., 2.]);
 SELECT 'stored nan array equals', count() FROM a_stored_nan WHERE a = [nan, 1.];
 
--- Constants that hold no NaN must still prune.
+-- Constants that hold no NaN must still prune. The aggregate reads a key column to keep a read step in
+-- the plan: a lone `count()` here is answered from partition metadata, whose plan has no `Parts:` line.
 SELECT 'still prunes parts', count() > 0
-FROM (EXPLAIN indexes = 1 SELECT count() FROM t_partition WHERE NOT (t < (2, 2)))
+FROM (EXPLAIN indexes = 1 SELECT sum(t.1) FROM t_partition WHERE NOT (t < (2, 2)))
 WHERE explain ILIKE '%Parts: 1/2%';
 
 SELECT 'still prunes granules', count() > 0
