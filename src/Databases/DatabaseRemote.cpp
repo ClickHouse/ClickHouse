@@ -701,8 +701,10 @@ std::vector<LightWeightTableDetails> DatabaseRemote::getLightweightTablesIterato
     /// names-only path of `system.tables`), so an unreachable server has to be reported as such. An
     /// empty successful answer would contradict `EXISTS TABLE` and `SELECT` on the same database, which
     /// do report the real network or authentication error, and it would hide the outage behind "there
-    /// are no tables". The helper paths (name hints, the plain `getTablesIterator` that the server
-    /// itself walks) stay best-effort.
+    /// are no tables". A `system.tables` scan that names no database catches the propagated failure and
+    /// skips this database instead; that decision belongs to the caller, which alone knows whether the
+    /// query named the database (see `handleCannotListTables`). The helper paths (name hints, the plain
+    /// `getTablesIterator` that the server itself walks) stay best-effort.
     std::vector<LightWeightTableDetails> result;
 
     for (const auto & table_name : fetchTablesList(local_context))
@@ -1188,7 +1190,7 @@ ENGINE = Remote(my_named_collection, database = 'default');
 - Access rights are enforced on the remote server for the configured remote user, and locally by the usual privileges on the database and its tables.
 - A table of a local shard that the user is not allowed to see is reported as missing rather than as forbidden, so a `Remote` database cannot be used to probe the table names of a local database the user has no privileges on. This applies to listing (`SHOW TABLES`, `EXISTS TABLE`) as well as to resolution (`DESCRIBE TABLE`, `SHOW CREATE TABLE`, `SELECT`), and such a table is not served through the remote replicas of its shard either: the fallback described above engages only when the local replica genuinely does not have the table.
 - Listing the tables of a database that exists on the local replica of a shard also includes the tables that only the remote replicas of that shard have, so that `SHOW TABLES` and `system.tables` agree with `EXISTS TABLE`, `DESCRIBE TABLE` and `SELECT`, which fall back to those replicas. When none of the remote replicas answers, the list of the local replica is returned as it is, because it is already the answer of an available replica.
-- If the remote server is unavailable, listing its tables (`SHOW TABLES`, `system.tables`) reports the connection error instead of an empty list of tables, as `EXISTS TABLE` and `SELECT` on the same database do. Note that a `SELECT` from `system.tables` covering all databases fails as well while such a database is unreachable.
+- If the remote server is unavailable, a query that names this database - `SHOW TABLES FROM`, or `system.tables` with a predicate on `database` - reports the connection error instead of an empty list of tables, as `EXISTS TABLE` and `SELECT` on the same database do. A `SELECT` from `system.tables` that covers all databases instead skips this one and logs a warning, so that one unreachable remote database does not break whole-server introspection.
 - A `Remote` database may point to another `Remote` database on the same server. Listing and describing the tables of such a chain needs no privileges on the intermediate database — it holds neither data nor metadata of its own, and every hop already checks the caller's rights on the objects that it proxies in turn. Reading and writing the data, in contrast, needs `SELECT` / `INSERT` on every hop of the chain, because the query is really executed against the table of the intermediate database, exactly like for a `Distributed` table over another `Distributed` table. The visibility rule described above survives the chain: a table that the intermediate database hides from the caller is not served through the remote replicas of the outer database either. If the intermediate database on the local replica cannot reach its own target, the local replica of the outer shard cannot answer at all — exactly as if the replica itself were down — and the outer database falls back to the remote replicas of the shard.
 
 ## Example {#example}

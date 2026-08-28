@@ -46,17 +46,23 @@ ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() > 0 FROM system.tables WHERE engin
 # legitimately empty here, so the assertion is that the scan answers at all.
 # `system.kafka_consumers` is behind `USE_RDKAFKA`: treat its absence as vacuously satisfied so the
 # reference stays the same across build configurations.
-for table in kafka_consumers s3_queue_settings azure_queue_settings iceberg_files iceberg_history
+for table in s3_queue_settings azure_queue_settings iceberg_files iceberg_history
 do
     echo -n "${table} "
-    if [[ "$(${CLICKHOUSE_CLIENT_QUIET} -q \
-            "SELECT count() FROM system.tables WHERE database = 'system' AND name = '${table}'")" == "0" ]]
-    then
-        echo 1
-    else
-        ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() >= 0 FROM system.\`${table}\`"
-    fi
+    ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() >= 0 FROM system.\`${table}\`"
 done
+
+# `system.kafka_consumers` is the only one of the five behind a build flag (`USE_RDKAFKA`), so its
+# absence is reported as such instead of being asserted, which keeps the reference stable without
+# letting the other four pass vacuously.
+echo -n 'kafka_consumers '
+if [[ "$(${CLICKHOUSE_CLIENT_QUIET} -q \
+        "SELECT count() FROM system.tables WHERE database = 'system' AND name = 'kafka_consumers'")" == "0" ]]
+then
+    echo 'not built'
+else
+    ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() >= 0 FROM system.kafka_consumers"
+fi
 
 # A typo must answer UNKNOWN_TABLE. The hint lookup iterates every database, so it used to answer
 # the connection failure instead.
@@ -69,9 +75,13 @@ echo -n 'named_database_fails '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.tables WHERE database = '${MYSQL_DB}'" 2>&1 | grep -c 'ALL_CONNECTION_TRIES_FAILED'
 echo -n 'show_tables_fails '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SHOW TABLES FROM ${MYSQL_DB}" 2>&1 | grep -c 'ALL_CONNECTION_TRIES_FAILED'
-# system.columns decides the same thing separately, so it needs its own assertion.
-echo -n 'named_database_columns_fails '
-${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.columns WHERE database = '${MYSQL_DB}'" 2>&1 | grep -c 'ALL_CONNECTION_TRIES_FAILED'
+# `system.columns` cannot report it, unlike `system.tables` above: it needs a storage object per
+# table, and the only listing variant that propagates a remote failure is the one `DatabaseDataLake`
+# uses to turn an unresolvable table into a row with a null storage object, which this query would
+# then silently drop. So it answers an empty result, exactly as it already does for an unreachable
+# `PostgreSQL` database. Pinned here so the asymmetry with `system.tables` is deliberate.
+echo -n 'named_database_columns_empty '
+${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.columns WHERE database = '${MYSQL_DB}'"
 
 # The `Remote` engine lists its tables from the remote ClickHouse server, so an unreachable server
 # is the same class of failure and goes through the same mechanism. It wraps a failure to reach every

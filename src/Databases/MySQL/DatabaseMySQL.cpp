@@ -187,13 +187,17 @@ Tables DatabaseMySQL::listTablesImpl(ContextPtr local_context, const FilterByNam
     }
     catch (...)
     {
-        if (throw_on_error)
+        /// Only an unreachable remote is tolerated, and only on the best-effort path. Anything else -
+        /// a malformed reply, a permission error, a logical error - propagates rather than turning
+        /// into a successful but incomplete list of tables. The classifier returns `warning` exactly
+        /// for a connection failure to the remote.
+        const auto level = mysqlToleratedConnectionFailureLogLevel();
+        if (throw_on_error || level != LogsLevel::warning)
             throw;
 
-        /// Serve whatever the local cache holds. The level is `warning` exactly for a connection
-        /// failure to the unreachable remote: an `Error` line would be reported as an error of a
-        /// query that succeeds, and anything else must stay visible as an error.
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", mysqlToleratedConnectionFailureLogLevel());
+        /// Serve whatever the local cache holds. Logged at `warning` rather than `error`, because an
+        /// `Error` line would be reported as an error of a query that succeeds.
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", level);
     }
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)

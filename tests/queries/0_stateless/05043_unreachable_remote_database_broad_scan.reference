@@ -2,15 +2,15 @@ tables 1
 columns 1
 completions 1
 tables_by_engine 1
-kafka_consumers 1
 s3_queue_settings 1
 azure_queue_settings 1
 iceberg_files 1
 iceberg_history 1
+kafka_consumers 1
 unknown_table 1
 named_database_fails 1
 show_tables_fails 1
-named_database_columns_fails 1
+named_database_columns_empty 0
 remote_engine_scan 1
 remote_engine_named_database_fails 1
 scan_no_error	1
