@@ -1,9 +1,13 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnReplicated.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationInfoNamed.h>
+#include <DataTypes/Serializations/SerializationInfoNullable.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 
@@ -21,6 +25,62 @@
 
 namespace DB
 {
+
+namespace
+{
+
+class SerializationInfoArray final : public SerializationInfoNamed
+{
+public:
+    SerializationInfoArray(MutableSerializationInfoPtr nested_, const Settings & settings_)
+        : SerializationInfoNamed({std::move(nested_)}, {"elements"}, settings_)
+    {
+    }
+
+    void add(const IColumn & column) override
+    {
+        SerializationInfoNamed::add(column);
+        elems.front()->add(assert_cast<const ColumnArray &>(column).getData());
+    }
+
+    void addDefaults(size_t length) override
+    {
+        SerializationInfo::addDefaults(length);
+    }
+
+    MutableSerializationInfoPtr clone() const override
+    {
+        auto result = std::make_shared<SerializationInfoArray>(elems.front()->clone(), settings);
+        result->data = data;
+        return result;
+    }
+
+    MutableSerializationInfoPtr createWithType(
+        const IDataType & old_type,
+        const IDataType & new_type,
+        const Settings & new_settings) const override
+    {
+        const auto & old_nested = *assert_cast<const DataTypeArray &>(old_type).getNestedType();
+        const auto & new_nested = *assert_cast<const DataTypeArray &>(new_type).getNestedType();
+
+        auto nested_settings = new_settings;
+        if (!new_settings.shouldCollectSerializationInfo(new_nested))
+            nested_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        auto nested_info = new_nested.createSerializationInfo(nested_settings);
+
+        if (canReuseSerializationInfoForTypeChange(*elems.front(), *nested_info))
+            nested_info = elems.front()->createWithType(old_nested, new_nested, nested_settings);
+        else if (auto reused = tryReuseSerializationInfoThroughNullable(
+                     *elems.front(), old_nested, nested_info, new_nested, nested_settings))
+            nested_info = std::move(reused);
+
+        return std::make_shared<SerializationInfoArray>(std::move(nested_info), new_settings);
+    }
+
+    const MutableSerializationInfoPtr & getNestedInfo() const { return elems.front(); }
+};
+
+}
 
 namespace ErrorCodes
 {
@@ -61,6 +121,62 @@ SerializationPtr DataTypeArray::doGetSerialization(const SerializationInfoSettin
     if (settings.propagate_types_serialization_versions_to_nested_types)
         return SerializationArray::create(nested->getSerialization(settings));
     return SerializationArray::create(nested->getDefaultSerialization());
+}
+
+SerializationPtr DataTypeArray::getSerialization(const SerializationInfo & info) const
+{
+    return getSerialization(info, true);
+}
+
+SerializationPtr DataTypeArray::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
+{
+    const auto * array_info = typeid_cast<const SerializationInfoArray *>(&info);
+    if (!array_info)
+        return IDataType::getSerialization(info, use_type_serialization_settings);
+
+    auto serialization = SerializationArray::create(
+        nested->getSerialization(*array_info->getNestedInfo(), use_type_serialization_settings));
+    return wrapSerializationBasedOnKindStack(std::move(serialization), info.getKindStack(), info.getSettings());
+}
+
+MutableSerializationInfoPtr DataTypeArray::createSerializationInfo(const SerializationInfoSettings & settings) const
+{
+    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS || !hasSparseSerializationSubcolumns(settings))
+        return IDataType::createSerializationInfo(settings);
+
+    return std::make_shared<SerializationInfoArray>(nested->createSerializationInfo(settings), settings);
+}
+
+SerializationInfoPtr DataTypeArray::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
+{
+    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS || !hasSparseSerializationSubcolumns(settings))
+        return IDataType::getSerializationInfo(column, settings);
+
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+
+    if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
+    {
+        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_replicated->getNestedColumn(), settings));
+        info->appendToKindStack(ISerialization::Kind::REPLICATED);
+        return info;
+    }
+
+    if (const auto * column_blob = checkAndGetColumn<ColumnBLOB>(&column))
+    {
+        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_blob->getWrappedColumn(), settings));
+        info->appendToKindStack(ISerialization::Kind::DETACHED);
+        return info;
+    }
+
+    const auto & column_array = assert_cast<const ColumnArray &>(column);
+    return std::make_shared<SerializationInfoArray>(
+        const_pointer_cast<SerializationInfo>(nested->getSerializationInfo(column_array.getData(), settings)), settings);
+}
+
+bool DataTypeArray::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
+{
+    return settings.shouldCollectSerializationInfo(*nested);
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const

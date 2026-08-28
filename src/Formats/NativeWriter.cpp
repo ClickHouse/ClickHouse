@@ -11,6 +11,7 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
@@ -39,6 +40,14 @@ ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
         return ColumnReplicated::create(
             materializeObjectTypedPaths(replicated->getNestedColumn()),
             replicated->getIndexesColumn());
+    }
+
+    if (const auto * array = typeid_cast<const ColumnArray *>(column.get()))
+    {
+        auto nested = recursiveRemoveSparse(materializeObjectTypedPaths(array->getDataPtr()));
+        if (nested.get() == array->getDataPtr().get())
+            return column;
+        return ColumnArray::create(nested, array->getOffsetsPtr());
     }
 
     if (const auto * tuple = typeid_cast<const ColumnTuple *>(column.get()))
