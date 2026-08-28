@@ -255,7 +255,8 @@ public:
     {
         nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, thread_pool, is_cancelled, arena);
         for (size_t i = row_begin; i < row_end; ++i)
-            (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
+            if (places[i])
+                (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -398,11 +399,6 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        return nested_function->getArgumentsThatCanBeOnlyNull();
-    }
 
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
     /// which changed the default null adapter for Tuple-returning functions:

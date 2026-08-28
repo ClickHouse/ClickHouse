@@ -262,7 +262,10 @@ static Plan getPlan(
                     plan.partitions.push_back({});
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
-                    data_file, persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key), 0);
+                    data_file,
+                    persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
+                    0,
+                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
                 /// One DataFilePlan per source *data file*, keyed by the data file's own path.
                 /// Keying by the manifest path made every data file after the first in a
                 /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
@@ -956,8 +959,18 @@ static bool writeConsolidatedManifestFile(
     return true;
 }
 
-namespace
+bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update)
 {
+    /// Every declared added file and row must be accounted for as a position delete: the
+    /// breakdown counters are optional and read as 0 when absent, so their absence is not
+    /// evidence. One delete file with deleted rows but no file count is a position delete file.
+    return update.added_files == 0 && update.added_records == 0 && update.added_delete_files != 0
+        && (update.added_position_delete_files == update.added_delete_files
+            || (update.added_position_delete_files == 0 && update.added_position_deletes != 0
+                && update.added_delete_files == 1))
+        && update.added_equality_delete_files == 0 && update.added_equality_deletes == 0
+        && update.deleted_data_files == 0 && update.removed_records == 0 && update.removed_files_size == 0;
+}
 
 [[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const Iceberg::IcebergHistoryRecord & history_record)
 {
@@ -972,9 +985,7 @@ namespace
         case SnapshotSummaryOperation::DELETE:
             return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
-            const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
-            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
-            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+            if (overwriteIsPositionDeleteOnly(summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>()))
                 return std::nullopt;
             [[fallthrough]];
         }
@@ -983,6 +994,8 @@ namespace
     }
 };
 
+namespace
+{
 
 /// Current experimental compact implementation expects snapshots to be either appends or overwrites which has only position deletes
 /// Lets force this invariant

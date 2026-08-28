@@ -408,13 +408,20 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
-        LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+        const bool permanent_error = e.errnum() == ER_ACCESS_DENIED_ERROR
+            || e.errnum() == ER_DBACCESS_DENIED_ERROR
+            || e.errnum() == ER_BAD_DB_ERROR;
+
+        /// A transient failure is left for the caller to tolerate (e.g. on ATTACH), so it is not an
+        /// error yet, while a permanent one must stay visible even if the caller tolerates it.
+        if (permanent_error)
+            LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+        else
+            LOG_WARNING(log, "Failed to connect to MySQL ({}): {}", description, e.what());
 
         if (!online
             || (!was_successful && !dont_throw_if_failed_first_time)
-            || e.errnum() == ER_ACCESS_DENIED_ERROR
-            || e.errnum() == ER_DBACCESS_DENIED_ERROR
-            || e.errnum() == ER_BAD_DB_ERROR)
+            || permanent_error)
         {
             online = false;
             throw;
