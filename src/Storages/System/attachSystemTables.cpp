@@ -446,6 +446,8 @@ loading_dependent_table:       []
 .description
 Contains information about each detached table.
 
+For `DatabaseMySQL` and `DatabasePostgreSQL`, these databases do not own the underlying data — it lives on the remote MySQL/PostgreSQL server. As a result, `DROP TABLE` on a table from one of these database engines is implemented as `detachTablePermanently` internally: it only removes ClickHouse's local tracking of the table, and the table shows up in `system.detached_tables` with `is_permanently = 1`, same as an explicit `DETACH TABLE PERMANENTLY`. The remote data itself is untouched. For persistent MySQL/PostgreSQL databases, the detached state persists across server restarts and reconnections: `DatabaseMySQL` stores a `.remove_flag` marker in the metadata directory, while `DatabasePostgreSQL` stores a `.removed` marker. Both are reloaded by `loadStoredObjects` on startup. The table only reappears if a fresh external-database mapping is created without the old metadata directory — for example, if the metadata is removed or the database is created with a different name.
+
 .examples
 ```sql
 SELECT * FROM system.detached_tables FORMAT Vertical;
@@ -3068,7 +3070,14 @@ Contains a list of all named collections which were created via SQL query or par
 )DOCS_MD");
     attachNoDescription<StorageSystemHandlers>(context, system_database, "handlers", R"DOCS_MD(
 .description
-Contains a list of all SQL-defined HTTP handlers created via CREATE HANDLER.
+Contains a list of all SQL-defined HTTP handlers created via [`CREATE HANDLER`](/reference/statements/create/handler).
+
+Reading this table requires the `SHOW HANDLERS` privilege; without it the table appears empty. Secrets that
+may be embedded in the handler's query (for example, credentials passed to a table function) are shown in the
+`query` and `create_query` columns only when the user is allowed to see secrets (the
+`display_secrets_in_show_and_select` server setting and `format_display_secrets_in_show_and_select` format
+setting are enabled and the user holds the `displaySecretsInShowAndSelect` privilege); otherwise, they are
+masked, exactly as in `SHOW CREATE TABLE`.
 )DOCS_MD");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", R"DOCS_MD(
 .description
@@ -3823,6 +3832,7 @@ is_generic_compression: 1
 is_encryption:          0
 is_timeseries_codec:    0
 is_experimental:        0
+tier:                   Production
 description:            Extremely fast; good compression; balanced speed and efficiency.
 ```
 )DOCS_MD");
