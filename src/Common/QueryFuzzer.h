@@ -72,6 +72,11 @@ public:
 
     static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 
+    /// Remember the `{name:Type}` placeholders a parameterized view declares, so a later call
+    /// through the parameterized-view syntax can bind all of them. A view definition is executed
+    /// unfuzzed as well, so the caller has to report that one too.
+    void rememberViewParameters(const ASTCreateQuery & create);
+
     UInt64 getSeed() const { return seed; }
 
     /// Returns the total number of accumulated AST fragments (column-like + table-like).
@@ -231,6 +236,13 @@ private:
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
     std::set<IASTHash> created_tables_hashes;
 
+    /// The `{name:Type}` placeholders a parameterized view declares, sorted by name.
+    using ViewParameters = std::vector<std::pair<String, String>>;
+    /// Placeholders of every parameterized view definition seen, keyed by the view's table name
+    /// (both the corpus name and the `__fuzz_N` clone). A call has to bind all of them, so their
+    /// names cannot be guessed.
+    std::unordered_map<String, ViewParameters> view_parameters;
+
     /// Populated by fuzzMain(): name → string-serialized value for every {name:type} param in the fuzzed query.
     NameToNameMap last_query_parameters;
     /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
@@ -340,6 +352,7 @@ private:
     String makeRemoteHostDescriptor(bool secure);
     void wrapTableAsDistributed(ASTTableExpression & table);
     void callTableAsParameterizedView(ASTTableExpression & table);
+    ASTPtr makeViewParameterValue(const String & type);
     void wrapTableAsMerge(ASTTableExpression & table);
     void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);

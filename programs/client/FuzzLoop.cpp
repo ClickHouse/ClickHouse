@@ -203,6 +203,9 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
     }
     else if (const auto * create = orig_ast->as<ASTCreateQuery>())
     {
+        /// This definition is executed as it is below, so it is the fuzzer's only chance to learn
+        /// the placeholders of a corpus view: a view has no column list, so it is never re-fuzzed.
+        fuzzer.rememberViewParameters(*create);
         if (QueryFuzzer::isSuitableForFuzzing(*create))
             this_query_runs = create_query_fuzzer_runs;
         else

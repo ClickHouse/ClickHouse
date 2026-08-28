@@ -114,6 +114,7 @@
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -2299,6 +2300,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     }
 
     create.setTable(new_name);
+    rememberViewParameters(create);
 
     SipHash sip_hash;
     sip_hash.update(original_name);
@@ -3523,6 +3525,35 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
     replaceTableExpressionWithFunction(table, table.database_and_table_name, std::move(wrapped));
 }
 
+void QueryFuzzer::rememberViewParameters(const ASTCreateQuery & create)
+{
+    if (!create.is_ordinary_view || !create.select)
+        return;
+
+    /// Read the placeholders off the body instead of asking `getQueryParameters`: `hasQueryParameters`
+    /// memoizes its answer, and the memo survives the clone a fuzzed definition is made from, so it
+    /// can predate the placeholders this fuzzer just injected.
+    const auto parameters = analyzeReceiveQueryParamsWithType(ASTPtr(create.select));
+    if (parameters.empty())
+        return;
+
+    /// Sorted, so the values the call binds do not depend on the hash order of the names.
+    ViewParameters sorted_parameters(parameters.begin(), parameters.end());
+    std::sort(sorted_parameters.begin(), sorted_parameters.end());
+    view_parameters[create.getTable()] = std::move(sorted_parameters);
+}
+
+/// A value to bind to a `{name:Type}` placeholder. The call arguments are evaluated and serialized
+/// with their own type, then read back with the declared one, so a literal of an unrelated type
+/// fails the call before the view body runs, while `defaultValueOfTypeName` always reads back.
+/// `Identifier` is a placeholder pseudo-type with no default value, so it only takes a literal.
+ASTPtr QueryFuzzer::makeViewParameterValue(const String & type)
+{
+    if (type.empty() || type == "Identifier" || fuzz_rand() % 5 == 0)
+        return make_intrusive<ASTLiteral>(getRandomField(fuzz_rand() % 11));
+    return makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(type));
+}
+
 /// Read a plain table through the parameterized-view call syntax `db.view(param = value, ...)`, which
 /// parses as a table function named after the table. Only a view whose body carries `{param:Type}`
 /// placeholders accepts it, so most of the time the server has to reject the call cleanly instead.
@@ -3541,17 +3572,39 @@ void QueryFuzzer::callTableAsParameterizedView(ASTTableExpression & table)
     if (table_name.empty())
         return;
 
-    /// `fuzz_param_N` are the names the literal-to-parameter rewrites use, so a view this fuzzer
-    /// turned into a parameterized one can actually be matched here.
-    static const Strings view_param_names = {"fuzz_param_0", "fuzz_param_1", "p", "param", "id", "n"};
     auto arguments = make_intrusive<ASTExpressionList>();
-    const size_t nparams = (fuzz_rand() % 2) + 1;
-    for (size_t i = 0; i < nparams; i++)
+    const auto known_parameters = view_parameters.find(table_name);
+    if (known_parameters != view_parameters.end())
     {
-        arguments->children.emplace_back(makeASTFunction(
-            "equals",
-            make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, view_param_names)),
-            make_intrusive<ASTLiteral>(getRandomField(fuzz_rand() % 11))));
+        /// A view whose definition went through the fuzzer: bind every placeholder it declares. A
+        /// single unbound one fails the call with UNKNOWN_QUERY_PARAMETER before any substitution
+        /// happens, so a guessed name never reaches the view body this call is aimed at.
+        for (const auto & [param_name, param_type] : known_parameters->second)
+            arguments->children.emplace_back(
+                makeASTFunction("equals", make_intrusive<ASTIdentifier>(param_name), makeViewParameterValue(param_type)));
+
+        /// An assignment binds by name, so the order of the arguments must not matter. They are
+        /// emitted sorted by name, so shuffling is the only way that gets checked.
+        if (arguments->children.size() > 1 && fuzz_rand() % 3 == 0)
+            std::shuffle(arguments->children.begin(), arguments->children.end(), fuzz_rand);
+
+        /// Occasionally leave one out anyway, to keep the unbound-parameter check covered.
+        if (arguments->children.size() > 1 && fuzz_rand() % 10 == 0)
+            arguments->children.erase(arguments->children.begin() + fuzz_rand() % arguments->children.size());
+    }
+    else
+    {
+        /// An unknown table has to reject the call. `fuzz_param_N` are the names the
+        /// literal-to-parameter rewrites use, so a view parameterized in an earlier run still matches.
+        static const Strings view_param_names = {"fuzz_param_0", "fuzz_param_1", "p", "param", "id", "n"};
+        const size_t nparams = (fuzz_rand() % 3) + 1;
+        for (size_t i = 0; i < nparams; i++)
+        {
+            arguments->children.emplace_back(makeASTFunction(
+                "equals",
+                make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, view_param_names)),
+                make_intrusive<ASTLiteral>(getRandomField(fuzz_rand() % 11))));
+        }
     }
 
     auto wrapped = make_intrusive<ASTFunction>();
@@ -3693,6 +3746,10 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
         return {};
 
     auto table_name = drop_query.getTable();
+    /// Before the lookup below: a view has no column list, so it is never fuzz-cloned and never
+    /// reaches `index_of_fuzzed_table`, which is exactly what a remembered parameter list belongs to.
+    view_parameters.erase(table_name);
+
     auto it = index_of_fuzzed_table.find(table_name);
     if (it == index_of_fuzzed_table.end())
         return {};
@@ -3706,6 +3763,7 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
         query->as<ASTDropQuery>()->setTable(fuzzed_name);
         /// Just in case add IF EXISTS to avoid exceptions.
         query->as<ASTDropQuery>()->if_exists = true;
+        view_parameters.erase(fuzzed_name);
     }
 
     index_of_fuzzed_table.erase(it);
@@ -3728,6 +3786,7 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
             auto it = original_table_name_to_fuzzed.find(original_name);
             if (it != original_table_name_to_fuzzed.end())
                 it->second.erase(table_name);
+            view_parameters.erase(table_name);
         }
     };
 
