@@ -412,7 +412,12 @@ def _older_than(prs, pr):
 # `Changelog-generated-up-to:`, the branch carries its own state and the pull
 # request diff stays clean:
 #   `Changelog-revert: <revert> <reverted> <title of the revert>`
-#   `Changelog-deleted-entry: <pull request> [<category>] <bullet as deleted>`
+#   `Changelog-deleted-entry: <pr> [<category>] [<where>] <bullet as deleted>`
+# `<where>` is `section` for an entry an edit had already accepted into the
+# in-progress section and `raw` for one still in a raw block: the same category
+# can mean either (`Build/Testing/Packaging Improvement` is both a raw category
+# and a section header), and the difference decides whether a restoration is
+# required or merely offered.
 # The category is the `#### <Category>` the bullet sat under, which is not
 # derivable from the pull request: the editing rules promote entries out of
 # `NOT FOR CHANGELOG` (skill section 3) and move them between real categories
@@ -422,7 +427,8 @@ REVERT_TRAILER = "Changelog-revert:"
 DELETED_TRAILER = "Changelog-deleted-entry:"
 REVERT_TRAILER_RE = re.compile(rf"^{REVERT_TRAILER}\s+(\d+)\s+(\d+)\s*(.*)$")
 DELETED_TRAILER_RE = re.compile(
-    rf"^{DELETED_TRAILER}\s+(\d+)\s+(?:\[([^\]]*)\]\s+)?(.*)$"
+    rf"^{DELETED_TRAILER}\s+(\d+)\s+(?:\[([^\]]*)\]\s+)?"
+    rf"(?:\[(section|raw)\]\s+)?(.*)$"
 )
 
 
@@ -581,19 +587,20 @@ def release_range_prs(version):
 def read_revert_ledger():
     """The revert relations and the revert-licensed deletions that previous
     runs recorded in the trailers of their own edit commits on this branch.
-    Returns (targets, titles, deleted): `targets` maps a revert to what it
-    reverts, `titles` gives those reverts' titles (for nested-title matching
-    of a later revert of a revert), `deleted` maps a pull request whose entry
-    a revert licensed us to delete to the (category, bullet) it had at that
-    moment.
+    Returns (targets, titles, deleted, integrated): `targets` maps a revert to
+    what it reverts, `titles` gives those reverts' titles (for nested-title
+    matching of a later revert of a revert), `deleted` maps a pull request whose
+    entry a revert licensed us to delete to the (category, bullet) it had at
+    that moment, and `integrated` holds those of them whose entry an edit had
+    already accepted into the in-progress section.
 
-    All three are empty on a branch whose edit commits predate the trailers,
+    All of them are empty on a branch whose edit commits predate the trailers,
     which degrades to the previous behaviour: chains are then only seen inside
     a single raw block."""
     log = Shell.get_output(
         "git log origin/master..HEAD --format=%B", strict=True
     )
-    targets, titles, deleted = {}, {}, {}
+    targets, titles, deleted, integrated = {}, {}, {}, set()
     for line in log.splitlines():
         m = REVERT_TRAILER_RE.match(line)
         if m:
@@ -607,8 +614,11 @@ def read_revert_ledger():
             # can be deleted, restored and deleted again, gaining a re-apply
             # link each time it comes back: the newest record holds the text
             # to restore, the older ones are superseded.
-            deleted.setdefault(m.group(1), (m.group(2) or "", m.group(3)))
-    return targets, titles, deleted
+            if m.group(1) not in deleted:
+                deleted[m.group(1)] = (m.group(2) or "", m.group(4))
+                if m.group(3) == "section":
+                    integrated.add(m.group(1))
+    return targets, titles, deleted, integrated
 
 
 def _attribution_re(pr):
@@ -750,7 +760,7 @@ def analyze_reverts(text, anchor, range_prs=()):
     `unresolved` - the reverts of this raw block whose target stayed unknown;
     `ledger`     - the trailer lines to record on the edit commit.
     """
-    ledger_targets, ledger_titles, deleted = read_revert_ledger()
+    ledger_targets, ledger_titles, deleted, integrated = read_revert_ledger()
     all_prs, strict_prs, text_reverts = raw_prs_and_reverts(text)
     new_targets, titles, unresolved = resolve_revert_targets(
         all_prs, text_reverts, ledger_titles
@@ -779,10 +789,14 @@ def analyze_reverts(text, anchor, range_prs=()):
     # back would push an entry into the changelog that the rules say does not
     # belong there, so for them the prompt asks and the agent decides - the
     # point of recording them is that the decision is possible at all.
+    # Required when the entry was one the rules protect - a strict category, or
+    # one an earlier edit had already accepted into the in-progress section,
+    # which is that edit having made the section 3 and 4 judgement already. Only
+    # a bullet still sitting in a raw block when it was cancelled is offered.
     required = {
         pr
         for pr, (category, _) in restore.items()
-        if category in STRICT_RETENTION_CATEGORIES
+        if category in STRICT_RETENTION_CATEGORIES or pr in integrated
     }
 
     def revert_chain(prs):
@@ -1349,7 +1363,9 @@ def revert_licensed_deletions(base_sha, version, credits, exempt=()):
     the category and the bullet it had before: when the revert is itself
     reverted — possibly weeks later, when nothing in the file or in the raw
     blocks remembers the entry — it has to be restorable exactly, in the
-    category the edit had put it in.
+    category the edit had put it in, and with whether the edit had already
+    accepted it into the in-progress section: a raw bullet the rules let an
+    edit prune is offered back, one the edit had kept is required.
 
     Deliberately wider than `disappeared_entries`. That one guards the entries
     the rules may not drop; the ledger has to remember every entry a revert
@@ -1365,13 +1381,18 @@ def revert_licensed_deletions(base_sha, version, credits, exempt=()):
     candidates = (
         set(PR_ATTRIBUTION_RE.findall(old_section)) | all_prs
     ) - set(exempt)
+    in_section = set(PR_ATTRIBUTION_RE.findall(old_section))
     deletions = {}
     for pr in sorted(candidates, key=int):
         if pr not in credits or is_attributed(text, pr):
             continue
         category, line = entry_placement(old_text, pr)
         if line:
-            deletions[pr] = (category, line)
+            deletions[pr] = (
+                category,
+                "section" if pr in in_section else "raw",
+                line,
+            )
     return deletions
 
 
@@ -1678,8 +1699,8 @@ def edit_raw_entries(version):
     # revert of one of today's reverts, whenever it arrives, still finds the
     # relation and the text of the entry it has to bring back.
     trailers = reverts["ledger"] + [
-        f"{DELETED_TRAILER} {pr} [{category}] {line}"
-        for pr, (category, line) in sorted(
+        f"{DELETED_TRAILER} {pr} [{category}] [{where}] {line}"
+        for pr, (category, where, line) in sorted(
             revert_licensed_deletions(
                 base_sha, version, reverts["credits"], reverts["cancelling"]
             ).items(),

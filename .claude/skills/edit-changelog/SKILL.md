@@ -194,8 +194,10 @@ the re-apply rather than describing a change.
    the link of the PR that restored it too.
 
    An entry the autogenerator had filed under `NOT FOR CHANGELOG` or as CI
-   plumbing is *offered* back, not required: §3 and §4 were free to prune it,
-   so decide again whether it describes a user-visible change. What matters is
+   plumbing and that was never added to the release is *offered* back, not
+   required: §3 and §4 were free to prune it, so decide again whether it
+   describes a user-visible change. One that had already been added is
+   required — that decision was made when it went in. What matters is
    that the choice is possible — the entry is quoted for you because nothing
    in the file remembers it any more.
 

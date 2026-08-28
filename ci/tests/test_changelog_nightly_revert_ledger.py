@@ -1523,7 +1523,7 @@ def test_a_promotable_entry_cancelled_in_one_run_is_still_recorded(monkeypatch):
     recorded = cl.revert_licensed_deletions(
         "base", VERSION, {"110700": "115950"}, ["115950"]
     )
-    assert recorded == {"110700": (JUNK, PROMOTABLE)}
+    assert recorded == {"110700": (JUNK, "raw", PROMOTABLE)}
 
     # The later run that takes the revert back finds it there.
     reverts = analyze(
@@ -1538,7 +1538,7 @@ def test_a_promotable_entry_cancelled_in_one_run_is_still_recorded(monkeypatch):
             ],
         ),
         [
-            f"Changelog-deleted-entry: 110700 [{JUNK}] {PROMOTABLE}",
+            f"Changelog-deleted-entry: 110700 [{JUNK}] [raw] {PROMOTABLE}",
             'Changelog-revert: 115950 110700 Revert "Fix a crash in `arrayJoin` '
             'with an empty array"',
         ],
@@ -1950,3 +1950,107 @@ def test_a_visible_revert_can_be_a_merged_sibling(monkeypatch, tmp_path):
         )
         is None
     )
+
+
+BUILD = "Build/Testing/Packaging Improvement"
+
+
+def build_changelog(entries, **kwargs):
+    """The helper's in-progress section under a `Build/Testing/Packaging
+    Improvement` header - a category that is both prunable in a raw block and a
+    legitimate section header."""
+    return changelog(entries, **kwargs).replace(
+        f"#### {STRICT}", f"#### {BUILD}", 1
+    )
+KEPT = _entry("110800", "Raise the minimum required CMake version to 3.25")
+
+
+def test_a_kept_build_entry_is_required_back(monkeypatch, tmp_path):
+    """`Build/Testing/Packaging Improvement` is a prunable raw category *and* a
+    section header, so the category alone cannot say whether an edit had already
+    decided the entry belongs. One that was accepted into the section had that
+    judgement made for it, so its restoration is required, not offered."""
+    PULL_REQUESTS["115850"] = {
+        "title": 'Revert "Raise the minimum required CMake version to 3.25"',
+        "body": "Reverts ClickHouse/ClickHouse#110800",
+    }
+    PULL_REQUESTS["115851"] = {
+        "title": 'Revert "Revert "Raise the minimum required CMake version to 3.25""',
+        "body": "Reverts ClickHouse/ClickHouse#115850",
+    }
+    raw = [_entry("115851", "NO CL ENTRY: 'Revert \"Revert ...\"'")]
+    old_text = build_changelog([], raw_sections=[("NO CL ENTRY", raw)])
+    ledger_revert = (
+        'Changelog-revert: 115850 110800 Revert "Raise the minimum required '
+        'CMake version to 3.25"'
+    )
+
+    # Recorded as a raw bullet: prunable, so the restoration is offered.
+    from_raw = analyze(
+        monkeypatch,
+        old_text,
+        [f"Changelog-deleted-entry: 110800 [{BUILD}] [raw] {KEPT}", ledger_revert],
+    )
+    assert from_raw["restore"] == {"110800": (BUILD, KEPT)}
+    assert from_raw["required"] == []
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, build_changelog([]), from_raw)
+        is None
+    )
+
+    # Recorded from the section: an edit had kept it, so it has to come back.
+    from_section = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 110800 [{BUILD}] [section] {KEPT}",
+            ledger_revert,
+        ],
+    )
+    assert from_section["required"] == ["110800"]
+    left_out = run_verify_edit(
+        monkeypatch, tmp_path, old_text, build_changelog([]), from_section
+    )
+    assert left_out is not None
+    assert "missing from the in-progress section" in left_out
+    assert "['110800']" in left_out
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            build_changelog([with_reapply(KEPT, "115851")]),
+            from_section,
+        )
+        is None
+    )
+
+
+def test_a_kept_entry_is_recorded_as_coming_from_the_section(monkeypatch):
+    """The other half: the recording side has to mark it, or the distinction
+    above has nothing to read."""
+    PULL_REQUESTS["115850"] = {
+        "title": 'Revert "Raise the minimum required CMake version to 3.25"',
+        "body": "Reverts ClickHouse/ClickHouse#110800",
+    }
+    revert = _entry("115850", "Lower the minimum CMake version again")
+    old_text = build_changelog([KEPT]).replace(
+        f"#### {BUILD}", f"#### {STRICT}\n\n{revert}\n\n#### {BUILD}", 1
+    )
+
+    def fake_get_output(command, strict=False, verbose=False, retries=1, delay=2):
+        if command.startswith("gh api graphql"):
+            return fake_graphql(command)
+        if command.startswith("git show"):
+            return old_text
+        return "Update changelog"
+
+    monkeypatch.setattr(cl.Shell, "get_output", staticmethod(fake_get_output))
+    monkeypatch.setattr(
+        cl, "Info", lambda: type("I", (), {"repo_name": "ClickHouse/ClickHouse"})()
+    )
+    monkeypatch.setattr(cl, "_read_changelog", lambda: build_changelog([]))
+    recorded = cl.revert_licensed_deletions(
+        "base", VERSION, {"110800": "115850"}, ["115850"]
+    )
+    assert recorded == {"110800": (BUILD, "section", KEPT)}
