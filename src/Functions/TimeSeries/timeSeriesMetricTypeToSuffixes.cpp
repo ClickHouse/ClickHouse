@@ -117,9 +117,9 @@ Returns the metric-name suffixes for a metric family of the given Prometheus typ
 SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
             )",
             R"(
-┌─suffixes──────────────────────┐
-│ ['_bucket','_count','_sum']   │
-└───────────────────────────────┘
+┌─suffixes────────────────────┐
+│ ['_bucket','_count','_sum'] │
+└─────────────────────────────┘
             )"
         }
     };
