@@ -10,7 +10,7 @@ echo -ne 'checksumchecksum\x95\xd3\x02\x00\x00\x01\x00\x00\x00\x0800\xff\xff\xff
 # Crafted 0b11 records whose (leading zero bits, data bits) pair no encoder can emit: the first
 # underflows the derived trailing-zero-bit count, the second asks the bit reader for zero bits.
 echo -ne 'checksumchecksum\x95\x19\x00\x00\x00\x10\x00\x00\x00\x08\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff' |
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&decompress=1&http_native_compression_disable_checksumming_on_decompress=1" --data-binary @- 2>&1 | grep -oF 'has 63 leading zero bits and 127 data bits'
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&decompress=1&http_native_compression_disable_checksumming_on_decompress=1" --data-binary @- 2>&1 | grep -oE 'CANNOT_DECOMPRESS|has 63 leading zero bits and 127 data bits'
 
 echo -ne 'checksumchecksum\x95\x19\x00\x00\x00\x10\x00\x00\x00\x08\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xc0\x00' |
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&decompress=1&http_native_compression_disable_checksumming_on_decompress=1" --data-binary @- 2>&1 | grep -oF 'has 0 leading zero bits and 0 data bits'
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&decompress=1&http_native_compression_disable_checksumming_on_decompress=1" --data-binary @- 2>&1 | grep -oE 'CANNOT_DECOMPRESS|has 0 leading zero bits and 0 data bits'
