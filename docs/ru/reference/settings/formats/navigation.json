@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Настройки форматов",
+  "group": "Format Settings",
   "pages": [
     "ru/reference/settings/formats/bool",
     "ru/reference/settings/formats/date-time",
