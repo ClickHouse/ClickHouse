@@ -1,0 +1,5 @@
+SELECT 1 NOT IN (\n        SELECT 1\n        WHERE 0\n    )
+1
+0
+1
+0
