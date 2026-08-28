@@ -111,9 +111,35 @@ def _cgroup_snapshot():
         return set()
 
 
-def _remove_new_cgroups(before):
+def _own_cgroup_names(test):
     """
-    Remove only the cgroup directories that appeared during our own run.
+    The cgroup names the workers that ran ``test`` in this invocation would create.
+
+    ``run_single_test`` names the cgroup ``clickhouse-test-{os.getpid()}``, and
+    ``TestCase.__init__`` builds the per-test file names in that same process, so
+    ``<test>.<pid>.stdout`` carries exactly the owning worker's pid.  That is the
+    only source available: ``run_single_test`` unlinks its PGID file when its test
+    finishes, so none of those survives to a teardown that runs after the runner
+    has exited.
+
+    Returns an empty set if no such artifact is there, which is what makes the
+    caller's guard falsifiable - a run whose owner cannot be identified must fail
+    loudly rather than clean up nothing and pass.  Nothing is added
+    unconditionally for that reason, the runner's own pid included: this fixture
+    carries no ``sequential`` tag, so its spawns happen in workers.
+    """
+    owner = re.compile(rf"^{re.escape(test)}\.(\d+)\.")
+    names = set()
+    for f in _SUITE_TMP.glob(f"{test}.*"):
+        found = owner.match(f.name)
+        if found:
+            names.add(f"clickhouse-test-{found.group(1)}")
+    return names
+
+
+def _remove_own_cgroups(before, own):
+    """
+    Remove the cgroup directories this invocation created.
 
     The test drives the real `--memory-limit` path, whose setup does
     `os.makedirs("/sys/fs/cgroup/<name>")` *before* the `memory.max` write that
@@ -125,6 +151,19 @@ def _remove_new_cgroups(before):
     otherwise the privileged CI Tests job would leak one empty root-level cgroup
     per run.
 
+    A path is removed only if it is both new *and* in `own`.  Appearing after the
+    snapshot does not establish ownership: the job runs `--cgroupns=host`, so a
+    co-scheduled runner's directory is visible here, and it is removable while
+    still empty between its `makedirs` and its `memory.max` write.  The name test
+    keeps this teardown off it; the snapshot diff is kept as well, so a recycled
+    pid from an earlier run is not adopted.
+
+    That filter is a pid, and the container does not share the host's pid
+    namespace, so it identifies the owner only within this container: a directory
+    another container created inside the snapshot window under a colliding pid
+    would still match.  Naming it out of reach of that would take a host-unique
+    token in the name, which belongs to the runner rather than here.
+
     `rmdir` only: an empty cgroup directory is removable, and a non-empty one
     must be left alone rather than recursively deleted.
 
@@ -135,6 +174,8 @@ def _remove_new_cgroups(before):
     """
     leaked = set()
     for path in _cgroup_snapshot() - before:
+        if path.name not in own:
+            continue
         try:
             os.rmdir(path)
         except OSError:
@@ -211,7 +252,7 @@ def _runner_argv(test=_TEST):
 @pytest.mark.skipif(
     not Path("/proc").is_dir(),
     reason="the descriptor comparison reads /proc/<pid>/fd, which only exists on "
-    "Linux; the CI Tests job runs on Linux (RunnerLabels.ARM_LARGE) and there is "
+    "Linux; the CI Tests job runs on Linux and there is "
     "no macOS ci/tests job, so coverage is unaffected",
 )
 def test_test_process_group_does_not_hold_runner_stdio():
@@ -496,6 +537,14 @@ def test_fatal_cgroup_failure_is_reported_as_the_test_result():
             f"exercise the guard:\n{out}"
         )
 
+        # The teardown attributes the cgroups it removes to this invocation's pids,
+        # so it is only non-vacuous while that attribution is available.  Asserted
+        # here rather than in `finally`, where it would mask a real failure.
+        assert _own_cgroup_names(_TEST), (
+            "no owning pid could be derived from this run, so the cgroup teardown "
+            f"would silently remove nothing:\n{out}"
+        )
+
         # Without the pre-created stdout file the normalization raises and `run`'s
         # generic handler reports `UNKNOWN` / "Test internal error" with a
         # `FileNotFoundError` traceback, never reading that stderr file at all.
@@ -552,7 +601,8 @@ def test_fatal_cgroup_failure_is_reported_as_the_test_result():
         # Group-aware and idempotent, so a timeout cannot leave the workers behind.
         if proc is not None:
             _reap_runner(proc)
-        leaked = _remove_new_cgroups(cgroups_before)
+        # Before `_clear_run_artifacts`, which is where the ownership comes from.
+        leaked = _remove_own_cgroups(cgroups_before, _own_cgroup_names(_TEST))
         _clear_group_pid_files()
         _clear_run_artifacts()
         # Last, so a cleanup failure cannot skip the artifact cleanup above.
