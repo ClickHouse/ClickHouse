@@ -36,11 +36,9 @@ public:
         if (!isUInt8(arguments.back()) && !arguments.back()->onlyNull())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Illegal type {} of the last argument of an aggregate function with the {} "
-                            "suffix: it is the condition and must be UInt8. Given {} argument{} in total, so "
-                            "the condition may be missing - it goes after the arguments of the aggregate "
-                            "function, as in sum{}(value, condition)",
-                            arguments.back()->getName(), getName(),
-                            arguments.size(), arguments.size() == 1 ? "" : "s", getName());
+                            "suffix: the last argument is the condition and must be UInt8. If the condition "
+                            "is missing, it goes after the arguments of the aggregate function",
+                            arguments.back()->getName(), getName());
 
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
