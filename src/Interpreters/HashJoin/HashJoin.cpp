@@ -446,7 +446,7 @@ HashJoin::HashJoin(
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
     used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
-    used_flags->setPendingFlagWorkers(data->workers.size());
+    used_flags->setPendingFlagWorkers(data->workers.size(), needUsedFlagsForPerRightTableRow(table_join));
 
     if (table_join->collectAnalyzeStats())
         matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, table_join->analyzeMode());

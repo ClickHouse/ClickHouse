@@ -30,7 +30,13 @@ public:
     std::vector<PendingPerRowFlags> pending_per_worker;
 
     /// Call before the build starts: resizing later would race with the appends.
-    void setPendingFlagWorkers(size_t num_workers) { pending_per_worker.resize(num_workers); }
+    /// `need_flags` is the fallback `getUsedSafe` reads, so publish it here, not from each worker.
+    void setPendingFlagWorkers(size_t num_workers, bool need_flags_ = false)
+    {
+        pending_per_worker.resize(num_workers);
+        if (need_flags_)
+            need_flags = true;
+    }
 
     /// Dense flags indexed by block_no, built from `pending_per_worker` when the build finishes.
     /// The probe and non-joined phases read and write only this.
@@ -77,7 +83,6 @@ public:
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            need_flags = true;
             chassert(worker_id < pending_per_worker.size());
             auto & flags = pending_per_worker[worker_id].emplace_back(block_no, UsedFlagsForColumns(rows)).second;
 

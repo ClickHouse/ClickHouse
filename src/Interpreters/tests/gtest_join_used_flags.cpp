@@ -50,7 +50,7 @@ TEST(JoinUsedFlags, AllOffsetFlagsSetEmptyCount)
 TEST(JoinUsedFlags, PendingPerRowFlagsMergeAcrossWorkers)
 {
     JoinStuff::JoinUsedFlags flags;
-    flags.setPendingFlagWorkers(/*num_workers=*/2);
+    flags.setPendingFlagWorkers(/*num_workers=*/2, /*need_flags_=*/true);
 
     flags.reinit<KIND, STRICTNESS, PREFER_MAPS_ALL>(/*worker_id=*/0, /*block_no=*/0, /*rows=*/3, ScatteredBlock::Selector(3));
     flags.reinit<KIND, STRICTNESS, PREFER_MAPS_ALL>(/*worker_id=*/1, /*block_no=*/1, /*rows=*/2, ScatteredBlock::Selector(2));
