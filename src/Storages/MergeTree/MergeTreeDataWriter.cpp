@@ -882,7 +882,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-            statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+            const auto & all_columns = metadata_snapshot->getColumns();
+            statistics = ColumnsStatistics(all_columns);
+            /// A non-physical column is never present in a written block, so `build` below would
+            /// reject it. Every other absence stays an error.
+            std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });
             statistics.build(block);
         }
     }
