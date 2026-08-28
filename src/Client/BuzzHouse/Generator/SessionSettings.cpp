@@ -1663,7 +1663,12 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"restore_replace_external_engines_to_null", trueOrFalseSettingNoOracle},
     {"restore_replace_external_table_functions_to_null", trueOrFalseSettingNoOracle},
     {"restore_replicated_merge_tree_to_shared_merge_tree", trueOrFalseSettingNoOracle},
-    {"shrink_over_allocated_columns_min_waste_ratio", probRangeSetting},
+    /// Only a ratio above 1 shrinks anything; 1 and below is the disabled default.
+    {"shrink_over_allocated_columns_min_waste_ratio",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 1.0, 10.0)); },
+         {"1.0", "1.01", "1.5", "2", "10"},
+         false)},
     {"time_series_prefer_recent_samples_table", trueOrFalseSetting},
     {"rows_before_aggregation", trueOrFalseSettingNoOracle},
     {"s3_allow_multipart_copy", trueOrFalseSettingNoOracle},

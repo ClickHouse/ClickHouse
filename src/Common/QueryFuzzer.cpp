@@ -3576,6 +3576,12 @@ void QueryFuzzer::callTableAsParameterizedView(ASTTableExpression & table)
     if (table_name.empty())
         return;
 
+    /// The member aliases an entry of `children`, and the fuzzing pass that ran before this one can
+    /// swap that entry outright. Replacing a node that is no longer a child would leave both of them.
+    const auto & children = table.children;
+    if (std::find(children.begin(), children.end(), table.database_and_table_name) == children.end())
+        return;
+
     auto arguments = make_intrusive<ASTExpressionList>();
     const auto known_parameters = view_parameters.find(table_name);
     if (known_parameters != view_parameters.end())
@@ -6021,7 +6027,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzTableName(*table_expr);
         wrapTableAsDistributed(*table_expr);
         wrapTableAsMerge(*table_expr);
-        callTableAsParameterizedView(*table_expr);
         fuzzTableFunctionName(table_expr->table_function);
 
         /// Fuzz SAMPLE clause
@@ -6176,6 +6181,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
 
         fuzz(table_expr->children);
+
+        /// Built after the pass above, which would otherwise deform the `param = value` assignments:
+        /// `fuzzColumnLikeExpressionList` adds and removes arguments, and an assignment that no longer
+        /// reads as `equals(identifier, value)` binds nothing, leaving its placeholder unset.
+        callTableAsParameterizedView(*table_expr);
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
     {
