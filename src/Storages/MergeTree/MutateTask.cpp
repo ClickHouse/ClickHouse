@@ -289,6 +289,8 @@ static void splitAndModifyMutationCommands(
 
         for (const auto & command : commands)
         {
+            const auto name_in_part = nameInPart(command.column_name);
+
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 auto marker_name = nameInPart(command.column_name);
@@ -319,7 +321,6 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::READ_COLUMN)
             {
-                const auto name_in_part = nameInPart(command.column_name);
                 bool has_column = part_columns.has(name_in_part) || part_columns.hasNested(name_in_part)
                     || part->getSerializationInfos().isMissingColumn(name_in_part);
                 if (has_column || command.read_for_patch)
@@ -406,9 +407,8 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(command);
             }
             else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
-                          name_in_part = nameInPart(command.column_name),
                           has_column = part_columns.has(name_in_part),
-                     has_nested_column = share_nested && part_columns.hasNested(name_in_part);
+                          has_nested_column = share_nested && part_columns.hasNested(name_in_part);
                      has_column || has_nested_column)
             {
                 if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
