@@ -13,6 +13,11 @@ after the cluster is started:
     table and a materialized view `system.<table>_watcher` are created locally,
     so every flushed log block is forwarded to the CI Logs cluster.
 
+The views are created with `DEFINER = ci_logs_sender`, a dedicated user with a
+pinned profile (see SENDER_USER_CONFIG), so the export runs with its own short
+timeouts and async-insert settings instead of the settings of the test query
+that happened to trigger the log flush.
+
 The destination tables are augmented with extra columns describing the CI job
 (repo, commit, check name, ...) plus two integration-test specific columns:
 `test_name` (the test module, e.g. `test_storage_s3` or
@@ -64,10 +69,15 @@ DEFAULT_EXTRA_COLUMNS_EXPRESSION = (
     "toLowCardinality('') AS instance_type, '' AS instance_id"
 )
 
-# The name is chosen to sort after the test-provided configs, so that the
-# cluster definition survives test configs which merge `remote_servers` with
-# `replace="replace"` (config.d files are merged in the alphabetical order).
+# The names are chosen to sort after the test-provided configs, so that the
+# definitions survive test configs which merge the same sections with
+# `replace="replace"` (the config.d/users.d files are merged in the
+# alphabetical order).
 CLUSTER_CONFIG_NAME = "zzz_system_logs_export.xml"
+USERS_CONFIG_NAME = "zzz_ci_logs_sender.xml"
+
+# The user the `_watcher` materialized views run as, see SENDER_USER_CONFIG.
+SENDER_USER = "ci_logs_sender"
 
 CLUSTER_CONFIG_TEMPLATE = """<clickhouse>
     <remote_servers>
@@ -83,6 +93,61 @@ CLUSTER_CONFIG_TEMPLATE = """<clickhouse>
             </shard>
         </{cluster}>
     </remote_servers>
+</clickhouse>
+"""
+
+# The dedicated profile and user for the export, the XML counterpart of
+# tests/config/users.d/ci_logs_sender.yaml (which serves the functional tests).
+# The `_watcher` views are created with `DEFINER = ci_logs_sender`, so the
+# INSERTs into the CI Logs cluster run with these settings instead of the
+# settings of whatever query triggered the log flush. The constraints are what
+# makes it stick: without them the triggering query's values (e.g. the default
+# 300 seconds of `send_timeout`, which turns a slow remote cluster into a slow
+# server shutdown) override the profile.
+SENDER_USER_CONFIG = """<clickhouse>
+    <profiles>
+        <ci_logs_sender>
+            <!-- The async sends block the table shutdown for the timeout, and
+                 the default of 300 seconds is too big and may lead to hangs;
+                 the INSERTs are retried anyway. -->
+            <send_timeout>15</send_timeout>
+            <receive_timeout>15</receive_timeout>
+            <!-- Async INSERT, to reduce the amount of parts -->
+            <async_insert>1</async_insert>
+            <wait_for_async_insert>0</wait_for_async_insert>
+            <async_insert_busy_timeout_min_ms>1000</async_insert_busy_timeout_min_ms>
+            <async_insert_busy_timeout_max_ms>5000</async_insert_busy_timeout_max_ms>
+            <!-- Avoid polluting caches -->
+            <enable_filesystem_cache_on_write_operations>0</enable_filesystem_cache_on_write_operations>
+            <write_through_distributed_cache>0</write_through_distributed_cache>
+            <!-- Override the local default limit -->
+            <max_memory_usage_for_user>0</max_memory_usage_for_user>
+            <!-- Force INSERT in background -->
+            <distributed_foreground_insert>0</distributed_foreground_insert>
+            <constraints>
+                <send_timeout><readonly/></send_timeout>
+                <receive_timeout><readonly/></receive_timeout>
+                <async_insert><readonly/></async_insert>
+                <wait_for_async_insert><readonly/></wait_for_async_insert>
+                <async_insert_busy_timeout_min_ms><readonly/></async_insert_busy_timeout_min_ms>
+                <async_insert_busy_timeout_max_ms><readonly/></async_insert_busy_timeout_max_ms>
+                <enable_filesystem_cache_on_write_operations><readonly/></enable_filesystem_cache_on_write_operations>
+                <write_through_distributed_cache><readonly/></write_through_distributed_cache>
+                <max_memory_usage_for_user><readonly/></max_memory_usage_for_user>
+                <distributed_foreground_insert><readonly/></distributed_foreground_insert>
+            </constraints>
+        </ci_logs_sender>
+    </profiles>
+    <users>
+        <ci_logs_sender>
+            <profile>ci_logs_sender</profile>
+            <no_password/>
+            <networks>
+                <ip>::1</ip>
+                <ip>127.0.0.1</ip>
+            </networks>
+        </ci_logs_sender>
+    </users>
 </clickhouse>
 """
 
@@ -168,6 +233,13 @@ def write_instance_config(config_d_dir):
     )
     with open(os.path.join(config_d_dir, CLUSTER_CONFIG_NAME), "w") as f:
         f.write(config)
+
+
+def write_instance_users_config(users_d_dir):
+    """Add the `ci_logs_sender` profile and user to the instance config, see
+    SENDER_USER_CONFIG."""
+    with open(os.path.join(users_d_dir, USERS_CONFIG_NAME), "w") as f:
+        f.write(SENDER_USER_CONFIG)
 
 
 def docker_compose_environment_section():
@@ -434,6 +506,7 @@ def _setup_for_instance(cluster, instance):
 
                 CREATE MATERIALIZED VIEW IF NOT EXISTS system.{table}_watcher
                 TO system.{table}_sender
+                DEFINER = {SENDER_USER}
                 AS SELECT {expression}, * FROM system.{table};
                 """,
                 timeout=60,
