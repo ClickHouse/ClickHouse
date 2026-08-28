@@ -64,6 +64,12 @@ BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS foo = DEFAULT
 -- A repeated key does reach the `base_backup` branch, and then the field is cleared.
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS base_backup = Disk('d', 'b0'), base_backup = DEFAULT$$);
 BACKUP TABLE t TO Disk(\'d\', \'b\')
+-- Both names reach their field through a keyword, so the case they are written in must not decide whether
+-- the reset clears it.
+SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS BASE_BACKUP = Disk('d', 'b0'), BASE_BACKUP = DEFAULT$$);
+BACKUP TABLE t TO Disk(\'d\', \'b\')
+SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS foo = DEFAULT, CLUSTER_HOST_IDS = DEFAULT$$);
+BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS foo = DEFAULT
 -- A backup-specific DEFAULT is reprinted as written; it is the resolved `changes` entry that the Backups
 -- layer drops, and this query has none. Formatting it must be idempotent either way.
 SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = DEFAULT$$)) = formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = DEFAULT$$) AS stable;

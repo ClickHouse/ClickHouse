@@ -162,6 +162,23 @@ ${CLICKHOUSE_CLIENT} --query "
 backup table src to Disk('backups', '${uniq}_h4') settings compression_method = 'lz4', compression_level = DEFAULT;
 " | grep -o "BACKUP_CREATED"
 
+echo "-- \`base_backup\` keeps the meaning each clause gives it today: a backup name on its own, a reset"
+echo "-- once the clause holds a defaulted item, which is where the field is cleared."
+
+# A bare identifier is a backup name, `DEFAULT` included, and that reading is reachable on its own.
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_b1') settings base_backup = DEFAULT;
+" 2>&1 | grep -m1 -o "BACKUP_ENGINE_NOT_FOUND"
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_b2') settings foo = DEFAULT, base_backup = DEFAULT;
+" | grep -o "BACKUP_CREATED"
+
+# Control: a locator is still read as one next to a defaulted sibling.
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_b3')
+settings foo = DEFAULT, base_backup = Disk('backups', '${uniq}_h4');
+" | grep -o "BACKUP_CREATED"
+
 ${CLICKHOUSE_CLIENT} -m --query "
 drop table r1; drop table r2; drop table r3; drop table r4; drop table r5; drop table src;
 "

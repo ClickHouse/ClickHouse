@@ -54,6 +54,10 @@ SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS cluster
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS foo = DEFAULT, cluster_host_ids = [['h']], cluster_host_ids = DEFAULT$$);
 -- A repeated key does reach the `base_backup` branch, and then the field is cleared.
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS base_backup = Disk('d', 'b0'), base_backup = DEFAULT$$);
+-- Both names reach their field through a keyword, so the case they are written in must not decide whether
+-- the reset clears it.
+SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS BASE_BACKUP = Disk('d', 'b0'), BASE_BACKUP = DEFAULT$$);
+SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS foo = DEFAULT, CLUSTER_HOST_IDS = DEFAULT$$);
 
 -- A backup-specific DEFAULT is reprinted as written; it is the resolved `changes` entry that the Backups
 -- layer drops, and this query has none. Formatting it must be idempotent either way.

@@ -15,6 +15,8 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 
 namespace DB
 {
@@ -234,6 +236,15 @@ namespace
         });
     }
 
+    /// Whether the next item is `<name> = DEFAULT`, matched as the pair parser matches it. `pos` is taken by
+    /// value, so this only looks ahead.
+    bool isDefaultedSetting(IParser::Pos pos, Expected & expected)
+    {
+        ASTPtr name;
+        return ParserCompoundIdentifier{}.parse(pos, name, expected) && ParserToken(TokenType::Equals).ignore(pos, expected)
+            && ParserKeyword(Keyword::DEFAULT).ignore(pos, expected);
+    }
+
     bool parseClusterHostIDs(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
     {
         /// Accept both [...] and array(...) syntax for formatting roundtrip consistency.
@@ -304,10 +315,14 @@ namespace
     {
         auto parse_setting = [&]
         {
-            if (!res.base_backup_name && parseBaseBackupSetting(pos, expected, res.base_backup_name))
+            /// A backup name may be a bare identifier, `DEFAULT` included. In this grammar such an item is a
+            /// reset, so the sub-setting parsers stand aside and `resolveDefaultedSubSettings` clears the field.
+            const bool defaulted = default_aware && isDefaultedSetting(pos, expected);
+
+            if (!defaulted && !res.base_backup_name && parseBaseBackupSetting(pos, expected, res.base_backup_name))
                 return true;
 
-            if (!res.cluster_host_ids && parseClusterHostIDsSetting(pos, expected, res.cluster_host_ids))
+            if (!defaulted && !res.cluster_host_ids && parseClusterHostIDsSetting(pos, expected, res.cluster_host_ids))
                 return true;
 
             SettingChange setting;
@@ -347,15 +362,20 @@ namespace
     /// "absent", so clear the field and drop the name.
     void resolveDefaultedSubSettings(ParsedSettings & res)
     {
+        /// Both names reach the field through a keyword, which is case-insensitive, so the reset that clears
+        /// it has to be matched the same way or a locator survives the reset naming it.
+        auto is_base_backup = [](const String & name) { return boost::iequals(name, "base_backup"); };
+        auto is_cluster_host_ids = [](const String & name) { return boost::iequals(name, "cluster_host_ids"); };
+
         for (const auto & name : res.default_settings)
         {
-            if (name == "base_backup")
+            if (is_base_backup(name))
                 res.base_backup_name = nullptr;
-            else if (name == "cluster_host_ids")
+            else if (is_cluster_host_ids(name))
                 res.cluster_host_ids = nullptr;
         }
 
-        std::erase_if(res.default_settings, [](const String & name) { return (name == "base_backup") || (name == "cluster_host_ids"); });
+        std::erase_if(res.default_settings, [&](const String & name) { return is_base_backup(name) || is_cluster_host_ids(name); });
     }
 
     void moveParsedSettingsOut(ParsedSettings & res, ASTPtr & settings, ASTPtr & base_backup_name, ASTPtr & cluster_host_ids)

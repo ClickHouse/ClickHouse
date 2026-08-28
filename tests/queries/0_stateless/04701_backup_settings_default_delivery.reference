@@ -33,3 +33,8 @@ shapes the HTTP response body
 shapes the HTTP response body
 shapes the HTTP response body
 BACKUP_CREATED
+-- `base_backup` keeps the meaning each clause gives it today: a backup name on its own, a reset
+-- once the clause holds a defaulted item, which is where the field is cleared.
+BACKUP_ENGINE_NOT_FOUND
+BACKUP_CREATED
+BACKUP_CREATED
