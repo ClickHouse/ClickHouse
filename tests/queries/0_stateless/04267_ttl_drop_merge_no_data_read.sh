@@ -568,22 +568,25 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_stopped;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_stopped;"
 
 # -------------------------------------------------------------------
-# Case 11: MODIFY TTL without materialization keeps the rows on a Regular merge
+# Case 11: MODIFY TTL without materialization still reads the source parts
 #
 # materialize_ttl_after_modify = 0 deliberately leaves old parts in place,
 # so their ttl_infos stay computed under the previous TTL expression: a part
 # fully expired under the original short TTL still says so after the TTL is
-# relaxed. A Regular merge over such a part must not trust that metadata --
-# it re-evaluates the current TTL in the pipeline and keeps the rows, which
-# is exactly what the zero-read shortcut would have skipped.
+# relaxed. A Regular merge over such a part must not skip the read on the
+# strength of that stale metadata -- this case pins read_rows so the
+# zero-read shortcut can never fire here. The rows themselves are dropped
+# by the ordinary TTL filter, which legitimately trusts the same stale
+# ttl_infos while the user opted out of materialization; recomputing them
+# under the relaxed expression is upstream behavior, unchanged by this PR.
 # max_number_of_merges_with_ttl_in_pool = 0 makes OPTIMIZE TABLE FINAL the
 # deterministic Regular merge here, and keeps the stale parts away from the
-# TTL drop selector, which would drop them as expired. Merges are stopped
-# until the ALTER has relaxed the TTL, so no merge can run under the short
-# one; afterwards a racing background Regular merge keeps the rows too, so
-# the part_log comparison below is order-independent.
+# TTL drop selector. Merges are stopped until the ALTER has relaxed the TTL,
+# so no merge can run under the short one; afterwards a racing background
+# Regular merge produces the same (rows, read_rows) pair, so the part_log
+# comparison below is order-independent.
 # -------------------------------------------------------------------
-echo "-- Case 11: MODIFY TTL without materialization keeps the rows"
+echo "-- Case 11: MODIFY TTL without materialization still reads the source parts"
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_ttl_modify_relaxed
@@ -617,9 +620,9 @@ ${CLICKHOUSE_CLIENT} -q "
 
 wait_for_ttl_merge_and_flush_logs "t_ttl_modify_relaxed"
 
-# The merge must open the source parts and keep what it reads: the rows are
-# alive under the current TTL. A zero-read shortcut trusting the stale
-# ttl_infos would report (0, 0) here and leave the table empty.
+# The merge must open the source parts: a zero-read shortcut trusting the
+# stale ttl_infos would report (0, 0) here. The ordinary TTL filter then drops
+# the rows per the same stale infos, which the materialization opt-out allows.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT DISTINCT
         merge_reason,
