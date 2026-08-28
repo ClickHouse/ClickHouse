@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS date_dim;
+    DROP TABLE IF EXISTS store_sales;
+    DROP TABLE IF EXISTS item;
     CREATE TABLE date_dim (d_date_sk UInt32, d_year Int64) ORDER BY d_date_sk;
     CREATE TABLE store_sales (ss_sold_date_sk UInt32, ss_item_sk Int64) ORDER BY ss_sold_date_sk;
     CREATE TABLE item (i_item_sk Int64, i_brand_id Int64) ORDER BY i_item_sk;
@@ -42,3 +45,5 @@ ${CLICKHOUSE_CLIENT} -q "SELECT item.i_brand_id FROM date_dim AS dt, store_sales
 # A genuine table reference must not be described as an alias of itself.
 echo -n 'not an alias: '
 ${CLICKHOUSE_CLIENT} -q "SELECT item.no_such_column FROM item" 2>&1 | grep -cF "an alias of" || true
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE date_dim; DROP TABLE store_sales; DROP TABLE item"
