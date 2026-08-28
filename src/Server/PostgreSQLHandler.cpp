@@ -67,11 +67,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_settings_after_format_in_insert;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
-    extern const SettingsBool implicit_select;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -88,7 +83,6 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
@@ -1321,6 +1315,11 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
                 throw;
             }
 
+            /// A failed write to the client cancels `out` (see `WriteBuffer::next`); nothing can be
+            /// sent on a canceled buffer, not even an error response - tear the connection down.
+            if (out->isCanceled())
+                throw;
+
             /// An external cancel (`CancelRequest` / `KILL QUERY`) aborts the copy the way PostgreSQL
             /// does: release the insert query promptly (nothing has been pushed to its pipeline, so the
             /// target table is untouched), report `57014 query_canceled` to the client, and keep
@@ -1634,49 +1633,74 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
         Int32 rows_count = 0;
-        while (executor->pull(block))
+        try
         {
-            /// PostgreSQL's COPY protocol expects one CopyData message per row, and libpq/pqxx rely on
-            /// this (they do not re-split a message into rows). Serialize each row on its own instead of
-            /// formatting the whole block and splitting the result on '\n': the latter only works for the
-            /// text/TSV path (where newlines inside values are escaped) and corrupts formats where a single
-            /// row is not one physical line - e.g. a quoted CSV field containing a newline, or the binary
-            /// format, which is not newline-delimited at all and would otherwise emit nothing.
-            Block materialized = materializeBlock(block);
-            for (size_t row = 0, num_rows = materialized.rows(); row < num_rows; ++row)
+            while (executor->pull(block))
             {
-                output_buffer.restart(DBMS_DEFAULT_BUFFER_SIZE); // This will recreate the moved-out vector.
-
-                Columns row_columns;
-                row_columns.reserve(materialized.columns());
-                for (size_t col = 0; col < materialized.columns(); ++col)
+                /// PostgreSQL's COPY protocol expects one CopyData message per row, and libpq/pqxx rely on
+                /// this (they do not re-split a message into rows). Serialize each row on its own instead of
+                /// formatting the whole block and splitting the result on '\n': the latter only works for the
+                /// text/TSV path (where newlines inside values are escaped) and corrupts formats where a single
+                /// row is not one physical line - e.g. a quoted CSV field containing a newline, or the binary
+                /// format, which is not newline-delimited at all and would otherwise emit nothing.
+                Block materialized = materializeBlock(block);
+                for (size_t row = 0, num_rows = materialized.rows(); row < num_rows; ++row)
                 {
-                    const auto & elem = materialized.getByPosition(col);
-                    if (is_array_column[col])
+                    output_buffer.restart(DBMS_DEFAULT_BUFFER_SIZE); // This will recreate the moved-out vector.
+
+                    Columns row_columns;
+                    row_columns.reserve(materialized.columns());
+                    for (size_t col = 0; col < materialized.columns(); ++col)
                     {
-                        auto str_column = ColumnString::create();
-                        WriteBufferFromOwnString literal;
-                        writePostgreSQLArrayText(*elem.column, *elem.type, row, literal, array_settings);
-                        str_column->insertData(literal.str().data(), literal.str().size());
-                        row_columns.push_back(std::move(str_column));
+                        const auto & elem = materialized.getByPosition(col);
+                        if (is_array_column[col])
+                        {
+                            auto str_column = ColumnString::create();
+                            WriteBufferFromOwnString literal;
+                            writePostgreSQLArrayText(*elem.column, *elem.type, row, literal, array_settings);
+                            str_column->insertData(literal.str().data(), literal.str().size());
+                            row_columns.push_back(std::move(str_column));
+                        }
+                        else
+                            row_columns.push_back(elem.column->cut(row, 1));
                     }
-                    else
-                        row_columns.push_back(elem.column->cut(row, 1));
+
+                    format_ptr->write(output_header.cloneWithColumns(row_columns));
+                    format_ptr->flush();
+                    output_buffer.finalize();
+
+                    message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_buf));
                 }
-
-                format_ptr->write(output_header.cloneWithColumns(row_columns));
-                format_ptr->flush();
-                output_buffer.finalize();
-
-                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_buf));
+                rows_count += static_cast<Int32>(materialized.rows());
             }
-            rows_count += static_cast<Int32>(materialized.rows());
+            /// The buffer is finalized after each row above, but a result with no rows at all (for example a
+            /// catalog probe for a table that does not exist) never enters the loop, and a `WriteBuffer` must
+            /// not reach its destructor neither finalized nor canceled. `finalize` is idempotent, so this is
+            /// a no-op when the last row already finalized the buffer.
+            output_buffer.finalize();
         }
-        /// The buffer is finalized after each row above, but a result with no rows at all (for example a
-        /// catalog probe for a table that does not exist) never enters the loop, and a `WriteBuffer` must
-        /// not reach its destructor neither finalized nor canceled. `finalize` is idempotent, so this is
-        /// a no-op when the last row already finalized the buffer.
-        output_buffer.finalize();
+        catch (...)
+        {
+            output_buffer.cancel();
+
+            /// A failed write to the client cancels `out` (see `WriteBuffer::next`); nothing can be
+            /// sent on a canceled buffer, not even an error response - tear the connection down.
+            if (out->isCanceled())
+                throw;
+
+            /// PostgreSQL reports a backend-detected error during copy-out with an `ErrorResponse` and
+            /// reverts to normal processing - the connection stays usable. Every `CopyData` frame above
+            /// is sent whole, so the stream is at a message boundary; libpq surfaces the error to the
+            /// client once the run loop follows with `ReadyForQuery` (closing the connection instead
+            /// would make libpq report a lost connection and swallow the error text).
+            tryLogCurrentException(log, "Failed to stream the result of COPY TO STDOUT");
+            message_transport->send(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                    PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000",
+                    "Query execution failed.\n" + getCurrentExceptionMessage(/* with_stacktrace = */ false)),
+                true);
+            return CopyQueryResult::ErrorHandled;
+        }
         /// A COPY TO STDOUT must be terminated by CopyDone, then CommandComplete ("COPY n"), then
         /// ReadyForQuery (sent by the caller). libpq/pqxx report an error if CommandComplete is missing.
         message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse());
@@ -1738,6 +1762,67 @@ void PostgreSQLHandler::discardRemainingCopyInFrames(size_t pending_frame_bytes)
     }
 }
 
+namespace
+{
+
+/// Splits a PostgreSQL simple-query message into its statements on top-level semicolons. The scan is
+/// SQL-aware through `skipOpaqueSQLToken`: a semicolon inside a string literal, a quoted identifier,
+/// a comment or a dollar-quoted string does not split. The statements are not parsed - unlike
+/// `splitMultipartQuery`, this accepts the statements only the PostgreSQL handler understands
+/// (`PREPARE`, `EXECUTE`, `COPY`, transaction control, driver no-ops), which the ClickHouse parser
+/// would reject. Fragments of whitespace and comments only (a trailing semicolon, `;;`, a trailing
+/// `-- comment`) are dropped.
+std::vector<String> splitPostgreSQLStatements(const String & text)
+{
+    std::vector<String> statements;
+    const size_t size = text.size();
+    size_t start = 0;
+    size_t i = 0;
+
+    const auto flush = [&](size_t end)
+    {
+        String fragment = text.substr(start, end - start);
+        start = end + 1;
+        /// A fragment of whitespace and comments only (a trailing semicolon, `;;`, a trailing
+        /// `-- comment`) is not a statement.
+        size_t k = 0;
+        while (k < fragment.size())
+        {
+            const char c = fragment[k];
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v')
+            {
+                ++k;
+                continue;
+            }
+            const bool is_comment = (c == '-' && k + 1 < fragment.size() && fragment[k + 1] == '-')
+                || (c == '/' && k + 1 < fragment.size() && fragment[k + 1] == '*');
+            if (!is_comment)
+            {
+                statements.push_back(std::move(fragment));
+                return;
+            }
+            k = PostgreSQLProtocol::PostgresPreparedStatements::skipOpaqueSQLToken(fragment, k);
+        }
+    };
+
+    while (i < size)
+    {
+        if (const size_t opaque_end = PostgreSQLProtocol::PostgresPreparedStatements::skipOpaqueSQLToken(text, i); opaque_end != i)
+        {
+            i = opaque_end;
+            continue;
+        }
+        if (text[i] == ';')
+            flush(i);
+        ++i;
+    }
+    flush(size);
+
+    return statements;
+}
+
+}
+
 void PostgreSQLHandler::processQuery()
 {
     /// A malformed or truncated frontend frame leaves the transport stream desynchronized. Read the
@@ -1761,55 +1846,12 @@ void PostgreSQLHandler::processQuery()
         /// catalog lives in per-session temporary views instead, so the qualifier is stripped here.
         String query_text = removePgCatalogQualifier(query->query);
 
-        /// `PREPARE`, `DEALLOCATE`, `EXECUTE` and `COPY ... FROM STDIN` are PostgreSQL statements that
-        /// the ClickHouse parser does not know, so `splitMultipartQuery` below cannot see them - it
-        /// would report a syntax error. Dispatch them on the whole message first; only a message that
-        /// is none of them is split into ClickHouse statements.
-        if (isTransactionControlQuery(query_text))
-        {
-            message_transport->send(
-                PostgreSQLProtocol::Messaging::CommandComplete(
-                    PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(query_text), 0),
-                true);
-            return;
-        }
-
-        if (auto noop_command_tag = classifyNoOpDriverCommand(query_text))
-        {
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
-            return;
-        }
-
-        if (processPrepareStatement(query_text))
-            return;
-
-        if (processDeallocate(query_text))
-            return;
-
-        if (processCopyQuery(query_text) != CopyQueryResult::NotCopy)
-            return;
-
-        {
-            auto query_context = session->makeQueryContext();
-            query_context->setCurrentQueryId(currentQueryId());
-
-            if (processExecute(query_text, query_context))
-                return;
-        }
-
-        const auto & settings = session->sessionContext()->getSettingsRef();
-        std::vector<String> queries;
-
-        auto parse_res = splitMultipartQuery(
-            query_text,
-            queries,
-            settings[Setting::max_query_size],
-            settings[Setting::max_parser_depth],
-            settings[Setting::max_parser_backtracks],
-            settings[Setting::allow_settings_after_format_in_insert],
-            settings[Setting::implicit_select]);
-        if (!parse_res.second)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
+        /// The message is split into statements without parsing them: a PostgreSQL simple-query
+        /// message may mix ClickHouse SQL with statements only this handler understands (`BEGIN`,
+        /// `PREPARE`, `EXECUTE`, `COPY`, driver no-ops), which `splitMultipartQuery` - built on the
+        /// ClickHouse parser - would reject as a syntax error before the per-statement dispatch
+        /// below could see them.
+        std::vector<String> queries = splitPostgreSQLStatements(query_text);
 
         for (auto & sql_query : queries)
         {
@@ -1872,6 +1914,11 @@ void PostgreSQLHandler::processQuery()
     catch (const Exception & e)
     {
         if (copy_protocol_error)
+            throw;
+        /// A failed write to the client cancels `out` (see `WriteBuffer::next`), and nothing can be
+        /// sent on a canceled buffer - not even the error response. Writing to it anyway would be a
+        /// logical error, so tear the connection down.
+        if (out->isCanceled())
             throw;
         bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
@@ -2046,6 +2093,10 @@ void PostgreSQLHandler::processParseQuery()
     }
     catch (const Exception & e)
     {
+        /// A failed write to the client cancels `out` (see `WriteBuffer::next`); nothing can be sent
+        /// on a canceled buffer, not even the error response - tear the connection down.
+        if (out->isCanceled())
+            throw;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
@@ -2066,6 +2117,10 @@ void PostgreSQLHandler::processBindQuery()
     }
     catch (const Exception & e)
     {
+        /// A failed write to the client cancels `out` (see `WriteBuffer::next`); nothing can be sent
+        /// on a canceled buffer, not even the error response - tear the connection down.
+        if (out->isCanceled())
+            throw;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
@@ -2076,22 +2131,16 @@ void PostgreSQLHandler::processBindQuery()
 
 void PostgreSQLHandler::processDescribeQuery()
 {
-    /// A malformed or truncated frame must close the session: `dropMessage` may not have consumed all
-    /// of its payload, so treating that exception as an extended-query error would desynchronize the stream.
-    message_transport->dropMessage();
+    /// The message is received outside any recoverable path: a malformed or truncated frame
+    /// desynchronizes the stream and must close the session.
+    std::unique_ptr<PostgreSQLProtocol::Messaging::DescribeQuery> query =
+        message_transport->receive<PostgreSQLProtocol::Messaging::DescribeQuery>();
 
-    try
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Describe is not supported in the PostgreSQL wire protocol");
-    }
-    catch (const Exception & e)
-    {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
-        ignore_extended_query_messages_until_sync = true;
-    }
+    /// PostgreSQL answers `Describe` with `ParameterDescription` and `RowDescription`. ClickHouse
+    /// cannot derive the result header of a statement without executing it, so `Describe` is
+    /// accepted silently and the `RowDescription` is sent when `Execute` produces the result -
+    /// clients driving the extended protocol (psycopg, Npgsql, the JDBC driver) accept it there.
+    /// Failing `Describe` instead would fail every prepared statement those clients issue.
 }
 
 void PostgreSQLHandler::processExecuteQuery()
@@ -2132,6 +2181,10 @@ void PostgreSQLHandler::processExecuteQuery()
     }
     catch (const Exception & e)
     {
+        /// A failed write to the client cancels `out` (see `WriteBuffer::next`); nothing can be sent
+        /// on a canceled buffer, not even the error response - tear the connection down.
+        if (out->isCanceled())
+            throw;
         bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
@@ -2201,6 +2254,10 @@ void PostgreSQLHandler::processCloseQuery()
     }
     catch (const Exception & e)
     {
+        /// A failed write to the client cancels `out` (see `WriteBuffer::next`); nothing can be sent
+        /// on a canceled buffer, not even the error response - tear the connection down.
+        if (out->isCanceled())
+            throw;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
@@ -2211,26 +2268,18 @@ void PostgreSQLHandler::processCloseQuery()
 
 void PostgreSQLHandler::processSyncQuery()
 {
-    try
-    {
-        std::unique_ptr<PostgreSQLProtocol::Messaging::SyncQuery> query =
-            message_transport->receive<PostgreSQLProtocol::Messaging::SyncQuery>();
+    /// The message is received outside any recoverable path: `Sync` is fixed-size, and a frame with a
+    /// different length leaves its trailing bytes in the stream, so the connection must close without
+    /// an `ErrorResponse` - the stream is already desynchronized.
+    std::unique_ptr<PostgreSQLProtocol::Messaging::SyncQuery> query =
+        message_transport->receive<PostgreSQLProtocol::Messaging::SyncQuery>();
 
-        /// Per PostgreSQL protocol, `Sync` ends the current extended-query cycle
-        /// and destroys the unnamed portal. We only support the unnamed portal
-        /// (see `attachBindQuery`), so resetting the single bind slot is
-        /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
-        prepared_statements_manager.resetBindQuery();
-        ignore_extended_query_messages_until_sync = false;
-    }
-    catch (const Exception & e)
-    {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
-        throw;
-    }
+    /// Per PostgreSQL protocol, `Sync` ends the current extended-query cycle
+    /// and destroys the unnamed portal. We only support the unnamed portal
+    /// (see `attachBindQuery`), so resetting the single bind slot is
+    /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
+    prepared_statements_manager.resetBindQuery();
+    ignore_extended_query_messages_until_sync = false;
 }
 
 bool PostgreSQLHandler::isEmptyQuery(const String & query)

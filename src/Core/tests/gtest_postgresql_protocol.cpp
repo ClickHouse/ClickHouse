@@ -147,15 +147,20 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
 {
     auto build = [](Int32 sz_param, const std::string & data)
     {
+        std::string body;
+        body.push_back('\0'); /// empty portal name
+        body.push_back('\0'); /// empty statement name
+        putInt16(body, 0); /// no parameter format codes
+        putInt16(body, 1); /// one parameter
+        putInt32(body, sz_param);
+        body += data;
+        putInt16(body, 0); /// no result format codes
+
+        /// The outer length includes its own four bytes and is enforced by `deserialize`
+        /// (see `FrontMessage::PayloadBoundary`), so it must be correct here.
         std::string bytes;
-        putInt32(bytes, 0); /// the outer size field is not used for bounds here
-        bytes.push_back('\0'); /// empty portal name
-        bytes.push_back('\0'); /// empty statement name
-        putInt16(bytes, 0); /// no parameter format codes
-        putInt16(bytes, 1); /// one parameter
-        putInt32(bytes, sz_param);
-        bytes += data;
-        putInt16(bytes, 0); /// no result format codes
+        putInt32(bytes, static_cast<Int32>(sizeof(Int32) + body.size()));
+        bytes += body;
         return bytes;
     };
 

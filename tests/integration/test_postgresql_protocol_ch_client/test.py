@@ -1021,12 +1021,6 @@ def test_copy_array_column_round_trips(started_cluster):
             "COPY copy_arrays FROM STDIN WITH (FORMAT csv)", io.StringIO(payload)
         )
 
-        # PostgreSQL multidimensional arrays must be rectangular. Reject a ClickHouse-only ragged
-        # value rather than advertising it as a PostgreSQL array literal that another server cannot parse.
-        with pytest.raises(py_psql.Error, match="rectangular"):
-            cur.execute("SELECT CAST([[1, 2], [3]], 'Array(Array(Int32))')")
-        conn.rollback()
-
         # A malformed array literal is reported without touching the table.
         node.query("DROP TABLE IF EXISTS copy_bad_arrays SYNC")
         node.query(
@@ -1054,6 +1048,33 @@ def test_copy_array_column_round_trips(started_cluster):
     node.query("DROP TABLE copy_arrays SYNC")
     node.query("DROP TABLE copy_bad_arrays SYNC")
 
+    # PostgreSQL multidimensional arrays must be rectangular. Reject a ClickHouse-only ragged value
+    # rather than advertising it as a PostgreSQL array literal that another server cannot parse.
+    # The failure is observed through `COPY ... TO STDOUT`: a backend-detected error during copy-out
+    # is reported with an `ErrorResponse` inside the copy stream and the server reverts to normal
+    # processing, as PostgreSQL does, so the client sees the server's message and the connection
+    # stays usable.
+    node.query("DROP TABLE IF EXISTS copy_ragged SYNC")
+    node.query(
+        "CREATE TABLE copy_ragged (v Array(Array(Int32))) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node.query(
+        "INSERT INTO copy_ragged VALUES ([[1, 2], [3]])", settings={"async_insert": 0}
+    )
+    ragged_conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        ragged_cur = ragged_conn.cursor()
+        with pytest.raises(py_psql.Error, match="rectangular"):
+            ragged_cur.copy_expert("COPY copy_ragged TO STDOUT", io.StringIO())
+        ragged_conn.rollback()
+        ragged_cur.execute("SELECT 42")
+        assert ragged_cur.fetchone()[0] == 42
+    finally:
+        ragged_conn.close()
+    node.query("DROP TABLE copy_ragged SYNC")
+
 
 def test_empty_nested_array_round_trips(started_cluster):
     # PostgreSQL prints an empty array as `{}` whatever its dimensionality, so an empty
@@ -1063,15 +1084,18 @@ def test_empty_nested_array_round_trips(started_cluster):
     node.query(
         "CREATE TABLE empty_nested (id UInt32, nested Array(Array(Int32))) ENGINE = MergeTree ORDER BY id"
     )
+    # The second row is rectangular on purpose: PostgreSQL multidimensional arrays must be
+    # rectangular, so a ragged value such as `[[1, 2], []]` is not representable as a PostgreSQL
+    # array literal at all (its rejection is covered in `test_copy_array_column_round_trips`).
     node.query(
-        "INSERT INTO empty_nested VALUES (1, []), (2, [[1, 2], []])",
+        "INSERT INTO empty_nested VALUES (1, []), (2, [[1, 2]])",
         settings={"async_insert": 0},
     )
 
     assert node.query(
         f"SELECT id, nested FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'empty_nested', "
         f"'pguser', 'pgpass') ORDER BY id"
-    ) == "1\t[]\n2\t[[1,2],[]]\n"
+    ) == "1\t[]\n2\t[[1,2]]\n"
 
     node.query("DROP TABLE empty_nested SYNC")
 

@@ -986,7 +986,7 @@ def _pg_connect_raw(node, user, password, database):
 def test_extended_query_errors_recover_at_sync(started_cluster):
     """An error in an extended-query cycle is not fatal to the connection. The server must return
     an `ErrorResponse`, ignore everything through the matching `Sync`, and then accept the next
-    cycle. Cover both an unsupported `Describe` and a query execution error after a complete
+    cycle. Also cover the errorless `Describe` cycle and a query execution error after a complete
     `Parse` / `Bind` / `Execute` sequence."""
     node = cluster.instances["node"]
     sock = _pg_connect_raw(node, "default", "123", "default")
@@ -1000,12 +1000,13 @@ def test_extended_query_errors_recover_at_sync(started_cluster):
         assert b"20260815" in seen[b"D"], seen
 
     try:
-        # Parse succeeds, but `Describe` is not implemented. `Sync` must restore the connection.
+        # `Describe` is accepted silently (the row description is sent when `Execute` produces the
+        # result), so a Parse/Describe/Sync cycle completes without an error.
         send(b"P", b"describe_probe\x00SELECT 1\x00\x00\x00")
         send(b"D", b"Sdescribe_probe\x00")
         send(b"S", b"")
         seen = _pg_read_until(sock, b"Z")
-        assert b"E" in seen, seen
+        assert b"E" not in seen, seen
         assert_recovered()
 
         # A statement whose execution fails after `Bind` follows the same extended-query recovery
@@ -1132,8 +1133,8 @@ def test_variable_size_frontend_frames_reject_trailing_bytes(
 def test_copy_done_rejects_trailing_bytes(started_cluster):
     """`CopyDone` is fixed-size and must reject a payload before it can desynchronize the session."""
     node = cluster.instances["node"]
-    node.query("DROP TABLE IF EXISTS malformed_copy_done SYNC")
-    node.query("CREATE TABLE malformed_copy_done (x UInt8) ENGINE = Memory")
+    node.query("DROP TABLE IF EXISTS malformed_copy_done SYNC", password="123")
+    node.query("CREATE TABLE malformed_copy_done (x UInt8) ENGINE = Memory", password="123")
     sock = _pg_connect_raw(node, "default", "123", "default")
 
     try:
@@ -1146,7 +1147,7 @@ def test_copy_done_rejects_trailing_bytes(started_cluster):
         assert sock.recv(1) == b""
     finally:
         sock.close()
-        node.query("DROP TABLE malformed_copy_done SYNC")
+        node.query("DROP TABLE malformed_copy_done SYNC", password="123")
 
 
 def test_flush_error_discards_extended_query_cycle(started_cluster):
@@ -1206,7 +1207,9 @@ def test_bound_portal_keeps_statement_after_close(started_cluster):
 
     try:
         send(b"P", b"portal_snapshot\x00SELECT 20260816\x00\x00\x00")
-        send(b"B", b"\x00portal_snapshot\x00\x00\x00\x00\x00\x00")
+        # Empty portal name, the statement name, and three zero Int16 fields: no parameter format
+        # codes, no parameters, no result format codes.
+        send(b"B", b"\x00portal_snapshot\x00\x00\x00\x00\x00\x00\x00")
         send(b"C", b"Sportal_snapshot\x00")
         send(b"E", b"\x00\x00\x00\x00\x00")
         send(b"S", b"")
@@ -1244,8 +1247,14 @@ def test_extended_query_cycle_does_not_send_ready_before_sync(started_cluster):
         send(b"P", b"describe_probe\x00SELECT 1\x00\x00\x00")
         send(b"S", b"")
         _pg_read_until(sock, b"Z")
+        # `Describe` is accepted without any response of its own (the row description is sent when
+        # `Execute` produces the result), and it must not end the cycle either.
         send(b"D", b"Sdescribe_probe\x00")
-        assert_no_ready_before_sync(b"E")
+        ready, _, _ = select.select([sock], [], [], 0.1)
+        assert not ready, "the server sent a response before Sync"
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"Z" in seen and b"E" not in seen, seen
     finally:
         sock.close()
 

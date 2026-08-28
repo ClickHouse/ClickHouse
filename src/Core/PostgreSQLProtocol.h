@@ -840,6 +840,12 @@ public:
     String function_name;
     VectorWithMemoryTracking<String> parameters;
     Int16 num_params{};
+    /// Non-default format codes are noted here rather than rejected in `deserialize`: the message is
+    /// received outside the recoverable extended-query path (a malformed frame must close the
+    /// connection), while an unsupported format in a well-formed frame is an ordinary recoverable
+    /// error, reported from `PreparedStatemetsManager::attachBindQuery`.
+    bool has_binary_parameter_format = false;
+    bool has_binary_result_format = false;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -853,6 +859,8 @@ public:
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
+            if (format_param != 0)
+                has_binary_parameter_format = true;
         }
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
@@ -881,16 +889,10 @@ public:
         {
             readBinaryBigEndian(format_param_result, in);
             if (format_param_result != 0)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary result formats are not supported in the PostgreSQL wire protocol");
+                has_binary_result_format = true;
         }
 
         boundary.check();
-
-        /// Extended-protocol parameter values are typed values, not SQL fragments. Decoding their
-        /// text and binary encodings requires the type OIDs from the corresponding `Parse` message;
-        /// until that is implemented, reject them instead of treating wire bytes as query text.
-        if (num_params != 0)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bind parameters are not supported in the PostgreSQL wire protocol");
     }
 
     MessageType getMessageType() const override
@@ -1859,6 +1861,110 @@ public:
 namespace PostgresPreparedStatements
 {
 
+/// If `body[i]` starts an opaque SQL token, returns the position just past it; otherwise returns `i`.
+/// Opaque tokens are the constructs a PostgreSQL-flavored scan must not look inside:
+///   - a string literal or a quoted identifier (`'`, `"` or a backtick; a doubled quote is an escaped
+///     quote in all three, and a backslash additionally escapes the next character in a single-quoted
+///     string - ClickHouse semantics, since the text is executed as ClickHouse SQL);
+///   - a `--` line comment or a `/* */` block comment (block comments nest, as in PostgreSQL and
+///     ClickHouse);
+///   - a bare identifier or keyword. Both PostgreSQL and the ClickHouse lexer allow `$` inside an
+///     unquoted identifier, so in `foo$1bar` the whole text is one identifier, not a reference to a
+///     parameter, and `foo$tag$` does not open a dollar-quoted string either. A word cannot start
+///     with a digit, so numeric constants are not consumed here. PostgreSQL identifiers may start
+///     with a letter, an underscore or a non-ASCII character, and continue with those plus digits
+///     and `$`;
+///   - a dollar-quoted string `$tag$ ... $tag$`, where the tag may be empty. The tag of a
+///     placeholder never starts with a digit, so a `$n` placeholder is never consumed here.
+/// An unterminated token extends to the end of the text.
+inline size_t skipOpaqueSQLToken(const String & body, size_t i)
+{
+    const size_t size = body.size();
+    const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+    const auto is_tag_start = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };
+    const auto is_tag_char = [&](char c) { return is_tag_start(c) || is_digit(c); };
+    const auto is_word_start = [&](char c) { return is_tag_start(c) || static_cast<unsigned char>(c) >= 0x80; };
+    const auto is_word_char = [&](char c) { return is_tag_char(c) || static_cast<unsigned char>(c) >= 0x80; };
+
+    const char c = body[i];
+    if (c == '\'' || c == '"' || c == '`')
+    {
+        size_t j = i + 1;
+        while (j < size)
+        {
+            if (c == '\'' && body[j] == '\\' && j + 1 < size)
+            {
+                j += 2;
+                continue;
+            }
+            if (body[j] == c)
+            {
+                if (j + 1 < size && body[j + 1] == c)
+                {
+                    j += 2;
+                    continue;
+                }
+                ++j;
+                break;
+            }
+            ++j;
+        }
+        return j;
+    }
+
+    if (c == '-' && i + 1 < size && body[i + 1] == '-')
+    {
+        const size_t j = body.find('\n', i);
+        return j == String::npos ? size : j;
+    }
+
+    if (c == '/' && i + 1 < size && body[i + 1] == '*')
+    {
+        size_t depth = 1;
+        size_t j = i + 2;
+        while (j < size && depth > 0)
+        {
+            if (body[j] == '/' && j + 1 < size && body[j + 1] == '*')
+            {
+                ++depth;
+                j += 2;
+            }
+            else if (body[j] == '*' && j + 1 < size && body[j + 1] == '/')
+            {
+                --depth;
+                j += 2;
+            }
+            else
+                ++j;
+        }
+        return j;
+    }
+
+    if (is_word_start(c))
+    {
+        size_t j = i + 1;
+        while (j < size && (is_word_char(body[j]) || body[j] == '$'))
+            ++j;
+        return j;
+    }
+
+    if (c == '$' && i + 1 < size && (is_tag_start(body[i + 1]) || body[i + 1] == '$'))
+    {
+        size_t j = i + 1;
+        while (j < size && is_tag_char(body[j]))
+            ++j;
+        if (j < size && body[j] == '$')
+        {
+            const String tag = body.substr(i, j - i + 1);
+            const size_t close = body.find(tag, j + 1);
+            return close == String::npos ? size : close + tag.size();
+        }
+        return i;
+    }
+
+    return i;
+}
+
 class PreparedStatemetsManager
 {
 public:
@@ -1915,6 +2021,16 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Named portals are not supported in the PostgreSQL wire protocol, "
                 "got portal name '{}'", query->portal_name);
+
+        /// Parameter values are substituted into the statement in their text encoding; a binary
+        /// parameter encoding would require decoding by the type OIDs of the `Parse` message.
+        if (query->has_binary_parameter_format && query->num_params > 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary parameter formats are not supported in the PostgreSQL wire protocol");
+
+        /// `DataRow` values are always written in the text format; honoring a binary result format
+        /// is not implemented, and silently answering in text would desynchronize the client.
+        if (query->has_binary_result_format)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary result formats are not supported in the PostgreSQL wire protocol");
 
         /// For the unnamed portal, a new `Bind` replaces the previous one
         /// per the PostgreSQL extended-query protocol — clients such as Npgsql
@@ -1986,83 +2102,18 @@ private:
         };
 
         const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
-        const auto is_tag_start = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };
-        const auto is_tag_char = [&](char c) { return is_tag_start(c) || is_digit(c); };
-        /// PostgreSQL identifiers may start with a letter, an underscore or a non-ASCII character,
-        /// and continue with those plus digits and `$`.
-        const auto is_word_start = [&](char c) { return is_tag_start(c) || static_cast<unsigned char>(c) >= 0x80; };
-        const auto is_word_char = [&](char c) { return is_tag_char(c) || static_cast<unsigned char>(c) >= 0x80; };
 
         while (i < size)
         {
             const char c = body[i];
-            if (c == '\'' || c == '"' || c == '`')
+            /// String literals, quoted identifiers, comments, bare identifiers and dollar-quoted
+            /// strings are copied through as opaque tokens - a `$n` inside them is not a placeholder
+            /// (see `skipOpaqueSQLToken`). A word cannot start with a digit (`1$2` is the constant `1`
+            /// followed by the placeholder `$2`), so numeric constants are not consumed there and a
+            /// placeholder right after one is still substituted.
+            if (const size_t opaque_end = skipOpaqueSQLToken(body, i); opaque_end != i)
             {
-                /// A string literal or a quoted identifier. A doubled quote is an escaped quote in all
-                /// three; a backslash additionally escapes the next character in a single-quoted string
-                /// (ClickHouse semantics - the body is executed as ClickHouse SQL).
-                size_t j = i + 1;
-                while (j < size)
-                {
-                    if (c == '\'' && body[j] == '\\' && j + 1 < size)
-                    {
-                        j += 2;
-                        continue;
-                    }
-                    if (body[j] == c)
-                    {
-                        if (j + 1 < size && body[j + 1] == c)
-                        {
-                            j += 2;
-                            continue;
-                        }
-                        ++j;
-                        break;
-                    }
-                    ++j;
-                }
-                copy_through(j);
-            }
-            else if (c == '-' && i + 1 < size && body[i + 1] == '-')
-            {
-                const size_t j = body.find('\n', i);
-                copy_through(j == String::npos ? size : j);
-            }
-            else if (c == '/' && i + 1 < size && body[i + 1] == '*')
-            {
-                /// Block comments nest, as in PostgreSQL and ClickHouse.
-                size_t depth = 1;
-                size_t j = i + 2;
-                while (j < size && depth > 0)
-                {
-                    if (body[j] == '/' && j + 1 < size && body[j + 1] == '*')
-                    {
-                        ++depth;
-                        j += 2;
-                    }
-                    else if (body[j] == '*' && j + 1 < size && body[j + 1] == '/')
-                    {
-                        --depth;
-                        j += 2;
-                    }
-                    else
-                        ++j;
-                }
-                copy_through(j);
-            }
-            else if (is_word_start(c))
-            {
-                /// A bare identifier (or a keyword). Both PostgreSQL and the ClickHouse lexer allow `$`
-                /// inside an unquoted identifier, so in `foo$1bar` the whole text is the identifier
-                /// `foo$1bar`, not a reference to a parameter. A dollar-quoted string never starts
-                /// inside a word either: `foo$tag$` is one identifier too. The word is copied through
-                /// as an opaque token. A word cannot start with a digit (`1$2` is the constant `1`
-                /// followed by the placeholder `$2`), so numeric constants are not consumed here and
-                /// a placeholder right after one is still substituted.
-                size_t j = i + 1;
-                while (j < size && (is_word_char(body[j]) || body[j] == '$'))
-                    ++j;
-                copy_through(j);
+                copy_through(opaque_end);
             }
             else if (c == '$' && i + 1 < size && is_digit(body[i + 1]))
             {
@@ -2086,25 +2137,6 @@ private:
                 max_placeholder = std::max(max_placeholder, n);
                 result += arguments[n - 1];
                 i = j;
-            }
-            else if (c == '$' && i + 1 < size && (is_tag_start(body[i + 1]) || body[i + 1] == '$'))
-            {
-                /// A dollar-quoted string: `$tag$ ... $tag$`, where the tag may be empty. The tag of a
-                /// placeholder never starts with a digit, so `$1` above and `$tag$` here do not overlap.
-                size_t j = i + 1;
-                while (j < size && is_tag_char(body[j]))
-                    ++j;
-                if (j < size && body[j] == '$')
-                {
-                    const String tag = body.substr(i, j - i + 1);
-                    const size_t close = body.find(tag, j + 1);
-                    copy_through(close == String::npos ? size : close + tag.size());
-                }
-                else
-                {
-                    result += c;
-                    ++i;
-                }
             }
             else
             {
