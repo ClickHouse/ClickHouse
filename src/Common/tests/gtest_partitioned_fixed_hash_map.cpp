@@ -518,8 +518,8 @@ TEST(PartitionedFixedHashMap, IteratorRoutedBucketSplitsAScanAcrossStreams)
     /// or streams 1..N skip straight to `end()`.
     using Map = Partitioned<UInt16, 16, 8>;
     Map map;
-    constexpr UInt32 num_keys = 4000;
-    for (UInt32 key = 0; key < num_keys; ++key)
+    constexpr UInt16 num_keys = 4000;
+    for (UInt16 key = 0; key < num_keys; ++key)
         insertKeyValue(map, key, key);
 
     for (auto it = map.begin(); it != map.end(); ++it)
@@ -545,7 +545,7 @@ TEST(PartitionedFixedHashMap, IteratorRoutedBucketSplitsAScanAcrossStreams)
             ++counts[stream];
         }
     }
-    for (UInt32 key = 0; key < num_keys; ++key)
+    for (UInt16 key = 0; key < num_keys; ++key)
         ASSERT_TRUE(seen[key]) << "key " << key << " missed";
     for (size_t stream = 0; stream < num_streams; ++stream)
         ASSERT_GT(counts[stream], 0u) << "stream " << stream << " got no keys";
