@@ -312,8 +312,6 @@ def test_get_xdbc_type_info():
         "UInt16",
         "Float32",
         "Float64",
-        "Enum16",
-        "Enum8",
         "String",
         "Date",
         "Date32",
@@ -371,16 +369,13 @@ def test_get_xdbc_type_info():
     # Only character-like types support all predicates, including LIKE.
     assert rows["String"]["searchable"] == 3
     assert rows["FixedString"]["searchable"] == 3
-    assert rows["Enum8"]["searchable"] == 3
     assert rows["Int32"]["searchable"] == 2
     assert rows["Date"]["searchable"] == 2
 
-    # String-like values use quoted literals. Enum comparisons are case-sensitive.
-    for name in ("UUID", "FixedString", "Enum8", "Enum16"):
+    # String-like values use quoted literals.
+    for name in ("UUID", "FixedString"):
         assert rows[name]["literal_prefix"] == "'"
         assert rows[name]["literal_suffix"] == "'"
-    for name in ("Enum8", "Enum16"):
-        assert rows[name]["case_sensitive"] is True
 
     # Optional numeric attributes are NULL for non-numeric types.
     assert rows["Int32"]["unsigned_attribute"] is False
@@ -391,8 +386,12 @@ def test_get_xdbc_type_info():
 
     assert rows["FixedString"]["column_size"] == 0xFFFFFF
     # Arrow UTF-8 arrays use signed 32-bit offsets and reserve one value.
-    for name in ("Enum8", "Enum16", "String"):
-        assert rows[name]["column_size"] == 2**31 - 2
+    assert rows["String"]["column_size"] == 2**31 - 2
+
+    # Enums are exported as integer codes, so they are not advertised as
+    # lossless standard XDBC string types.
+    assert "Enum8" not in rows
+    assert "Enum16" not in rows
 
     schema_result = client.get_xdbc_type_info_schema()
     assert schema_result.schema == table.schema
@@ -510,7 +509,7 @@ def test_get_tables_with_schema():
         "date_col": (pa.date32(), b"Date", b"Date"),
         "date32_col": (pa.date32(), b"Date32", b"Date32"),
         "int8_col": (pa.int8(), b"Int8", b"Int8"),
-        "enum8_col": (pa.int8(), b"Enum8", b"Enum8('one' = 1, 'two' = 2)"),
+        "enum8_col": (pa.int8(), None, b"Enum8('one' = 1, 'two' = 2)"),
         "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
         "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
         "decimal_col": (pa.decimal128(18, 4), b"Decimal", b"Decimal(18, 4)"),
@@ -521,7 +520,10 @@ def test_get_tables_with_schema():
         field = table_schema.field(name)
         metadata = _field_metadata(field)
         assert field.type == arrow_type
-        assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
+        if type_name is None:
+            assert FLIGHT_SQL_TYPE_NAME not in metadata
+        else:
+            assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
         assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
 
     assert _field_metadata(table_schema.field("decimal_col"))[FLIGHT_SQL_PRECISION] == b"18"
@@ -577,9 +579,9 @@ def test_statement_query_type_metadata(where_clause):
         "date_col": (pa.date32(), b"Date", b"Date"),
         "date32_col": (pa.date32(), b"Date32", b"Date32"),
         "int8_col": (pa.int8(), b"Int8", b"Int8"),
-        "enum8_col": (pa.int8(), b"Enum8", b"Enum8('one' = 1, 'two' = 2)"),
+        "enum8_col": (pa.int8(), None, b"Enum8('one' = 1, 'two' = 2)"),
         "int16_col": (pa.int16(), b"Int16", b"Int16"),
-        "enum16_col": (pa.int16(), b"Enum16", b"Enum16('one' = 1, 'two' = 2)"),
+        "enum16_col": (pa.int16(), None, b"Enum16('one' = 1, 'two' = 2)"),
         "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
         "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
     }
@@ -587,7 +589,10 @@ def test_statement_query_type_metadata(where_clause):
         field = table.schema.field(name)
         metadata = _field_metadata(field)
         assert field.type == arrow_type
-        assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
+        if type_name is None:
+            assert FLIGHT_SQL_TYPE_NAME not in metadata
+        else:
+            assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
         assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
 
     if not where_clause:
@@ -596,7 +601,8 @@ def test_statement_query_type_metadata(where_clause):
             type_info.column("type_name")[i].as_py() for i in range(type_info.num_rows)
         ]
         for _, type_name, _ in expected.values():
-            assert catalog_names.count(type_name.decode()) == 1
+            if type_name is not None:
+                assert catalog_names.count(type_name.decode()) == 1
 
 
 def test_wrapped_and_parameterized_type_metadata():
@@ -626,15 +632,18 @@ def test_wrapped_and_parameterized_type_metadata():
         "decimal_col": (b"Decimal", b"Decimal(18, 4)"),
         "fixed_string_col": (b"FixedString", b"FixedString(17)"),
         "datetime64_col": (b"DateTime64", b"DateTime64(6, 'UTC')"),
-        "enum_col": (b"Enum8", b"Enum8('one' = 1, 'two' = 2, 'three' = 3)"),
+        "enum_col": (None, b"Enum8('one' = 1, 'two' = 2, 'three' = 3)"),
         "bool_col": (b"Bool", b"Bool"),
     }
     for name, (type_name, clickhouse_type_name) in expected.items():
         metadata = _field_metadata(schema.field(name))
-        assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
+        if type_name is None:
+            assert FLIGHT_SQL_TYPE_NAME not in metadata
+        else:
+            assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
         assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
 
-    assert _field_metadata(schema.field("enum_col"))[FLIGHT_SQL_PRECISION] == b"5"
+    assert FLIGHT_SQL_PRECISION not in _field_metadata(schema.field("enum_col"))
 
     decimal_metadata = _field_metadata(schema.field("decimal_col"))
     assert decimal_metadata[FLIGHT_SQL_PRECISION] == b"18"
@@ -1401,9 +1410,9 @@ def test_prepared_statement_type_metadata():
 
     try:
         assert stmt.dataset_schema is not None
-        assert _field_metadata(stmt.dataset_schema.field("enum8_col"))[
-            FLIGHT_SQL_TYPE_NAME
-        ] == b"Enum8"
+        enum8_metadata = _field_metadata(stmt.dataset_schema.field("enum8_col"))
+        assert FLIGHT_SQL_TYPE_NAME not in enum8_metadata
+        assert enum8_metadata[CLICKHOUSE_TYPE_NAME] == b"Enum8('one' = 1, 'two' = 2)"
 
         stmt.bind_parameters(
             pa.record_batch([pa.array([1], type=pa.uint32())], names=["param_1"])

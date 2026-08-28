@@ -1,7 +1,6 @@
 #include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,7 +11,6 @@
 #include <arrow/array/builder_binary.h>
 #include <arrow/flight/sql/column_metadata.h>
 
-#include <algorithm>
 #include <array>
 #include <string>
 
@@ -45,7 +43,9 @@ constexpr int32_t SQL_SEARCHABLE_BASIC = 2;
 constexpr int32_t SQL_SEARCHABLE_FULL = 3;
 
 /// Ordered by `data_type` ascending, then `type_name` (protocol requirement).
-constexpr std::array<XdbcTypeInfoRow, 25> type_info_rows = {{
+/// `Enum8` and `Enum16` are omitted because Arrow exports their numeric codes
+/// without a standard mapping back to the ClickHouse labels.
+constexpr std::array<XdbcTypeInfoRow, 23> type_info_rows = {{
     {.type_name = "UUID",
      .data_type = SQL_GUID,
      .column_size = 36,
@@ -160,20 +160,6 @@ constexpr std::array<XdbcTypeInfoRow, 25> type_info_rows = {{
      .searchable = SQL_SEARCHABLE_BASIC,
      .numeric = true,
      .num_prec_radix = 2},
-    {.type_name = "Enum16",
-     .data_type = SQL_VARCHAR,
-     .column_size = arrow::StringBuilder::memory_limit(),
-     .literal_prefix = "'",
-     .literal_suffix = "'",
-     .case_sensitive = true,
-     .searchable = SQL_SEARCHABLE_FULL},
-    {.type_name = "Enum8",
-     .data_type = SQL_VARCHAR,
-     .column_size = arrow::StringBuilder::memory_limit(),
-     .literal_prefix = "'",
-     .literal_suffix = "'",
-     .case_sensitive = true,
-     .searchable = SQL_SEARCHABLE_FULL},
     {.type_name = "String",
      .data_type = SQL_VARCHAR,
      .column_size = arrow::StringBuilder::memory_limit(),
@@ -245,15 +231,6 @@ std::string getTypeFamilyName(const DataTypePtr & type)
     return type->getFamilyName();
 }
 
-template <typename EnumType>
-int32_t getEnumMaxNameSize(const EnumType & type)
-{
-    size_t result = 0;
-    for (const auto & [name, _] : type.getValues())
-        result = std::max(result, name.size());
-    return static_cast<int32_t>(result);
-}
-
 }
 
 std::span<const XdbcTypeInfoRow> getXdbcTypeInfoRows()
@@ -322,14 +299,6 @@ addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWit
         else if (family_name == "FixedString")
         {
             metadata_builder.Precision(static_cast<int32_t>(assert_cast<const DataTypeFixedString &>(*type).getN()));
-        }
-        else if (family_name == "Enum8")
-        {
-            metadata_builder.Precision(getEnumMaxNameSize(assert_cast<const DataTypeEnum8 &>(*type)));
-        }
-        else if (family_name == "Enum16")
-        {
-            metadata_builder.Precision(getEnumMaxNameSize(assert_cast<const DataTypeEnum16 &>(*type)));
         }
         else if (type_info && usesRegisteredColumnSizeAsPrecision(family_name, *type_info))
         {
