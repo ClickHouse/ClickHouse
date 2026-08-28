@@ -808,6 +808,40 @@ def test_remote_host_filter(started_cluster):
         assert "UNACCEPTABLE_URL" in instance.query_and_get_error(query), query
 
 
+def test_remote_host_filter_reload_for_persistent_table(started_cluster):
+    instance = started_cluster.instances["restricted_dummy"]
+    filename = "remote_host_filter_reload.csv"
+    put_s3_file_content(started_cluster, started_cluster.minio_bucket, filename, b"1\n")
+    url = (
+        f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/"
+        f"{started_cluster.minio_bucket}/{filename}"
+    )
+    instance.query(
+        f"CREATE TABLE remote_host_filter_reload (x UInt8) "
+        f"ENGINE = S3('{url}', 'minio', '{minio_secret_key}', 'CSV')"
+    )
+    try:
+        assert instance.query("SELECT * FROM remote_host_filter_reload") == "1\n"
+        blocked_config = """
+<clickhouse>
+    <remote_url_allow_hosts>
+        <host>blocked.invalid</host>
+    </remote_url_allow_hosts>
+</clickhouse>
+"""
+        with instance.with_replace_config(
+            "/etc/clickhouse-server/config.d/config_for_test_remote_host_filter.xml",
+            blocked_config,
+            reload_before=True,
+            reload_after=True,
+        ):
+            assert "UNACCEPTABLE_URL" in instance.query_and_get_error(
+                "SELECT * FROM remote_host_filter_reload"
+            )
+    finally:
+        instance.query("DROP TABLE remote_host_filter_reload")
+
+
 def test_wrong_s3_syntax(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     expected_err_msg = "Code: 42"  # NUMBER_OF_ARGUMENTS_DOESNT_MATCH
