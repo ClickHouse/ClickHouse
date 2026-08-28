@@ -1,0 +1,14 @@
+=== a typo in a key, index or TTL expression suggests the column
+--- ALTER TABLE t MODIFY ORDER BY (id, ix)
+Code: 47. Missing columns: 'ix' while processing: 'id, ix', required columns: 'id' 'ix', maybe you meant: 'id'. (UNKNOWN_IDENTIFIER)
+--- ALTER TABLE t ADD INDEX i ix TYPE minmax GRANULARITY 1
+Code: 47. Missing columns: 'ix' while processing: 'ix', required columns: 'ix', maybe you meant: 'id'. (UNKNOWN_IDENTIFIER)
+--- ALTER TABLE t MODIFY TTL ix + INTERVAL 1 DAY
+Code: 47. Missing columns: 'ix' while processing: 'ix + toIntervalDay(1)', required columns: 'ix', maybe you meant: 'id'. (UNKNOWN_IDENTIFIER)
+
+=== a name that is nothing like a column still gets the list of available columns
+--- ALTER TABLE t MODIFY TTL zzzzzzzzzzzz + INTERVAL 1 DAY
+Code: 47. Missing columns: 'zzzzzzzzzzzz' while processing: 'zzzzzzzzzzzz + toIntervalDay(1)', required columns: 'zzzzzzzzzzzz', available columns: 's' 'd' 'x' 'id'. (UNKNOWN_IDENTIFIER)
+
+=== the same expressions, spelled correctly
+5
