@@ -19,7 +19,7 @@ namespace
 {
 
 /// `Bool` is not a number here: only the legacy analyzer leaves a frame offset in that field
-/// alternative, and the new analyzer folds `true` to an integer one.
+/// alternative, and the analyzer folds `true` to an integer one.
 bool isNumericFieldType(Field::Types::Which which)
 {
     return isInt64OrUInt64FieldType(which)
