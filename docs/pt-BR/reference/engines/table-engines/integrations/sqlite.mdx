@@ -48,7 +48,7 @@ Essa tabela é somente leitura: `INSERT` nela não é permitido. A mesma sintaxe
 <Note>
   A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e reserializada antes de ser enviada ao SQLite. Portanto, ela deve ser um ClickHouse SQL válido. Para passar uma sintaxe específica do SQLite que o ClickHouse não interpreta, use a forma `query('...')`, cujo texto é enviado ao SQLite literalmente.
 
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse ao redor **não** é enviado para execução na consulta passada — ele é aplicado no ClickHouse depois que o resultado completo da consulta é recuperado. Para restringir os dados lidos do SQLite, coloque o filtro dentro da consulta passada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings#external_table_strict_query), um filtro externo que não pode ser enviado para execução é rejeitado com uma exceção, em vez de ser aplicado localmente.
+  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse ao redor **não** é enviado para execução na consulta passada — ele é aplicado no ClickHouse depois que o resultado completo da consulta é recuperado. Para restringir os dados lidos do SQLite, coloque o filtro dentro da consulta passada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo que não pode ser enviado para execução é rejeitado com uma exceção, em vez de ser aplicado localmente.
 </Note>
 
 <div id="data-types-support">

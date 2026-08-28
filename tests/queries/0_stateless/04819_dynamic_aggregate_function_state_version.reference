@@ -1,0 +1,15 @@
+AggregateFunction(1, quantileDeterministic, UInt64, UInt64)
+UInt8
+492708
+old peer: version 1
+current peer: version 1
+no revision: version 1, round trip 492708
+binary encoding: round trip 492708
+flattened: version 1, round trip 492708
+remote: 492708
+lopsided split via Dynamic: 492708
+unversioned spelling: AggregateFunction(quantileDeterministic, UInt64, UInt64)
+unversioned lopsided merge: 506014
+shared variant: AggregateFunction(1, quantileDeterministic, UInt64, UInt64) true
+shared variant merge: 492708
+shared variant round trip: 492708

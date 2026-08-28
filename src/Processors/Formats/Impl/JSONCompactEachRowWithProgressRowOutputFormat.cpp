@@ -185,7 +185,7 @@ FORMAT JSONCompactEachRowWithProgress
 
 ## Description {#description}
 
-Similar to [`JSONCompactEachRowWithProgress`](/interfaces/formats/JSONCompactEachRowWithProgress), but all values are converted to strings.
+Similar to [`JSONCompactEachRowWithProgress`](/reference/formats/JSON/JSONCompactEachRowWithProgress), but all values are converted to strings.
 This is useful when you need consistent string representation of all data types.
 
 Key features:

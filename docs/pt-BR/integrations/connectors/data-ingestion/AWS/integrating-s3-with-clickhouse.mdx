@@ -341,7 +341,7 @@ INSERT INTO default.trips_all
     )
 ```
 
-As inserções ocorrerão no nó iniciador. Isso significa que, embora as leituras ocorram em cada nó, as linhas resultantes serão encaminhadas ao iniciador para serem distribuídas. Em cenários de alto throughput, isso pode se tornar um gargalo. Para contornar isso, defina o parâmetro [parallel&#95;distributed&#95;insert&#95;select](/pt-BR/reference/settings/session-settings#parallel_distributed_insert_select) para a função `s3cluster`.
+As inserções ocorrerão no nó iniciador. Isso significa que, embora as leituras ocorram em cada nó, as linhas resultantes serão encaminhadas ao iniciador para serem distribuídas. Em cenários de alto throughput, isso pode se tornar um gargalo. Para contornar isso, defina o parâmetro [parallel&#95;distributed&#95;insert&#95;select](/pt-BR/reference/settings/session-settings/parallel#parallel_distributed_insert_select) para a função `s3cluster`.
 
 <div id="s3-table-engines">
   ## Motores de tabela S3
@@ -725,7 +725,7 @@ A replicação com discos S3 pode ser feita usando o motor de tabela `Replicated
 
 As notas a seguir abordam a implementação das interações entre o S3 e o ClickHouse. Embora sejam, em geral, apenas informativas, elas podem ajudar os leitores na [otimização de desempenho](#s3-optimizing-performance):
 
-* Por padrão, o número máximo de threads de processamento de consulta usadas por qualquer estágio do pipeline de processamento da consulta é igual ao número de núcleos. Alguns estágios são mais paralelizáveis do que outros, portanto esse valor define um limite superior. Vários estágios da consulta podem ser executados ao mesmo tempo, já que os dados são transmitidos do disco. Assim, o número exato de threads usadas por uma consulta pode exceder esse valor. Modifique isso por meio da configuração [max&#95;threads](/pt-BR/reference/settings/session-settings#max_threads).
+* Por padrão, o número máximo de threads de processamento de consulta usadas por qualquer estágio do pipeline de processamento da consulta é igual ao número de núcleos. Alguns estágios são mais paralelizáveis do que outros, portanto esse valor define um limite superior. Vários estágios da consulta podem ser executados ao mesmo tempo, já que os dados são transmitidos do disco. Assim, o número exato de threads usadas por uma consulta pode exceder esse valor. Modifique isso por meio da configuração [max&#95;threads](/pt-BR/reference/settings/session-settings/max-threads#max_threads).
 * As leituras no S3 são assíncronas por padrão. Esse comportamento é determinado pela configuração `remote_filesystem_read_method`, definida com o valor `threadpool` por padrão. Ao atender a uma solicitação, o ClickHouse lê grânulos em stripes. Cada uma dessas stripes pode conter muitas colunas. Uma thread lê as colunas dos respectivos grânulos, uma a uma. Em vez de fazer isso de forma síncrona, é feito um prefetch de todas as colunas antes de aguardar os dados. Isso oferece ganhos significativos de desempenho em comparação com a espera síncrona em cada coluna. Na maioria dos casos, você não precisará alterar essa configuração — veja [otimização de desempenho](#s3-optimizing-performance).
 * As gravações são realizadas em paralelo, com no máximo 100 threads simultâneas de gravação de arquivos. `max_insert_delayed_streams_for_parallel_write`, que tem valor padrão de 1000, controla o número de blobs do S3 gravados em paralelo. Como é necessário um buffer para cada arquivo gravado (~1MB), isso limita efetivamente o consumo de memória de um INSERT. Pode ser apropriado reduzir esse valor em cenários com pouca memória no servidor.
 
@@ -1259,7 +1259,7 @@ Quando você adicionou a [configuração do cluster](#define-a-cluster), foi def
   ```
 
 <Note>
-  Você pode personalizar o caminho do ZooKeeper `'clickhouse/tables/{uuid}/{shard}` mostrado acima definindo `default_replica_path` e `default_replica_name`. A documentação está [aqui](/pt-BR/reference/settings/server-settings/settings#default_replica_path).
+  Você pode personalizar o caminho do ZooKeeper `'clickhouse/tables/{uuid}/{shard}` mostrado acima definindo `default_replica_path` e `default_replica_name`. A documentação está [aqui](/pt-BR/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
 <div id="testing">
