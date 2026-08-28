@@ -1972,23 +1972,19 @@ public:
     {
         TimeComponents res;
 
-        bool is_negative = false;
+        res.is_negative = t < 0;
 
-        if (unlikely(t < 0))
-        {
-            is_negative = true;
-            t = -t;
-        }
+        /// Take the magnitude in the UInt64 domain: plain -t is signed-overflow UB for t == INT64_MIN.
+        /// The two's-complement result is identical for every other value.
+        UInt64 seconds = res.is_negative ? -static_cast<UInt64>(t) : static_cast<UInt64>(t);
 
         // Cap at 3599999 seconds (999:59:59)
-        if (unlikely(t > 3599999))
-            t = 3599999;
+        if (unlikely(seconds > 3599999))
+            seconds = 3599999;
 
-        res.second = t % 60;
-        res.minute = t / 60 % 60;
-        res.hour = t / 3600;
-
-        res.is_negative = is_negative;
+        res.second = seconds % 60;
+        res.minute = seconds / 60 % 60;
+        res.hour = seconds / 3600;
 
         return res;
     }
