@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `ShellCommandSource` and `LoopSource` read their rows through an inner pipeline and then report
 # the same rows again from the outer source, so `SelectedRows` and `SelectedBytes` must not be
-# accounted by the inner one. The seven cells below that take no input query read a known number of
+# accounted by the inner one. The eight cells below that take no input query read a known number of
 # rows, so both counters have to equal `read_rows` and `read_bytes` of the same query. The two cells
 # that do take an input query are asserted separately: input rows are read once but never reach
 # `read_rows`, so that equality cannot describe them.
@@ -45,13 +45,13 @@ FROM
         argMax(ProfileEvents['SelectedRows'], event_time_microseconds) AS selected_rows,
         argMax(ProfileEvents['SelectedBytes'], event_time_microseconds) AS selected_bytes,
         map('05047_loop_no_wrap', 1000, '05047_loop_wrap', 25, '05047_loop_tf', 10,
-            '05047_mergetree', 1000, '05047_numbers', 1000,
+            '05047_loop_file', 25, '05047_mergetree', 1000, '05047_numbers', 1000,
             '05047_exec_tf', 1000, '05047_exec_pool', 1000)[cell] AS expected_rows
     FROM system.query_log
     WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
         AND current_database = currentDatabase()
         AND log_comment IN ('05047_loop_no_wrap', '05047_loop_wrap', '05047_loop_tf',
-            '05047_mergetree', '05047_numbers',
+            '05047_loop_file', '05047_mergetree', '05047_numbers',
             '05047_exec_tf', '05047_exec_pool')
     GROUP BY cell
 )
@@ -83,6 +83,17 @@ FORMAT Null;
 -- storage.
 SELECT * FROM loop(numbers(3)) LIMIT 10
 SETTINGS log_queries = 1, log_comment = '05047_loop_tf', ast_fuzzer_runs = 0
+FORMAT Null;
+
+-- \`StorageFileSource\` reports a source-side figure of its own, counted in bytes consumed off the
+-- storage layer rather than in the size of the rows, and reads its format through a second inner
+-- pipeline. Wrapping it makes both layers report once per iteration, and neither may be added to
+-- what \`LoopSource\` emits.
+INSERT INTO FUNCTION file('05047_${CLICKHOUSE_DATABASE}.tsv', 'TSV', 'x UInt64')
+    SELECT number FROM numbers(10) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT * FROM loop(file('05047_${CLICKHOUSE_DATABASE}.tsv', 'TSV', 'x UInt64')) LIMIT 25
+SETTINGS log_queries = 1, log_comment = '05047_loop_file', ast_fuzzer_runs = 0
 FORMAT Null;
 
 -- Controls: neither has an inner pipeline on its read path, so a fix that deflated every read path
