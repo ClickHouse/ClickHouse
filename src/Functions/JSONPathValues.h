@@ -179,6 +179,7 @@ struct IndexConfiguration
 {
     UInt64 token_format_version;
     UInt64 max_token_bytes;
+    String source_type_name;
     std::shared_ptr<const PathMatcher> path_matcher;
 };
 

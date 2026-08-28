@@ -421,7 +421,8 @@ bool MergeTreeIndexConditionText::canUseQueryWithPartConfiguration(
 
     if (!part_configuration
         || part_configuration->token_format_version != JSONPathValues::TOKEN_FORMAT_VERSION
-        || part_configuration->max_token_bytes != json_path_values_configuration->max_token_bytes)
+        || part_configuration->max_token_bytes != json_path_values_configuration->max_token_bytes
+        || part_configuration->source_type_name != json_path_values_configuration->json_type->getName())
         return false;
 
     auto it = json_query_paths.find(query.getHash());
