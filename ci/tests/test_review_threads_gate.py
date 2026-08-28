@@ -67,6 +67,12 @@ class FakeInfo:
         self.sha = "0000000000000000000000000000000000000000"
         self.notes = []
 
+    def set_pr_labels(self, labels, reset=False):
+        if reset:
+            self.pr_labels = list(labels)
+        else:
+            self.pr_labels += [l for l in labels if l not in self.pr_labels]
+
     def store_kv_data(self, key, value):
         self.kv[key] = value
 
@@ -201,6 +207,35 @@ def test_fetch_thread_state_uses_live_force_all_label_on_rerun(monkeypatch):
     )
 
     assert fetch_thread_state(info) == (1, False, True)
+
+
+def test_live_labels_replace_the_stale_rerun_payload(monkeypatch):
+    """The whole live label set - not just the gate's own kv data - must win.
+
+    The earlier PR-data refresh in `ci/praktika/native_jobs.py` uses the
+    non-strict `GH.get_pr_title_body_labels`, so an API failure there leaves
+    the stale event payload in place. If the gate only recorded its own kv
+    data, a re-run that removed `do not test` and added
+    `ignore-unresolved-threads` would still be narrowed by `filter_job.py` and
+    could finish green without running the full suite.
+    """
+    info = FakeInfo(labels=["do not test"])
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        lambda *args, **kwargs: json.dumps(
+            {"labels": [{"name": Labels.IGNORE_UNRESOLVED_THREADS}]}
+        ),
+    )
+    monkeypatch.setattr(
+        GH, "list_pr_review_threads", lambda **kwargs: [{"isResolved": False}]
+    )
+
+    store_gate_state(info)
+
+    assert info.pr_labels == [Labels.IGNORE_UNRESOLVED_THREADS]
+    assert "do not test" not in info.pr_labels
+    assert info.get_kv_data(KV_OVERRIDE) is True
 
 
 # --- should_skip_job integration ---

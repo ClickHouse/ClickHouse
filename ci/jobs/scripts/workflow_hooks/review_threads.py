@@ -165,6 +165,17 @@ def store_gate_state(info):
     # comes from the original workflow event and is stale on GitHub reruns.
     info.store_kv_data(KV_FORCE_ALL, force_all)
     info.store_kv_data(KV_OVERRIDE, override)
+    # Publish the same live set as *the* label state of this run, so that every
+    # other label consumer agrees with the two values above. The earlier
+    # refresh in `ci/praktika/native_jobs.py` uses the non-strict
+    # `GH.get_pr_title_body_labels`, which degrades an API failure into no
+    # refresh at all; a re-run could then take `ci-force-all` /
+    # `ignore-unresolved-threads` from here while `filter_job.py` still narrows
+    # the run with a `do not test` that has since been removed, and finish
+    # green without ever running the full suite.
+    if list(info.pr_labels) != labels:
+        print(f"NOTE: refreshing stale PR labels {list(info.pr_labels)} -> {labels}")
+        info.set_pr_labels(labels, reset=True)
 
     try:
         unresolved_count = get_unresolved_review_threads_count(
