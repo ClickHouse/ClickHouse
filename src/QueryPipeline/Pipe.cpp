@@ -795,12 +795,12 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     addTransform(std::move(resize));
 }
 
-void Pipe::calibrateWatermarks(size_t num_streams)
+void Pipe::calibrateWatermarks(size_t num_streams, Field initial_watermark)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calibrate watermarks of an empty Pipe");
 
-    addTransform(std::make_shared<CalibrateWatermarksProcessor>(getSharedHeader(), numOutputPorts(), num_streams));
+    addTransform(std::make_shared<CalibrateWatermarksProcessor>(getSharedHeader(), numOutputPorts(), num_streams, std::move(initial_watermark)));
 }
 
 void Pipe::setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter)

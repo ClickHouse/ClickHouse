@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
+#include <Storages/MergeTree/Streaming/ReadRound/StampPartitionCursors.h>
 
 #include <Columns/IColumn.h>
 #include <Processors/ISimpleTransform.h>

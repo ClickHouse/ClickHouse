@@ -3,7 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
+#include <Storages/MergeTree/Streaming/ReadRound/buildReadRoundPipeline.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/ReadState.h>
 #include <Storages/SelectQueryInfo.h>

@@ -38,6 +38,7 @@ public:
 
     PartitionCursor getPartitionCursor(const std::string & partition) const;
     Field getPartitionWatermark(const std::string & partition) const;
+    Field getLastEmittedWatermark() const;
     bool isPartitionIdle(const std::string & partition, const StreamSettings & stream_settings) const;
 
 private:

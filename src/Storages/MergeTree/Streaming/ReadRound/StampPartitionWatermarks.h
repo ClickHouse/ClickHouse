@@ -8,14 +8,14 @@
 namespace DB
 {
 
-/// Watermark of a concrete partition; emitted by the stamper as an additional chunk after the generic marker.
+/// Watermark of a concrete partition.
 struct PartitionWatermarkInfo : public ChunkInfoCloneable<PartitionWatermarkInfo>
 {
     String partition_id;
     Field watermark;
 };
 
-/// Scopes the WatermarkMarker chunks produced by the watermark calculator to a concrete partition.
+/// Calculates the partition watermark on the aligned stream. Attaches PartitionWatermarkInfo.
 class StampPartitionWatermarksStep : public ITransformingStep
 {
     void updateOutputHeader() override;

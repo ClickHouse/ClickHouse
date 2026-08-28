@@ -37,7 +37,7 @@ class CalibrateWatermarksProcessor final : public IProcessor
     void mergeInputStates();
 
 public:
-    CalibrateWatermarksProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs);
+    CalibrateWatermarksProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs, Field initial_watermark);
 
     String getName() const override { return "CalibrateWatermarks"; }
     Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & updated_output_ports) override;

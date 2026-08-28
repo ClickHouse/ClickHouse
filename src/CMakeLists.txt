@@ -177,7 +177,7 @@ add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
 add_headers_and_sources(dbms Storages/MergeTree/Streaming)
 add_headers_and_sources(dbms Storages/MergeTree/Streaming/Cursors)
-add_headers_and_sources(dbms Storages/MergeTree/Streaming/ReadingPlan)
+add_headers_and_sources(dbms Storages/MergeTree/Streaming/ReadRound)
 add_headers_and_sources(dbms Storages/MergeTree/Streaming/Subscription)
 
 if (TARGET ch_contrib::amqp_cpp)
