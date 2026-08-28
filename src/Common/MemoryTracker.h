@@ -22,7 +22,8 @@
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <base/scope_guard.h>
-extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
+#include <Common/FiberLocal.h>
+extern constinit FiberLocal<bool, FiberLocalSlot::MEMORY_TRACKER_ALWAYS_THROW_ON_ALLOCATION> memory_tracker_always_throw_logical_error_on_allocation;
 
 /// NOLINTNEXTLINE
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \

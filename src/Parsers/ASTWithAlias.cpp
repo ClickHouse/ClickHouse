@@ -67,8 +67,14 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 
 void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// Length-prefixed, otherwise the alias runs into whatever `getID` writes next and two different
+    /// nodes can produce the same byte stream: `fooIdentifier_bar` and `bar AS Identifier_foo` both
+    /// hash `Identifier_fooIdentifier_bar`.
     if (!alias.empty() && !ignore_aliases)
+    {
+        hash_state.update(alias.size());
         hash_state.update(alias);
+    }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
