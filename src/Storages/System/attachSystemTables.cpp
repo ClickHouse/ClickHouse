@@ -44,6 +44,7 @@
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
 #include <Storages/System/StorageSystemDimensionalMetrics.h>
+#include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Storages/System/StorageSystemPrimes.h>
@@ -2777,6 +2778,10 @@ loading_duration:            0
 last_exception:
 comment:                     The temporary dictionary
 ```
+)DOCS_MD");
+    attach<StorageSystemModels>(context, system_database, "models", R"DOCS_MD(
+.description
+Contains a list of CatBoost models loaded into a `LibraryBridge`'s memory along with time when it was loaded.
 )DOCS_MD");
     attach<StorageSystemClusters>(context, system_database, "clusters", R"DOCS_MD(
 .description
