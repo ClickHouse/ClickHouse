@@ -525,6 +525,25 @@ std::optional<String> optimizeUseNormalProjections(
             *iter->node->children[iter->next_child - 1]);
     };
 
+    auto sorted_prefix_length = [&](const KeyDescription & sorting_key)
+    {
+        return readInOrderSortedPrefixLength(*outer_sorting_step, sorting_key, *iter->node->children[iter->next_child - 1]);
+    };
+
+    /// The two conditions optimizeReadInOrder checks that wouldReadInOrderBeUseful does not: a STREAM
+    /// read returns parts in commit order rather than sorting-key order, and a window partition
+    /// description blocks the pass unless reuse_storage_ordering_for_window_functions allows it.
+    bool base_read_in_order_applicable = outer_sorting_step && optimization_settings.read_in_order
+        && !reading->getQueryInfo().isStream()
+        && !(outer_sorting_step->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions);
+
+    /// Reading the base table in its own key order leaves no sorting work and lets SortingStep push the
+    /// LIMIT into its merge, so its selected_marks is an upper bound it never pays; a candidate whose key
+    /// supplies a shorter prefix must sort within each prefix group, so marks alone cannot compare them.
+    bool base_supplies_whole_order_by = base_read_in_order_applicable
+        && outer_sorting_step->getLimit() > 0
+        && sorted_prefix_length(metadata->getSortingKey()) == outer_sorting_step->getSortDescription().size();
+
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
@@ -631,6 +650,24 @@ std::optional<String> optimizeUseNormalProjections(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
                 candidate.projection->name,
                 candidate.sum_marks);
+
+            LOG_DEBUG(logger, "{}", stat.description);
+            continue;
+        }
+        else if (base_supplies_whole_order_by && candidate.sum_marks < parent_reading_marks && parent_reading_marks > 0
+                 && !force_optimize_projection
+                 /// Fewer rows than the LIMIT can match, so neither plan stops early, both mark counts
+                 /// are paid in full and comparing them is valid after all.
+                 && !(candidate.parent_parts.empty() && candidate.selected_rows < outer_sorting_step->getLimit())
+                 && sorted_prefix_length(candidate.projection->metadata->getSortingKey())
+                     < outer_sorting_step->getSortDescription().size())
+        {
+            stat.description = fmt::format(
+                "Projection {} is usable and requires reading fewer marks ({} vs {}), but its sort order satisfies only part of the query's "
+                "ORDER BY while the original table satisfies all of it, so reading it would add a sort under the LIMIT",
+                candidate.projection->name,
+                candidate.sum_marks,
+                parent_reading_marks);
 
             LOG_DEBUG(logger, "{}", stat.description);
             continue;

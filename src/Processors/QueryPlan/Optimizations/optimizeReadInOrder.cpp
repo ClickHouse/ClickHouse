@@ -1565,15 +1565,15 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
 }
 
-bool wouldReadInOrderBeUseful(
+size_t readInOrderSortedPrefixLength(
     const SortingStep & sorting,
     const KeyDescription & sorting_key,
     const QueryPlan::Node & subtree_above_reading)
 {
     if (sorting.getType() != SortingStep::Type::Full)
-        return false;
+        return 0;
     if (sorting_key.column_names.empty())
-        return false;
+        return 0;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1591,7 +1591,17 @@ bool wouldReadInOrderBeUseful(
         sorting_key.column_names,
         limit);
 
-    return order_info.input_order != nullptr;
+    return order_info.input_order ? order_info.input_order->sort_description_for_merging.size() : 0;
+}
+
+bool wouldReadInOrderBeUseful(
+    const SortingStep & sorting,
+    const KeyDescription & sorting_key,
+    const QueryPlan::Node & subtree_above_reading)
+{
+    /// buildInputOrderFromSortDescription returns no InputOrderInfo when the prefix it built is empty,
+    /// so a non-zero length is exactly the `input_order != nullptr` condition.
+    return readInOrderSortedPrefixLength(sorting, sorting_key, subtree_above_reading) > 0;
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
