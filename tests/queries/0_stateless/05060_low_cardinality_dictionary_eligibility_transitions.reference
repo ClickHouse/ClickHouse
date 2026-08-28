@@ -1,0 +1,24 @@
+different dictionary, two-level threshold 0
+other	1	20
+shared	2	40
+index aggregation
+value aggregation
+index aggregation
+different dictionary, two-level threshold 1
+other	1	20
+shared	2	40
+index aggregation
+value aggregation
+index aggregation
+same dictionary, two-level threshold 0
+other	1	20
+shared	2	40
+index aggregation
+value aggregation
+index aggregation
+same dictionary, two-level threshold 1
+other	1	20
+shared	2	40
+index aggregation
+value aggregation
+index aggregation
