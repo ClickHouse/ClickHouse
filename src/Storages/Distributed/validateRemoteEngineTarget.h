@@ -27,10 +27,8 @@ struct ValidatedRemoteEngineTarget
 /// engine requires of its target, under `local_context` (i.e. as the user who supplied the
 /// definition).
 ///
-/// This is the single definition of what the engine requires. It runs both while the storage is
-/// constructed (`registerStorageRemote`) and, for an `ON CLUSTER` query, on the initiator before
-/// the query is enqueued: on that path only each host's DDL worker constructs the storage, and its
-/// context carries no user, so a check performed there alone is a no-op.
+/// This is the single definition of what the engine requires: both the storage-construction path
+/// and an `ON CLUSTER` initiator call it.
 ///
 /// `columns_given` says whether the caller already has the table's structure; when it does not, the
 /// target is analyzed to obtain it. `dependent_table_id` is forwarded to
