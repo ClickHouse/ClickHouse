@@ -1404,7 +1404,7 @@ A set of queries that allow changing the table structure.
 Syntax:
 
 ```sql
-ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE|RECOMPRESS COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
@@ -1423,6 +1423,7 @@ The following actions are supported:
 - [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
 - [MODIFY COLUMN ADD ENUM VALUES](#modify-column-add-enum-values) - Adds new values to Enum.
 - [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
+- [RECOMPRESS COLUMN](#recompress-column) — Re-compresses the column's existing data with its current codec.
 These actions are described in detail below.
 
 ## ADD COLUMN {#add-column}
@@ -1763,6 +1764,54 @@ Separately, `ADD INDEX` only updates metadata: it does **not** immediately mater
 - [MATERIALIZED](/reference/statements/create/view#materialized-view).
 - [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index).
 
+## RECOMPRESS COLUMN {#recompress-column}
+
+Re-compresses the existing data of a column with the column's current compression codec.
+
+Changing a column's codec with `ALTER TABLE ... MODIFY COLUMN col CODEC(...)` only updates the metadata: the new codec applies to newly written data, while data already stored in existing parts keeps its old codec until the parts are merged. `RECOMPRESS COLUMN` rewrites the data of `col` in existing parts so that it is compressed with the codec currently set in the table metadata.
+
+Because the compression codec does not change the serialized representation of the data, for `Wide` parts the recompression is performed by decompressing and re-compressing the raw data blocks, without deserializing the column values. `Compact` parts are re-serialized as a whole. A column that has no explicit `CODEC(...)` and inherits the table's `default_compression_codec` is also re-serialized as a whole, so that a later change of the default codec is applied correctly.
+
+Implemented as a [mutation](/reference/statements/alter/index#mutations). The codec is taken from the table metadata at the moment the mutation is executed, so a preceding codec change must already be applied -- with the default `alter_sync` it is, but if you change the codec with `alter_sync = 0` and issue `RECOMPRESS COLUMN` immediately, the mutation can run before the replica applies the metadata change and then recompress the data with the previous codec.
+
+Dropping the target of a recompression that is still queued is allowed: the recompression only re-serializes the data streams of its own target, so it is skipped for every part once the column is no longer stored. `RENAME COLUMN` of the target is rejected while the recompression is queued, because the recompression is carried over to the new name and is executed there.
+
+`RECOMPRESS COLUMN` is not supported on tables with a `UNIQUE KEY`.
+
+It is also not supported for a column whose codec is lossy (such as `SZ3`) when something derived from the column would keep describing the values as they were before the recompression: a lossy codec does not reproduce the original values, and the recompression does not rebuild the dependents. This applies when:
+
+- a projection reads the column or a data skipping index depends on it. Drop the projection or the index, or rebuild it with `MATERIALIZE PROJECTION` / `MATERIALIZE INDEX` after the recompression. The drop may be part of the same `ALTER`, as long as it is written before the `RECOMPRESS COLUMN` -- for example `ALTER TABLE t DROP PROJECTION p, RECOMPRESS COLUMN val`. Written in the other order the recompression would run while the projection is still live, and it is rejected.
+- the partition key or the sorting key uses the column: the partition value, the part minmax index, the primary index and the physical order of the rows are not recalculated by the recompression, so parts and granules could be pruned incorrectly. Only a lossless codec can recompress such a column. A lossy codec on a column backing either key is already rejected when the table is created or altered, so this case only arises on tables attached from metadata written by earlier versions.
+- a stored `MATERIALIZED` column is computed from the column: its stored values are not recalculated by the recompression. Remove the `MATERIALIZED` property first (a `MODIFY COLUMN ... REMOVE MATERIALIZED` written before the `RECOMPRESS COLUMN` in the same `ALTER` works); it can be re-added afterwards and the column rebuilt with `MATERIALIZE COLUMN`.
+- a TTL expression (a table `TTL` -- delete, move, `GROUP BY` or `RECOMPRESS` -- or a column `TTL`) reads the column: the TTL bounds stored in the parts are not recalculated by the recompression, so data could be expired, kept, moved, or recompressed according to the pre-recompression values. Remove the TTL first (`ALTER TABLE ... REMOVE TTL` or `MODIFY COLUMN ... REMOVE TTL`); it can be re-added afterwards and the parts rebuilt with `ALTER TABLE ... MATERIALIZE TTL`.
+
+A dependent that reads the column only through a structural subcolumn -- one whose data a lossy codec never touches, such as the array sizes `arr.size0` or the null map `x.null` -- does not block the recompression: specialized codecs are applied only to the value-bearing streams, while sizes and null maps are always compressed with the generic codecs of the chain, so their values are bit-identical after the recompression.
+
+Because the codec is resolved again when the mutation executes, this check runs both when the `ALTER` is accepted and again at execution time: if the codec was switched to a lossy one (or a dependent was added) while the mutation was queued, the mutation fails instead of rewriting the data -- the failure reason is visible in [`system.mutations`](/reference/system-tables/mutations), and the mutation proceeds once the conflicting metadata is reverted, or can be cancelled with `KILL MUTATION`.
+
+On a part that cannot be recompressed in place (a `Compact` part, or the other whole-part rewrite cases described above), the rewrite re-serializes every stored column of the part with its current codec, not only the recompressed one. The execution-time check therefore covers every column such a rewrite re-serializes: if a pending `MODIFY COLUMN ... CODEC(...)` made the codec of *another* column lossy while that column has dependents (or is in the partition or sorting key), the mutation fails in the same way instead of silently rewriting that column lossily.
+
+Syntax:
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] RECOMPRESS COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
+```
+
+- If you specify a `PARTITION`, only the data in the specified partition is recompressed.
+
+**Example**
+
+```sql
+CREATE TABLE tmp (x UInt64, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO tmp SELECT number, repeat('a', 100) FROM numbers(1000000);
+
+-- Metadata-only change: existing data is still stored with CODEC(NONE).
+ALTER TABLE tmp MODIFY COLUMN s CODEC(ZSTD);
+
+-- Re-compress the existing data of `s` with ZSTD.
+ALTER TABLE tmp RECOMPRESS COLUMN s;
+```
+
 ## Limitations {#limitations}
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
@@ -1778,7 +1827,7 @@ The `ALTER` query blocks all reads and writes for the table. In other words, if 
 For tables that do not store data themselves (such as [Merge](/reference/statements/alter/index) and [Distributed](/reference/statements/alter/index)), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.
 )DOCS_MD",
         .syntax = R"(
-ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE|RECOMPRESS COLUMN ...
 
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 DROP COLUMN [IF EXISTS] name
@@ -1788,6 +1837,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
 MODIFY COLUMN [IF EXISTS] name REMOVE property
 MATERIALIZE COLUMN name [IN PARTITION partition_id]
+RECOMPRESS COLUMN name [IN PARTITION partition_id]
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "CODEC", "ALTER TABLE ... MODIFY TTL"},
