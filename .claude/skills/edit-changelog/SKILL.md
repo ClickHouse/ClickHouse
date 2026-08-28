@@ -105,7 +105,10 @@ PR (`gh pr view <N> --json title,body`; the title of a revert says `Revert`,
 and GitHub adds a `Reverts owner/repo#NNNNN` line to the body) and treat it by
 the rules below. Such a revert's own bullet is deleted with the entry it
 cancels, exactly like one from this section — the "never delete a real entry"
-rule does not protect it, because it is not a change that ships.
+rule does not protect it, because it is not a change that ships. A revert that
+undoes something of *this* release and something from an earlier one at the
+same time is the exception: the second half is user-visible, so it keeps an
+entry of its own (case 5 below).
 
 1. Read the title of the revert PR (`gh pr view <N> --json title,body`) to
    identify which earlier PR it reverts. Most reverts have a title of the
@@ -151,7 +154,10 @@ rule does not protect it, because it is not a change that ships.
    not leave the release without it.
 
    A bullet that covered several PRs comes back as one bullet carrying all of
-   them, not as one bullet each — splitting it undoes the merge of §7. And if
+   them, not as one bullet each — splitting it undoes the merge of §7. That
+   includes the PRs of that bullet which never left: re-adding the entry
+   beside the surviving bullet duplicates the prose even though no PR link
+   repeats, so merge it into that bullet instead. And if
    only some of those PRs were re-applied, leave the others' links off: their
    reverts still stand, so those changes are not in the release, even though
    the recorded text attributes them.
