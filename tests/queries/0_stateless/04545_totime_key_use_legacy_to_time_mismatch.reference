@@ -1,0 +1,7 @@
+1000
+part_name	String
+mark_number	UInt64
+rows_in_granule	UInt64
+toTimeWithFixedDate(c1)	DateTime
+Time
+DateTime
