@@ -833,6 +833,21 @@ std::optional<PreformattedMessage>
 hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 
 
+/// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
+/// served from a projection; the implicit count/minmax projection would also be counted once per
+/// bucket and multiply the result. Turn projection rewrites off so such a read is never built.
+/// Call this only after the decision on whether the plan is distributed: a plan that fell back to
+/// local execution keeps the projection settings the query asked for and runs the ordinary local
+/// plan, projections included.
+static void disableProjectionsForDistributedPlan(QueryPlanOptimizationSettings & settings)
+{
+    settings.optimize_projection = false;
+    settings.optimize_use_implicit_projections = false;
+    settings.force_use_projection = false;
+    settings.force_projection_name = {};
+}
+
+
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
@@ -846,7 +861,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     /// logical exchanges has passed the decision before, and deciding again could flip the
     /// setting off and orphan the exchanges (they execute as no-op steps and silently produce
     /// wrong results), so such plans skip it.
-    bool make_distributed_plan = effective_settings.make_distributed_plan && !QueryPlanOptimizations::planContainsLogicalExchange(*root);
+    const bool make_distributed_plan = effective_settings.make_distributed_plan && !QueryPlanOptimizations::planContainsLogicalExchange(*root);
     if (make_distributed_plan)
     {
         if (auto res = hasPlanUnsupportedStepForDistributed(*root, optimization_settings); res.has_value())
@@ -861,6 +876,9 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
             distributed_to_local_fallback_applied = true;
         }
     }
+
+    if (effective_settings.make_distributed_plan)
+        disableProjectionsForDistributedPlan(effective_settings);
 
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,

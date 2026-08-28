@@ -61,7 +61,8 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- Accepted semantics: strict mode asserts "this query WAS distributed", so a plan with no
--- distributable source at all legitimately fails it too.
+-- distributable source at all legitimately fails it too. Under the analyzer `SELECT 1` reads
+-- through `ReadFromSystemOneStep`, which is not serializable.
 SELECT '-- strict mode also refuses a plan with no distributable source';
 SELECT 1 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }

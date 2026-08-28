@@ -280,16 +280,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "make_distributed_plan does not support parallel replicas, "
             "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
 
-    /// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
-    /// served from a projection; the implicit count/minmax projection would also be counted once per
-    /// bucket and multiply the result. Turn projection rewrites off so such a read is never built.
-    if (make_distributed_plan)
-    {
-        optimize_projection = false;
-        optimize_use_implicit_projections = false;
-        force_use_projection = false;
-        force_projection_name = {};
-    }
+    /// NOTE: projection rewrites are disabled for a distributed plan in `QueryPlan::optimize`, after
+    /// the decision on whether the plan is distributed at all.
     distributed_plan_fallback_to_local_execution = from[Setting::distributed_plan_fallback_to_local_execution];
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
