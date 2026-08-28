@@ -223,6 +223,7 @@
                 "concepts/features/interfaces/adbc",
                 "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
+                "concepts/features/interfaces/mongo",
                 { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",

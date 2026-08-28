@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"allow_experimental_mongo_dialect", false, false, "New setting to enable the `mongo` value of the `dialect` setting, which interprets queries as MongoDB shell syntax."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -107,7 +108,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below `materialize_statistics_on_insert_max_table_size`, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
             {"materialize_statistics_on_insert_max_table_size", 0, 26843545600, "New setting."},
             {"throw_on_hive_partitioning_resolution_failure", false, true, "New setting to fail the query when Hive-style partitioning detection for an object storage table cannot list the storage, instead of running without the Hive partition columns."},
-            {"allow_experimental_mongo_dialect", false, false, "New setting to enable the `mongo` value of the `dialect` setting, which interprets queries as MongoDB shell syntax."},
             {"enable_json_ast_dialect", false, false, "New setting to enable the `clickhouse_json` value of the `dialect` setting, which interprets queries as JSON ASTs (the output of `parseQueryToJSON`) instead of SQL text."},
             {"allow_metadata_only_named_tuple_alter", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
