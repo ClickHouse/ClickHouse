@@ -148,15 +148,7 @@
         },
         "ja/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
+          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
         },
         "ja/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {

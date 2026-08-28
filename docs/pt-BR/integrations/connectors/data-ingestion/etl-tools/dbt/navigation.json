@@ -1,0 +1,11 @@
+{
+  "expanded": false,
+  "group": "dbt",
+  "pages": [
+    "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index",
+    "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
+    "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
+    "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
+    "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
+  ]
+}
