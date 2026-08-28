@@ -5,7 +5,8 @@
 # top-level columns. The legacy Delta reader (allow_delta_kernel_rs = 0) keeps logical nested
 # names in the exposed schema, so reading such a column silently returned NULLs for the renamed
 # fields - through both the log-derived schema and an external column list. Now it fails with
-# UNSUPPORTED_METHOD. Columns whose nested names are not renamed stay readable.
+# UNSUPPORTED_METHOD. Columns whose nested names are not renamed stay readable, and so does an
+# external column list that spells the physical nested names.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -82,5 +83,17 @@ $CLICKHOUSE_LOCAL --allow_delta_kernel_rs=0 --multiquery "
     CREATE TABLE t (col_s2 Tuple(inner Nullable(Int64))) ENGINE = DeltaLakeLocal('$DIR');
     SELECT col_s2 FROM t;
 " 2>&1 | grep -o -m1 'UNSUPPORTED_METHOD'
+
+echo '-- external schema with the physical nested name: readable'
+$CLICKHOUSE_LOCAL --allow_delta_kernel_rs=0 --multiquery "
+    CREATE TABLE t (col_s2 Tuple(col_inner Nullable(Int64))) ENGINE = DeltaLakeLocal('$DIR');
+    SELECT col_s2 FROM t ORDER BY col_s2;
+"
+
+echo '-- external schema with the physical name inside array elements: readable'
+$CLICKHOUSE_LOCAL --allow_delta_kernel_rs=0 --multiquery "
+    CREATE TABLE t (arr Array(Tuple(col_x Nullable(Int64)))) ENGINE = DeltaLakeLocal('$DIR');
+    SELECT arr FROM t ORDER BY arr;
+"
 
 rm -rf "$DIR"

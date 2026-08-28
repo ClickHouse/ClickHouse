@@ -12,3 +12,11 @@ UNSUPPORTED_METHOD
 UNSUPPORTED_METHOD
 -- external schema with the logical nested name: rejected
 UNSUPPORTED_METHOD
+-- external schema with the physical nested name: readable
+(0)
+(10)
+(20)
+-- external schema with the physical name inside array elements: readable
+[(0)]
+[(100)]
+[(200)]

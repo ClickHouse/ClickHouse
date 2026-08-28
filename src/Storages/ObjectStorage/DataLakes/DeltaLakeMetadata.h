@@ -99,8 +99,8 @@ private:
     NamesAndTypesList schema;
     /// Logical name -> physical name, holding only the columns whose names differ.
     NameToNameMap physical_names_map;
-    /// Storage names of columns whose type contains renamed nested fields.
-    NameSet nested_mapped_columns;
+    /// Storage name of a column with renamed nested fields -> their logical names.
+    std::unordered_map<String, NameSet> nested_mapped_columns;
     DeltaLakePartitionColumns partition_columns;
     ObjectStoragePtr object_storage;
 

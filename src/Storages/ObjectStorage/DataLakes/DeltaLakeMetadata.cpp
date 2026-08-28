@@ -3,6 +3,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/JSON.h>
+#include <base/find_symbols.h>
+#include <Common/typeid_cast.h>
 #include "config.h"
 
 #if USE_PARQUET
@@ -118,12 +120,12 @@ DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
 }
 
-/// Whether the type under `parent[type_key]` has a descendant field renamed by column mapping,
-/// i.e. one whose `delta.columnMapping.physicalName` differs from its logical name.
-bool hasMappedNamesInType(const Poco::JSON::Object::Ptr & parent, const String & type_key)
+/// Collects the logical names of descendant fields renamed by column mapping,
+/// i.e. those whose `delta.columnMapping.physicalName` differs from the logical name.
+void collectMappedLogicalNames(const Poco::JSON::Object::Ptr & parent, const String & type_key, NameSet & mapped_logical_names)
 {
     if (!parent->isObject(type_key))
-        return false;
+        return;
 
     const auto type = parent->getObject(type_key);
     const auto type_name = type->getValue<String>("type");
@@ -137,20 +139,40 @@ bool hasMappedNamesInType(const Poco::JSON::Object::Ptr & parent, const String &
             const auto metadata = field->getObject("metadata");
             if (metadata && metadata->has("delta.columnMapping.physicalName")
                 && metadata->getValue<String>("delta.columnMapping.physicalName") != field->getValue<String>("name"))
-                return true;
-            if (hasMappedNamesInType(field, "type"))
-                return true;
+                mapped_logical_names.insert(field->getValue<String>("name"));
+            collectMappedLogicalNames(field, "type", mapped_logical_names);
         }
-        return false;
+        return;
     }
 
     if (type_name == "array")
-        return hasMappedNamesInType(type, "elementType");
+    {
+        collectMappedLogicalNames(type, "elementType", mapped_logical_names);
+        return;
+    }
 
     if (type_name == "map")
-        return hasMappedNamesInType(type, "keyType") || hasMappedNamesInType(type, "valueType");
+    {
+        collectMappedLogicalNames(type, "keyType", mapped_logical_names);
+        collectMappedLogicalNames(type, "valueType", mapped_logical_names);
+    }
+}
 
-    return false;
+/// Finds a tuple element name from `names` anywhere inside `type`.
+std::optional<String> findAnyOfNamesInType(const IDataType & type, const NameSet & names)
+{
+    std::optional<String> found;
+    auto check = [&](const IDataType & current)
+    {
+        const auto * tuple = typeid_cast<const DataTypeTuple *>(&current);
+        if (!found && tuple && tuple->hasExplicitNames())
+            for (const auto & name : tuple->getElementNames())
+                if (names.contains(name))
+                    found = name;
+    };
+    check(type);
+    type.forEachChild(check);
+    return found;
 }
 
 }
@@ -201,8 +223,8 @@ struct DeltaLakeMetadataImpl
         NamesAndTypesList schema;
         /// Logical name -> physical name, only the top-level columns whose names differ.
         NameToNameMap physical_names_map;
-        /// Storage names of columns whose type contains renamed nested fields.
-        NameSet nested_mapped_columns;
+        /// Storage name of a column with renamed nested fields -> their logical names.
+        std::unordered_map<String, NameSet> nested_mapped_columns;
     };
 
     /**
@@ -458,8 +480,10 @@ struct DeltaLakeMetadataImpl
             if (physical_name != column_name)
                 parsed.physical_names_map[column_name] = physical_name;
 
-            if (hasMappedNamesInType(field, "type"))
-                parsed.nested_mapped_columns.insert(physical_name);
+            NameSet mapped_logical_names;
+            collectMappedLogicalNames(field, "type", mapped_logical_names);
+            if (!mapped_logical_names.empty())
+                parsed.nested_mapped_columns[physical_name] = std::move(mapped_logical_names);
 
             parsed.schema.push_back({physical_name, DB::DeltaLakeMetadata::getFieldType(field, "type", is_nullable)});
         }
@@ -757,6 +781,31 @@ static bool supportsDeltaKernel(ObjectStorageType storage_type)
     return storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
 }
 
+/// Throws when the requested type or subcolumn path still uses a renamed logical nested name.
+static void throwIfUsesLogicalNestedName(const NameAndTypePair & column, const NameSet & logical_names, bool delta_kernel_available)
+{
+    auto logical_name = findAnyOfNamesInType(*column.type, logical_names);
+    if (!logical_name && column.isSubcolumn())
+    {
+        const auto subcolumn_name = column.getSubcolumnName();
+        std::vector<std::string_view> parts;
+        splitInto<'.'>(parts, subcolumn_name);
+        for (const auto & part : parts)
+            if (logical_names.contains(String(part)))
+                logical_name = String(part);
+    }
+
+    if (logical_name)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Table uses column mapping: nested field '{}' of column '{}' is stored under a different physical name, "
+            "and the legacy DeltaLake reader does not translate column names. {}",
+            *logical_name, column.getNameInStorage(),
+            delta_kernel_available
+                ? "Enable the setting `allow_delta_kernel_rs`"
+                : "Use a build with DeltaKernel support");
+}
+
 ReadFromFormatInfo DeltaLakeMetadata::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
@@ -771,8 +820,9 @@ ReadFromFormatInfo DeltaLakeMetadata::prepareReadingFromFormat(
     /// database or an explicit column list in `CREATE TABLE`. The data files store physical
     /// names, so reading a logical name would silently return only NULLs; fail instead.
     /// A schema taken from the log is physical at the top level, so it is not a key of the map,
-    /// but its nested names stay logical, so a column with renamed nested fields is unreadable
-    /// through either schema source.
+    /// but its nested names stay logical and unreadable. An explicit column list stays readable
+    /// when it spells the physical nested names, so reject a nested-mapped column only when the
+    /// requested type or subcolumn path still uses a renamed logical name.
     /// Suggest `allow_delta_kernel_rs` only when the kernel reader can actually take over.
 #if USE_DELTA_KERNEL_RS
     const bool delta_kernel_available = supportsDeltaKernel(object_storage->getType());
@@ -792,15 +842,9 @@ ReadFromFormatInfo DeltaLakeMetadata::prepareReadingFromFormat(
                     ? "Enable the setting `allow_delta_kernel_rs`, or create the table without an explicit column list"
                     : "Create the table without an explicit column list, or use a build with DeltaKernel support");
 
-        if (nested_mapped_columns.contains(column.getNameInStorage()))
-            throw Exception(
-                ErrorCodes::UNSUPPORTED_METHOD,
-                "Table uses column mapping: column '{}' contains nested fields stored under different physical names, "
-                "and the legacy DeltaLake reader does not translate column names. {}",
-                column.getNameInStorage(),
-                delta_kernel_available
-                    ? "Enable the setting `allow_delta_kernel_rs`"
-                    : "Use a build with DeltaKernel support");
+        auto nested_it = nested_mapped_columns.find(column.getNameInStorage());
+        if (nested_it != nested_mapped_columns.end())
+            throwIfUsesLogicalNestedName(column, nested_it->second, delta_kernel_available);
     }
 
     return info;
