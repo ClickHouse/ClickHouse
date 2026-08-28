@@ -61,7 +61,7 @@ void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & dir
                     description, directory));
         }
     }
-    catch (...) /// A failed probe must not break disk construction. // NOLINT(bugprone-empty-catch)
+    catch (...) /// Ok: a failed probe must not break disk construction. // NOLINT(bugprone-empty-catch)
     {
     }
 #endif
