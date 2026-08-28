@@ -131,11 +131,13 @@ It is called "lightweight update" to contrast it to the [`ALTER TABLE ... UPDATE
 It is only available for the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) table engine family.
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
 ```
 
 The `filter_expr` must be of type `UInt8`. This query updates values of the specified columns to the values of the corresponding expressions in rows for which the `filter_expr` takes a non-zero value.
 Values are cast to the column type using the `CAST` operator. Updating columns used in the calculation of the primary or partition keys is not supported.
+
+The `IN PARTITION` clause limits the update to the listed partitions. Without it, on tables of the `ReplicatedMergeTree` family, when the [optimize_mutations_with_partition_pruning](/reference/settings/session-settings/optimize) setting is enabled (the default), ClickHouse automatically detects partition key conditions in `filter_expr` and only updates the affected partitions. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit an update to specific partitions.
 
 ## Examples {#examples}
 
@@ -235,7 +237,7 @@ The join mode is slower and requires more memory than the merge mode, but it is 
 - [`APPLY PATCHES`](/reference/statements/alter/apply-patches) - Force physical materialization of patches to data parts (mutation operation)
 )DOCS_MD",
         .syntax = R"(
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 )",
         .related = {"ALTER TABLE ... UPDATE", "ALTER TABLE ... APPLY PATCHES", "DELETE", "INSERT INTO"},
     });
