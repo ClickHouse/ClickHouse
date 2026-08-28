@@ -247,7 +247,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
     LoadingStrictnessLevel mode,
-    bool is_fresh_definition)
+    bool attach_short_syntax)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -303,7 +303,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     }
 
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
-    if (is_fresh_definition)
+    if (isFreshTableDefinition(mode, attach_short_syntax))
     {
         static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
             "index_granularity",

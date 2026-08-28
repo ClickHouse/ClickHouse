@@ -102,8 +102,8 @@ struct ProjectionDescription
         const KeyDescription * partition_key,
         const ContextPtr & query_context,
         LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH,
-        /// `isFreshTableDefinition` of the table carrying it; only then are its settings checked
-        bool is_fresh_definition = false);
+        /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
+        bool attach_short_syntax = true);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,

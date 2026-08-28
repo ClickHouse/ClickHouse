@@ -1023,7 +1023,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 try
                 {
                     auto projection = ProjectionDescription::getProjectionFromAST(
-                        projection_ast, columns, &metadata.partition_key, context, args.mode, is_fresh_definition);
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)

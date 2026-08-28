@@ -88,7 +88,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
-#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
@@ -884,8 +883,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
-                    projection_ast, properties.columns, nullptr, getContext(), mode,
-                    isFreshTableDefinition(mode, create.attach_short_syntax));
+                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
                 properties.projections.add(std::move(projection));
             }
 
