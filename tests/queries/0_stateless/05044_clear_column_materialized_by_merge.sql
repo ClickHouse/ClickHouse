@@ -22,8 +22,10 @@ alter table t_clear_materialized_by_merge clear column y settings alter_sync = 0
 
 optimize table t_clear_materialized_by_merge final;
 
--- A merge has to have happened, otherwise the rest asserts nothing.
-select 'merged into', count() from system.parts
+-- A merge has to have happened, otherwise the rest asserts nothing. The merged part must not
+-- record the pending clear as applied: its data version stays below the mutation version, so the
+-- part is `all_1_2_1` with data version 1, not `all_1_2_1_3`.
+select 'merged into', name, data_version from system.parts
 where database = currentDatabase() and table = 't_clear_materialized_by_merge' and active;
 
 select 'after merge';
