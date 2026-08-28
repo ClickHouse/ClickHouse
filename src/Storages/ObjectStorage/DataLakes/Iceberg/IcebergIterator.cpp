@@ -248,11 +248,9 @@ void SingleThreadIcebergKeysIterator::schedulePrefetchIfPossible()
         if (manifest_list_entry.content_type != manifest_file_content_type)
             continue;
 
-        auto fetch = [this,
-                      path = manifest_list_entry.manifest_file_path,
-                      bytes = manifest_list_entry.manifest_file_byte_size]()
+        auto fetch = [this, path = manifest_list_entry.manifest_file_path]()
         {
-            return Iceberg::getManifestFile(object_storage, persistent_components, local_context, log, path, bytes);
+            return Iceberg::getManifestFile(object_storage, persistent_components, local_context, log, path);
         };
         prefetched_manifest = PrefetchedManifest{index, prefetch_runner(std::move(fetch), Priority{})};
         return;
@@ -419,8 +417,7 @@ void IcebergIterator::decodeDeleteManifests()
                     persistent_components,
                     local_context,
                     logger,
-                    manifest_list_entry.manifest_file_path,
-                    manifest_list_entry.manifest_file_byte_size);
+                    manifest_list_entry.manifest_file_path);
 
                 auto manifest_file_iterator = Iceberg::ManifestFileIterator::create(
                     manifest_file_cacheable_part.deserializer,

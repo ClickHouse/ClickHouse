@@ -76,7 +76,7 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache [file_path --> ManifestFileCacheKeys]
     /// - manifest file [file_path --> Iceberg::ManifestFileCacheableInfo]
     std::variant<String, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo> cached_element;
-    Int64 memory_bytes;
+    size_t memory_bytes;
 
     explicit IcebergMetadataFilesCacheCell(String && metadata_json_str)
         : cached_element(std::move(metadata_json_str))
