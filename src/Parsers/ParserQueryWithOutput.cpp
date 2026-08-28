@@ -26,6 +26,7 @@
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
+#include <Parsers/Access/ParserCreateTokenQuery.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ParserShowAccessQuery.h>
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
@@ -49,6 +50,7 @@ namespace DB
 
 static bool parseShowCreateAccessEntityQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
 static bool parseShowAccessQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
+static bool parseCreateTokenQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
 
 #else
 
@@ -69,6 +71,12 @@ static bool parseShowAccessQuery(IParser::Pos & pos, ASTPtr & query, Expected & 
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
         || show_privileges_p.parse(pos, query, expected);
+}
+
+static bool parseCreateTokenQuery(IParser::Pos & pos, ASTPtr & query, Expected & expected)
+{
+    ParserCreateTokenQuery create_token_p;
+    return create_token_p.parse(pos, query, expected);
 }
 
 #endif
@@ -115,6 +123,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || describe_cache_p.parse(pos, query, expected)
         || describe_table_p.parse(pos, query, expected)
         || show_processlist_p.parse(pos, query, expected)
+        || parseCreateTokenQuery(pos, query, expected) /// should be before `create_p`
         || create_p.parse(pos, query, expected)
         || alter_p.parse(pos, query, expected)
         || rename_p.parse(pos, query, expected)
