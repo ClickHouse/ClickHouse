@@ -14,3 +14,8 @@ echo -ne 'checksumchecksum\x95\x19\x00\x00\x00\x10\x00\x00\x00\x08\x00\x02\x00\x
 
 echo -ne 'checksumchecksum\x95\x19\x00\x00\x00\x10\x00\x00\x00\x08\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xc0\x00' |
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&decompress=1&http_native_compression_disable_checksumming_on_decompress=1" --data-binary @- 2>&1 | grep -oE 'CANNOT_DECOMPRESS|has 0 leading zero bits and 0 data bits'
+
+# The valid split is per-width: a `bytes_size` of 1 selects the `UInt8` decoder, where 0 leading
+# zero bits and 9 data bits already overrun the 8-bit value.
+echo -ne 'checksumchecksum\x95\x13\x00\x00\x00\x02\x00\x00\x00\x01\x00\x02\x00\x00\x00\x00\xc4\xff\xff' |
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&decompress=1&http_native_compression_disable_checksumming_on_decompress=1" --data-binary @- 2>&1 | grep -oE 'CANNOT_DECOMPRESS|9 data bits, which is not a valid split of 8 bits'
