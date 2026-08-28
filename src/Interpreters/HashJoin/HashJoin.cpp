@@ -507,6 +507,10 @@ HashJoin::HashJoin(
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block, data->sample_block);
 
+    size_t disjuncts_num = table_join->getClauses().size();
+    /// maps must exist so `initRowStore` can see the one-disjunct layout via `isRightTableRerangeEnabled`.
+    data->maps.resize(disjuncts_num);
+
     if (!table_join->isRowStoreEnabled() || !isRowStoreSupported() || data->sample_block.columns() == 0)
         data->row_store_state = RowStoreState::Disabled;
     else
@@ -515,8 +519,6 @@ HashJoin::HashJoin(
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
-    size_t disjuncts_num = table_join->getClauses().size();
-    data->maps.resize(disjuncts_num);
     key_sizes.reserve(disjuncts_num);
 
     std::optional<Type> selected_join_method;
