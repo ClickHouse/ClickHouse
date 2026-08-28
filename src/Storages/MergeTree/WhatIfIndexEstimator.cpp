@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexAnalyzerNames.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
@@ -230,7 +231,10 @@ WhatIfCandidateResult evaluateIndex(
     MergeTreeIndexConditionPtr condition;
     try
     {
-        condition = index_helper->createIndexCondition(predicate, context);
+        /// Use the same rewrite-aware entry point as the read path, so a hypothetical `minmax`
+        /// index on an expression the query analyzer renames is estimated the way it would really
+        /// be used (issue #103128).
+        condition = RewriteAwareIndexConditionFactory(index_helper).create(predicate, context);
     }
     catch (const Exception &)
     {
