@@ -22,6 +22,11 @@ DROP TABLE t_azure_sas;
 -- unresolved, so nothing is read.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1/cont?sv=2025-01-05&sig=SEKRIT_SIGNATURE', '', 'data.parquet', 'Parquet');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(concat('http://localhost:11111/devstoreaccount1/cont?sig=', 'SEKRIT_SIGNATURE'), '', 'data.parquet', 'Parquet');
+
+-- `AzureBlobStorage::isConnectionString` is a case sensitive `starts_with("http")`, so a mixed case
+-- scheme is classified as a connection string and the credential never authenticates. The signature
+-- the user typed still reaches the log, so it is masked in both spellings.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('HTTPS://localhost:11111/devstoreaccount1/cont?sv=2025-01-05&sig=SEKRIT_UPPERCASE_SCHEME', '', 'data.parquet', 'Parquet');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorageCluster('c', 'http://localhost:11111/devstoreaccount1/cont?sv=2025-01-05&sig=SEKRIT_SIGNATURE', '', 'data.parquet', 'Parquet');
 
 -- A computed named override key can evaluate to storage_account_url. Hide its value whole when the
@@ -29,6 +34,7 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorageCluster('c', 'ht
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missing, concat('storage_account_', 'url') = concat('http://localhost:11111/devstoreaccount1/cont?sig=', 'SEKRIT_SIGNATURE'));
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missing, concat('http://localhost:11111/devstoreaccount1/cont?sig=', 'SEKRIT_NAMED_EXPRESSION'));
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missing, client_id = 'SEKRIT_CLIENT_ID', tenant_id = 'SEKRIT_TENANT_ID');
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missing, storage_account_url = 'HTTPS://localhost:11111/devstoreaccount1/cont?sig=SEKRIT_UPPERCASE_OVERRIDE');
 
 -- extra_credentials is removed before positional arguments are assigned. The account key after it
 -- must still occupy the account_key slot.
