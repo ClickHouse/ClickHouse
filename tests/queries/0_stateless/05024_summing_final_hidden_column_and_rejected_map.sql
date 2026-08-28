@@ -40,8 +40,11 @@ SYSTEM STOP MERGES summing_final_rejected_map;
 INSERT INTO summing_final_rejected_map VALUES (1, 1, [1], [1], ['2020-01-01']);
 INSERT INTO summing_final_rejected_map VALUES (1, 1, [1], [1], ['2020-01-01']);
 
--- Only `k` and `s` are read; neither rejected group appears in the pipeline.
-SELECT count() FROM (EXPLAIN PIPELINE header = 1 SELECT count() FROM summing_final_rejected_map FINAL) WHERE explain ILIKE '%Map.%';
+-- Only `k` and `s` are read; neither rejected group appears in the pipeline. The read set is
+-- asserted on `SELECT k` rather than on `SELECT count()`: a count reads the column that is
+-- cheapest to read, which is chosen from the on-disk sizes and therefore depends on the
+-- randomized `MergeTree` settings, not on the columns the merge requires.
+SELECT count() FROM (EXPLAIN PIPELINE header = 1 SELECT k FROM summing_final_rejected_map FINAL) WHERE explain ILIKE '%Map.%';
 SELECT count() FROM summing_final_rejected_map FINAL;
 
 -- A valid map group, in contrast, participates in the summation and has to be read.
@@ -52,8 +55,8 @@ SYSTEM STOP MERGES summing_final_valid_map;
 INSERT INTO summing_final_valid_map VALUES (1, 1, [1], [1]);
 INSERT INTO summing_final_valid_map VALUES (1, 1, [1], [1]);
 
-SELECT count() > 0 FROM (EXPLAIN PIPELINE header = 1 SELECT count() FROM summing_final_valid_map FINAL) WHERE explain LIKE '%GoodMap.ID%';
-SELECT count() > 0 FROM (EXPLAIN PIPELINE header = 1 SELECT count() FROM summing_final_valid_map FINAL) WHERE explain LIKE '%GoodMap.V%';
+SELECT count() > 0 FROM (EXPLAIN PIPELINE header = 1 SELECT k FROM summing_final_valid_map FINAL) WHERE explain LIKE '%GoodMap.ID%';
+SELECT count() > 0 FROM (EXPLAIN PIPELINE header = 1 SELECT k FROM summing_final_valid_map FINAL) WHERE explain LIKE '%GoodMap.V%';
 SELECT count() FROM summing_final_valid_map FINAL;
 
 DROP TABLE summing_final_rejected_map;
