@@ -39,9 +39,6 @@ a text-search function in the SELECT list above the JOIN
 a subquery between the scan and the predicate
 1
 3
-parallel replicas
-1
-3
 expression carrier above the JOIN
 1
 1

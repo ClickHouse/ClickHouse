@@ -2,6 +2,8 @@
 -- A text-search function without an explicit tokenizer takes it from the text index on its haystack.
 -- The tokenizer is resolved in the analyzer, so it does not depend on the shape of the query plan: a
 -- predicate that a JOIN keeps away from the table scan is tokenized exactly like one that reaches it.
+-- No `no-parallel-replicas` tag on purpose: a plan-level rewrite cannot reach the local plan of a
+-- replica, so the run with parallel replicas enabled is what pins that this one does.
 
 SET enable_full_text_index = 1;
 SET enable_analyzer = 1;
@@ -168,17 +170,6 @@ SELECT id FROM
 )
 WHERE hasAnyTokens(shingle_tokens, ['alpha beta gamma']) OR category = 'nonexistent'
 ORDER BY id;
-
--- Parallel replicas optimize the local plan on its own, so a plan-level rewrite could not reach this.
-SELECT 'parallel replicas';
-
-SELECT a.record_id
-FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
-WHERE hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) OR b.category = 'nonexistent'
-ORDER BY a.record_id
-SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
-    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0;
 
 DROP TABLE t_115999_a;
 DROP TABLE t_115999_b;
