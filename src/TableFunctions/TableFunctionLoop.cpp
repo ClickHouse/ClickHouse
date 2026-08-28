@@ -143,9 +143,9 @@ namespace DB
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
             context->checkAccess(AccessType::SELECT, database_name, loop_table_name);
 
-            /// An Alias publishes its target's metadata to the caller before any row is read, so the
-            /// target must be readable in full here; the per-column check happens later, once the
-            /// loop's own SELECT runs.
+            /// An `Alias` publishes its target's metadata to the caller before any row is read, so
+            /// the target must be readable in full here; the per-column check happens later, once
+            /// the loop's own `SELECT` runs.
             if (const auto * alias = storage->as<StorageAlias>();
                 alias && !alias->isTargetTableGranted(context, AccessType::SELECT, {}))
                 throw Exception(
