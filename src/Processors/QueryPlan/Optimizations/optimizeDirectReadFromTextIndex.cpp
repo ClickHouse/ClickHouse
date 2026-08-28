@@ -109,18 +109,16 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
 }
 
 /// Returns the argument whose NULL rows make the predicate itself NULL, if there is one.
-/// A constant Nullable argument (e.g. `hasToken(col, toNullable('foo'))`) does not: it is either NULL for
-/// every row, and then the index is not used at all, or it is never NULL.
+/// Constants are skipped: a Nullable constant needle is NULL for every row or for none.
 const ActionsDAG::Node * findNullableDataArgument(const ActionsDAG::Node & function_node)
 {
-    /// Its only use restores NULLs, so it must not apply to a predicate that has none.
     if (!isNullableOrLowCardinalityNullable(function_node.result_type))
         return nullptr;
 
     for (const auto * child : function_node.children)
     {
         const auto * argument = removeAliases(child);
-        if (!argument->column && isNullableOrLowCardinalityNullable(argument->result_type))
+        if (argument && !argument->column && isNullableOrLowCardinalityNullable(argument->result_type))
             return argument;
     }
 
@@ -432,7 +430,7 @@ public:
     struct ResultReplacement
     {
         IndexReadColumns added_columns;
-        /// (Sub)columns the replacement introduced, e.g. `.null`. They must be added for reading.
+        /// (Sub)columns the replacement introduced, e.g. `.null`, that must be added for reading.
         Names added_physical_columns;
         Names removed_columns;
         const ActionsDAG::Node * filter_node = nullptr;
@@ -585,8 +583,9 @@ private:
     /// has/hasAll/hasAny bypass both transforms.
     static bool needApplyPreprocessor(const String & function_name)
     {
-        return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        /// Shared with MergeTreeIndexConditionText, which relies on this list to reject the index for the
+        /// other functions when the preprocessor can produce NULL.
+        return MergeTreeIndexConditionText::isPreprocessedFunction(function_name);
     }
 
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
@@ -681,20 +680,16 @@ private:
         /// Taken from the original node because processTextIndexFunction may wrap it into an alias below.
         const auto * nullable_argument = findNullableDataArgument(function_node);
 
-        /// The preprocessor is only applied to the haystack of the functions it rewrites, and the NULLs it
-        /// makes are only observable when the predicate itself is Nullable. The source column need not be:
-        /// `nullIf(str, '')` over a plain String makes NULLs of its own.
+        /// Only the rewritten functions see the preprocessed haystack, and only a Nullable predicate can show
+        /// its NULLs. The source column need not be: `nullIf(str, '')` over a plain String makes NULLs too.
         const bool preprocessed = needApplyPreprocessor(function_name)
             && isNullableOrLowCardinalityNullable(function_node.result_type);
 
-        /// A preprocessor that can turn a non-NULL row into NULL (e.g. `nullIf(str, '')`) makes NULLs that
-        /// the argument's own null map does not describe. Only the rewritten haystack does, so restore them
-        /// from there instead.
+        /// These NULLs are not in the argument's null map; only the rewritten haystack has them.
         const bool preprocessor_makes_nulls
-            = preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.canIntroduceNull(); });
+            = preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.producesNull(); });
 
-        /// A preprocessor that strips the nullability (e.g. `ifNull(str, '')`) makes the predicate over a
-        /// NULL row a plain 0, so there is no NULL to restore.
+        /// `ifNull(str, '')` makes the predicate over a NULL row a plain 0: nothing to restore.
         if (preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.removesNull(); }))
             nullable_argument = nullptr;
 
@@ -704,8 +699,7 @@ private:
         if (preprocessor_makes_nulls)
             nullable_argument = replacement.rewritten_haystack;
 
-        /// Without a rewritten haystack there is nothing those NULLs can be restored from, so keep the
-        /// original predicate: every part then takes the same row-level path.
+        /// Nothing to restore them from: keep the original predicate so every part takes the row-level path.
         const bool can_restore_nulls = !preprocessor_makes_nulls || nullable_argument;
 
         if (direct_read_from_text_index && can_restore_nulls)
@@ -714,7 +708,6 @@ private:
         return replacement;
     }
 
-    /// Whether any condition that uses direct read has a preprocessor with the given property.
     static bool anyPreprocessor(const std::vector<SelectedCondition> & selected_conditions, auto && property)
     {
         return std::ranges::any_of(selected_conditions, [&](const auto & condition)
@@ -722,8 +715,8 @@ private:
             if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
                 return false;
 
-            const auto & condition_text
-                = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition_template->generateUnsubstituted());
+            /// Not through `info->index`, which is null for an inject-only entry.
+            const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->condition);
             auto preprocessor = condition_text.getPreprocessor();
             return preprocessor && preprocessor->hasActions() && property(*preprocessor);
         });
@@ -944,9 +937,9 @@ private:
         replacement.node = &actions_dag.addAlias(*new_function_node, function_node.result_name);
     }
 
-    /// Returns `if(<argument is NULL>, NULL, index_result)`, i.e. what the original predicate evaluates to.
-    /// In exact mode the argument is not read any more, so the NULLs come from its `.null` subcolumn instead;
-    /// `LowCardinality(Nullable)` has no such subcolumn, and hint mode reads the argument anyway.
+    /// Returns `if(<argument is NULL>, NULL, index_result)`.
+    /// In exact mode the argument is no longer read, so take the NULLs from its `.null` subcolumn where there
+    /// is one: `LowCardinality(Nullable)` has none, and hint mode reads the argument anyway.
     const ActionsDAG::Node & addNullsOfArgument(
         const ActionsDAG::Node & index_result,
         const ActionsDAG::Node & nullable_argument,
@@ -1068,8 +1061,8 @@ private:
             replacement.node = &actions_dag.addFunction(function_builder, children, "");
         }
 
-        /// The UInt8 virtual column holds 0 where the predicate is NULL. Both are falsy in a filter, but
-        /// `NOT`, `isNull` and reading the value tell them apart.
+        /// The UInt8 virtual column holds 0 where the predicate is NULL; `NOT`, `isNull` and reading the
+        /// value tell the two apart.
         if (nullable_argument)
             replacement.node = &addNullsOfArgument(*replacement.node, *nullable_argument, has_exact_search, context);
 

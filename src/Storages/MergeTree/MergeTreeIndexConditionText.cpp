@@ -261,6 +261,14 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
+bool MergeTreeIndexConditionText::isPreprocessedFunction(const String & function_name)
+{
+    return function_name == "hasToken"
+        || function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens"
+        || function_name == "hasPhrase";
+}
+
 TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 {
     const auto & settings = getContext()->getSettingsRef();
@@ -637,6 +645,11 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         const auto function = node.toFunctionNode();
         auto function_name = function.getFunctionName();
         size_t function_arguments_size = function.getArgumentsSize();
+
+        /// A row the preprocessor nullifies (e.g. `nullIf(str, 'x')`) has no tokens in the index, while a
+        /// predicate over the raw value can still be true there, so the index is a false negative for it.
+        if (has_preprocessor && preprocessor->producesNull() && !isPreprocessedFunction(function_name))
+            return false;
 
         if (traverseMapElementKeyNode(function, out))
             return true;
