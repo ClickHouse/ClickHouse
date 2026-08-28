@@ -3659,6 +3659,8 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 
 void Context::resetSettingsToDefaultValueRespectingCompatibility(const std::vector<String> & names)
 {
+    if (names.empty())
+        return;
     std::lock_guard lock(mutex);
     for (const String & name : names)
         settings->setDefaultValueRespectingCompatibility(name);
