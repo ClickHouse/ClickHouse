@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <future>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <random>
@@ -601,6 +602,12 @@ struct ManualAllocation : public ResourceAllocation
         cv.wait(lock, [&] { return total_pressure_events >= count; });
     }
 
+    bool waitPressureCountFor(size_t count, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [&] { return total_pressure_events >= count; });
+    }
+
     size_t pressureCount()
     {
         std::unique_lock lock(mutex);
@@ -612,6 +619,12 @@ struct ManualAllocation : public ResourceAllocation
         queue.notifyRecoveryProgress(*this);
     }
 
+    void runOnNextPressure(std::function<void()> callback)
+    {
+        std::unique_lock lock(mutex);
+        next_pressure_callback = std::move(callback);
+    }
+
     void reconcilePendingIncreaseTo(ResourceCost size)
     {
         std::unique_lock lock(mutex);
@@ -621,13 +634,25 @@ struct ManualAllocation : public ResourceAllocation
 private: // interaction with the scheduler thread
     GrowthPressureAction onGrowthPressure() override
     {
-        std::unique_lock lock(mutex);
-        ++current_pressure_round;
-        ++total_pressure_events;
-        const bool protect = protection_round != 0 && current_pressure_round >= protection_round;
-        recovery_active = !protect;
-        cv.notify_all();
-        return protect ? GrowthPressureAction::Protect : GrowthPressureAction::Yield;
+        std::function<void()> callback;
+        GrowthPressureAction action;
+        {
+            std::unique_lock lock(mutex);
+            ++current_pressure_round;
+            ++total_pressure_events;
+            const bool protect = protection_round != 0 && current_pressure_round >= protection_round;
+            recovery_active = !protect;
+            action = protect ? GrowthPressureAction::Protect : GrowthPressureAction::Yield;
+            callback = std::move(next_pressure_callback);
+            cv.notify_all();
+        }
+
+        /// Run outside the allocation mutex so a query-side recovery callback can safely enter the
+        /// queue. This deliberately models the real hand-off from scheduler pressure notification
+        /// to a pipeline worker.
+        if (callback)
+            callback();
+        return action;
     }
 
     void onGrowthPressureResolved() override
@@ -703,6 +728,7 @@ private: // interaction with the scheduler thread
     size_t current_pressure_round = 0;
     size_t total_pressure_events = 0;
     bool recovery_active = false;
+    std::function<void()> next_pressure_callback;
     std::optional<ResourceCost> reconciled_increase_size;
 };
 
@@ -1341,7 +1367,10 @@ TEST(SchedulerSpaceShared, RepeatedSuspensionInjectsExternalPriority)
     /// injects protection, so existing in-scope eviction chooses the larger competing allocation.
     victim->decreaseAsync(100);
     victim->waitSynced();
-    victim->waitKills(1);
+    ASSERT_TRUE(victim->waitKillsFor(1, std::chrono::seconds(5)))
+        << "External suction priority did not reach the larger in-scope victim; pressure_events="
+        << heavy.pressureCount() << ", heavy_kills=" << heavy.killCount()
+        << ", victim_kills=" << victim->killCount();
 
     EXPECT_EQ(heavy.pressureCount(), 2u);
     EXPECT_EQ(heavy.killCount(), 0u);
@@ -1375,6 +1404,34 @@ TEST(SchedulerSpaceShared, RecoveryLaneRunsBeforeSuctionBackstop)
 
     heavy.recoveryCheckpoint();
     heavy.waitKills(1);
+
+    EXPECT_EQ(heavy.pressureCount(), 2u);
+    EXPECT_EQ(heavy.killCount(), 1u);
+}
+
+
+
+/// A no-candidate or completed-spill notification may arrive immediately from the query thread
+/// while the scheduler is still publishing the parked owner. That explicit completion must not be
+/// dropped: it must reopen the same episode and reach suction when growth remains impossible.
+TEST(SchedulerSpaceShared, EarlyRecoveryCompletionCannotBeLost)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.protectAfterPressureRounds(2);
+    heavy.runOnNextPressure([&] { heavy.recoveryCheckpoint(); });
+    heavy.increaseAsync(5000);
+
+    ASSERT_TRUE(heavy.waitPressureCountFor(1, std::chrono::seconds(5)))
+        << "The initial pressure episode was never published";
+    ASSERT_TRUE(heavy.waitKillsFor(1, std::chrono::seconds(5)))
+        << "An immediate recovery completion was lost before the queue published its parked owner; "
+        << "pressure_events=" << heavy.pressureCount() << ", kills=" << heavy.killCount();
 
     EXPECT_EQ(heavy.pressureCount(), 2u);
     EXPECT_EQ(heavy.killCount(), 1u);
@@ -1445,6 +1502,38 @@ TEST(SchedulerSpaceShared, ExplicitSpillCompletionControlsSuctionPriority)
     EXPECT_EQ(suction_request.epoch, first_request.epoch);
     EXPECT_TRUE(suction_request.inject_priority);
 }
+
+
+/// A forced-spill epoch belongs to the query, not to a processor cached during a previous episode.
+/// If another spillable processor is the one that becomes runnable, it must be able to claim and
+/// complete the new epoch instead of waiting forever for the stale previous winner.
+TEST(SchedulerSpaceShared, RunnableProcessorClaimsForcedSpillEpoch)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor previously_selected(8192, /*spill_succeeds_=*/ true);
+    ManualSpillProcessor runnable(4096, /*spill_succeeds_=*/ true);
+    scheduler.registerProcessor(&previously_selected);
+    scheduler.registerProcessor(&runnable);
+
+    const auto first = scheduler.requestForcedSpill();
+    scheduler.checkAndSpill(&previously_selected);
+    ASSERT_NE(
+        scheduler.getForcedSpillResult(first.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+    scheduler.finishMemoryPressure();
+
+    const auto second = scheduler.requestForcedSpill();
+    ASSERT_FALSE(second.inject_priority);
+    scheduler.checkAndSpill(&runnable);
+
+    EXPECT_EQ(runnable.spillCallCount(), 1u)
+        << "The runnable processor could not claim the query-level forced-spill epoch";
+    EXPECT_NE(
+        scheduler.getForcedSpillResult(second.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending)
+        << "The epoch remained pinned to a processor that did not run";
+}
+
 
 
 /// A query with no registered spillable processor has a concrete no-candidate result. It reaches
