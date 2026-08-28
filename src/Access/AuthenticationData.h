@@ -10,6 +10,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
+#include <ctime>
+#include <optional>
 #include <vector>
 #include <base/types.h>
 
@@ -82,11 +84,25 @@ public:
     time_t getValidUntil() const { return valid_until; }
     void setValidUntil(time_t valid_until_) { valid_until = valid_until_; }
 
+    /// If not empty, the access rights of a user authenticated with this method
+    /// are limited to the intersection with these elements (the GRANTS clause).
+    const AccessRightsElements & getGrants() const { return grants; }
+    void setGrants(AccessRightsElements grants_) { grants = std::move(grants_); }
+
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
-    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
-    boost::intrusive_ptr<ASTAuthenticationData> toAST() const;
+    /// When `now` is provided, it is used as the reference time for a per-authentication
+    /// `VALID FOR <interval>` clause, so that all `VALID FOR` clauses of one statement share one `now`.
+    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now = std::nullopt);
+
+    /// In attach mode the result is meant to be parsed back by a server (replicated or disk access
+    /// storage), possibly with a different default time zone and possibly by an older server version,
+    /// so `valid_until` is serialized as a zero-padded Unix timestamp string, which denotes the same
+    /// instant everywhere and which older versions parse the same way (see the comment in `toAST`
+    /// for details, including the clamping of out-of-range deadlines). Otherwise (`SHOW CREATE USER`)
+    /// `valid_until` is formatted in the server time zone for display.
+    boost::intrusive_ptr<ASTAuthenticationData> toAST(bool attach_mode) const;
 
     struct Util
     {
@@ -108,6 +124,8 @@ public:
     };
 
 private:
+    static AuthenticationData fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now);
+
     AuthenticationType type = AuthenticationType::NO_PASSWORD;
     Digest password_hash;
     std::optional<OneTimePasswordSecret> otp_secret;
@@ -126,6 +144,7 @@ private:
     String http_auth_server_name;
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
     time_t valid_until = 0;
+    AccessRightsElements grants;
 };
 
 }

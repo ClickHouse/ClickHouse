@@ -63,7 +63,8 @@ For a detailed description of the parameters, see the [CREATE TABLE](/reference/
 
 `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine has no parameters.
 
-#### ORDER BY {#order_by}
+<a id="order_by"></a>
+#### ORDER BY {#order-by}
 
 `ORDER BY` — The sorting key.
 
@@ -234,7 +235,7 @@ This feature is helpful when using the [SummingMergeTree](/reference/engines/tab
 
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER](/reference/statements/alter/index) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
+[ALTER](/reference/statements/alter/skipping-index) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
 
 ### Use of indexes and partitions in queries {#use-of-indexes-and-partitions-in-queries}
 

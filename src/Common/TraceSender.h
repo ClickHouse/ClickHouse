@@ -48,7 +48,7 @@ public:
 
     /// Collect a stack trace. This method is signal safe.
     /// Precondition: the TraceCollector object must be created.
-    static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras);
+    static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
 
 private:
     friend class TraceCollector;

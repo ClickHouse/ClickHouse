@@ -27,7 +27,7 @@ REGISTER_FUNCTION(HasToken)
     FunctionDocumentation::Description description = R"(
 Checks if the given token is present in the haystack.
 
-Uses [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha) as tokenizer, i.e. a token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]` (numbers, ASCII characters and underscore).
+Uses [splitByNonAlpha](/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha) as tokenizer, i.e. a token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]` (numbers, ASCII characters and underscore).
     )";
     FunctionDocumentation::Syntax syntax = "hasToken(haystack, token)";
     FunctionDocumentation::Arguments arguments = {
@@ -64,9 +64,9 @@ Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
         "Usage example",
         "SELECT hasTokenOrNull('apple banana cherry', 'ban ana');",
         R"(
-┌─hasTokenOrNu⋯ 'ban ana')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
+│                                             ᴺᵁᴸᴸ │
+└──────────────────────────────────────────────────┘
         )"
     }
     };

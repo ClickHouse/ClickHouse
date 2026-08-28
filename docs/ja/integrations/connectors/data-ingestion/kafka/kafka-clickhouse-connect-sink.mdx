@@ -25,15 +25,21 @@ Kafka Connector Sink は、[Apache 2.0 ライセンス](https://www.apache.org/l
   ### 環境要件
 </div>
 
-環境に [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) フレームワーク v2.7 以降がインストールされている必要があります。
+環境に [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) フレームワーク v2.7 以降がインストールされ、Java 11 以降で実行されている必要があります。
 
 <div id="version-compatibility-matrix">
-  ### バージョン互換性マトリックス
+  ### バージョン互換性マトリクス
 </div>
 
-| ClickHouse Kafka Connect バージョン | ClickHouse バージョン | Kafka Connect | Confluent Platform |
-| ------------------------------ | ---------------- | ------------- | ------------------ |
-| 1.0.0                          | &gt; 23.3        | &gt; 2.7      | &gt; 6.1           |
+| ClickHouse Kafka Connect バージョン | ClickHouse バージョン | Kafka Connect | Confluent Platform | ClickHouse Java Client |
+| ------------------------------ | ---------------- | ------------- | ------------------ | ---------------------- |
+| 1.4.x (最新)                     | 23.3+            | 2.7+          | 6.1+               | 0.9.5                  |
+| 1.3.x                          | 23.3+            | 2.7+          | 6.1+               | 0.8.0 ～ 0.9.5          |
+| 1.2.x                          | 23.3+            | 2.7+          | 6.1+               | 0.6.3 ～ 0.8.0          |
+| 1.1.x                          | 23.3+            | 2.7+          | 6.1+               | 0.6.0 ～ 0.6.1          |
+| 1.0.x                          | 23.3+            | 2.7+          | 6.1+               | 0.4.6 ～ 0.6.0          |
+
+このコネクタは、23.3 より古い ClickHouse サーバーでは起動しません。古いバージョンに固定する理由がない限り、常に[最新リリース](https://github.com/ClickHouse/clickhouse-kafka-connect/releases/latest)を使用してください。
 
 <div id="main-features">
   ### 主な機能
@@ -112,7 +118,7 @@ ClickHouse Sink を ClickHouse サーバー に接続するには、次の情報
 | `ssl`                                           | ClickHouse への SSL 接続を有効にします                                                                                                                                                                                    | `true`                                                   |
 | `jdbcConnectionProperties`                      | ClickHouse に接続する際の接続プロパティ。`?` で始め、各 `param=value` は `&` で連結する必要があります                                                                                                                                           | `""`                                                     |
 | `username`                                      | ClickHouse データベースのユーザー名                                                                                                                                                                                        | `default`                                                |
-| `password` (必須)                                 | ClickHouse データベースのパスワード                                                                                                                                                                                        | N/A                                                      |
+| `password` (必須)                                 | ClickHouse データベースのパスワード                                                                                                                                                                                        | 該当なし                                                     |
 | `database`                                      | ClickHouse データベース名                                                                                                                                                                                             | `default`                                                |
 | `connector.class`  (必須)                         | コネクタクラス (明示的に設定し、デフォルト値のまま使用)                                                                                                                                                                                  | `"com.clickhouse.kafka.connect.ClickHouseSinkConnector"` |
 | `tasks.max`                                     | コネクタのタスク数                                                                                                                                                                                                      | `"1"`                                                    |
@@ -136,6 +142,7 @@ ClickHouse Sink を ClickHouse サーバー に接続するには、次の情報
 | `bufferCount` (v1.3.6以降)                        | ClickHouse にフラッシュする前に、メモリ内でバッファするレコード数です。`0` は内部バッファリングを無効にします。`exactlyOnce=true` ではバッファリングはサポートされていません。                                                                                                       | `"0"`                                                    |
 | `bufferFlushTime` (v1.3.6以降)                    | `exactlyOnce=false` の場合に、flush 前にレコードをバッファに保持する最大時間 (ミリ秒) です。`0` を指定すると、時間ベースのフラッシュは無効になります。デフォルト値は `0` です。時間ベースのしきい値を使用する場合にのみ必要です。`bufferCount > 0` の場合にのみ有効です。                                              | `"0"`                                                    |
 | `reportInsertedOffsets` (v1.3.6以降)              | `exactlyOnce=false` の場合、`preCommit` は `currentOffsets` ではなく、正常に挿入されたオフセットのみを返すようになります。これは `ignorePartitionsWhenBatching=true` の場合には適用されず、その場合は引き続き `currentOffsets` が返されます。                                    | `"false"`                                                |
+| `client_version` (v1.2.0以降)                     | コネクタで使用する [ClickHouse Java クライアント](/ja/integrations/language-clients/java/client) を選択します。有効な値は `"V1"` と `"V2"` です。                                                                                                | `"V1"`                                                   |
 
 <div id="target-tables">
   ### ターゲットテーブル
@@ -494,7 +501,7 @@ message TwoRecords {
 }
 ```
 
-CH バージョン 26.1 以降では、`allow_experimental_nullable_tuple_type=1` を設定すると、このスキーマがサポートされます ([こちらのドキュメントページ](/ja/reference/settings/session-settings#allow_experimental_nullable_tuple_type)を参照) 。
+CH バージョン 26.1 以降では、`allow_experimental_nullable_tuple_type=1` を設定すると、このスキーマがサポートされます ([こちらのドキュメントページ](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)を参照) 。
 
 <div id="json-schema-support">
   ### JSON スキーマ対応
@@ -986,13 +993,31 @@ SETTINGS
 コネクタは ClickHouse への HTTP 接続を維持します。遅延の大きいネットワークでは、タイムアウトを調整してください。
 
 ```json
-"clickhouseSettings": "socket_timeout=300000,connection_timeout=30000"
+"jdbcConnectionProperties": "?socket_timeout=300000,connection_timeout=30000"
 ```
 
 * **`socket_timeout`** (デフォルト: 30000 ms) : 読み取り操作の最大待機時間
 * **`connection_timeout`** (デフォルト: 10000 ms) : 接続確立までの最大待機時間
 
 大きなバッチでタイムアウトエラーが発生する場合は、これらの値を増やしてください。
+
+<div id="client-network-buffer">
+  #### クライアントネットワークバッファ
+</div>
+
+クライアント V2 (`"client_version": "V2"`) を使用する場合、データは `client_network_buffer_size` (バイト単位) で制御されるバッファを介して、ソケットとアプリケーションメモリの間でコピーされます。デフォルトのサイズは `300000` バイトです。バッファを大きくすると、高レイテンシまたは高帯域幅の接続でスループットが向上する可能性がありますが、接続タスクあたりのメモリ使用量が増加します。
+
+すべてのクライアントオプションは、`clickhouseSettings` ではなく `jdbcConnectionProperties` で設定します。例:
+
+```json
+"jdbcConnectionProperties": "?client_network_buffer_size=1000000"
+```
+
+複数のクライアントプロパティを設定する場合は、`&` で連結します。
+
+```json
+"jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
+```
 
 <div id="monitoring-performance">
   #### パフォーマンスの監視とトラブルシューティング

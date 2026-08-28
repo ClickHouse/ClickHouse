@@ -57,8 +57,9 @@ vendrá determinado por `timeout_overflow_mode`, que de forma predeterminada est
 
 <Note>
   El tiempo de espera se comprueba y la consulta solo puede detenerse en puntos concretos durante el procesamiento de datos.
-  Actualmente no puede detenerse durante la fusión de estados de agregación ni durante el análisis de la consulta,
-  y el tiempo de ejecución real será mayor que el valor de esta configuración.
+  Actualmente no puede detenerse durante la fusión de estados de agregación ni durante la mayor parte del análisis de la consulta
+  (el establecimiento de una conexión con una réplica remota es un punto en el que sí puede), y el tiempo de ejecución real
+  será mayor que el valor de esta configuración.
 </Note>
 
 <div id="max_execution_time_leaf">
