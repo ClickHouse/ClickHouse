@@ -23,6 +23,9 @@ BAD_ARGUMENTS
 accepted with gates on:	1
 --- disabling those gates later makes it not_applicable ---
 reason: Hypothetical projection can no longer be added to this table
+--- a runtime ALTER guard does not reject a valid definition ---
+created: 1
+reason: EXPLAIN WHATIF does not estimate hypothetical projections yet
 --- a name taken by a real projection is rejected ---
 ILLEGAL_PROJECTION
 --- duplicate without IF NOT EXISTS is rejected ---
