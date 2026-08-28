@@ -319,7 +319,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , foreign_processing_node_cache_ttl_seconds((*queue_settings_)[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds])
     , foreign_processing_observers(std::make_shared<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers>(
-        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]))
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements],
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes]))
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
@@ -1808,6 +1809,8 @@ void StorageObjectStorageQueue::alter(
                 foreign_processing_node_cache_ttl_seconds = static_cast<time_t>(change.value.safeGet<UInt64>());
             else if (change.name == "metadata_cache_size_elements")
                 foreign_processing_observers->setMaxEntries(change.value.safeGet<UInt64>());
+            else if (change.name == "metadata_cache_size_bytes")
+                foreign_processing_observers->setMaxSizeInBytes(change.value.safeGet<UInt64>());
         }
 
         metadata->updateSettings(changed_settings);

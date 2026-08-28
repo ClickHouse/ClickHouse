@@ -290,6 +290,44 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversAllowUnlimitedEntri
     expectForeignProcessingObserversAllowUnlimitedEntries();
 }
 
+/// The registry must stay under the same memory contract as the metadata cache: the byte
+/// limit bounds it even when the number of entries is unlimited.
+template <typename Meta = ObjectStorageQueueIFileMetadata>
+void expectForeignProcessingObserversAreBoundedByBytes()
+{
+    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
+    {
+        /// All the paths below are of the same length, hence of the same weight.
+        typename Meta::ForeignProcessingObservers observers(/* max_entries */ 0, /* max_bytes */ 0);
+        observers.set("data/aaa.csv", /* generation */ 1, 1);
+        const size_t weight_of_one_entry = observers.sizeInBytes();
+        ASSERT_GT(weight_of_one_entry, 0);
+
+        observers.setMaxSizeInBytes(2 * weight_of_one_entry);
+        observers.set("data/bbb.csv", /* generation */ 1, 2);
+        observers.set("data/ccc.csv", /* generation */ 1, 3);
+
+        ASSERT_EQ(observers.count(), 2);
+        ASSERT_LE(observers.sizeInBytes(), 2 * weight_of_one_entry);
+        ASSERT_EQ(observers.get("data/aaa.csv", 1), 0);
+        ASSERT_EQ(observers.get("data/bbb.csv", 1), 2);
+        ASSERT_EQ(observers.get("data/ccc.csv", 1), 3);
+
+        /// Lowering the limit evicts the least recently used entries immediately.
+        observers.setMaxSizeInBytes(weight_of_one_entry);
+        ASSERT_EQ(observers.count(), 1);
+        ASSERT_EQ(observers.get("data/bbb.csv", 1), 0);
+        ASSERT_EQ(observers.get("data/ccc.csv", 1), 3);
+    }
+    else
+        FAIL() << "There is no registry of foreign processing observations";
+}
+
+TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversAreBoundedByBytes)
+{
+    expectForeignProcessingObserversAreBoundedByBytes();
+}
+
 /// An observation of a path made for an earlier foreign hold must not be returned for a
 /// later one, even when the entry is still in the registry.
 template <typename Meta = ObjectStorageQueueIFileMetadata>

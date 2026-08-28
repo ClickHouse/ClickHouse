@@ -112,14 +112,31 @@ void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const Stri
         return;
     }
 
-    if (max_entries && observations.size() == max_entries)
+    lru.push_front(file_path);
+    const auto inserted_it = observations.emplace(file_path, Observation{generation, since, lru.begin(), 0}).first;
+    /// The weight is remembered, because the two copies of the path may have different capacities.
+    inserted_it->second.entry_weight = weight(inserted_it->first, lru.front());
+    size_in_bytes += inserted_it->second.entry_weight;
+    evictWhileOverLimitsUnlocked();
+}
+
+size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::weight(const String & key, const String & lru_entry)
+{
+    return sizeof(Observation) + 2 * sizeof(String) + key.capacity() + lru_entry.capacity();
+}
+
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::evictWhileOverLimitsUnlocked()
+{
+    /// The most recently touched entry is at the front, so a freshly inserted observation
+    /// is evicted only when it alone does not fit into the limit.
+    while (!observations.empty()
+        && ((max_entries && observations.size() > max_entries) || (max_bytes && size_in_bytes > max_bytes)))
     {
-        observations.erase(lru.back());
+        const auto evicted_it = observations.find(lru.back());
+        size_in_bytes -= evicted_it->second.entry_weight;
+        observations.erase(evicted_it);
         lru.pop_back();
     }
-
-    lru.push_front(file_path);
-    observations.emplace(file_path, Observation{generation, since, lru.begin()});
 }
 
 time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const String & file_path, UInt64 generation) const
@@ -143,11 +160,26 @@ void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::setMaxEntries(
 {
     std::lock_guard lock(mutex);
     max_entries = max_entries_;
-    while (max_entries && observations.size() > max_entries)
-    {
-        observations.erase(lru.back());
-        lru.pop_back();
-    }
+    evictWhileOverLimitsUnlocked();
+}
+
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::setMaxSizeInBytes(size_t max_bytes_)
+{
+    std::lock_guard lock(mutex);
+    max_bytes = max_bytes_;
+    evictWhileOverLimitsUnlocked();
+}
+
+size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::sizeInBytes() const
+{
+    std::lock_guard lock(mutex);
+    return size_in_bytes;
+}
+
+size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::count() const
+{
+    std::lock_guard lock(mutex);
+    return observations.size();
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor(ForeignProcessingObservers & observers)

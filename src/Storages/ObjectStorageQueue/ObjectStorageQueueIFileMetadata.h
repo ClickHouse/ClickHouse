@@ -32,12 +32,16 @@ public:
     class ForeignProcessingObservers
     {
     public:
-        explicit ForeignProcessingObservers(size_t max_entries_) : max_entries(max_entries_) {}
+        explicit ForeignProcessingObservers(size_t max_entries_, size_t max_bytes_ = 0)
+            : max_entries(max_entries_), max_bytes(max_bytes_) {}
 
         void set(const String & path, UInt64 generation, time_t since);
         /// Zero if the path was not observed by this table in this generation.
         time_t get(const String & path, UInt64 generation) const;
         void setMaxEntries(size_t max_entries_);
+        void setMaxSizeInBytes(size_t max_bytes_);
+        size_t sizeInBytes() const;
+        size_t count() const;
 
     private:
         struct Observation
@@ -45,12 +49,21 @@ public:
             UInt64 generation;
             time_t since;
             std::list<String>::iterator lru_position;
+            size_t entry_weight;
         };
 
+        /// The registry holds this many bytes per observation: the path is stored twice
+        /// (as the key of `observations` and as an element of the `lru` list).
+        static size_t weight(const String & key, const String & lru_entry);
+        void evictWhileOverLimitsUnlocked() TSA_REQUIRES(mutex);
+
         size_t max_entries;
+        /// Zero means that only `max_entries` bounds the registry.
+        size_t max_bytes;
         mutable std::mutex mutex;
-        mutable std::list<String> lru;
-        mutable std::unordered_map<String, Observation> observations;
+        mutable std::list<String> lru TSA_GUARDED_BY(mutex);
+        mutable std::unordered_map<String, Observation> observations TSA_GUARDED_BY(mutex);
+        size_t size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     };
 
     struct FileStatus
