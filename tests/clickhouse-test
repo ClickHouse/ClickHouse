@@ -2034,7 +2034,7 @@ class MergeTreeSettingsRandomizer:
         ),
         "text_index_max_memory_usage_before_flush": lambda: random.choice([4096, 65536, 1048576, 1073741824]),
         "text_index_max_processed_tokens_before_flush": lambda: random.choice([1, 100, 10000, 100000000]),
-        "allow_experimental_adaptive_codec_selection": lambda: random.random() < 0.3,
+        "enable_adaptive_codec_selection": lambda: random.random() < 0.3,
         "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
         "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
         "max_buckets_in_map": lambda: random.randint(1, 100),
