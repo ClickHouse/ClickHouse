@@ -1247,8 +1247,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     return nuraft::cb_func::ReturnCode::ReturnNull;
 
                 batch->digest = *digest_after_preprocessing;
-                /// Piggy-back the current commit point on the entry (a lower bound; see the
-                /// TODO on KeeperRequestBatch::committed_log_idx for the intended use).
                 batch->committed_log_idx = static_cast<int64_t>(state_machine->last_commit_index());
 
                 /// older versions of Keeper can send logs that are missing some fields

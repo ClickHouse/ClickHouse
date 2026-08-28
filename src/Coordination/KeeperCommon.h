@@ -93,8 +93,10 @@ struct KeeperRequestBatch
     //TODO(keeper-batch3): Use this to avoid producing useless responses on servers that don't own the
     ///       corresponding client sessions. Probably pass the flag all the way to processRequest so we don't waste time creating responses at all.
     int32_t dispatcher_server_id{-1};
-    /// Lower bound on last committed log entry idx, patched in by the leader in the
-    /// PreAppendLogLeader callback. 0 if unknown (e.g. log entry in old format).
+    /// Lower bound on last committed log entry idx. Used on startup.
+    /// (This doesn't particularly need to be stored in each log entry; a single latest commit point
+    ///  persisted by each server would suffice. But it's easier and probably more efficient to
+    ///  piggy-back to log entries.)
     /// TODO: Use this to avoid the localLogsPreprocessed() dance on startup: read last local log
     ///       entry, take committed_log_idx from it, preprocess+commit entries up to it, preprocess
     ///       entries after it.
