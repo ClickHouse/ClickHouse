@@ -20,6 +20,7 @@ show create table aggregate_function_combinators format TSVRaw;
 show create table asynchronous_inserts format TSVRaw;
 show create table asynchronous_metrics format TSVRaw;
 show create table build_options format TSVRaw;
+show create table changelog format TSVRaw;
 show create table clusters format TSVRaw;
 show create table collations format TSVRaw;
 show create table columns format TSVRaw;

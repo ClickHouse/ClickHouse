@@ -40,6 +40,21 @@ CREATE TABLE system.build_options
 )
 ENGINE = SystemBuildOptions
 COMMENT 'Contains a list of all build flags, compiler options and commit hash for used build.'
+CREATE TABLE system.changelog
+(
+    `version` Tuple(
+        major UInt16,
+        minor UInt8,
+        patch UInt16),
+    `release_date` Date,
+    `is_lts` UInt8,
+    `category` LowCardinality(String),
+    `description` String,
+    `pull_requests` Array(UInt32),
+    `authors` Array(String)
+)
+ENGINE = SystemChangelog
+COMMENT 'Contains the entries of the curated ClickHouse changelog: one row per entry of each feature release documented in CHANGELOG.md.'
 CREATE TABLE system.clusters
 (
     `cluster` String,

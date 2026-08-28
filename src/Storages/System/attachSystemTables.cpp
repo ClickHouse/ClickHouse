@@ -73,6 +73,7 @@
 #include <Storages/System/StorageSystemConstraints.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
+#include <Storages/System/StorageSystemChangelog.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Storages/System/StorageSystemWarnings.h>
@@ -215,6 +216,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemStatements>(context, system_database, "statements", "Contains a list of all SQL statements of ClickHouse.");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
     attach<StorageSystemContributors>(context, system_database, "contributors", "Contains a list of all ClickHouse contributors <3");
+    attach<StorageSystemChangelog>(context, system_database, "changelog", "Contains the entries of the curated ClickHouse changelog: one row per entry of each feature release documented in CHANGELOG.md.");
     attach<StorageSystemUsers>(context, system_database, "users", "Contains a list of all users profiles either configured at the server through a configuration file or created via SQL.");
     attach<StorageSystemRoles>(context, system_database, "roles", "Contains a list of all roles created at the server.");
     attach<StorageSystemGrants>(context, system_database, "grants", "Contains the information about privileges granted to ClickHouse user accounts.");
