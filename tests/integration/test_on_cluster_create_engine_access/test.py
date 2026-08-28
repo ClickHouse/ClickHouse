@@ -19,13 +19,13 @@ while inferring an omitted structure. (Plain `Distributed` is not covered below:
 infers an omitted structure under the *local* context as well, so its own `SHOW_COLUMNS`
 check applies to a local `CREATE` and not to this path - an uncovered parity gap.)
 
-For `Merge` the parity is partial, and no case below can assert the remainder. The
-inference traversal filters on `isGranted(SHOW_TABLES)` before it checks `SHOW_COLUMNS`,
-so the set of tables it checks depends on what the acting user can see. On a host the
-acting user is `full_access` and sees everything; on the initiator the issuing user's own
-visibility applies, so a source table the user has no `SHOW TABLES` on is skipped there
-and its columns can still be inferred on the hosts. Exact parity needs the host to run as
-the user, which is the open question in #111561.
+For `Merge` the initiator cannot borrow that inference to authorize the statement: it filters
+on `isGranted(SHOW_TABLES)` before checking `SHOW_COLUMNS`, so a host, where the acting user
+is `full_access`, reads every matching table, while on the initiator a source the issuing
+user cannot see is skipped with no denial. The initiator therefore asks for `SHOW_COLUMNS`
+on every table its own catalog matches, seen by the user or not. What remains is a match set
+only a host has: the initiator's catalog cannot name those tables, so authorizing them needs
+the host to run as the user, which is the open question in #111561.
 
 On an `ON CLUSTER` query only each host's DDL worker reaches `StorageFactory::get`, and
 its query context carries no user unless the server setting
@@ -67,6 +67,7 @@ node2 = cluster.add_instance(
 )
 
 DB = "acl_db"
+HIDDEN_DB = "acl_hidden_db"
 DENIED = "ACCESS_DENIED"
 
 
@@ -88,6 +89,12 @@ def started_cluster():
             node.query(
                 f"CREATE TABLE {DB}.remote_source (x UInt64) "
                 f"ENGINE = Remote('127.0.0.1:9000', {DB}, local_target, 'default')"
+            )
+            # A source in a database no test user holds anything on, so it is invisible to the
+            # user on the initiator while every host still infers from it.
+            node.query(f"CREATE DATABASE {HIDDEN_DB}")
+            node.query(
+                f"CREATE TABLE {HIDDEN_DB}.hidden_target (h UInt64) ENGINE = MergeTree ORDER BY h"
             )
         yield cluster
     finally:
@@ -503,15 +510,12 @@ def merge_over_local_target():
 def make_merge_user(name):
     """A user that can create `Merge` tables and can see `local_target`.
 
-    Visibility of the source table is a precondition of these cases, not an incidental
-    grant: the inference traversal filters on `isGranted(SHOW_TABLES)` and silently skips
-    what the user cannot see, with no denial. `make_user`'s database-level
-    `CREATE TABLE, SELECT, INSERT ON acl_db.*` already implies it (a table flag implies
-    `SHOW_TABLES`, and the later `REVOKE SELECT, INSERT` leaves `CREATE TABLE` in place),
-    so this grant is redundant and kept only to state the precondition where the reader
-    looks for it. That same filter is why the suite cannot observe the residual described
-    in the module docstring: a source table the issuing user cannot see is skipped on the
-    initiator and inferred anyway on the hosts.
+    Visibility of the source table is what makes these cases about `SHOW_COLUMNS` alone, and
+    `make_user`'s database-level `CREATE TABLE, SELECT, INSERT ON acl_db.*` already implies it
+    (a table flag implies `SHOW_TABLES`, and the later `REVOKE SELECT, INSERT` leaves
+    `CREATE TABLE` in place), so this grant is redundant and kept only to state that where the
+    reader looks for it. An invisible source is a separate case, denied for a separate reason:
+    `test_merge_source_hidden_from_the_user_is_still_checked`.
     """
     user = make_user(name, engines=("Merge",))
     for node in (node1, node2):
@@ -550,6 +554,55 @@ def test_merge_engine_omitted_structure_requires_show_columns(started_cluster):
         # read-time check, unchanged by this fix, and asserting it keeps the success non-vacuous.
         node.query(f"GRANT SELECT ON {DB}.local_target TO {user}")
         assert node.query(f"SELECT x FROM {DB}.{table}", user=user).strip() == "42"
+        node.query(f"DROP TABLE {DB}.{table} SYNC")
+
+
+def test_merge_source_hidden_from_the_user_is_still_checked(started_cluster):
+    # Inference skips a source the acting user may not `SHOW TABLES`, and a host acts with no
+    # user, so a source that is merely invisible on the initiator was inferred there anyway:
+    # the statement was accepted and every host materialized the hidden table's columns.
+    user = make_user(unique("u_merge_hidden"), engines=("Merge",))
+    table = unique("t_merge_hidden")
+    definition = f"ENGINE = Merge('{HIDDEN_DB}', '^hidden_target$')"
+
+    error = create_on_cluster(user, table, definition)
+    assert error is not None, "the statement was accepted"
+    subject = denial_subject(error)
+    assert subject.startswith("SHOW COLUMNS"), subject
+    # The denial asks for the database the statement itself names, never the table: naming a table
+    # the user may not see would disclose that it exists, and the regexp would make that an
+    # enumeration oracle. With the database given as a regexp too, it names neither.
+    assert HIDDEN_DB in subject, subject
+    assert "hidden_target" not in subject, subject
+    assert_absent_everywhere(table)
+
+    by_regexp = create_on_cluster(
+        user, unique("t_merge_hidden_re"), f"ENGINE = Merge(REGEXP('^{HIDDEN_DB}$'), '^hidden_target$')"
+    )
+    assert by_regexp is not None, "the statement was accepted"
+    subject = denial_subject(by_regexp)
+    assert subject.startswith("SHOW COLUMNS"), subject
+    assert HIDDEN_DB not in subject and "hidden_target" not in subject, subject
+
+    # Both paths agree, though not through the same code: without `ON CLUSTER` the constructor
+    # infers under the user, sees nothing it may read, and has no structure to store.
+    local = _run(user, f"CREATE TABLE {DB}.{unique('t_merge_hidden_local')} {definition}")
+    assert local is not None and "CANNOT_EXTRACT_TABLE_STRUCTURE" in local, local
+
+    # A grant on the table itself also makes it visible, so the per-table check applies and the
+    # structure then stored is the hidden table's - which is what the denial above kept out of a
+    # table the user can read.
+    for node in (node1, node2):
+        node.query(f"GRANT SHOW COLUMNS ON {HIDDEN_DB}.hidden_target TO {user}")
+    assert create_on_cluster(user, table, definition) is None
+    for node in (node1, node2):
+        assert (
+            node.query(
+                f"SELECT name, type FROM system.columns "
+                f"WHERE database = '{DB}' AND table = '{table}'"
+            ).strip()
+            == "h\tUInt64"
+        )
         node.query(f"DROP TABLE {DB}.{table} SYNC")
 
 

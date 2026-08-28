@@ -24,17 +24,12 @@ struct ValidatedRemoteEngineTarget
 };
 
 /// Parses the arguments of a `Remote`/`RemoteSecure` engine and performs every access check the
-/// engine requires of its target, under `local_context` (i.e. as the user who supplied the
-/// definition).
+/// engine requires of its target, under `local_context`, i.e. as the user who supplied the
+/// definition. Without `columns_given` the target is analyzed to obtain the structure.
 ///
-/// This is the single definition of what the engine requires: both the storage-construction path
-/// and an `ON CLUSTER` initiator call it.
-///
-/// `columns_given` says whether the caller already has the table's structure; when it does not, the
-/// target is analyzed to obtain it. `dependent_table_id` is forwarded to
-/// `parseRemoteFunctionArguments`, which registers the id as a dependent of a named collection when
-/// the addresses come from one: pass the table's id from the storage-construction path, and nullptr
-/// from a preflight, which must not register a dependency for a table that may never exist.
+/// `dependent_table_id` reaches `parseRemoteFunctionArguments`, which registers it as a dependent of
+/// a named collection the addresses come from: pass the table's id while constructing a storage, and
+/// nullptr from a preflight, which must not leave a dependency on a table that may never exist.
 ValidatedRemoteEngineTarget parseAndValidateRemoteEngineTarget(
     ASTs & engine_args,
     ContextPtr local_context,

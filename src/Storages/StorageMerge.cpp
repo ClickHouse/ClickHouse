@@ -275,6 +275,38 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(
     return getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, nullptr);
 }
 
+void StorageMerge::checkSourceTablesAccess(
+    const ContextPtr & query_context,
+    const String & source_database_name_or_regexp,
+    bool database_is_regexp,
+    const String & source_table_regexp,
+    size_t max_tables_to_look)
+{
+    DatabaseNameOrRegexp database_name_or_regexp(source_database_name_or_regexp, database_is_regexp, source_database_name_or_regexp, source_table_regexp, {});
+    auto access = query_context->getAccess();
+    size_t table_num = 0;
+
+    traverseTablesUntilImpl(query_context, nullptr, database_name_or_regexp, [&](auto && table)
+    {
+        if (!table)
+            return false;
+
+        const auto storage_id = table->getStorageID();
+
+        /// A denial names what it asks the grant for, and a regexp would turn that into an
+        /// enumeration oracle, so ask for the narrowest object the context could already name.
+        if (access->isGranted(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name))
+            access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
+        else if (!database_is_regexp || access->isGranted(AccessType::SHOW_DATABASES, storage_id.database_name))
+            access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name);
+        else
+            access->checkAccess(AccessType::SHOW_COLUMNS);
+
+        ++table_num;
+        return table_num >= max_tables_to_look;
+    });
+}
+
 ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const ContextPtr & query_context) const
 {
     auto max_tables_to_look = query_context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference];
@@ -2345,10 +2377,9 @@ void validateMergeEngineTarget(const ASTs & engine_args, ContextPtr local_contex
 
     auto parsed = parseMergeEngineArguments(args_copy, local_context);
 
-    /// Runs the same per-source-table SHOW_COLUMNS checks as construction; the columns are
-    /// discarded. Unlike the member overload this does not reject a regexp matching no table,
-    /// so a statement the constructing host would accept is never rejected here.
-    StorageMerge::getColumnsDescriptionFromSourceTables(
+    /// A regexp matching no table stays accepted, so the constructing host still decides that:
+    /// this rejects only a source the issuing user may not see the columns of.
+    StorageMerge::checkSourceTablesAccess(
         local_context,
         parsed.source_database_name_or_regexp,
         parsed.is_regexp,
