@@ -1171,7 +1171,7 @@ TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
     }
     catch (const Poco::Exception & e)
     {
-        dialed_the_pinned_address = e.displayText().find("127.0.0.99") != std::string::npos;
+        dialed_the_pinned_address = e.displayText().contains("127.0.0.99");
         if (!dialed_the_pinned_address)
             FAIL() << "The tunnel did not dial the caller-resolved address: " << e.displayText();
     }
