@@ -295,28 +295,37 @@ Dashboards can be favorited for easy access on the sidebar and at the top of the
 ## Dashboards - tagging {#tagging}
 <Tagging />
 
-## Custom filters {#custom-filters}
+## Custom filters and variables {#custom-filters}
 
 In addition to the [free-text filters](#filter-dashboards) available on all dashboards, saved dashboards support custom dropdown filters populated by data queried from ClickHouse. These provide reusable, point-and-click filter controls so that dashboard viewers can filter without writing expressions manually.
 
 <Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Services dropdown filter showing available service names" size="lg"/>
 
-The following steps demonstrate adding a custom filter to the dashboard created in the ["Creating dashboards"](#creating-dashboards) section.
+Each filter allows the viewer to choose one or more values, and does one or both of the following with them:
+
+- **Broadcast** — applies the selection as a filter condition on matching tiles. Tiles do not need to be updated to reference the filter.
+- **Variable** — exposes the selection to tile queries as `$variableName`, so each tile decides where and how the value is used.
+
+A filter must do at least one of the two. Broadcast is enabled by default when creating a filter.
+
+The following steps demonstrate adding a filter to the dashboard created in the ["Creating dashboards"](#creating-dashboards) section.
 
 <Steps>
 <Step title="Open the Edit Filters dialog" id="open-edit-filters">
 
-Open a saved dashboard and select **Edit Filters** from the toolbar.
+Open a saved dashboard and select **Edit Filters and Variables** from the toolbar.
 
 <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Edit Filters button in the dashboard toolbar" size="lg"/>
 </Step>
 <Step title="Add a new filter" id="add-new-filter">
 
-Click **Add new filter**. Configure the filter by providing a **Name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
+Click **Add new filter**. Configure the filter by providing a **Display Name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
 
 For example, to add a service filter for trace data, use `ServiceName` as the filter expression with the `Traces` data source. The "Dropdown values filter" is optional, and provides a way to restrict which values appear in the dropdown.
 
-<Image img="/images/clickstack/dashboards/add-filter.webp" alt="Add filter dialog with Name, Data source, and Filter expression fields" size="md"/>
+<Image img="/images/clickstack/dashboards/add-filter.webp" alt="Add filter dialog with Display Name, Data source, and Filter expression fields" size="md"/>
+
+The same dialog also controls whether the filter [broadcasts](#broadcast-filters) its value and whether it is [available as a variable](#dashboard-variables), both described below.
 
 The Filters modal shows all configured filters for the dashboard. From here you can edit or delete existing filters, or add additional ones.
 
@@ -338,6 +347,75 @@ To persist a filter selection as the dashboard default, choose **Save Query & Fi
 
 <Note>
 Custom dropdown filters are available on saved dashboards. For an example of this pattern in action, see the [Kubernetes dashboard](#kubernetes-dashboard), which provides built-in dropdown filters for Pod, Deployment, Node name, Namespace, and Cluster.
+</Note>
+
+### Broadcasting {#broadcast-filters}
+
+With **Broadcast filter condition** enabled, the selected values are applied as a filter condition on the dashboard's tiles, without any tile explicitly referencing the filter. By default the condition reaches every tile. Use **Applies to sources** to restrict it to tiles that use a given set of sources — useful when the filter's expression only makes sense for some of the data on the dashboard.
+
+Chart builder tiles pick up broadcast filters automatically. Raw SQL tiles must include the [`$__filters` macro](/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) and have a source selected, since ClickStack cannot infer where the condition belongs in a hand-written query.
+
+### Variables {#dashboard-variables}
+
+With **Available as variable** enabled, the filter's selection is also exposed to tile queries as `$variableName`. The **Variable name** defaults to the filter's display name with illegal characters removed, and can be overridden. Names must start with a letter and may contain only letters, digits, and underscores.
+
+Use a variable when broadcasting a `WHERE` condition is not what you want — for example, to put the value in a `SELECT` expression, a `HAVING` clause, or a join key, or to filter a tile on a column other than the filter's own expression.
+
+#### Referencing a variable {#referencing-variables}
+
+A variable expands to the values currently selected in its dropdown. The reference form controls the rendering:
+
+| Reference             | Expands to                                                                                        | Empty selection |
+|-----------------------|---------------------------------------------------------------------------------------------------|-----------------|
+| `$name`, `${name}`    | The selected values, in `sqlstring` or `lucene` format, depending on context. Braces delimit the name when it is followed by word characters, as in `${name}_total`. | `NULL`          |
+| `${name:sqlstring}`   | The selected values, single-quoted, comma-separated, and escaped as SQL values, eg. `'a', 'b'`    | `NULL`          |
+| `${name:csv}`         | Unquoted and comma-separated: `a,b`. Not escaped for SQL.                                         | empty string    |
+| `${name:regex}`       | A regex alternation, regex-escaped: `(a\|b)`.                                                     | `.*`            |
+| `${name:lucene}`      | An `OR` of quoted terms, for Lucene inputs: `("a" OR "b")`.                                       | `("")`          |
+
+Because `$name` renders as `NULL` before anything is selected, prefer the following macros wherever a SQL predicate is expected. Both macros expand to `1=1` while their variable has no selection, so the query stays valid:
+
+| Macro                                          | Description                                                                                                              |
+|------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `$__filter($<variable>)`                        | Expands to `toString(<filter expression>) IN ($variable)` when values are selected for `variable`, and `1=1` otherwise.  |
+| `$__filter(<expression>, $<variable>)`          | Expands to `<expression> IN ($variable)` when values are selected for `variable`, and `1=1` otherwise.                   |
+| `$__conditionalAll(<condition>, $<variable>)`   | Expands to `<condition>` when the variable has a selection, `1=1` otherwise.                                             |
+
+#### Using variables in chart builder tiles {#variables-in-builder-tiles}
+
+Every SQL expression input in the chart builder accepts variable references: `SELECT` columns and per-series expressions, `WHERE`, `GROUP BY`, and `HAVING`. The editor autocompletes the dashboard's variables and shows what each reference expands to for the current selection.
+
+Prefer using the `$__filter` and `$__conditionalAll` macros when in SQL mode, so that queries remain valid when variable selections are empty. Macros are not available in Lucene inputs — reference raw variables there instead (eg. `ServiceName:$service`).
+
+In a Lucene input, whether the variable reference itself is quoted controls how a multi-value selection is matched. Given `$service` selected as `a,b`:
+
+| Reference                | Expands to                             | Matching behavior                                                                            |
+|---------------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------|
+| `ServiceName:$service`    | `ServiceName:("a" OR "b")`             | Substring match — translated to SQL as `ServiceName ILIKE '%a%' OR ServiceName ILIKE '%b%'`   |
+| `ServiceName:"$service"`  | `(ServiceName:"a" OR ServiceName:"b")` | Exact match on each selected value                                                            |
+
+Quote the variable reference — `Field:"$var"` — when the selected values should match `Field` exactly rather than as substrings.
+
+#### Using variables in SQL tiles {#variables-in-sql-tiles}
+
+Raw SQL tiles reference variables the same way, anywhere in the query:
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+See [SQL-based visualizations](/clickstack/features/dashboards/sql-visualizations#dashboard-variables) for the full list of macros available to SQL tiles.
+
+<Note>
+Alerts on a tile that references a dashboard variable evaluate with every variable in its empty state, not the values selected on the dashboard.
 </Note>
 
 ## Drilldown to search {#drilldown-to-search}

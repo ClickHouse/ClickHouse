@@ -37,9 +37,6 @@
           "$ref": "./products/managed-postgres/navigation.json"
         },
         {
-          "$ref": "./clickstack/navigation.json"
-        },
-        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
           "item": "Langfuse"
@@ -48,6 +45,9 @@
           "href": "#",
           "icon": "/images/icons/section-header.svg",
           "item": "С открытым исходным кодом"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "$ref": "./products/agentic-data-stack/navigation.json"
