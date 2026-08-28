@@ -110,7 +110,8 @@ $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG |& grep -F -o Exception
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --host $TEST_HOST |& grep -F -o Exception
 echo 'port'
-$CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_port |& grep -F -o 'Connection refused (localhost:0).'
+# The refusal now names the resolved address; normalize it away so the line stays stable.
+$CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_port |& grep -E -o 'Connection refused[^(]*\(localhost:0\)\.' | sed -E 's/refused[^(]*\(/refused (/'
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_port --port $TEST_PORT |& grep -F -o Exception
 echo 'secure'
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_secure |& grep -m1 -F -o -e 'SSL routines::wrong version number' -e 'tcp_secure protocol is disabled because poco library was built without NetSSL support.' -e 'certificate verify failed'
