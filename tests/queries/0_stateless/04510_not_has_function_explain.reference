@@ -426,10 +426,13 @@ SELECT isNull(k) FROM test_nullable_key_null_elem_mem WHERE has([CAST('', 'Dynam
 -- The NULL element still prunes on a Nullable key, so it reaches one granule and not both.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'Dynamic')], k)) WHERE explain LIKE '%Granules:%/%';
 Granules: 1/2
+Granules: 1/1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'LowCardinality(Nullable(String))')], k)) WHERE explain LIKE '%Granules:%/%';
 Granules: 1/2
+Granules: 1/1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_null_elem WHERE has([CAST('', 'Dynamic')], k)) WHERE explain LIKE '%Granules:%/%';
 Granules: 1/2
+Granules: 1/1
 DROP TABLE test_nullable_key_null_elem;
 DROP TABLE test_nullable_key_null_elem_mem;
 -- A monotonic wrapper whose argument type is the container key itself resolves the constant against

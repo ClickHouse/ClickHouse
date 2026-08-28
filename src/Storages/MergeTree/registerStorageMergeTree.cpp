@@ -2464,7 +2464,7 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part. For `Nullable` columns, `basic` statistics also track the number of `NULL` values in each part, enabling pruning based on `IS NULL` / `IS NOT NULL` predicates and improving range pruning accuracy for parts without `NULL` values.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
