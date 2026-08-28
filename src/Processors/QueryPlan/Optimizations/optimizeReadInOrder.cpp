@@ -1599,8 +1599,8 @@ bool wouldReadInOrderBeUseful(
     const KeyDescription & sorting_key,
     const QueryPlan::Node & subtree_above_reading)
 {
-    /// `buildInputOrderFromSortDescription` returns no `InputOrderInfo` when the prefix it built is
-    /// empty, so a non-zero length is exactly the `input_order != nullptr` condition.
+    /// `InputOrderInfo` is only ever constructed once a non-empty prefix is in hand, and a null
+    /// result maps to zero, so a non-zero length is exactly the `input_order != nullptr` condition.
     return readInOrderSortedPrefixLength(sorting, sorting_key, subtree_above_reading) > 0;
 }
 
