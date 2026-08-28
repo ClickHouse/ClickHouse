@@ -1928,6 +1928,7 @@ function accumulateResourceEvents(state, events)
         /// them all into one sum to derive the live IO rate, exactly like `clickhouse-client`.
         if (e.name === 'OSReadBytes' || e.name === 'OSWriteBytes' || e.name === 'ReadBufferFromS3Bytes'
             || e.name === 'WriteBufferFromS3Bytes' || e.name === 'ReadBufferFromAzureBytes' || e.name === 'WriteBufferFromAzureBytes'
+            || e.name === 'ReadWriteBufferFromHTTPBytes' || e.name === 'WriteBufferFromHTTPBytes'
             || e.name === 'NetworkReceiveBytes' || e.name === 'NetworkSendBytes')
         {
             state.io_bytes += value;

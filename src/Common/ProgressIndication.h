@@ -26,8 +26,8 @@ struct ThreadEventData
     UInt64 temp_data_on_disk_usage = 0;
 
     /// Per-packet byte deltas for the live IO rate. IO sums block-device reads/writes
-    /// (`OSReadBytes`/`OSWriteBytes`), object-storage reads/writes (S3, Azure), and ClickHouse's own
-    /// network traffic (`NetworkReceiveBytes`/`NetworkSendBytes`).
+    /// (`OSReadBytes`/`OSWriteBytes`), object-storage reads/writes (S3, Azure), HTTP payload
+    /// bytes, and ClickHouse's own network traffic (`NetworkReceiveBytes`/`NetworkSendBytes`).
     UInt64 io_bytes = 0;
 
     // -1 used as flag 'is not shown for old servers'
