@@ -1,5 +1,6 @@
 #include <memory>
 #include <Databases/IDatabase.h>
+#include <Databases/RenderedCreateQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TableNameHints.h>
@@ -264,6 +265,18 @@ ASTPtr IDatabase::getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*
     if (throw_on_error)
         throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no SHOW CREATE TABLE query for Database{}", getEngineName());
     return nullptr;
+}
+
+RenderedCreateQueryPtr
+IDatabase::getRenderedCreateTableQuery(const String & name, ContextPtr context, const RenderedCreateQueryFields & fields) const
+{
+    return getRenderedCreateTableQueryImpl(name, context, resolveRenderOptions(context), fields);
+}
+
+RenderedCreateQueryPtr IDatabase::getRenderedCreateTableQueryImpl(
+    const String & name, ContextPtr context, const RenderOptions & options, const RenderedCreateQueryFields & fields) const
+{
+    return renderCreateQuery(tryGetCreateTableQuery(name, context), options, fields);
 }
 
 DiskPtr IDatabase::getDisk() const

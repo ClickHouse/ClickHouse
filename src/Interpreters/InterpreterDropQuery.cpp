@@ -281,7 +281,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else if (query.kind == ASTDropQuery::Kind::Drop)
                 context_->checkAccess(drop_storage, table_id);
 
-            ddl_guard->releaseTableLock();
+            if (ddl_guard)
+                ddl_guard->releaseTableLock();
             table.reset();
 
             query_to_send.if_empty = false;
@@ -648,7 +649,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
         /// the logic regarding finding suitable tables is a bit below
-        if (!truncate || !query.has_tables || query.like.empty())
+        if (!truncate || !query.has_tables || !query.has_like)
         {
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
             /// since in this case getTablesIterator() may do some additional work,
@@ -824,7 +825,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     }
 
     /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
-    if (truncate && query.has_tables && !query.like.empty())
+    if (truncate && query.has_tables && query.has_like)
     {
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
@@ -844,7 +845,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 
-            if (!query.like.empty())
+            if (query.has_like)
             {
                 bool match = matchesLikePattern(tname, query.like, query.case_insensitive_like);
                 if (query.not_like)
@@ -1030,6 +1031,8 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         drop_query->kind = kind;
         drop_query->sync = sync;
         drop_query->if_exists = true;
+        /// The DDLGuard for this exact name is already held above, and it is not recursive.
+        drop_query->no_ddl_lock = need_ddl_guard;
         ASTPtr ast_drop_query = drop_query;
         /// FIXME We have to use global context to execute DROP query for inner table
         /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege

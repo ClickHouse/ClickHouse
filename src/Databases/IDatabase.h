@@ -39,6 +39,10 @@ using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
 class IRestoreCoordination;
+struct RenderOptions;
+struct RenderedCreateQuery;
+struct RenderedCreateQueryFields;
+using RenderedCreateQueryPtr = std::shared_ptr<const RenderedCreateQuery>;
 
 /// This structure is returned when getLightweightTablesIterator is called
 /// It contains basic details of the table, currently only the table name
@@ -452,6 +456,10 @@ public:
     /// like the one produced for `SELECT` queries.
     ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const;
 
+    /// The CREATE query rendered for `system.tables`. Never null. Read only the requested `fields`.
+    RenderedCreateQueryPtr
+    getRenderedCreateTableQuery(const String & name, ContextPtr context, const RenderedCreateQueryFields & fields) const;
+
     /// Get the CREATE DATABASE query for current database.
     ASTPtr getCreateDatabaseQuery() const
     {
@@ -540,6 +548,10 @@ public:
 protected:
     virtual ASTPtr getCreateDatabaseQueryImpl() const = 0;
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const;
+
+    /// Renders on every call. An override may serve a cached rendering of more fields than asked.
+    virtual RenderedCreateQueryPtr getRenderedCreateTableQueryImpl(
+        const String & name, ContextPtr context, const RenderOptions & options, const RenderedCreateQueryFields & fields) const;
 
     mutable std::mutex mutex;
     String database_name TSA_GUARDED_BY(mutex);

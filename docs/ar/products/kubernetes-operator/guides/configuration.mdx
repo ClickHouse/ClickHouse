@@ -599,7 +599,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
   ## منافذ إضافية
 </div>
 
-يكشف المشغّل مجموعة ثابتة من المنافذ على كل Pod لـ ClickHouse وعلى الخدمة عديمة الرأس الخاصة به: `8123` لـ HTTP، و`9000` لـ native، و`9009` للاتصال بين الخوادم، و`9001` للإدارة، و`9363` لمقاييس Prometheus، بالإضافة إلى منافذ TLS البديلة `8443`/`9440` عند تمكين TLS. لجعل ClickHouse يستمع إلى بروتوكولات إضافية — مثل MySQL أو PostgreSQL أو gRPC أو أي منفذ مخصّص — عرِّفها في `spec.additionalPorts`:
+يكشف المشغّل مجموعة ثابتة من المنافذ على كل Pod لـ ClickHouse وعلى الخدمة عديمة الرأس العامة الخاصة به: `8123` لـ HTTP، و`9000` لـ أصلي، و`9009` للاتصال بين الخوادم، و`9001`/`9002` للإدارة، و`9363` لمقاييس Prometheus، بالإضافة إلى منافذ TLS البديلة `8443`/`9440` عند تمكين TLS. كما تُكشف منافذ `interserver` والإدارة عبر الخدمات الداخلية لكل نسخة متماثلة، بحيث تتمكن النسخ المتماثلة والمشغّل من التواصل قبل أن تصبح النسخة المتماثلة جاهزة. لجعل ClickHouse يستمع إلى بروتوكولات إضافية — مثل MySQL أو PostgreSQL أو gRPC أو أي منفذ مخصّص — عرِّفها في `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -612,7 +612,8 @@ spec:
       port: 9100
 ```
 
-يضيف المشغّل هذه المنافذ إلى `containerPorts` الخاصة بالـ Pod وإلى الخدمة عديمة الرأس. ويمكن العثور على المثال الكامل في [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+يضيف المشغّل هذه المنافذ إلى `containerPorts` الخاصة بالـ Pod وإلى الخدمة عديمة الرأس العامة.
+ويمكن العثور على المثال الكامل في [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   يفتح `additionalPorts` المنافذ على مستوى Kubernetes فقط. لكنه **لا** يهيّئ خادم ClickHouse للاستماع عليها. ويجب أيضًا تمكين البروتوكول المقابل في `spec.settings.extraConfig.protocols`. وبدون ذلك، سيكون المنفذ مفتوحًا على الـ Service، لكن لن يستجيب أي شيء داخل الـ Pod.
@@ -638,7 +639,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -934,7 +935,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -980,6 +982,12 @@ spec:
 ```
 
 عند التفعيل، يزامن المُشغِّل جداول Replicated وجداول التكامل مع النسخ المتماثلة الجديدة.
+
+تحمل كل Pod للنسخة المتماثلة بوابة الجاهزية `clickhouse.com/ReplicaInitialized`، لذلك لا تُنشر النسخة المتماثلة الجديدة عبر الخدمة عديمة الرأس العامة إلا بعد أن يُكمل المُشغِّل تهيئتها: إذ تُحوَّل قاعدة البيانات `default` إلى محرك Replicated ويُزامَن المخطط. وحتى ذلك الحين، يصل إليها المُشغِّل والنسخ المتماثلة الأخرى عبر خدمتها الداخلية. عند استخدام `enableDatabaseSync: false`، يضع المُشغِّل علامة التهيئة على النسخ المتماثلة فورًا، لذا تعتمد الجاهزية على فحوصات الحاوية وحدها.
+
+لا يحذف المُشغِّل مطلقًا قاعدة بيانات `default` غير Replicated والمملوءة بالبيانات. تبدأ هذه النسخة المتماثلة مع ذلك في خدمة حركة مرور العملاء بعد إعداد المخطط، لكن العنقود يبلّغ عن `SchemaInSync=False` بالسبب `DefaultDatabaseNotReplicated` إلى أن تعالج قاعدة البيانات تلك بنفسك.
+
+قبل إزالة نسخة متماثلة عند التخفيض التدريجي، يُفرِّغ المُشغِّل أولًا حركة مرور العملاء منها، وينتظر حتى تتوقف عن النشر، ويُكرِّر بياناتها المتبقية إلى النسخ المتماثلة الباقية، ثم يحذفها فقط بعد ذلك.
 
 <div id="server-logging">
   ### تسجيل الخادم
