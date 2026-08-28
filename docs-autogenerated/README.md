@@ -137,9 +137,10 @@ included automatically.
 - Concrete versions are immutable bundles served beneath
   `/docs/reference/versions/<version>`.
 - `/sitemap.xml` is a sitemap index for the current reference sitemap and every
-  immutable version sitemap. Current pages are listed in
-  `/docs/reference/sitemap.xml`; a release freezes its own sitemap at
-  `/docs/reference/versions/<version>/sitemap.xml`.
+  immutable version sitemap. Each channel sitemap is itself a hierarchical
+  index whose child sitemap files follow the reference URL tree, such as
+  `/docs/reference/settings/sitemap.xml`; a release freezes the same hierarchy
+  beneath `/docs/reference/versions/<version>`.
 - Every archived HTML page emits `noindex,follow`; only `latest` is indexable.
 - The versions catalog is derived exclusively from bundles that are present.
   It has no speculative entries, publication status, or archive grouping.

@@ -13,6 +13,7 @@ import {
 } from './export-reference-docs.mjs';
 import { resolveStatementPages } from './lib/statement-metadata.mjs';
 import { loadStatementRegistrations } from './lib/statement-source.mjs';
+import { referenceSitemapFiles } from './lib/reference-sitemaps.mjs';
 import { findVersionSnapshotFile } from './lib/version-snapshot-files.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -272,6 +273,7 @@ async function main() {
     ]);
 
     const documents = (await readJson(path.join(artifactDirectory, 'documents.json'))).documents;
+    const routePayload = await readJson(path.join(artifactDirectory, 'routes.json'));
     const search = (await readJson(path.join(artifactDirectory, 'search.json'))).records;
     const navigation = await readJson(path.join(artifactDirectory, 'navigation.json'));
     const versionedNavigation = await readJson(
@@ -335,14 +337,43 @@ async function main() {
       path.join(generatedDirectory, 'public/sitemap.xml'),
       'utf8',
     );
-    const latestSitemap = await readFile(
+    const latestSitemapIndex = await readFile(
       path.join(generatedDirectory, 'public/docs/reference/sitemap.xml'),
       'utf8',
     );
-    const versionedSitemap = await readFile(
+    const latestHomepageSitemap = await readFile(
+      path.join(generatedDirectory, 'public/docs/reference/pages-sitemap.xml'),
+      'utf8',
+    );
+    const latestSettingsSitemap = await readFile(
+      path.join(generatedDirectory, 'public/docs/reference/settings/sitemap.xml'),
+      'utf8',
+    );
+    const latestStatementPagesSitemap = await readFile(
+      path.join(
+        generatedDirectory,
+        'public/docs/reference/statements/pages-sitemap.xml',
+      ),
+      'utf8',
+    );
+    const versionedSitemapIndex = await readFile(
       path.join(
         versionedGeneratedDirectory,
         'public/docs/reference/versions/26.8/sitemap.xml',
+      ),
+      'utf8',
+    );
+    const versionedHomepageSitemap = await readFile(
+      path.join(
+        versionedGeneratedDirectory,
+        'public/docs/reference/versions/26.8/pages-sitemap.xml',
+      ),
+      'utf8',
+    );
+    const versionedStatementPagesSitemap = await readFile(
+      path.join(
+        versionedGeneratedDirectory,
+        'public/docs/reference/versions/26.8/statements/pages-sitemap.xml',
       ),
       'utf8',
     );
@@ -532,23 +563,79 @@ async function main() {
       'The root sitemap index does not point to latest and immutable version sitemaps',
     );
     requireValue(
-      latestSitemap.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
-        && latestSitemap.includes('<loc>https://clickhouse.com/docs/reference</loc>')
-        && latestSitemap.includes(
-          '<loc>https://clickhouse.com/docs/reference/statements/select</loc>',
+      latestSitemapIndex.includes(
+        '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+      )
+        && latestSitemapIndex.includes(
+          '<loc>https://clickhouse.com/docs/reference/pages-sitemap.xml</loc>',
         )
-        && !latestSitemap.includes('/docs/reference/versions/26.8/'),
-      'The latest sitemap does not contain only current canonical reference routes',
+        && latestSitemapIndex.includes(
+          '<loc>https://clickhouse.com/docs/reference/functions/sitemap.xml</loc>',
+        )
+        && latestSitemapIndex.includes(
+          '<loc>https://clickhouse.com/docs/reference/settings/sitemap.xml</loc>',
+        )
+        && latestSitemapIndex.includes(
+          '<loc>https://clickhouse.com/docs/reference/system-tables/sitemap.xml</loc>',
+        )
+        && !latestSitemapIndex.includes('/docs/reference/versions/'),
+      'The latest sitemap index does not discover its reference-family sitemaps',
     );
     requireValue(
-      versionedSitemap.includes('<loc>https://clickhouse.com/docs/reference/versions/26.8</loc>')
-        && versionedSitemap.includes(
+      latestHomepageSitemap.includes('<loc>https://clickhouse.com/docs/reference</loc>')
+        && latestStatementPagesSitemap.includes(
+          '<loc>https://clickhouse.com/docs/reference/statements/select</loc>',
+        )
+        && latestSettingsSitemap.includes(
+          '<loc>https://clickhouse.com/docs/reference/settings/session-settings/sitemap.xml</loc>',
+        )
+        && latestSettingsSitemap.includes(
+          '<loc>https://clickhouse.com/docs/reference/settings/server-settings/sitemap.xml</loc>',
+        ),
+      'The latest sitemap hierarchy does not keep homepage, statement, and setting URLs local',
+    );
+    requireValue(
+      versionedSitemapIndex.includes(
+        '<loc>https://clickhouse.com/docs/reference/versions/26.8/pages-sitemap.xml</loc>',
+      )
+        && versionedSitemapIndex.includes(
+          '<loc>https://clickhouse.com/docs/reference/versions/26.8/settings/sitemap.xml</loc>',
+        )
+        && versionedHomepageSitemap.includes(
+          '<loc>https://clickhouse.com/docs/reference/versions/26.8</loc>',
+        )
+        && versionedStatementPagesSitemap.includes(
           '<loc>https://clickhouse.com/docs/reference/versions/26.8/statements/select</loc>',
         )
         && docsLayout.includes(
           `manifest.channel !== 'latest' && <meta name="robots" content="noindex,follow" />`,
         ),
-      'The immutable version is missing its sitemap or page-level `noindex` directive',
+      'The immutable version is missing its sitemap hierarchy or page-level `noindex` directive',
+    );
+
+    const generatedSitemapFiles = referenceSitemapFiles(latestManifest, routePayload, versions);
+    const generatedSitemapRoutes = new Set(generatedSitemapFiles.map(({ route }) => route));
+    const indexedReferenceSitemaps = generatedSitemapFiles
+      .filter(({ route, content }) => route !== '/sitemap.xml' && content.includes('<sitemapindex'))
+      .flatMap(({ content }) => [...content.matchAll(/<loc>([^<]+)<\/loc>/g)])
+      .map((match) => new URL(match[1]).pathname);
+    requireValue(
+      indexedReferenceSitemaps.every((route) => generatedSitemapRoutes.has(route)),
+      'A reference sitemap index points to a sitemap file that was not generated',
+    );
+    const expectedSitemapUrls = new Set([
+      '/docs/reference',
+      ...routePayload.routes.map(({ route }) => route),
+    ]);
+    const generatedSitemapUrls = generatedSitemapFiles
+      .filter(({ content }) => content.includes('<urlset'))
+      .flatMap(({ content }) => [...content.matchAll(/<loc>([^<]+)<\/loc>/g)])
+      .map((match) => new URL(match[1]).pathname);
+    requireValue(
+      generatedSitemapUrls.length === expectedSitemapUrls.size
+        && new Set(generatedSitemapUrls).size === expectedSitemapUrls.size
+        && generatedSitemapUrls.every((route) => expectedSitemapUrls.has(route)),
+      'The hierarchical latest sitemaps do not contain every canonical route exactly once',
     );
 
     requireValue(
