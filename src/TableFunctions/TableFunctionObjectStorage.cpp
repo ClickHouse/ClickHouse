@@ -92,6 +92,19 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 #endif
                     break;
 #endif
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD && USE_AVRO
+                case ObjectStorageType::GCS:
+                    /// A native GCS disk is only reachable for the backend-agnostic `iceberg` function, not for
+                    /// a backend-named one: `icebergS3` names the S3-compatibility API, which is a different
+                    /// path to the same bucket, and there is no `icebergGCS`. Delta Lake is not wired to the
+                    /// native backend at all, so a `deltaLake` over a `gcs` disk falls through to the error
+                    /// below rather than silently reading through the wrong configuration.
+                    if (Definition::name != "iceberg" && Definition::name != "icebergCluster")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
+
+                    configuration = std::make_shared<StorageGCSIcebergConfiguration>(settings);
+                    break;
+#endif
 #if USE_AZURE_BLOB_STORAGE && USE_AVRO
                 case ObjectStorageType::Azure:
                     if (Definition::name != "iceberg" &&
@@ -841,12 +854,13 @@ SETTINGS use_native_gcs = 1;
 In native mode credentials are resolved via the Google-native mechanisms rather than S3 HMAC keys:
 
 - **Application Default Credentials** (the default when no credentials are given): `GOOGLE_APPLICATION_CREDENTIALS`, the GCE/GKE metadata server, or the `gcloud` SDK configuration.
-- **`NOSIGN`** — anonymous access (public buckets and the GCS emulator).
-- **Application Default Credentials** and **`NOSIGN`** are the authentication modes supported by the SQL surface. Service-account keys are supported by server-configured GCS disks.
+- **`NOSIGN`**, and **`use_environment_credentials = 0`** — anonymous access (public buckets and the GCS emulator). A named collection that only specifies a `url` is anonymous, because that is what `use_environment_credentials = 0` means and named collections default it to `0`.
+- **`google_adc_client_id`, `google_adc_client_secret`, `google_adc_refresh_token`** — a Google "authorized user" refresh-token triple. The access token minted from it is renewed as it nears expiry, so it is also usable by a long-lived disk.
+- Those are the authentication modes supported by the SQL surface. Service-account keys are supported by server-configured GCS disks.
 
 Positional HMAC `access_key_id`/`secret_access_key` arguments only apply to the default S3-compatibility path; leave `use_native_gcs` unset (the default) to keep using them.
 
-Native GCS is also available as a MergeTree storage disk via `object_storage_type: gcs` (or `type: gcs`) when `use_native_gcs` is enabled.
+Native GCS is also available as a MergeTree storage disk via `object_storage_type: gcs` (or `type: gcs`) when `use_native_gcs` is enabled. Such a disk can back an [`Iceberg`](/reference/engines/table-engines/integrations/iceberg) table through the `disk` setting.
 
 ## Arguments {#arguments}
 

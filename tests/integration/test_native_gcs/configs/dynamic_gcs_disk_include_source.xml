@@ -8,4 +8,11 @@
     <gcs_included_service_account_key>
         <service_account_key>{"type": "service_account", "client_email": "server-managed@example.com"}</service_account_key>
     </gcs_included_service_account_key>
+    <!-- An include that resolves to a backend which is neither S3 nor GCS. The AST-level check cannot
+         know that (an `include` could still supply `type = gcs`), so it conservatively treats such a
+         disk as potentially remote; the persisted credential grant must not follow that guess. -->
+    <gcs_included_local_backend>
+        <type>local</type>
+        <path>/var/lib/clickhouse/custom_disks/included_local/</path>
+    </gcs_included_local_backend>
 </clickhouse>

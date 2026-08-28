@@ -559,7 +559,10 @@ SETTINGS disk = disk(
 | `endpoint` (Required)       | GCS endpoint in `https://storage.googleapis.com/bucket-name/root-path/` form. A non-Google host is treated as an endpoint override (for emulators). | -             |
 | `service_account_key`       | Contents of a service account JSON key for authentication.                                                                                          | -             |
 | `service_account_key_file`  | Path to a service account JSON key file.                                                                                                            | -             |
+| `google_adc_client_id`, `google_adc_client_secret`, `google_adc_refresh_token` | A Google "authorized user" refresh-token triple. All three must be given together. The access token minted from it is renewed as it nears expiry, so it is usable by a long-lived disk. | -             |
+| `google_adc_token_uri`      | Where the refresh token is exchanged. Only applies together with the triple above; validated against `remote_url_allow_hosts`.                       | `https://oauth2.googleapis.com/token` |
 | `no_sign_request`           | If `true`, send anonymous (unsigned) requests.                                                                                                       | `false`       |
+| `use_environment_credentials` | If `0`, do not resolve Application Default Credentials; a disk with no explicit credential then sends anonymous requests.                          | `1`           |
 | `header`                    | Additional HTTP header to send with every request; can be specified multiple times.                                                                 | -             |
 | `connect_timeout_ms`        | Connection timeout, in milliseconds.                                                                                                                 | `1000`        |
 | `request_timeout_ms`        | Request (transfer stall) timeout, in milliseconds.                                                                                                   | `30000`       |
@@ -567,13 +570,28 @@ SETTINGS disk = disk(
 | `readonly`                  | Only allow reading from the disk.                                                                                                                    | `false`       |
 | `proxy`                     | Proxy configuration in the same format as for the `s3` disk type; the server-wide `<proxy>` section and proxy environment variables also apply.      | -             |
 
-If none of the explicit credential parameters is set, the client falls back to [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) (a key file referenced by the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, or the metadata server on GCE/GKE).
+If none of the explicit credential parameters is set, and `use_environment_credentials` is not `0`, the client falls back to [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) (a key file referenced by the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, or the metadata server on GCE/GKE).
+
+#### Apache Iceberg on a native GCS disk {#native-gcs-storage-iceberg}
+
+An [`Iceberg`](/reference/engines/table-engines/integrations/iceberg) table can be read from and written to a native GCS disk by naming the disk in the `disk` setting, which is what the `Iceberg` engine and the `iceberg` table function pick their backend from:
+
+```sql
+CREATE TABLE iceberg_on_gcs (a UInt64, b String)
+ENGINE = Iceberg(path = 'table1/', format = Parquet)
+SETTINGS disk = 'gcs_disk';
+
+SELECT count() FROM iceberg(path = 'table1/', SETTINGS disk = 'gcs_disk');
+```
+
+The backend-named `icebergS3` engine and table function keep using the S3-compatible XML API, which is a different route to the same bucket.
 
 #### Limitations {#native-gcs-storage-limitations}
 
 - The backend is experimental. Dynamic GCS disks and the `gcs` table function require the experimental setting [`use_native_gcs`](/reference/settings/session-settings/use#use_native_gcs); server-configured disks are enabled by `object_storage_type: gcs`. The `GCS` table engine uses the S3-compatible backend.
 - The `plain_rewritable` metadata type is not supported with the native `gcs` object storage type.
-- Native GCS disks do not support static `access_token`, `google_adc_*` refresh-token credentials, or `access_header`; use Application Default Credentials or a service-account key instead.
+- Native GCS disks do not support a static `access_token` (a bearer token cannot be renewed for a long-lived client) or `access_header`; use `google_adc_*` refresh-token credentials, Application Default Credentials, or a service-account key instead.
+- Authentication settings that only the S3-compatibility path understands (`access_key_id`, `secret_access_key`, `session_token`, `role_arn`, `http_client`, `service_account`, `metadata_service`, `request_token_path`, the `server_side_encryption_*` keys) are rejected rather than ignored, so a disk cannot end up authenticating as something other than what was configured.
 - The server must be built with `google-cloud-cpp` support (`USE_GOOGLE_CLOUD`, enabled in official builds).
 
 ## Using HDFS storage (Unsupported) {#using-hdfs-storage-unsupported}

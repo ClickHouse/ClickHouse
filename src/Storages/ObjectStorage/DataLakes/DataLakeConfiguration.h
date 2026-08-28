@@ -17,6 +17,9 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+#include <Storages/ObjectStorage/GCS/Configuration.h>
+#endif
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
@@ -479,6 +482,13 @@ private:
 #    if USE_AWS_S3
 using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
 using StorageS3PaimonConfiguration = DataLakeConfiguration<StorageS3Configuration, PaimonMetadata>;
+#endif
+
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+/// Iceberg on a native GCS backend. Reaching it requires a `gcs` disk, which can only be created with the
+/// experimental `use_native_gcs` setting, so the feature gate is the disk's. An Iceberg table on GCS remains
+/// reachable through `icebergS3` and the S3-compatibility API without the native backend.
+using StorageGCSIcebergConfiguration = DataLakeConfiguration<StorageGCSConfiguration, IcebergMetadata>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE

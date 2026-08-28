@@ -1118,6 +1118,11 @@ void registerStorageIceberg(StorageFactory & factory)
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
                         break;
 #endif
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+                    case ObjectStorageType::GCS:
+                        configuration = std::make_shared<StorageGCSIcebergConfiguration>(storage_settings);
+                        break;
+#endif
 #if USE_AZURE_BLOB_STORAGE
                     case ObjectStorageType::Azure:
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
@@ -1161,7 +1166,7 @@ The Iceberg Table Engine is available but may have limitations. ClickHouse wasn'
 
 :::
 
-This engine provides a *data* integration with Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
+This engine provides a *data* integration with Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, Google Cloud Storage, HDFS and locally stored tables.
 
 ## Create table {#create-table}
 
@@ -1217,7 +1222,7 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 ## Aliases {#aliases}
 
-The `Iceberg` table engine auto-detects the storage backend from the `disk` setting and dispatches to `IcebergS3`, `IcebergAzure`, or `IcebergLocal` accordingly. When no `disk` is specified, it defaults to the `IcebergS3` implementation.
+The `Iceberg` table engine auto-detects the storage backend from the `disk` setting and dispatches to `IcebergS3`, `IcebergAzure`, or `IcebergLocal` accordingly. A native [Google Cloud Storage](/operations/storing-data#native-gcs-storage) disk is also supported, and is only reachable this way: there is no backend-named `IcebergGCS`, and `IcebergS3` uses the S3-compatible XML API instead. When no `disk` is specified, it defaults to the `IcebergS3` implementation.
 
 ## Data types {#data-types}
 
