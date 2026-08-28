@@ -25,8 +25,12 @@ run "SELECT toDate('2020-01-01') = ''"
 echo
 echo '=== a correlated subquery of several columns where a single value is expected'
 ${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS outer_table;
+    DROP TABLE IF EXISTS inner_table;
     CREATE TABLE outer_table (a UInt32) ORDER BY a;
     CREATE TABLE inner_table (b UInt32, c UInt32) ORDER BY b;
 "
 # `NOT EXISTS (...)` that lost its `EXISTS`.
 run "SELECT a FROM outer_table WHERE NOT (SELECT * FROM inner_table WHERE b = a)"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE outer_table; DROP TABLE inner_table"
