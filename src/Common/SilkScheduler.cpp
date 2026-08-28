@@ -28,8 +28,7 @@ void setSilkConfiguredButNotStarted(bool value)
 #include <Common/CurrentThread.h>
 #include <Common/ErrnoException.h>
 
-#include <silk/util/init.h>
-#include <Common/SilkSchedulerOptions.h>
+#include <Common/SilkFiberScheduler.h>
 #include <silk/fibers/fiber.h>
 
 #include <sys/syscall.h>
@@ -87,9 +86,11 @@ void probeIoUringAvailable()
 
 std::atomic<bool> silk_scheduler_initialized{false};
 
-/// Fires on every fiber switch across the whole process - both when a fiber is suspended
-/// and when it is resumed, possibly on a different carrier OS thread each time - for every
-/// fiber the server-wide Silk scheduler ever runs. A single swap of `DB::current_thread`
+/// Fires on every fiber switch - both when a fiber is suspended and when it is resumed,
+/// possibly on a different carrier OS thread each time - for every fiber of the
+/// `SilkFiberCategory::FETCH` category (the scheduler-wide hooks installed by
+/// `Silk::initializeFiberScheduler` dispatch on the category and forward FETCH fibers
+/// here; see `Silk::setFiberHooksForCategory`). A single swap of `DB::current_thread`
 /// (the borrowing OS thread's own thread-local pointer) with the header's parked slot serves
 /// as both directions: swap is its own inverse, so the same call both saves the carrier's
 /// `current_thread` and installs the fiber's own (on suspend) and restores the carrier's
@@ -102,30 +103,32 @@ std::atomic<bool> silk_scheduler_initialized{false};
 void onFiberResumeSuspend(silk::Fiber * fiber) noexcept
 {
     auto * header = static_cast<SilkFiberJobHeader *>(silk::FiberScheduler::getFiberParameters(fiber));
-    std::swap(header->saved_current_thread, current_thread);
+    /// `current_thread` is a FiberLocal, so the swap goes through its load/store; FETCH
+    /// fibers keep sharing the carrier's FiberLocalStorage for the other slots (the same
+    /// sharing they had when those variables were plain TLS).
+    ThreadStatus * fiber_current_thread = header->saved_current_thread;
+    header->saved_current_thread = current_thread;
+    current_thread = fiber_current_thread;
 }
 
 }
 
-silk::FiberScheduler::Options makeServerSilkSchedulerOptions()
+void registerReaderExecutorFiberHooks()
 {
-    silk::FiberScheduler::Options options;
-    /// OpenSSL handshakes and the AWS SDK run on fiber stacks and need more
-    /// room than the silk default (matches gtest_silk_fiber_stream_socket).
-    options.fiberStackSize = 320 * 1024;
-    /// Swap `DB::current_thread` in and out as a fiber migrates across carrier OS threads.
-    /// Must be set before `initialize`.
-    options.fiberResume = onFiberResumeSuspend;
-    options.fiberSuspend = onFiberResumeSuspend;
-    return options;
+    /// Swap `DB::current_thread` in and out as a FETCH fiber migrates across carrier OS
+    /// threads. Swap is its own inverse, so the same function serves as both hooks.
+    Silk::setFiberHooksForCategory(SilkFiberCategory::FETCH, onFiberResumeSuspend, onFiberResumeSuspend);
 }
 
 void initializeSilkScheduler()
 {
     probeIoUringAvailable();
-    silk::initialize();
-    silk::FiberScheduler::Options options = makeServerSilkSchedulerOptions();
-    silk::FiberScheduler::initialize(&options);
+    registerReaderExecutorFiberHooks();
+    /// The process supports a single `silk::FiberScheduler`; it may already have been
+    /// started by the `enable_silk_runtime` startup path, in which case the fibers of both
+    /// kinds share it (the switch hooks dispatch on the fiber category).
+    if (!Silk::isFiberSchedulerInitialized())
+        Silk::initializeFiberScheduler(Silk::DEFAULT_FIBER_STACK_SIZE);
     silk_scheduler_initialized.store(true);
 }
 
@@ -150,6 +153,10 @@ namespace DB
 {
 
 void initializeSilkScheduler()
+{
+}
+
+void registerReaderExecutorFiberHooks()
 {
 }
 

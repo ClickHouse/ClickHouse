@@ -43,6 +43,24 @@ bool isClickHouseFiber() noexcept
     return silk::FiberScheduler::getCurrentFiberId().category == CLICKHOUSE_FIBER_CATEGORY;
 }
 
+/// Hooks for one extra fiber category (see `setFiberHooksForCategory`). The category is
+/// stored last with release order and loaded first with acquire order, so a hook invocation
+/// that observes the category also observes the hook pointers; registration may race with
+/// switches of fibers of *other* categories, never with fibers of the registered category
+/// (none exist before registration).
+std::atomic<FiberSwitchHook> extra_hook_on_suspend{nullptr};
+std::atomic<FiberSwitchHook> extra_hook_on_resume{nullptr};
+std::atomic<uint8_t> extra_hook_category{0};
+
+void callExtraHook(const std::atomic<FiberSwitchHook> & hook_slot, silk::Fiber * fiber) noexcept
+{
+    const uint8_t category = silk::FiberScheduler::getCurrentFiberId().category;
+    if (category == 0 || category != extra_hook_category.load(std::memory_order_acquire))
+        return;
+    if (FiberSwitchHook hook = hook_slot.load(std::memory_order_acquire))
+        hook(fiber);
+}
+
 struct FiberContext
 {
     FiberLocalStorage::Holder fiber_local_storage;
@@ -70,7 +88,10 @@ struct FiberContext
 void onFiberResume(silk::Fiber * fiber) noexcept
 {
     if (!isClickHouseFiber())
+    {
+        callExtraHook(extra_hook_on_resume, fiber);
         return;
+    }
 
     auto * context = static_cast<FiberContext *>(silk::FiberScheduler::getFiberParameters(fiber));
     FiberLocalStorage::swap(*context->fiber_local_storage);
@@ -83,7 +104,10 @@ void onFiberResume(silk::Fiber * fiber) noexcept
 void onFiberSuspend(silk::Fiber * fiber) noexcept
 {
     if (!isClickHouseFiber())
+    {
+        callExtraHook(extra_hook_on_suspend, fiber);
         return;
+    }
 
     /// There can be a practically unbounded number of fibers.
     /// Each fiber gets a small buffer of untracked memory which it does not publish
@@ -128,6 +152,14 @@ void initializeFiberScheduler(uint32_t fiber_stack_size)
     silk::FiberScheduler::initialize(&options);
 
     fiber_scheduler_initialized.store(true, std::memory_order_release);
+}
+
+void setFiberHooksForCategory(uint8_t category, FiberSwitchHook on_suspend, FiberSwitchHook on_resume)
+{
+    chassert(category != 0 && category != CLICKHOUSE_FIBER_CATEGORY);
+    extra_hook_on_suspend.store(on_suspend, std::memory_order_release);
+    extra_hook_on_resume.store(on_resume, std::memory_order_release);
+    extra_hook_category.store(category, std::memory_order_release);
 }
 
 void destroyFiberScheduler()

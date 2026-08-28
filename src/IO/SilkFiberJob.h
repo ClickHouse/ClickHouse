@@ -31,8 +31,11 @@ struct SilkFiberJobHeader
 
 namespace SilkFiberCategory
 {
-    /// Reader executor fetch steps.
-    inline constexpr uint8_t FETCH = 1;
+    /// Reader executor fetch steps. Category 1 is taken by fibers spawned through
+    /// `Silk::spawn` (`CLICKHOUSE_FIBER_CATEGORY` in SilkFiberScheduler.cpp), which follow
+    /// a different parameters convention; the scheduler-wide switch hooks dispatch on the
+    /// category, so the two must not collide.
+    inline constexpr uint8_t FETCH = 2;
 }
 
 /// The one sanctioned spawn point for fibers on the server-wide scheduler:

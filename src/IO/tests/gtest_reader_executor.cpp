@@ -3792,7 +3792,7 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsHeldSegment)
     /// previous pointer on exit (the singleton's process-exit dtor asserts it
     /// is still `current_thread`). Mirrors `FileCacheTest`'s SetUp/TearDown —
     /// without it this test aborts under shuffled / sanitizer CI runs.
-    auto * saved_thread = DB::current_thread;
+    DB::ThreadStatus * saved_thread = DB::current_thread;
     DB::current_thread = nullptr;
     SCOPE_EXIT({ DB::current_thread = saved_thread; });
 
@@ -3918,7 +3918,7 @@ TEST(ReaderExecutor, DoneMachineCollectedAndLeadToppedUpBehindCursor)
     /// already in flight beyond it, bounded by the horizon.
     DB::ServerUUID::setRandomForUnitTests();
 
-    auto * saved_thread = DB::current_thread;
+    DB::ThreadStatus * saved_thread = DB::current_thread;
     DB::current_thread = nullptr;
     SCOPE_EXIT({ DB::current_thread = saved_thread; });
 
@@ -4037,7 +4037,7 @@ TEST(ReaderExecutor, FullCacheColdReadServesRefusedBytesFromBank)
     /// launcher still ASKS the full lead: the residue cap, not a tier gate, limits the fetch.
     DB::ServerUUID::setRandomForUnitTests();
 
-    auto * saved_thread = DB::current_thread;
+    DB::ThreadStatus * saved_thread = DB::current_thread;
     DB::current_thread = nullptr;
     SCOPE_EXIT({ DB::current_thread = saved_thread; });
 
@@ -4126,7 +4126,7 @@ TEST(ReaderExecutor, EncryptedColdCellWindowStartsBelowHeader)
     /// debug builds (the `toLogical` underflow guard).
     DB::ServerUUID::setRandomForUnitTests();
 
-    auto * saved_thread = DB::current_thread;
+    DB::ThreadStatus * saved_thread = DB::current_thread;
     DB::current_thread = nullptr;
     SCOPE_EXIT({ DB::current_thread = saved_thread; });
 
@@ -4280,7 +4280,7 @@ TEST(ReaderExecutor, UnifiedForegroundStopsAtFirstSiblingLedSegment)
 {
     DB::ServerUUID::setRandomForUnitTests();
 
-    auto * saved_thread = DB::current_thread;
+    DB::ThreadStatus * saved_thread = DB::current_thread;
     DB::current_thread = nullptr;
     SCOPE_EXIT({ DB::current_thread = saved_thread; });
 
@@ -4420,7 +4420,7 @@ TEST(ReaderExecutor, PumpHealsAbandonedSiblingSegment)
 {
     DB::ServerUUID::setRandomForUnitTests();
 
-    auto * saved_thread = DB::current_thread;
+    DB::ThreadStatus * saved_thread = DB::current_thread;
     DB::current_thread = nullptr;
     SCOPE_EXIT({ DB::current_thread = saved_thread; });
 
@@ -4617,7 +4617,7 @@ TEST(ReaderExecutor, ForegroundElectThenSourceThrowLeavesNoDownloadingSegment)
 {
     DB::ServerUUID::setRandomForUnitTests();
 
-    auto * saved_thread = DB::current_thread;
+    DB::ThreadStatus * saved_thread = DB::current_thread;
     DB::current_thread = nullptr;
     SCOPE_EXIT({ DB::current_thread = saved_thread; });
 

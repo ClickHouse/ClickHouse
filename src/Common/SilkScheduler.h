@@ -22,9 +22,14 @@ namespace DB
 /// to start.
 /// All functions are no-ops (false) in builds without Silk.
 /// This header deliberately exposes no Silk types: its consumers (e.g. the
-/// server) do not link ch_contrib::silk_fibers. The scheduler options live
-/// in SilkSchedulerOptions.h for the TUs that do.
+/// server) do not link ch_contrib::silk_fibers.
 void initializeSilkScheduler();
+
+/// Registers the reader-executor fiber-switch hooks (the `current_thread` swap for
+/// `SilkFiberCategory::FETCH` fibers) on the process-wide scheduler without starting it.
+/// Called by `initializeSilkScheduler`; exposed separately for unit tests, which start the
+/// scheduler through the shared lazy test helper instead. No-op in builds without Silk.
+void registerReaderExecutorFiberHooks();
 
 /// Set once during single-threaded server startup; safe to call concurrently
 /// from any thread afterwards (atomic load).

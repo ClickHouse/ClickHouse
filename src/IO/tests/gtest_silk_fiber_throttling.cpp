@@ -107,7 +107,7 @@ TEST(SilkFiberThrottling, ScopesSurviveMigration)
 
     std::vector<silk::FiberFuture> futures(2 * fibers_per_kind);
     for (size_t i = 0; i < futures.size(); ++i)
-        ASSERT_EQ(DB::runSilkFiber(fiber_main, Params{{}, /*with_scopes=*/ i % 2 == 0}, 0, &futures[i]), 0);
+        ASSERT_EQ(DB::runSilkFiber(fiber_main, Params{{}, /*with_scopes=*/ i % 2 == 0}, DB::SilkFiberCategory::FETCH, &futures[i]), 0);
 
     for (auto & future : futures)
         EXPECT_EQ(future.wait(), 0);
@@ -155,7 +155,7 @@ TEST(SilkFiberThrottling, ThrottleSleepYieldsCarrier)
 
     std::vector<silk::FiberFuture> futures(fiber_count);
     for (auto & future : futures)
-        ASSERT_EQ(DB::runSilkFiber(fiber_main, Params{}, 0, &future), 0);
+        ASSERT_EQ(DB::runSilkFiber(fiber_main, Params{}, DB::SilkFiberCategory::FETCH, &future), 0);
 
     for (auto & future : futures)
         EXPECT_EQ(future.wait(), 0);
