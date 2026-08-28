@@ -73,7 +73,7 @@ public:
 protected:
     /// Blocks a plain thread; on a silk fiber suspends only the fiber, keeping
     /// the carrier OS thread free for other fibers.
-    virtual void sleep(UInt64 nanoseconds);
+    void sleep(UInt64 nanoseconds);
 
 private:
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value);

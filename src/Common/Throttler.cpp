@@ -4,6 +4,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/SilkScheduler.h>
+#include <Common/SilkFiberScheduler.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
@@ -66,8 +67,10 @@ void Throttler::sleep(UInt64 nanoseconds)
 #if USE_SILK
     /// Blocking on a fiber would stall the borrowed carrier OS thread and every
     /// fiber queued behind it; suspend just this fiber instead. Plain threads
-    /// and proxy fibers (id 0) keep the blocking sleep.
-    if (currentSilkFiberId() != 0)
+    /// and proxy fibers (id 0) keep the blocking sleep. Fibers spawned through
+    /// `Silk::spawn`/`Silk::runBlocking` and through the reader-executor scheduler
+    /// mark themselves differently, so check both.
+    if (Silk::isInsideFiber() || currentSilkFiberId() != 0)
     {
         silk::FiberScheduler::sleep(nanoseconds);
         return;
@@ -75,6 +78,7 @@ void Throttler::sleep(UInt64 nanoseconds)
 #endif
     sleepForNanoseconds(nanoseconds);
 }
+
 
 bool Throttler::throttle(size_t amount, size_t max_block_ns)
 {
