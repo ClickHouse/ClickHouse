@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the RapidJSON parser is not built in fasttest.
+
 -- `JSONExtract` fills named tuples from JSON objects only (see the
 -- `json_extract_named_tuples_as_objects` setting); unnamed tuples keep the
 -- historical positional fill from arrays.
