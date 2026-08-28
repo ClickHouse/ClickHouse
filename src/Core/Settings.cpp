@@ -8183,6 +8183,17 @@ Cloud default value: `default`.
     DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(
 If true, subquery for IN will be executed on every follower replica.
 )", 0) \
+    DECLARE(UInt64, parallel_replicas_ship_join_predicate, 0, R"(
+Ship the semi-join predicate of an `INNER JOIN` into the subquery that parallel replicas execute, so that
+every replica filters its own share before aggregating instead of sending every group to the initiator.
+The join itself still runs on the initiator, so row multiplicity is unchanged.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Inject `IN (SELECT key FROM <build side>)`. Each replica evaluates the subquery itself.
+- 2 - Inject `GLOBAL IN (SELECT key FROM <build side>)`. The initiator evaluates it once and broadcasts the set.
+)", EXPERIMENTAL) \
     DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
 )", 0) \

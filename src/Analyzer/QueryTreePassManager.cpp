@@ -21,6 +21,7 @@
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 #include <Analyzer/Passes/HasToInPass.h>
+#include <Analyzer/Passes/ShipJoinPredicateToParallelReplicasPass.h>
 #include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
@@ -348,6 +349,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
+
+    /// After CrossToInnerJoinPass, so a rewritten CROSS JOIN is seen as INNER.
+    manager.addPass(std::make_unique<ShipJoinPredicateToParallelReplicasPass>());
 
     manager.addPass(std::make_unique<DisableParallelReplicasPass>());
 }

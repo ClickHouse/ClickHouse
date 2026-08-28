@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"parallel_replicas_ship_join_predicate", 0, 0, "New setting"},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},

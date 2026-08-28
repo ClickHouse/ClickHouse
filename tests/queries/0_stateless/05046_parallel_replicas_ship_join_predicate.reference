@@ -1,0 +1,14 @@
+predicate reaches the WHERE of the shipped subquery
+1	1
+1
+results are identical in every mode
+45000	10
+45000	10
+45000	10
+duplicate build keys keep their multiplicity
+40	9000	10
+40	9000	10
+40	9000	10
+a LEFT JOIN keeps its unmatched rows
+10000
+10000
