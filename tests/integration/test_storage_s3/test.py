@@ -842,6 +842,47 @@ def test_remote_host_filter_reload_for_persistent_table(started_cluster):
         instance.query("DROP TABLE remote_host_filter_reload")
 
 
+def test_remote_host_filter_reload_for_iceberg_maintenance(started_cluster):
+    instance = started_cluster.instances["restricted_dummy"]
+    url = (
+        f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/"
+        f"{started_cluster.minio_bucket}/remote_host_filter_reload_iceberg"
+    )
+    instance.query(
+        f"CREATE TABLE remote_host_filter_reload_iceberg (x UInt32) "
+        f"ENGINE = IcebergS3('{url}', 'minio', '{minio_secret_key}')"
+    )
+    try:
+        instance.query(
+            "INSERT INTO remote_host_filter_reload_iceberg VALUES (1)",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+        assert instance.query("SELECT * FROM remote_host_filter_reload_iceberg") == "1\n"
+        blocked_config = """
+<clickhouse>
+    <remote_url_allow_hosts>
+        <host>blocked.invalid</host>
+    </remote_url_allow_hosts>
+</clickhouse>
+"""
+        with instance.with_replace_config(
+            "/etc/clickhouse-server/config.d/config_for_test_remote_host_filter.xml",
+            blocked_config,
+            reload_before=True,
+            reload_after=True,
+        ):
+            assert "UNACCEPTABLE_URL" in instance.query_and_get_error(
+                "ALTER TABLE remote_host_filter_reload_iceberg ADD COLUMN y UInt32",
+                settings={"allow_insert_into_iceberg": 1},
+            )
+            assert "UNACCEPTABLE_URL" in instance.query_and_get_error(
+                "OPTIMIZE TABLE remote_host_filter_reload_iceberg",
+                settings={"allow_experimental_iceberg_compaction": 1},
+            )
+    finally:
+        instance.query("DROP TABLE remote_host_filter_reload_iceberg")
+
+
 def test_wrong_s3_syntax(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     expected_err_msg = "Code: 42"  # NUMBER_OF_ARGUMENTS_DOESNT_MATCH
