@@ -48,6 +48,21 @@ public:
     /// Could be used to concatenate columns.
     virtual MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
+    struct IndexesWithMaxIndex
+    {
+        MutableColumnPtr indexes;
+        size_t max_index;
+    };
+
+    /// Translates a range of dictionary indexes. Callers can pass distinct positions to insert each referenced key once.
+    /// The returned indexes correspond one-to-one with src_indexes[start, start + length), and max_index is their maximum.
+    virtual IndexesWithMaxIndex uniqueInsertRangeFromDictionary(
+        const IColumnUnique & src_dictionary,
+        const IColumn & src_indexes,
+        size_t start,
+        size_t length,
+        size_t destination_size_upper_bound) = 0;
+
     struct IndexesWithOverflow
     {
         MutableColumnPtr indexes;

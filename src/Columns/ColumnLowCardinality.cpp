@@ -12,15 +12,59 @@
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
+#include <algorithm>
+#include <limits>
+#include <new>
+
 
 namespace DB
 {
+
+thread_local LowCardinalityHashMapSizeCache * LowCardinalityHashMapSizeCache::current_cache = nullptr;
+
+LowCardinalityHashMapSizeCache::Scope::Scope(LowCardinalityHashMapSizeCache & cache_)
+    : previous_cache(current_cache)
+{
+    current_cache = &cache_;
+}
+
+LowCardinalityHashMapSizeCache::Scope::~Scope()
+{
+    current_cache = previous_cache;
+}
+
+size_t LowCardinalityHashMapSizeCache::get(const IColumn * source_indexes) const
+{
+    for (const auto & entry : entries)
+        if (entry.source_indexes == source_indexes)
+            return entry.hash_map_size;
+    return 0;
+}
+
+void LowCardinalityHashMapSizeCache::set(const IColumn * source_indexes, size_t hash_map_size)
+{
+    for (auto & entry : entries)
+    {
+        if (entry.source_indexes == source_indexes)
+        {
+            entry.hash_map_size = hash_map_size;
+            return;
+        }
+    }
+    entries.push_back({source_indexes, hash_map_size});
+}
+
+LowCardinalityHashMapSizeCache * LowCardinalityHashMapSizeCache::getCurrent()
+{
+    return current_cache;
+}
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 void throwUnexpectedLowCardinalityIndexType(size_t size)
@@ -47,33 +91,58 @@ namespace
     }
 
     template <typename T>
-    MutableColumnPtr mapUniqueIndexImplRef(PaddedPODArray<T> & index)
+    const PaddedPODArray<T> * getIndexesData(const IColumn & indexes)
     {
+        const auto * column = typeid_cast<const ColumnVector<T> *>(&indexes);
+        if (column)
+            return &column->getData();
+
+        return nullptr;
+    }
+
+    template <typename T>
+    MutableColumnPtr mapUniqueIndexImplRef(PaddedPODArray<T> & index, const IColumn * reserve_cache_key)
+    {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         PaddedPODArray<T> copy(index.cbegin(), index.cend());
+#endif
 
-        HashMap<T, T> hash_map;
-        for (auto val : index)
-            hash_map.insert({val, static_cast<T>(hash_map.size())});
-
+        auto * reserve_cache = LowCardinalityHashMapSizeCache::getCurrent();
+        const size_t reserve_size = reserve_cache && reserve_cache_key
+            ? std::min(index.size(), reserve_cache->get(reserve_cache_key))
+            : 0;
+        HashMap<T, T> hash_map(reserve_size);
         auto res_col = ColumnVector<T>::create();
         auto & data = res_col->getData();
 
-        data.resize(hash_map.size());
-        for (const auto & val : hash_map)
-            data[val.getMapped()] = val.getKey();
-
         for (auto & ind : index)
-            ind = hash_map[ind];
+        {
+            typename HashMap<T, T>::LookupResult it;
+            bool inserted = false;
+            hash_map.emplace(ind, it, inserted);
+            if (inserted)
+            {
+                const auto compact_index = static_cast<T>(data.size());
+                new (&it->getMapped()) T(compact_index);
+                data.push_back(ind);
+            }
+            ind = it->getMapped();
+        }
 
+        if (reserve_cache && reserve_cache_key)
+            reserve_cache->set(reserve_cache_key, hash_map.size());
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         for (size_t i = 0; i < index.size(); ++i)
             if (data[index[i]] != copy[i])
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {}, but got {}", toString(data[index[i]]), toString(copy[i]));
+#endif
 
         return res_col;
     }
 
     template <typename T>
-    MutableColumnPtr mapUniqueIndexImpl(PaddedPODArray<T> & index)
+    MutableColumnPtr mapUniqueIndexImpl(PaddedPODArray<T> & index, const IColumn * reserve_cache_key)
     {
         if (index.empty())
             return ColumnVector<T>::create();
@@ -86,7 +155,7 @@ namespace
 
         /// May happen when dictionary is shared.
         if (max_val > size)
-            return mapUniqueIndexImplRef(index);
+            return mapUniqueIndexImplRef(index, reserve_cache_key);
 
         auto map_size = static_cast<UInt64>(max_val) + 1;
         PaddedPODArray<T> map(map_size, 0);
@@ -119,18 +188,135 @@ namespace
     }
 
     /// Returns unique values of column. Write new index to column.
-    MutableColumnPtr mapUniqueIndex(IColumn & column)
+    MutableColumnPtr mapUniqueIndex(IColumn & column, const IColumn * reserve_cache_key = nullptr)
     {
         if (auto * data_uint8 = getIndexesData<UInt8>(column))
-            return mapUniqueIndexImpl(*data_uint8);
+            return mapUniqueIndexImpl(*data_uint8, reserve_cache_key);
         if (auto * data_uint16 = getIndexesData<UInt16>(column))
-            return mapUniqueIndexImpl(*data_uint16);
+            return mapUniqueIndexImpl(*data_uint16, reserve_cache_key);
         if (auto * data_uint32 = getIndexesData<UInt32>(column))
-            return mapUniqueIndexImpl(*data_uint32);
+            return mapUniqueIndexImpl(*data_uint32, reserve_cache_key);
         if (auto * data_uint64 = getIndexesData<UInt64>(column))
-            return mapUniqueIndexImpl(*data_uint64);
+            return mapUniqueIndexImpl(*data_uint64, reserve_cache_key);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}", column.getName());
     }
+
+    template <typename DestinationIndexType, typename SourceIndexType>
+    MutableColumnPtr convertIndexColumn(const PaddedPODArray<SourceIndexType> & source_indexes)
+    {
+        auto result = ColumnVector<DestinationIndexType>::create();
+        auto & result_indexes = result->getData();
+        result_indexes.reserve(source_indexes.size());
+        for (const auto index : source_indexes)
+            result_indexes.push_back(static_cast<DestinationIndexType>(index));
+        return result;
+    }
+
+    template <typename IndexType>
+    MutableColumnPtr narrowIndexColumnForType(
+        MutableColumnPtr indexes, const PaddedPODArray<IndexType> & indexes_data, size_t max_index)
+    {
+        if constexpr (sizeof(IndexType) == sizeof(UInt8))
+            return indexes;
+
+        if (max_index <= std::numeric_limits<UInt8>::max())
+            return convertIndexColumn<UInt8>(indexes_data);
+        if constexpr (sizeof(IndexType) > sizeof(UInt16))
+            if (max_index <= std::numeric_limits<UInt16>::max())
+                return convertIndexColumn<UInt16>(indexes_data);
+        if constexpr (sizeof(IndexType) > sizeof(UInt32))
+            if (max_index <= std::numeric_limits<UInt32>::max())
+                return convertIndexColumn<UInt32>(indexes_data);
+        return indexes;
+    }
+
+    MutableColumnPtr narrowIndexColumn(MutableColumnPtr indexes, size_t max_index)
+    {
+        if (indexes->empty())
+            return indexes;
+        if (const auto * indexes_data = getIndexesData<UInt8>(*indexes))
+            return narrowIndexColumnForType(std::move(indexes), *indexes_data, max_index);
+        if (const auto * indexes_data = getIndexesData<UInt16>(*indexes))
+            return narrowIndexColumnForType(std::move(indexes), *indexes_data, max_index);
+        if (const auto * indexes_data = getIndexesData<UInt32>(*indexes))
+            return narrowIndexColumnForType(std::move(indexes), *indexes_data, max_index);
+        if (const auto * indexes_data = getIndexesData<UInt64>(*indexes))
+            return narrowIndexColumnForType(std::move(indexes), *indexes_data, max_index);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Indexes column for LowCardinality translation must be ColumnUInt, got {}",
+            indexes->getName());
+    }
+
+    template <typename SourceIndexType>
+    MutableColumnPtr translateSparseIndexesForSourceType(
+        const IColumn & source_indexes_column,
+        const PaddedPODArray<SourceIndexType> & source_indexes,
+        size_t start,
+        size_t length,
+        const IColumnUnique & source_dictionary,
+        IColumnUnique & destination_dictionary)
+    {
+        const size_t source_dictionary_size = source_dictionary.size();
+        /// Every valid source index is dense-path eligible without scanning in this case.
+        if (source_dictionary_size == 0 || source_dictionary_size - 1 <= length)
+            return nullptr;
+
+        SourceIndexType max_source_index = source_indexes[start];
+        for (size_t i = 1; i < length; ++i)
+            max_source_index = std::max(max_source_index, source_indexes[start + i]);
+
+        /// Preserve the existing dense mapping path and its crossover exactly.
+        if (max_source_index <= length)
+            return nullptr;
+
+        auto compact_indexes = IColumn::mutate(source_indexes_column.cut(start, length));
+        auto distinct_source_indexes = mapUniqueIndex(*compact_indexes, &source_indexes_column);
+        const size_t distinct_source_index_count = distinct_source_indexes->size();
+        const size_t max_new_keys = std::min(distinct_source_index_count, source_dictionary_size);
+        const size_t destination_dictionary_size = destination_dictionary.size();
+        if (max_new_keys > std::numeric_limits<size_t>::max() - destination_dictionary_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality dictionary size overflow");
+        const size_t destination_size_upper_bound = destination_dictionary_size + max_new_keys;
+        auto translated_distinct_indexes = destination_dictionary.uniqueInsertRangeFromDictionary(
+            source_dictionary,
+            *distinct_source_indexes,
+            0,
+            distinct_source_index_count,
+            destination_size_upper_bound);
+        translated_distinct_indexes.indexes = narrowIndexColumn(
+            std::move(translated_distinct_indexes.indexes), translated_distinct_indexes.max_index);
+
+        if (distinct_source_index_count == length)
+            return std::move(translated_distinct_indexes.indexes);
+        return IColumn::mutate(translated_distinct_indexes.indexes->index(*compact_indexes, 0));
+    }
+
+    MutableColumnPtr translateSparseIndexes(
+        const IColumn & source_indexes,
+        size_t start,
+        size_t length,
+        const IColumnUnique & source_dictionary,
+        IColumnUnique & destination_dictionary)
+    {
+        if (const auto * indexes = getIndexesData<UInt8>(source_indexes))
+            return translateSparseIndexesForSourceType(
+                source_indexes, *indexes, start, length, source_dictionary, destination_dictionary);
+        if (const auto * indexes = getIndexesData<UInt16>(source_indexes))
+            return translateSparseIndexesForSourceType(
+                source_indexes, *indexes, start, length, source_dictionary, destination_dictionary);
+        if (const auto * indexes = getIndexesData<UInt32>(source_indexes))
+            return translateSparseIndexesForSourceType(
+                source_indexes, *indexes, start, length, source_dictionary, destination_dictionary);
+        if (const auto * indexes = getIndexesData<UInt64>(source_indexes))
+            return translateSparseIndexesForSourceType(
+                source_indexes, *indexes, start, length, source_dictionary, destination_dictionary);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Indexes column for LowCardinality translation must be ColumnUInt, got {}",
+            source_indexes.getName());
+    }
+
 }
 
 
@@ -205,6 +391,16 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
+    const size_t source_size = low_cardinality_src->size();
+    if (start > source_size || length > source_size - start)
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Parameters start = {}, length = {} are out of bound in ColumnLowCardinality::insertRangeFrom method "
+            "(source.size() = {})",
+            start,
+            length,
+            source_size);
+
     if (length == 0)
         return;
 
@@ -222,19 +418,34 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
-        idx.insertIndexesRange(low_cardinality_src->getIndexes(), start, length);
+        idx.insertIndexesRangeWithShift(
+            low_cardinality_src->getIndexes(),
+            start,
+            length,
+            /*shift=*/0,
+            low_cardinality_src->getDictionary().size() - 1);
     }
     else
     {
         compactIfSharedDictionary();
 
-        /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
+        const auto & source_keys = *low_cardinality_src->getDictionary().getNestedColumn();
+        auto translated_indexes = translateSparseIndexes(
+            low_cardinality_src->getIndexes(),
+            start,
+            length,
+            low_cardinality_src->getDictionary(),
+            getDictionary());
+        if (translated_indexes)
+        {
+            idx.insertIndexesRange(*translated_indexes, 0, length);
+            return;
+        }
 
+        /// Keep the existing batched path for dense source indexes.
         auto sub_idx = IColumn::mutate(low_cardinality_src->getIndexes().cut(start, length));
         auto idx_map = mapUniqueIndex(*sub_idx);
-
-        auto src_nested = low_cardinality_src->getDictionary().getNestedColumn();
-        auto used_keys = src_nested->index(*idx_map, 0);
+        auto used_keys = source_keys.index(*idx_map, 0);
 
         auto inserted_indexes = getDictionary().uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
         idx.insertIndexesRange(*inserted_indexes->index(*sub_idx, 0), 0, length);
@@ -663,7 +874,7 @@ ColumnLowCardinality::DictionaryEncodedColumn
 ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const
 {
     MutableColumnPtr sub_indexes = IColumn::mutate(idx.getIndexes()->cut(offset, limit));
-    auto indexes_map = mapUniqueIndex(*sub_indexes);
+    auto indexes_map = mapUniqueIndex(*sub_indexes, &getIndexes());
     auto sub_keys = getDictionary().getNestedColumn()->index(*indexes_map, 0);
 
     return {std::move(sub_keys), std::move(sub_indexes)};

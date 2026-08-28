@@ -16,6 +16,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class DataTypeArray;
 class ColumnArray;
+class LowCardinalityHashMapSizeCache;
 std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type);
 const ColumnArray * getArrayJoinColumnRawPtr(const ColumnPtr & column);
 
@@ -59,7 +60,7 @@ class ArrayJoinResultIterator
 {
 public:
     explicit ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_, bool enable_lazy_columns_replication_);
-    ~ArrayJoinResultIterator() = default;
+    ~ArrayJoinResultIterator();
 
     Block next();
     bool hasNext() const;
@@ -77,6 +78,8 @@ private:
     const ColumnArray * any_array;
     /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
     std::map<String, ColumnPtr> non_empty_array_columns;
+
+    std::unique_ptr<LowCardinalityHashMapSizeCache> low_cardinality_hash_map_size_cache;
 
     size_t total_rows;
     size_t current_row;

@@ -10,6 +10,8 @@
 #include <base/range.h>
 #include <base/unaligned.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -324,6 +326,8 @@ public:
     static constexpr bool use_saved_hash = !is_numeric_column;
 
     UInt64 insert(std::string_view data);
+    void reserve(size_t num_rows);
+    bool isBuilt() const { return index != nullptr; }
 
     /// Returns the found data's index in the dictionary. If index is not built, builds it.
     UInt64 getInsertionPoint(std::string_view data)
@@ -391,7 +395,7 @@ private:
     mutable ColumnUInt64::MutablePtr external_saved_hash;
     mutable std::atomic<const ColumnUInt64 *> external_saved_hash_snapshot;
 
-    void buildIndex();
+    void buildIndex(size_t reserve_for_num_elements = 0);
 
     UInt64 getHash(std::string_view ref) const
     {
@@ -433,7 +437,7 @@ size_t ReverseIndex<IndexType, ColumnType>::size() const
 }
 
 template <typename IndexType, typename ColumnType>
-void ReverseIndex<IndexType, ColumnType>::buildIndex()
+void ReverseIndex<IndexType, ColumnType>::buildIndex(size_t reserve_for_num_elements)
 {
     if (index)
         return;
@@ -442,7 +446,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex can't build index because index column wasn't set.");
 
     auto size = column->size();
-    index = std::make_unique<IndexMapType>(size);
+    index = std::make_unique<IndexMapType>(std::max(size, reserve_for_num_elements));
 
     if constexpr (use_saved_hash)
         saved_hash = calcHashes();
@@ -470,6 +474,25 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicating keys found in ReverseIndex.");
     }
+}
+
+template <typename IndexType, typename ColumnType>
+void ReverseIndex<IndexType, ColumnType>::reserve(size_t num_rows)
+{
+    if (!column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex can't reserve because index column wasn't set.");
+
+    column->reserve(num_rows);
+
+    const size_t num_index_elements = num_rows > num_prefix_rows_to_skip ? num_rows - num_prefix_rows_to_skip : 0;
+
+    if (!index)
+        buildIndex(num_index_elements);
+    else
+        index->reserve(num_index_elements);
+
+    if constexpr (use_saved_hash)
+        saved_hash->reserve(num_rows);
 }
 
 template <typename IndexType, typename ColumnType>

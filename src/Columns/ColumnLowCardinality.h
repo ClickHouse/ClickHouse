@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
 #include <Columns/ColumnIndex.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -13,6 +14,38 @@ namespace DB
 {
 
 [[noreturn]] void throwUnexpectedLowCardinalityIndexType(size_t size);
+
+class LowCardinalityHashMapSizeCache
+{
+public:
+    class Scope
+    {
+    public:
+        explicit Scope(LowCardinalityHashMapSizeCache & cache_);
+        ~Scope();
+
+        Scope(const Scope &) = delete;
+        Scope & operator=(const Scope &) = delete;
+
+    private:
+        LowCardinalityHashMapSizeCache * previous_cache;
+    };
+
+    size_t get(const IColumn * source_indexes) const;
+    void set(const IColumn * source_indexes, size_t hash_map_size);
+
+    static LowCardinalityHashMapSizeCache * getCurrent();
+
+private:
+    struct Entry
+    {
+        const IColumn * source_indexes;
+        size_t hash_map_size;
+    };
+
+    VectorWithMemoryTracking<Entry> entries;
+    static thread_local LowCardinalityHashMapSizeCache * current_cache;
+};
 
 /**
  * How data is stored (in a nutshell):

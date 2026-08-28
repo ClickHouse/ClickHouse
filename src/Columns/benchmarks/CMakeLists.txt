@@ -7,3 +7,8 @@ clickhouse_add_executable(benchmark_compute_hash_into benchmark_compute_hash_int
 target_link_libraries (benchmark_compute_hash_into PRIVATE
     ch_contrib::gbenchmark_all
     dbms)
+
+clickhouse_add_executable(column_low_cardinality_insert_range benchmark_low_cardinality_insert_range.cpp)
+target_link_libraries(column_low_cardinality_insert_range PRIVATE
+    ch_contrib::gbenchmark_all
+    dbms)

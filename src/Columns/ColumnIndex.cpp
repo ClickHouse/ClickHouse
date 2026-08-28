@@ -291,19 +291,34 @@ void ColumnIndex::insertIndexesRangeWithShift(const IColumn & column, size_t off
         if (!column_ptr)
             return false;
 
-        auto copy = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+        if (shift == 0 && size_of_type == sizeof(ColumnType))
+            indexes->insertRangeFrom(column, offset, limit);
+        else
         {
-            auto & indexes_data = getIndexesData<CurIndexType>();
-            const auto & column_data = column_ptr->getData();
+            const size_t column_size = column_ptr->size();
+            if (offset > column_size || limit > column_size - offset)
+                throw Exception(
+                    ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "Parameters offset = {}, limit = {} are out of bound in ColumnIndex::insertIndexesRangeWithShift method "
+                    "(column.size() = {})",
+                    offset,
+                    limit,
+                    column_size);
 
-            size_t size = indexes_data.size();
-            indexes_data.resize(size + limit);
+            auto copy = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+            {
+                auto & indexes_data = getIndexesData<CurIndexType>();
+                const auto & column_data = column_ptr->getData();
 
-            for (size_t i = 0; i < limit; ++i)
-                indexes_data[size + i] = static_cast<CurIndexType>(static_cast<CurIndexType>(column_data[offset + i]) + shift);
-        };
+                size_t size = indexes_data.size();
+                indexes_data.resize(size + limit);
 
-        callForType(std::move(copy), size_of_type);
+                for (size_t i = 0; i < limit; ++i)
+                    indexes_data[size + i] = static_cast<CurIndexType>(static_cast<CurIndexType>(column_data[offset + i]) + shift);
+            };
+
+            callForType(std::move(copy), size_of_type);
+        }
 
         return true;
     };
