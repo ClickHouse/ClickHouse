@@ -3855,6 +3855,93 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
             const char * statement_begin = token_iterator->begin;
 
+            /// `clickhouse_json` statements are not parser-based: `parseQuery` above routes
+            /// them through `IAST::createFromJSON` after scanning the raw text for one
+            /// balanced top-level JSON object (a leading `SET` is still parsed as SQL as an
+            /// escape hatch back to the other dialects -- for it, fall through to the regular
+            /// parser probe below, which also keeps the `SET dialect = ...` mirroring alive).
+            /// Mirror that scan here: an object whose braces (or a string literal) are still
+            /// open at the end of input is being typed, so it needs continuation. Everything
+            /// else is submitted -- disabled support, a statement that does not start with
+            /// `{`, oversized input, malformed JSON and excessive trailing input are all
+            /// errors the executor reports on its own.
+            if (effective_settings[Setting::dialect] == Dialect::clickhouse_json
+                && !isClickHouseJSONSetEscape(statement_begin, end, effective_settings[Setting::max_query_size]))
+            {
+                if (!effective_settings[Setting::enable_json_ast_dialect])
+                    return false;
+
+                /// Bound the scan by `max_query_size` like the executor does; exceeding it
+                /// there is an error, so the buffer is submitted to report it.
+                const size_t scan_max_query_size = effective_settings[Setting::max_query_size];
+
+                const char * json_begin = statement_begin;
+                while (json_begin < end && isWhitespaceASCII(*json_begin))
+                {
+                    if (scan_max_query_size != 0 && static_cast<size_t>(json_begin - statement_begin) > scan_max_query_size)
+                        return false;
+                    ++json_begin;
+                }
+
+                if (json_begin == end || *json_begin != '{')
+                    return false;
+
+                size_t depth = 0;
+                bool in_string = false;
+                bool escaped = false;
+                const char * json_end = json_begin;
+                for (; json_end < end; ++json_end)
+                {
+                    if (scan_max_query_size != 0 && static_cast<size_t>(json_end - json_begin) > scan_max_query_size)
+                        return false;
+                    const char c = *json_end;
+                    if (in_string)
+                    {
+                        if (escaped)
+                            escaped = false;
+                        else if (c == '\\')
+                            escaped = true;
+                        else if (c == '"')
+                            in_string = false;
+                    }
+                    else if (c == '"')
+                    {
+                        in_string = true;
+                    }
+                    else if (c == '{')
+                    {
+                        ++depth;
+                    }
+                    else if (c == '}')
+                    {
+                        --depth;
+                        if (depth == 0)
+                        {
+                            ++json_end;
+                            break;
+                        }
+                    }
+                }
+
+                /// The object is still open at the end of input: the user is typing it.
+                if (depth != 0)
+                    return true;
+
+                /// A complete JSON object. The executor accepts only `;` or the end of input
+                /// after it (anything else is "excessive input" to report), so submit unless
+                /// a `;` introduces another statement to probe. A JSON statement cannot be a
+                /// `SET` escape (handled above), so the effective settings are unchanged.
+                Tokens after_json_tokens(json_end, end, 0, true);
+                TokenIterator after_json_iterator(after_json_tokens);
+                if (after_json_iterator->isEnd() || after_json_iterator->type != TokenType::Semicolon)
+                    return false;
+
+                /// Advance the shared parse position past the object, up to its terminator.
+                while (!token_iterator->isEnd() && token_iterator->begin < json_end)
+                    ++token_iterator;
+                continue;
+            }
+
             ASTPtr ast;
             Expected expected;
             bool parsed = false;
@@ -3874,6 +3961,16 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 /// at an arbitrary point, so anything else is committed and reported
                 /// by the regular query-processing path.
                 if (has_statement_terminator(statement_begin))
+                    return false;
+
+                /// Polyglot hands the foreign-dialect text to the transpiler as one opaque
+                /// string -- it is never tokenized by the ClickHouse lexer, so the bracket
+                /// heuristic below cannot be trusted on it, and the transpiler reports all
+                /// failures as free-form error text with no stable end-of-input marker to
+                /// probe. There is no reliable "still being typed" signal, so continuation
+                /// is disabled for it: submit, and the executor reports the syntax error,
+                /// exactly as it does for any thrown parse error.
+                if (effective_settings[Setting::dialect] == Dialect::polyglot)
                     return false;
 
                 /// PromQL and PRQL validate their entire statement with external
