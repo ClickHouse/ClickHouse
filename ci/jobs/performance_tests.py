@@ -1233,11 +1233,12 @@ def find_prev_master_slower_count(job_name, commits, release_base_sha):
     the current run against an older one, so red would no longer blame the
     commit that introduced the regression.
 
-    `commits` on master runs is the raw GitHub `/commits` listing, which
-    interleaves merged PR side-branch commits with the first-parent chain, so
-    the walk deliberately has no cutoff: side-branch commits have no report in
-    S3 and are skipped cheaply, and truncating the list could exhaust it
-    before reaching the previous actual master run."""
+    `commits` on master runs is `master_track_commits_sha`, the first-parent
+    chain of master recorded by the `store_data` hook, so every entry is a
+    commit that had (or should have had) its own master run. The walk has no
+    cutoff anyway: a commit whose run produced no report says nothing and is
+    skipped, and truncating the list could exhaust it before reaching the
+    previous actual master run."""
     result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
     for sha in commits:
         link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
