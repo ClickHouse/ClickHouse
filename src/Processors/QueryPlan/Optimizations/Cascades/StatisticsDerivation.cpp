@@ -125,8 +125,8 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
                     result.max_row_count = std::min(result.max_row_count, other.max_row_count);
                 }
                 /// The distinct output rows cannot exceed any input, with or without NDVs.
-                result.estimated_distinct_bound = std::min(result.estimated_distinct_bound,
-                    std::min(other.estimated_row_count, other.estimated_distinct_bound));
+                result.estimated_distinct_bound = std::min(
+                    {result.estimated_distinct_bound, other.estimated_row_count, other.estimated_distinct_bound});
                 for (size_t position = 0; position < input_headers.at(0)->columns(); ++position)
                 {
                     auto output_column = result.column_statistics.find(input_headers.at(0)->getByPosition(position).name);
