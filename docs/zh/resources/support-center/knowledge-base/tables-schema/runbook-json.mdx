@@ -79,7 +79,7 @@ keywords: ['JSON', 'JSON type', 'schema 设计', '类型提示', 'max_dynamic_pa
 
   **注意事项**
 
-  * 如果你使用 `JSONEachRow` 插入 JSON 数据，而 JSON 中包含 schema 里不存在的字段，ClickHouse 默认会静默丢弃这些字段。如果你希望改为报错，请将 [`input_format_skip_unknown_fields`](/zh/reference/settings/formats#input_format_skip_unknown_fields) 设置为 `0`。
+  * 如果你使用 `JSONEachRow` 插入 JSON 数据，而 JSON 中包含 schema 里不存在的字段，ClickHouse 默认会静默丢弃这些字段。如果你希望改为报错，请将 [`input_format_skip_unknown_fields`](/zh/reference/settings/formats/input-format#input_format_skip_unknown_fields) 设置为 `0`。
 </Accordion>
 
 ***
