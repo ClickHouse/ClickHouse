@@ -24,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -131,20 +130,6 @@ void validateSupportedColumns(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
             configuration.getTypeName());
-    }
-}
-
-void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name)
-{
-    size_t position = 0;
-    for (const auto & column : schema)
-    {
-        if (column.name.empty())
-            throw Exception(
-                ErrorCodes::AMBIGUOUS_COLUMN_NAME,
-                "Column name in {} table schema cannot be empty (field at position {})",
-                lake_name, position);
-        ++position;
     }
 }
 

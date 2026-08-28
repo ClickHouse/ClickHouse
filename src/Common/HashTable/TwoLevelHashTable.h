@@ -378,16 +378,6 @@ public:
         return res;
     }
 
-    /// Walk the mapped values of every bucket. `TwoLevelHashMapTable` shadows this with its own; defined
-    /// here so that a two-level table over set buckets - which have no mapped values, so this visits
-    /// nothing - also satisfies generic code that iterates mapped values.
-    template <typename Func>
-    void ALWAYS_INLINE forEachMapped(Func && func)
-    {
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-            impls[i].forEachMapped(func);
-    }
-
     bool empty() const
     {
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)

@@ -123,7 +123,13 @@ ExpressionTransform
 2020-10-12	2
 2020-10-12	3
 2020-10-12	4
-SELECT\n    date,\n    i\nFROM t_read_in_order\nWHERE equals(date, \'2020-10-12\')\nORDER BY i DESC\nLIMIT 5
+SELECT
+    date,
+    i
+FROM t_read_in_order
+WHERE equals(date, \'2020-10-12\')
+ORDER BY i DESC
+LIMIT 5
 (Expression)
 ExpressionTransform
   (Limit)

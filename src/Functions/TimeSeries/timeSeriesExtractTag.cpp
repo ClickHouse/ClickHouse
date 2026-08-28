@@ -88,7 +88,7 @@ REGISTER_FUNCTION(TimeSeriesExtractTag)
 {
     FunctionDocumentation::Description description = R"(
 Extracts the value of a specified tag from the group. Returns NULL if not found.
-See also function [timeSeriesGroupToTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+See also function [timeSeriesGroupToTags()](/sql-reference/functions/time-series-functions#timeSeriesGroupToTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesExtractTag(group)";
     FunctionDocumentation::Arguments arguments = {

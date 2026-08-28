@@ -1,8 +1,4 @@
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/System/DatabaseTablesCursor.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
-
-#include <set>
 
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
@@ -19,7 +15,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -37,8 +32,6 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Columns/ColumnConst.h>
-#include <Functions/IFunction.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -53,142 +46,9 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
+    extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
-}
-
-namespace
-{
-
-/// Try to read a constant string from `node` and return its single value.
-/// Unwraps aliases and reads the value via `ColumnConst::getField`, which works
-/// even for a `ColumnConst` of logical size 0 (a "pure" constant, as produced by
-/// the analyzer) — unlike `column[0]`, which an `empty()` check has to guard.
-std::optional<String> tryReadConstString(const ActionsDAG::Node * node)
-{
-    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        node = node->children[0];
-    if (!node || !node->column)
-        return {};
-    const IColumn * column = node->column.get();
-    /// Unwrap `ColumnConst` to its single-row data column. This reads the value
-    /// even for a `ColumnConst` of logical size 0 (the analyzer's "pure" constant).
-    if (const auto * const_column = typeid_cast<const ColumnConst *>(column))
-        column = &const_column->getDataColumn();
-    if (column->empty())
-        return {};
-    Field field = (*column)[0];
-    if (field.getType() != Field::Types::String)
-        return {};
-    return field.safeGet<String>();
-}
-
-/// Unwrap ALIAS nodes to reach the underlying node.
-const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
-{
-    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        node = node->children[0];
-    return node;
-}
-
-/// Escape SQL LIKE wildcards (`%`, `_`) and the escape char (`\`) so a literal
-/// prefix (e.g. from `startsWith`) becomes an equivalent LIKE pattern.
-String escapeForLikeLiteral(const String & s)
-{
-    String result;
-    result.reserve(s.size());
-    for (char c : s)
-    {
-        if (c == '%' || c == '_' || c == '\\')
-            result += '\\';
-        result += c;
-    }
-    return result;
-}
-
-/// Extract a namespace-pushdown hint from a top-level `name` conjunct: `name = '…'`
-/// (Equals), or `name LIKE '…%'` / its analyzer rewrite `startsWith(name, '…')` (Like).
-TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
-{
-    if (!predicate)
-        return {};
-
-    /// Collect top-level conjuncts.
-    std::vector<const ActionsDAG::Node *> conjuncts;
-    const auto * node = predicate;
-    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        node = node->children[0];
-
-    if (node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base
-        && node->function_base->getName() == "and")
-    {
-        for (const auto * child : node->children)
-            conjuncts.push_back(child);
-    }
-    else
-    {
-        conjuncts.push_back(node);
-    }
-
-    TablesFilter like_filter;
-    for (const auto * conjunct : conjuncts)
-    {
-        while (conjunct->type == ActionsDAG::ActionType::ALIAS && !conjunct->children.empty())
-            conjunct = conjunct->children[0];
-
-        if (conjunct->type != ActionsDAG::ActionType::FUNCTION
-            || !conjunct->function_base
-            || conjunct->children.size() != 2)
-            continue;
-
-        const auto & fn_name = conjunct->function_base->getName();
-
-        const auto * lhs = skipAliases(conjunct->children[0]);
-        const auto * rhs = skipAliases(conjunct->children[1]);
-
-        /// The `name` column reads as an INPUT named "name" once aliases are
-        /// unwrapped. (A constant carries `column`; the column reference does not.)
-        auto is_name_column = [](const ActionsDAG::Node * n)
-        {
-            return n && n->result_name == "name" && !n->column;
-        };
-        const bool lhs_is_name = is_name_column(lhs);
-        const bool rhs_is_name = is_name_column(rhs);
-        if (!lhs_is_name && !rhs_is_name)
-            continue;
-
-        if (fn_name == "equals")
-        {
-            /// `equals` is symmetric (literal either side); prefer it — most selective.
-            if (auto literal = tryReadConstString(lhs_is_name ? rhs : lhs))
-                return {TablesFilter::Kind::Equals, std::move(*literal)};
-        }
-        else if (fn_name == "like")
-        {
-            /// Not symmetric: only `name LIKE 'pattern'` (name on lhs) constrains `name`.
-            /// Keep the first such pattern if no `equals` is found.
-            if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
-            {
-                if (auto literal = tryReadConstString(rhs))
-                    like_filter = {TablesFilter::Kind::Like, std::move(*literal)};
-            }
-        }
-        else if (fn_name == "startsWith")
-        {
-            /// Analyzer rewrite of a perfect-prefix `name LIKE 'prefix%'`. The literal
-            /// is a plain prefix, so escape it and append `%` to recover the LIKE pattern.
-            if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
-            {
-                if (auto literal = tryReadConstString(rhs))
-                    like_filter = {TablesFilter::Kind::Like, escapeForLikeLiteral(*literal) + "%"};
-            }
-        }
-    }
-
-    return like_filter;
-}
-
 }
 
 namespace detail
@@ -219,7 +79,7 @@ ColumnPtr getFilteredTables(
 {
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUUID>(), "uuid"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
 
     MutableColumnPtr table_column = ColumnString::create();
@@ -227,11 +87,6 @@ ColumnPtr getFilteredTables(
     MutableColumnPtr engine_column;
 
     auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
-
-    TablesFilter tables_filter;
-    if (dag)
-        tables_filter = extractTableNameFilter(dag->getOutputs().at(0));
-
     if (dag)
     {
         bool filter_by_engine = false;
@@ -273,31 +128,26 @@ ColumnPtr getFilteredTables(
         {
             if (engine_column || uuid_column)
             {
-                auto table_it = database->getTablesIteratorWithHint(context,
+                auto table_it = database->getTablesIterator(context,
                                                                        /* filter_by_table_name */ {},
-                                                                       /* skip_not_loaded */ false,
-                                                                       tables_filter);
+                                                                       /* skip_not_loaded */ false);
                 for (; table_it->isValid(); table_it->next())
                 {
                     const auto & table = table_it->table();
-                    /// A null table means the storage object could not be resolved (concurrent
-                    /// drop, or unresolvable DataLakeCatalog metadata). Keep the name with an
-                    /// empty engine / Nil uuid rather than dropping the row, so predicates on
-                    /// `engine`/`uuid` see it (and it can be filtered out) instead of the table
-                    /// silently vanishing from system.tables.
+                    if (!table)
+                        continue; /// Table was concurrently dropped and should be skipped
                     table_column->insert(table_it->name());
                     if (engine_column)
-                        engine_column->insert(table ? table->getName() : "");
+                        engine_column->insert(table->getName());
                     if (uuid_column)
-                        uuid_column->insert(table ? table->getStorageID().uuid : UUIDHelpers::Nil);
+                        uuid_column->insert(table->getStorageID().uuid);
                 }
             }
             else
             {
-                auto table_details = database->getLightweightTablesIteratorWithHint(context,
+                auto table_details = database->getLightweightTablesIterator(context,
                                                                       /* filter_by_table_name */ {},
-                                                                      /* skip_not_loaded */ false,
-                                                                      tables_filter);
+                                                                      /* skip_not_loaded */ false);
                 for (const auto & table_detail : table_details)
                 {
                     table_column->insert(table_detail.name);
@@ -349,7 +199,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
         {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
-        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, tokenbf_v1, text, vector_similarity). Empty for tables without skip indices."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
@@ -430,14 +279,12 @@ public:
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
-        ContextPtr context_,
-        TablesFilter tables_filter_)
+        ContextPtr context_)
         : ISource(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
-        , databases_cursor(std::move(databases_))
+        , databases(std::move(databases_))
         , context(Context::createCopy(context_))
-        , tables_filter(std::move(tables_filter_))
     {
         size_t size = tables_->size();
         tables.reserve(size);
@@ -458,48 +305,28 @@ protected:
         return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
     }
 
-    void fillSkippingIndicesTypes(MutableColumns & columns, const StorageMetadataPtr & metadata_snapshot, size_t & res_index)
-    {
-        Array skipping_indices_types;
-        if (metadata_snapshot)
-        {
-            /// Collect distinct types, sorted, so the result is deterministic.
-            /// Skip implicitly created indices (e.g. via add_minmax_index_for_numeric_columns)
-            /// so the column reports only skip indices explicitly defined on the table.
-            std::set<String> types;
-            for (const auto & index : metadata_snapshot->getSecondaryIndices())
-                if (!index.isImplicitlyCreated())
-                    types.insert(index.type);
-
-            skipping_indices_types.reserve(types.size());
-            for (const auto & type : types)
-                skipping_indices_types.push_back(type);
-        }
-        columns[res_index++]->insert(skipping_indices_types);
-    }
-
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
     {
-        /// `table` can be null for an unresolvable table (e.g. a DataLakeCatalog table whose
-        /// metadata cannot be fetched). Always advance `res_index` so the column stays aligned
-        /// with the others; otherwise the whole system.tables scan aborts.
-        const auto metadata_snapshot = table ? table->getInMemoryMetadataPtr(context, false) : nullptr;
-        if (!metadata_snapshot)
+        if (table)
         {
-            columns[res_index++]->insertDefault();
-            return;
-        }
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            if (!metadata_snapshot)
+            {
+                columns[res_index++]->insertDefault();
+                return;
+            }
 
-        NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
-        if (!query_parameters_array.empty())
-        {
-            Array changes;
-            for (const auto & [key, value] : query_parameters_array)
-                changes.push_back(Tuple{key, value});
-            columns[res_index++]->insert(changes);
+            NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
+            if (!query_parameters_array.empty())
+            {
+                Array changes;
+                for (const auto & [key, value] : query_parameters_array)
+                    changes.push_back(Tuple{key, value});
+                columns[res_index++]->insert(changes);
+            }
+            else
+                columns[res_index++]->insertDefault();
         }
-        else
-            columns[res_index++]->insertDefault();
     }
 
 
@@ -507,10 +334,9 @@ protected:
     /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
-        auto table_details = databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(context,
+        auto table_details = database->getLightweightTablesIterator(context,
                                 /* filter_by_table_name */ {},
-                                /* skip_not_loaded */ false,
-                                tables_filter);
+                                /* skip_not_loaded */ false);
 
         size_t count = 0;
 
@@ -523,7 +349,7 @@ protected:
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(databases_cursor.getDatabaseName());
+                res_columns[res_index++]->insert(database_name);
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(table_detail.name);
@@ -548,8 +374,30 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
+            /// Consume the exhausted iterator, otherwise it could advance `database_idx` twice.
+            if (tables_it && !tables_it->isValid())
+            {
+                ++database_idx;
+                tables_it.reset();
+            }
+
+            while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
+            {
+                database_name = databases->getDataAt(database_idx);
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+
+                if (!database)
+                {
+                    /// Database was deleted just now or the user has no access.
+                    ++database_idx;
+                    continue;
+                }
+
+                break;
+            }
+
             /// This is for temporary tables. They are output in single block regardless to max_block_size.
-            if (!databases_cursor.advanceToNextDatabase())
+            if (database_idx >= databases->size())
             {
                 if (context->hasSessionContext())
                 {
@@ -625,13 +473,7 @@ protected:
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
                             }
-                            // skipping_indices_types
-                            else if (src_index == 20 && columns_mask[src_index])
-                            {
-                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
-                                fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
-                            }
-                            else if (src_index == 22 && columns_mask[src_index])
+                            else if (src_index == 21 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -649,7 +491,7 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 23 && columns_mask[src_index])
+                            else if (src_index == 22 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -679,7 +521,6 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
-            const String & database_name = databases_cursor.getDatabaseName();
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             /// This is for queries similar to 'show tables', where only name of the table is needed
@@ -690,48 +531,38 @@ protected:
                         ((needed_columns[0].name == "name" && needed_columns[1].name == "database") ||
                             (needed_columns[0].name == "database" && needed_columns[1].name == "name")));
 
-            /// A database whose iterator survived a block boundary was started on the
-            /// slow path and must be finished there, not re-emitted whole.
-            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables && !databases_cursor.hasTablesIterator())
+            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables)
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
-                databases_cursor.skipCurrentDatabase();
+                ++database_idx;
                 continue;
             }
 
-            const DatabasePtr & database = databases_cursor.getDatabase();
-            if (!databases_cursor.hasTablesIterator())
-                databases_cursor.setTablesIterator(database->getTablesIteratorWithHint(context,
+            if (!tables_it || !tables_it->isValid())
+                tables_it = database->getTablesIterator(context,
                         /* filter_by_table_name */ {},
-                        /* skip_not_loaded */ false,
-                        tables_filter));
+                        /* skip_not_loaded */ false);
 
-            auto & tables_it = databases_cursor.getTablesIterator();
-            for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
+            for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
-                auto table_name = tables_it.name();
+                auto table_name = tables_it->name();
                 if (!tables.contains(table_name))
                     continue;
 
                 if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = tables_it.table();
-                /// A null table means the storage object could not be resolved: either the table
-                /// was concurrently dropped between the iterator snapshot and this table() call, or
-                /// (for DataLakeCatalog databases) its metadata is unresolvable. We still emit a row
-                /// for it -- with defaults/NULL for every column that needs the opened storage object
-                /// -- so a single broken table neither drops itself from the listing nor aborts the
-                /// whole system.tables scan. Every metadata-dependent column below is guarded on
-                /// `table` being non-null.
+                StoragePtr table = tables_it->table();
+                if (!table)
+                    continue; /// Table was concurrently dropped between iterator snapshot and table() call so we should skip it
 
                 TableLockHolder lock;
 
                 /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
                 /// and it's not protected internally by other mutexes
                 static const size_t DATA_PATHS_INDEX = 5;
-                if (table && columns_mask[DATA_PATHS_INDEX])
+                if (columns_mask[DATA_PATHS_INDEX])
                 {
                     lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
                     if (!lock)
@@ -751,14 +582,12 @@ protected:
                     res_columns[res_index++]->insert(table_name);
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it.uuid());
+                    res_columns[res_index++]->insert(tables_it->uuid());
 
                 if (columns_mask[src_index++])
                 {
-                    if (table)
-                        res_columns[res_index++]->insert(table->getName());
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    chassert(table != nullptr);
+                    res_columns[res_index++]->insert(table->getName());
                 }
 
                 if (columns_mask[src_index++])
@@ -766,17 +595,13 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    chassert(lock != nullptr);
                     Array table_paths_array;
-                    /// `lock` is only acquired above when `table` is non-null.
-                    if (table)
+                    if (auto paths = table->tryGetDataPaths())
                     {
-                        chassert(lock != nullptr);
-                        if (auto paths = table->tryGetDataPaths())
-                        {
-                            table_paths_array.reserve(paths->size());
-                            for (const String & path : *paths)
-                                table_paths_array.push_back(path);
-                        }
+                        table_paths_array.reserve(paths->size());
+                        for (const String & path : *paths)
+                            table_paths_array.push_back(path);
                     }
                     res_columns[res_index++]->insert(table_paths_array);
                     /// We don't need the lock anymore
@@ -826,26 +651,42 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
-                    /// Skip the catalog query for a null-storage row (unresolvable DataLakeCatalog
-                    /// table, or one dropped concurrently with the scan): it re-enters
-                    /// DatabaseDataLake::getCreateTableQueryImpl, which can throw again and abort
-                    /// the whole scan. Such a row renders as empty strings.
-                    const RenderedCreateQueryFields fields{
-                        .create_table_query = columns_mask[src_index] != 0,
-                        .engine_full = columns_mask[src_index + 1] != 0,
-                        .as_select = columns_mask[src_index + 2] != 0};
+                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
+                    auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
-                    auto rendered = table ? database->getRenderedCreateTableQuery(table_name, context, fields)
-                                          : renderCreateQuery(nullptr, RenderOptions{}, fields);
+                    if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
+                    {
+                        ast_create->uuid = UUIDHelpers::Nil;
+                        if (ast_create->targets)
+                            ast_create->targets->resetInnerUUIDs();
+                    }
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(rendered->create_table_query);
+                        res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(rendered->engine_full);
+                    {
+                        String engine_full;
+
+                        if (ast_create && ast_create->storage)
+                        {
+                            engine_full = format({context, *ast_create->storage});
+
+                            static const char * const extra_head = " ENGINE = ";
+                            if (startsWith(engine_full, extra_head))
+                                engine_full = engine_full.substr(strlen(extra_head));
+                        }
+
+                        res_columns[res_index++]->insert(engine_full);
+                    }
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(rendered->as_select);
+                    {
+                        String as_select;
+                        if (ast_create && ast_create->select)
+                            as_select = format({context, *ast_create->select});
+                        res_columns[res_index++]->insert(as_select);
+                    }
                 }
                 else
                     src_index += 3;
@@ -896,9 +737,6 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
-                    fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
-
-                if (columns_mask[src_index++])
                 {
                     auto policy = table ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
                     if (policy)
@@ -935,7 +773,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table ? table->totalBytes(context_copy) : std::nullopt;
+                        auto total_bytes = table->totalBytes(context_copy);
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else
@@ -954,7 +792,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
+                        auto total_bytes_uncompressed = table->totalBytesUncompressed(context_copy->getSettingsRef());
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
@@ -1134,11 +972,14 @@ protected:
 private:
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
-    DatabaseTablesCursor databases_cursor;
+    ColumnPtr databases;
     NameSet tables;
+    size_t database_idx = 0;
+    DatabaseTablesIteratorPtr tables_it;
     ContextPtr context;
     bool done = false;
-    TablesFilter tables_filter;
+    DatabasePtr database;
+    std::string database_name;
 };
 
 class ReadFromSystemTables : public SourceStepWithFilter
@@ -1174,7 +1015,6 @@ private:
 
     ColumnPtr filtered_databases_column;
     ColumnPtr filtered_tables_column;
-    TablesFilter tables_filter;
 };
 
 void StorageSystemTables::readImpl(
@@ -1208,26 +1048,13 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 
     filtered_databases_column = detail::getFilteredDatabases(predicate, context);
     filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, false);
-
-    /// Extract the namespace hint from the `name` predicate so downstream
-    /// databases (DataLake catalogs) can fetch only the relevant namespace
-    /// instead of enumerating the entire catalog.
-    Block sample{
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUUID>(), "uuid"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
-    if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context))
-        tables_filter = extractTableNameFilter(dag->getOutputs().at(0));
 }
 
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context, std::move(tables_filter)));
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
     pipeline.init(std::move(pipe));
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTables) }

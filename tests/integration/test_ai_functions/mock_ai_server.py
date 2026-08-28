@@ -16,8 +16,6 @@ Endpoints:
   POST /v1/chat/completions          — returns response based on request content:
       - If response_format with json_schema is present, returns JSON matching the schema
         with values derived from the user message.
-      - If the system prompt looks like an `aiFilter` boolean filter, returns plain
-        `true` or `false` based on the user message.
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
   POST /v1/embeddings                — returns one deterministic embedding per input.
@@ -60,28 +58,6 @@ def extract_user_message(body):
         if msg.get("role") == "user":
             return msg.get("content", "")
     return ""
-
-
-def extract_system_prompt(body):
-    data = json.loads(body)
-    messages = data.get("messages", [])
-    for msg in messages:
-        if msg.get("role") == "system":
-            return msg.get("content", "")
-    return ""
-
-
-def is_filter_request(body):
-    """Detect `aiFilter` requests from the fixed boolean-filter system prompt."""
-    return "boolean text filter" in extract_system_prompt(body).lower()
-
-
-def filter_match_response(user_message):
-    """Return plain true/false for `aiFilter`. False when the user message signals an obvious negative."""
-    lowered = user_message.lower()
-    if any(token in lowered for token in ("false", "no match", "does not match")):
-        return "false"
-    return "true"
 
 
 def extract_response_format(body):
@@ -232,8 +208,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             if json_schema:
                 content = build_structured_response(json_schema, user_msg)
-            elif is_filter_request(body):
-                content = filter_match_response(user_msg)
             else:
                 content = user_msg
 
@@ -248,23 +222,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # A deterministic client error (e.g. malformed request / bad API key). The url table
             # function never retries 400, so neither should the AI functions.
             self._send_json(400, make_error_response("invalid request", error_type="invalid_request_error"))
-            return
-
-        if parsed.path == "/v1/error_control_chars":
-            # An error whose `message` and `type` carry control characters (newline, tab, carriage
-            # return, BEL). The server must not copy these verbatim into the logged exception, so the
-            # AI functions sanitize them; this endpoint lets the test assert that.
-            self._send_json(
-                400,
-                make_error_response("start\nmid\tend\rBEL\x07done", error_type="err\ttype"),
-            )
-            return
-
-        if parsed.path == "/v1/error_nonjson":
-            # A non-JSON error body with control characters. It cannot be parsed as a structured
-            # error, so the AI functions fall back to the truncated raw body -- which must also be
-            # sanitized before it reaches the logs.
-            self._send_raw(500, b"Internal Error:\nstack\ttrace\x07here")
             return
 
         if parsed.path == "/v1/embeddings":
@@ -293,13 +250,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
-
-    def _send_raw(self, status, body_bytes, content_type="text/plain"):
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body_bytes)))
-        self.end_headers()
-        self.wfile.write(body_bytes)
 
     def log_message(self, format, *args):
         pass  # suppress request logs

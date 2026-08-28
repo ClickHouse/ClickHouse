@@ -22,10 +22,7 @@ namespace DB
 class SerializationNullableWithParentNullMap final : public SerializationWrapper
 {
 public:
-    /// `on_disk_type_` is set only when the subcolumn's type was promoted from a non-nullable
-    /// `LowCardinality(T)` to `LowCardinality(Nullable(T))`; the deserialization buffer is then built from
-    /// it so that the substreams published to the shared cache keep the on-disk representation.
-    static SerializationPtr create(const SerializationPtr & nested_, const DataTypePtr & on_disk_type_ = nullptr);
+    static SerializationPtr create(const SerializationPtr & nested_);
 
     void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override;
 
@@ -43,11 +40,8 @@ public:
         SubstreamsCache * cache) const override;
 
 private:
-    SerializationNullableWithParentNullMap(const SerializationPtr & nested_, const DataTypePtr & on_disk_type_);
-    static UInt128 getHash(const SerializationPtr & nested_, const DataTypePtr & on_disk_type_);
-
-    /// Not null only for the promoted non-nullable `LowCardinality(T)` case, see `create()`.
-    const DataTypePtr on_disk_type;
+    explicit SerializationNullableWithParentNullMap(const SerializationPtr & nested_);
+    static UInt128 getHash(const SerializationPtr & nested_);
 };
 
 }

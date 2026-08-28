@@ -1,7 +1,5 @@
 #include <Interpreters/SpillingHashJoin.h>
 
-#include <utility>
-
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -23,9 +21,7 @@ SpillingHashJoin::SpillingHashJoin(
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t initial_num_buckets_,
-    size_t max_num_buckets_,
-    const StatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_)
+    size_t max_num_buckets_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -33,12 +29,9 @@ SpillingHashJoin::SpillingHashJoin(
     , tmp_data(std::move(tmp_data_))
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
-    , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    hash_join = std::make_shared<HashJoin>(
-        table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
-        /*use_two_level_maps_=*/false, stats_collecting_params_);
+    hash_join = std::make_shared<HashJoin>(table_join, right_sample_block_);
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -49,8 +42,7 @@ SpillingHashJoin::SpillingHashJoin(
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
     size_t concurrent_slots_,
-    const StatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_)
+    const StatsCollectingParams & stats_collecting_params_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -58,7 +50,6 @@ SpillingHashJoin::SpillingHashJoin(
     , tmp_data(std::move(tmp_data_))
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
-    , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
     concurrent_join = std::make_shared<ConcurrentHashJoin>(
@@ -66,7 +57,7 @@ SpillingHashJoin::SpillingHashJoin(
         concurrent_slots_,
         right_sample_block_,
         stats_collecting_params_,
-        any_take_last_row,
+        /*any_take_last_row_=*/false,
         max_bytes_before_external_join);
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 }
@@ -127,9 +118,16 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
-    const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
-    if (total_bytes * 2 >= max_bytes_before_external_join && maySwitchToGraceHashJoin())
-        switchToGraceHashJoin();
+    if (concurrent_join)
+    {
+        if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+            switchToGraceHashJoin();
+    }
+    else
+    {
+        if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+            switchToGraceHashJoin();
+    }
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
@@ -153,36 +151,6 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 
     /// Single-thread HashJoin path.
     return hash_join->addBlockToJoin(block, check_limits);
-}
-
-void SpillingHashJoin::keepLeftPipelineInOrder()
-{
-    /// Runs at plan optimization time, long before the build phase, so no switch can have happened
-    /// yet and a plain store is enough to be visible to the build threads.
-    keep_left_in_order.store(true, std::memory_order_release);
-}
-
-bool SpillingHashJoin::maySwitchToGraceHashJoin()
-{
-    /// The plan dropped a sort because this join promised to preserve the left order, so we are no
-    /// longer allowed to spill: GraceHashJoin scatters rows into buckets by hash and the query
-    /// would return wrongly ordered rows. Keep collecting in memory and let the memory tracker
-    /// enforce the limit, exactly as it would with no auto-spill threshold configured.
-    ///
-    /// Callers must treat a `false` here as "the threshold was not reached", so that the build
-    /// still finishes through the in-memory promotion in `onBuildPhaseFinish` - returning early
-    /// from `switchToGraceHashJoin` instead would leave `chosen_join` unset. They must also call
-    /// this only after the byte threshold check, otherwise the log below would fire on the very
-    /// first build block of every pinned join, however small.
-    if (!keep_left_in_order.load(std::memory_order_acquire))
-        return true;
-
-    if (!logged_spill_suppressed.exchange(true))
-        LOG_DEBUG(
-            log,
-            "Memory spill threshold reached, but the query plan relies on this join preserving the "
-            "left pipeline order; staying in memory instead of switching to GraceHashJoin");
-    return false;
 }
 
 void SpillingHashJoin::switchToGraceHashJoin()
@@ -219,7 +187,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
                 left_sample_block,
                 std::make_shared<const Block>(right_sample_block),
                 tmp_data,
-                any_take_last_row,
+                /*any_take_last_row_=*/false,
                 max_bytes_before_external_join);
             grace_join->initialize(*left_sample_block);
             chosen_join = grace_join;
@@ -246,7 +214,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
         left_sample_block,
         std::make_shared<const Block>(right_sample_block),
         tmp_data,
-        any_take_last_row,
+        /*any_take_last_row_=*/false,
         max_bytes_before_external_join);
 
     chosen_join->initialize(*left_sample_block);
@@ -271,7 +239,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
         const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
-        if (total_bytes >= max_bytes_before_external_join && maySwitchToGraceHashJoin())
+        if (total_bytes >= max_bytes_before_external_join)
         {
             switchToGraceHashJoin();
         }
@@ -298,19 +266,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 
     chosen_join->onBuildPhaseFinish();
-}
-
-bool SpillingHashJoin::hasPostBuildPhase() const
-{
-    /// `FillingRightJoinSideTransform` asks this right after `onBuildPhaseFinish`, so `chosen_join`
-    /// is already set. Stay defensive anyway: with no chosen join there is nothing to post-process.
-    return chosen_join && chosen_join->hasPostBuildPhase();
-}
-
-void SpillingHashJoin::runPostBuildPhase()
-{
-    if (chosen_join)
-        chosen_join->runPostBuildPhase();
 }
 
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
@@ -393,20 +348,6 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
         return hash_join->alwaysReturnsEmptySet();
     }
     return chosen_join->alwaysReturnsEmptySet();
-}
-
-StepAnalysisReport SpillingHashJoin::getAnalysisReport() const
-{
-    /// This method always runs after the built phase, so in principal we could have
-    /// written it without this if statement. However, we keep it
-    /// for canonicity with the other accessors and safety in case the call order ever changes.
-    if (state.load(std::memory_order_acquire) == State::COLLECTING)
-    {
-        if (concurrent_join)
-            return concurrent_join->getAnalysisReport();
-        return hash_join->getAnalysisReport();
-    }
-    return chosen_join->getAnalysisReport();
 }
 
 bool SpillingHashJoin::supportParallelNonJoinedBlocksProcessing() const

@@ -79,20 +79,6 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
         return new_state;
     }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (map_column)
-            callback(map_column);
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (map_state)
-            callback(map_state);
-        if (structure_state)
-            callback(structure_state);
-    }
 };
 
 
@@ -132,16 +118,9 @@ void SerializationObjectSharedDataPath::enumerateStreams(
 
         addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
         addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
-
-        /// Substreams/SubstreamsMarks/PathsSubstreamsMetadata are needed only to read an individual
-        /// subcolumn of a path directly from disk. When the whole path is requested (no subcolumn),
-        /// deserialization reads only Structure/PathsMarks/Data.
-        if (!path_subcolumn.empty())
-        {
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
-        }
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
 
         if (settings.use_specialized_prefixes_and_suffixes_substreams)
             addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructureSuffix);

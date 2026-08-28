@@ -137,9 +137,6 @@
         <gs>
             <to>https://storage.googleapis.com/{bucket}</to>
         </gs>
-        <gcs>
-            <to>https://storage.googleapis.com/{bucket}</to>
-        </gcs>
         <oss>
             <to>https://{bucket}.oss.aliyuncs.com</to>
         </oss>
@@ -1075,7 +1072,7 @@
     </http_forbid_headers> -->
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
-         The path to the file with substitutions is specified in the 'include_from' element. There is no default path.
+         By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
          Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
       -->
 
@@ -1248,10 +1245,6 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
-
-        <!-- Create `system.user_query_log`, which shows every user their own query log records
-             without requiring access to the query log table. -->
-        <enable_user_query_log>true</enable_user_query_log>
 
         <!-- example of using a different storage policy for a system table -->
         <!-- storage_policy>local_ssd</storage_policy -->
@@ -1626,16 +1619,6 @@
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
 
-    <!-- Configuration of drivers for executable user-defined functions. -->
-    <!-- A driver knows how to take a user-supplied code snippet and produce a runnable executable -->
-    <!-- user-defined function. Source-tree examples under this glob are not installed by packages; -->
-    <!-- operators can provide driver configs at the same config key. -->
-    <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
-
-    <!-- Directory used to keep configuration files of executable UDFs created dynamically by drivers. -->
-    <!-- It is automatically watched by the executable functions loader. -->
-    <!-- <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path> -->
-
     <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
      If not specified they will be stored locally. -->
     <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
@@ -1854,11 +1837,6 @@
             <regexp>((?:aes_)?(?:encrypt|decrypt)(?:_mysql)?)\s*\(\s*(?:'(?:\\'|.)+'|.*?)\s*\)</regexp>
             <replace>\1(???)</replace>
         </rule>
-        <rule>
-            <name>hide sensitive HTTP query-string parameters</name>
-            <regexp>([?&][^&=]*(?:secret|password|passwd|token|credential|signature|key)[^&=]*=)[^&\s]*</regexp>
-            <replace>\1[HIDDEN]</replace>
-        </rule>
     </query_masking_rules> -->
 
     <!-- Uncomment to use custom http handlers.
@@ -2050,7 +2028,7 @@
     -->
 
     <!-- Delay (in seconds) to wait for unfinished queries before force exit -->
-    <!-- <shutdown_wait_unfinished>120</shutdown_wait_unfinished> -->
+    <!-- <shutdown_wait_unfinished>5</shutdown_wait_unfinished> -->
 
     <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
     <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->

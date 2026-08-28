@@ -25,7 +25,7 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 ///    SAMPLES ENGINE = ReplicatedMergeTree('zkpath', 'replica')
 ///    TAGS INNER COLUMNS (
-///        id UUID DEFAULT reinterpretAsUUID(sipHash128(tags)) CODEC(ZSTD(3)),
+///        id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)) CODEC(ZSTD(3)),
 ///        instance LowCardinality(String),
 ///        job String)
 ///    ENGINE = ReplacingMergeTree, ...
@@ -84,10 +84,6 @@ public:
 
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
-
-    /// Forward the size guard onto every inner target table that `dropInnerTableIfAny`
-    /// will actually drop.
-    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 

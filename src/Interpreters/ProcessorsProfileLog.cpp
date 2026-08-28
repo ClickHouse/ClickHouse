@@ -42,7 +42,7 @@ ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
         {"plan_step_description", std::make_shared<DataTypeString>(), "Description of the query plan step which created this processor. The value is empty if the processor was not added from any step."},
         {"plan_group", std::make_shared<DataTypeUInt64>(), "Group of the processor if it was created by query plan step. A group is a logical partitioning of processors added from the same query plan step. Group is used only for beautifying the result of EXPLAIN PIPELINE result."},
 
-        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
+        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the processor."},
         {"elapsed_us", std::make_shared<DataTypeUInt64>(), "Number of microseconds this processor was executed."},
@@ -144,7 +144,7 @@ void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IPro
                 processor_elem.output_rows = info.output_rows;
                 processor_elem.output_bytes = info.output_bytes;
 
-                processors_profile_log->add([&](ProcessorProfileLogElement & element) { element = processor_elem; });
+                processors_profile_log->add(processor_elem);
             }
         }
         auto logger = ::getLogger("ProcessorProfileLog");
