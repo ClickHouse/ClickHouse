@@ -655,7 +655,10 @@ struct DeltaJSONSchemaVisitor
 
     std::vector<Node> & listAt(size_t id)
     {
-        return const_cast<std::vector<Node> &>(static_cast<const DeltaJSONSchemaVisitor &>(*this).listAt(id));
+        auto it = lists.find(id);
+        if (it == lists.end())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema list with id {} does not exist", id);
+        return it->second;
     }
 
     Poco::Dynamic::Var buildType(const Node & node) const

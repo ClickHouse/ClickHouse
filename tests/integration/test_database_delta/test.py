@@ -1369,6 +1369,65 @@ def test_register_existing_delta_table_in_unity_catalog(started_cluster):
         node1.query(f"DROP TABLE IF EXISTS default.{attach_creator}")
 
 
+def test_register_existing_delta_table_missing_namespace(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_missing_ns_{test_uuid}"
+    schema_name = f"present_schema_{test_uuid}"
+    missing_schema = f"missing_schema_{test_uuid}"
+    table_name = f"table_{test_uuid}"
+    creator = f"creator_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    execute_multiple_spark_queries(
+        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
+    )
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    try:
+        # An existing Delta table on storage, not yet registered in Unity.
+        node1.query(
+            f"CREATE TABLE default.{creator} (id Int32) ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+
+        # (1) Schema exists, table not registered -> `existsTable` returns false (no throw), so onboarding
+        # the existing table succeeds.
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        tables = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'", settings=write_settings
+        ).strip()
+        assert f"{schema_name}.{table_name}" in tables, tables
+
+        # (2) Schema does not exist -> the pre-create existence check throws a clear "no schema" error
+        # rather than reporting the table as absent (which would let CREATE write commit 0 and only then
+        # fail in catalog registration).
+        error = node1.query_and_get_error(
+            f"CREATE TABLE {db_name}.`{missing_schema}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        assert "has no schema" in error, error
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+        node1.query(f"DROP TABLE IF EXISTS default.{creator}")
+
+
 def test_register_existing_delta_table_preserves_raw_schema(started_cluster):
     """
     Attaching an existing Spark-created Delta table into a Unity `DataLakeCatalog` database must register the
