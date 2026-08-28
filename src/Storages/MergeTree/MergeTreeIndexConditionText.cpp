@@ -237,6 +237,13 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
     }
 }
 
+bool textSearchFunctionAcceptsTokenizer(const String & function_name)
+{
+    return function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens"
+        || function_name == "hasPhrase";
+}
+
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {
     return function_name == "hasToken"
@@ -265,7 +272,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
 {
     /// The third argument of hasToken is a start position, not a tokenizer.
-    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
+    if (!textSearchFunctionAcceptsTokenizer(function_name))
         return false;
 
     Field const_value;

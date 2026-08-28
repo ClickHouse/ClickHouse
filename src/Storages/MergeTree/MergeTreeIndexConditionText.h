@@ -242,4 +242,9 @@ private:
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 bool isTextIndexVirtualColumn(const String & column_name);
 
+/// Text-search functions that accept an explicit tokenizer as their third argument. Without one, the
+/// tokenizer of the text index on the haystack applies (see `TextSearchTokenizerPass`). `has`/`hasAll`/
+/// `hasAny` are not among them: they match array elements verbatim, bypassing the tokenizer.
+bool textSearchFunctionAcceptsTokenizer(const String & function_name);
+
 }
