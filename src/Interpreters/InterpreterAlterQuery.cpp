@@ -671,11 +671,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
                 required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
-        case ASTAlterCommand::MODIFY_SUBCOLUMN:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, command.subcolumn_path.front());
-            break;
-        }
         case ASTAlterCommand::COMMENT_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_COMMENT_COLUMN, database, table, column_name());

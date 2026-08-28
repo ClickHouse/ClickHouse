@@ -30,7 +30,6 @@ public:
         ADD_COLUMN,
         DROP_COLUMN,
         MODIFY_COLUMN,
-        MODIFY_SUBCOLUMN,
         COMMENT_COLUMN,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
@@ -103,9 +102,6 @@ public:
      *  In MODIFY query, the column name and the new type are stored here
      */
     IAST * col_decl = nullptr;
-
-    /// Segmented owning-column/tuple-element path for `MODIFY SUBCOLUMN`.
-    Strings subcolumn_path;
 
     /** The ADD COLUMN and MODIFY COLUMN query here optionally stores the name of the column following AFTER
      * The DROP query stores the column name for deletion here

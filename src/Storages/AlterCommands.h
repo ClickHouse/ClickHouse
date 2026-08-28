@@ -155,8 +155,7 @@ struct AlterCommand
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
     ColumnCodecDescription declared_codec;
-    CodecPath codec_path;
-    bool remove_subcolumn_codec = false;
+    std::vector<TupleCodecRemoval> codec_removals;
 
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;

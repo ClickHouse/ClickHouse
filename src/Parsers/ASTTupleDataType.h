@@ -25,6 +25,10 @@ public:
     /// the data type arguments and are ignored by `DataTypeFactory`.
     std::vector<ASTPtr> element_codecs;
 
+    /// ALTER-only operations which remove the declaration at the corresponding tuple element.
+    /// A false entry with a null `element_codecs` entry means that no codec operation was specified.
+    std::vector<bool> element_codec_removals;
+
     String getID(char delim) const override;
     ASTPtr clone() const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
@@ -39,6 +43,9 @@ protected:
     ///          Tuple(Type1, Type2, ...) for unnamed
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
+
+private:
+    void validateCodecOperations() const;
 };
 
 }

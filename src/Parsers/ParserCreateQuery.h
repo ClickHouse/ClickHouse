@@ -14,7 +14,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
-
 namespace DB
 {
 
@@ -43,8 +42,9 @@ template <typename NameParser>
 class IParserNameTypePair : public IParserBase
 {
 public:
-    explicit IParserNameTypePair(bool allow_tuple_element_codecs_ = false)
+    explicit IParserNameTypePair(bool allow_tuple_element_codecs_ = false, bool allow_tuple_element_codec_removals_ = false)
         : allow_tuple_element_codecs(allow_tuple_element_codecs_)
+        , allow_tuple_element_codec_removals(allow_tuple_element_codec_removals_)
     {
     }
 
@@ -54,6 +54,7 @@ protected:
 
 private:
     bool allow_tuple_element_codecs;
+    bool allow_tuple_element_codec_removals;
 };
 
 /** The name and type are separated by a space. For example, URL String. */
@@ -63,7 +64,7 @@ template <typename NameParser>
 bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserDataType type_parser(allow_tuple_element_codecs);
+    ParserDataType type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
 
     ASTPtr name;
     ASTPtr type;
@@ -124,10 +125,15 @@ template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 public:
-    explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
+    explicit IParserColumnDeclaration(
+        bool require_type_ = true,
+        bool allow_null_modifiers_ = false,
+        bool check_keywords_after_name_ = false,
+        bool allow_tuple_element_codec_removals_ = false)
         : require_type(require_type_)
         , allow_null_modifiers(allow_null_modifiers_)
         , check_keywords_after_name(check_keywords_after_name_)
+        , allow_tuple_element_codec_removals(allow_tuple_element_codec_removals_)
     {
     }
 
@@ -143,6 +149,7 @@ protected:
     const bool check_keywords_after_name = false;
     /// just for ALTER TABLE ALTER COLUMN use
     bool check_type_keyword = false;
+    const bool allow_tuple_element_codec_removals = false;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -172,7 +179,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
 
     NameParser name_parser;
-    ParserDataType type_parser(/* allow_tuple_element_codecs */ true);
+    ParserDataType type_parser(
+        /* allow_tuple_element_codecs */ true,
+        allow_tuple_element_codec_removals);
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
@@ -193,7 +202,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
     tryGetIdentifierNameInto(name, column_declaration->name);
-
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
     /// doesn't check that parsed string is existing data type. In this way,
