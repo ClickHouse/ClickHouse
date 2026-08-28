@@ -1,0 +1,13 @@
+-- Function tokens
+['Hello World']
+['Hello World']
+-- Functions hasAllTokens/hasAnyTokens
+1
+1
+0
+0
+-- Text index
+idx	text
+1
+2
+1
