@@ -32,7 +32,7 @@ CREATE TABLE repro_proj_order
 )
 ENGINE = MergeTree
 ORDER BY (ts, grp)
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 
 INSERT INTO repro_proj_order
 SELECT number AS id, toDateTime64('2026-01-01 00:00:00', 3, 'UTC') - number AS ts, if(number % 2 = 0, 'even', 'odd') AS grp, number AS val

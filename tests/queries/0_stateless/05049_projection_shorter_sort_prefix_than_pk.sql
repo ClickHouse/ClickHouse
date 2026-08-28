@@ -39,7 +39,7 @@ CREATE TABLE repro_t
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(date)
 ORDER BY (source_id, date, have_reply, id)
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 
 INSERT INTO repro_t
 SELECT

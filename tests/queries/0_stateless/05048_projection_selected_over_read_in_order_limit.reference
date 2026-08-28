@@ -9,7 +9,7 @@ Limit (preliminary LIMIT)
    │  Limit 200
    └──ReadFromMergeTree (default.repro_proj_order)
          Read type: InReverseOrder
-         Parts: 1 | Granules: 122
+         Parts: 1 | Granules: 123
          Output: id, ts
          Prewhere filter
          Prewhere filter column:  grp = \'even\'
@@ -20,7 +20,7 @@ Limit (preliminary LIMIT)
                grp
              Condition: (grp in [\'even\', \'even\'])
              Parts: 1/1
-             Granules: 122/122
+             Granules: 123/123
              Search Algorithm: generic exclusion search
            Ranges: 1
 39800	2025-12-31 23:53:22.000	2026-01-01 00:00:00.000
