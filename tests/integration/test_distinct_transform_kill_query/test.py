@@ -862,6 +862,115 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
     assert query_error[0] == "", f"break-mode soft timeout raised an error: {query_error[0]}"
 
 
+def test_mixed_null_keys_break_prefix(started_cluster):
+    """Break-mode soft timeout must preserve the committed source-row prefix across *multiple* nullable-key
+    prepasses: when the timeout latches inside the first prepass, the remaining `LowCardinality(Nullable(...))`
+    key columns must not re-zero the keep mask from row 0 (which previously reset `committed_source_rows` and
+    dropped the already-committed prefix for multi-key `IN` set builds).
+
+    Uses a two-column `LowCardinality(Nullable)` key so the prepass runs the LC null-marking loop once per column.
+    The exact preserved-prefix value cannot be asserted (an interrupted break-mode query returns no rows in this
+    harness), so the test asserts the mechanism: the prepass pauses on the first boundary, never on a third, and the
+    query finishes with no error.
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt_mixed "
+        "(k1 Nullable(UInt64), k2 LowCardinality(Nullable(String))) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k1 IS NULL, toUInt64(0), k1) AS UInt64) % 4) ORDER BY tuple() "
+        "SETTINGS allow_suspicious_low_cardinality_types=1"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_mixed")
+    ## Spread rows across all four partitions (so the set build runs with >1 stream and the
+    ## `DistinctTransform`/`skip_null_keys` prepass is actually engaged) and inject NULLs so the
+    ## combined null map is non-zero: the plain-nullable null-marking prepass runs first and pauses,
+    ## after which the `LowCardinality(Nullable)` key column's prepass must preserve the already
+    ## committed source-row boundary (the second prepass used to re-zero the keep mask from row 0).
+    node1.query(
+        "INSERT INTO null_keys_mt_mixed "
+        "SELECT if(number % 7 = 0, NULL, number % 4), toNullable(toString(number % 1000)) FROM numbers(1000000)"
+    )
+
+    query = """SELECT count() FROM numbers(1000000)
+WHERE (number, number) IN (SELECT k1, k2 FROM null_keys_mt_mixed)
+FORMAT Null
+SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+         max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+
+    thread_error = [None]
+    query_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                settings={"interactive_delay": 0},
+                query_id=query_id,
+            )
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        ## First 4096-row boundary: the null-marking prepass pauses after committing the first slice.
+        wait_failpoint(NULL_FAULT_NAME)
+        ## Re-arm and resume so the prepass commits a *second* 4096-row slice and pauses again at the
+        ## second boundary. This is the multi-slice prefix the upstream commit must preserve wholesale,
+        ## here across two `LowCardinality(Nullable)` key columns.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        second_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=15)
+        if not done:
+            assert False, "prepass did not reach the second 4096-row boundary: multi-slice prefix path not exercised"
+        second_pause_future.result()
+        ## Hold past the deadline so the soft timeout latches while two slices are already committed, then
+        ## release. With the fix the prepass stops at the paused row and every subsequent nullable-key
+        ## column preserves the committed source-row boundary; the second column must not re-zero the mask
+        ## from row 0 (which would drop the prefix).
+        time.sleep(6)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        ## With the fix the prepass breaks at the paused row and never pauses a third time.
+        third_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([third_pause_future], timeout=10)
+        if done:
+            third_pause_future.result()
+            assert False, "prepass reached a third boundary: soft-timeout latch is broken"
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "query did not terminate after the soft timeout"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+    ## Break mode must not surface an error to the client.
+    assert query_error[0] == "", f"break-mode soft timeout raised an error: {query_error[0]}"
+
+
 def test_null_keys_break_prefix(started_cluster):
     """Break-mode soft timeout must preserve the whole committed prefix for a plain `Nullable` (non-LowCardinality)
     `IN (subquery)` set build. This is the path where `processed_prefix` is set from the null-marking prepass's

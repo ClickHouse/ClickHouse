@@ -593,6 +593,17 @@ void DistinctTransform::transform(Chunk & chunk)
                     }
                     if (isSoftTimeout())
                     {
+                        if (time_limit_exceeded)
+                        {
+                            /// Pre-latched by an earlier nullable-key prepass (the plain-nullable null-map
+                            /// pass, or a preceding `LowCardinality(Nullable(...))` column): the committed
+                            /// source-row boundary is already captured in `committed_source_rows` and must
+                            /// survive. Only mark the LC null rows inside that committed prefix and stop; do
+                            /// not reset `committed_source_rows` (which would drop the prefix) and do not zero
+                            /// the mask from row 0.
+                            markLowCardinalityNullRowsRange(*low_cardinality, keep, 0, committed_source_rows);
+                            break;
+                        }
                         /// Break-mode soft timeout: drop the unprocessed tail so only the already-marked
                         /// prefix survives; the rest of the transform preserves the committed prefix
                         /// (including through `buildLowCardinalityMask`, which is taught not to discard an
