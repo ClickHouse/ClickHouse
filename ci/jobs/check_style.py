@@ -540,6 +540,10 @@ DEFERRABLE_STORAGE_CLASSES = (
     "StorageMergeTree",
     "StorageReplicatedMergeTree",
     "StorageSharedMergeTree",
+    "StorageSetOrJoinBase",
+    "StorageSet",
+    "StorageJoin",
+    "StorageEmbeddedRocksDB",
 )
 
 # Casts on an operand that cannot be a catalog pointer, so no proxy can be in the way.
@@ -632,6 +636,9 @@ def check_storage_proxy_forwards(files) -> str:
         "src/Storages/StorageMergeTree.h",
         "src/Storages/StorageReplicatedMergeTree.h",
         "src/Storages/SharedMergeTree/StorageSharedMergeTree.h",
+        "src/Storages/StorageSet.h",
+        "src/Storages/StorageJoin.h",
+        "src/Storages/RocksDB/StorageEmbeddedRocksDB.h",
     ]
     if not pathlib.Path(proxy_path).exists():
         return ""

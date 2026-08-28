@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -831,7 +832,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
     bool is_join_with_special_storage = false;
     if (const auto * right_table_node = join_node.getRightTableExpressionNode()->as<TableNode>())
     {
-        is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
+        is_join_with_special_storage = castStorage<StorageJoin>(right_table_node->getStorage(), StorageResolution::Load).get();
     }
 
     for (auto & join_clause : result.join_clauses)
@@ -1028,7 +1029,7 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
     else if (auto * table_function = table_expression->as<TableFunctionNode>())
         storage = table_function->getStorage();
 
-    auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage);
+    auto storage_join = castStorage<StorageJoin>(storage, StorageResolution::Load);
     if (storage_join)
     {
         table_join->setStorageJoin(storage_join);

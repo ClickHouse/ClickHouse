@@ -70,6 +70,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -482,7 +483,7 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     const auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (storage->getName() != "Set")
         return nullptr;
-    const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
+    const auto storage_set = castStorage<StorageSet>(storage, StorageResolution::Load);
     return storage_set->getSet();
 }
 

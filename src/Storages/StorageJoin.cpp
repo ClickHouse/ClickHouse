@@ -542,6 +542,7 @@ void registerStorageJoin(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .supports_deferred_load = true,
             .has_builtin_setting_fn = has_builtin_fn,
         },
         Documentation{

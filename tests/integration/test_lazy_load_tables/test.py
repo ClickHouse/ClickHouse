@@ -91,12 +91,17 @@ def test_deferred_table_reports_its_engine(engine):
 
 def test_only_mergetree_family_opts_in(started_cluster):
     """Deferring an engine that works in the background, like a message queue, would cancel that
-    work rather than delay it, so opting in is per engine and only the MergeTree family has."""
+    work rather than delay it, so opting in is per engine."""
     opted_in = node.query(
         "SELECT name FROM system.table_engines WHERE supports_deferred_load ORDER BY name"
     ).split()
-    assert opted_in, "the MergeTree family must be deferrable"
-    assert all(name.endswith("MergeTree") for name in opted_in), opted_in
+    assert "MergeTree" in opted_in and "Set" in opted_in, opted_in
+    unexpected = [
+        name
+        for name in opted_in
+        if not name.endswith("MergeTree") and name not in {"Set", "Join", "EmbeddedRocksDB"}
+    ]
+    assert not unexpected, unexpected
 
 
 def test_other_engines_stay_eager(engine):
@@ -104,8 +109,6 @@ def test_other_engines_stay_eager(engine):
     node.query(
         f"""
         CREATE TABLE {DB}.src (id UInt64) ENGINE = {engine} ORDER BY id;
-        CREATE TABLE {DB}.st (id UInt64) ENGINE = Set;
-        CREATE TABLE {DB}.jn (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
         CREATE TABLE {DB}.mem (id UInt64) ENGINE = Memory;
         CREATE TABLE {DB}.lg (id UInt64) ENGINE = Log;
         CREATE TABLE {DB}.tlg (id UInt64) ENGINE = TinyLog;
@@ -691,3 +694,28 @@ def test_no_system_table_loads_a_lazy_table(started_cluster):
         assert not loaders, f"these system tables loaded the table: {loaders}"
     finally:
         node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
+
+
+def test_set_join_and_rocksdb_are_deferred(engine):
+    """`Set` and `Join` read their whole contents into memory in the constructor and RocksDB opens
+    its database there, so they are worth deferring, and each is reached by a concrete-type cast."""
+    node.query(
+        f"""
+        CREATE TABLE {DB}.st (id UInt64) ENGINE = Set;
+        CREATE TABLE {DB}.jn (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
+        CREATE TABLE {DB}.kv (k String, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
+        INSERT INTO {DB}.st VALUES (1), (2);
+        INSERT INTO {DB}.jn VALUES (1, 'one');
+        INSERT INTO {DB}.kv VALUES ('a', 'first');
+        {RELOAD}
+        """
+    )
+    assert loaded("st") == "0" and loaded("jn") == "0" and loaded("kv") == "0"
+
+    # Each one is reached through the cast that its query path makes.
+    assert int(node.query(f"SELECT count() FROM numbers(4) WHERE number IN {DB}.st")) == 2
+    assert node.query(
+        f"SELECT v FROM (SELECT toUInt64(1) AS k) AS s ANY LEFT JOIN {DB}.jn USING (k)"
+    ).strip() == "one"
+    assert node.query(f"SELECT joinGet('{DB}.jn', 'v', toUInt64(1))").strip() == "one"
+    assert node.query(f"SELECT v FROM {DB}.kv WHERE k = 'a'").strip() == "first"
