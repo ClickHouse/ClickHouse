@@ -24,6 +24,8 @@ ENGINE = MergeTree ORDER BY name;
 CREATE TABLE t_pv_dist AS t_pv ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_pv);
 
 -- Every parameter here is non-String, so each one is CAST-wrapped on its way to the shard.
+-- Reading system.one keeps the view from being constant-folded on the initiator, so the forwarded
+-- query text really carries the parameterized call.
 CREATE VIEW v_pv AS
 SELECT
     {name:String} AS name,
@@ -31,7 +33,8 @@ SELECT
     {d:Date} AS d,
     {u:UUID} AS u,
     {ip:IPv4} AS ip,
-    {dec:Decimal(10, 2)} AS dec;
+    {dec:Decimal(10, 2)} AS dec
+FROM system.one;
 
 INSERT INTO t_pv_dist
 SELECT * FROM v_pv(
@@ -95,10 +98,11 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
     AND has(databases, currentDatabase()) AND query LIKE '%v_pv_array%';
 
+-- The analyzer renders the call as `db.v_pv`(...), so the paren cannot follow the name directly.
 SELECT 'shard saw the scalar view call', count() > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
-    AND has(databases, currentDatabase()) AND query LIKE '%v_pv(%';
+    AND has(databases, currentDatabase()) AND query LIKE '%v_pv%' AND query NOT LIKE '%v_pv_array%';
 
 DROP VIEW v_pv_array;
 DROP VIEW v_pv;
