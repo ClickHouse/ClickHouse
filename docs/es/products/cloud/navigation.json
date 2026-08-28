@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "Primeros pasos",
       "pages": [
         "es/products/cloud/getting-started/cloud-get-started",
         "es/products/cloud/getting-started/intro",
@@ -9,13 +9,13 @@
       ]
     },
     {
-      "group": "Services and infrastructure",
+      "group": "Servicios e infraestructura",
       "pages": [
         "es/products/cloud/reference/architecture",
         "es/products/cloud/features/cli",
         {
           "expanded": false,
-          "group": "Plan and deploy",
+          "group": "Planificar e implementar",
           "pages": [
             "es/products/cloud/features/cloud-tiers",
             "es/products/cloud/reference/supported-regions",
@@ -27,7 +27,7 @@
         },
         {
           "expanded": false,
-          "group": "Configure and scale",
+          "group": "Configurar y escalar",
           "pages": [
             "es/products/cloud/features/autoscaling/overview",
             "es/products/cloud/reference/settings",
@@ -42,7 +42,7 @@
         },
         {
           "expanded": false,
-          "group": "Compute and storage",
+          "group": "Computación y almacenamiento",
           "pages": [
             "es/products/cloud/features/large-single-replica-services",
             "es/products/cloud/features/infrastructure/parallel-replicas",
@@ -54,7 +54,7 @@
         },
         {
           "expanded": false,
-          "group": "Reliability and maintenance",
+          "group": "Fiabilidad y mantenimiento",
           "pages": [
             "es/products/cloud/reference/service-uptime",
             "es/products/cloud/reference/data-resiliency",
@@ -63,7 +63,7 @@
         },
         {
           "expanded": false,
-          "group": "Production planning",
+          "group": "Planificación para producción",
           "pages": [
             "es/products/cloud/guides/best-practices/index",
             "es/products/cloud/guides/production-readiness",
@@ -77,14 +77,14 @@
       "$ref": "../bring-your-own-cloud/navigation.json"
     },
     {
-      "group": "Data and integrations",
+      "group": "Datos e integraciones",
       "pages": [
         "es/products/cloud/features/integrations",
         "es/products/cloud/features/data-catalogs",
         "es/products/cloud/guides/migration/upload-a-csv-file",
         {
           "expanded": false,
-          "group": "Data sources",
+          "group": "Fuentes de datos",
           "pages": [
             "es/products/cloud/guides/data-sources/index",
             "es/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -97,14 +97,14 @@
       ]
     },
     {
-      "group": "Connect and query",
+      "group": "Conectar y consultar",
       "pages": [
         "es/products/cloud/features/sql-console-features/sql-console",
         "es/products/cloud/guides/sql-console/connection-details",
         "es/products/cloud/features/sql-console-features/query-insights",
         {
           "expanded": false,
-          "group": "Query API endpoints",
+          "group": "Puntos de conexión de la API de consultas",
           "pages": [
             "es/products/cloud/features/sql-console-features/query-endpoints",
             "es/products/cloud/guides/sql-console/query-endpoints"
@@ -116,12 +116,12 @@
       ]
     },
     {
-      "group": "Access management",
+      "group": "Administración de acceso",
       "pages": [
         "es/products/cloud/guides/security/cloud-access-management/index",
         {
           "expanded": false,
-          "group": "Cloud accounts and roles",
+          "group": "Cuentas en la nube y roles",
           "pages": [
             "es/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "es/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
@@ -132,7 +132,7 @@
         },
         {
           "expanded": false,
-          "group": "Database users and permissions",
+          "group": "Usuarios de base de datos y permisos",
           "pages": [
             "es/products/cloud/guides/security/cloud-access-management/manage-database-users",
             "es/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
@@ -141,7 +141,7 @@
         },
         {
           "expanded": false,
-          "group": "Identity providers",
+          "group": "Proveedores de identidad",
           "pages": [
             "es/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
             "es/products/cloud/guides/security/saml-sso-removal",
@@ -153,17 +153,17 @@
       ]
     },
     {
-      "group": "Security and compliance",
+      "group": "Seguridad y cumplimiento",
       "pages": [
         "es/products/cloud/features/security",
         {
           "expanded": false,
-          "group": "Network access",
+          "group": "Acceso a la red",
           "pages": [
             "es/products/cloud/guides/security/connectivity/setting-ip-filters",
             {
               "expanded": false,
-              "group": "Private networking",
+              "group": "Redes privadas",
               "pages": [
                 "es/products/cloud/guides/security/connectivity/private-networking/index",
                 "es/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -175,7 +175,7 @@
         },
         {
           "expanded": false,
-          "group": "Audit logging",
+          "group": "Registro de auditoría",
           "pages": [
             "es/products/cloud/guides/security/audit-logging/index",
             "es/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -186,7 +186,7 @@
         },
         {
           "expanded": false,
-          "group": "Data security",
+          "group": "Seguridad de los datos",
           "pages": [
             "es/products/cloud/guides/security/data-masking",
             "es/products/cloud/guides/security/cmek"
@@ -194,7 +194,7 @@
         },
         {
           "expanded": false,
-          "group": "Compliance and privacy",
+          "group": "Cumplimiento y privacidad",
           "pages": [
             "es/products/cloud/reference/security/compliance-overview",
             "es/products/cloud/guides/security/compliance/hipaa-onboarding",
@@ -206,11 +206,11 @@
       ]
     },
     {
-      "group": "Monitoring and backups",
+      "group": "Monitorización y copias de seguridad",
       "pages": [
         {
           "expanded": false,
-          "group": "Monitoring",
+          "group": "Monitorización",
           "pages": [
             "es/products/cloud/features/monitoring/overview",
             "es/products/cloud/features/monitoring/cloud-console",
@@ -223,19 +223,19 @@
         },
         {
           "expanded": false,
-          "group": "Backups",
+          "group": "Copias de seguridad",
           "pages": [
             "es/products/cloud/features/backups/overview",
             {
               "expanded": false,
-              "group": "Manage backups",
+              "group": "Administrar copias de seguridad",
               "pages": [
                 "es/products/cloud/guides/backups/index",
                 "es/products/cloud/guides/backups/review-and-restore-backups",
                 "es/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "Bring Your Own Backup",
+                  "group": "Trae tu propia copia de seguridad",
                   "pages": [
                     "es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -249,7 +249,7 @@
       ]
     },
     {
-      "group": "AI tools and agents",
+      "group": "Herramientas y agentes de IA",
       "pages": [
         "es/products/cloud/features/ai-ml/index",
         "es/products/cloud/features/ai-ml/aichat/using-ai-chat",
@@ -293,13 +293,13 @@
       ]
     },
     {
-      "group": "Cloud API",
+      "group": "API de Cloud",
       "pages": [
         "es/products/cloud/features/admin-features/api/api-overview",
         "es/products/cloud/features/admin-features/api/openapi",
         "es/products/cloud/features/admin-features/api/postman",
         {
-          "group": "API reference",
+          "group": "Referencia de la API",
           "openapi": {
             "directory": "es/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"
@@ -311,7 +311,7 @@
       ]
     },
     {
-      "group": "Billing",
+      "group": "Facturación",
       "pages": [
         "es/products/cloud/reference/billing/billing-overview",
         {
@@ -345,7 +345,7 @@
       ]
     },
     {
-      "group": "Support",
+      "group": "Soporte",
       "pages": [
         "es/products/cloud/features/support",
         "es/products/cloud/reference/account-close"

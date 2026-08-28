@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "はじめに",
       "pages": [
         "ja/products/cloud/getting-started/cloud-get-started",
         "ja/products/cloud/getting-started/intro",
@@ -9,13 +9,13 @@
       ]
     },
     {
-      "group": "Services and infrastructure",
+      "group": "サービスとインフラストラクチャ",
       "pages": [
         "ja/products/cloud/reference/architecture",
         "ja/products/cloud/features/cli",
         {
           "expanded": false,
-          "group": "Plan and deploy",
+          "group": "計画とデプロイ",
           "pages": [
             "ja/products/cloud/features/cloud-tiers",
             "ja/products/cloud/reference/supported-regions",
@@ -27,7 +27,7 @@
         },
         {
           "expanded": false,
-          "group": "Configure and scale",
+          "group": "設定とスケーリング",
           "pages": [
             "ja/products/cloud/features/autoscaling/overview",
             "ja/products/cloud/reference/settings",
@@ -42,7 +42,7 @@
         },
         {
           "expanded": false,
-          "group": "Compute and storage",
+          "group": "コンピューティングとストレージ",
           "pages": [
             "ja/products/cloud/features/large-single-replica-services",
             "ja/products/cloud/features/infrastructure/parallel-replicas",
@@ -54,7 +54,7 @@
         },
         {
           "expanded": false,
-          "group": "Reliability and maintenance",
+          "group": "信頼性とメンテナンス",
           "pages": [
             "ja/products/cloud/reference/service-uptime",
             "ja/products/cloud/reference/data-resiliency",
@@ -63,7 +63,7 @@
         },
         {
           "expanded": false,
-          "group": "Production planning",
+          "group": "本番環境の計画",
           "pages": [
             "ja/products/cloud/guides/best-practices/index",
             "ja/products/cloud/guides/production-readiness",
@@ -77,14 +77,14 @@
       "$ref": "../bring-your-own-cloud/navigation.json"
     },
     {
-      "group": "Data and integrations",
+      "group": "データとインテグレーション",
       "pages": [
         "ja/products/cloud/features/integrations",
         "ja/products/cloud/features/data-catalogs",
         "ja/products/cloud/guides/migration/upload-a-csv-file",
         {
           "expanded": false,
-          "group": "Data sources",
+          "group": "データソース",
           "pages": [
             "ja/products/cloud/guides/data-sources/index",
             "ja/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -97,14 +97,14 @@
       ]
     },
     {
-      "group": "Connect and query",
+      "group": "接続とクエリ",
       "pages": [
         "ja/products/cloud/features/sql-console-features/sql-console",
         "ja/products/cloud/guides/sql-console/connection-details",
         "ja/products/cloud/features/sql-console-features/query-insights",
         {
           "expanded": false,
-          "group": "Query API endpoints",
+          "group": "クエリ API エンドポイント",
           "pages": [
             "ja/products/cloud/features/sql-console-features/query-endpoints",
             "ja/products/cloud/guides/sql-console/query-endpoints"
@@ -116,12 +116,12 @@
       ]
     },
     {
-      "group": "Access management",
+      "group": "アクセス管理",
       "pages": [
         "ja/products/cloud/guides/security/cloud-access-management/index",
         {
           "expanded": false,
-          "group": "Cloud accounts and roles",
+          "group": "クラウドアカウントとロール",
           "pages": [
             "ja/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
@@ -132,7 +132,7 @@
         },
         {
           "expanded": false,
-          "group": "Database users and permissions",
+          "group": "データベースユーザーと権限",
           "pages": [
             "ja/products/cloud/guides/security/cloud-access-management/manage-database-users",
             "ja/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
@@ -141,7 +141,7 @@
         },
         {
           "expanded": false,
-          "group": "Identity providers",
+          "group": "ID プロバイダー",
           "pages": [
             "ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
             "ja/products/cloud/guides/security/saml-sso-removal",
@@ -153,17 +153,17 @@
       ]
     },
     {
-      "group": "Security and compliance",
+      "group": "セキュリティとコンプライアンス",
       "pages": [
         "ja/products/cloud/features/security",
         {
           "expanded": false,
-          "group": "Network access",
+          "group": "ネットワークアクセス",
           "pages": [
             "ja/products/cloud/guides/security/connectivity/setting-ip-filters",
             {
               "expanded": false,
-              "group": "Private networking",
+              "group": "プライベートネットワーキング",
               "pages": [
                 "ja/products/cloud/guides/security/connectivity/private-networking/index",
                 "ja/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -175,7 +175,7 @@
         },
         {
           "expanded": false,
-          "group": "Audit logging",
+          "group": "監査ログ",
           "pages": [
             "ja/products/cloud/guides/security/audit-logging/index",
             "ja/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -186,7 +186,7 @@
         },
         {
           "expanded": false,
-          "group": "Data security",
+          "group": "データセキュリティ",
           "pages": [
             "ja/products/cloud/guides/security/data-masking",
             "ja/products/cloud/guides/security/cmek"
@@ -194,7 +194,7 @@
         },
         {
           "expanded": false,
-          "group": "Compliance and privacy",
+          "group": "コンプライアンスとプライバシー",
           "pages": [
             "ja/products/cloud/reference/security/compliance-overview",
             "ja/products/cloud/guides/security/compliance/hipaa-onboarding",
@@ -206,11 +206,11 @@
       ]
     },
     {
-      "group": "Monitoring and backups",
+      "group": "監視とバックアップ",
       "pages": [
         {
           "expanded": false,
-          "group": "Monitoring",
+          "group": "監視",
           "pages": [
             "ja/products/cloud/features/monitoring/overview",
             "ja/products/cloud/features/monitoring/cloud-console",
@@ -223,12 +223,12 @@
         },
         {
           "expanded": false,
-          "group": "Backups",
+          "group": "バックアップ",
           "pages": [
             "ja/products/cloud/features/backups/overview",
             {
               "expanded": false,
-              "group": "Manage backups",
+              "group": "バックアップの管理",
               "pages": [
                 "ja/products/cloud/guides/backups/index",
                 "ja/products/cloud/guides/backups/review-and-restore-backups",
@@ -249,7 +249,7 @@
       ]
     },
     {
-      "group": "AI tools and agents",
+      "group": "AI ツールとエージェント",
       "pages": [
         "ja/products/cloud/features/ai-ml/index",
         "ja/products/cloud/features/ai-ml/aichat/using-ai-chat",
@@ -257,7 +257,7 @@
         "ja/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
-          "group": "Remote MCP",
+          "group": "リモートMCP",
           "pages": [
             "ja/products/cloud/features/ai-ml/remote-mcp",
             "ja/products/cloud/features/ai-ml/mcp/remote-mcp"
@@ -270,7 +270,7 @@
             "ja/products/cloud/features/ai-ml/agents/quickstart",
             "ja/products/cloud/features/ai-ml/agents/chat",
             {
-              "group": "Agent Builder",
+              "group": "エージェントビルダー",
               "pages": [
                 "ja/products/cloud/features/ai-ml/agents/builder/index",
                 "ja/products/cloud/features/ai-ml/agents/builder/model-parameters",
@@ -299,7 +299,7 @@
         "ja/products/cloud/features/admin-features/api/openapi",
         "ja/products/cloud/features/admin-features/api/postman",
         {
-          "group": "API reference",
+          "group": "API リファレンス",
           "openapi": {
             "directory": "ja/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"
@@ -311,12 +311,12 @@
       ]
     },
     {
-      "group": "Billing",
+      "group": "請求",
       "pages": [
         "ja/products/cloud/reference/billing/billing-overview",
         {
           "expanded": false,
-          "group": "Marketplace",
+          "group": "マーケットプレイス",
           "pages": [
             "ja/products/cloud/reference/billing/marketplace/overview",
             "ja/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -345,7 +345,7 @@
       ]
     },
     {
-      "group": "Support",
+      "group": "サポート",
       "pages": [
         "ja/products/cloud/features/support",
         "ja/products/cloud/reference/account-close"
