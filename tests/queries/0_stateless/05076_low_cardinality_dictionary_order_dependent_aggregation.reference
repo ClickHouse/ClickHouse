@@ -1,0 +1,6 @@
+String control, two-level threshold 0	shared	0	[10,5,0]
+deltaSum, two-level threshold 0	shared	0
+groupArray, two-level threshold 0	shared	[10,5,0]
+String control, two-level threshold 1	shared	0	[10,5,0]
+deltaSum, two-level threshold 1	shared	0
+groupArray, two-level threshold 1	shared	[10,5,0]

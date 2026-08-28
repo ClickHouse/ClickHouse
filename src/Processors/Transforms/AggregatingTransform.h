@@ -1,5 +1,10 @@
 #pragma once
+#include <algorithm>
+#include <atomic>
+#include <bit>
+#include <mutex>
 #include <optional>
+#include <unordered_map>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -71,27 +76,62 @@ struct AggregatingTransformParams
 
 struct ManyAggregatedData
 {
+    struct DictionaryAggregationLease
+    {
+        AggregatedDataVariantsPtr variants;
+        std::unique_lock<std::mutex> lock;
+    };
+
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
 
     /// The number of producers that have to reach the finish barrier in
     /// `AggregatingTransform::initGenerate`, fixed at construction time.
-    /// `variants.size()` cannot be used instead: the last finisher appends the adaptive
-    /// aggregation's early-drain routing table to `variants`, and reading the size of a vector
-    /// that is concurrently grown is a data race.
+    /// `variants.size()` cannot be used instead: producers can append shared single-dictionary
+    /// shards while consuming, and the last finisher can append the adaptive aggregation's early-drain
+    /// routing table. Reading the size of a vector that is concurrently grown is a data race.
     const size_t num_producers;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see
     /// `AdaptiveAggregationSession`); shared by all the participating transforms.
     AdaptiveAggregationSessionPtr adaptive_session;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), num_producers(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0)
+        : variants(num_threads)
+        , num_producers(num_threads)
+        , num_dictionary_shards(std::bit_floor(std::max<size_t>(1, std::min(max_dictionary_shards, num_threads))))
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
     }
 
+    DictionaryAggregationLease acquireDictionaryAggregationShard(const ColumnPtr & dictionary, size_t shard);
+
+    size_t getNumDictionaryShards() const { return num_dictionary_shards; }
+
+    /// Once shards have been created, their sizes cannot serve as per-producer size hints.
+    std::atomic<bool> has_created_dictionary_shards = false;
+
     ~ManyAggregatedData();
+
+private:
+    struct DictionaryAggregationShard
+    {
+        AggregatedDataVariantsPtr variants = std::make_shared<AggregatedDataVariants>();
+        std::mutex mutex;
+    };
+
+    struct DictionaryAggregationShards
+    {
+        ColumnPtr dictionary;
+        std::vector<std::unique_ptr<DictionaryAggregationShard>> shards;
+    };
+
+    static constexpr size_t max_dictionary_shards = 64;
+    const size_t num_dictionary_shards;
+
+    std::mutex dictionary_shards_mutex;
+    std::unordered_map<const IColumn *, DictionaryAggregationShards> dictionary_shards;
 };
 
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
@@ -109,7 +149,10 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * Last AggregatingTransform expands pipeline and adds second input port, which reads from ConvertingAggregated.
   *
   * Aggregation data is passed by ManyAggregatedData structure, which is shared between all aggregating transforms.
-  * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
+  * At aggregation step, every transform normally uses its own AggregatedDataVariants structure.
+  * A transform aggregates a single-part `LowCardinality` dictionary into its local variant until
+  * its input switches dictionaries. It then retains the local variant and uses bounded shared
+  * shards, independently of which transform receives later read tasks.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
 class AggregatingTransform final : public IProcessor
@@ -161,7 +204,12 @@ private:
     bool no_more_keys = false;
 
     ManyAggregatedDataPtr many_data;
+    /// Non-owning: the pointee stays stable when `many_data->variants` grows, and completed
+    /// transforms must not extend its lifetime after releasing `many_data`.
     AggregatedDataVariants & variants;
+    const IColumn * previous_single_dictionary = nullptr;
+    bool dictionary_sharding_enabled = false;
+    size_t dictionary_shard_offset = 0;
 
     /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
     /// on `many_data`. Held by pointer: the producer's definition stays out of this widely

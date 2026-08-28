@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsNumber.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Interpreters/AdaptiveAggregationImpl.h>
@@ -36,6 +37,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AggregationSingleLowCardinalityDictionarySwitches;
 }
 
 namespace DB
@@ -46,21 +48,54 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ManyAggregatedData::DictionaryAggregationLease ManyAggregatedData::acquireDictionaryAggregationShard(
+    const ColumnPtr & dictionary, size_t shard)
+{
+    chassert(shard < num_dictionary_shards);
+
+    std::unique_lock registry_lock(dictionary_shards_mutex);
+    auto [entry_it, inserted] = dictionary_shards.try_emplace(dictionary.get());
+    auto & entry = entry_it->second;
+    if (inserted)
+    {
+        entry.dictionary = dictionary;
+        entry.shards.resize(num_dictionary_shards);
+    }
+
+    if (!entry.shards[shard])
+    {
+        entry.shards[shard] = std::make_unique<DictionaryAggregationShard>();
+        variants.push_back(entry.shards[shard]->variants);
+        has_created_dictionary_shards.store(true, std::memory_order_relaxed);
+    }
+
+    auto & dictionary_shard = *entry.shards[shard];
+    auto variant = dictionary_shard.variants;
+    registry_lock.unlock();
+    std::unique_lock shard_lock(dictionary_shard.mutex);
+    return {std::move(variant), std::move(shard_lock)};
+}
+
 ManyAggregatedData::~ManyAggregatedData()
 {
     try
     {
+        /// Leave `variants` as the sole owner so the thread-pool tasks below actually destroy
+        /// shared shard states instead of only dropping one of two references to them.
+        dictionary_shards.clear();
+
         if (variants.size() <= 1)
             return;
 
         // Aggregation states destruction may be very time-consuming.
         // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
         // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
+        const size_t num_threads = std::min(variants.size(), num_producers);
         const auto pool = std::make_unique<ThreadPool>(
             CurrentMetrics::DestroyAggregatesThreads,
             CurrentMetrics::DestroyAggregatesThreadsActive,
             CurrentMetrics::DestroyAggregatesThreadsScheduled,
-            variants.size());
+            num_threads);
 
         for (auto && variant : variants)
         {
@@ -1116,6 +1151,7 @@ AggregatingTransform::AggregatingTransform(
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
+    , dictionary_shard_offset(current_variant)
     , max_threads(std::min(many_data->variants.size(), max_threads_))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
@@ -1278,16 +1314,144 @@ void AggregatingTransform::consume(Chunk chunk)
     }
     else
     {
-        if (!params->aggregator.executeOnBlock(
-                chunk.detachColumns(),
-                0,
-                num_rows,
-                variants,
-                key_columns,
-                aggregate_columns,
-                no_more_keys,
-                adaptive_context.get()))
-            is_consume_finished = true;
+        Columns columns = chunk.detachColumns();
+        /// `skip_merging` requires complete groups in each producer's result. Shards from
+        /// different dictionaries can contain partial results for the same key.
+        const bool can_use_dictionary_shards
+            = !skip_merging && (!adaptive_context || adaptive_context->isBaseline() || variants.empty());
+        const size_t num_dictionary_shards = many_data->getNumDictionaryShards();
+        IColumn::Selector dictionary_shard_selector;
+        auto dictionary = can_use_dictionary_shards
+            ? params->aggregator.getSingleLowCardinalityDictionaryForBlock(
+                columns, dictionary_sharding_enabled ? num_dictionary_shards : 1, dictionary_shard_selector)
+            : nullptr;
+        if (dictionary)
+        {
+            if (adaptive_context && !adaptive_context->isBaseline())
+            {
+                adaptive_context->standDown(
+                    AdaptiveAggregationProducer::BaselineState::Reason::SingleLowCardinalityDictionary);
+            }
+
+            const bool dictionary_changed
+                = previous_single_dictionary && previous_single_dictionary != dictionary.get();
+            if (dictionary_changed)
+            {
+                ProfileEvents::increment(ProfileEvents::AggregationSingleLowCardinalityDictionarySwitches);
+                dictionary_sharding_enabled = true;
+                if (num_dictionary_shards > 1)
+                {
+                    auto shard_dictionary = params->aggregator.getSingleLowCardinalityDictionaryForBlock(
+                        columns, num_dictionary_shards, dictionary_shard_selector);
+                    if (shard_dictionary.get() != dictionary.get())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality dictionary changed while selecting aggregation shards");
+                }
+            }
+            previous_single_dictionary = dictionary.get();
+
+            if (!dictionary_sharding_enabled)
+            {
+                if (!params->aggregator.executeOnBlock(
+                        std::move(columns),
+                        0,
+                        num_rows,
+                        variants,
+                        key_columns,
+                        aggregate_columns,
+                        no_more_keys,
+                        adaptive_context.get()))
+                    is_consume_finished = true;
+                return;
+            }
+
+            auto execute_shard = [&](const Columns & input_columns, size_t input_rows, size_t shard)
+            {
+                auto lease = many_data->acquireDictionaryAggregationShard(dictionary, shard);
+                return params->aggregator.executeOnBlock(
+                    input_columns,
+                    0,
+                    input_rows,
+                    *lease.variants,
+                    key_columns,
+                    aggregate_columns,
+                    no_more_keys,
+                    adaptive_context.get(),
+                    /*is_dictionary_shard=*/true);
+            };
+
+            if (num_dictionary_shards == 1)
+            {
+                if (!execute_shard(columns, num_rows, 0))
+                    is_consume_finished = true;
+                return;
+            }
+
+            std::vector<size_t> shard_sizes(num_dictionary_shards);
+            for (const size_t shard : dictionary_shard_selector)
+                ++shard_sizes[shard];
+
+            std::vector<ColumnUInt64::MutablePtr> shard_row_indexes;
+            shard_row_indexes.resize(num_dictionary_shards);
+            for (size_t shard = 0; shard < num_dictionary_shards; ++shard)
+                if (shard_sizes[shard] != 0)
+                    shard_row_indexes[shard] = ColumnUInt64::create(shard_sizes[shard]);
+
+            std::vector<size_t> shard_offsets(num_dictionary_shards);
+            for (size_t row = 0; row < num_rows; ++row)
+            {
+                const size_t shard = dictionary_shard_selector[row];
+                shard_row_indexes[shard]->getData()[shard_offsets[shard]++] = row;
+            }
+
+            std::vector<Columns> shard_columns(num_dictionary_shards);
+            for (auto & shard : shard_columns)
+                shard.reserve(columns.size());
+            for (auto & column : columns)
+            {
+                for (size_t shard = 0; shard < num_dictionary_shards; ++shard)
+                    if (shard_sizes[shard] != 0)
+                        shard_columns[shard].push_back(column->index(*shard_row_indexes[shard], 0));
+                column.reset();
+            }
+            columns.clear();
+            shard_row_indexes.clear();
+            dictionary_shard_selector.clear();
+
+            const size_t shard_mask = num_dictionary_shards - 1;
+            const size_t first_shard = dictionary_shard_offset & shard_mask;
+            dictionary_shard_offset = (first_shard + 1) & shard_mask;
+            for (size_t shard_index = 0; shard_index < num_dictionary_shards; ++shard_index)
+            {
+                const size_t shard = (first_shard + shard_index) & shard_mask;
+                const size_t shard_rows = shard_sizes[shard];
+                if (shard_rows == 0)
+                    continue;
+
+                const bool should_continue = execute_shard(shard_columns[shard], shard_rows, shard);
+                shard_columns[shard].clear();
+
+                if (!should_continue)
+                {
+                    is_consume_finished = true;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            dictionary_sharding_enabled |= previous_single_dictionary != nullptr;
+            previous_single_dictionary = nullptr;
+            if (!params->aggregator.executeOnBlock(
+                    std::move(columns),
+                    0,
+                    num_rows,
+                    variants,
+                    key_columns,
+                    aggregate_columns,
+                    no_more_keys,
+                    adaptive_context.get()))
+                is_consume_finished = true;
+        }
     }
 }
 
@@ -1405,10 +1569,13 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
+            const bool hash_table_sizes_are_representative
+                = !many_data->has_created_dictionary_shards.load(std::memory_order_relaxed);
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
                 std::move(many_data->variants),
                 adaptive_context ? adaptive_context->session.get() : nullptr,
-                /*require_stable_bucket_hash=*/!params->final);
+                /*require_stable_bucket_hash=*/!params->final,
+                hash_table_sizes_are_representative);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
                 params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
@@ -1418,10 +1585,13 @@ void AggregatingTransform::initGenerate()
             if (updater)
                 updater->markUnsupportedCase();
 
+            const bool hash_table_sizes_are_representative
+                = !many_data->has_created_dictionary_shards.load(std::memory_order_relaxed);
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
                 std::move(many_data->variants),
                 /*adaptive_session=*/nullptr,
-                /*require_stable_bucket_hash=*/!params->final);
+                /*require_stable_bucket_hash=*/!params->final,
+                hash_table_sizes_are_representative);
             Pipes pipes;
             for (auto & variant : prepared_data)
             {
