@@ -1307,7 +1307,7 @@ def test_projection_rebuild_with_multiple_temporary_parts_keeps_recompression_co
     SETTINGS
         materialize_projections_on_insert = 0,
         materialize_projections_on_merge = 1,
-        allow_experimental_adaptive_codec_selection = 1,
+        enable_adaptive_codec_selection = 1,
         min_bytes_for_wide_part = 0,
         min_rows_for_wide_part = 0,
         merge_with_recompression_ttl_timeout = 0
