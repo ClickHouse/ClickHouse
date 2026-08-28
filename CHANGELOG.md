@@ -22,6 +22,48 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release 89f0cefcbb9f184152afd941594799416de5a956 (89f0cefcbb9) FIXME as compared to 708305557adf1e20eb55742774fad3a960a5783c (708305557ad)
+
+#### Performance Improvement
+* Speed up server shutdown for databases with many tables by shutting tables down in parallel. Controlled by the new `database_catalog_shutdown_table_concurrency` setting (0 by default, meaning the number of CPU cores). [#104969](https://github.com/ClickHouse/ClickHouse/pull/104969) ([Jayme Bird](https://github.com/jaymebrd)).
+* ArrayElement and arraySlice now read lazily replicated arrays (produced by ARRAY JOIN and JOIN when enable_lazy_columns_replication is enabled) directly, without materializing them. This greatly reduces memory usage and improves performance of queries that index or slice a large array. [#112304](https://github.com/ClickHouse/ClickHouse/pull/112304) ([Diego Gomes Tomé](https://github.com/diegomestre2)).
+* `A UNION DISTINCT B` now deduplicates each branch in parallel before merging them, the same way its `SELECT DISTINCT * FROM (A UNION ALL B)` rewrite already did. Previously every row funnelled through a single `DistinctTransform`, so the query did not scale with `max_threads`. [#115173](https://github.com/ClickHouse/ClickHouse/pull/115173) ([Groene AI](https://github.com/groeneai)).
+* Extend the regexp fast path to simple anchored literals: prefix, suffix, and exact-literal matches. [#116554](https://github.com/ClickHouse/ClickHouse/pull/116554) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* Made TTL deletion during merges cheaper: the block is now filtered in a single vectorized pass instead of being rebuilt column by column, and a block with nothing to delete is passed through untouched instead of being copied. [#116623](https://github.com/ClickHouse/ClickHouse/pull/116623) ([Shaohua Wang](https://github.com/tiandiwonder)).
+
+#### Improvement
+* Add ability to select jemalloc 4K/16K page size on aarch64 (default 64K). [#115424](https://github.com/ClickHouse/ClickHouse/pull/115424) ([Azat Khuzhin](https://github.com/azat)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fixed Kafka tables using `kafka_sasl_mechanism = 'AWS_MSK_IAM'` failing authentication once an hour with `SASL authentication error: Access denied`. The OAUTHBEARER token lifetime advertised to librdkafka is now capped by the remaining validity of the AWS credentials that signed the token, so the next token refresh is always scheduled before those credentials expire. Successful token refreshes are now logged, and unhelpful ClickHouse-side stack traces are omitted from broker-originated SASL errors in `system.kafka_consumers`. [#109125](https://github.com/ClickHouse/ClickHouse/pull/109125) ([kalavt](https://github.com/kalavt)).
+* Fixes silent truncation of `DateTime64` and `Time64` values with a scale above 6 when `date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands` is enabled. The printed fraction was capped at 6 digits, so a `DateTime64(9)` value of `00:00:00.000000700` rendered as `00:00:00.000000` even though the stored value was not zero. The documented output range of the setting widens from `[0, 3, 6]` to `[0, 3, 6, 9]`. [#112854](https://github.com/ClickHouse/ClickHouse/pull/112854) ([Groene AI](https://github.com/groeneai)).
+* Fixed `dpsub` join-order optimization (`query_plan_optimize_join_order_algorithm = 'dpsub'`) silently dropping single-table filter conditions from a `JOIN ... ON` clause, which could return extra rows. [#114629](https://github.com/ClickHouse/ClickHouse/pull/114629) ([Fisnik Kastrati](https://github.com/fkastrati)).
+* Reject unsupported and mixed read/write operations in ZooKeeper multi requests. [#115768](https://github.com/ClickHouse/ClickHouse/pull/115768) ([Antonio Andelic](https://github.com/antonio2368)).
+* You can now read Iceberg v2 tables whose manifests omit the optional `snapshot_id` column, such as tables managed by BigQuery; reading one previously failed with `Cannot find column snapshot_id`. A manifest that omits `sequence_number` is also no longer read as sequence number 0. Both values are inherited from the manifest list, as the Iceberg spec requires. [#116040](https://github.com/ClickHouse/ClickHouse/pull/116040) ([Takayuki Enomoto](https://github.com/tkykenmt)).
+* Fixed the `_path` virtual column returning a path with a redundant separator when a file was reached through a `**` glob, which made `WHERE _path = '<path>'` match no rows. Also fixed a glob reaching a file through a symlink and a `..` naming, reading and, with `rename_files_after_processing`, renaming a different file. [#116244](https://github.com/ClickHouse/ClickHouse/pull/116244) ([Groene AI](https://github.com/groeneai)).
+* Fixed the `_path` virtual column and the listing prefilters composing a path inconsistently, so `WHERE _path = '<path>'` could match no rows. Affected object storages with an empty namespace, such as `IcebergLocal` and HDFS, and keys that keep a leading separator on `azureBlobStorage`. [#116252](https://github.com/ClickHouse/ClickHouse/pull/116252) ([Groene AI](https://github.com/groeneai)).
+* Fixes a query with `make_distributed_plan = 1` becoming unresponsive and outliving its `max_execution_time` when the plan has many nodes. Worker fragments now honor the query's `max_threads` and `use_concurrency_control`, so a distributed plan no longer asks for one pipeline thread per shard and exhausts the server's thread pool. [#116300](https://github.com/ClickHouse/ClickHouse/pull/116300) ([Groene AI](https://github.com/groeneai)).
+* Fix wrong window function results for `PARTITION BY` over a floating-point key (also `JSON`, `Dynamic`, and these types nested in `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`/`Variant`) with `max_threads > 1`: values that compare as equal, such as `-0.` and `0.`, could hash into different threads, and one logical partition got several window frames. [#116315](https://github.com/ClickHouse/ClickHouse/pull/116315) ([Alexander Gololobov](https://github.com/davenger)).
+* A setting that a client does not know about is sent over the native protocol as a custom setting. The server now reads such a setting into the setting it names, instead of keeping it as a custom setting of the same name. Previously, it was reported as unchanged, at its default value, in the settings received with the query. [#116317](https://github.com/ClickHouse/ClickHouse/pull/116317) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* Fixed `h3Line` returning uninitialized memory in the tail of the result array when a line between two valid H3 indices cannot be drawn because it crosses pentagon distortion. Such a call now throws `INCORRECT_DATA`. [#116583](https://github.com/ClickHouse/ClickHouse/pull/116583) ([Groene AI](https://github.com/groeneai)).
+* A `PRIMARY KEY` in the column list of `CREATE TABLE ... AS <table function>` was accepted, and the table metadata was then written in a form the server could not parse back, so the database failed to load with `Code: 62 SYNTAX_ERROR` on the next start. Such a statement is now rejected, as it already is for views. [#116645](https://github.com/ClickHouse/ClickHouse/pull/116645) ([Groene AI](https://github.com/groeneai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Rename `allow_experimental_adaptive_codec_selection` to `enable_adaptive_codec_selection`. [#113479](https://github.com/ClickHouse/ClickHouse/pull/113479) ([Nikita Fomichev](https://github.com/fm4v)).
+* Bound the waits in 02932_refreshable_materialized_views_1 and report refresh state on expiry. [#114974](https://github.com/ClickHouse/ClickHouse/pull/114974) ([Groene AI](https://github.com/groeneai)).
+* macOS binary signing: prod key via dedicated signing runner. [#115492](https://github.com/ClickHouse/ClickHouse/pull/115492) ([Rahul Nair](https://github.com/motsc)).
+* Remove outdated comment in  transactionlog. [#115588](https://github.com/ClickHouse/ClickHouse/pull/115588) ([Murphy](https://github.com/murphy-4o)).
+* CI: refuse LLVM coverage verdicts on incomplete measurements, make coverage profiles kill-safe. [#115623](https://github.com/ClickHouse/ClickHouse/pull/115623) ([Alexey Bakharew](https://github.com/alexbakharew)).
+* Sync changes. [#115630](https://github.com/ClickHouse/ClickHouse/pull/115630) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Fix compilation of `benchmark_statistics` with `ENABLE_BENCHMARKS=ON`. [#116292](https://github.com/ClickHouse/ClickHouse/pull/116292) ([Groene AI](https://github.com/groeneai)).
+* Add a test for out-of-range enums in Iceberg manifest files. [#116318](https://github.com/ClickHouse/ClickHouse/pull/116318) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Reduce the wall time of `03251_insert_sparse_all_formats` by dropping the per-format table reset, so it stops hitting the per-test timeout in the debug flaky check. [#116605](https://github.com/ClickHouse/ClickHouse/pull/116605) ([Groene AI](https://github.com/groeneai)).
+* Trim the code comment and the test added by [#112639](https://github.com/ClickHouse/ClickHouse/issues/112639). [#116632](https://github.com/ClickHouse/ClickHouse/pull/116632) ([Groene AI](https://github.com/groeneai)).
+* <!-- CI automatic block start :ci_links: -->. [#116687](https://github.com/ClickHouse/ClickHouse/pull/116687) ([clickhouse-gh[bot]](https://github.com/apps/clickhouse-gh)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="269"></a> ClickHouse release 26.9, FIXME (in progress)
 
 #### Backward Incompatible Change
