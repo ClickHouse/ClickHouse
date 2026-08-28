@@ -15,9 +15,9 @@ storage, and all of them live behind `StorageFactory::get`:
 
 The `Merge` engine carries the same gap through a different check: its creator passes the
 *local* context into the constructor, which performs a per-source-table `SHOW_COLUMNS`
-while inferring an omitted structure. (Plain `Distributed` is deliberately not covered:
-its creator passes the *global* context, so it is bypassed on the non-`ON CLUSTER` path
-too and the two paths already agree - a separate, pre-existing defect.)
+while inferring an omitted structure. (Plain `Distributed` is not covered below: its creator
+infers an omitted structure under the *local* context as well, so its own `SHOW_COLUMNS`
+check applies to a local `CREATE` and not to this path - an uncovered parity gap.)
 
 For `Merge` the parity is partial, and no case below can assert the remainder. The
 inference traversal filters on `isGranted(SHOW_TABLES)` before it checks `SHOW_COLUMNS`,
