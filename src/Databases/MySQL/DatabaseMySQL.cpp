@@ -176,18 +176,57 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+Tables DatabaseMySQL::listTablesImpl(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool throw_on_error) const
 {
     Tables tables;
     std::lock_guard lock(mutex);
 
-    fetchTablesIntoLocalCache(local_context);
+    try
+    {
+        fetchTablesIntoLocalCache(local_context);
+    }
+    catch (...)
+    {
+        if (throw_on_error)
+            throw;
+
+        /// Serve whatever the local cache holds. The level is `warning` exactly for a connection
+        /// failure to the unreachable remote: an `Error` line would be reported as an error of a
+        /// query that succeeds, and anything else must stay visible as an error.
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", mysqlToleratedConnectionFailureLogLevel());
+    }
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)
         if (!remove_or_detach_tables.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
             tables[table_name] = modify_time_and_storage.second;
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+    return tables;
+}
+
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+{
+    return std::make_unique<DatabaseTablesSnapshotIterator>(
+        listTablesImpl(local_context, filter_by_table_name, /* throw_on_error = */ false), getDatabaseName());
+}
+
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIteratorWithHint(
+    ContextPtr local_context,
+    const FilterByNameFunction & filter_by_table_name,
+    bool /* skip_not_loaded */,
+    const TablesFilter & /* tables_filter */) const
+{
+    return std::make_unique<DatabaseTablesSnapshotIterator>(
+        listTablesImpl(local_context, filter_by_table_name, /* throw_on_error = */ true), getDatabaseName());
+}
+
+std::vector<LightWeightTableDetails> DatabaseMySQL::getLightweightTablesIterator(
+    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+{
+    std::vector<LightWeightTableDetails> result;
+    for (const auto & [table_name, storage] : listTablesImpl(local_context, filter_by_table_name, /* throw_on_error = */ true))
+        if (storage)
+            result.emplace_back(table_name);
+    return result;
 }
 
 bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) const

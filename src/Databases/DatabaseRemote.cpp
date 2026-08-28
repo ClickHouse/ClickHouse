@@ -663,6 +663,33 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIteratorImpl(
 }
 
 
+std::optional<LogsLevel> DatabaseRemote::toleratedListTablesFailureLogLevel() const
+{
+    /// `fetchTablesList` turns every failed attempt to reach the remote replicas into
+    /// `NO_REMOTE_SHARD_AVAILABLE`, so that code means exactly "the remote is unreachable". Nothing
+    /// else on the listing path is a mere connection failure: the structure of an individual table is
+    /// resolved with `throw_on_error = false`, and a self-reference (`INFINITE_LOOP`) must not be
+    /// hidden behind a skip.
+    /// Must be called from within a catch block: it rethrows the active exception to classify it.
+    try
+    {
+        throw;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::NO_REMOTE_SHARD_AVAILABLE)
+            return LogsLevel::warning;
+        return {};
+    }
+    /// Ok to not report anything here: the exception stays active and the caller logs it at the
+    /// level `handleCannotListTables` derives from this result.
+    catch (...)
+    {
+        return {};
+    }
+}
+
+
 std::vector<LightWeightTableDetails> DatabaseRemote::getLightweightTablesIterator(
     ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {

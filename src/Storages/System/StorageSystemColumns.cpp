@@ -537,7 +537,13 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
                 const DatabasePtr & database = databases.at(database_name);
                 try
                 {
-                    for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                    /// `system.columns` is a user-facing listing, so use the strict variant: a remote
+                    /// engine propagates a connection failure through it instead of answering an empty
+                    /// list of tables. Whether a whole-server scan may then skip this database is
+                    /// decided below by `databases_narrowed_by_query`.
+                    auto iterator = database->getTablesIteratorWithHint(
+                        context, /* filter_by_table_name */ {}, /* skip_not_loaded */ false, /* tables_filter */ {});
+                    for (; iterator->isValid(); iterator->next())
                     {
                         if (const auto & table = iterator->table())
                         {

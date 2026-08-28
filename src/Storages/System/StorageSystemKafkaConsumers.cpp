@@ -273,6 +273,12 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & db : databases)
     {
+        /// A `Kafka` table is a ClickHouse internal table type, so an external database (`MySQL`,
+        /// `PostgreSQL`, a data lake catalog, ...) can never contain one. Skipping it also avoids
+        /// listing its tables, which for a remote engine is a round-trip to the remote server.
+        if (db.second->isExternal())
+            continue;
+
         for (auto it = db.second->getTablesIterator(context); it->isValid(); it->next())
         {
             StoragePtr storage = it->table();

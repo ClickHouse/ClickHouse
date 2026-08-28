@@ -18,10 +18,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_QUIET=$(echo "${CLICKHOUSE_CLIENT}" | sed "s/--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}/--send_logs_level=fatal/g")
 
 MYSQL_DB="${CLICKHOUSE_DATABASE}_mysql"
+REMOTE_DB="${CLICKHOUSE_DATABASE}_remote"
 SCAN_QUERY_ID="${CLICKHOUSE_DATABASE}_scan_${RANDOM}${RANDOM}"
 
 # Drop on any exit: a database left attached slows every later scan in the run.
-trap "${CLICKHOUSE_CLIENT} -q 'DROP DATABASE IF EXISTS ${MYSQL_DB}'" EXIT
+trap "${CLICKHOUSE_CLIENT} -q 'DROP DATABASE IF EXISTS ${MYSQL_DB}; DROP DATABASE IF EXISTS ${REMOTE_DB}'" EXIT
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${MYSQL_DB}"
 ${CLICKHOUSE_CLIENT_QUIET} -q "
@@ -39,6 +40,24 @@ ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() > 0 FROM system.completions"
 echo -n 'tables_by_engine '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() > 0 FROM system.tables WHERE engine = 'SystemTables'"
 
+# Every other system table that enumerates all databases and lists their tables. They reach the
+# best-effort `getTablesIterator`, which the engine itself makes tolerant, so they are covered by a
+# different mechanism than the four scans above and need their own assertions. These tables are
+# legitimately empty here, so the assertion is that the scan answers at all.
+# `system.kafka_consumers` is behind `USE_RDKAFKA`: treat its absence as vacuously satisfied so the
+# reference stays the same across build configurations.
+for table in kafka_consumers s3_queue_settings azure_queue_settings iceberg_files iceberg_history
+do
+    echo -n "${table} "
+    if [[ "$(${CLICKHOUSE_CLIENT_QUIET} -q \
+            "SELECT count() FROM system.tables WHERE database = 'system' AND name = '${table}'")" == "0" ]]
+    then
+        echo 1
+    else
+        ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() >= 0 FROM system.\`${table}\`"
+    fi
+done
+
 # A typo must answer UNKNOWN_TABLE. The hint lookup iterates every database, so it used to answer
 # the connection failure instead.
 echo -n 'unknown_table '
@@ -53,6 +72,16 @@ ${CLICKHOUSE_CLIENT_QUIET} -q "SHOW TABLES FROM ${MYSQL_DB}" 2>&1 | grep -c 'ALL
 # system.columns decides the same thing separately, so it needs its own assertion.
 echo -n 'named_database_columns_fails '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.columns WHERE database = '${MYSQL_DB}'" 2>&1 | grep -c 'ALL_CONNECTION_TRIES_FAILED'
+
+# The `Remote` engine lists its tables from the remote ClickHouse server, so an unreachable server
+# is the same class of failure and goes through the same mechanism. It wraps a failure to reach every
+# replica into `NO_REMOTE_SHARD_AVAILABLE`, which is what its classifier tolerates.
+${CLICKHOUSE_CLIENT_QUIET} -q "DROP DATABASE IF EXISTS ${REMOTE_DB}"
+${CLICKHOUSE_CLIENT_QUIET} -q "CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('127.0.0.1:1', 'fake_db', 'user', 'password')"
+echo -n 'remote_engine_scan '
+${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() > 0 FROM system.tables"
+echo -n 'remote_engine_named_database_fails '
+${CLICKHOUSE_CLIENT_QUIET} -q "SHOW TABLES FROM ${REMOTE_DB}" 2>&1 | grep -c 'NO_REMOTE_SHARD_AVAILABLE'
 
 # The tolerated failure is a warning: Error-level messages from these paths trip the Upgrade check.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"

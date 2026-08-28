@@ -63,6 +63,13 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         for (const auto & db : databases)
         {
+            /// An `S3Queue` or `AzureQueue` table is a ClickHouse internal table type, so an
+            /// external database (`MySQL`, `PostgreSQL`, a data lake catalog, ...) can never contain
+            /// one. Skipping it also avoids listing its tables, which for a remote engine is a
+            /// round-trip to the remote server.
+            if (db.second->isExternal())
+                continue;
+
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();

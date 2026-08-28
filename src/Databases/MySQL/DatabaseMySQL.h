@@ -63,7 +63,26 @@ public:
 
     bool empty() const override;
 
+    /// Best-effort: the server itself walks over every database through this iterator (asynchronous
+    /// metrics, `SYSTEM` commands, `DROP DATABASE`, `system.kafka_consumers`, ...), so a single
+    /// unreachable remote must not make those operations fail. Serves whatever the local cache holds.
+    /// The user-facing listings below propagate the failure instead; see `DatabaseRemote`, which
+    /// splits the two the same way.
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
+
+    /// The `system.tables` path. A remote failure is propagated, because answering an empty list of
+    /// tables would report "this database has no tables" when the truth is "its server is
+    /// unreachable". `StorageSystemTables` decides whether a whole-server scan may skip this
+    /// database; see `handleCannotListTables`.
+    DatabaseTablesIteratorPtr getTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const override;
+
+    /// Drives the explicit `SHOW TABLES`, which propagates a remote failure for the same reason.
+    std::vector<LightWeightTableDetails>
+    getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     std::optional<LogsLevel> toleratedListTablesFailureLogLevel() const override
     {
@@ -126,6 +145,10 @@ private:
     void cleanOutdatedTables();
 
     void fetchTablesIntoLocalCache(ContextPtr context) const TSA_REQUIRES(mutex);
+
+    /// Refreshes the local cache from the remote and returns its visible entries. `throw_on_error`
+    /// selects between the two listing semantics described above.
+    Tables listTablesImpl(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool throw_on_error) const;
 
     std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;
 

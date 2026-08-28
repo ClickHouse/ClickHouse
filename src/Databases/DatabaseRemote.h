@@ -47,6 +47,8 @@ public:
 
     bool isRemoteDatabase() const override { return true; }
 
+    std::optional<LogsLevel> toleratedListTablesFailureLogLevel() const override;
+
     String getMetadataPath() const override { return metadata_path; }
 
     /// The table list lives on the remote server, so this database is never required to be empty
