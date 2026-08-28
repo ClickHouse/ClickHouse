@@ -39,9 +39,11 @@ ${CLICKHOUSE_CLIENT} --query "
     ENGINE = IcebergLocal('${table_path}', 'Parquet')
 "
 
+# One insert sink: each sink commits its own snapshot, so with more than one they contend for the
+# same metadata version and the loser of the compare-and-swap logs its lost commit at Error level.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_insert_max_rows_in_data_file=2 \
-    --min_insert_block_size_rows=2 --max_insert_block_size=2 --max_block_size=2 --query \
-    "INSERT INTO ${table} SELECT number, char(number + ascii('a')), char(number + ascii('A')) FROM numbers(6)"
+    --min_insert_block_size_rows=2 --max_insert_block_size=2 --max_block_size=2 --max_insert_threads=1 \
+    --query "INSERT INTO ${table} SELECT number, char(number + ascii('a')), char(number + ascii('A')) FROM numbers(6)"
 
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query \
     "ALTER TABLE ${table} DELETE WHERE id = 2"
