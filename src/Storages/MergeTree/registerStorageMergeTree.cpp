@@ -49,7 +49,6 @@ namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
     extern const SettingsBool allow_experimental_scann_index;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
