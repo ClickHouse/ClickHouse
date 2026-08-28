@@ -5,12 +5,12 @@
     "es/clickstack/index",
     {
       "expanded": true,
-      "group": "Get started",
+      "group": "Primeros pasos",
       "pages": [
         "es/clickstack/overview",
         {
           "expanded": true,
-          "group": "Quickstarts",
+          "group": "Guías de inicio rápido",
           "pages": [
             "es/clickstack/getting-started/index",
             "es/clickstack/getting-started/managed",
@@ -18,7 +18,7 @@
           ]
         },
         {
-          "group": "Sample datasets",
+          "group": "Conjuntos de datos de ejemplo",
           "pages": [
             "es/clickstack/example-datasets/index",
             "es/clickstack/example-datasets/sample-data",
@@ -27,7 +27,9 @@
             "es/clickstack/example-datasets/remote-demo-data",
             "es/clickstack/example-datasets/session-replay",
             "es/clickstack/example-datasets/chrome-extension",
-            "es/clickstack/example-datasets/otelgen"
+            "es/clickstack/example-datasets/otelgen",
+            "es/clickstack/example-datasets/telemetrygen",
+            "es/clickstack/example-datasets/instrument-application"
           ]
         },
         "es/clickstack/architecture",
@@ -35,14 +37,14 @@
       ]
     },
     {
-      "group": "Features",
+      "group": "Características",
       "pages": [
         {
-          "group": "Deployment",
+          "group": "Implementación",
           "pages": [
             "es/clickstack/deployment/overview",
             {
-              "group": "Open Source",
+              "group": "Código abierto",
               "pages": [
                 "es/clickstack/deployment/oss",
                 "es/clickstack/deployment/all-in-one",
@@ -61,7 +63,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (deprecated)",
+                      "group": "v1.x (obsoleto)",
                       "pages": [
                         "es/clickstack/deployment/helm-v1",
                         "es/clickstack/deployment/helm-configuration-v1",
@@ -82,7 +84,7 @@
         },
         "es/clickstack/features/search",
         {
-          "group": "Dashboards",
+          "group": "Paneles",
           "pages": [
             "es/clickstack/features/dashboards/overview",
             "es/clickstack/features/dashboards/dashboard-templates",
@@ -130,7 +132,7 @@
     },
     {
       "expanded": true,
-      "group": "Managing ClickStack",
+      "group": "Administración de ClickStack",
       "pages": [
         "es/clickstack/managing/overview",
         "es/clickstack/managing/admin",
@@ -144,10 +146,11 @@
       ]
     },
     {
-      "group": "Guides",
+      "group": "Guías",
       "pages": [
         {
-          "group": "Ingesting data",
+          "expanded": true,
+          "group": "Ingesta de datos",
           "pages": [
             "es/clickstack/ingesting-data/index",
             "es/clickstack/ingesting-data/overview",
@@ -158,7 +161,7 @@
             "es/clickstack/ingesting-data/schema/map-vs-json",
             "es/clickstack/ingesting-data/trace-sampling",
             {
-              "group": "Integrations",
+              "group": "Integraciones",
               "pages": [
                 "es/clickstack/integration-examples/index",
                 "es/clickstack/integration-examples/nginx-logs",
@@ -168,7 +171,7 @@
                 "es/clickstack/integration-examples/cloudwatch",
                 "es/clickstack/integration-examples/aws-lambda",
                 {
-                  "group": "Host logs",
+                  "group": "Logs del host",
                   "pages": [
                     "es/clickstack/integration-examples/host-logs",
                     "es/clickstack/integration-examples/host-logs/ec2"
@@ -189,7 +192,7 @@
               ]
             },
             {
-              "group": "Language SDKs",
+              "group": "SDK de lenguajes",
               "pages": [
                 "es/clickstack/ingesting-data/sdks/index",
                 "es/clickstack/ingesting-data/sdks/browser",
@@ -210,11 +213,11 @@
         },
         {
           "expanded": true,
-          "group": "Migration guides",
+          "group": "Guías de migración",
           "pages": [
             "es/clickstack/migration/index",
             {
-              "group": "Migrating from Elastic",
+              "group": "Migración desde Elastic",
               "pages": [
                 "es/clickstack/migration/elastic/index",
                 "es/clickstack/migration/elastic/intro",
@@ -233,7 +236,7 @@
     },
     {
       "expanded": true,
-      "group": "Integration partners",
+      "group": "Socios de integración",
       "pages": [
         "es/clickstack/integration-partners/index",
         "es/clickstack/integration-partners/bindplane",
@@ -243,7 +246,7 @@
     },
     {
       "expanded": true,
-      "group": "API reference",
+      "group": "Referencia de la API",
       "openapi": {
         "directory": "es/clickstack/api-reference",
         "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
