@@ -178,6 +178,11 @@ QueryTreeNodes unwrapInjectiveFunctionsInKeys(const QueryTreeNodes & keys, bool 
         }
     }
 
+    /// Unwrapping must not eliminate every key: aggregation without keys returns a row even for an
+    /// empty input, while `GROUP BY` over an empty input must return nothing.
+    if (new_keys.empty())
+        return keys;
+
     return new_keys;
 }
 

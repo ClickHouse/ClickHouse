@@ -2240,7 +2240,9 @@ bool Aggregator::executeOnBlock(Columns columns,
       */
     Columns materialized_columns;
     bool all_keys_are_const = false;
-    if (params.optimize_group_by_constant_keys)
+    /// The constant-key path represents the whole block by a single key row, which is only valid if
+    /// the block has at least one row. For an empty block it would create a group out of nothing.
+    if (params.optimize_group_by_constant_keys && row_begin != row_end)
     {
         all_keys_are_const = true;
         for (size_t i = 0; i < params.keys_size; ++i)
