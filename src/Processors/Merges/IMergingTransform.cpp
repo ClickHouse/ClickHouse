@@ -2,8 +2,6 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Port.h>
 
-#include <iostream>
-
 namespace DB
 {
 
@@ -253,11 +251,6 @@ IProcessor::Status IMergingTransformBase::prepare()
             const auto & input_chunk = state.input_chunk.chunk;
 
             bool virtual_row = isVirtualRow(input_chunk);
-            std::cerr << "PROBE consume pull: merge=" << getName()
-                      << " rows=" << input_chunk.getNumRows()
-                      << " cols=" << input_chunk.getNumColumns()
-                      << " virt=" << virtual_row
-                      << " finished=" << input.isFinished() << "\n";
             if (!virtual_row && (!limit_hint || input_chunk.getNumRows() < limit_hint || always_read_till_end))
             {
                 input.setNeeded();
