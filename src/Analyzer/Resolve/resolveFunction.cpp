@@ -1260,9 +1260,13 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     /// "100000000000000000000000" parsed as UInt128), cast from the original text to the
     /// target type. This preserves precision — parsing "3.14" → Decimal64 directly is
     /// exact, whereas Float64(3.14) → Decimal64 loses trailing digits.
+    ///
+    /// A string target is the exception: it compares against the value the literal denotes, so it has
+    /// to stringify the resolved value. The original text of `1e2` would give '1e2', not '100'.
     if (const auto * constant_node = node->as<ConstantNode>())
     {
-        if (constant_node->hasNumberLiteralText())
+        const auto unwrapped_target = removeNullable(removeLowCardinality(target_type));
+        if (constant_node->hasNumberLiteralText() && !isStringOrFixedString(*unwrapped_target))
         {
             auto string_constant = std::make_shared<ConstantNode>(
                 constant_node->getNumberLiteralText(), std::make_shared<DataTypeString>());
