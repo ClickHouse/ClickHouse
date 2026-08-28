@@ -65,9 +65,9 @@ LEDGER_REVERT_OF_REVERT = (
 LEDGER_DELETED = f"Changelog-deleted-entry: 109946 {FIX}"
 
 
-def changelog(entries, raw_bullets=None):
+def changelog(entries, raw_bullets=None, released=()):
     """A minimal CHANGELOG.md: table of contents, an optional raw block, the
-    in-progress section, and one already-released section."""
+    in-progress section, and one already-released section (`released`)."""
     raw = ""
     if raw_bullets is not None:
         raw = "\n".join(
@@ -91,6 +91,7 @@ def changelog(entries, raw_bullets=None):
             "",
             "* Released. [#1](https://github.com/ClickHouse/ClickHouse/pull/1) "
             "([X](https://github.com/x)).",
+            *released,
         ]
     )
 
@@ -109,7 +110,7 @@ def analyze(monkeypatch, text, ledger=()):
     monkeypatch.setattr(
         cl, "Info", lambda: type("I", (), {"repo_name": "ClickHouse/ClickHouse"})()
     )
-    return cl.analyze_reverts(text)
+    return cl.analyze_reverts(text, ANCHOR)
 
 
 def not_restored(reverts, text):
@@ -486,3 +487,111 @@ def test_verify_edit_accepts_only_the_exact_merged_bullet_restoration(
         run_verify_edit(monkeypatch, tmp_path, old_text, changelog([MERGED]), reverts)
         is None
     )
+
+
+def test_a_numeric_revert_title_resolves_across_runs(monkeypatch):
+    """The skill's other common revert title is `Revert #NNNNN`, which names
+    the target outright. A re-apply titled that way has to cancel the earlier
+    revert just as the nested-title form does — otherwise the stale deletion
+    credit survives from the ledger and the shipped fix stays dropped."""
+    PULL_REQUESTS["114913"] = {"title": "Revert #114911", "body": "No marker."}
+    numeric_revert_of_revert = (
+        "* NO CL ENTRY: 'Revert #114911'. "
+        "[#114913](https://github.com/ClickHouse/ClickHouse/pull/114913) "
+        "([Someone](https://github.com/someone))."
+    )
+    reverts = analyze(
+        monkeypatch,
+        changelog([], [numeric_revert_of_revert]),
+        [LEDGER_REVERT, LEDGER_DELETED],
+    )
+    assert reverts["unresolved"] == []
+    assert reverts["ledger"] == [
+        "Changelog-revert: 114913 114911 Revert #114911",
+    ]
+    # `#114911` is cancelled, so it licenses nothing any more ...
+    assert reverts["credits"] == {"114911": "114913"}
+    # ... and the fix it removed has to come back.
+    assert reverts["restore"] == {"109946": FIX}
+    assert [group["prs"] for group in reverts["missing"]] == [["109946"]]
+    assert not_restored(reverts, changelog([])) == ["109946"]
+
+
+def test_a_numeric_title_pointing_forward_is_not_a_relation(monkeypatch):
+    """A revert is always merged after what it reverts. A title naming a
+    higher number is not describing a revert of it, and binding it would break
+    the descending single-pass reduction, so it stays unresolved."""
+    PULL_REQUESTS["114700"] = {"title": "Revert #114911", "body": "No marker."}
+    reverts = analyze(
+        monkeypatch,
+        changelog(
+            [],
+            [
+                "* NO CL ENTRY: 'Revert #114911'. "
+                "[#114700](https://github.com/ClickHouse/ClickHouse/pull/114700) "
+                "([Someone](https://github.com/someone))."
+            ],
+        ),
+    )
+    assert reverts["unresolved"] == ["114700"]
+    assert reverts["ledger"] == []
+
+
+def test_a_quoted_title_mentioning_an_issue_is_not_a_numeric_revert(monkeypatch):
+    """`Revert "Fix #12345"` quotes an original title that happens to name an
+    issue; it is the nested-title form, not `Revert #NNNNN`."""
+    PULL_REQUESTS["115900"] = {"title": 'Revert "Fix #12345"', "body": "No marker."}
+    reverts = analyze(
+        monkeypatch,
+        changelog(
+            [],
+            [
+                "* NO CL ENTRY: 'Revert \"Fix #12345\"'. "
+                "[#115900](https://github.com/ClickHouse/ClickHouse/pull/115900) "
+                "([Someone](https://github.com/someone))."
+            ],
+        ),
+    )
+    # No candidate is titled `Fix #12345`, so it resolves to nothing at all -
+    # crucially not to `#12345`, which it does not revert.
+    assert reverts["unresolved"] == ["115900"]
+    assert reverts["credits"] == {}
+
+
+def test_a_sibling_surviving_only_in_a_released_section_is_not_a_bullet(monkeypatch):
+    """`siblings` says "the bullet is still there, merge into it". A pull
+    request that appears only in an already-released section further down the
+    file is not that bullet: the same pull request legitimately sits in the
+    previous release or a backport."""
+    PULL_REQUESTS.setdefault(
+        "115000",
+        {
+            "title": f'Revert "{MERGED_TITLE}"',
+            "body": "Reverts ClickHouse/ClickHouse#109000",
+        },
+    )
+    PULL_REQUESTS.setdefault(
+        "115001",
+        {
+            "title": f'Revert "Revert "{MERGED_TITLE}""',
+            "body": "Reverts ClickHouse/ClickHouse#115000",
+        },
+    )
+    ledger = [
+        f"Changelog-deleted-entry: 109000 {MERGED}",
+        f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+    ]
+    # The sibling is in the in-progress section: there is a bullet to merge into.
+    in_section = analyze(
+        monkeypatch, changelog([SOLO], [REVERT_OF_MERGED]), ledger
+    )
+    assert [group["siblings"] for group in in_section["missing"]] == [["109006"]]
+
+    # The same sibling only below, in the released section: no bullet to merge
+    # into, so the entry is restored as its own bullet.
+    below = analyze(
+        monkeypatch, changelog([], [REVERT_OF_MERGED], released=[SOLO]), ledger
+    )
+    assert [group["siblings"] for group in below["missing"]] == [[]]
+    prompt = cl._edit_prompt(VERSION, below)
+    assert "That bullet also carries" not in prompt

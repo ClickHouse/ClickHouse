@@ -332,6 +332,11 @@ def raw_strict_prs_and_reverts(text):
     return strict_prs, revert_prs
 
 
+def _older_than(prs, pr):
+    """The pull requests of `prs` merged before `pr`, by number."""
+    return {p for p in prs if int(p) < int(pr)}
+
+
 # The revert bookkeeping the job carries on its own branch. A release cycle is
 # edited in ~30 nightly increments and a revert chain routinely spans them: the
 # change lands on one day, the revert arrives on another, the revert of the
@@ -347,6 +352,15 @@ REVERT_TRAILER = "Changelog-revert:"
 DELETED_TRAILER = "Changelog-deleted-entry:"
 REVERT_TRAILER_RE = re.compile(rf"^{REVERT_TRAILER}\s+(\d+)\s+(\d+)\s*(.*)$")
 DELETED_TRAILER_RE = re.compile(rf"^{DELETED_TRAILER}\s+(\d+)\s+(.*)$")
+
+
+# `Revert #NNNNN` / `Reverts #NNNNN` / `Revert of PR #NNNNN`: the title names
+# the reverted pull request outright. Anchored on the whole title, so that a
+# `Revert "Fix #12345"` — a quoted original title that happens to mention an
+# issue — is not mistaken for it and goes to the nested-title form instead.
+_REVERT_NUMBER_TITLE_RE = re.compile(
+    r"(?is)^\s*revert(?:s|ed)?\s+(?:of\s+)?(?:pr\s*)?#(\d+)\.?\s*$"
+)
 
 
 def resolve_revert_targets(revert_prs, known_titles=None):
@@ -371,8 +385,13 @@ def resolve_revert_targets(revert_prs, known_titles=None):
         data = json.loads(out) if out else {}
         titles[pr] = " ".join(data.get("title", "").split())
         found = re.findall(r"(?i)reverts\s+[\w.-]+/[\w.-]+#(\d+)", data.get("body", ""))
-        if found:
-            targets[pr] = set(found)
+        # A revert is always merged after what it reverts, so it always has the
+        # higher number. That is the invariant `revert_net_effect` settles
+        # whole chains in a single descending pass with, so a relation that
+        # breaks it is not one: drop it and let the other forms try.
+        older = _older_than(found, pr)
+        if older:
+            targets[pr] = older
     # A revert of a revert made with the web UI carries no `Reverts ...#N`
     # marker in its body (the button restores the change, GitHub words the
     # body differently), but its title nests the reverted title: the target
@@ -383,6 +402,14 @@ def resolve_revert_targets(revert_prs, known_titles=None):
     for pr in revert_prs:
         if pr in targets:
             continue
+        # The skill's other common form, and an exact one: no title matching
+        # needed, and nothing to be ambiguous about.
+        numbered = _REVERT_NUMBER_TITLE_RE.match(titles[pr])
+        if numbered:
+            older = _older_than([numbered.group(1)], pr)
+            if older:
+                targets[pr] = older
+                continue
         nested = re.match(r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', titles[pr])
         matched = (
             {
@@ -477,15 +504,20 @@ def entry_line(text, pr):
     return fallback
 
 
-def group_restorations(restore, text):
+def group_restorations(restore, section):
     """Group the entries to restore by the bullet they were recorded from.
 
     A merge (skill section 7) puts several pull requests on one bullet, so one
     recorded line can be the record of more than one of them: it has to be
     restored once, not once per pull request. `siblings` are the other pull
-    requests attributed on that line which are still in `text` — the bullet
+    requests attributed on that line which are still in `section` — the bullet
     is therefore still there, and the restoration has to put the missing links
-    back into it instead of pasting a copy of the line and duplicating them."""
+    back into it instead of pasting a copy of the line and duplicating them.
+
+    `section` is the in-progress section, not the whole file: the same pull
+    request legitimately appears in an already-released section further down
+    (published in the last release, or backported), and a sibling that
+    survives only there is no bullet to merge into."""
     groups = {}
     for pr, line in restore.items():
         groups.setdefault(line, []).append(pr)
@@ -496,7 +528,7 @@ def group_restorations(restore, text):
             {
                 "prs": sorted(prs, key=int),
                 "siblings": sorted(
-                    (p for p in siblings if f"/pull/{p})" in text), key=int
+                    (p for p in siblings if f"/pull/{p})" in section), key=int
                 ),
                 "line": line,
             }
@@ -516,7 +548,7 @@ def duplicate_attributions(text):
     return {pr for pr, count in counts.items() if count > 1}
 
 
-def analyze_reverts(text):
+def analyze_reverts(text, anchor):
     """Everything the editing step needs to know about reverts, resolved
     against the branch's ledger so that a chain spread over several nightly
     runs is handled exactly like one arriving inside a single raw block.
@@ -568,13 +600,18 @@ def analyze_reverts(text):
             key=int,
         )
 
+    # Whether an entry is missing is asked of the whole file, like everywhere
+    # else here: a pull request whose link sits in an already-released section
+    # was published there and has no business in this release. Whether the
+    # bullet to merge into still exists is asked of the in-progress section
+    # only.
     missing = group_restorations(
         {
             pr: line
             for pr, line in restore.items()
             if f"/pull/{pr})" not in text
         },
-        text,
+        extract_in_progress_section(text, anchor) or "",
     )
     for group in missing:
         group["removed_by"] = removed_by(group["prs"])
@@ -1000,7 +1037,7 @@ def edit_raw_entries(version):
     # Resolving the reverts talks to GitHub, and every attempt starts from the
     # same raw blocks, so it is done once for all of them.
     refresh_gh_token()
-    reverts = analyze_reverts(_read_changelog())
+    reverts = analyze_reverts(_read_changelog(), _anchor_id(version))
     last_error = None
     for attempt in range(1, MAX_EDIT_ATTEMPTS + 1):
         # `last_error` still holds the rejection of the previous attempt here:

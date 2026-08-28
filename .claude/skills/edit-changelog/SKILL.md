@@ -140,9 +140,11 @@ section. For each:
    release without it.
 
    If the deleted entry shared a bullet with other PRs (§7) and those are
-   still in the file, that bullet is still there too: append the missing PR
-   link to it instead of adding a second bullet. No PR may end up attributed
-   twice in the section — one `[#NNNNN](...) ([Author](...))` per PR.
+   still in the in-progress section, that bullet is still there too: append
+   the missing PR link to it instead of adding a second bullet. The same PR
+   appearing in an already-released section further down is not that bullet.
+   No PR may end up attributed twice within one section — one
+   `[#NNNNN](...) ([Author](...))` per PR.
 7. After processing, delete any leftover bullets and the section header
    itself.
 
