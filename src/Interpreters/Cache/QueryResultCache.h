@@ -11,7 +11,12 @@
 #include <Parsers/IAST_fwd.h>
 #include <base/UUID.h>
 
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <mutex>
 #include <optional>
+#include <unordered_map>
 
 namespace DB
 {
@@ -20,14 +25,30 @@ struct Settings;
 
 /// Checks that query cache can be used for query.
 /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
-/// Throws if ast contains non-deterministic functions or system tables and appropriate handling setting is set to throw.
+/// Throws if ast contains non-deterministic functions or system tables and appropriate handling setting is set to throw
+/// (unless throw_on_error is false, see below).
 /// When skip_context_check is true, the context's canUseQueryResultCache flag is not checked.
 /// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
 /// but the outer query context may not have the flag set.
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
+/// When throw_on_error is false, returns false instead of throwing for AST/setting combinations that would
+/// otherwise throw. This is used to cheaply and speculatively probe write-eligibility (e.g. to decide whether
+/// thundering-herd coalescing is worthwhile) without pre-empting the authoritative throwing call made once the
+/// query has actually run.
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false, bool throw_on_error = true);
+
+/// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
+/// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
+/// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
+/// another overflow mode. Called by executeQuery() for the top-level cache and by Planner for the subquery-level cache (explicit
+/// per-subquery opt-in), since the outer query's use_query_cache flag - and therefore executeQuery()'s own check - may be false
+/// even though the Planner-level cache is used for that subquery.
+void throwIfQueryResultCacheUsedWithNonThrowOverflowMode(const Settings & settings);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
+class QueryResultCache;
+
+using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
@@ -131,6 +152,85 @@ public:
         std::optional<Chunk> extremes = std::nullopt;
     };
 
+    /// Identifies a group of concurrent, identical queries that should coalesce onto a single execution
+    /// ("thundering herd" avoidance). Unlike Key, equality here does not consider the entry's TTL/creation time
+    /// etc. - it only needs to tell apart queries which would race to compute and insert the very same Key.
+    /// user_id/current_user_roles are part of the key (unless share_between_users is set) so that queries of
+    /// different users/roles never wait on each other's execution, mirroring the read-side access check.
+    struct CoalescingKey
+    {
+        IASTHash ast_hash;
+        std::optional<UUID> user_id;
+        std::vector<UUID> current_user_roles;
+        bool share_between_users = false;
+        bool is_subquery = false;
+
+        bool operator==(const CoalescingKey & other) const;
+    };
+
+    struct CoalescingKeyHasher
+    {
+        size_t operator()(const CoalescingKey & key) const;
+    };
+
+    /// Represents one in-flight computation of a query result. The query which creates the token (the
+    /// "executor") holds `mutex` locked until it is done (successfully or not); concurrent identical queries
+    /// (the "waiters") block on `mutex` instead of redundantly re-computing the same result.
+    struct HerdToken
+    {
+        HerdToken(String owner_query_id_, UInt64 generation_)
+            : owner_query_id(std::move(owner_query_id_)), generation(generation_)
+        {
+        }
+
+        std::timed_mutex mutex;
+
+        /// Set by a waiter that gave up on its own timeout, after it removed this token from the coalescing map.
+        /// Lets every other waiter still polling this same token bail out immediately instead of waiting for
+        /// their own (possibly much later) timeout to elapse.
+        std::atomic<bool> abandoned{false};
+
+        /// Query id of the query which created this token. Used to detect the case where a query would end up
+        /// waiting on its own in-flight execution (e.g. the same subquery appears twice in one query) which
+        /// would otherwise deadlock.
+        const String owner_query_id;
+
+        /// Snapshot of QueryResultCache::clear_generation at creation time. A token whose generation does not
+        /// match the cache's current clear_generation is considered stale: SYSTEM CLEAR QUERY CACHE ran after it
+        /// was created, so new queries must not coalesce onto it (even though the query it belongs to may still
+        /// be legitimately running and will insert its result normally once done).
+        const UInt64 generation;
+    };
+    using HerdTokenPtr = std::shared_ptr<HerdToken>;
+
+    /// Tries to become the herd "executor" for `key`, waiting up to `timeout` for a concurrent, identical query
+    /// to finish if one is already in flight.
+    ///
+    /// Returns a token (already locked) if this call became the executor. The caller must run the query and
+    /// call releaseHerdToken() exactly once, from both the success and the exception path.
+    ///
+    /// Returns nullptr if this call did not become the executor. This happens when: the wait succeeded (the
+    /// other query's execution finished, a cache hit is likely - the caller should re-probe the cache), the
+    /// wait gave up (this or another waiter's timeout elapsed), or `is_cancelled` started returning true. In all
+    /// of these cases, the caller should re-probe the cache and, if still empty, call tryBecomeHerdExecutor() to
+    /// attempt taking over as executor; if the query was in fact cancelled, the caller is expected to detect and
+    /// report that itself (e.g. via QueryStatus::throwIfKilled()), the same way it would without coalescing.
+    HerdTokenPtr acquireOrWaitHerdToken(
+        const CoalescingKey & key,
+        std::chrono::milliseconds timeout,
+        const String & query_id,
+        const std::function<bool()> & is_cancelled);
+
+    /// Non-blocking counterpart of acquireOrWaitHerdToken(): tries to become the herd executor for `key`
+    /// immediately. Returns a locked token on success, or nullptr if another query already owns `key` (that
+    /// query is the executor).
+    HerdTokenPtr tryBecomeHerdExecutor(const CoalescingKey & key, const String & query_id);
+
+    /// Releases a token obtained from tryBecomeHerdExecutor()/acquireOrWaitHerdToken(). Must be called exactly
+    /// once by whichever call became the executor. Unblocks waiters and, if the token is still the current entry
+    /// for `key` in the coalescing map, removes it so that future queries don't wait on a finished execution.
+    void releaseHerdToken(const CoalescingKey & key, const HerdTokenPtr & token);
+
 private:
     struct KeyHasher
     {
@@ -189,9 +289,63 @@ private:
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
 
+    /// Currently in-flight query executions, keyed by CoalescingKey, used to avoid the "thundering herd" effect
+    /// (many concurrent identical queries each computing and inserting the same result). See HerdToken.
+    using HerdTokenMap = std::unordered_map<CoalescingKey, HerdTokenPtr, CoalescingKeyHasher>;
+    HerdTokenMap herd_tokens TSA_GUARDED_BY(mutex);
+
+    /// Bumped once per clear() call. Snapshotted into each new HerdToken so that lookups can tell apart tokens
+    /// created before vs. after the most recent SYSTEM CLEAR QUERY CACHE.
+    UInt64 clear_generation TSA_GUARDED_BY(mutex) = 0;
+
+    HerdTokenPtr tryBecomeHerdExecutorImpl(const CoalescingKey & key, const String & query_id) TSA_REQUIRES(mutex);
+
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;
     friend class QueryResultCacheReader;
+};
+
+/// RAII bridge for a herd token acquired while building the query plan for a subquery (in the Planner), which
+/// must be released once the subquery has actually executed (successfully or not) - or immediately, if the
+/// subquery's result was served from a plain cache hit, or its plan wasn't cached at all and the token was never
+/// acquired in the first place.
+///
+/// This indirection exists because "acquired" (during planning) and "released" (whenever/if the subquery
+/// pipeline finishes executing, which may be much later, or never if e.g. the query is fully replaced by a
+/// ReadFromQueryResultCacheStep) happen at very different places in the code. A holder is created unconditionally
+/// for every subquery plan; release() is idempotent so it is safe to call from both a normal completion path and
+/// a cleanup/exception path without extra bookkeeping at the call sites.
+class QueryResultCacheHerdTokenHolder
+{
+public:
+    QueryResultCacheHerdTokenHolder() = default;
+
+    QueryResultCacheHerdTokenHolder(QueryResultCachePtr cache_, QueryResultCache::CoalescingKey key_, QueryResultCache::HerdTokenPtr token_)
+        : cache(std::move(cache_)), key(std::move(key_)), token(std::move(token_))
+    {
+    }
+
+    QueryResultCacheHerdTokenHolder(const QueryResultCacheHerdTokenHolder &) = delete;
+    QueryResultCacheHerdTokenHolder & operator=(const QueryResultCacheHerdTokenHolder &) = delete;
+    QueryResultCacheHerdTokenHolder(QueryResultCacheHerdTokenHolder &&) = default;
+    QueryResultCacheHerdTokenHolder & operator=(QueryResultCacheHerdTokenHolder &&) = default;
+
+    ~QueryResultCacheHerdTokenHolder() { release(); }
+
+    /// Idempotent: safe to call more than once (e.g. once from a SCOPE_EXIT and once from an explicit early-exit
+    /// path) and safe to call on a default-constructed (no-op) holder.
+    void release()
+    {
+        if (!token)
+            return;
+        cache->releaseHerdToken(key, token);
+        token.reset();
+    }
+
+private:
+    QueryResultCachePtr cache;
+    QueryResultCache::CoalescingKey key;
+    QueryResultCache::HerdTokenPtr token;
 };
 
 /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
@@ -281,8 +435,5 @@ private:
 
     friend class QueryResultCache; /// for createReader()
 };
-
-
-using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
 
 }

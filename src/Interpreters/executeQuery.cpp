@@ -177,17 +177,14 @@ namespace Setting
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsDialect dialect;
-    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsString framing_output_format;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsSetOperationMode intersect_default_mode;
-    extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsString log_comment;
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
@@ -207,6 +204,7 @@ namespace Setting
     extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
+    extern const SettingsSeconds query_cache_herd_wait_timeout;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
     extern const SettingsMilliseconds query_cache_min_query_duration;
@@ -217,18 +215,11 @@ namespace Setting
     extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsSeconds query_cache_ttl;
     extern const SettingsInt64 query_metric_log_interval;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-    extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsBool run_query_in_background;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsBool send_profile_events;
-    extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-    extern const SettingsOverflowMode timeout_overflow_mode;
-    extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
@@ -267,7 +258,6 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -2970,21 +2960,19 @@ static BlockIO executeQueryImpl(
         context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
+        /// Holds a herd token (see QueryResultCache::acquireOrWaitHerdToken()) for the duration of this query's
+        /// execution, if it became the "executor" for a group of concurrent, identical queries below. Declared
+        /// here (rather than deeper in this scope), spanning both the block that may acquire it and the block
+        /// further below that transfers it into finish_callback/exception_callback, so that an exception thrown
+        /// anywhere in between still releases the token via this variable's destructor during stack unwinding.
+        QueryResultCacheHerdTokenHolder herd_token_holder;
+
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
         /// another overflow mode.
-        if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
-            || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::result_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::timeout_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::set_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::join_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::transfer_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW))
-            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
+        if (settings[Setting::use_query_cache])
+            throwIfQueryResultCacheUsedWithNonThrowOverflowMode(settings);
 
         /// If the query runs with "use_query_cache = 1", we first probe if the query result cache already contains the query result (if
         /// yes: return result from cache). If doesn't, we execute the query normally and write the result into the query result cache. Both
@@ -3022,7 +3010,75 @@ static BlockIO executeQueryImpl(
                 return false;
             };
 
-            if (!get_result_from_query_result_cache())
+            bool served_from_query_result_cache = get_result_from_query_result_cache();
+
+            if (!served_from_query_result_cache)
+            {
+                /// Avoid the "thundering herd" effect: if many concurrent, identical queries miss the query result
+                /// cache at the same time, only one of them (the "executor") actually computes the result; the
+                /// others wait for it to finish and then re-probe the cache instead of redundantly computing the
+                /// same, potentially expensive, result themselves.
+                const auto herd_wait_timeout = std::chrono::milliseconds(settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds());
+                if (can_use_query_result_cache && herd_wait_timeout.count() > 0
+                    && settings[Setting::enable_reads_from_query_cache]
+                    /// query_cache_min_query_runs/query_cache_min_query_duration mean the executor's write may be
+                    /// skipped even though checkCanWriteQueryResultCache() below returns true (they are enforced
+                    /// later, in recordQueryRun()/QueryResultCacheWriter::finalizeWrite()). Coalescing in that case
+                    /// would make waiters block for nothing and, worse, would make min_query_runs itself less
+                    /// effective: recordQueryRun() is only called once per herd instead of once per concurrent
+                    /// query, so more rounds of otherwise-parallel traffic are needed to reach the threshold. So
+                    /// only coalesce when the executor is unconditionally going to attempt the write.
+                    && settings[Setting::query_cache_min_query_runs] == 0
+                    && settings[Setting::query_cache_min_query_duration].totalMilliseconds() == 0
+                    /// throw_on_error=false: only a cheap, speculative probe of write-eligibility to decide whether
+                    /// coalescing is worthwhile at all. If it is not (e.g. the query touches a system table and
+                    /// query_cache_system_table_handling='throw'), the authoritative, throwing check further below
+                    /// (after the query has actually run) is completely unaffected by this probe.
+                    && checkCanWriteQueryResultCache(out_ast, context, /*skip_context_check=*/ false, /*throw_on_error=*/ false))
+                {
+                    QueryResultCache::Key coalescing_probe_key(
+                        out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(),
+                        context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
+                    QueryResultCache::CoalescingKey herd_key{
+                        .ast_hash = coalescing_probe_key.ast_hash,
+                        .user_id = context->getUserID(),
+                        .current_user_roles = context->getCurrentRoles(),
+                        .share_between_users = settings[Setting::query_cache_share_between_users],
+                        .is_subquery = false};
+
+                    QueryStatusPtr herd_wait_process_list_elem = context->getProcessListElement();
+                    auto herd_is_cancelled = [herd_wait_process_list_elem]()
+                    {
+                        return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled();
+                    };
+
+                    QueryResultCache::HerdTokenPtr herd_token = query_result_cache->acquireOrWaitHerdToken(
+                        herd_key, herd_wait_timeout, context->getCurrentQueryId(), herd_is_cancelled);
+
+                    if (!herd_token)
+                    {
+                        /// We waited rather than became the executor. Distinguish "waited and gave up/got woken"
+                        /// from "was cancelled while waiting" exactly as the query would be without coalescing.
+                        if (herd_wait_process_list_elem)
+                            herd_wait_process_list_elem->throwIfKilled();
+
+                        served_from_query_result_cache = get_result_from_query_result_cache();
+                        if (!served_from_query_result_cache)
+                        {
+                            /// Still a miss: the previous executor may have thrown, been cancelled, timed out, or
+                            /// the cache may have been cleared in the meantime. Try to take over as executor; if
+                            /// that also fails (lost a race to yet another concurrent query), fall through and
+                            /// execute independently and uncoalesced, exactly as if this feature did not exist.
+                            herd_token = query_result_cache->tryBecomeHerdExecutor(herd_key, context->getCurrentQueryId());
+                        }
+                    }
+
+                    if (herd_token)
+                        herd_token_holder = QueryResultCacheHerdTokenHolder(query_result_cache, herd_key, herd_token);
+                }
+            }
+
+            if (!served_from_query_result_cache)
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
@@ -3243,6 +3299,13 @@ static BlockIO executeQueryImpl(
 
             /// Also make possible for caller to log successful query finish and exception during execution.
 
+            /// If this query became the herd executor above, its token must be released exactly once, whenever
+            /// the query actually finishes executing (successfully or not) - which happens asynchronously,
+            /// potentially long after this function returns. Move ownership out of the local RAII holder (which
+            /// only guards exceptions thrown before we get here) into a shared holder captured by both callbacks;
+            /// release() is idempotent so it is safe regardless of which of the two ends up firing.
+            auto shared_herd_token_holder = std::make_shared<QueryResultCacheHerdTokenHolder>(std::move(herd_token_holder));
+
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
                                      query_result_cache_usage,
@@ -3260,10 +3323,13 @@ static BlockIO executeQueryImpl(
                                     internal,
                                     log_as_internal,
                                     implicit_tcl_executor,
+                                    shared_herd_token_holder,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
+                shared_herd_token_holder->release();
+
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
@@ -3273,8 +3339,10 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span, shared_herd_token_holder](bool log_error) mutable
             {
+                shared_herd_token_holder->release();
+
                 if (implicit_tcl_executor->transactionRunning())
                 {
                     implicit_tcl_executor->rollback(context);
