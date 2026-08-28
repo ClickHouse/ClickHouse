@@ -596,12 +596,14 @@ def test_incremental_backup_restore_on_log_with_native_copy(cluster):
     # transfers the whole source blob, so the backup writer must not take that route for a range, or
     # the incremental backup silently stores the whole file where only the tail belongs.
     #
-    # A `Log` data file on an Azure disk normally gets one object per `INSERT`, and a multi-object
-    # source is already excluded from the native copy. To reach the native copy with a non-zero
-    # `start_pos`, the source must be a single object whose prefix is in the base backup: the table is
-    # truncated and refilled by one `INSERT` that writes the same blocks, with `max_block_size = 1`
-    # keeping every row in its own compressed block so that the first block stays byte-identical to
-    # the one the base backup holds.
+    # Reaching that route needs an append-only file that is a single object and whose prefix is in the
+    # base backup. `allow_checksums_from_remote_paths = 0` is what makes the prefix match possible at
+    # all: an Azure disk hands out random blob paths, so by default the checksum of a file comes from
+    # its remote path and no prefix checksum can be computed, which leaves `base_size` at 0. And a
+    # `Log` data file normally gets one object per `INSERT`, while a multi-object source is already
+    # excluded from the native copy, so the table is truncated and refilled by one `INSERT` that writes
+    # the same blocks: `max_block_size = 1` keeps every row in its own compressed block, so the first
+    # block stays byte-identical to the one the base backup holds and the whole file is one blob.
     node = cluster.instances["node_native_copy"]
     one_row_per_block = {
         "max_block_size": 1,
@@ -623,7 +625,8 @@ def test_incremental_backup_restore_on_log_with_native_copy(cluster):
     base_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
     azure_query(
         node,
-        f"BACKUP TABLE test_native_copy_incremental_log TO {base_backup_destination}",
+        f"BACKUP TABLE test_native_copy_incremental_log TO {base_backup_destination} "
+        f"SETTINGS allow_checksums_from_remote_paths = 0",
     )
 
     azure_query(node, "TRUNCATE TABLE test_native_copy_incremental_log")
@@ -637,7 +640,7 @@ def test_incremental_backup_restore_on_log_with_native_copy(cluster):
     azure_query(
         node,
         f"BACKUP TABLE test_native_copy_incremental_log TO {incremental_backup_destination} "
-        f"SETTINGS base_backup = {base_backup_destination}",
+        f"SETTINGS base_backup = {base_backup_destination}, allow_checksums_from_remote_paths = 0",
     )
 
     azure_query(
