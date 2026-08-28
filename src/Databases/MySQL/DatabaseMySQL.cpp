@@ -5,6 +5,7 @@
 #    include <filesystem>
 #    include <string>
 #    include <Columns/IColumn.h>
+#    include <Common/FailPoint.h>
 #    include <Core/Settings.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
@@ -59,6 +60,11 @@ namespace Setting
 namespace MySQLSetting
 {
     extern const MySQLSettingsMySQLDataTypesSupport mysql_datatypes_support_level;
+}
+
+namespace FailPoints
+{
+    extern const char mysql_fetch_tables_throw[];
 }
 
 namespace ErrorCodes
@@ -183,6 +189,13 @@ Tables DatabaseMySQL::listTablesImpl(ContextPtr local_context, const FilterByNam
 
     try
     {
+        /// Not a connection failure to the remote, so it must propagate even here rather than be
+        /// served from `local_tables_cache` as if the listing had succeeded.
+        fiu_do_on(FailPoints::mysql_fetch_tables_throw,
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Injected MySQL table listing failure");
+        });
+
         fetchTablesIntoLocalCache(local_context);
     }
     catch (...)

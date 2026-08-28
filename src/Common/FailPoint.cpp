@@ -299,6 +299,7 @@ static struct InitFiu
     PAUSEABLE(truncate_database_tables_pause) \
     PAUSEABLE(database_materialized_postgresql_pause_before_table_drop) \
     REGULAR(datalake_try_get_table_return_nullptr) \
+    REGULAR(mysql_fetch_tables_throw) \
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_get_tables_throw) \
     REGULAR(datalake_simulate_missing_table_state) \

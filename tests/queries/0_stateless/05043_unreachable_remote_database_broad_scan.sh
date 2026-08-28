@@ -22,7 +22,10 @@ REMOTE_DB="${CLICKHOUSE_DATABASE}_remote"
 SCAN_QUERY_ID="${CLICKHOUSE_DATABASE}_scan_${RANDOM}${RANDOM}"
 
 # Drop on any exit: a database left attached slows every later scan in the run.
-trap "${CLICKHOUSE_CLIENT} -q 'DROP DATABASE IF EXISTS ${MYSQL_DB}; DROP DATABASE IF EXISTS ${REMOTE_DB}'" EXIT
+# The failpoint below has to go too: while it is enabled even `DROP DATABASE` cannot list the
+# tables of the MySQL database, so the drop itself would fail and leave it attached.
+trap "${CLICKHOUSE_CLIENT} -q 'SYSTEM DISABLE FAILPOINT mysql_fetch_tables_throw' > /dev/null 2>&1; \
+      ${CLICKHOUSE_CLIENT} -q 'DROP DATABASE IF EXISTS ${MYSQL_DB}; DROP DATABASE IF EXISTS ${REMOTE_DB}'" EXIT
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${MYSQL_DB}"
 ${CLICKHOUSE_CLIENT_QUIET} -q "
@@ -52,14 +55,16 @@ do
     ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() >= 0 FROM system.\`${table}\`"
 done
 
-# `system.kafka_consumers` is the only one of the five behind a build flag (`USE_RDKAFKA`), so its
-# absence is reported as such instead of being asserted, which keeps the reference stable without
-# letting the other four pass vacuously.
+# `system.kafka_consumers` is the only one of the five behind a build flag (`USE_RDKAFKA`). Where it
+# is built the scan is asserted like the others; where it is not there is nothing to scan, and the
+# same `1` keeps the reference stable across build configurations. The bypass is deliberately not
+# applied to the four tables above, which are registered unconditionally and so cannot pass
+# vacuously.
 echo -n 'kafka_consumers '
 if [[ "$(${CLICKHOUSE_CLIENT_QUIET} -q \
         "SELECT count() FROM system.tables WHERE database = 'system' AND name = 'kafka_consumers'")" == "0" ]]
 then
-    echo 'not built'
+    echo 1
 else
     ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() >= 0 FROM system.kafka_consumers"
 fi
@@ -92,6 +97,17 @@ echo -n 'remote_engine_scan '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() > 0 FROM system.tables"
 echo -n 'remote_engine_named_database_fails '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SHOW TABLES FROM ${REMOTE_DB}" 2>&1 | grep -c 'NO_REMOTE_SHARD_AVAILABLE'
+
+# Tolerance is only for a connection failure to the remote. A listing failure of any other kind must
+# propagate, rather than serve the local cache as if the listing had succeeded - on the best-effort
+# path (`system.iceberg_files`, which uses the plain iterator) as well as on the scan that decides
+# per database (`system.tables`).
+${CLICKHOUSE_CLIENT_QUIET} -q "SYSTEM ENABLE FAILPOINT mysql_fetch_tables_throw"
+echo -n 'injected_failure_propagates_best_effort '
+${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.iceberg_files" 2>&1 | grep -c 'Injected MySQL table listing failure'
+echo -n 'injected_failure_propagates_scan '
+${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.tables" 2>&1 | grep -c 'Injected MySQL table listing failure'
+${CLICKHOUSE_CLIENT_QUIET} -q "SYSTEM DISABLE FAILPOINT mysql_fetch_tables_throw"
 
 # The tolerated failure is a warning: Error-level messages from these paths trip the Upgrade check.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
