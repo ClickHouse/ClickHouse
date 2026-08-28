@@ -5,6 +5,8 @@ Code: 184. Aggregate function count() AS c is found in WHERE in query. Aggregate
 Code: 184. Aggregate function count() is found in WHERE in query. Aggregate functions are not allowed in WHERE and PREWHERE, because they are computed after filtering; use HAVING to filter by the result of an aggregation. (ILLEGAL_AGGREGATION)
 --- SELECT count() FROM t PREWHERE count() > 1
 Code: 184. Aggregate function count() is found in PREWHERE in query. Aggregate functions are not allowed in WHERE and PREWHERE, because they are computed after filtering; use HAVING to filter by the result of an aggregation. (ILLEGAL_AGGREGATION)
+--- SELECT count() AS c FROM numbers(10) WHERE c > 1 SETTINGS enable_analyzer = 0
+Code: 184. Aggregate function count() is found in WHERE in query. Aggregate functions are not allowed in WHERE and PREWHERE, because they are computed after filtering; use HAVING to filter by the result of an aggregation: While processing count() AS c. (ILLEGAL_AGGREGATION)
 10
 
 === a value that is not a date is not reported as being too short
