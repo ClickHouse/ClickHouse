@@ -499,7 +499,16 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     /// Use search functions more often
     SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
     static const std::vector<std::string> searchFuncs
-        = {"endsWith", "has", "hasToken", "hasTokenOrNull", "mapContains", "match", "hasAllTokens", "hasAnyTokens", "startsWith"};
+        = {"endsWith",
+           "has",
+           "notHas",
+           "hasToken",
+           "hasTokenOrNull",
+           "mapContains",
+           "match",
+           "hasAllTokens",
+           "hasAnyTokens",
+           "startsWith"};
     const auto & nfunc = rg.pickRandomly(searchFuncs);
 
     sfc->mutable_func()->set_catalog_func(nfunc);

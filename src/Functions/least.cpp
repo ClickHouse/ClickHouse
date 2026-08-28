@@ -72,7 +72,7 @@ Returns the smallest value among the arguments.
 - For DateTime types, the result type is promoted to the largest type (e.g., DateTime64 if mixed with DateTime32).
 
 :::note Use setting `least_greatest_legacy_null_behavior` to change `NULL` behavior
-Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
+Version [24.12](/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
 To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`.
 :::
     )";
@@ -100,9 +100,9 @@ SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 SELECT least(['hello'], ['there'], ['world']);
         )",
         R"(
-┌─least(['hell⋯ ['world'])─┐
-│ ['hello']                │
-└──────────────────────────┘
+┌─least(['hello'], ['there'], ['world'])─┐
+│ ['hello']                              │
+└────────────────────────────────────────┘
         )"
     },
     {
@@ -112,9 +112,9 @@ SELECT least(['hello'], ['there'], ['world']);
 SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
         )",
         R"(
-┌─least(toDate⋯0.000', 3))─┐
-│  2025-01-01 12:00:00.000 │
-└──────────────────────────┘
+┌─least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                2025-01-01 12:00:00.000 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

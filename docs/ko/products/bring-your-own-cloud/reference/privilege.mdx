@@ -78,3 +78,31 @@ Bootstrap 서비스 계정에는 다음 권한이 포함된 프로젝트 범위�
   * 클러스터에서 실행되는 모니터링 스택의 대상 아이덴티티입니다. 이 배포 전용 GCS 버킷의 장기 메트릭 저장소를 읽고 쓰는 데 사용됩니다.
 * **ClickHouse 런타임 관리 아이덴티티**
   * Private Service Connect 엔드포인트 관리, 버킷 수명 주기 조정, 서비스 계정 교체와 같은 Day 2 운영 작업을 처리하는 ClickHouse의 런타임 데이터 플레인 관리 컨트롤러에서 사용됩니다.
+
+<div id="azure-roles-and-identities">
+  ## Azure 역할 및 ID
+</div>
+
+<div id="onboarding-service-principal">
+  ### 온보딩 서비스 주체
+</div>
+
+[Azure용 Terraform module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)을 통한 온보딩은 테넌트 간 인증에 관한 Azure 지침에 따라 테넌트에 다중 테넌트 애플리케이션을 Enterprise Application(서비스 주체)으로 프로비저닝합니다. 서비스 주체에는 대상 subscription 범위에서 최소 권한 원칙을 따르는 custom 역할이 할당되며, 다음 권한이 포함됩니다.
+
+* **네트워킹**: BYOC 인프라가 호스팅되는 VNet, 서브넷, 공용 IP, NAT gateway, 네트워크 보안 그룹 및 DNS 영역을 관리합니다.
+* **클러스터**: AKS 클러스터와 노드 풀을 관리합니다.
+* **Storage**: ClickHouse 데이터, 백업 및 모니터링 데이터에 사용되는 스토리지 계정과 blob 컨테이너를 관리합니다.
+* **아이덴티티**: subscription 내의 사용자 할당 관리형 아이덴티티와 해당 페더레이션 아이덴티티 자격 증명을 관리합니다.
+* **권한 부여**: custom 역할 정의와 역할 할당을 관리합니다. 모든 권한은 대상 subscription으로 범위가 제한되므로 이 역할은 다른 subscription이나 테넌트의 리소스에 접근할 수 없습니다.
+
+<div id="additional-managed-identities-created-by-the-controller">
+  ### 컨트롤러가 생성하는 추가 관리형 아이덴티티
+</div>
+
+BYOC 서비스를 프로비저닝하면 ClickHouse의 컨트롤 플레인이 subscription에 사용자 할당 관리형 아이덴티티를 생성합니다. 각 아이덴티티는 제한적이고 단일 목적의 권한 세트를 가진 특정 Kubernetes 서비스 계정(Workload Identity)에 페더레이션됩니다.
+
+* **서비스별 아이덴티티**
+  * 각 ClickHouse 서비스가 테이블 데이터와 백업을 위해 자체 스토리지 계정에 액세스할 때 사용됩니다. 이때 해당 스토리지 계정 범위로 지정된 사용자 지정 blob 스토리지 역할을 사용합니다.
+  * 서비스를 백업에서 복원하면 소스 서비스의 백업 Container에 대한 읽기 전용 액세스도 추가로 부여됩니다.
+* **공유 인프라 아이덴티티**
+  * Private Link 서비스 관리와 같은 2일차 운영에 ClickHouse의 런타임 데이터 플레인 관리 컨트롤러가 사용합니다.

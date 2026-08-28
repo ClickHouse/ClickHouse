@@ -1,6 +1,6 @@
 ---
 title: 'Premiers pas avec les lacs de données'
-sidebarTitle: 'Premiers pas'
+sidebarTitle: 'Vue d’ensemble'
 slug: /use-cases/data-lake/getting-started
 description: 'Une introduction pratique pour interroger, accélérer et réécrire des données dans des formats de table ouverts avec ClickHouse.'
 keywords: ['lac de données', 'lakehouse', 'premiers pas', 'Iceberg', 'Delta Lake', 'hudi', 'paimon']
@@ -12,14 +12,16 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 <Info>
   **TL;DR**
 
-  Un guide pratique pour interroger des tables de data lake, les accélérer avec MergeTree et réécrire les résultats dans Iceberg. Toutes les étapes utilisent des jeux de données publics et fonctionnent aussi bien sur Cloud que sur OSS.
+  Un guide pratique pour interroger des tables de lac de données, les accélérer avec MergeTree et réécrire les résultats dans Iceberg. Toutes les étapes utilisent des jeux de données publics et fonctionnent aussi bien sur Cloud que sur OSS.
 </Info>
 
 Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse Cloud](https://console.clickhouse.cloud). Toutes les requêtes fonctionnent aussi bien sur Cloud que sur des déploiements auto-gérés.
 
+ClickHouse propose trois façons de lire des formats de table ouverts : les fonctions de table, les moteurs de table et le moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake). **Si vos tables se trouvent dans un catalogue de données** (Glue, Unity Catalog, REST, entre autres), connectez-vous à `DataLakeCatalog` afin d’accéder à toutes vos tables Iceberg/Delta via une seule fonction. Les sections sur les fonctions de table et les moteurs de table ci-dessous conviennent mieux aux requêtes ad hoc ou lorsque vous connaissez un chemin de stockage spécifique et n’utilisez pas de catalogue.
+
 <Steps>
   <Step title="Interroger directement des données Iceberg" id="query-directly">
-    Le moyen le plus rapide pour démarrer consiste à utiliser la table function [`icebergS3()`](/fr/reference/functions/table-functions/iceberg) : pointez-la vers une table Iceberg dans S3 et lancez immédiatement une query, sans aucune configuration préalable.
+    Le moyen le plus rapide pour démarrer — en particulier pour des requêtes ad hoc ou lorsque vous n’utilisez pas de catalogue — consiste à utiliser la table function [`icebergS3()`](/fr/reference/functions/table-functions/iceberg). Pointez-la vers une table Iceberg dans S3 et lancez immédiatement une query, sans aucune configuration préalable.
 
     Inspectez le schéma :
 
@@ -47,7 +49,7 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
   </Step>
 
   <Step title="Créer une table persistante avec le moteur de table Iceberg" id="table-engine">
-    Pour éviter d’avoir à spécifier le chemin à chaque fois, créez une table à l’aide du moteur de table Iceberg. Les données restent dans S3 — aucune donnée n’est dupliquée :
+    Si vous n’utilisez pas de catalogue mais comptez interroger plusieurs fois le même chemin, créez une table à l’aide du moteur de table Iceberg afin de ne pas avoir à spécifier le chemin à chaque fois. Les données restent dans S3 — aucune donnée n’est dupliquée :
 
     ```sql
     CREATE TABLE hits_iceberg
@@ -72,7 +74,13 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
   </Step>
 
   <Step title="Se connecter à un catalogue" id="connect-catalog">
-    La plupart des organisations gèrent les tables Iceberg via un catalogue de données afin de centraliser les métadonnées des tables et la découverte des données. ClickHouse permet de se connecter à votre catalogue à l’aide du moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake), qui expose toutes les tables du catalogue sous forme de base de données ClickHouse. Il s’agit de l’approche la plus évolutive : ainsi, à mesure que de nouvelles tables Iceberg sont créées, elles restent accessibles dans ClickHouse sans configuration supplémentaire.
+    Si votre organisation utilise un catalogue de données, c’est l’approche d’intégration que nous recommandons. Les catalogues centralisent les métadonnées des tables et leur découverte — au lieu de gérer une définition de table pour chaque chemin de stockage, connectez-vous une seule fois avec le moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake). Chaque table du catalogue apparaît comme une table ClickHouse, y compris celles ajoutées en amont après la création de la connexion.
+
+    <Warning>
+      **Recommandé si vous utilisez un catalogue**
+
+      Utilisez `DataLakeCatalog` pour les charges de travail de production avec Glue, Unity Catalog, REST et les autres [catalogues pris en charge](/fr/guides/use-cases/data-warehousing/reference/index). Les fonctions de table et les moteurs de table fonctionnent lorsque vous connaissez un chemin spécifique, mais ils ne restent pas synchronisés à mesure que votre catalogue s’agrandit et nécessitent des identifiants ou des chemins distincts pour chaque table.
+    </Warning>
 
     Voici un exemple de connexion à [AWS Glue](/fr/guides/use-cases/data-warehousing/glue-catalog) :
 
@@ -106,7 +114,7 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
   </Step>
 
   <Step title="Exécuter une requête" id="issue-query">
-    Quelle que soit la méthode utilisée ci-dessus — fonction de table, moteur de table ou catalogue — le même SQL ClickHouse fonctionne dans tous les cas :
+    Quelle que soit la méthode utilisée ci-dessus — fonction de table, moteur de table ou `DataLakeCatalog` — le même ClickHouse SQL fonctionne dans tous les cas. En production avec un catalogue, interrogez via la base de données `DataLakeCatalog` ; les autres exemples restent utiles pour des tests rapides et un accès par chemin :
 
     ```sql
     -- Table function
@@ -229,8 +237,8 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
 
 Maintenant que vous avez vu l’ensemble du processus, approfondissez chaque domaine :
 
+* [Connexion aux catalogues](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Recommandé pour les charges de travail adossées à un catalogue ; guide complet de Unity Catalog avec Delta et Iceberg
 * [Interrogation directe](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) — Les quatre formats, les variantes de cluster, les moteurs de table, la mise en cache
-* [Connexion aux catalogues](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Guide complet de Unity Catalog avec Delta et Iceberg
 * [Accélérer l’analytique](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — Optimisation du schéma, indexation, démonstration d’une accélération d’environ 40x
 * [Écriture dans des lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/writing-data) — Écritures brutes, écritures agrégées, correspondance de types
 * [Matrice de compatibilité](/fr/guides/use-cases/data-warehousing/support-matrix) — Comparaison des fonctionnalités selon les formats et les backends de stockage
