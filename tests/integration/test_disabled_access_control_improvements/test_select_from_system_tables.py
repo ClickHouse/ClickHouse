@@ -103,6 +103,26 @@ def test_system_db():
     )
 
 
+def test_read_system_table_through_remote():
+    # The user holds an implicit SELECT on the system database and no SHOW COLUMNS on it, so a read
+    # through a cluster must be authorized by the privilege on the data. 127.0.0.1 makes the shard
+    # local, which is the arm that resolves the structure on this server rather than on a remote one.
+    node.query("GRANT READ ON REMOTE, CREATE TEMPORARY TABLE ON *.* TO sqluser")
+    assert node.query("SELECT count() >= 0 FROM system.parts", user="sqluser") == "1\n"
+    assert (
+        node.query(
+            "SELECT count() >= 0 FROM remote('127.0.0.1:9000', 'system', 'parts')",
+            user="sqluser",
+        )
+        == "1\n"
+    )
+    # Introspection keeps requiring the privilege on the schema.
+    expected_error = "necessary to have the grant SHOW COLUMNS ON system.parts"
+    assert expected_error in node.query_and_get_error(
+        "DESCRIBE TABLE remote('127.0.0.1:9000', 'system', 'parts')", user="sqluser"
+    )
+
+
 def test_information_schema():
     assert (
         node.query(

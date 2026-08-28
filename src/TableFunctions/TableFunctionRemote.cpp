@@ -88,10 +88,13 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
     chassert(cluster);
-    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
+    /// Introspection (`DESCRIBE`, `CREATE TABLE AS`) resolves the structure with `is_insert_query` set,
+    /// and so keeps requiring the privilege on the schema.
+    return getStructureOfRemoteTable(
+        *cluster, remote_table_id, context, remote_table_function_ptr, /*for_query_execution=*/ !is_insert_query);
 }
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
