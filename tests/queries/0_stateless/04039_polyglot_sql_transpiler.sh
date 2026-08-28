@@ -47,6 +47,10 @@ $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
     -q "SET dialect = 'clickhouse'" && echo OK
 
+# Test that SET ROLE is dispatched as a role statement, not a `ROLE = true` setting shorthand
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
+    -q "SET ROLE NONE" && echo OK
+
 # Test that `SET` without a setting name reaches the dialect parser instead of being
 # rejected by the ClickHouse lexer before it gets there
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \

@@ -23,6 +23,8 @@
 [('__name__','set'),('instance','host3')]	2
 -- a real SET statement still works under the dialect
 OK
+-- SET ROLE is dispatched as a role statement, not a ROLE = true setting shorthand
+OK
 -- a malformed SET still gets an SQL-side syntax error
 SYNTAX_ERROR
 -- a malformed SET without = still gets an SQL-side syntax error

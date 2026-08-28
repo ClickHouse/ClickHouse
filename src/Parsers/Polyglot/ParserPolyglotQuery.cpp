@@ -8,6 +8,7 @@
 
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
 
@@ -32,6 +33,11 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// which the transpiler below can still take as foreign text.
     if (isCommittedToSetQuery(pos))
     {
+        /// SET ROLE / SET DEFAULT ROLE are role statements: ParserSetQuery would take the leading
+        /// ROLE / DEFAULT as a setting-name shorthand, so they go first, as in ParserQuery.
+        ParserSetRoleQuery set_role_p;
+        if (set_role_p.parse(pos, node, expected))
+            return true;
         ParserSetQuery set_p;
         if (set_p.parse(pos, node, expected))
             return true;
