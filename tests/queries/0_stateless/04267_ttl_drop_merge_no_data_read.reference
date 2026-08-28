@@ -45,3 +45,6 @@ LZ4
 -- Case 16: patched merge keeps rows-WHERE TTL entries live
 10
 0
+-- Case 17: patched merge keeps live GROUP BY TTL bounds
+100
+1
