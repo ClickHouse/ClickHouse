@@ -1,5 +1,21 @@
 [
   {
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data"
+  },
+  {
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data/index"
+  },
+  {
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion"
+  },
+  {
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion/index"
+  },
+  {
     "destination": "/products/cloud/features/backups/overview",
     "source": "/products/cloud/features/backups/faq"
   },
@@ -1404,7 +1420,7 @@
     "source": "/cloud/connect"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/cloud/data-ingestion"
   },
   {
@@ -3752,7 +3768,7 @@
     "source": "/guides"
   },
   {
-    "destination": "/reference/functions/regular-functions/machine-learning-functions",
+    "destination": "/reference/functions/regular-functions/other-functions",
     "source": "/guides/apply_catboost_model"
   },
   {
@@ -3768,7 +3784,7 @@
     "source": "/guides/developer/alternative-query-languages"
   },
   {
-    "destination": "/reference/functions/regular-functions/machine-learning-functions",
+    "destination": "/reference/functions/regular-functions/other-functions",
     "source": "/guides/developer/apply-catboost-model"
   },
   {
@@ -4380,7 +4396,7 @@
     "source": "/integrations/data-ingestion"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/integrations/data-ingestion-overview"
   },
   {
@@ -27840,12 +27856,8 @@
     "source": "/operations/system-tables/metrics"
   },
   {
-    "destination": "/reference/system-tables/overview",
+    "destination": "/reference/system-tables/models",
     "source": "/operations/system-tables/models"
-  },
-  {
-    "destination": "/reference/system-tables/overview",
-    "source": "/reference/system-tables/models"
   },
   {
     "destination": "/reference/system-tables/moves",
@@ -41852,7 +41864,7 @@
     "source": "/use-cases/observability/clickstack/getting-started/telemetrygen"
   },
   {
-    "destination": "/clickstack/ingesting-data",
+    "destination": "/clickstack/ingesting-data/overview",
     "source": "/use-cases/observability/clickstack/ingesting-data"
   },
   {
