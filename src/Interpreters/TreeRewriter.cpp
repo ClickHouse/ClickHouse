@@ -58,6 +58,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageJoin.h>
+#include <Common/NamePrompter.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentThread.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1320,7 +1321,34 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
         else
         {
-            if (!source_column_names.empty())
+            /** The callers that validate a key, an index or a TTL expression pass no storage to ask for
+              * hints, but the source columns are right here, so the same hint can be produced from them.
+              * Without it a typo in `ALTER TABLE ... MODIFY ORDER BY` got only the list of available
+              * columns, which for a MergeTree table starts with a dozen virtual columns (`_block_number`,
+              * `_part_index`, ...) and is cut off by the message length limit before reaching the real
+              * ones - while `SELECT` for the same typo answers `Maybe you meant: ['id']`.
+              */
+            VectorWithMemoryTracking<String> prompting_strings;
+            prompting_strings.reserve(source_column_names.size());
+            for (const auto & name : source_column_names)
+                prompting_strings.push_back(name);
+
+            std::vector<String> hints;
+            for (const auto & name : unknown_required_source_columns)
+            {
+                for (const auto & hint : NamePrompter<2>::getHints(name, prompting_strings))
+                {
+                    if (std::find(hints.begin(), hints.end(), hint) == hints.end())
+                        hints.push_back(hint);
+                }
+            }
+
+            if (!hints.empty())
+            {
+                ss << ", maybe you meant: ";
+                ss << toStringWithFinalSeparator(hints, " or ");
+            }
+            else if (!source_column_names.empty())
             {
                 ss << ", available columns:";
                 for (const auto & name : source_column_names)
