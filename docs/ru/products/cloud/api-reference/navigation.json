@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "Организация",
     "pages": [
       {
-        "group": "Organization",
+        "group": "Организация",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -19,7 +19,7 @@
         ]
       },
       {
-        "group": "Billing",
+        "group": "Оплата",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "ru/products/cloud/api-reference/billing/active-balances-get",
@@ -27,7 +27,7 @@
         ]
       },
       {
-        "group": "User management",
+        "group": "Управление пользователями",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +40,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "Управление ролями",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -69,10 +69,10 @@
     ]
   },
   {
-    "group": "Service",
+    "group": "Сервис",
     "pages": [
       {
-        "group": "Service",
+        "group": "Сервис",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -118,7 +118,7 @@
     ]
   },
   {
-    "group": "API keys",
+    "group": "Ключи API",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

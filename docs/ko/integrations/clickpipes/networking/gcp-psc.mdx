@@ -1,6 +1,7 @@
 ---
 title: "ClickPipes용 GCP Private Service Connect"
 sidebarTitle: "GCP Private Service Connect"
+icon: "/images/icons/cloud-providers/google-cloud-color.svg"
 description: "Private Service Connect(PSC)를 사용하여 ClickPipes와 GCP에서 호스팅되는 데이터 소스 간의 보안 연결을 설정합니다."
 slug: "/integrations/clickpipes/networking/gcp-psc"
 doc_type: "guide"
@@ -12,7 +13,7 @@ integration:
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect)를 사용하여 ClickPipes와 GCP에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 자체 VPC에 **역방향 프라이빗 엔드포인트(RPE)**를 생성하고 데이터 소스용으로 게시된 endpoint service를 가리키도록 구성하므로, 트래픽이 공용 인터넷에 노출되지 않습니다.
+GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect)를 사용하여 ClickPipes와 GCP에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 자체 VPC에 **역방향 Private Endpoint(RPE)**를 생성하고 데이터 소스용으로 게시된 endpoint service를 가리키도록 구성하므로, 트래픽이 공용 인터넷에 노출되지 않습니다.
 
 <Check>
   ClickPipes는 [글로벌 액세스](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)를 통해 **cross-region** PSC 연결을 지원합니다. ClickPipes 인프라가 실행되는 리전과 다른 리전에 있는 엔드포인트에는 글로벌 액세스가 필요합니다. 자세한 내용은 [ClickPipes GCP 리전 문서](/ko/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)를 확인하십시오.

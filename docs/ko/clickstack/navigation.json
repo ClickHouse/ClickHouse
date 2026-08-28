@@ -5,12 +5,12 @@
     "ko/clickstack/index",
     {
       "expanded": true,
-      "group": "Get started",
+      "group": "시작하기",
       "pages": [
         "ko/clickstack/overview",
         {
           "expanded": true,
-          "group": "Quickstarts",
+          "group": "빠른 시작",
           "pages": [
             "ko/clickstack/getting-started/index",
             "ko/clickstack/getting-started/managed",
@@ -18,7 +18,7 @@
           ]
         },
         {
-          "group": "Sample datasets",
+          "group": "샘플 데이터 세트",
           "pages": [
             "ko/clickstack/example-datasets/index",
             "ko/clickstack/example-datasets/sample-data",
@@ -37,14 +37,14 @@
       ]
     },
     {
-      "group": "Features",
+      "group": "기능",
       "pages": [
         {
-          "group": "Deployment",
+          "group": "배포",
           "pages": [
             "ko/clickstack/deployment/overview",
             {
-              "group": "Open Source",
+              "group": "오픈 소스",
               "pages": [
                 "ko/clickstack/deployment/oss",
                 "ko/clickstack/deployment/all-in-one",
@@ -84,7 +84,7 @@
         },
         "ko/clickstack/features/search",
         {
-          "group": "Dashboards",
+          "group": "대시보드",
           "pages": [
             "ko/clickstack/features/dashboards/overview",
             "ko/clickstack/features/dashboards/dashboard-templates",
@@ -103,7 +103,7 @@
         "ko/clickstack/mcp",
         "ko/clickstack/url-parameters",
         {
-          "group": "Demo days",
+          "group": "데모 데이",
           "pages": [
             "ko/clickstack/demo-days/index",
             {
@@ -135,7 +135,7 @@
     },
     {
       "expanded": true,
-      "group": "Managing ClickStack",
+      "group": "ClickStack 관리",
       "pages": [
         "ko/clickstack/managing/overview",
         "ko/clickstack/managing/admin",
@@ -149,11 +149,11 @@
       ]
     },
     {
-      "group": "Guides",
+      "group": "가이드",
       "pages": [
         {
           "expanded": true,
-          "group": "Ingesting data",
+          "group": "데이터 수집",
           "pages": [
             "ko/clickstack/ingesting-data/overview",
             "ko/clickstack/ingesting-data/opentelemetry",
@@ -163,7 +163,7 @@
             "ko/clickstack/ingesting-data/schema/map-vs-json",
             "ko/clickstack/ingesting-data/trace-sampling",
             {
-              "group": "Integrations",
+              "group": "통합",
               "pages": [
                 "ko/clickstack/integration-examples/index",
                 "ko/clickstack/integration-examples/nginx-logs",
@@ -173,7 +173,7 @@
                 "ko/clickstack/integration-examples/cloudwatch",
                 "ko/clickstack/integration-examples/aws-lambda",
                 {
-                  "group": "Host logs",
+                  "group": "호스트 로그",
                   "pages": [
                     "ko/clickstack/integration-examples/host-logs",
                     "ko/clickstack/integration-examples/host-logs/ec2"
@@ -194,7 +194,7 @@
               ]
             },
             {
-              "group": "Language SDKs",
+              "group": "언어 SDK",
               "pages": [
                 "ko/clickstack/ingesting-data/sdks/index",
                 "ko/clickstack/ingesting-data/sdks/browser",
@@ -215,11 +215,11 @@
         },
         {
           "expanded": true,
-          "group": "Migration guides",
+          "group": "마이그레이션 가이드",
           "pages": [
             "ko/clickstack/migration/index",
             {
-              "group": "Migrating from Elastic",
+              "group": "Elastic에서 마이그레이션",
               "pages": [
                 "ko/clickstack/migration/elastic/index",
                 "ko/clickstack/migration/elastic/intro",
@@ -238,7 +238,7 @@
     },
     {
       "expanded": true,
-      "group": "Integration partners",
+      "group": "통합 파트너",
       "pages": [
         "ko/clickstack/integration-partners/index",
         "ko/clickstack/integration-partners/bindplane",
@@ -248,7 +248,7 @@
     },
     {
       "expanded": true,
-      "group": "API reference",
+      "group": "API 참조",
       "openapi": {
         "directory": "ko/clickstack/api-reference",
         "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"

@@ -5,12 +5,12 @@
     "ru/clickstack/index",
     {
       "expanded": true,
-      "group": "Get started",
+      "group": "Начало работы",
       "pages": [
         "ru/clickstack/overview",
         {
           "expanded": true,
-          "group": "Quickstarts",
+          "group": "Быстрый старт",
           "pages": [
             "ru/clickstack/getting-started/index",
             "ru/clickstack/getting-started/managed",
@@ -18,7 +18,7 @@
           ]
         },
         {
-          "group": "Sample datasets",
+          "group": "Примеры наборов данных",
           "pages": [
             "ru/clickstack/example-datasets/index",
             "ru/clickstack/example-datasets/sample-data",
@@ -37,14 +37,14 @@
       ]
     },
     {
-      "group": "Features",
+      "group": "Возможности",
       "pages": [
         {
-          "group": "Deployment",
+          "group": "Развертывание",
           "pages": [
             "ru/clickstack/deployment/overview",
             {
-              "group": "Open Source",
+              "group": "Открытый исходный код",
               "pages": [
                 "ru/clickstack/deployment/oss",
                 "ru/clickstack/deployment/all-in-one",
@@ -63,7 +63,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (deprecated)",
+                      "group": "v1.x (устарело)",
                       "pages": [
                         "ru/clickstack/deployment/helm-v1",
                         "ru/clickstack/deployment/helm-configuration-v1",
@@ -84,7 +84,7 @@
         },
         "ru/clickstack/features/search",
         {
-          "group": "Dashboards",
+          "group": "Панели мониторинга",
           "pages": [
             "ru/clickstack/features/dashboards/overview",
             "ru/clickstack/features/dashboards/dashboard-templates",
@@ -103,7 +103,7 @@
         "ru/clickstack/mcp",
         "ru/clickstack/url-parameters",
         {
-          "group": "Demo days",
+          "group": "Демо-дни",
           "pages": [
             "ru/clickstack/demo-days/index",
             {
@@ -135,7 +135,7 @@
     },
     {
       "expanded": true,
-      "group": "Managing ClickStack",
+      "group": "Управление ClickStack",
       "pages": [
         "ru/clickstack/managing/overview",
         "ru/clickstack/managing/admin",
@@ -149,11 +149,11 @@
       ]
     },
     {
-      "group": "Guides",
+      "group": "Руководства",
       "pages": [
         {
           "expanded": true,
-          "group": "Ingesting data",
+          "group": "Ингестия данных",
           "pages": [
             "ru/clickstack/ingesting-data/overview",
             "ru/clickstack/ingesting-data/opentelemetry",
@@ -163,7 +163,7 @@
             "ru/clickstack/ingesting-data/schema/map-vs-json",
             "ru/clickstack/ingesting-data/trace-sampling",
             {
-              "group": "Integrations",
+              "group": "Интеграции",
               "pages": [
                 "ru/clickstack/integration-examples/index",
                 "ru/clickstack/integration-examples/nginx-logs",
@@ -173,7 +173,7 @@
                 "ru/clickstack/integration-examples/cloudwatch",
                 "ru/clickstack/integration-examples/aws-lambda",
                 {
-                  "group": "Host logs",
+                  "group": "Логи хоста",
                   "pages": [
                     "ru/clickstack/integration-examples/host-logs",
                     "ru/clickstack/integration-examples/host-logs/ec2"
@@ -194,7 +194,7 @@
               ]
             },
             {
-              "group": "Language SDKs",
+              "group": "SDK для языков программирования",
               "pages": [
                 "ru/clickstack/ingesting-data/sdks/index",
                 "ru/clickstack/ingesting-data/sdks/browser",
@@ -215,11 +215,11 @@
         },
         {
           "expanded": true,
-          "group": "Migration guides",
+          "group": "Руководства по миграции",
           "pages": [
             "ru/clickstack/migration/index",
             {
-              "group": "Migrating from Elastic",
+              "group": "Миграция с Elastic",
               "pages": [
                 "ru/clickstack/migration/elastic/index",
                 "ru/clickstack/migration/elastic/intro",
@@ -238,7 +238,7 @@
     },
     {
       "expanded": true,
-      "group": "Integration partners",
+      "group": "Партнеры по интеграции",
       "pages": [
         "ru/clickstack/integration-partners/index",
         "ru/clickstack/integration-partners/bindplane",
@@ -248,7 +248,7 @@
     },
     {
       "expanded": true,
-      "group": "API reference",
+      "group": "Справочник API",
       "openapi": {
         "directory": "ru/clickstack/api-reference",
         "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"

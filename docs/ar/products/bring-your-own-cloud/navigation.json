@@ -2,14 +2,14 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "Overview",
+      "group": "نظرة عامة",
       "pages": [
         "ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ar/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "Configuration",
+      "group": "التهيئة",
       "pages": [
         "ar/products/bring-your-own-cloud/configuration/configurations",
         "ar/products/bring-your-own-cloud/configuration/connect",
@@ -17,18 +17,18 @@
       ]
     },
     {
-      "group": "Onboarding",
+      "group": "الإعداد الأولي",
       "pages": [
         "ar/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Customization",
+          "group": "التخصيص",
           "pages": [
             "ar/products/bring-your-own-cloud/onboarding/customization-aws",
             "ar/products/bring-your-own-cloud/onboarding/customization-gcp"
           ]
         },
         {
-          "group": "Network",
+          "group": "الشبكة",
           "pages": [
             "ar/products/bring-your-own-cloud/onboarding/network",
             "ar/products/bring-your-own-cloud/onboarding/network-aws",
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "group": "Connector",
+      "group": "الموصّل",
       "pages": [
         "ar/products/bring-your-own-cloud/connector/overview",
         "ar/products/bring-your-own-cloud/connector/onboarding",
@@ -49,7 +49,7 @@
         "ar/products/bring-your-own-cloud/connector/configuration",
         "ar/products/bring-your-own-cloud/connector/operations",
         {
-          "group": "Reference",
+          "group": "مرجع",
           "pages": [
             "ar/products/bring-your-own-cloud/connector/reference/cli",
             "ar/products/bring-your-own-cloud/connector/reference/configuration",
@@ -60,7 +60,7 @@
       ]
     },
     {
-      "group": "Reference",
+      "group": "مرجع",
       "pages": [
         "ar/products/bring-your-own-cloud/reference/network-security",
         "ar/products/bring-your-own-cloud/reference/privilege",

@@ -1,11 +1,11 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "Concepts",
+  "item": "Основные понятия",
   "pages": [
     "ru/concepts/index",
     {
       "expanded": true,
-      "group": "Fundamentals",
+      "group": "Основы",
       "pages": [
         "ru/concepts/core-concepts/index",
         "ru/concepts/core-concepts/glossary",
@@ -19,7 +19,7 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouse concepts",
+      "group": "Концепции ClickHouse",
       "pages": [
         "ru/concepts/features/index",
         {
@@ -32,28 +32,28 @@
           ]
         },
         {
-          "group": "Dictionaries",
+          "group": "Словари",
           "pages": [
             "ru/concepts/features/dictionaries/index",
             "ru/concepts/features/dictionaries/best-practices"
           ]
         },
         {
-          "group": "Projections",
+          "group": "Проекции",
           "pages": [
             "ru/concepts/features/projections/projections",
             "ru/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "Performance",
+          "group": "Производительность",
           "pages": [
             "ru/concepts/features/performance/index",
             "ru/concepts/features/performance/prewhere",
             "ru/concepts/features/performance/allocation-profiling",
             "ru/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "Caches",
+              "group": "Кэши",
               "pages": [
                 "ru/concepts/features/performance/caches/caches",
                 "ru/concepts/features/performance/caches/query-cache",
@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "Skipping-indexes",
+              "group": "Индексы пропуска данных",
               "pages": [
                 "ru/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ru/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -70,7 +70,7 @@
             },
             "ru/concepts/features/performance/lazy-materialization",
             {
-              "group": "Troubleshooting",
+              "group": "Устранение неполадок",
               "pages": [
                 "ru/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "ru/concepts/features/performance/troubleshoot/oom-canary",
@@ -84,7 +84,7 @@
           "group": "Operations",
           "pages": [
             {
-              "group": "Insert",
+              "group": "Вставка",
               "pages": [
                 "ru/concepts/features/operations/insert/inserting-data",
                 "ru/concepts/features/operations/insert/asyncinserts",
@@ -95,13 +95,13 @@
               ]
             },
             {
-              "group": "Select",
+              "group": "Выборка",
               "pages": [
                 "ru/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Update",
+              "group": "Обновление",
               "pages": [
                 "ru/concepts/features/operations/update/index",
                 "ru/concepts/features/operations/update/overview",
@@ -109,7 +109,7 @@
               ]
             },
             {
-              "group": "Delete",
+              "group": "Удаление",
               "pages": [
                 "ru/concepts/features/operations/delete/index",
                 "ru/concepts/features/operations/delete/overview",
@@ -122,10 +122,10 @@
           ]
         },
         {
-          "group": "Configuration",
+          "group": "Конфигурация",
           "pages": [
             {
-              "group": "Settings",
+              "group": "Настройки",
               "pages": [
                 "ru/concepts/features/configuration/settings/overview",
                 "ru/concepts/features/configuration/settings/settings-query-level",
@@ -141,7 +141,7 @@
               ]
             },
             {
-              "group": "Server config",
+              "group": "Конфигурация сервера",
               "pages": [
                 "ru/concepts/features/configuration/server-config/configuration-files",
                 "ru/concepts/features/configuration/server-config/storing-data",
@@ -156,7 +156,7 @@
           ]
         },
         {
-          "group": "Security and auth",
+          "group": "Безопасность и аутентификация",
           "pages": [
             "ru/concepts/features/security/index",
             "ru/concepts/features/security/access-rights",
@@ -170,7 +170,7 @@
               ]
             },
             {
-              "group": "External authenticators",
+              "group": "Внешние аутентификаторы",
               "pages": [
                 "ru/concepts/features/security/external-authenticators/index",
                 {
@@ -195,7 +195,7 @@
           ]
         },
         {
-          "group": "Backup and restore",
+          "group": "Резервное копирование и восстановление",
           "pages": [
             "ru/concepts/features/backup-restore/overview",
             "ru/concepts/features/backup-restore/restore-settings",
@@ -207,14 +207,14 @@
           ]
         },
         {
-          "group": "Interfaces",
+          "group": "Интерфейсы",
           "pages": [
             "ru/concepts/features/interfaces/native-clients-interfaces-index",
             "ru/concepts/features/interfaces/cli",
             "ru/concepts/features/interfaces/client",
             "ru/concepts/features/interfaces/mcp",
             {
-              "group": "Drivers and interfaces",
+              "group": "Драйверы и интерфейсы",
               "pages": [
                 "ru/concepts/features/interfaces/overview",
                 "ru/concepts/features/interfaces/http",
@@ -242,7 +242,7 @@
             "ru/concepts/features/interfaces/web-ui-result-shaping",
             "ru/concepts/features/interfaces/web-terminal",
             {
-              "group": "Third-party clients",
+              "group": "Сторонние клиенты",
               "pages": [
                 "ru/concepts/features/interfaces/third-party/index"
               ]
@@ -250,7 +250,7 @@
           ]
         },
         {
-          "group": "Tools and utilities",
+          "group": "Инструменты и утилиты",
           "pages": [
             "ru/concepts/features/tools-and-utilities/index",
             "ru/concepts/features/tools-and-utilities/backupview",
@@ -270,7 +270,7 @@
     },
     {
       "expanded": true,
-      "group": "Best practices",
+      "group": "Лучшие практики",
       "pages": [
         "ru/concepts/best-practices/index",
         "ru/concepts/best-practices/choosing-a-primary-key",
