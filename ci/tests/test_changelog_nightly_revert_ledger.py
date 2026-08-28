@@ -1885,3 +1885,68 @@ def test_an_uncategorised_revert_of_an_earlier_release_is_put_to_the_agent(
     prompt = cl._edit_prompt(VERSION, reverts)
     assert "Reverts of earlier releases" in prompt
     assert "`#116800` reverts `#90000`" in prompt
+
+
+def test_a_visible_revert_can_be_a_merged_sibling(monkeypatch, tmp_path):
+    """The surviving pull request on the recorded bullet is itself a revert -
+    of an earlier release, so it is a normal entry (skill section 2, case 5).
+    It shared the bullet, so the restoration merges back into it; only the
+    re-apply links a previous restoration appended are not siblings."""
+    PULL_REQUESTS["115400"] = {
+        "title": 'Revert "Make the setting default"',
+        "body": "Reverts ClickHouse/ClickHouse#100050",
+    }
+    merged = (
+        "* Settings propagation is fixed and the old default is restored. "
+        "[#109946](https://github.com/ClickHouse/ClickHouse/pull/109946) "
+        "([Someone](https://github.com/someone)). "
+        "[#115400](https://github.com/ClickHouse/ClickHouse/pull/115400) "
+        "([Someone](https://github.com/someone))."
+    )
+    survivor = (
+        "* Settings propagation is fixed and the old default is restored. "
+        "[#115400](https://github.com/ClickHouse/ClickHouse/pull/115400) "
+        "([Someone](https://github.com/someone))."
+    )
+    old_text = changelog(
+        [survivor], raw_sections=[("NO CL ENTRY", [REVERT_OF_REVERT])]
+    )
+    reverts = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 109946 [{BUG_FIX}] {merged}",
+            'Changelog-revert: 114911 109946 Revert "%s"' % FIX_TITLE,
+            'Changelog-revert: 115400 100050 Revert "Make the setting default"',
+        ],
+    )
+    # A revert, but not an annotation on this entry: it shared the bullet.
+    assert [group["siblings"] for group in reverts["missing"]] == [["115400"]]
+
+    beside = changelog(
+        [
+            survivor,
+            with_reapply(
+                "* Settings propagation is fixed and the old default is "
+                "restored. "
+                "[#109946](https://github.com/ClickHouse/ClickHouse/pull/109946) "
+                "([Someone](https://github.com/someone)).",
+                "114912",
+            ),
+        ]
+    )
+    split = run_verify_edit(monkeypatch, tmp_path, old_text, beside, reverts)
+    assert split is not None
+    assert "shared one bullet are on several" in split
+    assert "`#109946`, `#115400` on 2 bullets" in split
+
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(merged, "114912")]),
+            reverts,
+        )
+        is None
+    )

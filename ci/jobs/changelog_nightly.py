@@ -656,7 +656,7 @@ def entry_placement(text, pr):
     return "", ""
 
 
-def group_restorations(restore, section, withheld=(), reverts=()):
+def group_restorations(restore, section, withheld=()):
     """Group the entries to restore by the bullet they were recorded from.
 
     A merge (skill section 7) puts several pull requests on one bullet, so one
@@ -671,11 +671,10 @@ def group_restorations(restore, section, withheld=(), reverts=()):
     (published in the last release, or backported), and a sibling that
     survives only there is no bullet to merge into.
 
-    `reverts` are the pull requests known to be reverts. A recorded line can
-    already carry the link of one from an earlier restoration, and that link is
-    an annotation, not an entry that shared the bullet: counting it as a sibling
-    would demand it be on the same bullet as this entry, which is order- and
-    shape-dependent once the same re-applier annotates more than one entry.
+    The other attributions of the line come back as `others`, for the caller
+    to split into the pull requests that shared the bullet and the re-apply
+    links a previous restoration appended - which it can, having the chain, and
+    this cannot.
 
     `withheld` are the pull requests whose deletion a revert still licenses.
     A recorded merged bullet can attribute one of those - the bullet covered
@@ -689,13 +688,10 @@ def group_restorations(restore, section, withheld=(), reverts=()):
     out = []
     for (category, line), prs in groups.items():
         others = set(PR_ATTRIBUTION_RE.findall(line)) - set(prs)
-        entries = others - set(reverts)
         out.append(
             {
                 "prs": sorted(prs, key=int),
-                "siblings": sorted(
-                    (p for p in entries if is_attributed(section, p)), key=int
-                ),
+                "others": sorted(others, key=int),
                 "withheld": sorted((p for p in others if p in withheld), key=int),
                 "category": category,
                 "line": line,
@@ -946,12 +942,25 @@ def analyze_reverts(text, anchor, range_prs=()):
         },
         section,
         withheld,
-        set(targets),
     )
     for group in missing:
         group["removed_by"] = removed_by(group["prs"])
         group["reapplied_by"] = reapplied_by(group["prs"])
         group["required"] = bool(set(group["prs"]) & required)
+        # The pull requests that shared the bullet, as opposed to the re-apply
+        # links a previous restoration appended to it. Only the latter are
+        # excluded: a revert of an earlier release is rewritten into a normal
+        # entry (skill section 2, case 5), so a revert can perfectly well be a
+        # merged sibling - what disqualifies an attribution is being an
+        # annotation on this very entry, not being a revert.
+        group["siblings"] = sorted(
+            (
+                p
+                for p in group.pop("others")
+                if p not in group["reapplied_by"] and is_attributed(section, p)
+            ),
+            key=int,
+        )
     return {
         "credits": credits,
         "restore": restore,

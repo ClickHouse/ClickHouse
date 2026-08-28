@@ -170,7 +170,10 @@ the re-apply rather than describing a change.
    them, not as one bullet each — splitting it undoes the merge of §7. That
    includes the PRs of that bullet which never left: re-adding the entry
    beside the surviving bullet duplicates the prose even though no PR link
-   repeats, so merge it into that bullet instead. And if
+   repeats, so merge it into that bullet instead. A revert can be one of those
+   PRs — a revert of an earlier release is a normal entry (case 5) and can have
+   been merged like any other; what is *not* a PR of the bullet is the link a
+   previous restoration appended to record a re-apply. And if
    only some of those PRs were re-applied, leave the others' links off: their
    reverts still stand, so those changes are not in the release, even though
    the recorded text attributes them.
