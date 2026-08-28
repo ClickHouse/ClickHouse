@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-old-analyzer, no-parallel-replicas
 -- Materializing only the offset produces duplicate (_block_number, _block_offset)
 -- pairs after a merge: the offsets keep the original per-insert values while the
 -- block number falls back to a single value for the whole merged part. The duplicate
