@@ -92,7 +92,11 @@ FROM
     FROM t_lc_single_dictionary_index
     GROUP BY s
 )
-SETTINGS max_threads = 1, max_block_size = 31, group_by_two_level_threshold = 1, optimize_read_in_order = 0;
+SETTINGS
+    max_threads = 1,
+    max_block_size = 31,
+    group_by_two_level_threshold = 1,
+    optimize_read_in_order = 0;
 
 SELECT 'two_parts_top_k', s, count()
 FROM t_lc_single_dictionary_index

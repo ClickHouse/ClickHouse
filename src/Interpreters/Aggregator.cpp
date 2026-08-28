@@ -11,6 +11,7 @@
 #include <base/getL2CacheSize.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -37,6 +38,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
@@ -120,9 +122,12 @@ bool worthConvertToTwoLevel(
 }
 
 void initDataVariantsWithSizeHint(
-    DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
+    DB::AggregatedDataVariants & result,
+    DB::AggregatedDataVariants::Type method_chosen,
+    const DB::Aggregator::Params & params,
+    bool use_hash_table_size_hint = true)
 {
-    if (params.top_k)
+    if (params.top_k || !use_hash_table_size_hint)
     {
         result.init(method_chosen);
         ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
@@ -168,7 +173,8 @@ void initDataVariantsWithSizeHint(
 void updateStatistics(
     const DB::ManyAggregatedDataVariants & data_variants,
     DB::AdaptiveAggregationSession * adaptive_session,
-    const DB::StatsCollectingParams & params)
+    const DB::StatsCollectingParams & params,
+    bool hash_table_sizes_are_representative)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -176,13 +182,6 @@ void updateStatistics(
     for (const auto & variants : data_variants)
         if (variants->topKHeapEverRejected())
             return;
-
-    std::vector<size_t> sizes(data_variants.size());
-    for (size_t i = 0; i < data_variants.size(); ++i)
-        sizes[i] = data_variants[i]->size();
-    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
-    ::nth_element(sizes.begin(), median_size, sizes.end());
-    const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
 
     /// A run that staged enough records to trust the thaw sampler records the measured verdict;
     /// any other run carries the stored verdict over, so that runs without an adaptive
@@ -203,7 +202,33 @@ void updateStatistics(
             repeat_dominated = prev->adaptive_staging_repeat_dominated;
     }
 
-    DB::getHashTablesStatistics<DB::AggregationEntry>().update(
+    auto & statistics = DB::getHashTablesStatistics<DB::AggregationEntry>();
+    if (!hash_table_sizes_are_representative)
+    {
+        /// A dictionary-shard run does not have one representative table per producer, while size
+        /// hints are interpreted that way. Keep the previous sizes instead of feeding shard sizes
+        /// back as per-thread estimates on the next run.
+        if (!measured)
+            return;
+
+        DB::AggregationEntry entry{.adaptive_staging_repeat_dominated = repeat_dominated};
+        if (const auto previous = statistics.getSizeHint(params))
+        {
+            entry.sum_of_sizes = previous->sum_of_sizes;
+            entry.median_size = previous->median_size;
+        }
+        statistics.update(entry, params);
+        return;
+    }
+
+    std::vector<size_t> sizes(data_variants.size());
+    for (size_t i = 0; i < data_variants.size(); ++i)
+        sizes[i] = data_variants[i]->size();
+    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
+    ::nth_element(sizes.begin(), median_size, sizes.end());
+    const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
+
+    statistics.update(
         {.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = repeat_dominated}, params);
 }
 
@@ -808,6 +833,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         }
     }
 
+    can_reorder_dictionary_aggregation = canUseSingleLowCardinalityDictionary(method_chosen)
+        && std::ranges::all_of(
+            aggregate_functions,
+            [](const auto * function)
+            {
+                const auto properties = AggregateFunctionFactory::instance().tryGetProperties(function->getName(), NullsAction::EMPTY);
+                return properties && !properties->is_order_dependent;
+            });
+
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
     /// method serializes the whole block's keys on state construction, which is pathological for the
     /// per-run in-order path, where a fresh state is constructed for every run of equal order-key
@@ -994,6 +1028,79 @@ bool Aggregator::hasSparseArguments(const AggregateFunctionInstruction * aggrega
         if (inst->has_sparse_arguments)
             return true;
     return false;
+}
+
+ColumnPtr Aggregator::getSingleLowCardinalityDictionaryForBlock(
+    const Columns & columns, size_t num_shards, IColumn::Selector & selector) const
+{
+    if (!can_reorder_dictionary_aggregation
+        || params.keys_size != 1
+        || params.max_rows_to_group_by != 0
+        || params.overflow_row
+        || !canUseSingleLowCardinalityDictionary(method_chosen))
+        return {};
+
+    ColumnPtr key_column = columns.at(keys_positions[0]);
+    if (params.optimize_group_by_constant_keys && isColumnConst(*key_column))
+        key_column = assert_cast<const ColumnConst &>(*key_column).getDataColumnPtr();
+    else
+        key_column = removeSpecialRepresentations(key_column)->convertToFullColumnIfConst();
+
+    const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(key_column.get());
+    if (!low_cardinality_column || !low_cardinality_column->hasSingleDictionaryForPart())
+        return {};
+
+    if (!std::has_single_bit(num_shards))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The number of dictionary aggregation shards must be a power of two");
+
+    if (num_shards == 1)
+        return low_cardinality_column->getDictionaryPtr();
+
+    const size_t rows = columns.at(keys_positions[0])->size();
+    selector.resize(rows);
+    const auto & indexes = low_cardinality_column->getIndexes();
+    const char * positions = indexes.getRawData().data();
+    const size_t shard_mask = num_shards - 1;
+    /// Use the same high hash bits as the two-level aggregation buckets. After a shard is
+    /// converted to two-level, its keys therefore occupy one contiguous range of buckets.
+    const size_t shard_shift = 32 - std::countr_zero(num_shards);
+    const bool is_constant = key_column->size() == 1 && rows != 1;
+
+    auto fill_selector = [&]<typename Index>()
+    {
+        if (is_constant)
+        {
+            const size_t shard = (HashCRC32<UInt64>{}(unalignedLoad<Index>(positions)) >> shard_shift) & shard_mask;
+            std::ranges::fill(selector, shard);
+            return;
+        }
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const UInt64 index = unalignedLoad<Index>(positions + row * sizeof(Index));
+            selector[row] = (HashCRC32<UInt64>{}(index) >> shard_shift) & shard_mask;
+        }
+    };
+
+    switch (low_cardinality_column->getSizeOfIndexType())
+    {
+        case sizeof(UInt8):
+            fill_selector.template operator()<UInt8>();
+            break;
+        case sizeof(UInt16):
+            fill_selector.template operator()<UInt16>();
+            break;
+        case sizeof(UInt32):
+            fill_selector.template operator()<UInt32>();
+            break;
+        case sizeof(UInt64):
+            fill_selector.template operator()<UInt64>();
+            break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected dictionary index size");
+    }
+
+    return low_cardinality_column->getDictionaryPtr();
 }
 
 bool Aggregator::canUseSingleLowCardinalityDictionary(AggregatedDataVariants::Type type) const
@@ -2466,6 +2573,27 @@ bool Aggregator::executeOnBlock(Columns columns,
     bool & no_more_keys,
     AdaptiveAggregationProducer * adaptive) const
 {
+    return executeOnBlock(
+        columns,
+        row_begin,
+        row_end,
+        result,
+        key_columns,
+        aggregate_columns,
+        no_more_keys,
+        adaptive,
+        /*is_dictionary_shard=*/false);
+}
+
+bool Aggregator::executeOnBlock(const Columns & columns,
+    size_t row_begin, size_t row_end,
+    AggregatedDataVariants & result,
+    ColumnRawPtrs & key_columns,
+    AggregateColumns & aggregate_columns,
+    bool & no_more_keys,
+    AdaptiveAggregationProducer * adaptive,
+    bool is_dictionary_shard) const
+{
     /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
     /// and query memory trackers, and accounts for the aggregation state across all threads.
     const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
@@ -2521,15 +2649,17 @@ bool Aggregator::executeOnBlock(Columns columns,
             }
         }
 
-        initDataVariantsWithSizeHint(result, initial_method, params);
+        initDataVariantsWithSizeHint(result, initial_method, params, /*use_hash_table_size_hint=*/!is_dictionary_shard);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
     }
 
-    if (result.isSingleLowCardinalityDictionary()
-        && !bindSingleLowCardinalityDictionary(result, key_columns))
+    if (result.isSingleLowCardinalityDictionary() && !bindSingleLowCardinalityDictionary(result, key_columns))
     {
+        if (is_dictionary_shard)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Shared LowCardinality aggregation shard has a different dictionary");
+
         normalizeSingleLowCardinalityDictionary(result);
         LOG_TRACE(log, "Aggregation method normalized to: {}", result.getMethodName());
     }
@@ -4929,7 +5059,8 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     ManyAggregatedDataVariants && data_variants,
     AdaptiveAggregationSession * adaptive_session,
-    bool require_stable_bucket_hash) const
+    bool require_stable_bucket_hash,
+    bool hash_table_sizes_are_representative) const
 {
     if (data_variants.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::prepareVariantsToMerge.");
@@ -4975,16 +5106,60 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     if (!can_merge_dictionary_indexes)
     {
+        std::vector<AggregatedDataVariants *> variants_to_normalize;
+        size_t rows_to_normalize = 0;
         for (auto & data : data_variants)
         {
             if (!data->isSingleLowCardinalityDictionary())
                 continue;
 
-            normalizeSingleLowCardinalityDictionary(*data);
+            variants_to_normalize.push_back(data.get());
+            rows_to_normalize += data->sizeWithoutOverflowRow();
+        }
+
+        /// Re-keying keeps the source and destination hash tables alive at the same time. A
+        /// small fixed worker limit parallelizes the final normalization without multiplying
+        /// that temporary memory by the number of reader streams.
+        constexpr size_t min_rows_for_parallel_normalization = 100'000;
+        constexpr size_t max_parallel_normalizations = 4;
+        if (variants_to_normalize.size() > 1
+            && params.max_threads > 1
+            && rows_to_normalize >= min_rows_for_parallel_normalization)
+        {
+            std::atomic<size_t> next_variant = 0;
+            auto normalizer = [this, &variants_to_normalize, &next_variant]
+            {
+                while (true)
+                {
+                    const size_t index = next_variant.fetch_add(1);
+                    if (index >= variants_to_normalize.size())
+                        break;
+                    normalizeSingleLowCardinalityDictionary(*variants_to_normalize.at(index));
+                }
+            };
+
+            ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+            const size_t num_threads
+                = std::min({params.max_threads, variants_to_normalize.size(), max_parallel_normalizations});
+            /// Track every accepted task. On an enqueue exception, `runner` waits for running
+            /// tasks before the locals captured by `normalizer` are destroyed.
+            runner.reserve(num_threads);
+            for (size_t i = 0; i < num_threads; ++i)
+                runner.enqueueAndKeepTrack([normalizer]() { normalizer(); }, Priority{});
+            runner.waitForAllToFinishAndRethrowFirstError();
+        }
+        else
+        {
+            for (auto * data : variants_to_normalize)
+                normalizeSingleLowCardinalityDictionary(*data);
         }
     }
 
-    updateStatistics(data_variants, adaptive_session, params.stats_collecting_params);
+    updateStatistics(
+        data_variants,
+        adaptive_session,
+        params.stats_collecting_params,
+        hash_table_sizes_are_representative);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());

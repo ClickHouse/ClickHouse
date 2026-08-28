@@ -431,7 +431,8 @@ struct AdaptiveAggregationProducer
             /// repeat-dominated (see `publishDelayedRecords`).
             RepeatedStagedKeys,
             /// Dictionary indexes are local to one verified MergeTree part. Keep this producer
-            /// on the baseline path, where a dictionary change can normalize its table directly.
+            /// on the baseline path while it uses the bounded shared tables for that dictionary,
+            /// without interacting with staged adaptive records.
             SingleLowCardinalityDictionary,
         };
         Reason reason;
