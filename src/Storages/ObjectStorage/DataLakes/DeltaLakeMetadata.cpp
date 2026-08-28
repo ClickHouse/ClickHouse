@@ -724,6 +724,11 @@ static bool usesBearerAuthentication(const ObjectStoragePtr & object_storage)
     return false;
 #endif
 }
+
+bool DeltaLakeMetadataDeltaKernel::requiresRecreation(const ObjectStoragePtr & object_storage) const
+{
+    return usesBearerAuthentication(object_storage);
+}
 #endif
 
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
