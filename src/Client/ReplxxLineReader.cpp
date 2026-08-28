@@ -1,5 +1,6 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ReplxxLineReader.h>
+#include <Client/Autocomplete.h>
 #include <Parsers/Lexer.h>
 #include <base/errnoToString.h>
 
@@ -347,6 +348,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     , rx(options.input_stream, options.output_stream, options.in_fd, options.out_fd, options.err_fd)
     , highlighter(std::move(options.highlighter))
     , suggest(options.suggest)
+    , autocomplete(options.autocomplete)
     , word_break_characters(options.word_break_characters.data())
     , editor(getEditor())
 {
@@ -407,6 +409,28 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     rx.set_completion_callback(callback);
 
+    /// When a predictive model is available, feed its next-token predictions into the completion
+    /// dictionary. `Suggest::getMatchingWords` merges these words in, prefix-matches them against
+    /// the word currently being typed, and ranks the matching ones above the static suggestions, so
+    /// a prediction the user has started typing (e.g. `count` after `SELECT c`) is offered first,
+    /// for both Tab completion and inline hints, reusing all of the existing hint/acceptance
+    /// machinery.
+    ///
+    /// The model predicts the *next* token, so it must see the context *before* the word being
+    /// typed: `prefix` is the text up to the cursor and `prefix_length` the length of that word, so
+    /// dropping the last `prefix_length` characters yields the context to predict from (e.g. prefix
+    /// `SELECT co`, length 2 -> predict from `SELECT `). The returned words are unique and ordered
+    /// most likely first; `Suggest` relies on that order for its ranking.
+    if (autocomplete)
+    {
+        suggest.setCompletionsCallback(
+            [this](const String & prefix, size_t prefix_length) -> Suggest::Words
+            {
+                const String context = prefix.substr(0, prefix.size() - prefix_length);
+                return autocomplete->predictNextTokens(context);
+            });
+    }
+
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
@@ -444,7 +468,36 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             const bool last_word_empty
                 = (last_word_pos == std::string::npos) ? context.empty() : (last_word_pos + 1 == context.size());
             if (last_word_empty)
+            {
+                /// Nothing is being typed (the cursor is right after a word break), so there is no
+                /// prefix for `Suggest` to match. A predictive model, however, can still suggest the
+                /// *next* token from the preceding context (e.g. `count` right after `SELECT `). Show
+                /// its top predictions as hints. `context_size` stays 0: there is nothing to
+                /// overwrite, so accepting inserts the whole predicted token. Populate the completion
+                /// snapshot exactly as the non-empty branch does, so acceptance reuses it.
+                if (autocomplete)
+                {
+                    auto predictions = autocomplete->predictNextTokens(context);
+                    if (!predictions.empty())
+                    {
+                        context_size = 0;
+                        hint_completions = replxx::Replxx::completions_t(predictions.begin(), predictions.end());
+                        hint_completions_context = context;
+                        hint_completions_context_size = 0;
+
+                        replxx::Replxx::hints_t hints;
+                        const size_t shown = std::min(hint_completions.size(), HINTS_MAX_ROWS);
+                        hints.reserve(shown);
+                        for (size_t i = 0; i < shown; ++i)
+                            hints.push_back(hint_completions[i].text());
+                        hint_count = static_cast<int>(hints.size());
+                        /// Predicted tokens are non-empty, i.e. there is always something to complete.
+                        hints_visible = true;
+                        return hints;
+                    }
+                }
                 return replxx::Replxx::hints_t{};
+            }
 
             const std::string text = rx.get_state().text();
             auto priority = extractIdentifiers(text.c_str());

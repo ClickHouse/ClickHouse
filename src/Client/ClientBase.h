@@ -75,6 +75,7 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
+class Autocomplete;
 class InternalTextLogs;
 class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
@@ -410,6 +411,12 @@ protected:
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
     bool wait_for_suggestions_to_load = false;
+
+    /// Optional predictive next-token model (opt-in via --autocomplete_model), layered on top of
+    /// `suggest`. A member so it outlives the line reader, which holds a pointer to it. Held by
+    /// pointer (with a forward declaration) to keep the heavy model/connection headers out of the
+    /// widely-included ClientBase.h.
+    std::unique_ptr<Autocomplete> autocomplete;
 
     std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
