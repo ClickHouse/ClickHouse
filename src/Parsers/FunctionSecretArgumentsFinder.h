@@ -171,7 +171,12 @@ protected:
 
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
-    bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
+    /// `positional_allowed_after_collection` keeps the single positional the Azure backup locator
+    /// accepts after a named collection (the blob path) visible; everywhere else, and for anything
+    /// past that first one, a positional after a collection is invalid and fails closed.
+    bool maskAzureConnectionString(
+        ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0,
+        bool positional_allowed_after_collection = false);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a
     /// named `url = ...` override, and the `headers(...)` values at any position. `url` is at
@@ -196,7 +201,7 @@ protected:
     void findTableEngineSecretArguments();
     void findExternalDistributedTableEngineSecretArguments();
     void findS3TableEngineSecretArguments();
-    void findAzureBlobStorageTableEngineSecretArguments();
+    void findAzureBlobStorageTableEngineSecretArguments(bool positional_allowed_after_collection = false);
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
     void findBigQuerySecretArguments();
