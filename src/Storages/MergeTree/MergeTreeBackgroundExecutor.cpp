@@ -161,20 +161,6 @@ size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 }
 
 template <class Queue>
-size_t MergeTreeBackgroundExecutor<Queue>::getAvailableTaskSlots() const
-{
-    LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
-
-    if (shutdown)
-        return 0;
-
-    /// The same bound as in `tryReserveTaskSlots`.
-    const Int64 limit = std::min(static_cast<Int64>(max_tasks_count.load()), static_cast<Int64>(threads_count));
-    const Int64 current = CurrentMetrics::values[metric].load();
-    return current >= limit ? 0 : static_cast<size_t>(limit - current);
-}
-
-template <class Queue>
 bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 {
     LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);

@@ -7,9 +7,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Keep all but one merge-executor worker occupied. `OPTIMIZE FINAL` must then start only one
-# partition helper: the implementation sizes the helper pool by the currently-free capacity, so
-# helpers cannot tag parts or reserve output space for merges the executor cannot run yet.
+# Keep all but one merge-executor worker occupied. `OPTIMIZE FINAL` must then run exactly one
+# partition merge at a time: every merge occupies a free executor slot, and a helper that cannot
+# get a slot rolls its selection back (releasing the tagged parts and the reserved output space)
+# before waiting - so the single free slot must still be picked up for one of the partitions
+# instead of the whole statement stalling behind the occupied workers.
 pool_size=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'background_pool_size'")
 blockers=$((pool_size - 1))
 
@@ -51,8 +53,8 @@ done
 
 $CLICKHOUSE_CLIENT --receive_timeout 900 --query "OPTIMIZE TABLE t_optimize_final_free_slots FINAL" &
 
-# Exactly one remaining worker can execute a target merge. The other target partitions are not
-# selected until capacity is released; this is what prevents them from retaining merge tags.
+# Exactly one remaining worker can execute a target merge. The helpers of the other target
+# partitions wait without retaining merge tags, disk reservations, or executor slots.
 for _ in {1..300}; do
     active_target=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_optimize_final_free_slots'")
     [[ "$active_target" -eq "$pool_size" ]] && break

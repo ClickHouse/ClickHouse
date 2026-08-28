@@ -332,12 +332,6 @@ public:
 
     bool trySchedule(ExecutableTaskPtr task);
 
-    /// The number of task slots that are currently free for `tryReserveTaskSlots`. This is a hint:
-    /// the value can change immediately after the call. It is used to size the number of concurrent
-    /// foreground merge helpers of OPTIMIZE FINAL, so that no more partitions are selected (and
-    /// their parts tagged and disk space reserved) than the executor can actually run right now.
-    size_t getAvailableTaskSlots() const;
-
     /// Reserve up to `desired` free slots for merges that run outside this executor (e.g. the
     /// synchronous merges of OPTIMIZE FINAL). Returns the number of slots actually reserved, which
     /// may be fewer than requested (down to zero if the pool is already busy). The reservation is
