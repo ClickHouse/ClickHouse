@@ -15,9 +15,11 @@ alter_pid=""
 
 cleanup()
 {
+    # Disable the failpoint first: if cleanup runs while the transform is paused at it, the mutation
+    # would otherwise never resume and `wait "$alter_pid"` below would hang indefinitely.
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT check_sorted_transform_pause" 2>/dev/null ||:
     $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL MUTATION WHERE database = '${CLICKHOUSE_DATABASE}' AND table = '${TABLE}'" >/dev/null 2>&1 ||:
     [ -n "$alter_pid" ] && wait "$alter_pid" 2>/dev/null
-    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT check_sorted_transform_pause" 2>/dev/null ||:
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${TABLE} SYNC" 2>/dev/null ||:
     rm -f "$alter_stderr"
 }

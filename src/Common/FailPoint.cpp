@@ -2,8 +2,10 @@
 #include <Common/FailPoint.h>
 
 #include <boost/core/noncopyable.hpp>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -507,7 +509,7 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     });
 }
 
-void FailPointInjection::waitForPause(const String & fail_point_name)
+void FailPointInjection::waitForPause(const String & fail_point_name, std::optional<UInt64> timeout_ms)
 {
     /// A mistyped name would otherwise return at once and silently drop the synchronisation the
     /// caller asked for, turning a deterministic test into a race. A registered fail point with no
@@ -522,10 +524,19 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
 
     auto channel = iter->second;
 
-    /// Wait until a thread has paused at this failpoint after the most recent resume.
-    channel->pause_cv.wait(lock, [&] {
+    auto paused_or_disabled = [&] {
         return channel->pause_epoch > channel->resume_epoch || channel->disabled;
-    });
+    };
+
+    /// Wait until a thread has paused at this failpoint after the most recent resume. `timeout_ms`
+    /// bounds the wait so a caller cannot hang forever if the target never reaches the failpoint.
+    if (timeout_ms)
+        channel->pause_cv.wait_until(
+            lock,
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(*timeout_ms),
+            paused_or_disabled);
+    else
+        channel->pause_cv.wait(lock, paused_or_disabled);
 }
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
@@ -615,7 +626,7 @@ void FailPointInjection::notifyFailPoint(const String &)
     throwDisabled();
 }
 
-void FailPointInjection::waitForPause(const String &)
+void FailPointInjection::waitForPause(const String &, std::optional<UInt64>)
 {
     throwDisabled();
 }

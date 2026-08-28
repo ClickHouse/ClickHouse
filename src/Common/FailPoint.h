@@ -2,7 +2,9 @@
 
 #include <Core/Types.h>
 
+#include <chrono>
 #include <mutex>
+#include <optional>
 
 #include "config.h"
 
@@ -160,7 +162,10 @@ public:
       * - Can be called after target thread has already paused
       * - Thread-safe: multiple test threads can wait simultaneously
       */
-    static void waitForPause(const String & fail_point_name);
+    /// `timeout_ms`, when set, bounds the wait so a caller cannot hang forever if the target never
+    /// reaches the failpoint (e.g. the operation errored out earlier). When unset, waits indefinitely
+    /// as before.
+    static void waitForPause(const String & fail_point_name, std::optional<UInt64> timeout_ms = {});
 
     /** Wait for the failpoint to be notified and threads to resume.
       *

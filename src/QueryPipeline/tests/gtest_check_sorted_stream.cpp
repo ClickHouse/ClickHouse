@@ -250,6 +250,17 @@ TEST(CheckSortedTransform, CheckEqualBlock)
 namespace
 {
 
+/// State shared between the test body and the pull thread. Owned by a `shared_ptr` and captured by
+/// value, so the (detached-on-timeout) thread never touches stack memory that `checkCancellation`
+/// may have destroyed by the time it returns.
+struct CancellationTestState
+{
+    std::atomic<bool> pull_finished{false};
+    std::atomic<bool> pull_result{true};
+    std::shared_ptr<QueryPipeline> pipeline;
+    std::shared_ptr<PullingPipelineExecutor> executor;
+};
+
 /// Check that a `CheckSortedTransform` paused at a failpoint is interrupted promptly when the
 /// pipeline is cancelled: the in-flight `pull` must finish without producing the chunk.
 void checkCancellation(const char * fail_point_name)
@@ -259,54 +270,52 @@ void checkCancellation(const char * fail_point_name)
     BlocksList blocks;
     blocks.push_back(getSortedBlockWithSize(key_columns, 10000, 1, 0));
 
+    auto state = std::make_shared<CancellationTestState>();
     Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
     pipe.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
-
-    auto pipeline = std::make_shared<QueryPipeline>(std::move(pipe));
-    auto executor = std::make_shared<PullingPipelineExecutor>(*pipeline);
+    state->pipeline = std::make_shared<QueryPipeline>(std::move(pipe));
+    state->executor = std::make_shared<PullingPipelineExecutor>(*state->pipeline);
 
     FailPointInjection::enableFailPoint(fail_point_name);
 
-    std::atomic<bool> pull_finished{false};
-    std::atomic<bool> pull_result{true};
-    /// The thread keeps `pipeline` and `executor` alive via the shared pointers, so on timeout it
-    /// can be detached instead of joined: the failpoint is already disabled, so it terminates on
-    /// its own without outliving the pipeline objects.
-    std::thread pull_thread([&, executor, pipeline]
+    /// The thread keeps `state` (and thus `pipeline`/`executor`) alive via the shared pointer, so on
+    /// timeout it can be detached instead of joined without accessing freed stack memory.
+    std::thread pull_thread([state]
     {
         Chunk chunk;
         try
         {
-            pull_result = executor->pull(chunk);
+            state->pull_result = state->executor->pull(chunk);
         }
         catch (...)
         {
             /// Any exception during pull is treated as a failed pull; the test only asserts on
             /// prompt termination after cancellation, not on the chunk content. Ok.
-            pull_result = false;
+            state->pull_result = false;
         }
-        pull_finished = true;
+        state->pull_finished = true;
     });
 
-    FailPointInjection::waitForPause(fail_point_name);
+    /// Bound the wait so a pull that errors out before reaching the failpoint cannot wedge the job.
+    FailPointInjection::waitForPause(fail_point_name, UInt64{5000});
 
-    executor->cancel();
+    state->executor->cancel();
     FailPointInjection::disableFailPoint(fail_point_name);
 
     Stopwatch timer;
-    while (!pull_finished && timer.elapsedSeconds() < 10)
+    while (!state->pull_finished && timer.elapsedSeconds() < 10)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    if (pull_finished)
+    if (state->pull_finished)
         pull_thread.join();
     else
         pull_thread.detach();
 
-    ASSERT_TRUE(pull_finished) << "Pull did not finish promptly after cancellation";
-    EXPECT_FALSE(pull_result);
+    ASSERT_TRUE(state->pull_finished) << "Pull did not finish promptly after cancellation";
+    EXPECT_FALSE(state->pull_result);
 }
 
 }

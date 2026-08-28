@@ -1856,21 +1856,22 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
     }
 
     /// Register a hook that cancels the running mutation pipeline when the merge list entry
-    /// is cancelled (e.g. KILL MUTATION). The hook is invoked under
-    /// pipeline_cancel_hook_mutex, so it is safe to set and clear it while the pipeline runs.
-    /// It captures the context weakly to avoid a reference cycle: the context owns a reference
-    /// to the merge list entry, so capturing the context strongly would keep the entry alive
-    /// forever even after the hook has served its purpose.
+    /// is cancelled (e.g. KILL MUTATION). The hook captures the cancel state by value (not the
+    /// merge list entry), so it can be invoked from another thread even after the entry has been
+    /// destroyed, and it locks only the state's own mutex. The context is captured weakly to avoid
+    /// a reference cycle: the context owns a reference to the merge list entry, so capturing it
+    /// strongly would keep the entry alive forever even after the hook has served its purpose.
     void setPipelineCancelHook()
     {
-        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_hook_mutex};
-        (*mutate_entry)->pipeline_cancel_hook = [weak_ctx = weak_from_this()]()
+        auto state = (*mutate_entry)->pipeline_cancel_state;
+        std::lock_guard lock{state->mutex};
+        state->hook = [state, weak_ctx = weak_from_this()]()
         {
             if (auto ctx = weak_ctx.lock())
             {
                 /// Access to the executor is guarded by the same mutex that protects the hook slot,
                 /// so it cannot race with the teardown in `resetMutatingPipeline()`.
-                std::lock_guard hook_lock{(*ctx->mutate_entry)->pipeline_cancel_hook_mutex};
+                std::lock_guard hook_lock{state->mutex};
                 if (ctx->mutating_executor)
                     ctx->mutating_executor->cancel();
             }
@@ -1879,8 +1880,8 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
 
     void clearPipelineCancelHook() const
     {
-        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_hook_mutex};
-        (*mutate_entry)->pipeline_cancel_hook = {};
+        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_state->mutex};
+        (*mutate_entry)->pipeline_cancel_state->hook = {};
     }
 
     /// Releases the mutation pipeline. Must run under the same mutex that protects the hook slot,
@@ -1888,7 +1889,7 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
     /// or observes a null one, never a destroyed one.
     void resetMutatingPipeline()
     {
-        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_hook_mutex};
+        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_state->mutex};
         mutating_executor.reset();
         mutating_pipeline.reset();
     }

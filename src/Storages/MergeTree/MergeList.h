@@ -74,6 +74,18 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 struct Settings;
 
+/// State used to cancel a running merge/mutation pipeline from another thread (e.g. KILL MUTATION).
+/// It is kept in a `shared_ptr` (see `MergeListElement::pipeline_cancel_state`) so the cancellation
+/// hook that invokes it outlives the `MergeListElement` that owns the entry: the hook captures this
+/// state by value, so it never dereferences the (possibly already destroyed) merge list entry and
+/// never locks a mutex that belongs to a freed object.
+struct PipelineCancelState
+{
+    mutable std::mutex mutex;
+    std::function<void()> hook;
+};
+using PipelineCancelStatePtr = std::shared_ptr<PipelineCancelState>;
+
 
 struct MergeListElement : boost::noncopyable
 {
@@ -98,11 +110,10 @@ struct MergeListElement : boost::noncopyable
     std::atomic<bool> is_cancelled{};
 
     /// Optional hook to cancel the running merge/mutation pipeline when the entry
-    /// is cancelled (e.g. KILL MUTATION). Set and cleared by the owning task; invoked
-    /// under pipeline_cancel_hook_mutex so the owning task can safely release it
-    /// before the pipeline is destroyed.
-    std::function<void()> pipeline_cancel_hook;
-    mutable std::mutex pipeline_cancel_hook_mutex;
+    /// is cancelled (e.g. KILL MUTATION). Set and cleared by the owning task. The
+    /// `PipelineCancelState` keeps its mutex (and the hook) alive independently of this
+    /// entry, so a concurrent cancellation cannot touch a freed object.
+    PipelineCancelStatePtr pipeline_cancel_state = std::make_shared<PipelineCancelState>();
 
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_bytes_uncompressed{};
@@ -194,9 +205,9 @@ public:
                     && merge_element.result_part_info.getDataVersion() >= mutation_version)
                 {
                     merge_element.is_cancelled = true;
-                    std::lock_guard hook_lock{merge_element.pipeline_cancel_hook_mutex};
-                    if (merge_element.pipeline_cancel_hook)
-                        hooks_to_invoke.push_back(merge_element.pipeline_cancel_hook);
+                    std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
+                    if (merge_element.pipeline_cancel_state->hook)
+                        hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
                 }
             }
         }
@@ -206,21 +217,43 @@ public:
 
     void cancelAll()
     {
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
-            merge_element.is_cancelled = true;
+        /// Cancel every running merge/mutation in the table, including a still in-flight pipeline.
+        std::vector<std::function<void()>> hooks_to_invoke;
+        {
+            std::lock_guard lock{mutex};
+            for (auto & merge_element : entries)
+            {
+                merge_element.is_cancelled = true;
+                std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
+                if (merge_element.pipeline_cancel_state->hook)
+                    hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
+            }
+        }
+        for (const auto & hook : hooks_to_invoke)
+            hook();
     }
 
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
     {
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
+        /// Cancel every running merge/mutation in the partition, including a still in-flight pipeline.
+        std::vector<std::function<void()>> hooks_to_invoke;
         {
-            if (merge_element.table_id == table_id
-                && merge_element.partition_id == partition_id
-                && merge_element.result_part_info.min_block < delimiting_block_number)
-                merge_element.is_cancelled = true;
+            std::lock_guard lock{mutex};
+            for (auto & merge_element : entries)
+            {
+                if (merge_element.table_id == table_id
+                    && merge_element.partition_id == partition_id
+                    && merge_element.result_part_info.min_block < delimiting_block_number)
+                {
+                    merge_element.is_cancelled = true;
+                    std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
+                    if (merge_element.pipeline_cancel_state->hook)
+                        hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
+                }
+            }
         }
+        for (const auto & hook : hooks_to_invoke)
+            hook();
     }
 
     /// Merge consists of two parts: assignment and execution. We add merge to
