@@ -331,6 +331,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_after_check_data) \
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
+    REGULAR(transaction_hold_unknown_state) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \

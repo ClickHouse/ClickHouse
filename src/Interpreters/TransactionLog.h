@@ -92,6 +92,11 @@ public:
     /// Returns the oldest snapshot that is visible for some running transaction
     CSN getOldestSnapshot() const;
 
+    /// True while any transaction's outcome is undetermined -- `multi()` threw a hardware error
+    /// and `tryFinalizeUnknownStateTransactions` has not resolved it yet. A caller that cannot
+    /// fail closed on an unresolvable commit must refuse to proceed while this holds.
+    bool hasUnknownStateTransactions() const;
+
     /// Allocates TID, returns new transaction object
     MergeTreeTransactionPtr beginTransaction();
 
