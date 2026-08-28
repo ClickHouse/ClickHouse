@@ -3054,7 +3054,7 @@ These codecs are designed to make compression more effective by exploiting speci
 
 ### ALP {#alp}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 `ALP(variant)` — Adaptive lossless compression for floating-point data. Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
@@ -3065,7 +3065,7 @@ The codec accepts an optional variant argument:
 - `ALP(RD)` — Real Doubles variant. Reinterprets each value's bit pattern and splits it into a high part (sign + exponent + top mantissa bits) and a low part. High parts are dictionary-encoded (up to 8 entries), low parts are bit-packed. Works best when many values share the same high bits.
 
 <Note>
-This codec is experimental and requires `SET enable_alp_codec = 1` to use.
+This codec is in beta and requires `SET enable_alp_codec = 1` to use.
 </Note>
 
 ### FPC {#fpc}
