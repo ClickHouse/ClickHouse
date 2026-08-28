@@ -145,6 +145,10 @@ public:
     std::optional<UInt64> lifetimeRows() const override { return lifetime_writes.rows; }
     std::optional<UInt64> lifetimeBytes() const override { return lifetime_writes.bytes; }
 
+    /// Same lookup as getDestinationTable, but returns {} instead of throwing on a self-reference,
+    /// for callers that must not raise (e.g. deciding whether Merge may prune this child by name).
+    StoragePtr tryGetDestinationTable() const;
+
 
 private:
     struct Buffer

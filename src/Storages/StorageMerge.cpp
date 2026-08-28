@@ -1,6 +1,10 @@
+#include "config.h"
+
+#include <array>
 #include <cmath>
 #include <functional>
 #include <iterator>
+#include <ranges>
 #include <Access/ContextAccess.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -70,16 +74,29 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageLoop.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageView.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#if USE_FILELOG
+#include <Storages/FileLog/StorageFileLog.h>
+#endif
+#if USE_LIBPQXX
+#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#endif
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
@@ -1809,6 +1826,180 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan) const
     plan.addStep(std::move(filter_step));
 }
 
+namespace
+{
+
+/// Longest chain of read-forwarding storages the probe below follows before failing closed. Mirrors
+/// `max_insert_forwarding_depth`, which guards the equivalent probes in `InsertDependenciesBuilder`.
+constexpr size_t max_read_forwarding_depth = 16;
+
+/// A `tryGet...` target lookup dispatches to the database implementation, and some of those do remote
+/// I/O that throws (`DatabasePostgreSQL::tryGetTable` fetches the table structure). An excluded child
+/// must never fail the query, so a throw is an unresolvable hop, which the caller treats as prunable.
+StoragePtr tryResolveForwardingTarget(const std::function<StoragePtr()> & resolve)
+{
+    try
+    {
+        return resolve();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+        return {};
+    }
+    catch (const Poco::Exception &)
+    {
+        return {};
+    }
+}
+
+/// The file-like engines stamp `_table` from their own `StorageID` in the single family-wide site
+/// `addRequestedFileLikeStorageVirtualsToChunk`. The whole shared declaration identifies them: `Merge`,
+/// `Buffer`, the message queues and `Hive` also declare it at `Reader` place without self-stamping.
+bool declaresFileLikeSelfStampedTable(const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals)
+{
+    /// `getVirtualsForFileLikeStorage` omits a family virtual whose name the table declares physically, so
+    /// a physical column counts as declared here. `_table` is excluded: it is the name the rows carry.
+    static constexpr std::array shadowable_columns = {"_path", "_file", "_size", "_etag", "_tags"};
+    return virtuals.tryGetDescription("_table", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader)
+        && std::ranges::all_of(shadowable_columns, [&](const auto * name)
+    { return columns.has(name) || virtuals.tryGetDescription(name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader); });
+}
+
+/// True when reading `child` does not stamp `child`'s own name into every row, so pruning it by name is
+/// required rather than optional. Only wrappers that forward the whole read and prune nothing themselves
+/// are followed, so a nested `Merge`, which prunes by name itself, is not.
+bool readIsNotSelfNamed(
+    const IStorage & child,
+    QueryProcessingStage::Enum stage,
+    String & emitted_database,
+    String & emitted_table,
+    size_t depth = 0)
+{
+    /// A materialized view is not a transparent wrapper: `StorageMaterializedView::getInMemoryMetadataPtr`
+    /// re-places the target's `_database`/`_table` at `Plan`, and `StorageWithCommonVirtualColumns::read`
+    /// then materializes them from the VIEW's own `StorageID`, whatever the target stamps. So the identity
+    /// the rows carry is the view's, and following the target instead would prune the view against a name
+    /// its rows never carry. That site runs only at `FetchColumns`; above it the view delegates the read
+    /// untouched and the target's stamping is what reaches the rows. A virtual the view does not declare
+    /// is not materialized at all, so the rows carry an empty value for it, as for a file-like child.
+    if (const auto * self_named_view = dynamic_cast<const StorageMaterializedView *>(&child);
+        self_named_view && stage == QueryProcessingStage::FetchColumns)
+    {
+        auto view_metadata = self_named_view->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        const auto & view_virtuals = view_metadata->virtuals;
+        if (view_virtuals.tryGetDescription("_table", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan))
+        {
+            emitted_database
+                = view_virtuals.tryGetDescription("_database", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan)
+                ? self_named_view->getStorageID().getDatabaseName()
+                : "";
+            emitted_table = self_named_view->getStorageID().getTableName();
+            return true;
+        }
+    }
+
+    if (child.isStreamingStorage())
+        return true;
+#if USE_FILELOG
+    /// `StorageFileLog` is the one streaming engine outside `IStreamingStorage`. It is built only where
+    /// `Storages/FileLog` is, so the cast has to be compiled out elsewhere to keep its vtable resolvable.
+    if (dynamic_cast<const StorageFileLog *>(&child))
+        return true;
+#endif
+
+    /// `StorageLoop` re-reads its inner storage forever, and `StorageWindowView` forwards the read to an
+    /// arbitrary `TO` target. Neither declares `_database`/`_table`, so a query that selects one by name
+    /// is rejected either way, and admitting an excluded one only reads a table the predicate rules out.
+    if (dynamic_cast<const StorageLoop *>(&child) || dynamic_cast<const StorageWindowView *>(&child))
+        return true;
+
+    /// Fail closed on an over-long chain or an unresolvable hop: staying prunable is what master does
+    /// for every child, so it cannot regress, whereas admitting one of these reads the wrong table.
+    if (depth >= max_read_forwarding_depth)
+        return true;
+    auto forwards_to = [&emitted_database, &emitted_table, stage, depth](const std::function<StoragePtr()> & resolve)
+    {
+        auto target = tryResolveForwardingTarget(resolve);
+        /// Held for the rest of the decision, so the inspected chain cannot be destroyed under us.
+        if (!target || readIsNotSelfNamed(*target, stage, emitted_database, emitted_table, depth + 1))
+            return true;
+        /// A file-like target stamps its own `StorageID`, which is the target's name and not this
+        /// wrapper's, so reading through the wrapper is not self-named either. Report that name, so
+        /// the caller prunes against the identity the rows carry rather than the wrapper's. The
+        /// family declares no `_database`, so the rows carry an empty one.
+        auto target_metadata = target->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        if (!declaresFileLikeSelfStampedTable(target_metadata->columns, target_metadata->virtuals))
+            return false;
+        emitted_database.clear();
+        emitted_table = target->getStorageID().getTableName();
+        return true;
+    };
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(&child))
+        return forwards_to([alias] { return alias->tryGetTargetTable(); });
+    if (const auto * buffer = dynamic_cast<const StorageBuffer *>(&child))
+        return forwards_to([buffer] { return buffer->tryGetDestinationTable(); });
+    if (const auto * view = dynamic_cast<const StorageMaterializedView *>(&child))
+        return forwards_to([view] { return view->tryGetTargetTable(); });
+#if USE_LIBPQXX
+    if (const auto * pg = dynamic_cast<const StorageMaterializedPostgreSQL *>(&child))
+        return forwards_to([pg] { return pg->tryGetNested(); });
+#endif
+    /// `tryGetNested`, not `getNested`, which would force-load a lazy table here; an unmaterialized
+    /// one is an unresolvable hop and so fails closed above.
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(&child))
+        return forwards_to([proxy] { return proxy->tryGetNested(); });
+    return false;
+}
+
+/// The prefilter matches the child's own name, so it may prune only a child whose rows carry that name.
+/// Admitting a child is always safe: the per-row filter still applies above it. `get_child_metadata` is
+/// lazy; some overrides rebuild it on every call.
+bool childMaterializesOwnStorageId(
+    const StoragePtr & storage,
+    const std::function<StorageMetadataHandle()> & get_child_metadata,
+    const std::function<bool(const String &, const String &)> & table_filter,
+    QueryProcessingStage::Enum stage)
+{
+    /// MergeTree stamps both names from its own id in the reader, at any stage. Not `isMergeTree()`,
+    /// which `StorageAlias` forwards to its target.
+    if (dynamic_cast<const MergeTreeData *>(storage.get()))
+        return true;
+
+    /// Pruning these is required rather than optional, at any stage: their rows carry another table's
+    /// name, and reading one consumes a queue or never terminates. A file-like forwarding target is the
+    /// exception: its name is known, so it is pruned against the identity its rows carry.
+    String emitted_database;
+    String emitted_table;
+    if (readIsNotSelfNamed(*storage, stage, emitted_database, emitted_table))
+        return emitted_table.empty() || !table_filter(emitted_database, emitted_table);
+
+    /// Named, because `StorageMetadataHandle` deletes its rvalue `operator->` to stop `virtuals`
+    /// outliving the handle.
+    auto child_metadata = get_child_metadata();
+    const auto & virtuals = child_metadata->virtuals;
+
+    /// The file-like family stamps `_table` from its own id but declares no `_database`, so its rows
+    /// carry an empty one. Pruning is sound exactly when the predicate rejects that identity.
+    if (declaresFileLikeSelfStampedTable(child_metadata->columns, virtuals))
+        return !table_filter("", storage->getStorageID().getTableName());
+
+    /// Both remaining tests are required: the self-stamping path in `StorageWithCommonVirtualColumns`
+    /// runs only at `FetchColumns`, and a `StorageAlias` inherits its target's `Plan` declarations
+    /// while still delegating the read.
+    if (stage != QueryProcessingStage::FetchColumns)
+        return false;
+    if (!dynamic_cast<const StorageWithCommonVirtualColumns *>(storage.get()))
+        return false;
+
+    return virtuals.tryGetDescription("_database", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan)
+        && virtuals.tryGetDescription("_table", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan);
+}
+
+}
+
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     ContextPtr query_context) const
 {
@@ -1863,8 +2054,17 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 continue;
             }
 
+            /// Prune by name only where the child is proven to stamp its own name into the columns.
+            auto prunable = [&]
+            {
+                if (!table_filter)
+                    return false;
+                auto get_child_metadata = [&] { return storage->getInMemoryMetadataPtr(query_context, false); };
+                return childMaterializesOwnStorageId(storage, get_child_metadata, table_filter, common_processed_stage);
+            };
+
             if (storage.get() != storage_merge.get())
-                if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
+                if (!prunable() || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
                         if  (!granted_select_on_all_tables)

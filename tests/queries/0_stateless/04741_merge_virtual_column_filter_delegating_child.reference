@@ -1,0 +1,104 @@
+-- arm 1: Distributed child at FetchColumns, filter the leaf name
+t04741_dist_leaf_b	200
+-- arm 1 control: same query with no _table filter
+t04741_dist_leaf_a	20
+t04741_dist_leaf_b	200
+-- arm 2: Merge child, filter the inner leaf name
+t04741_merge_leaf_b	100
+-- arm 2 control: same query with no _table filter
+t04741_merge_leaf_a	10
+t04741_merge_leaf_b	100
+-- arm 3: Buffer child, filter the destination name
+t04741_buffer_dest	100
+-- arm 3b: Buffer child, filter the Buffer own name, keeps only the buffered rows
+t04741_buffer_child	13
+-- arm 3 control: same query with no _table filter
+t04741_buffer_child	13
+t04741_buffer_dest	100
+-- arm 4: Alias child over MergeTree, filter the target name
+t04741_alias_target	100
+-- arm 4 control: same query with no _table filter
+t04741_alias_target	100
+-- arm 5: _database of a cross-database Distributed child, filter the leaf database
+1	t04741_other_db_leaf	14
+-- arm 5 control: same query with no _database filter
+1	t04741_other_db_leaf	14
+-- arm 5 control: the Merge parent database does not match the leaf database
+0
+-- arm 6: negation of a Distributed child own name keeps both leaves
+t04741_dist_leaf_a	20
+t04741_dist_leaf_b	200
+-- arm 6 control: negation of a leaf name excludes exactly that leaf
+t04741_dist_leaf_b	200
+-- arm 6b: IN over the inner leaves of a Merge child
+t04741_merge_leaf_a	10
+t04741_merge_leaf_b	100
+-- arm 7 control: MergeTree children keep being pruned by name
+t04741_plain_a	10
+-- arm 7 control: the pruned MergeTree leaf is absent from the plan
+1
+0
+-- arm 8 control: pruning of a name that matches nothing reads no rows
+0
+-- arm 9 control: a View child is pruned by its own name
+t04741_view_child	30
+-- arm 9 control: a MaterializedView child is pruned by its own name
+t04741_mv_child	20
+-- arm 9b: Alias child over Memory, filter the target name
+t04741_memory_target	50
+-- arm 9b control: same query with no _table filter
+t04741_memory_target	50
+-- arm 10 characterization: a physical _table column keeps shadowing the virtual one
+Int32	6	1
+-- arm 11: an admitted delegating child still prunes, one level lower where the names are right
+1
+0
+-- arm A positive control: the children really are lazy proxies
+t04741_lazy_a	TableProxy
+t04741_lazy_b	TableProxy
+-- arm A: a lazily-proxied MergeTree child answers correctly
+t04741_lazy_a	11
+-- arm B: an admitted lazy proxy reads both children and the per-row filter decides
+1
+1
+-- arm C positive control: the Merge child really is a lazy proxy
+t04741_lzm_a	TableProxy
+t04741_lzm_b	TableProxy
+t04741_lzm_child	TableProxy
+-- arm C: a proxy over a Merge carries its grandchildren names, so it must not be pruned
+t04741_lzm_b	103
+-- arm C control: same query with no _table filter
+t04741_lzm_a	17
+t04741_lzm_b	103
+-- arm F: a _table filter prunes the file-like child, so its missing file is never opened
+t04741_file_sibling	23
+-- arm F control: with no filter the same query opens the child and fails
+-- arm G: a _database filter must not prune it, because its rows carry an empty _database
+-- arm H control: an excluded file-like child stays absent from the plan
+0
+-- arm H control: without the filter it is admitted, and it really is readable
+1
+t04741_file_present	19
+-- arm J: a file-like child whose family virtual is shadowed physically is still pruned
+t04741_file_sibling	23
+-- arm J control: with no filter the same query opens the shadowed child and fails
+-- arm K: a Buffer over a file-like target is pruned by name
+t04741_file_sibling	23
+-- arm K control: with no filter the same query opens the absent destination and fails
+-- arm L: a _database filter must not prune a wrapper over a file-like target
+-- arm M control: a wrapper stays pruned when the whole predicate rejects its target identity
+t04741_file_sibling	23
+-- arm N: same for a direct file-like child
+t04741_file_sibling	23
+-- arm O: a _table filter naming the forwarding target admits the wrapper
+-- arm P: a materialized view child is pruned against its own name, not its file-like target
+0
+-- arm Q control: a _database filter must not prune the view, whose rows carry an empty one
+-- arm R control: naming the view itself admits it, and its absent target does raise
+-- arm I: a _table filter prunes the loop child, so the query terminates
+t04741_loop_sibling	31
+-- arm I control: the pruned plan really does not read it
+0
+-- arm I control: without the filter it is admitted, and it really is readable
+1
+5

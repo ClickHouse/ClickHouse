@@ -148,6 +148,19 @@ StoragePtr StorageBuffer::getDestinationTable() const
 }
 
 
+StoragePtr StorageBuffer::tryGetDestinationTable() const
+{
+    if (!destination_id)
+        return {};
+
+    auto destination = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
+    if (destination.get() == this)
+        return {};
+
+    return destination;
+}
+
+
 std::string StorageBuffer::Thresholds::toString() const
 {
     return fmt::format("time={}, rows={}, bytes={}", time, rows, bytes);

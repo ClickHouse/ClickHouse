@@ -151,6 +151,8 @@ public:
     }
 
     StoragePtr getNested() const override { return nested; }
+    /// Constructed eagerly, so it is always materialized and answering forces nothing.
+    StoragePtr tryGetNested() const override { return nested; }
     String getName() const override { return nested->getName(); }
 
     /// Engine classification is used by policy checks (e.g. the `disable_insertion_and_mutation`

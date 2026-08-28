@@ -1,0 +1,63 @@
+-- arm 1: filtering out the streaming child prunes it, so the query succeeds at the default
+10	100
+-- arm 2 (control): without the filter the streaming child IS read, so the query is refused
+QUERY_NOT_ALLOWED
+-- arm 3: same filter with direct select allowed still returns only the MergeTree rows
+10	100
+-- arm 4: and it did not consume the filtered-out queue -- all 3 records are still there
+3
+-- arm 5 (control): arm 4 did consume them, so a second read sees none
+0
+-- arm 6: an Alias over a streaming child is pruned too, so the query succeeds at the default
+10	100
+-- arm 6 (control): without the filter the aliased streaming child IS read, so it is refused
+QUERY_NOT_ALLOWED
+-- arm 7: with direct select allowed the filtered read returns only the MergeTree rows
+10	100
+-- arm 8: and it did not consume the aliased queue -- all 3 records are still there
+3
+-- arm 9 (control): arm 8 did consume them, so a second read sees none
+0
+-- arm 10: a Buffer over a streaming destination is pruned too, so the query succeeds at the default
+10	100
+-- arm 10 (control): without the filter the buffered streaming destination IS read, so it is refused
+QUERY_NOT_ALLOWED
+-- arm 11: with direct select allowed the filtered read returns only the MergeTree rows
+10	100
+-- arm 12: and it did not consume the buffered queue -- all 3 records are still there
+3
+-- arm 12 (control): arm 12 did consume them, so a second read sees none
+0
+-- arm 13: a Buffer over a Buffer over a streaming destination is pruned through both hops
+10	100
+-- arm 13 (control): without the filter the chained streaming destination IS read, so it is refused
+QUERY_NOT_ALLOWED
+-- arm 14: with direct select allowed the filtered read returns only the MergeTree rows
+10	100
+-- arm 15: and it did not consume the chained queue -- all 3 records are still there
+3
+-- arm 15 (control): arm 15 did consume them, so a second read sees none
+0
+-- arm 16: a MaterializedView whose target is streaming is pruned too
+10	100
+-- arm 16 (control): without the filter the view IS read, delegating into the FileLog, so it is refused
+QUERY_NOT_ALLOWED
+-- arm 17: with direct select allowed the filtered read returns only the MergeTree rows
+10	100
+-- arm 18: and it did not consume the view target queue -- all 3 records are still there
+3
+-- arm 18 (control): arm 18 did consume them, so a second read sees none
+0
+-- arm 19 positive control: the children really are lazy proxies
+t04742_lazy_filelog	TableProxy
+t04742_lazy_mt	TableProxy
+-- arm 19: a lazily-proxied streaming child is pruned too, so the query succeeds at the default
+10	100
+-- arm 19 (control): without the filter the proxied streaming child IS read, so it is refused
+QUERY_NOT_ALLOWED
+-- arm 20: with direct select allowed the filtered read returns only the MergeTree rows
+10	100
+-- arm 21: and it did not consume the proxied queue -- all 3 records are still there
+3
+-- arm 21 (control): arm 21 did consume them, so a second read sees none
+0
