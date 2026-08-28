@@ -924,44 +924,49 @@ def need_retry(args, stdout, stderr, total_time):
 
 
 def get_processlist_size(args):
+    # The rows are counted client-side: aggregation performs a memory limit check
+    # that a server over its per-user limit cannot pass, and this query has to
+    # answer in exactly that state.
     if args.replicated_database:
-        return int(
+        return len(
             clickhouse_execute(
                 args,
                 """
-                SELECT
-                    count()
+                SELECT 1
                 FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
                 """,
-            ).strip()
+            ).splitlines()
         )
     if args.shared_catalog:
-        return int(
+        return len(
             clickhouse_execute(
                 args,
                 """
-                SELECT
-                    count()
+                SELECT 1
                 FROM clusterAllReplicas('test_cluster_shared_catalog', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
                 """,
-            ).strip()
+            ).splitlines()
         )
-    return int(
+    return len(
         clickhouse_execute(
             args,
             """
-                SELECT
-                    count()
+                SELECT 1
                 FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
             """,
-        ).strip()
+        ).splitlines()
     )
+
+
+# The stacktrace query below is the one hung-check query that cannot avoid
+# aggregating, so it is the only one that needs the per-user limit lifted.
+HUNG_CHECK_QUERY_SETTINGS = {"max_memory_usage_for_user": 0}
 
 
 def get_processlist_with_stacktraces(args):
@@ -987,6 +992,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
             settings={
+                **HUNG_CHECK_QUERY_SETTINGS,
                 "allow_introspection_functions": 1,
             },
             timeout=120,
@@ -1013,6 +1019,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
             settings={
+                **HUNG_CHECK_QUERY_SETTINGS,
                 "allow_introspection_functions": 1,
             },
             timeout=120,
@@ -1034,6 +1041,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
         settings={
+            **HUNG_CHECK_QUERY_SETTINGS,
             "allow_introspection_functions": 1,
         },
         timeout=120,
@@ -5120,7 +5128,7 @@ def check_server_started(args):
 
     sys.stdout.flush()
     retry_count = args.server_check_retries
-    query = "SELECT version(), arrayStringConcat(groupArray(value), ' ') FROM system.build_options WHERE name IN ('GIT_HASH', 'GIT_BRANCH')"
+    query = "SELECT version(), (SELECT value FROM system.build_options WHERE name = 'GIT_HASH'), (SELECT value FROM system.build_options WHERE name = 'GIT_BRANCH')"
     while retry_count > 0:
         try:
             res = (
@@ -5864,7 +5872,7 @@ def main(args):
     tests_start_time = time()
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
+        msg = "Server is not responding. Cannot query the server version."
         if args.hung_check:
             print(msg)
             print_c_stacktraces(args)
