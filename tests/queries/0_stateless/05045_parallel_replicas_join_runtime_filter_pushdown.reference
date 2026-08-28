@@ -1,0 +1,7 @@
+Aggregating
+Aggregating
+ReadFromMergeTree (default.pr_rf_probe)
+Runtime filters: RF1(k, k from default.pr_rf_build)
+Runtime filters: RF1(k, k from default.pr_rf_build)
+ReadFromMergeTree (default.pr_rf_build)
+45
