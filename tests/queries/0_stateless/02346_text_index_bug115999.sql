@@ -196,7 +196,8 @@ SELECT id FROM t_115999_pp WHERE hasAnyTokens(tokens, ['alpha beta']) ORDER BY i
 SELECT id FROM t_115999_pp WHERE hasPhrase(val, 'hello world') ORDER BY id;
 
 -- Row-preserving steps between the JOIN and the stranded predicate (the projection folds into the filter,
--- leaving Sorting and Limit): the walk must carry the indexed column through them.
+-- leaving Sorting and Limit): the walk must carry the indexed column through them. Parallel replicas put
+-- other steps there, which the walk does not cross, so this shape is pinned to a local plan.
 SELECT 'pass-through steps between the JOIN and the stranded predicate';
 
 SELECT id FROM
@@ -207,7 +208,8 @@ SELECT id FROM
     LIMIT 10
 )
 WHERE hasAnyTokens(tokens, ['alpha beta']) OR category = 'nonexistent'
-ORDER BY id;
+ORDER BY id
+SETTINGS enable_parallel_replicas = 0;
 
 SELECT id FROM
 (
@@ -218,7 +220,7 @@ SELECT id FROM
 )
 WHERE hasAnyTokens(tokens, ['alpha beta']) OR category = 'nonexistent'
 ORDER BY id
-SETTINGS use_skip_indexes = 0;
+SETTINGS use_skip_indexes = 0, enable_parallel_replicas = 0;
 
 -- A post-JOIN Expression that carries the indexed column only as a header pass-through, which the walk has
 -- to follow as well: this is the shape where tracking the DAG outputs alone loses the column.
