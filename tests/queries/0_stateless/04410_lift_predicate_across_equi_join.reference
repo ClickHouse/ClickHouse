@@ -15,6 +15,9 @@ computed target key	1
 computed target key correctness	0
 filtered target prunes	1
 filtered computed target key	1
+inner eq rhs	2
+both sides lift	2	2
+both sides lift correctness	0
 distinct target	1
 sorted target	2
 key vs key	1

@@ -203,6 +203,37 @@ FROM (
         ON o.orderkey = l.orderkey
 );
 
+-- Filter on the right input of an INNER JOIN: the copy has to run in the other direction too
+SELECT 'inner eq rhs',
+       countIf(explain LIKE '%ilter column:%orderkey = 777%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM lift_orders AS o
+    INNER JOIN (SELECT * FROM lift_lineitem WHERE orderkey = 777) AS l ON o.orderkey = l.orderkey
+);
+
+-- Both inputs filtered: each direction must see the other side as it was before the first copy
+SELECT 'both sides lift',
+       countIf(explain LIKE '%ilter column:%orderkey = 555%'),
+       countIf(explain LIKE '%ilter column:%custkey = 7%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_two_key WHERE orderkey = 555) AS a
+    INNER JOIN (SELECT * FROM lift_two_key WHERE custkey = 7) AS b
+        ON a.orderkey = b.orderkey AND a.custkey = b.custkey
+);
+
+SELECT 'both sides lift correctness',
+       (SELECT count() FROM (SELECT * FROM lift_two_key WHERE orderkey = 555) AS a
+        INNER JOIN (SELECT * FROM lift_two_key WHERE custkey = 7) AS b
+            ON a.orderkey = b.orderkey AND a.custkey = b.custkey)
+     - (SELECT count() FROM (SELECT * FROM lift_two_key WHERE orderkey = 555) AS a
+        INNER JOIN (SELECT * FROM lift_two_key WHERE custkey = 7) AS b
+            ON a.orderkey = b.orderkey AND a.custkey = b.custkey
+        SETTINGS query_plan_lift_predicate_across_join = 0);
+
 -- `DISTINCT` between the join and the read is out of contract: index analysis cannot reach a
 -- filter placed above it, so the pass leaves the predicate on the source side
 SELECT 'distinct target',
