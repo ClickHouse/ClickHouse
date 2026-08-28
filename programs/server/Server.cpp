@@ -976,13 +976,22 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 linux_version.toString());
         else if (linux_version >= VersionNumber{4, 16, 0} && linux_version < VersionNumber{4, 16, 4})
         {
-            /// The corruption bug lives in ext4, so warn only when the <path> directory actually
-            /// resides on ext4: identical kernels with ClickHouse on xfs, zfs or any other
-            /// filesystem are not affected and must not raise a system.warnings alarm. Warn as
-            /// before when the filesystem cannot be told - going quiet on an unreadable
-            /// /proc/self/mounts would trade a false alarm for a blind spot.
-            const String data_fs_type = getDirectoryFilesystemType(data_path);
-            if (data_fs_type.empty() || data_fs_type == "ext4")
+            /// The corruption bug lives in ext4, so warn only when the <path> directory or one of
+            /// the configured local disks actually resides on ext4: identical kernels with
+            /// ClickHouse on xfs, zfs or any other filesystem are not affected and must not raise
+            /// a system.warnings alarm. Warn as before when the filesystem cannot be told - going
+            /// quiet on an unreadable /proc/self/mounts would trade a false alarm for a blind spot.
+            bool warn_about_ext4 = false;
+            const auto probe_path = [&](const String & path)
+            {
+                const String fs_type = getDirectoryFilesystemType(path);
+                warn_about_ext4 |= fs_type.empty() || fs_type == "ext4";
+            };
+            probe_path(data_path);
+            for (const auto & [_, disk] : server.context()->getDisksMap())
+                if (!disk->isRemote())
+                    probe_path(disk->getPath());
+            if (warn_about_ext4)
                 kernel_warning = PreformattedMessage::create(
                     "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). Consider upgrading the kernel.",
                     linux_version.toString());
