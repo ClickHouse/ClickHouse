@@ -21,6 +21,10 @@ INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbe
 INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbers(10);
 
+-- Pinned because the asserted plans have no place for the copied join predicate: with
+-- `query_plan_merge_filters = 0` it cannot merge into the read's filter and shows up as an
+-- extra `Filter` step.
+SET query_plan_lift_predicate_across_join = 0;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 -- Pinned because the test asserts that the runtime join filter is built; the default threshold
