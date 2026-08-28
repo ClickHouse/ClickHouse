@@ -266,7 +266,7 @@ public:
     void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwNoSerialization(); }
     void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override { throwNoSerialization(); }
     void serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const override { throwNoSerialization(); }
-    void deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, size_t, double) const override { throwNoSerialization(); }
+    void deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const override { throwNoSerialization(); }
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
@@ -346,8 +346,7 @@ public:
     }
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & /* state */,
@@ -369,18 +368,9 @@ public:
         }
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
-            size_t prev_size = column->size();
-            auto mutable_column = column->assumeMutable();
+            size_t prev_size = column.size();
 
-            if (rows_offset)
-            {
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "SerializationPostingList does not support cases where rows_offset {} is non-zero",
-                    rows_offset);
-            }
-
-            ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(*mutable_column);
+            ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
             ColumnAggregateFunction::Container & vec = real_column.getData();
 
             Arena & arena = real_column.createOrGetArena();
@@ -439,8 +429,7 @@ public:
                 place += total_size_of_state;
             }
 
-            column = std::move(mutable_column);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         }
 
         settings.path.pop_back();
@@ -461,11 +450,10 @@ String DataTypePostingList::getName() const
 static DataTypePtr buildPostingListType(const Array & params, const PostingListParams & posting_list_params)
 {
     auto function = std::make_shared<AggregateFunctionPostingList>(posting_list_params);
-    auto type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{}, Array{});
     /// Mirror format_version into DataTypeAggregateFunction::version so that it propagates to
     /// ColumnAggregateFunction::version via createColumn() / set(), matching the standard aggregate
     /// function versioning convention (see ColumnAggregateFunction.h:86).
-    type->setVersion(posting_list_params.format_version, /*if_empty=*/false);
+    auto type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{}, Array{}, posting_list_params.format_version);
     type->setCustomization(
         std::make_unique<DataTypeCustomDesc>(
             std::make_unique<DataTypePostingList>(params, posting_list_params.format_version),

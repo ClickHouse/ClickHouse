@@ -31,14 +31,13 @@ MergeTreeReaderTextProjectionIndex::MergeTreeReaderTextProjectionIndex(
     : MergeTreeReaderTextIndex(main_reader_, index_, columns_, nullptr)
     , projection_granule(std::move(index_granule_))
 {
-    auto data_part = getDataPart();
-    auto index_format = index.index->getPhysicalFormat(*data_part, index.index->getFileName());
+    auto index_format = index.index->getPhysicalFormat(*data_part_info_for_read, index.index->getFileName());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state{
         .version = index_format.version,
         .condition = index.condition_template->generateUnsubstituted().get(),
-        .part = *data_part,
+        .part_info = *data_part_info_for_read,
         .index = *index.index,
         .readable_ranges = nullptr,
         /// This reader serves granule reads that do consume posting lists, matching
@@ -375,11 +374,11 @@ void MergeTreeReaderTextProjectionIndex::fillColumnLazy(
     cursor->fill(column_data.data() + column_offset, row_offset, num_rows);
 }
 
-void MergeTreeReaderTextProjectionIndex::fillBatch(Columns & res_columns, size_t from_row, size_t batch_rows)
+void MergeTreeReaderTextProjectionIndex::fillBatch(MutableColumns & res_columns, size_t from_row, size_t batch_rows)
 {
     for (size_t i = 0; i < res_columns.size(); ++i)
     {
-        auto & col = res_columns[i]->assumeMutableRef();
+        auto & col = *res_columns[i];
         if (is_always_true[i])
         {
             auto & data = assert_cast<ColumnUInt8 &>(col).getData();
@@ -421,8 +420,7 @@ size_t MergeTreeReaderTextProjectionIndex::readRows(
     size_t from_mark,
     bool continue_reading,
     size_t max_rows_to_read,
-    size_t rows_offset,
-    Columns & res_columns)
+    MutableColumns & res_columns)
 {
     ensureInitialized();
 
@@ -433,11 +431,11 @@ size_t MergeTreeReaderTextProjectionIndex::readRows(
     if (continue_reading)
     {
         from_mark = current_mark;
-        from_row = current_row + rows_offset;
+        from_row = current_row;
     }
     else
     {
-        from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
+        from_row = index_granularity.getMarkStartingRow(from_mark);
 
         /// Non-continuation read: the read position may jump backward.
         /// Forward-only cursors (AndCursor, PhraseCursor) cannot rewind,

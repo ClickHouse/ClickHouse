@@ -135,7 +135,7 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
 
-    for (const auto & [name, proj_part] : state.part.getProjectionParts())
+    for (const auto & [name, proj_part] : state.part_info.getDataPart()->getProjectionParts())
     {
         if (name == projection_name)
         {
@@ -149,7 +149,7 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
 
     if (index_id_for_caches.empty())
     {
-        const auto & part_storage = state.part.getDataPartStorage();
+        const auto & part_storage = *state.part_info.getDataPartStorage();
         index_id_for_caches = fmt::format("proj:{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), projection_name);
     }
 
@@ -320,13 +320,12 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
         /// so this iteration sees a fresh empty optional. The callback either sets it or
         /// leaves it nullopt (meaning: read all rows for this mark).
         reader->matched_row_indices_for_posting.reset();
-        Columns result;
+        MutableColumns result;
         result.resize(cols.size());
         size_t rows_read = reader->readRows(
             mark,
             prev_mark && *prev_mark == mark - 1,
             rows_to_read,
-            /*rows_offset=*/0,
             result);
 
         chassert(rows_read > 0);
@@ -433,7 +432,7 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
     if (remaining_tokens.empty())
         return;
 
-    const String & data_path = state.part.getDataPartStorage().getFullPath();
+    const String data_path = state.part_info.getDataPartStorage()->getFullPath();
 
     for (const auto & [token, token_info] : remaining_tokens)
     {
@@ -634,9 +633,9 @@ MergeTreeIndexSubstreams MergeTreeProjectionIndexText::getSubstreams() const
 }
 
 MergeTreeIndexFormat MergeTreeProjectionIndexText::getPhysicalFormat(
-    const IMergeTreeDataPart & part, const std::string & /* relative_path_prefix */) const
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & /* storage */, const std::string & /* relative_path_prefix */) const
 {
-    if (part.checksums.files.contains(index.name + ".proj"))
+    if (checksums.files.contains(index.name + ".proj"))
         return {1, getSubstreams()};
 
     return {0 /*unknown*/, {}};

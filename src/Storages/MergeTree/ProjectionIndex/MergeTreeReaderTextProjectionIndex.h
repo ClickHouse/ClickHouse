@@ -20,8 +20,7 @@ public:
         size_t from_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        size_t offset,
-        Columns & res_columns) override;
+        MutableColumns & res_columns) override;
 
     void setPrecomputedGranule(const IndexGranulesMap & granules) override;
     void setIndexGranule(MergeTreeIndexGranulePtr index_granule) override;
@@ -48,7 +47,7 @@ private:
 
     void fillColumnLazy(IColumn & column, const String & column_name, size_t column_offset, size_t row_offset, size_t num_rows);
 
-    void fillBatch(Columns & res_columns, size_t from_row, size_t batch_rows);
+    void fillBatch(MutableColumns & res_columns, size_t from_row, size_t batch_rows);
 
     MergeTreeIndexGranulePtr projection_granule;
 
