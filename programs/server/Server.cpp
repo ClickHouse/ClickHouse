@@ -976,32 +976,21 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 linux_version.toString());
         else if (linux_version >= VersionNumber{4, 16, 0} && linux_version < VersionNumber{4, 16, 4})
         {
-            /// The corruption bug lives in ext4, so warn only when the <path> directory or one of
-            /// the configured local disks actually resides on ext4: identical kernels with
-            /// ClickHouse on xfs, zfs or any other filesystem are not affected and must not raise
-            /// a system.warnings alarm. Warn as before when the filesystem cannot be told - going
-            /// quiet on an unreadable /proc/self/mounts would trade a false alarm for a blind spot.
-            bool warn_about_ext4 = false;
-            const auto probe_path = [&](const String & path)
-            {
-                const String fs_type = getDirectoryFilesystemType(path);
-                warn_about_ext4 |= fs_type.empty() || fs_type == "ext4";
-            };
-            probe_path(data_path);
-            /// Object-storage disks keep their metadata under a local path too, so disk paths are
-            /// probed as well - but only ones that really exist locally: web and plain metadata
-            /// backends report an empty string or a remote prefix here, which must not raise the
-            /// unknown-filesystem alarm.
-            for (const auto & [_, disk] : server.context()->getDisksMap())
-            {
-                const String disk_path = disk->getPath();
-                std::error_code ec;
-                if (!disk_path.empty() && std::filesystem::is_directory(std::filesystem::path(disk_path), ec))
-                    probe_path(disk_path);
-            }
-            if (warn_about_ext4)
+            /// The corruption bug lives in ext4, so warn only when the <path> directory actually
+            /// resides on ext4: identical kernels with ClickHouse on xfs, zfs or any other
+            /// filesystem are not affected and must not raise a system.warnings alarm. Warn as
+            /// before when the filesystem cannot be told - going quiet on an unreadable
+            /// /proc/self/mounts would trade a false alarm for a blind spot.
+            /// Only <path> is probed: covering other disks would materialize every configured disk
+            /// right here (getDisksMap() is lazy and starts object-storage disks), and a disk's
+            /// getPath() cannot be told apart reliably from a remote object prefix - so the
+            /// warning text names the limitation instead.
+            const String data_fs_type = getDirectoryFilesystemType(data_path);
+            if (data_fs_type.empty() || data_fs_type == "ext4")
                 kernel_warning = PreformattedMessage::create(
-                    "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). Consider upgrading the kernel.",
+                    "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). "
+                    "Only the server's data path directory was checked; other configured disks are not covered by this check. "
+                    "Consider upgrading the kernel.",
                     linux_version.toString());
         }
         else if (linux_version >= VersionNumber{5, 5, 0} && linux_version < VersionNumber{5, 6, 13})
