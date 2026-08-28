@@ -65,7 +65,7 @@ TEST(SerializationIPBinaryBulk, IPv4BulkRoundTrip)
 
     auto restored = type->createColumn();
     ReadBufferFromString istr(ostr.str());
-    serialization->deserializeBinaryBulk(*restored, istr, 0, 2, 0);
+    serialization->deserializeBinaryBulk(*restored, istr, 2, 0);
 
     ASSERT_EQ(restored->size(), 2u);
     const auto & restored_data = assert_cast<const ColumnVector<IPv4> &>(*restored).getData();
@@ -123,9 +123,10 @@ TEST(SerializationIPBinaryBulk, IPv4BigEndianHostWireBytesMatchLittleEndianHost)
         transformEndianness<std::endian::little, std::endian::big>(addr);
         UInt32 swapped = addr.toUnderType();
         std::string native_bytes(reinterpret_cast<const char *>(&swapped), sizeof(swapped));
-        /// This host is little-endian, so its own native byte order is the mirror image of the
-        /// big-endian host's; reversing it here yields exactly the bytes a real big-endian
-        /// memcpy would produce, without needing to run on one.
+        /// On a big-endian host the native bytes already are what its memcpy puts on the wire; a
+        /// little-endian host's native order is the mirror image, so reversing emulates it.
+        if constexpr (std::endian::native == std::endian::big)
+            return native_bytes;
         return {native_bytes.rbegin(), native_bytes.rend()};
     };
 
@@ -150,7 +151,12 @@ TEST(SerializationIPBinaryBulk, IPv4BigEndianHostReadReconstructsOriginalValue)
     /// the original. transformEndianness is its own inverse (byteswap undoes byteswap), so the
     /// same explicit-FromEndian trick applies here too.
     const std::string wire_bytes{"\x04\x03\x02\x01", 4}; /// wire format for IPv4(0x01020304)
-    std::string be_native_bytes(wire_bytes.rbegin(), wire_bytes.rend());
+    /// A big-endian host's memcpy keeps the wire bytes as-is; a little-endian one mirrors them.
+    std::string be_native_bytes;
+    if constexpr (std::endian::native == std::endian::big)
+        be_native_bytes = wire_bytes;
+    else
+        be_native_bytes.assign(wire_bytes.rbegin(), wire_bytes.rend());
     UInt32 be_native_value = 0;
     memcpy(&be_native_value, be_native_bytes.data(), sizeof(be_native_value));
 
