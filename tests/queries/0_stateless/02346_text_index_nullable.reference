@@ -271,7 +271,7 @@ Nullable(String) with a null-producing preprocessor
 3
 -- nullIf: direct read is kept, with the NULLs taken from the rewritten haystack
 1	1
--- nullIf: endsWith keeps direct read and still excludes the NULL rows
+-- nullIf: endsWith falls back to the row-level predicate
 1
 2
 1
@@ -289,4 +289,25 @@ String with a null-producing preprocessor and a Nullable needle
 3
 3
 -- direct read is kept for it too
+1
+A null-producing preprocessor with a string-like tokenizer
+-- ngrams: the nullified row is still returned by the predicates it matches
+1
+1
+1
+1
+1
+1
+-- ngrams: and excluded by their negations, which kept it before
+2
+2
+2
+-- ngrams: the same, with the index taken out of the picture
+1
+2
+1
+2
+-- ngrams: no virtual column is read for them
+0
+-- ngrams: hasAnyTokens still uses the index
 1

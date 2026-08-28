@@ -80,8 +80,7 @@ SELECT id FROM tab WHERE isNull(hasToken(str, 'hello')) ORDER BY id;
 SELECT '-- the predicate evaluates to NULL for the NULL rows, not to 0';
 SELECT id, hasToken(str, 'hello') AS matched FROM tab WHERE matched OR isNull(matched) ORDER BY id;
 
--- Only the null map is read instead of the column data. The plan depends on the setting, unlike the
--- results above, so it is pinned here.
+-- Unlike the results above, this depends on the setting, so it is pinned.
 SELECT '-- the index is still read directly, and only the null map of the column with it';
 SELECT count() > 0 FROM
 (
@@ -108,7 +107,7 @@ DROP TABLE tab;
 
 SELECT 'Nullable(String) with a partially materialized index.';
 -- The first part has no index, so its virtual column comes from the default expression, which must
--- neither fail on the NULL rows nor report them as 0.
+-- not report the NULL rows as 0.
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
@@ -134,8 +133,7 @@ SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
 SELECT '-- partially materialized: isNull(hasToken) is rows 2 and 4';
 SELECT id FROM tab WHERE isNull(hasToken(str, 'hello')) ORDER BY id;
 
--- Hint mode over the same mix: the virtual column is 1 where the index is missing, from the postings
--- where it is not, and the NULLs must survive both.
+-- Hint mode over the same mix: the NULLs must survive both the missing and the materialized index.
 SELECT '-- partially materialized, index as a hint: NOT like is only row 3';
 SELECT id FROM tab WHERE NOT like(str, '%hello%') ORDER BY id;
 
@@ -565,7 +563,7 @@ ORDER BY id;
 SYSTEM STOP MERGES tab;
 
 INSERT INTO tab VALUES (1, 'hello'), (2, NULL), (3, 'foo');
-ALTER TABLE tab ADD INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = ifNull(str, '')) GRANULARITY 1;
+ALTER TABLE tab ADD INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = ifNull(str, ''));
 INSERT INTO tab VALUES (11, 'hello'), (12, NULL), (13, 'foo');
 
 SELECT '-- ifNull: a source NULL is 0, so NOT keeps it; both parts agree';
@@ -592,7 +590,7 @@ CREATE TABLE tab
 (
     id  UInt32,
     str Nullable(String),
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = coalesce(str, '')) GRANULARITY 1
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = coalesce(str, ''))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -609,7 +607,7 @@ CREATE TABLE tab
 (
     id  UInt32,
     str Nullable(String),
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = assumeNotNull(str)) GRANULARITY 1
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = assumeNotNull(str))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -626,7 +624,7 @@ CREATE TABLE tab
 (
     id  UInt32,
     str Nullable(String),
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(ifNull(str, ''), 'Nullable(String)')) GRANULARITY 1
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(ifNull(str, ''), 'Nullable(String)'))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -644,7 +642,7 @@ CREATE TABLE tab
 (
     id  UInt32,
     str Nullable(String),
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(CAST(ifNull(str, ''), 'Nullable(String)'))) GRANULARITY 1
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(CAST(ifNull(str, ''), 'Nullable(String)')))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -659,14 +657,13 @@ SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_p
 DROP TABLE tab;
 
 SELECT 'Nullable(String) with a null-producing preprocessor';
--- `nullIf` makes NULLs that exist only in the index, which the source null map cannot describe, so
--- direct read is not used at all and every part answers alike.
+-- `nullIf` makes NULLs that exist only in the index and that the source null map cannot describe.
 
 CREATE TABLE tab
 (
     id  UInt32,
     str Nullable(String),
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nullIf(str, '')) GRANULARITY 1
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nullIf(str, ''))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -677,8 +674,7 @@ SELECT '-- nullIf: row 2 (preprocessed to NULL) and row 4 (source NULL) are both
 SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
 SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
 
--- The NULLs come from the rewritten haystack rather than from a null map, which costs a read of the
--- column but keeps the index answering the predicate.
+-- Taking them from the rewritten haystack costs a read of the column but keeps the index answering.
 SELECT '-- nullIf: direct read is kept, with the NULLs taken from the rewritten haystack';
 SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0, countIf(explain LIKE '%isNull(nullIf(str, %') > 0 FROM
 (
@@ -686,8 +682,8 @@ SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0, countIf(explain LIKE 
     SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
 );
 
--- endsWith is not rewritten through the preprocessor, so it reads the source value and keeps direct read.
-SELECT '-- nullIf: endsWith keeps direct read and still excludes the NULL rows';
+-- endsWith reads the raw source value, so the index is not used for it. See the ngrams section below.
+SELECT '-- nullIf: endsWith falls back to the row-level predicate';
 SELECT id FROM tab WHERE NOT endsWith(str, 'oo') ORDER BY id;
 SELECT id FROM tab WHERE NOT endsWith(str, 'oo') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
 
@@ -697,7 +693,7 @@ CREATE TABLE tab
 (
     id  UInt32,
     str Nullable(String),
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(nullIf(str, ''), 'Nullable(String)')) GRANULARITY 1
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(nullIf(str, ''), 'Nullable(String)'))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -715,7 +711,7 @@ CREATE TABLE tab
 (
     id  UInt32,
     str Nullable(String),
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(toNullable(str))) GRANULARITY 1
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(toNullable(str)))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -737,16 +733,14 @@ SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0 FROM
 DROP TABLE tab;
 
 SELECT 'String with a null-producing preprocessor and a Nullable needle';
--- The source column is not Nullable, but the preprocessor still makes row 2 NULL and the Nullable needle
--- makes that NULL observable, so it is restored from the rewritten haystack.
--- (With a non-Nullable needle the rewritten predicate is cast back to UInt8 and the row-level path raises
--- CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, which is a separate pre-existing problem and left alone.)
+-- The source column is not Nullable; the preprocessor makes row 2 NULL and the Nullable needle makes it
+-- observable. A non-Nullable needle instead hits a pre-existing CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN.
 
 CREATE TABLE tab
 (
     id  UInt32,
     str String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nullIf(str, '')) GRANULARITY 1
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nullIf(str, ''))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -761,6 +755,61 @@ SELECT '-- direct read is kept for it too';
 SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0 FROM
 (
     EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(str, toNullable('hello'))
+    SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
+);
+
+DROP TABLE tab;
+
+SELECT 'A null-producing preprocessor with a string-like tokenizer';
+-- These predicates read the raw source value, for which the index is a false negative: row 1 is nullified
+-- by the preprocessor and has no tokens. Two parts so that granule skipping can drop it on its own.
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = ngrams(3), preprocessor = nullIf(str, 'hello world'))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, 'hello world');
+INSERT INTO tab VALUES (2, 'foo bar');
+
+SELECT '-- ngrams: the nullified row is still returned by the predicates it matches';
+SELECT id FROM tab WHERE endsWith(str, 'world') ORDER BY id;
+SELECT id FROM tab WHERE startsWith(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE str LIKE '%world' ORDER BY id;
+SELECT id FROM tab WHERE match(str, 'world') ORDER BY id;
+SELECT id FROM tab WHERE multiSearchAny(str, ['world']) ORDER BY id;
+SELECT id FROM tab WHERE str = 'hello world' ORDER BY id;
+
+SELECT '-- ngrams: and excluded by their negations, which kept it before';
+SELECT id FROM tab WHERE NOT endsWith(str, 'world') ORDER BY id;
+SELECT id FROM tab WHERE NOT startsWith(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT (str LIKE '%world') ORDER BY id;
+
+SELECT '-- ngrams: the same, with the index taken out of the picture';
+SELECT id FROM tab WHERE endsWith(str, 'world') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE NOT endsWith(str, 'world') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE str LIKE '%world' ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE NOT (str LIKE '%world') ORDER BY id SETTINGS use_skip_indexes = 0;
+
+SELECT '-- ngrams: no virtual column is read for them';
+SELECT countIf(explain LIKE '%\_\_text_index%') FROM
+(
+    EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT endsWith(str, 'world')
+    SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
+);
+
+-- hasAnyTokens is rewritten through the preprocessor, so it keeps the index. (hasToken cannot be used
+-- here at all: it is fixed to the splitByNonAlpha tokenizer.)
+SELECT '-- ngrams: hasAnyTokens still uses the index';
+SELECT countIf(explain LIKE '%\_\_text_index%') > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id FROM tab WHERE hasAnyTokens(str, ['foo'])
     SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
 );
 
