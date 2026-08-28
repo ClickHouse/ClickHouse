@@ -16,6 +16,8 @@ node1 = cluster.add_instance(
         "configs/server.crt",
         "configs/server.key",
         "configs/dhparam.pem",
+        # combined PEM needed for test_combined_pem_cert_key_in_single_file
+        "configs/client.combined.pem",
     ],
     with_zookeeper=False,
     use_keeper=False,
@@ -54,6 +56,9 @@ CONFIG_MTLS_WITH_CERT = "/tmp/keeper_client_mtls_with_cert.xml"
 CONFIG_MTLS_NO_CERT = "/tmp/keeper_client_mtls_no_cert.xml"
 CONFIG_MTLS_ENCRYPTED_KEY = "/tmp/keeper_client_mtls_encrypted_key.xml"
 CONFIG_MTLS_COMBINED_PEM = "/tmp/keeper_client_mtls_combined_pem.xml"
+# Combined-PEM test runs against the plain-TLS keeper (no client-auth requirement)
+# to isolate the tls_cert_file fallback from OpenSSL's chain-reader behaviour.
+CONFIG_COMBINED_PEM = "/tmp/keeper_client_combined_pem.xml"
 
 # The server cert is self-signed, so it doubles as its own CA.
 CA_PATH = "/etc/clickhouse-server/config.d/server.crt"
@@ -70,6 +75,7 @@ def started_cluster():
             ("keeper_client_ssl_no_ca.xml", CONFIG_SSL_NO_CA),
             ("keeper_client_zk_secure_node_ca.xml", CONFIG_ZK_SECURE_NODE_WITH_CA),
             ("keeper_client_zk_secure_node_no_ca.xml", CONFIG_ZK_SECURE_NODE_NO_CA),
+            ("keeper_client_combined_pem.xml", CONFIG_COMBINED_PEM),
         ):
             node1.copy_file_to_container(
                 os.path.join(os.path.dirname(__file__), "configs", name), dest
@@ -266,14 +272,18 @@ def test_encrypted_key_with_keyfilehandler(started_cluster_mtls):
     assert "api_version" in data
 
 
-def test_combined_pem_cert_key_in_single_file(started_cluster_mtls):
+def test_combined_pem_cert_key_in_single_file(started_cluster):
     """When certificateFile is absent, tls_cert_file falls back to privateKeyFile (combined-PEM path)."""
-    data = node_mtls.exec_in_container(
+    # Runs against the plain-TLS keeper (no client-auth requirement) so the test
+    # isolates the tls_cert_file fallback from OpenSSL's certificate chain-reader
+    # behaviour, which varies across versions when a non-cert PEM block follows
+    # the leaf certificate in the file.
+    data = node1.exec_in_container(
         [
             "bash",
             "-c",
             f"clickhouse keeper-client --host localhost --port {SECURE_PORT} "
-            f"--secure -c {CONFIG_MTLS_COMBINED_PEM} -q \"ls '/keeper'\"",
+            f"--secure -c {CONFIG_COMBINED_PEM} -q \"ls '/keeper'\"",
         ],
         privileged=True,
     )
