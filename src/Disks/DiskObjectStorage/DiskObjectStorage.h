@@ -39,25 +39,16 @@ public:
         ObjectStorageRouterPtr object_storages_,
         DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix);
+        const String & config_prefix,
+        bool use_fake_transaction_ = true);
     ~DiskObjectStorage() override;
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    /// A shallow copy of this disk with a fresh writable in-memory metadata storage;
-    /// everything else is shared, no background threads are started.
-    DiskObjectStoragePtr wrapWithMemoryMetadata();
-
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    /// Keeper metadata replicates itself; in-memory metadata is transient and has no local
-    /// metadata files zero-copy could ship (see `getReplicatedFilesDescriptionForRemoteDisk`).
-    bool supportZeroCopyReplication() const override
-    {
-        return metadata_storage->getType() != MetadataStorageType::Keeper
-            && metadata_storage->getType() != MetadataStorageType::Memory;
-    }
+    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
 
     bool supportParallelWrite() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->supportParallelWrite(); }
 
@@ -163,11 +154,10 @@ public:
 
     ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
 
-    void prepareRead(
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
@@ -194,8 +184,6 @@ public:
         ) override;
 
     void waitBlobsCleanup();
-    int64_t getDeadBlobsQueueEstimate() const;
-    int64_t getMissingBlobsQueueEstimate() const;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
@@ -211,8 +199,8 @@ public:
     bool isPlain() const override;
 
     /// Is object write-once?
-    /// For example: S3ObjectStorage with MetadataStorageFromPlainObjectStorage is write once, this
-    /// means that it does support BACKUP to this disk, but does not support INSERT into
+    /// For example: S3PlainObjectStorage is write once, this means that it
+    /// does support BACKUP to this disk, but does not support INSERT into
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
@@ -235,7 +223,6 @@ public:
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
-    DiskObjectStorageConstPtr getWrappedDisk() const;
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -250,17 +237,15 @@ public:
 
 private:
 
-    /// Shallow-copy constructor for `wrapWithMemoryMetadata`.
-    DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_);
-
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
+    String getReadResourceName() const;
+    String getWriteResourceName() const;
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
-    void propagateResourceNamesNoLock() const;
 
     /// Points to wrapped disk in case of cache disk.
     DiskObjectStorageConstPtr wrapped_disk = nullptr;
@@ -273,9 +258,6 @@ private:
 
     BlobKillerThreadPtr blob_killer;
     BlobCopierThreadPtr blob_copier;
-
-    /// Thread pool used to parallelize `copyObjectToAnotherObjectStorage` calls.
-    std::shared_ptr<ThreadPool> copy_object_pool;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
@@ -294,6 +276,7 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
+    const bool use_fake_transaction;
     std::atomic<bool> wait_blob_removal;
     UInt64 remove_shared_recursive_file_limit;
 };
@@ -324,7 +307,7 @@ public:
 private:
     DiskObjectStoragePtr disk;
     UInt64 size;
-    UInt64 unreserved_space{};
+    UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;
 };
 

@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -50,7 +51,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
     {
         if (checkString("version: ", in))
         {
-            size_t version = 0;
+            size_t version;
 
             readText(version, in);
             assertChar('\n', in);
@@ -84,7 +85,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
 
         PartitionIdToPartName parts_in_quorum;
 
-        uint64_t parts_count = 0;
+        uint64_t parts_count;
         readText(parts_count, in);
         assertChar('\n', in);
 

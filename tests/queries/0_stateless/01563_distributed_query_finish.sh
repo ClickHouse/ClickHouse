@@ -19,12 +19,7 @@ create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards
 select * from dist_01247 format Null;
 EOL
 
-# Silence the CI system.*_log_sender background pool so its NETWORK_ERRORs
-# (when the cloud destination is unreachable) don't contaminate system.errors.
-# This only blocks the async insert sender; SELECT from dist_01247 is unaffected.
-$CLICKHOUSE_CLIENT -q "SYSTEM STOP DISTRIBUTED SENDS"
-trap '$CLICKHOUSE_CLIENT -q "SYSTEM START DISTRIBUTED SENDS"' EXIT
-
+# NOTE: it is possible to got NETWORK_ERROR even with no-parallel, at least due to system.*_log_sender to the cloud
 for ((i = 0; i < 100; ++i)); do
     network_errors_before=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
 
@@ -34,9 +29,7 @@ for ((i = 0; i < 100; ++i)); do
         "--optimize_distributed_group_by_sharding_key=1"
         "--prefer_localhost_replica=0"
     )
-    # The query uses `FORMAT Null` to discard the output (we only care about NETWORK_ERROR side effects).
-    # Do not pass `--format`: the `format` setting now takes precedence over the query `FORMAT` clause and would un-discard the output.
-    $CLICKHOUSE_CLIENT "${opts[@]}" -m -q "select count(), * from dist_01247 group by number order by number limit 1 format Null"
+    $CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -m -q "select count(), * from dist_01247 group by number order by number limit 1 format Null"
 
     # expect zero new network errors
     network_errors_after=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")

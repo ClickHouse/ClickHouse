@@ -2,6 +2,7 @@
 
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
@@ -20,11 +21,6 @@ public:
         Chunk chunk;
         bool is_finished = false;
         ssize_t required_source = -1;
-
-        /// Additional sources that are worth reading ahead because the merge is likely
-        /// to need them soon (e.g. sources deferred behind a virtual row). Unlike
-        /// `required_source`, the algorithm does not wait for data from them.
-        std::vector<size_t> sources_to_prefetch;
 
         explicit Status(Chunk chunk_) : chunk(std::move(chunk_)) {}
         explicit Status(Chunk chunk_, bool is_finished_) : chunk(std::move(chunk_)), is_finished(is_finished_) {}
@@ -112,13 +108,6 @@ public:
     virtual void initialize(Inputs inputs) = 0;
     virtual void consume(Input & input, size_t source_num) = 0;
     virtual Status merge() = 0;
-
-    /// Called when a source the merge requested turns out to be finished without delivering
-    /// any data (e.g. all its rows were filtered out upstream), so `consume` is never called
-    /// for it. The merge loop already drops such a source from its queue; this notification
-    /// lets algorithms that keep per-source bookkeeping (e.g. the read-ahead for sources
-    /// deferred behind virtual rows) release it. The default implementation does nothing.
-    virtual void onSourceExhausted(size_t /*source_num*/) {}
 
     IMergingAlgorithm() = default;
     virtual ~IMergingAlgorithm() = default;

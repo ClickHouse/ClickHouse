@@ -135,12 +135,8 @@ public:
     /// Used for serialization when necessary
     virtual void write(WriteBuffer &) const {}
 
-    /// Used for serialization when necessary. The state comes from the data, so the updaters that
-    /// store vectors must check them against `expected_size` (the size of the gradient, that is,
-    /// the number of weights plus one for the bias): the updaters index these vectors by the
-    /// weight number during `merge` and `addToBatch`. An empty vector is also valid: versions
-    /// before 23.2 serialized the vectors empty until the first update.
-    virtual void read(ReadBuffer &, UInt64 /* expected_size */) {}
+    /// Used for serialization when necessary
+    virtual void read(ReadBuffer &) {}
 };
 
 
@@ -176,7 +172,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf, UInt64 expected_size) override;
+    void read(ReadBuffer & buf) override;
 
 private:
     Float64 alpha{0.1};
@@ -213,7 +209,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf, UInt64 expected_size) override;
+    void read(ReadBuffer & buf) override;
 
 private:
     const Float64 alpha = 0.9;
@@ -255,7 +251,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf, UInt64 expected_size) override;
+    void read(ReadBuffer & buf) override;
 
 private:
     /// beta1 and beta2 hyperparameters have such recommended values
@@ -291,10 +287,7 @@ public:
 
     void write(WriteBuffer & buf) const;
 
-    /// `expected_param_num` is the number of features declared by the type: the state comes from
-    /// the data and must agree with it, because everything downstream indexes the weights by the
-    /// feature number.
-    void read(ReadBuffer & buf, UInt64 expected_param_num);
+    void read(ReadBuffer & buf);
 
     void predict(
         ColumnVector<Float64>::Container & container,
@@ -308,13 +301,13 @@ private:
     VectorWithMemoryTracking<Float64> weights;
     Float64 bias{0.0};
 
-    Float64 learning_rate{};
-    Float64 l2_reg_coef{};
-    UInt64 batch_capacity{};
+    Float64 learning_rate;
+    Float64 l2_reg_coef;
+    UInt64 batch_capacity;
 
     UInt64 iter_num = 0;
     VectorWithMemoryTracking<Float64> gradient_batch;
-    UInt64 batch_size{};
+    UInt64 batch_size;
 
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::shared_ptr<IWeightsUpdater> weights_updater;
@@ -389,14 +382,11 @@ public:
         this->data(place).add(columns, row_num);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).write(buf); }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
-    {
-        this->data(place).read(buf, param_num);
-    }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).read(buf); }
 
     void predictValues(
         ConstAggregateDataPtr __restrict place,

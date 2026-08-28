@@ -9,7 +9,7 @@ namespace DB
 {
 namespace
 {
-    class FunctionTid final : public IFunction
+    class FunctionTid : public IFunction
     {
     public:
         static constexpr auto name = "tid";
@@ -40,7 +40,7 @@ namespace
 REGISTER_FUNCTION(Tid)
 {
     FunctionDocumentation::Description description = R"(
-Returns id of the thread, in which the current [Block](/resources/develop-contribute/introduction/architecture#block) is processed.
+Returns id of the thread, in which the current [Block](/development/architecture/#block) is processed.
     )";
     FunctionDocumentation::Syntax syntax = "tid()";
     FunctionDocumentation::Arguments arguments = {};

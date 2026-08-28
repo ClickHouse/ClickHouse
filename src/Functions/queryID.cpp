@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -8,7 +7,7 @@
 
 namespace DB
 {
-class FunctionQueryID final : public IFunction
+class FunctionQueryID : public IFunction
 {
     const String query_id;
 
@@ -32,9 +31,6 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    /// Read per executing node, so two nodes can disagree.
-    bool isServerConstant() const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -47,7 +43,7 @@ REGISTER_FUNCTION(QueryID)
 {
     FunctionDocumentation::Description description = R"(
 Returns the ID of the current query.
-Other parameters of a query can be extracted from field `query_id` in the [`system.query_log`](/reference/system-tables/query_log) table.
+Other parameters of a query can be extracted from field `query_id` in the [`system.query_log`](../../operations/system-tables/query_log.md) table.
 
 In contrast to [`initialQueryID`](#initialQueryID) function, `queryID` can return different results on different shards.
 )";
