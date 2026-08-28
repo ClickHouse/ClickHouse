@@ -1,5 +1,7 @@
 import concurrent.futures
+import os
 import pytest
+import signal
 import time
 import uuid
 import threading
@@ -984,6 +986,140 @@ def test_lc_null_keys_break_then_kill(started_cluster):
     if thread_error[0] is not None:
         raise thread_error[0]
     assert "Query was cancelled" in query_error[0], f"expected KILL to cancel the query, got: {query_error[0]}"
+
+
+def test_lc_null_keys_break_then_client_cancel(started_cluster):
+    """A real client-initiated `Cancel` (Ctrl+C) arriving after a BREAK-mode soft timeout has latched must be
+    honored as a hard cancellation, not misclassified as a soft timeout that lets the resumed pre-latched
+    `buildLowCardinalityMask` keep running.
+
+    A TCP `Cancel` does not, by itself, set `QueryStatus::cancel_reason` on the server (unlike `KILL QUERY`), so
+    before the fix `isCancelledBySoftTimeout()` returned true for it (break mode + `cancel_reason == UNDEFINED` +
+    latched timeout) and the resumed scan was treated as a harmless soft timeout. The fix makes
+    `TCPHandler::processCancel` propagate `CANCELLED_BY_USER` for the remote `Cancel`, so the hard-cancel check
+    (`isCancelled() && !isCancelledBySoftTimeout()`) fires and the query is aborted. This test proves the client
+    `Cancel` is actually honored end-to-end: it latches the break timeout in the prepass (via
+    `distinct_transform_null_pause`, committing a 2-slice prefix), lets the pre-latched `buildLowCardinalityMask`
+    resume and pause on `distinct_transform_lc_pause`, sends a real client `Cancel` (SIGINT to the
+    framework-managed `clickhouse-client` process, which delivers a Cancel packet on the query's own TCP
+    connection), and asserts the query is cancelled ("Query was cancelled") rather than silently downgraded to a
+    soft timeout. The downstream abort (hard-cancel check firing at the next boundary) is what makes the
+    cancellation take effect before the scan resumes; without the fix the query would instead be kept alive as a
+    soft timeout.
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt_lc (k LowCardinality(Nullable(UInt64))) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+        "SETTINGS allow_suspicious_low_cardinality_types=1"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(0) FROM numbers(1000000)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(1) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(2) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+     WHERE number IN (SELECT k FROM null_keys_mt_lc)
+     FORMAT Null
+     SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+              max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+
+    thread_error = [None]
+    query_error = [None]
+
+    ## `get_query_request` spawns the framework-managed `clickhouse-client` subprocess and returns the
+    ## `CommandRequest` whose `.process` is the live `Popen`; we keep it so we can signal the exact client
+    ## (delivering a real TCP Cancel) without hunting for its PID.
+    req = node1.get_query_request(
+        query,
+        settings={"interactive_delay": 0},
+        query_id=query_id,
+    )
+
+    def execute_query():
+        try:
+            _, error = req.get_answer_and_error()
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    ## Arm both failpoints up front: the prepass pauses on `null_pause`, and the pre-latched
+    ## `buildLowCardinalityMask` (which runs after the prepass breaks) must already find `lc_pause`
+    ## armed when it reaches its first 4096-row boundary.
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        ## Latch the BREAK-mode soft timeout inside the `skip_null_keys` prepass, committing a 2-slice prefix.
+        wait_failpoint(NULL_FAULT_NAME)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+        second_pause_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE")
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=15)
+        if not done:
+            assert False, "prepass did not reach the second boundary: prefix path not exercised"
+        second_pause_future.result()
+        time.sleep(6)  # past the 5s deadline -> break timeout latches upstream
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        ## The resumed `buildLowCardinalityMask` runs pre-latched and pauses on the already-armed LC failpoint.
+        wait_failpoint(LC_FAULT_NAME)
+
+        ## Send a real client Cancel (Ctrl+C) on the query's own TCP connection. Unlike KILL QUERY, a TCP
+        ## `Cancel` does not, by itself, set `cancel_reason = CANCELLED_BY_USER` on the server: before the fix
+        ## it was misclassified as a soft timeout and the resumed `buildLowCardinalityMask` kept rescanning the
+        ## committed prefix instead of aborting. The fix makes `TCPHandler::processCancel` propagate
+        ## `CANCELLED_BY_USER`, so a client Cancel is honored as a hard cancellation and the query is aborted
+        ## (the client receives "Query was cancelled") rather than silently downgraded to a soft timeout.
+        ## The client is the framework-managed `clickhouse-client` subprocess we spawned via `get_query_request`,
+        ## so `req.process.pid` is its exact PID; SIGINT makes the client deliver a Cancel packet on the query's
+        ## own connection. We resume the paused scan and let the server honor the Cancel: the observable contract
+        ## is that the query is cancelled (the downstream transform must not keep running as a soft timeout).
+        os.kill(req.process.pid, signal.SIGINT)
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+    except Exception as exc:
+        raise
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "client-canceled query did not terminate within 60 s"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+    assert "Query was cancelled" in query_error[0], f"expected client Cancel to cancel the query, got: {query_error[0]}"
+
+    ## The cancel_reason the server records is the real discriminator: a TCP `Cancel` does not set it by
+    ## itself, so without the fix it stays `UNDEFINED` and the query is silently downgraded to a soft timeout;
+    ## the fix makes `TCPHandler::processCancel` propagate `CANCELLED_BY_USER`. `system.query_log` now exposes
+    ## `cancel_reason`, so we assert it directly.
+    node1.query("SYSTEM FLUSH LOGS")
+    cancel_reason = node1.query(
+        f"SELECT cancel_reason FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = 'ExceptionWhileProcessing' "
+        f"FORMAT TSV"
+    ).strip()
+    assert cancel_reason == "CANCELLED_BY_USER", (
+        f"expected client Cancel to set cancel_reason='CANCELLED_BY_USER', got: {cancel_reason!r}"
+    )
 
 
 def test_mixed_null_keys_break_prefix(started_cluster):
