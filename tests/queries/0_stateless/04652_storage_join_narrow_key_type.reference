@@ -9,7 +9,7 @@ SET enable_analyzer = 1; -- the fix lives in the analyzer's plan path; the old a
 -- (stress.py --database=test_N), where clickhouse-test neither creates nor drops a per-test
 -- database, so a second run would hit TABLE_ALREADY_EXISTS.
 DROP TABLE IF EXISTS jt;
-DROP TABLE IF EXISTS big;
+DROP TABLE IF EXISTS big_04652;
 DROP TABLE IF EXISTS s_u32;
 DROP TABLE IF EXISTS o_u64;
 DROP TABLE IF EXISTS l_u64;
@@ -58,9 +58,9 @@ DROP TABLE IF EXISTS l_bool;
 -- 1. The reported query (issue #104918) returns the correct answer instead of INCOMPATIBLE_TYPE_OF_JOIN.
 CREATE TABLE jt (k UInt32, jv Int64) ENGINE = Join(ANY, LEFT, k);
 INSERT INTO jt SELECT number * 2, number * 5 - 100 FROM numbers(500);
-CREATE TABLE big (k UInt64, v Int64) ENGINE = MergeTree ORDER BY k;
-INSERT INTO big SELECT number, number FROM numbers(1000);
-SELECT count(), count(r.jv), sum(r.jv) FROM big AS l ANY LEFT JOIN jt AS r USING (k);
+CREATE TABLE big_04652 (k UInt64, v Int64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO big_04652 SELECT number, number FROM numbers(1000);
+SELECT count(), count(r.jv), sum(r.jv) FROM big_04652 AS l ANY LEFT JOIN jt AS r USING (k);
 1000	1000	573750
 -- 2. Correctness against an ENGINE = Memory oracle, with left keys outside the UInt32 domain.
 -- A plain CAST would wrap those keys and fabricate matches (100 / [30,10,20,0,30,10]).
@@ -360,7 +360,7 @@ SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_bool AS l ANY LEFT J
 7	[(false,0),(true,7)]
 -- Leave nothing behind for the next run in the shared-database mode described above.
 DROP TABLE IF EXISTS jt;
-DROP TABLE IF EXISTS big;
+DROP TABLE IF EXISTS big_04652;
 DROP TABLE IF EXISTS s_u32;
 DROP TABLE IF EXISTS o_u64;
 DROP TABLE IF EXISTS l_u64;

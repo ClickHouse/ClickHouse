@@ -11,7 +11,7 @@ SET enable_analyzer = 1; -- the fix lives in the analyzer's plan path; the old a
 -- Drop first: the stress job runs some workers with one shared database for every test
 -- (stress.py --database=test_N), where clickhouse-test neither creates nor drops a per-test
 -- database, so a second run would hit TABLE_ALREADY_EXISTS.
-DROP TABLE IF EXISTS kv;
+DROP TABLE IF EXISTS kv_04653;
 DROP TABLE IF EXISTS l_kv;
 DROP TABLE IF EXISTS o_kv;
 DROP TABLE IF EXISTS l_kv32;
@@ -19,28 +19,28 @@ DROP TABLE IF EXISTS l_kv32;
 -- A key-value entity is not a StorageJoin: its lookup is not built from a frozen hash table, so the
 -- narrowing rewrite added for Join-engine tables must not apply here. This pins the plan shape, not
 -- just the result, because both shapes answer correctly.
-CREATE TABLE kv (k UInt32, jv Int64) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
-INSERT INTO kv VALUES (2, 10), (4, 20);
+CREATE TABLE kv_04653 (k UInt32, jv Int64) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
+INSERT INTO kv_04653 VALUES (2, 10), (4, 20);
 CREATE TABLE l_kv (k UInt64) ENGINE = Memory;
 INSERT INTO l_kv VALUES (2), (4), (4294967298);
 CREATE TABLE o_kv (k UInt64, jv Int64) ENGINE = Memory;
 INSERT INTO o_kv VALUES (2, 10), (4, 20);
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOIN o_kv AS r USING (k);
-SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOIN kv AS r USING (k);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOIN kv_04653 AS r USING (k);
 SELECT count() FROM (EXPLAIN PLAN actions = 1
-    SELECT sum(r.jv) FROM l_kv AS l ANY LEFT JOIN kv AS r USING (k))
+    SELECT sum(r.jv) FROM l_kv AS l ANY LEFT JOIN kv_04653 AS r USING (k))
 WHERE explain ILIKE '%accurateCastOrNull%';
 
 -- A type-matched key-value join keeps the direct DirectKeyValueJoin lookup.
 CREATE TABLE l_kv32 (k UInt32) ENGINE = Memory;
 INSERT INTO l_kv32 VALUES (2), (4), (7);
-SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv32 AS l ANY LEFT JOIN kv AS r USING (k);
+SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv32 AS l ANY LEFT JOIN kv_04653 AS r USING (k);
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1
-    SELECT sum(r.jv) FROM l_kv32 AS l ANY LEFT JOIN kv AS r USING (k))
+    SELECT sum(r.jv) FROM l_kv32 AS l ANY LEFT JOIN kv_04653 AS r USING (k))
 WHERE explain ILIKE '%DirectKeyValueJoin%';
 
 -- Leave nothing behind for the next run in the shared-database mode described above.
-DROP TABLE IF EXISTS kv;
+DROP TABLE IF EXISTS kv_04653;
 DROP TABLE IF EXISTS l_kv;
 DROP TABLE IF EXISTS o_kv;
 DROP TABLE IF EXISTS l_kv32;
