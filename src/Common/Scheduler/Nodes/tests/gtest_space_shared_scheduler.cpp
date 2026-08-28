@@ -1892,7 +1892,7 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
     }
 }
 
-+/// A late pending request that fits must wake an idle queue even when older pending requests were
+/// A late pending request that fits must wake an idle queue even when older pending requests were
 /// parked earlier in the same suspension round.
 TEST(SchedulerSpaceShared, LateFittingAdmissionWakesSuspendedQueue)
 {
