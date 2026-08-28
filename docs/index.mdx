@@ -173,11 +173,13 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
+    const path = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
+    const withBase = (p) => assetBase + p;
     return (
         <a
-            href={href}
+            href={path}
             data-galaxy-event="docs.home.mcp-server"
+            onClick={(e) => { e.preventDefault(); window.location.href = withBase(path); }}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
             <span
