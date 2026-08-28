@@ -1211,10 +1211,10 @@ The include options are combined, and then the skip options are applied. Therefo
 CREATE TABLE events
 (
     id UInt64,
-    data JSON,
+    data JSON(level String),
     INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(
         max_token_bytes = 1024,
-        include_paths = ['message', 'attributes'],
+        include_paths = ['message', 'attributes', 'level'],
         include_paths_regexp = ['(?:^|\\.)(?:title|description)$'],
         skip_paths = ['attributes.raw'],
         skip_paths_regexp = ['(?:^|\\.)debug_']))
