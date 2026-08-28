@@ -796,6 +796,13 @@ void KeeperClient::connectToKeeper()
             /// build the context. This gives keeper-client the same openSSL.client contract as
             /// clickhouse-client and clickhouse-server, including cipherList, disableProtocols,
             /// extendedVerification, verificationDepth and the handler factories.
+
+            /// config() persists across reconnects, so drop the keys copied last time before
+            /// re-copying. Without this, a setting deleted from config.xml keeps its old value
+            /// for the lifetime of the process - which for invalidCertificateHandler.name would
+            /// mean relaxed certificate handling outliving its removal by the operator.
+            config().remove("openSSL");
+            
             copyConfigSubtree(*clickhouse_config.configuration, config(), "openSSL");
 
             if (config().has("tls-key-file"))
