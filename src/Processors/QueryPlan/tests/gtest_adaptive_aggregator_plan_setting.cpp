@@ -14,6 +14,7 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
 }
 }
 
@@ -49,6 +50,7 @@ QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_agg
         /*enable_packed_string_keys=*/true);
     params.enable_adaptive_aggregator = enable_adaptive_aggregator;
     params.adaptive_aggregator_freeze_threshold = 4096;
+    params.adaptive_aggregator_freeze_threshold_bytes = 4096;
 
     AggregatingStep step(
         std::make_shared<const Block>(header),
@@ -92,6 +94,7 @@ TEST(AdaptiveAggregatorPlanSetting, CarriedTowardsAPeerThatKnowsTheNames)
         const auto settings = serializeAggregatingStep(enabled, current_version);
         EXPECT_TRUE(wireCarries(settings, "enable_adaptive_aggregator")) << "enabled = " << enabled;
         EXPECT_TRUE(wireCarries(settings, "adaptive_aggregator_freeze_threshold")) << "enabled = " << enabled;
+        EXPECT_TRUE(wireCarries(settings, "adaptive_aggregator_freeze_threshold_bytes")) << "enabled = " << enabled;
     }
 }
 
@@ -103,15 +106,17 @@ TEST(AdaptiveAggregatorPlanSetting, NotCarriedTowardsAPeerThatPredatesTheNames)
         const auto settings = serializeAggregatingStep(enabled, pre_setting_version);
         EXPECT_FALSE(wireCarries(settings, "enable_adaptive_aggregator")) << "enabled = " << enabled;
         EXPECT_FALSE(wireCarries(settings, "adaptive_aggregator_freeze_threshold")) << "enabled = " << enabled;
+        EXPECT_FALSE(wireCarries(settings, "adaptive_aggregator_freeze_threshold_bytes")) << "enabled = " << enabled;
     }
 }
 
 TEST(AdaptiveAggregatorPlanSetting, DefaultsToPreFeatureBehaviorWhenAbsent)
 {
-    /// A new worker reading a version-6 plan does not receive the two settings at all. Its
+    /// A new worker reading a version-6 plan does not receive the adaptive settings at all. Its
     /// defaults must preserve the behavior of the old initiator instead of enabling a strategy
     /// the initiator could not have selected.
     QueryPlanSerializationSettings settings;
     EXPECT_FALSE(settings[QueryPlanSerializationSetting::enable_adaptive_aggregator]);
     EXPECT_EQ(settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold], 0);
+    EXPECT_EQ(settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes], 0);
 }

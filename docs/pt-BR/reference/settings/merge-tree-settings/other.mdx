@@ -572,6 +572,25 @@ Valores possíveis:
 * `partition_key_only` — somente as colunas da chave de partição são rastreadas.
 * `with_block_number_offset` — colunas da chave de partição, além das colunas virtuais persistidas `_block_number` e `_block_offset`. Permite a poda em nível de parte com base nessas colunas.
 
+<div id="patch_parts_version">
+  ## patch_parts_version
+</div>
+
+<SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "v2"},{"label": "Nova configuração para controlar a versão de serialização em disco das partes de patch geradas por atualizações leves. Os modos de compatibilidade mais antigos continuam gravando patches v1, que todas as réplicas de um cluster com versões mistas podem ler."}]}]} />
+
+Versão de serialização em disco das partes de patch geradas por consultas UPDATE leves.
+
+Valores possíveis:
+
+* `v1` - formato legado: as partes de patch contêm as colunas de sistema `_part, _part_offset` e são ordenadas por
+  `(_part, _part_offset)`. No pior caso, o uso de memória durante a aplicação é limitado ao tamanho de toda a parte de patch.
+* `v2` - as partes de patch incluem as colunas da chave de ordenação da tabela principal e são ordenadas por
+  `(sorting_key_columns..., _block_number, _block_offset)`. O uso de memória durante a aplicação é limitado à maior sequência com a mesma chave de ordenação.
+
+Os patches no formato antigo em disco permanecem legíveis independentemente desta configuração.
+
 <div id="propagate_types_serialization_versions_to_nested_types">
   ## propagate_types_serialization_versions_to_nested_types
 </div>
