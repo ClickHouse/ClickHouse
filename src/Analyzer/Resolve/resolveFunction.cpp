@@ -160,9 +160,19 @@ std::optional<RegisteredFunctionArity> tryGetRegisteredFunctionArity(const Strin
     if (resolver)
         return RegisteredFunctionArity{resolver->getNumberOfArguments(), resolver->isVariadic()};
 
-    if (ASTPtr sql_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
+    if (ASTPtr stored_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
     {
-        if (const auto * create_function_query = sql_udf_ast->as<ASTCreateSQLFunctionQuery>())
+        /// A `CREATE FUNCTION ... LANGUAGE WASM` definition is kept in the same storage and
+        /// outlives the engine that runs it: after a restart with
+        /// `allow_experimental_webassembly_udf` turned off, or on a build without a WebAssembly
+        /// engine at all, the definition is still stored while the registry probed above is
+        /// empty. Take the arity from the stored definition anyway, so that resolving the
+        /// rewritten call reports that WebAssembly support is unavailable instead of failing as
+        /// an unknown identifier. A WebAssembly UDF declares its arguments in the statement.
+        if (const auto * wasm_function_query = stored_udf_ast->as<ASTCreateWasmFunctionQuery>())
+            return RegisteredFunctionArity{wasm_function_query->getNumberOfArguments(), false};
+
+        if (const auto * create_function_query = stored_udf_ast->as<ASTCreateSQLFunctionQuery>())
         {
             if (create_function_query->function_core)
             {
@@ -2863,6 +2873,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
         {
             UNUSED(create_function_query);
+            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
     }
