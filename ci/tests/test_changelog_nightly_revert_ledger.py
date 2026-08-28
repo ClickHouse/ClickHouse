@@ -116,7 +116,7 @@ def analyze(monkeypatch, text, ledger=()):
 
 def not_restored(reverts, text):
     section = cl.extract_in_progress_section(text, ANCHOR) or ""
-    return sorted(pr for pr in reverts["restore"] if f"/pull/{pr})" not in section)
+    return sorted(pr for pr in reverts["restore"] if not cl.is_attributed(section, pr))
 
 
 def uncredited(reverts, before, after):
@@ -697,3 +697,77 @@ def test_a_promoted_entry_is_restored_under_the_category_it_was_moved_to(
     assert wrong is not None
     assert "wrong category" in wrong
     assert "#110500 under Bug Fix" in wrong
+
+
+MENTIONING = (
+    "* Speed up the parser. This also revisits the change of "
+    "[#109946](https://github.com/ClickHouse/ClickHouse/pull/109946). "
+    "[#120000](https://github.com/ClickHouse/ClickHouse/pull/120000) "
+    "([Someone](https://github.com/someone))."
+)
+
+
+def test_an_inline_mention_does_not_stand_in_for_the_restoration(
+    monkeypatch, tmp_path
+):
+    """A bullet attributed to `#120000` that merely links `#109946` in its prose
+    is not `#109946`'s entry - the file has 17 pull requests linked that way and
+    never attributed. Restoration is satisfied by the attribution only, and the
+    category is read from the attributed bullet, not from the mentioning one."""
+    old_text = changelog([], [REVERT_OF_REVERT])
+    reverts = analyze(monkeypatch, old_text, [LEDGER_REVERT, LEDGER_DELETED])
+    assert [group["prs"] for group in reverts["missing"]] == [["109946"]]
+
+    mention_only = changelog([MENTIONING])
+    # The substring the old check looked for is right there ...
+    assert "/pull/109946)" in mention_only
+    # ... but it is not an attribution, so the entry is still missing.
+    assert not cl.is_attributed(mention_only, "109946")
+    assert cl.entry_placement(mention_only, "109946") == ("", "")
+    rejected = run_verify_edit(monkeypatch, tmp_path, old_text, mention_only, reverts)
+    assert rejected is not None
+    assert "missing from the in-progress section" in rejected
+    assert "['109946']" in rejected
+
+    # The real entry alongside the mentioning bullet is accepted.
+    assert (
+        run_verify_edit(
+            monkeypatch, tmp_path, old_text, changelog([MENTIONING, FIX]), reverts
+        )
+        is None
+    )
+
+
+def test_a_sibling_only_mentioned_inline_is_not_a_bullet_to_merge_into(monkeypatch):
+    """The same distinction for `siblings`: a merged bullet is "still there"
+    only if its other pull request is attributed in the section."""
+    mentions_sibling = (
+        "* Unrelated entry, see "
+        "[#109006](https://github.com/ClickHouse/ClickHouse/pull/109006). "
+        "[#120001](https://github.com/ClickHouse/ClickHouse/pull/120001) "
+        "([Someone](https://github.com/someone))."
+    )
+    PULL_REQUESTS.setdefault(
+        "115000",
+        {
+            "title": f'Revert "{MERGED_TITLE}"',
+            "body": "Reverts ClickHouse/ClickHouse#109000",
+        },
+    )
+    PULL_REQUESTS.setdefault(
+        "115001",
+        {
+            "title": f'Revert "Revert "{MERGED_TITLE}""',
+            "body": "Reverts ClickHouse/ClickHouse#115000",
+        },
+    )
+    reverts = analyze(
+        monkeypatch,
+        changelog([mentions_sibling], [REVERT_OF_MERGED]),
+        [
+            f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {MERGED}",
+            f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+        ],
+    )
+    assert [group["siblings"] for group in reverts["missing"]] == [[]]
+    assert "That bullet also carries" not in cl._edit_prompt(VERSION, reverts)

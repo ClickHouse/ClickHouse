@@ -150,6 +150,11 @@ section. For each:
    appearing in an already-released section further down is not that bullet.
    No PR may end up attributed twice within one section — one
    `[#NNNNN](...) ([Author](...))` per PR.
+
+   A restored PR needs its own attribution, `[#NNNNN](...) ([Author](...))`.
+   A bare `[#NNNNN](...)` link inside somebody else's bullet — a
+   `This closes` reference, a follow-up named in prose — is not that PR's
+   entry and does not count as restoring it.
 7. After processing, delete any leftover bullets and the section header
    itself.
 

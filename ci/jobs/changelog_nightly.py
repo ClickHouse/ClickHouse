@@ -494,24 +494,39 @@ def read_revert_ledger():
     return targets, titles, deleted
 
 
+def _attribution_re(pr):
+    return re.compile(
+        rf"\[#{pr}\]\(https://github\.com/[^/)]+/[^/)]+/pull/{pr}\) \(\["
+    )
+
+
+def is_attributed(text, pr):
+    """Whether `text` carries the changelog entry of `pr`, i.e. its attribution
+    `[#N](.../pull/N) ([Author](...))` — the form the generator emits at the
+    end of every entry and a merge (skill section 7) appends for each pull
+    request it merges in.
+
+    A bare `[#N](...)` link inside another entry — a `This closes` reference, a
+    follow-up named in prose — is not the entry of `pr` and does not stand in
+    for it. The current `CHANGELOG.md` has 17 pull requests linked that way and
+    never attributed, so the distinction is not theoretical: without it a
+    restoration is satisfied by someone else's bullet merely mentioning the
+    pull request."""
+    return bool(_attribution_re(pr).search(text))
+
+
 def entry_placement(text, pr):
     """Where the changelog entry of `pr` sits in `text`: the (category, bullet)
-    of the bullet `pr` is attributed to, falling back to one that only mentions
-    it inline. ("", "") when there is none."""
-    link = rf"\[#{pr}\]\(https://github\.com/[^/)]+/[^/)]+/pull/{pr}\)"
-    attributed = re.compile(link + r" \(\[")
-    mentioned = re.compile(link)
+    of the bullet `pr` is attributed to, ("", "") when it has none. Only the
+    attribution counts, see `is_attributed`."""
+    attributed = _attribution_re(pr)
     category = ""
-    fallback = ("", "")
     for line in text.splitlines():
         if line.startswith("#### "):
             category = line[5:].strip()
-        elif line.startswith("* "):
-            if attributed.search(line):
-                return category, line
-            if not fallback[1] and mentioned.search(line):
-                fallback = (category, line)
-    return fallback
+        elif line.startswith("* ") and attributed.search(line):
+            return category, line
+    return "", ""
 
 
 def group_restorations(restore, section):
@@ -538,7 +553,7 @@ def group_restorations(restore, section):
             {
                 "prs": sorted(prs, key=int),
                 "siblings": sorted(
-                    (p for p in siblings if f"/pull/{p})" in section), key=int
+                    (p for p in siblings if is_attributed(section, p)), key=int
                 ),
                 "category": category,
                 "line": line,
@@ -627,7 +642,7 @@ def analyze_reverts(text, anchor):
         {
             pr: record
             for pr, record in restore.items()
-            if f"/pull/{pr})" not in section
+            if not is_attributed(section, pr)
         },
         section,
     )
@@ -1010,10 +1025,11 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
         )
     # The mirror image of the check above, and the reason the ledger exists:
     # an entry an earlier run deleted for a revert that has since been
-    # reverted itself has to be back in the file. Nothing here disappeared —
-    # the entry went away days ago — so only the ledger can tell.
+    # reverted itself has to be back in the file, as its own attribution and
+    # not as a mention inside someone else's bullet. Nothing here disappeared
+    # — the entry went away days ago — so only the ledger can tell.
     not_restored = sorted(
-        pr for pr in reverts["restore"] if f"/pull/{pr})" not in section
+        pr for pr in reverts["restore"] if not is_attributed(section, pr)
     )
     if not_restored:
         return (
