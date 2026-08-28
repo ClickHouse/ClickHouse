@@ -21,6 +21,24 @@ SELECT '---';
 
 DROP TABLE ttl_multi_group_by;
 
+-- F3: a MATERIALIZED column may be defined over an ALIAS column. An ALIAS is computed on read and never
+-- stored, so its name cannot be resolved against the columns a merge sees: the reference has to be
+-- replaced by the expression it stands for before the default is analyzed, otherwise the merge throws
+-- UNKNOWN_IDENTIFIER. The SET rewrites the column behind the alias, so `m` is recomputed through it:
+-- x = max(x) = 9, a = x + 100 = 109, m = a + 1 = 110, payload = sum = 30.
+CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, x UInt32, a UInt32 ALIAS x + 100, m UInt32 MATERIALIZED a + 1, payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k SET x = max(x), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_multi_group_by (k, ts, x, payload) VALUES (1, '2020-01-01', 1, 10), (1, '2020-01-02', 9, 20);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT k, x, a, m, payload FROM ttl_multi_group_by ORDER BY k;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
 -- G2: cascading order loss. Once an earlier GROUP BY TTL runs unsorted (its SET rewrites its own key),
 -- it finalizes via the aggregator hash table, which does NOT preserve primary-key order. A later GROUP
 -- BY TTL keyed on a shorter, unaffected prefix (day) therefore also receives an unordered stream and

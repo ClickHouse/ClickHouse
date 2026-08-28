@@ -18,6 +18,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -217,6 +218,17 @@ NameSet getSortKeyStorageDependencies(const StorageMetadataPtr & metadata_snapsh
     return sort_key_dependencies;
 }
 
+/// An ALIAS is computed on read and never stored, so its name cannot be resolved against the on-disk
+/// columns a merge sees: it has to be replaced by the expression it stands for, cast to the alias
+/// type, before the default expression is analyzed or evaluated here.
+ASTPtr cloneDefaultWithAliasesReplaced(
+    const ColumnDescription & column_desc, const ColumnsDescription & columns_desc, const ContextPtr & context)
+{
+    auto query = column_desc.default_desc.expression->clone();
+    replaceAliasColumnsInQuery(query, columns_desc, {}, context);
+    return query;
+}
+
 /// The source columns a MATERIALIZED column's default expression reads from, mapped to their
 /// physical storage columns (the expression may reference a subcolumn). Analyzed the same way the
 /// UPDATE mutation path does in `MutationsInterpreter::prepare`. Returns nullopt when the default
@@ -225,12 +237,13 @@ NameSet getSortKeyStorageDependencies(const StorageMetadataPtr & metadata_snapsh
 /// skipped instead of analyzed as recomputable.
 std::optional<NameSet> getMaterializedColumnSourceColumns(
     const ColumnDescription & column_desc,
+    const ColumnsDescription & columns_desc,
     const NamesAndTypesList & all_columns,
     const NameSet & storage_columns,
     const NameSet & ephemeral_columns,
     const ContextPtr & context)
 {
-    auto query = column_desc.default_desc.expression->clone();
+    auto query = cloneDefaultWithAliasesReplaced(column_desc, columns_desc, context);
     replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
     auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
 
@@ -283,7 +296,7 @@ std::unordered_map<String, NameSet> getMaterializedColumnSourcesMap(
         if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
             continue;
         auto sources = getMaterializedColumnSourceColumns(
-            column_desc, all_columns_with_ephemeral, storage_columns, ephemeral_columns, expressions_context);
+            column_desc, columns_desc, all_columns_with_ephemeral, storage_columns, ephemeral_columns, expressions_context);
         if (sources)
             sources_map.emplace(column.name, std::move(*sources));
     }
@@ -377,7 +390,7 @@ Names getStaleEphemeralMaterializedColumnsAffectedBySet(
         if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
             continue;
 
-        auto query = column_desc.default_desc.expression->clone();
+        auto query = cloneDefaultWithAliasesReplaced(column_desc, columns_desc, expressions_context);
         replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
         auto syntax_result = TreeRewriter(expressions_context).analyze(query, all_columns_with_ephemeral);
 
@@ -455,7 +468,7 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     for (const auto & column : columns_desc.getAllPhysical())
         if (affected_materialized.contains(column.name))
         {
-            auto default_ast = columns_desc.get(column.name).default_desc.expression->clone();
+            auto default_ast = cloneDefaultWithAliasesReplaced(columns_desc.get(column.name), columns_desc, expressions_context);
             const auto syntax_result = TreeRewriter(expressions_context).analyze(default_ast, columns_desc.getAll());
             const auto default_actions = ExpressionAnalyzer{default_ast, syntax_result, expressions_context}.getActions(true);
 
@@ -878,7 +891,7 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
         /// `tup` in `requiredSourceColumns()`, hiding the subcolumn we must drop. Analyzed as-is, a
         /// subcolumn read such as `tup.ts` in `d MATERIALIZED toDate(tup.ts)` is reported by its
         /// subcolumn name, so it is recognised and dropped below.
-        auto query = column_desc.default_desc.expression->clone();
+        auto query = cloneDefaultWithAliasesReplaced(column_desc, columns_desc, expressions_context);
         auto syntax_result = TreeRewriter(expressions_context).analyze(query, all_columns_with_ephemeral);
         for (const auto & source : syntax_result->requiredSourceColumns())
             /// A subcolumn source is one that is not itself a physical column but maps to one.
