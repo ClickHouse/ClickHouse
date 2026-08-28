@@ -235,7 +235,7 @@ datasources:
 Grafana는 이 기준 URL 뒤에 `/api/v1/query` 또는 `/api/v1/query_range`를 추가하고, 각 요청에 `customQueryParameters`를 추가합니다.
 
 <Note>
-  쿼리 엔드포인트인 `/api/v1/query` 및 `/api/v1/query_range`와 시리즈 메타데이터 엔드포인트 `/api/v1/series`만 구현되어 있습니다. `/api/v1/series`에는 최소 하나의 `match[]` 시리즈 셀렉터가 필요하며, 선택 사항인 `start`, `end`, `limit` 매개변수를 지원하고, 각 셀렉터와 일치하는 시리즈의 합집합을 반환합니다. Grafana Prometheus 데이터 소스에서 레이블 탐색, 템플릿 변수, 쿼리 빌더 자동 완성에 사용하는 레이블 메타데이터 엔드포인트(`/api/v1/labels`, `/api/v1/label/<name>/values`)는 구현되어 있지 않으므로 오류를 반환합니다. 쿼리 빌더 대신 코드 모드에서 PromQL 표현식을 작성하십시오.
+  쿼리 엔드포인트인 `/api/v1/query` 및 `/api/v1/query_range`와 메타데이터 엔드포인트 `/api/v1/series` 및 `/api/v1/labels`만 구현되어 있습니다. `/api/v1/series`에는 최소 하나의 `match[]` 시리즈 셀렉터가 필요하며, 선택 사항인 `start`, `end`, `limit` 매개변수를 지원하고, 각 셀렉터와 일치하는 시리즈의 합집합을 반환합니다. `/api/v1/labels`는 동일한 매개변수를 허용하며, `match[]`는 선택 사항이고 일치하는 시리즈의 정렬된 레이블 이름을 반환합니다(셀렉터가 제공되지 않은 경우 모든 시리즈의 레이블 이름을 반환합니다). Grafana Prometheus 데이터 소스에서 레이블 탐색, 템플릿 변수, 쿼리 빌더 자동 완성에 사용하는 레이블 값 엔드포인트(`/api/v1/label/<name>/values`)는 구현되어 있지 않으므로 오류를 반환합니다. 쿼리 빌더 대신 코드 모드에서 PromQL 표현식을 작성하십시오.
 </Note>
 
 <div id="sql-entry-points">

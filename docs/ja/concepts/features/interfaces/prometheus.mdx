@@ -235,7 +235,7 @@ datasources:
 Grafana は、このベース URL に `/api/v1/query` または `/api/v1/query_range` を付加し、各リクエストに `customQueryParameters` を追加します。
 
 <Note>
-  実装されているのは、クエリエンドポイント `/api/v1/query` と `/api/v1/query_range`、およびシリーズメタデータエンドポイント `/api/v1/series` のみです。`/api/v1/series` には少なくとも 1 つの `match[]` シリーズセレクターが必要で、任意の `start`、`end`、`limit` パラメータをサポートし、各セレクターに一致するシリーズのユニオンを返します。Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用するラベルメタデータエンドポイント (`/api/v1/labels`、`/api/v1/label/<name>/values`) は実装されておらず、エラーを返します。クエリビルダーではなく、コードモードで PromQL 式を記述してください。
+  実装されているのは、クエリエンドポイント `/api/v1/query` と `/api/v1/query_range`、およびメタデータエンドポイント `/api/v1/series` と `/api/v1/labels` のみです。`/api/v1/series` には少なくとも 1 つの `match[]` シリーズセレクターが必要で、任意の `start`、`end`、`limit` パラメータをサポートし、各セレクターに一致するシリーズのユニオンを返します。`/api/v1/labels` は同じパラメータを受け付けますが、`match[]` は任意であり、一致するシリーズのソート済みラベル名を返します (セレクターが指定されていない場合はすべてのシリーズのラベル名を返します) 。Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用するラベル値エンドポイント (`/api/v1/label/<name>/values`) は実装されておらず、エラーを返します。クエリビルダーではなく、コードモードで PromQL 式を記述してください。
 </Note>
 
 <div id="sql-entry-points">
