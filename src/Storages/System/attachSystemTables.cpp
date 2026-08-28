@@ -14,6 +14,7 @@
 #include <Storages/System/StorageSystemBuildOptions.h>
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
 #include <Storages/System/StorageSystemInstrumentation.h>
+#include <Storages/System/StorageSystemChangelog.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
@@ -373,6 +374,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
     attach<StorageSystemCompletions>(context, system_database, "completions", "Contains a list of completion tokens.");
+    attach<StorageSystemChangelog>(context, system_database, "changelog", "Contains ClickHouse changelog fetched dynamically from a remote or local source.", context);
 
     attach<StorageSystemFailPoints>(context, system_database, "fail_points", "Contains a list of all available failpoints with their type and enabled status. Only available in debug builds.");
 
