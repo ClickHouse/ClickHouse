@@ -447,14 +447,37 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     for (size_t row = 0; row < indexes_size; ++row)
         indexes_per_row[getIndexes().getUInt(row)].push_back(row);
 
+    /// A float dictionary is not canonicalized, so -0.0 can sit next to +0.0, and one NaN payload next to
+    /// another, while comparing equal. Rows of value-equal entries form one equal range, so a stable sort
+    /// has to emit them in row order rather than one dictionary entry at a time.
+    const IColumnUnique & dict = getDictionary();
+    const bool merge_value_equal_entries = stability == IColumn::PermutationSortStability::Stable
+        && WhichDataType(dict.getNestedNotNullableColumn()->getDataType()).isFloat();
+
     /// Replicate permutation.
     size_t perm_size = std::min(indexes_size, limit);
     res.resize(perm_size);
     size_t perm_index = 0;
-    for (size_t row = 0; row < unique_perm.size() && perm_index < perm_size; ++row)
+    VectorWithMemoryTracking<size_t> merged_rows;
+    for (size_t row = 0; row < unique_perm.size() && perm_index < perm_size;)
     {
-        const auto & row_indexes = indexes_per_row[unique_perm[row]];
-        for (auto row_index : row_indexes)
+        size_t next = row + 1;
+        if (merge_value_equal_entries)
+            while (next < unique_perm.size()
+                && dict.compareAt(unique_perm[next - 1], unique_perm[next], dict, nan_direction_hint) == 0)
+                ++next;
+
+        const auto * row_indexes = &indexes_per_row[unique_perm[row]];
+        if (next != row + 1)
+        {
+            merged_rows.clear();
+            for (size_t i = row; i < next; ++i)
+                merged_rows.insert(merged_rows.end(), indexes_per_row[unique_perm[i]].begin(), indexes_per_row[unique_perm[i]].end());
+            ::sort(merged_rows.begin(), merged_rows.end());
+            row_indexes = &merged_rows;
+        }
+
+        for (auto row_index : *row_indexes)
         {
             res[perm_index] = row_index;
             ++perm_index;
@@ -462,6 +485,8 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
             if (perm_index == perm_size)
                 break;
         }
+
+        row = next;
     }
 }
 

@@ -21,7 +21,7 @@ run "
     SELECT v FROM t ORDER BY k ASC, v ASC;
 "
 
-# Ordering by value must be preserved where the dictionary holds no value-equal entries.
+# Entries that compare differently keep their own order, while the value-equal pair is grouped.
 run "
     CREATE TABLE t (k LowCardinality(Float64), v UInt64) ENGINE = Memory;
     INSERT INTO t VALUES (2.5, 1), (-0.0, 2), (1.5, 3), (0.0, 4), (2.5, 5), (-0.0, 6);
@@ -45,4 +45,13 @@ run "
     CREATE TABLE t (k LowCardinality(String), v UInt64) ENGINE = Memory;
     INSERT INTO t VALUES ('b', 10), ('a', 20), ('b', 30), ('a', 40);
     SELECT v FROM t ORDER BY k ASC, v ASC;
+"
+
+# A single sorting key takes the stable single-column sort the MergeTree writer applies to each
+# inserted block, which persists the row order into the part. Rows of one equal range must stay in
+# insertion order, so the result must match the one a plain Float64 key gives.
+run "
+    CREATE TABLE mt (k LowCardinality(Float64), v UInt64) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO mt VALUES (5.0, 10), (-0.0, 20), (0.0, 30), (5.0, 40), (0.0, 50), (-0.0, 60);
+    SELECT groupArray(v) FROM (SELECT v FROM mt) SETTINGS max_threads = 1;
 "
