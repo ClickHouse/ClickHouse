@@ -32,6 +32,7 @@ TEST(SharedPartColumns, NonPoolableSerializationsAreNotShared)
     /// `data` makes the whole object unshareable, so it is not interned either.
     EXPECT_NE(first, second);
     EXPECT_NE(first->tryGet("data"), second->tryGet("data"));
+    EXPECT_FALSE(first->tryGet("data")->supportsPooling());
     EXPECT_EQ(first->tryGet("id"), second->tryGet("id"));
 }
 
@@ -45,5 +46,7 @@ TEST(SharedPartColumns, TypedJSONSubcolumnsAreIncluded)
     SharedPartColumns bundle(columns, description, description, false, SharedPartColumns::describeColumns(columns));
 
     SerializationInfoByName infos{SerializationInfoSettings{}};
-    EXPECT_NE(bundle.getSerializations(infos)->tryGet("data.typed"), nullptr);
+    auto serialization = bundle.getSerializations(infos)->tryGet("data.typed");
+    ASSERT_NE(serialization, nullptr);
+    EXPECT_TRUE(serialization->supportsPooling());
 }

@@ -422,7 +422,11 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     }
 
     if (containsObjectType(*column_in_part->getTypeInStorage()))
-        return data_part_info_for_read->getSerialization(*column_in_part);
+    {
+        auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
+        if (serialization->supportsPooling())
+            return serialization;
+    }
 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
