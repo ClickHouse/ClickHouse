@@ -764,9 +764,17 @@ ${CLICKHOUSE_CLIENT} -q "
     ORDER BY id
     TTL event_time + INTERVAL 1 SECOND, d2 + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(3))
     SETTINGS
-        min_bytes_for_wide_part = 1,
+        -- Every input of chooseMergeAlgorithm is pinned here: the runner randomizes these same
+        -- MergeTree settings per run, and any one of them can send the merge down the horizontal
+        -- path, where this case would no longer exercise anything.
+        enable_vertical_merge_algorithm = 1,
+        vertical_merge_optimize_ttl_delete = 1,
         vertical_merge_algorithm_min_rows_to_activate = 1,
-        vertical_merge_algorithm_min_columns_to_activate = 1;
+        vertical_merge_algorithm_min_columns_to_activate = 1,
+        vertical_merge_algorithm_min_bytes_to_activate = 0,
+        allow_vertical_merges_from_compact_to_wide_parts = 1,
+        min_bytes_for_wide_part = 0,
+        min_rows_for_wide_part = 0;
 
     SYSTEM STOP MERGES t_ttl_vertical_recompress;
 
