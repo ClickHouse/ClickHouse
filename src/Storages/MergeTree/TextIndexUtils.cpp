@@ -287,6 +287,7 @@ bool canReuseTextIndexForMerge(
     const auto & source_matcher = *source_configuration->path_matcher;
     return target_configuration->token_format_version == source_configuration->token_format_version
         && target_configuration->max_token_bytes == source_configuration->max_token_bytes
+        && target_configuration->source_type_name == source_configuration->source_type_name
         && target_matcher.getIncludePaths() == source_matcher.getIncludePaths()
         && target_matcher.getIncludePathRegexps() == source_matcher.getIncludePathRegexps()
         && target_matcher.getSkipPaths() == source_matcher.getSkipPaths()
