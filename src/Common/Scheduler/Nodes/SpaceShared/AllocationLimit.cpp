@@ -407,7 +407,15 @@ void AllocationLimit::processSuction(
     /// stale. That activity gets its own scheduling turn; if pressure is still unresolved after the
     /// subtree is exhausted again, a fresh suction event is queued with the accumulated priority.
     if (activity_generation != observed_generation)
+    {
+        /// Suction is an externally authorized decision for a stable resource-state generation.
+        /// Scheduler activity invalidates the observed snapshot, but must not consume the decision:
+        /// queue it again for the new generation. Repeated activity keeps postponing eviction while
+        /// fitting work and releases make progress; once the state becomes quiet, the next event
+        /// either applies the deterministic backstop or observes that pressure was resolved.
+        scheduleSuction();
         return;
+    }
 
     if (suspended_growth_retry_pending || decrease != nullptr
         || memory_growth_suspension_beneficiaries != 0 || allocation_to_kill
