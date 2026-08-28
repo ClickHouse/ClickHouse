@@ -240,7 +240,8 @@ private:
       */
     struct FieldValue
     {
-        explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+        explicit FieldValue(MutableColumnPtr && column_, bool block_memory_tracker_ = false)
+            : column(std::move(column_)), block_memory_tracker(block_memory_tracker_) {}
         void update(const Field & x);
 
         bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
@@ -251,6 +252,10 @@ private:
 
         // If value is Null, uses the actual value in column
         MutableColumnPtr column;
+
+        /// True when the column belongs to the thread-local buffer of getFieldValueRangesBuffer,
+        /// which outlives the query; its reallocations must not be charged to the current query.
+        bool block_memory_tracker = false;
     };
 
     struct FieldValueRange
@@ -260,20 +265,27 @@ private:
         bool left_included = false;
         bool right_included = false;
 
-        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
+        explicit FieldValueRange(const IColumn & prototype, bool block_memory_tracker = false)
+            : left(prototype.cloneEmpty(), block_memory_tracker), right(prototype.cloneEmpty(), block_memory_tracker) {}
     };
 
     using FieldValueRanges = std::vector<FieldValueRange>;
 
-    /// Per-thread buffer reused across checkInRange calls (which run once per mark during index
-    /// analysis) to avoid per-call column allocations. Invalidated by the next call on the same thread.
-    FieldValueRanges & getFieldValueRangesBuffer() const;
+    /// Buffer reused across checkInRange calls (which run once per mark during index analysis)
+    /// to avoid per-call column allocations. For fixed-width key types it is a per-thread cache
+    /// (invalidated by the next call on the same thread) whose retained size is small and bounded.
+    /// Variable-width key types (e.g. String) could pin arbitrarily large reserved capacity in
+    /// thread-local storage after the query ends, so for them the given query-scoped scratch
+    /// buffer is filled and returned instead.
+    FieldValueRanges & getFieldValueRangesBuffer(FieldValueRanges & scratch) const;
 
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
     const UInt64 instance_id;
+    /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
+    bool cache_ranges = false;
 };
 
 }
