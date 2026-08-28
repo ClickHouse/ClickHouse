@@ -449,6 +449,22 @@ public:
         return !reserved_param_names.contains(name);
     }
 
+    /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
+    /// with 0 (the default) meaning no limit.
+    UInt64 getLimitParam() const
+    {
+        String limit_param = params->get("limit", "");
+        if (limit_param.empty())
+            return 0;
+
+        Int64 parsed_limit = 0;
+        if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
+                            limit_param);
+        return static_cast<UInt64>(parsed_limit);
+    }
+
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
         const String & uri = request.getURI();
@@ -533,29 +549,18 @@ public:
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
-
-                /// The optional `limit` parameter caps the number of returned series (0 means no limit, which is also the default).
-                UInt64 limit = 0;
-                String limit_param = params->get("limit", "");
-                if (!limit_param.empty())
-                {
-                    Int64 parsed_limit = 0;
-                    if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
-                                        limit_param);
-                    limit = static_cast<UInt64>(parsed_limit);
-                }
+                UInt64 limit = getLimitParam();
 
                 protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (uri_path.ends_with("/labels"))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabels(getOutputStream(response), match, start, end);
+                protocol.getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
