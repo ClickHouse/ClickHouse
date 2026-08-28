@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/unaligned.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -17,7 +18,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
-#include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -235,12 +236,16 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
 static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
-    ReadBuffer & in)
+    ReadBufferFromString & in)
 {
     size_t columns_size = columns.size();
 
-    VectorWithMemoryTracking<UInt32> serialized_sizes(columns_size);
-    in.readStrict(reinterpret_cast<char *>(serialized_sizes.data()), columns_size * sizeof(UInt32));
+    /// The buffer is contiguous and never refills, so the header is read in
+    /// place and stays addressable while the values are deserialized.
+    size_t sizes_header_size = columns_size * sizeof(UInt32);
+    chassert(in.available() >= sizes_header_size);
+    const char * sizes_header = in.position();
+    in.ignore(sizes_header_size);
 
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
@@ -249,7 +254,7 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
             column->deserializeAndInsertFromArena(in, nullptr);
         else
-            in.ignore(serialized_sizes[column_index]);
+            in.ignore(unalignedLoad<UInt32>(sizes_header + column_index * sizeof(UInt32)));
     }
 }
 
