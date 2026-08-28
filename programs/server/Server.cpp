@@ -982,22 +982,36 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             /// (getDisksMap() is lazy and would start object-storage disks right here, and a
             /// disk's getPath() cannot be told apart from a remote object prefix), but the
             /// configured strings can be: every path/metadata_path declared under
-            /// storage_configuration.disks that exists as a local directory joins <path> in the
-            /// probe. Defaulted metadata paths live under <path> and share its filesystem.
+            /// storage_configuration.disks joins <path> in the probe, along with each disk's
+            /// synthesized default metadata directory <path>/disks/<name>/ (a mount there escapes
+            /// <path>'s own probe). A directory the disk will only create later is probed through
+            /// its nearest existing ancestor - the filesystem it will be created on.
             std::vector<String> probe_paths{data_path};
+            const auto add_probe_path = [&](const String & configured)
+            {
+                if (configured.empty())
+                    return;
+                fs::path candidate(configured);
+                std::error_code ec;
+                while (!candidate.empty() && candidate != candidate.parent_path() && !fs::is_directory(candidate, ec))
+                    candidate = candidate.parent_path();
+                if (!candidate.empty() && fs::is_directory(candidate, ec))
+                    probe_paths.push_back(candidate.string());
+            };
             if (server.config().has("storage_configuration.disks"))
             {
                 Poco::Util::AbstractConfiguration::Keys disk_names;
                 server.config().keys("storage_configuration.disks", disk_names);
                 for (const auto & disk_name : disk_names)
-                    for (const auto & key : {"path", "metadata_path"})
-                    {
-                        const String configured
-                            = server.config().getString("storage_configuration.disks." + disk_name + "." + key, "");
-                        std::error_code ec;
-                        if (!configured.empty() && fs::is_directory(configured, ec))
-                            probe_paths.push_back(configured);
-                    }
+                {
+                    add_probe_path(server.config().getString("storage_configuration.disks." + disk_name + ".path", ""));
+                    const String metadata_path
+                        = server.config().getString("storage_configuration.disks." + disk_name + ".metadata_path", "");
+                    if (!metadata_path.empty())
+                        add_probe_path(metadata_path);
+                    else
+                        add_probe_path(data_path + "disks/" + disk_name + "/");
+                }
             }
 
             String affected_path;
