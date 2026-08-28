@@ -378,11 +378,12 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         // Convert the offsets to the ORDER BY column type. We can't just check
         // that the type matches, because e.g. the int literals are always
         // (U)Int64, but the column might be Int8 and so on.
-        // The comparison functions downstream assume a nonnegative offset. NaN is
-        // unordered, so a comparison against zero cannot reject it.
-        auto is_nan_offset = [](const Field & offset)
+        // The comparison functions downstream assume a finite nonnegative offset: NaN is unordered,
+        // so a comparison against zero cannot reject it, and adding an infinite offset to an
+        // infinite value of the ORDER BY column produces NaN there too.
+        auto is_non_finite_offset = [](const Field & offset)
         {
-            return offset.getType() == Field::Types::Float64 && std::isnan(offset.safeGet<Float64>());
+            return offset.getType() == Field::Types::Float64 && !std::isfinite(offset.safeGet<Float64>());
         };
         if (window_description.frame.begin_type
             == WindowFrame::BoundaryType::Offset)
@@ -391,11 +392,11 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 window_description.frame.begin_offset,
                 *entry.type);
 
-            if (is_nan_offset(window_description.frame.begin_offset)
+            if (is_non_finite_offset(window_description.frame.begin_offset)
                 || accurateLess(window_description.frame.begin_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
+                    "Window frame start offset must be a finite nonnegative number, {} given",
                     window_description.frame.begin_offset);
             }
         }
@@ -406,11 +407,11 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 window_description.frame.end_offset,
                 *entry.type);
 
-            if (is_nan_offset(window_description.frame.end_offset)
+            if (is_non_finite_offset(window_description.frame.end_offset)
                 || accurateLess(window_description.frame.end_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame end offset must be nonnegative, {} given",
+                    "Window frame end offset must be a finite nonnegative number, {} given",
                     window_description.frame.end_offset);
             }
         }

@@ -153,6 +153,21 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
 
 LoggerPtr getLogger() { return ::getLogger("ExpressionAnalyzer"); }
 
+/// `WindowFrame` keeps only the erased field, which cannot stand in for the type: a `DateTime64` or
+/// `Time64` constant is a decimal field, and a `LowCardinality` one is its nested field. An `Int64`
+/// or `UInt64` field is exempt because a `RANGE` offset has always been taken from those.
+void checkFrameOffsetType(
+    WindowFrame::FrameType frame_type, const Field & value, const DataTypePtr & type, std::string_view bound)
+{
+    if (frame_type == WindowFrame::FrameType::RANGE && !isNumber(removeNullable(type))
+        && !isInt64OrUInt64FieldType(value.getType()))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Window frame {} OFFSET expression must be constant with numeric type. Actual type: {}",
+            bound,
+            type->getName());
+}
+
 }
 
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
@@ -761,15 +776,17 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
 
     if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {
-        auto [value, _] = evaluateConstantExpression(definition.frame_end_offset,
+        auto [value, type] = evaluateConstantExpression(definition.frame_end_offset,
             context_.shared_from_this());
+        checkFrameOffsetType(definition.frame_type, value, type, "end");
         desc.frame.end_offset = value;
     }
 
     if (definition.frame_begin_type == WindowFrame::BoundaryType::Offset)
     {
-        auto [value, _] = evaluateConstantExpression(definition.frame_begin_offset,
+        auto [value, type] = evaluateConstantExpression(definition.frame_begin_offset,
             context_.shared_from_this());
+        checkFrameOffsetType(definition.frame_type, value, type, "begin");
         desc.frame.begin_offset = value;
     }
 }

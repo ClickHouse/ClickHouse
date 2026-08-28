@@ -18,9 +18,11 @@ namespace ErrorCodes
 namespace
 {
 
+/// `Bool` is not a number here: only the legacy analyzer leaves a frame offset in that field
+/// alternative, and the new analyzer folds `true` to an integer one.
 bool isNumericFieldType(Field::Types::Which which)
 {
-    return isInt64OrUInt64orBoolFieldType(which)
+    return isInt64OrUInt64FieldType(which)
         || Field::isDecimal(which)
         || which == Field::Types::Float64
         || which == Field::Types::UInt128 || which == Field::Types::Int128
