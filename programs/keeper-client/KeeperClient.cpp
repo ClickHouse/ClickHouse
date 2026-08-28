@@ -158,10 +158,8 @@ UInt128 fingerprintTLSMaterial(const Poco::Util::AbstractConfiguration & config)
             readStringUntilEOF(contents, in);
             hash.update(contents);
         }
-        catch (...)
+        catch (...) // Ok: unreadable file is marked with a sentinel byte so that becoming readable later counts as a change
         {
-            /// Unreadable now; mark it so that becoming readable later counts as a change
-            /// and SSLManager gets a chance to report the real error.
             hash.update('\x01');
         }
         hash.update('\0');
