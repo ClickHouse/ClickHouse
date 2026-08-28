@@ -587,6 +587,11 @@ void StorageKafka2::startup()
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
         std::lock_guard lock(consumers_mutex);
+
+        /// Reset — this is now the quota divisor (see setNumConsumers below), so it must
+        /// count only this startup's successes.
+        num_created_consumers = 0;
+
         /// Pre-size to `num_consumers` so consumer slots are addressable by their original index even
         /// when individual creations fail. Compacting via `push_back` would shift indices and break
         /// the per-slot streaming task in `threadFunc`, which is scheduled by the configured slot index.
@@ -596,12 +601,29 @@ void StorageKafka2::startup()
             try
             {
                 consumers[i] = std::make_shared<KeeperHandlingConsumer>(
-                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log, partition_shard_num, shard_count);
+                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log, num_consumers, partition_shard_num, shard_count);
                 ++num_created_consumers;
             }
             catch (const cppkafka::Exception &)
             {
                 tryLogCurrentException(log);
+            }
+        }
+
+        /// If some consumers failed to construct, update the remaining ones with the
+        /// actual count so the quota formula uses the running consumer count, not the
+        /// configured one.
+        if (num_created_consumers != num_consumers && num_created_consumers > 0)
+        {
+            LOG_WARNING(
+                log,
+                "Only {}/{} consumers were created; adjusting partition quota divisor",
+                num_created_consumers,
+                num_consumers);
+            for (auto & consumer : consumers)
+            {
+                if (consumer)
+                    consumer->setNumConsumers(num_created_consumers);
             }
         }
     }

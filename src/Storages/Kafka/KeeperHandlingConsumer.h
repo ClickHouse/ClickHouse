@@ -81,8 +81,13 @@ public:
         const String & replica_name_,
         size_t idx_,
         const LoggerPtr & log_,
+        size_t num_consumers_,
         UInt64 partition_shard_num_ = 0,
         UInt64 shard_count_ = 0);
+
+    /// Called after startup to adjust the consumer count to reflect how many consumers
+    /// were actually created (some may have failed during construction).
+    void setNumConsumers(size_t actual_num_consumers);
 
     /// It is important that the consumer is using the same Keeper session as the storage to make sure all ephemeral
     /// nodes are handled at the same time, e.g.: if a replica is deactivated because of session loss, all of its
@@ -152,7 +157,13 @@ private:
 
     std::filesystem::path keeper_path;
     const String replica_name;
-    size_t idx;
+    const size_t idx;
+
+    /// Number of actually running consumers on this node.  Set at construction and
+    /// updated via setNumConsumers once the startup loop completes (some consumers
+    /// may fail to construct).  Atomic because the setter runs before polling threads
+    /// start today, but nothing structurally enforces that ordering.
+    std::atomic<size_t> num_consumers;
 
     /// Partition affinity settings (enabled when shard_count > 0)
     UInt64 partition_shard_num = 0;
@@ -181,6 +192,9 @@ private:
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
+    /// Computes this consumer's share of node_quota, distributing remainder by consumer
+    /// index so all consumers' quotas sum to exactly node_quota.
+    size_t computeConsumerQuota(size_t node_quota) const;
 
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions();
     ActiveReplicasInfo getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock);
