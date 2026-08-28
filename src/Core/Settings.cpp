@@ -8767,16 +8767,16 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 If it is set to true, allow to specify any experimental compression codec.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_alp_codec, false, R"(
-Allows using the experimental `ALP` compression codec.
-)", EXPERIMENTAL) \
+Enables the `ALP` compression codec.
+)", BETA) \
     DECLARE(Bool, enable_quantized_codec, false, R"(
-Allows using the experimental `Quantized` compression codec.
+Enables the `Quantized` compression codec.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_sz3_codec, false, R"(
-Allows using the experimental `SZ3` compression codec.
+Enables the `SZ3` compression codec.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
-Allows using the experimental `ZXC` compression codec.
+Enables the `ZXC` compression codec.
 )", EXPERIMENTAL) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
@@ -9972,6 +9972,11 @@ Field Settings::stringToValueUtil(std::string_view name, const String & str)
 bool Settings::hasBuiltin(std::string_view name)
 {
     return SettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> Settings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return SettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view Settings::resolveName(std::string_view name)
