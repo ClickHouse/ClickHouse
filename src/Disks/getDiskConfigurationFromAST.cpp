@@ -308,8 +308,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
     /// Match the table-function/engine restriction for a dynamic native GCS disk. Without an explicit
     /// native credential or `NOSIGN`, the client falls back to ADC and can borrow the server identity.
+    /// `use_environment_credentials = 0` is the second anonymous form of the shared grammar: the native
+    /// backend honours it as anonymous access (see `GCSObjectStorageSettings::loadFromConfig`), so it is
+    /// a safe credential form here exactly like `no_sign_request`. A `role_arn` next to it is S3-only and
+    /// the native path rejects it, so unlike the S3 branch below it needs no extra guard.
     const bool has_explicit_gcs_adc = has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token;
-    const bool has_explicit_gcs_credentials = has_gcs_service_account_key || has_gcs_access_token || has_explicit_gcs_adc || has_no_sign_request;
+    const bool has_explicit_gcs_credentials = has_gcs_service_account_key || has_gcs_access_token || has_explicit_gcs_adc
+        || has_no_sign_request || use_environment_credentials_off;
     /// A user-created S3 disk must not resolve the server's own credentials. Indirection (`from_env`/`from_zk`
     /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is an
     /// explicit literal non-S3 type. `type = object_storage` is a wrapper: non-S3 only with a literal non-S3
@@ -365,9 +370,14 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->for_system_database = for_system_database;
         info->ast_gcs_credentials = std::move(ast_gcs_credentials);
         info->ast_gcs_headers = std::move(ast_gcs_headers);
-        /// Persist the opt-in for a fresh create that resolves server credentials and is currently allowed
-        /// (the session opted in), so the disk is not re-restricted on reload.
-        info->persist_server_credentials_allowance = !is_loading_from_existing_metadata
+        /// A fresh create that the pre-resolution check reads as relying on server credentials, while the
+        /// session has the opt-in, is a *candidate* for the persisted marker -- so the disk is not
+        /// re-restricted on reload. It is only a candidate because the answer here is deliberately
+        /// conservative: `maybe_s3_disk` / `maybe_gcs_disk` treat an `include` or an indirect type as
+        /// potentially S3/GCS, which is right for refusing a create but would hand a durable grant to a disk
+        /// whose backend is not S3 or GCS at all. The caller confirms the candidate against the resolved
+        /// configuration with `resolvedDiskConfigReliesOnServerCredentials` before writing the marker.
+        info->may_persist_server_credentials_allowance = !is_loading_from_existing_metadata
             && (relies_on_server_credentials || gcs_relies_on_server_credentials)
             && !has_server_credentials_marker && !context->shouldRestrictUserQueryS3Credentials();
     }
@@ -376,9 +386,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "A dynamic native GCS disk created from user SQL may not use Application Default Credentials because "
-            "they can resolve the server's identity. Provide `service_account_key` or `no_sign_request`, or enable "
-            "`s3_allow_server_credentials_in_user_queries` (`access_token` and `google_adc_*` are not supported for "
-            "a disk: its long-lived client cannot refresh them)");
+            "they can resolve the server's identity. Provide `service_account_key`, `google_adc_*` refresh-token "
+            "credentials, `no_sign_request` or `use_environment_credentials = 0`, or enable "
+            "`s3_allow_server_credentials_in_user_queries` (`access_token` is not supported for a disk: its "
+            "long-lived client cannot renew a bearer token)");
 
     if (relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
     {
@@ -467,6 +478,23 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
 namespace
 {
 
+/// Every object-storage backend a resolved disk configuration describes: the disk root, plus one
+/// `locations.<name>.` prefix per child of a multi-location `DiskObjectStorage`. Each child is built
+/// independently, with its own type and credentials, so an `include` can hide a backend behind a root
+/// that proves something else -- every check that reasons about "the backend" has to visit all of them.
+std::vector<String> collectResolvedBackendPrefixes(const Poco::Util::AbstractConfiguration & config)
+{
+    std::vector<String> prefixes{""};
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back("locations." + location + ".");
+    }
+    return prefixes;
+}
+
 /// Whether one resolved object-storage backend (the disk root, or a single `locations.<name>` child selected by
 /// `prefix`) is an S3 backend that resolved to credentials the AST did not prove explicit, and so must be
 /// downgraded to anonymous or rejected. Returns false for a non-S3 backend or one whose resolved auth is safe.
@@ -522,6 +550,65 @@ bool resolvedS3BackendIsRestricted(
     return !safe;
 }
 
+/// Whether the resolved value of a native GCS credential field is exactly the literal the SQL definition put on
+/// the disk root. `doIncludesRecursive` inserts the included children before the `<include>` node and duplicate
+/// siblings resolve to the first one, so `include = 'creds', service_account_key = 'dummy'` reads the *included*
+/// key while the AST vouched only for `'dummy'`; comparing the values, rather than asking whether the AST
+/// carried a field of that name, is what tells the two apart. A `locations.<name>` child is never vouched for:
+/// it is constructed independently, so a credential on the root says nothing about it.
+bool resolvedGCSCredentialIsVouchedFor(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & prefix,
+    bool is_root,
+    const DynamicS3DiskCredentialInfo & info,
+    const String & field)
+{
+    const String resolved = config.getString(prefix + field, "");
+    if (resolved.empty() || !is_root)
+        return false;
+    const auto it = info.ast_gcs_credentials.find(field);
+    return it != info.ast_gcs_credentials.end() && it->second == resolved;
+}
+
+/// Whether one resolved object-storage backend (the disk root, or a single `locations.<name>` child selected by
+/// `prefix`) is a native GCS backend that would fall back to Application Default Credentials, which can resolve
+/// the server's identity. Returns false for a non-GCS backend or one whose resolved auth is safe.
+///
+/// `service_account_key_file` is deliberately not treated as a safe credential here: it is rejected outright for
+/// a dynamic GCS disk created from user SQL (both pre- and post-resolution), so it never reaches this question.
+bool resolvedGCSBackendIsRestricted(
+    const Poco::Util::AbstractConfiguration & config, const String & prefix, bool is_root, const DynamicS3DiskCredentialInfo & info)
+{
+    auto key = [&](const String & k) { return prefix + k; };
+    if (config.getString(key("type"), "") != "gcs" && config.getString(key("object_storage_type"), "") != "gcs")
+        return false;
+
+    /// Both anonymous forms of the shared argument grammar send no credentials at all, so they are safe wherever
+    /// they were configured -- an `include` cannot use them to borrow the server identity.
+    const bool resolved_anonymous = config.getBool(key("no_sign_request"), false)
+        || (config.has(key("use_environment_credentials")) && !config.getBool(key("use_environment_credentials"), true));
+    if (resolved_anonymous)
+        return false;
+
+    auto vouched = [&](const String & field) { return resolvedGCSCredentialIsVouchedFor(config, prefix, is_root, info, field); };
+    const bool vouched_adc
+        = vouched("google_adc_client_id") && vouched("google_adc_client_secret") && vouched("google_adc_refresh_token");
+    return !vouched("service_account_key") && !vouched("access_token") && !vouched_adc;
+}
+
+}
+
+bool resolvedDiskConfigReliesOnServerCredentials(
+    const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info)
+{
+    for (const auto & prefix : collectResolvedBackendPrefixes(config))
+    {
+        const bool is_root = prefix.empty();
+        if (resolvedS3BackendIsRestricted(config, prefix, is_root, info)
+            || resolvedGCSBackendIsRestricted(config, prefix, is_root, info))
+            return true;
+    }
+    return false;
 }
 
 void validateResolvedS3DiskCredentials(
@@ -538,17 +625,8 @@ void validateResolvedS3DiskCredentials(
     /// Check the disk root and every `locations.<name>` child: a multi-location `DiskObjectStorage` builds one
     /// object storage per child, each with its own `object_storage_type`, so an `include` can hide an S3 child
     /// (built with `for_disk_s3 = true`) behind a root that proves non-S3.
-    std::vector<String> prefixes{""};
-    if (config.has("locations"))
-    {
-        Poco::Util::AbstractConfiguration::Keys locations;
-        config.keys("locations", locations);
-        for (const auto & location : locations)
-            prefixes.push_back("locations." + location + ".");
-    }
-
     std::vector<String> restricted_prefixes;
-    for (const auto & prefix : prefixes)
+    for (const auto & prefix : collectResolvedBackendPrefixes(config))
         if (resolvedS3BackendIsRestricted(config, prefix, /* is_root */ prefix.empty(), info))
             restricted_prefixes.push_back(prefix);
 
@@ -596,16 +674,7 @@ void validateResolvedGCSDiskCredentials(
     /// so accepting one would let a table become unloadable after restart under the default restriction.
     /// Check the disk root and every `locations.<name>` child: a multi-location `DiskObjectStorage` builds one
     /// object storage per child, so an `include` can hide a GCS child behind a non-GCS root.
-    std::vector<String> prefixes{""};
-    if (config.has("locations"))
-    {
-        Poco::Util::AbstractConfiguration::Keys locations;
-        config.keys("locations", locations);
-        for (const auto & location : locations)
-            prefixes.push_back("locations." + location + ".");
-    }
-
-    for (const auto & prefix : prefixes)
+    for (const auto & prefix : collectResolvedBackendPrefixes(config))
     {
         auto key = [&](const String & k) { return prefix + k; };
         const bool resolved_backend_is_gcs
@@ -637,23 +706,12 @@ void validateResolvedGCSDiskCredentials(
         /// The other credential fields are allowed only when the SQL definition itself supplied them as literal
         /// values on the disk root; a value resolved from the `include` -- including any credential field on an
         /// `include`-created `locations` child, which the AST cannot vouch for -- is server-managed auth material.
-        /// The resolved value is compared with the literal one rather than merely asking whether the AST carried
-        /// a field of that name: `doIncludesRecursive` inserts the included children before the `<include>` node
-        /// and duplicate siblings resolve to the first one, so `include = 'creds', service_account_key = 'dummy'`
-        /// reads the *included* key while the AST vouched only for `'dummy'`.
+        /// See `resolvedGCSCredentialIsVouchedFor` for why the resolved value is compared with the literal one.
         const bool is_root = prefix.empty();
-        /// Whether the field's resolved value is exactly the literal the SQL definition put on the disk root.
-        auto resolved_is_vouched_for = [&](const String & field)
-        {
-            const String resolved = config.getString(key(field), "");
-            if (resolved.empty() || !is_root)
-                return false;
-            const auto it = info.ast_gcs_credentials.find(field);
-            return it != info.ast_gcs_credentials.end() && it->second == resolved;
-        };
         auto resolved_is_foreign = [&](const String & field)
         {
-            return !config.getString(key(field), "").empty() && !resolved_is_vouched_for(field);
+            return !config.getString(key(field), "").empty()
+                && !resolvedGCSCredentialIsVouchedFor(config, prefix, is_root, info, field);
         };
 
         const bool has_foreign_credential_field = resolved_is_foreign("service_account_key")
@@ -689,24 +747,16 @@ void validateResolvedGCSDiskCredentials(
         if (!context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
             continue;
 
-        /// `no_sign_request` is anonymous and therefore safe regardless of its provenance. An explicit native
-        /// credential is safe only on the root and only when the literal SQL AST vouched for every selected
-        /// credential field. A `locations.<name>` child is constructed independently, so credentials on the root
-        /// must never authorize a credential-less child resolved from `include`.
-        const bool no_sign_request = config.getBool(key("no_sign_request"), false);
-        const bool root_has_vouched_service_account_key = resolved_is_vouched_for("service_account_key");
-        const bool root_has_vouched_access_token = resolved_is_vouched_for("access_token");
-        const bool root_has_vouched_adc = resolved_is_vouched_for("google_adc_client_id")
-            && resolved_is_vouched_for("google_adc_client_secret") && resolved_is_vouched_for("google_adc_refresh_token");
-
-        if (!no_sign_request && !root_has_vouched_service_account_key && !root_has_vouched_access_token && !root_has_vouched_adc)
+        /// Either anonymous form is safe regardless of its provenance; an explicit native credential is safe only
+        /// on the root and only when the literal SQL AST vouched for every selected credential field.
+        if (resolvedGCSBackendIsRestricted(config, prefix, is_root, info))
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "A dynamic native GCS disk created from user SQL that uses `include` may not use Application Default "
-                "Credentials, because they can resolve the server's identity. Provide `service_account_key` or "
-                "`no_sign_request` as literal values in the SQL definition, or enable "
-                "`s3_allow_server_credentials_in_user_queries` (`access_token` and `google_adc_*` are not supported "
-                "for a disk: its long-lived client cannot refresh them)");
+                "Credentials, because they can resolve the server's identity. Provide `service_account_key`, "
+                "`google_adc_*` refresh-token credentials, `no_sign_request` or `use_environment_credentials = 0` as "
+                "literal values in the SQL definition, or enable `s3_allow_server_credentials_in_user_queries` "
+                "(`access_token` is not supported for a disk: its long-lived client cannot renew a bearer token)");
     }
 }
 

@@ -26,6 +26,42 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// The configuration of one leaf disk definition as the disk factory will see it: the key=value AST becomes an
+/// XML document, then `include`, `from_env` and `from_zk` are substituted. The pre-resolution outcome of the
+/// credential checks is reported through `info`, for the callers that finish those checks on the resolved form.
+static Poco::AutoPtr<Poco::Util::XMLConfiguration> resolveDiskConfigFromAST(
+    const ASTs & disk_args,
+    ContextPtr context,
+    bool attach,
+    bool for_system_database,
+    DynamicS3DiskCredentialInfo & info)
+{
+    const std::string include_from_path = context->getConfigRef().getString("include_from", "");
+
+    auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &info, for_system_database);
+
+    Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
+    Poco::XML::DOMParser dom_parser(name_pool);
+
+    std::vector<std::pair<std::string, std::string>> substitutions;
+    zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
+
+    ConfigProcessor::processIncludes(
+        xml_document,
+        substitutions,
+        include_from_path,
+        /* throw_on_bad_incl= */!attach,
+        dom_parser,
+        getLogger("getOrCreateCustomDisk"),
+        /*contributing_zk_paths=*/ {},
+        /*contributing_files=*/ {},
+        &zk_node_cache);
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    config->load(xml_document);
+    return config;
+}
+
 static std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
@@ -33,47 +69,22 @@ static std::string getOrCreateCustomDisk(
     bool attach,
     bool for_system_database)
 {
-    const auto & server_config = context->getConfigRef();
-    std::string include_from_path = server_config.getString("include_from", "");
+    DynamicS3DiskCredentialInfo s3_disk_info;
+    auto config = resolveDiskConfigFromAST(disk_args, context, attach, for_system_database, s3_disk_info);
 
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
-    {
-        DynamicS3DiskCredentialInfo s3_disk_info;
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database);
+    /// Applied after `processIncludes`. If the pre-resolution check already decided the disk must load
+    /// anonymously, enforce it now (an `include` cannot re-introduce server credentials). Otherwise
+    /// re-validate the resolved config, so an `include` that injects an S3 backend with server-managed
+    /// auth (past a literal non-S3 `type` in the AST) is still caught.
+    if (s3_disk_info.load_anonymously)
+        forceAnonymousS3DiskConfig(*config);
+    else
+        validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
 
-        Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
-        Poco::XML::DOMParser dom_parser(name_pool);
-
-        std::vector<std::pair<std::string, std::string>> substitutions;
-        zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
-
-        ConfigProcessor::processIncludes(
-            xml_document,
-            substitutions,
-            include_from_path,
-            /* throw_on_bad_incl= */!attach,
-            dom_parser,
-            getLogger("getOrCreateCustomDisk"),
-            /*contributing_zk_paths=*/ {},
-            /*contributing_files=*/ {},
-            &zk_node_cache);
-
-        config->load(xml_document);
-
-        /// Applied after `processIncludes`. If the pre-resolution check already decided the disk must load
-        /// anonymously, enforce it now (an `include` cannot re-introduce server credentials). Otherwise
-        /// re-validate the resolved config, so an `include` that injects an S3 backend with server-managed
-        /// auth (past a literal non-S3 `type` in the AST) is still caught.
-        if (s3_disk_info.load_anonymously)
-            forceAnonymousS3DiskConfig(*config);
-        else
-            validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
-
-        /// The GCS analogue of the S3 re-check above: an `include` can likewise inject a `gcs` backend with
-        /// `service_account_key_file` (a server-side file read) or server-managed credential fields. Unlike
-        /// the S3 path there is no anonymous downgrade -- the check is unconditional and fail-closed.
-        validateResolvedGCSDiskCredentials(*config, context, attach, s3_disk_info);
-    }
+    /// The GCS analogue of the S3 re-check above: an `include` can likewise inject a `gcs` backend with
+    /// `service_account_key_file` (a server-side file read) or server-managed credential fields. Unlike
+    /// the S3 path there is no anonymous downgrade -- the check is unconditional and fail-closed.
+    validateResolvedGCSDiskCredentials(*config, context, attach, s3_disk_info);
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
     config->keys(disk_settings_keys);
@@ -171,10 +182,17 @@ public:
     }
 };
 
-/// Persist the credential opt-in into the stored disk definition. For each leaf dynamic S3 disk that resolves
+/// Persist the credential opt-in into the stored disk definition. For each leaf dynamic disk that resolves
 /// server-managed credentials and is currently allowed (the session opted in), add a `_server_credentials_allowed`
 /// marker, so on reload the disk is not re-restricted (the marker is honored only when loading from metadata).
 /// Operates on the original AST (not the flattening clone), so the marker reaches the stored metadata.
+///
+/// The decision is confirmed against the *resolved* configuration, not just the AST. The AST-level answer is
+/// deliberately conservative -- an `include` or a `from_env`/`from_zk` backend type is treated as potentially
+/// S3/GCS -- which is what refusing a create needs, but it would grant a durable exemption to a disk whose
+/// backend is neither. Retargeting that server-side include or environment value at `s3`/`gcs` later would then
+/// inherit an authorization the new backend never earned. So the marker is written only when the configuration
+/// the disk factory will actually build really does rely on server-managed credentials.
 class ServerCredentialMarkerInjector
 {
 public:
@@ -223,8 +241,9 @@ public:
         }
 
         DynamicS3DiskCredentialInfo info;
-        getDiskConfigurationFromASTImpl(args, data.context, /* is_loading_from_existing_metadata */ false, &info, data.for_system_database);
-        if (info.persist_server_credentials_allowance)
+        auto config = resolveDiskConfigFromAST(
+            args, data.context, /* attach */ false, data.for_system_database, info);
+        if (info.may_persist_server_credentials_allowance && resolvedDiskConfigReliesOnServerCredentials(*config, info))
             args.push_back(makeASTFunction(
                 "equals",
                 make_intrusive<ASTIdentifier>("_server_credentials_allowed"),

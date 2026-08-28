@@ -42,10 +42,13 @@ struct DynamicS3DiskCredentialInfo
     /// `system`-database disk, or a persisted `_server_credentials_allowed` marker), so the post-`include`
     /// re-check must not re-apply it.
     bool restriction_exempt = false;
-    /// On a fresh create the disk relies on server-managed credentials and the session opted in, so the caller
-    /// should persist a `_server_credentials_allowed` marker in the stored definition. The marker is honored
-    /// (only) on later metadata loads, so the disk keeps working across restart without re-opting in.
-    bool persist_server_credentials_allowance = false;
+    /// On a fresh create the pre-resolution check reads the disk as relying on server-managed credentials and
+    /// the session opted in, so a `_server_credentials_allowed` marker in the stored definition is a candidate.
+    /// The marker is honored (only) on later metadata loads, so the disk keeps working across restart without
+    /// re-opting in. Before writing it the caller must confirm the candidate against the resolved configuration
+    /// with `resolvedDiskConfigReliesOnServerCredentials`: this flag is derived from a conservative guess that
+    /// treats an `include` or an indirect backend type as potentially S3/GCS.
+    bool may_persist_server_credentials_allowance = false;
     /// The safe credential forms the AST itself supplied with literal values; the resolved auth mode is
     /// validated against these.
     bool ast_has_explicit_key_pair = false;                 /// literal `access_key_id` + `secret_access_key`
@@ -103,6 +106,19 @@ void validateResolvedGCSDiskCredentials(
     ContextPtr context,
     bool is_loading_from_existing_metadata,
     const DynamicS3DiskCredentialInfo & info);
+
+/// Whether the *resolved* configuration -- after `include`, `from_env` and `from_zk` are substituted -- really
+/// describes a backend that the user-query credential restriction would refuse: an S3 backend whose credentials
+/// the SQL definition did not prove explicit, or a native GCS backend that falls back to Application Default
+/// Credentials. Checks the disk root and every `locations.<name>` child.
+///
+/// This is what decides whether a fresh create earns a persisted `_server_credentials_allowed` marker. The
+/// pre-resolution answer cannot: `disk(include = 'foo')` and `disk(type = 'from_env BACKEND', ...)` are treated
+/// as potentially S3/GCS there, which is the right call for *refusing* a create but not for *granting* a durable
+/// exemption -- a disk whose include or environment value resolves to, say, a local backend would otherwise
+/// store a grant that a later retargeting of that server-side value at `s3` or `gcs` would inherit for free.
+bool resolvedDiskConfigReliesOnServerCredentials(
+    const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info);
 
 /*
  * A reverse function.
