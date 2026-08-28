@@ -1,0 +1,111 @@
+---
+noindex: true
+title: "FAQ / 故障排查"
+sidebarTitle: "FAQ"
+description: "如果此错误出现在 ClickHouse Operator 的日志中，则表示它无法完成 ClickHouse 集群的协调，因为该 Operator"
+---
+
+<div id="zone-details-couldnt-be-found-for-any-pv">
+  ## 任何 PV 都找不到 zone 详情？
+</div>
+
+如果此错误出现在 ClickHouse Operator 日志中，这意味着它无法完成 ClickHouse 集群的协调，因为该 operator 预期 PersistentVolume 上会自动填充具备拓扑感知能力的节点亲和性。具体来说，operator 会查找基于 `topology.kubernetes.io/zone` 标签的节点亲和性。通常，这由具备拓扑感知能力的卷置备器处理 (例如使用 AWS EBS 卷置备器时) 。
+
+但是，对于某些云提供商 (例如 IBM) 或本地部署环境，这些信息不会自动填充，或者会使用非标准标签。为确保 operator 仍能继续运行，建议在存储类上添加节点亲和性，例如：
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme-sc
+allowVolumeExpansion: true
+parameters:
+  path: /nvme/disk
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - <your_cluster_name>-keeper
+          - <your_host_1>
+          - <your_host_2>
+          - <your_host_3>
+          - <your_host_4>
+          - <your_host_5>
+          - <your_host_6>
+      - key: directpv.min.io/zone
+        values:
+          - default
+```
+
+这将确保以正确的节点亲和性创建存储卷。例如：
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  ...
+spec:
+  accessModes:
+    - ReadWriteOnce
+  ...
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: directpv.min.io/zone
+              operator: In
+              values:
+                - default
+  ...
+```
+
+如果使用非标准标记来表示拓扑，operator 会提供一个 `additionalZoneLabelRegexes` 属性。例如，如果你使用 Helm 图表安装 operator，可以将 `operator.additionalZoneLabelRegexes` 这个 helm 值设置为 `directpv.*zone`，以匹配上述 PersistentVolume。
+
+<div id="what-does-the-loadbalancertype-field-on-the-clickhousecluster-crd-do">
+  ## ClickHouseCluster CRD 上的 `loadBalancerType` 字段有什么作用？
+</div>
+
+`loadBalancerType` 实际上不会为 ClickHouse 集群的 Service 添加负载均衡器 annotations。目前，ClickHouse Operator 还不支持为 ClickHouse 集群创建负载均衡器。这个字段只在 ClickHouse Cloud 中才有用途，用于协助为 Cloud SQL 控制台创建用户。
+
+<div id="do-i-have-to-use-a-nvme-attached-instance-what-purpose-does-the-nvme-disk-serve">
+  ## 我必须使用带有 NVMe 的实例吗？NVMe 磁盘有什么作用？
+</div>
+
+NVMe 磁盘由 ClickHouse Operator 用于在 ClickHouse server 的 pod (容器组) 中挂载缓存卷。该缓存卷用作来自 S3 (或等效对象存储) 的数据缓存。ClickHouse Operator 会在 ClickHouse server 配置中自动设置这些磁盘：
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+请注意，如果使用 SharedMergeTree，ClickHouse 实际上并不会在本地存储数据。本地存储唯一的作用只是优化针对 SharedMergeTree 执行的查询性能。
+
+也可以使用其他存储设备，例如在使用 EC2 实例时使用 AWS EBS。这会使入门指南中的几个步骤有所不同：
+
+* 你需要确保这些磁盘已挂载到用于运行 ClickHouse server Kubernetes pod (容器组) 的实例上
+* 应调整启动模板，以反映磁盘架构的变化。你仍然可以创建 RAID 磁盘，并将磁盘格式化为 ext4 或 xfs，但显然需要使用其他工具列出这些设备 (例如 `lsblk`) 。
+* 如果磁盘并未像示例启动模板中那样挂载到 `/nvme/disk`，则应将 ClickHouseCluster Helm 图表中的 `hostPathBaseDirectory` 设置为实际挂载点。
+
+请注意，具体选择会影响查询性能。
+
+<div id="can-i-deploy-multiple-clickhouseclusters-in-the-same-namespace">
+  ## 我可以在同一个命名空间中部署多个 ClickHouseClusters 吗？
+</div>
+
+不可以。operator 假定每个命名空间中恰好只有一个 `ClickHouseCluster`。在同一个命名空间中部署多个实例会导致协调冲突。`onprem-clickhouse-cluster` Helm 图表默认会通过 `ResourceQuota` 强制实施这一限制，将命名空间中的 `ClickHouseCluster` 资源数量限制为 1。如果您需要多个集群，请将每个集群分别部署到各自的命名空间中。
+
+<div id="i-use-s3-compatible-storage-but-region-information-isnt-required-or-causes-issues">
+  ## 我使用兼容 S3 的存储，但区域信息并非必需 (或会导致问题)
+</div>
+
+默认情况下，operator 会强制在 S3 连接中指定区域信息。对于云对象存储，这是推荐的行为；但如果你使用的是本地部署的对象存储 (例如 MinIO) ，区域信息可能会带来问题。
+
+operator 可以通过在 `ClickHouseCluster` 自定义资源上将 `spec.isOnPremiseInstance` 设置为 `true`，按集群禁用对区域信息的强制要求。设置后，operator 会将 S3 连接中的区域信息设为可选——如果未传入区域，则会将该区域字段从配置中完全移除。

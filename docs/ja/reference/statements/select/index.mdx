@@ -1,6 +1,6 @@
 ---
 description: 'SELECT クエリのドキュメント'
-sidebarTitle: '概要'
+sidebarTitle: 'SELECT'
 slug: /sql-reference/statements/select/
 title: 'SELECT クエリ'
 doc_type: 'reference'
@@ -34,26 +34,23 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-`SELECT` の直後にある式のリストは必須です。その他の句はすべて省略可能です。
+すべての句は省略可能です。ただし、`SELECT` の直後にある必須の式のリストは例外で、これについては[以下](#select-clause)で詳しく説明します。
 
-`SELECT` とそのオプション句は個別のセクションで扱います。
+各オプション句の詳細は個別のセクションで扱っており、実行順に以下に示します。
 
 * [WITH 句](/ja/reference/statements/select/with)
 * [SELECT 句](#select-clause)
-* [ALL 句](/ja/reference/statements/select/all)
 * [DISTINCT 句](/ja/reference/statements/select/distinct)
 * [FROM 句](/ja/reference/statements/select/from)
 * [SAMPLE 句](/ja/reference/statements/select/sample)
-* [ARRAY JOIN 句](/ja/reference/statements/select/array-join)
 * [JOIN 句](/ja/reference/statements/select/join)
 * [PREWHERE 句](/ja/reference/statements/select/prewhere)
 * [WHERE 句](/ja/reference/statements/select/where)
-* [GROUP BY 句](/ja/reference/statements/select/group-by)
-* [HAVING 句](/ja/reference/statements/select/having)
 * [WINDOW 句](/ja/reference/functions/window-functions/index)
-* [QUALIFY 句](/ja/reference/statements/select/qualify)
-* [ORDER BY 句](/ja/reference/statements/select/order-by)
+* [GROUP BY 句](/ja/reference/statements/select/group-by)
 * [LIMIT BY 句](/ja/reference/statements/select/limit-by)
+* [HAVING 句](/ja/reference/statements/select/having)
+* [QUALIFY 句](/ja/reference/statements/select/qualify)
 * [LIMIT 句](/ja/reference/statements/select/limit)
 * [OFFSET 句](/ja/reference/statements/select/offset)
 * [UNION 句](/ja/reference/statements/select/union)
@@ -61,15 +58,6 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [EXCEPT 句](/ja/reference/statements/select/except)
 * [INTO OUTFILE 句](/ja/reference/statements/select/into-outfile)
 * [FORMAT 句](/ja/reference/statements/select/format)
-
-クエリは、[パイプ演算子](/ja/reference/statements/select/pipe-operators)を使用して、変換を線形に連結する形式で記述することもできます。
-
-```sql
-FROM table
-|> WHERE x > 1
-|> AGGREGATE count() AS c GROUP BY y
-|> ORDER BY c DESC
-```
 
 <div id="select-clause">
   ## SELECT 句
@@ -208,7 +196,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 クエリのどの部分でも、シノニム (`AS` 別名) を使用できます。
 
-`GROUP BY`、`ORDER BY`、`LIMIT BY` 句では、位置引数を使用できます。これを有効にするには、[enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 設定をオンにします。すると、たとえば `ORDER BY 1,2` は、テーブルの行を最初のカラム、次に 2 番目のカラムでソートします。
+`GROUP BY`、`ORDER BY`、`LIMIT BY` 句では、位置引数を使用できます。これを有効にするには、[enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings#enable_positional_arguments) 設定をオンにします。すると、たとえば `ORDER BY 1,2` は、テーブルの行を最初のカラム、次に 2 番目のカラムでソートします。
 
 <div id="implementation-details">
   ## 実装の詳細

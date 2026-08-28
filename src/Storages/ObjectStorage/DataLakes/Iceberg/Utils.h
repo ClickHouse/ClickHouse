@@ -84,7 +84,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
-Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
+Poco::Dynamic::Var getAvroType(DataTypePtr type);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
@@ -149,11 +149,6 @@ void forEachAvroEntry(
     ContextPtr context,
     const String & logger_name,
     std::function<void(const avro::GenericDatum &)> callback);
-
-using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
-
-PartitionColumnValues getIdentityPartitionColumnValues(
-    const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor);
 }
 
 #endif

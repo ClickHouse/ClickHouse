@@ -10,7 +10,7 @@ keywords: ['Proporção de valores vazios ou zero', 'Calcular']
   ## Como calcular a proporção de valores vazios/zero em cada coluna de uma tabela
 </div>
 
-Se uma coluna for esparsa (vazia ou contiver principalmente zeros), o ClickHouse pode codificá-la em um formato esparso e otimizar automaticamente os cálculos — os dados não exigem descompressão completa durante as consultas. Na verdade, se você souber o quão esparsa é uma coluna, poderá definir essa proporção usando a [configuração `ratio_of_defaults_for_sparse_serialization`](/pt-BR/reference/settings/merge-tree-settings/other#ratio_of_defaults_for_sparse_serialization) para otimizar a serialização.
+Se uma coluna for esparsa (vazia ou contiver principalmente zeros), o ClickHouse pode codificá-la em um formato esparso e otimizar automaticamente os cálculos — os dados não exigem descompressão completa durante as consultas. Na verdade, se você souber o quão esparsa é uma coluna, poderá definir essa proporção usando a [configuração `ratio_of_defaults_for_sparse_serialization`](/pt-BR/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) para otimizar a serialização.
 
 Esta consulta útil pode levar algum tempo, mas analisa cada linha da tabela e determina a proporção de valores que são zero (ou o valor padrão) em cada coluna da tabela especificada:
 

@@ -71,10 +71,6 @@ struct KeeperResponseForSession
 
 using KeeperResponsesForSessions = std::vector<KeeperResponseForSession>;
 
-/// Delivers a response whose waiter is not a per-session response callback, and returns whether it
-/// took the response. Required: both dispatchers reject an empty router at construction.
-using KeeperSpecialResponseRouter = std::function<bool(const KeeperResponseForSession &)>;
-
 struct KeeperRequestForSession
 {
     int64_t session_id{};
@@ -97,10 +93,6 @@ uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path);
 /// the same logical index under the same key, e.g. "snapshot_100_<uuid>.bin.zstd" -> "snapshot_100.bin.zstd".
 std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path);
 
-/// Narrow a setting to the int32 that most `nuraft::raft_params` fields are, warning instead of
-/// wrapping when it does not fit.
-int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log);
-
 /// `before_file_remove_op` runs after the copy and before the source removal. Returning
 /// `false` rejects the move: the source is kept, the caller cleans up the copied target.
 void moveFileBetweenDisks(
@@ -111,15 +103,6 @@ void moveFileBetweenDisks(
     std::function<bool()> before_file_remove_op,
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context);
-
-/// Coarse admission classification for the memory soft limit: does this request plausibly
-/// increase the amount of data Keeper stores?
-///
-/// This is deliberately coarse. It is evaluated in the dispatcher, before the request enters
-/// Raft, where znode states are not available - so it cannot compute a real allocation delta,
-/// and request byte counts have no defined relationship to storage growth. It only gets the
-/// sign right. Computing the true delta needs the storage state and is tracked separately.
-bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request);
 
 /// Callback invoked by KeeperDispatcher to deliver responses to clients.
 /// Must be safe for concurrent invocation: setResponse (from responseThread) and
@@ -137,11 +120,11 @@ struct KeeperNodeStats
 {
     /// Flags packed into ctime_and_flags.
     static constexpr uint64_t NUM_FLAGS = 3;
-    static constexpr uint64_t EPHEMERAL = 1ull << 63;
-    static constexpr uint64_t TTL = 1ull << 62;
-    static constexpr uint64_t CONTAINER = 1ull << 61;
+    static constexpr uint64_t EPHEMERAL = 1ul << 63;
+    static constexpr uint64_t TTL = 1ul << 62;
+    static constexpr uint64_t CONTAINER = 1ul << 61;
     static constexpr uint64_t FLAGS_MASK = EPHEMERAL | TTL | CONTAINER;
-    static_assert(FLAGS_MASK == ~(~0ull >> NUM_FLAGS));
+    static_assert(FLAGS_MASK == ~(~0ul >> NUM_FLAGS));
 
     /// ephemeralOwner value for container nodes (matches `CONTAINER_EPHEMERAL_OWNER` in ZooKeeper).
     static constexpr int64_t CONTAINER_EPHEMERAL_OWNER = INT64_MIN;

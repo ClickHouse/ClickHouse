@@ -56,7 +56,6 @@ struct PartitionSpecsEntry
     Int32 source_id;
     String transform_name;
     String partition_name;
-    Int32 tuple_index;
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 

@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 يستخدم ClickHouse عمومًا [السلوك نفسه المستخدم في برامج C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-تختلف دوال `to<type>` و[cast](#CAST) في سلوكهما في بعض الحالات، مثل حالة [LowCardinality](/ar/reference/data-types/lowcardinality): إذ يزيل [cast](#CAST) السمة [LowCardinality](/ar/reference/data-types/lowcardinality)، بينما لا تفعل دوال `to<type>` ذلك. وينطبق الأمر نفسه على [Nullable](/ar/reference/data-types/nullable). هذا السلوك غير متوافق مع معيار SQL، ويمكن تغييره باستخدام الإعداد [cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings/cast#cast_keep_nullable).
+تختلف دوال `to<type>` و[CAST](#CAST) في سلوكهما في بعض الحالات، مثل حالة [LowCardinality](/ar/reference/data-types/lowcardinality): إذ يزيل [CAST](#CAST) السمة [LowCardinality](/ar/reference/data-types/lowcardinality)، بينما لا تفعل دوال `to<type>` ذلك. وينطبق الأمر نفسه على [Nullable](/ar/reference/data-types/nullable). هذا السلوك غير متوافق مع معيار SQL، ويمكن تغييره باستخدام الإعداد [cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings#cast_keep_nullable).
 
 <Note>
   انتبه إلى احتمال فقدان البيانات إذا جرى تحويل قيم من نوع بيانات إلى نوع أصغر (على سبيل المثال من `Int64` إلى `Int32`) أو بين
@@ -252,8 +252,8 @@ SELECT accurateCast(42, 'UInt16')
 
 ```response title=Response
 ┌─accurateCast(42, 'UInt16')─┐
-│                         42 │
-└────────────────────────────┘
+│                        42 │
+└───────────────────────────┘
 ```
 
 **من نص إلى رقم**
@@ -425,9 +425,12 @@ FROM numbers(3)
 
 ```response title=Response
 ┌─formatRow('CSV', number, 'good')─┐
-│ 0,"good"                        ↴│
-│ 1,"good"                        ↴│
-│ 2,"good"                        ↴│
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
 └──────────────────────────────────┘
 ```
 
@@ -441,15 +444,15 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
 
 ```response title=Response
 ┌─formatRow('CustomSeparated', number, 'good')─┐
-│ <prefix>                                    ↴│
-│↳0	good                                     ↴│
-│↳<suffix>                                     │
-│ <prefix>                                    ↴│
-│↳1	good                                     ↴│
-│↳<suffix>                                     │
-│ <prefix>                                    ↴│
-│↳2	good                                     ↴│
-│↳<suffix>                                     │
+│ <prefix>
+0    good
+<suffix>                   │
+│ <prefix>
+1    good
+<suffix>                   │
+│ <prefix>
+2    good
+<suffix>                   │
 └──────────────────────────────────────────────┘
 ```
 
@@ -851,7 +854,7 @@ SELECT
 يُحلِّل سلسلة تاريخ ووقت بدقة أجزاء من الثانية وفقًا لسلسلة تنسيق تاريخ MySQL.
 
 هذه الدالة هي المعكوس لـ [`formatDateTime`](/ar/reference/functions/regular-functions/date-time-functions) لـ DateTime64.
-وهي تُحلِّل وسيطة من النوع String باستخدام String للتنسيق. وتُرجع نوع DateTime64 يمكنه تمثيل التواريخ من 0000 إلى 9999 بدقة أجزاء من الثانية (تغطي درجات الدقة العالية نطاقًا أضيق لأن القيمة تُخزَّن في `Int64` كعدد من tick: تصل الدقة 8 إلى نحو 4892، وتمتد الدقة 9 من 1677 إلى 2262).
+وهي تُحلِّل وسيطة من النوع String باستخدام String للتنسيق. وتُرجع نوع DateTime64 يمكنه تمثيل التواريخ من 1900 إلى 2299 بدقة أجزاء من الثانية.
 
 **الصيغة**
 
@@ -879,8 +882,8 @@ SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                         2025-01-04 23:00:00.123000 │
-└────────────────────────────────────────────────────────────────────┘
+│                                       2025-01-04 23:00:00.123       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64BestEffort">
@@ -1135,7 +1138,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 يُحلِّل سلسلة تاريخ ووقت بدقة أجزاء من الثانية وفقًا لسلسلة تنسيق تاريخ Joda.
 
 هذه الدالة هي معكوس [`formatDateTimeInJodaSyntax`](/ar/reference/functions/regular-functions/date-time-functions#formatDateTimeInJodaSyntax) لـ DateTime64.
-تُحلِّل وسيطًا من النوع String باستخدام سلسلة تنسيق بأسلوب Joda. وتُرجع نوع DateTime64، الذي يمكنه تمثيل التواريخ من 0000 إلى 9999 بدقة أجزاء من الثانية (تغطي درجات الدقة الأعلى نطاقًا أضيق لأن القيمة تُخزَّن في عدد `Int64` من وحدات tick: تصل الدقة 8 إلى نحو 4892، وتمتد الدقة 9 من 1677 إلى 2262).
+تُحلِّل وسيطًا من النوع String باستخدام سلسلة تنسيق بأسلوب Joda. وتُرجع نوع DateTime64، الذي يمكنه تمثيل التواريخ من 1900 إلى 2299 بدقة أجزاء من الثانية.
 
 راجِع [توثيق Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) للاطلاع على أنماط التنسيق.
 
@@ -1145,7 +1148,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 parseDateTime64InJodaSyntax(time_string, format[, timezone])
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * `time_string` — قيمة `String` المراد تحليلها إلى DateTime64. [`String`](/ar/reference/data-types/string)
 * `format` — سلسلة تنسيق بصياغة Joda تحدد كيفية تحليل time&#95;string. [`String`](/ar/reference/data-types/string)
@@ -1165,8 +1168,8 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                           2025-01-04 23:00:00.123 │
-└───────────────────────────────────────────────────────────────────────────────────┘
+│                                                          2025-01-04 23:00:00.123   │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64InJodaSyntaxOrNull">
@@ -1177,13 +1180,13 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
 
 مماثلة لـ [`parseDateTime64InJodaSyntax`](#parseDateTime64InJodaSyntax)، لكنها تُرجع `NULL` عند مواجهة تنسيق تاريخ يتعذّر تحليله.
 
-**البنية**
+**الصيغة**
 
 ```sql
 parseDateTime64InJodaSyntaxOrNull(time_string, format[, timezone])
 ```
 
-**الوسيطات**
+**المعاملات**
 
 * `time_string` — سلسلة نصية لتحليلها إلى DateTime64. [`String`](/ar/reference/data-types/string)
 * `format` — سلسلة تنسيق بصيغة Joda تحدد كيفية تحليل time&#95;string. [`String`](/ar/reference/data-types/string)
@@ -1203,8 +1206,8 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                                 2025-01-04 23:00:00.123 │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                             2025-01-04 23:00:00.123      │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64InJodaSyntaxOrZero">
@@ -1215,7 +1218,7 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 مثل [`parseDateTime64InJodaSyntax`](#parseDateTime64InJodaSyntax)، لكنها تُرجع التاريخ الصفري عند مواجهة تنسيق تاريخ غير قابل للتحليل.
 
-**البنية**
+**الصياغة**
 
 ```sql
 parseDateTime64InJodaSyntaxOrZero(time_string, format[, timezone])
@@ -1241,8 +1244,8 @@ SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                                 2025-01-04 23:00:00.123 │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                              2025-01-04 23:00:00.123     │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64OrNull">
@@ -1279,8 +1282,8 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                               2025-01-04 23:00:00.123000 │
-└──────────────────────────────────────────────────────────────────────────┘
+│                                            2025-01-04 23:00:00.123        │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64OrZero">
@@ -1289,7 +1292,7 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 أُضيف في: v24.11.0
 
-مماثلة لـ [`parseDateTime64`](#parseDateTime64)، لكنها تُرجع التاريخ الصفري عند مواجهة تنسيق تاريخ يتعذر تحليله.
+مماثلة لـ [`parseDateTime64`](#parseDateTime64)، لكنها تُرجع تاريخًا صفريًا عند مواجهة تنسيق تاريخ يتعذر تحليله.
 
 **البنية**
 
@@ -1297,7 +1300,7 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 parseDateTime64OrZero(time_string, format[, timezone])
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * `time_string` — سلسلة نصية تُحلَّل إلى DateTime64. [`String`](/ar/reference/data-types/string)
 * `format` — سلسلة تنسيق تحدد كيفية تحليل `time&#95;string`. [`String`](/ar/reference/data-types/string)
@@ -1317,8 +1320,8 @@ SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                               2025-01-04 23:00:00.123000 │
-└──────────────────────────────────────────────────────────────────────────┘
+│                                             2025-01-04 23:00:00.123       │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeBestEffort">
@@ -1656,8 +1659,8 @@ SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                     2025-01-04 23:00:00 │
-└─────────────────────────────────────────────────────────────────────────┘
+│                                                      2025-01-04 23:00:00 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeInJodaSyntaxOrNull">
@@ -1694,8 +1697,8 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                           2025-01-04 23:00:00 │
-└───────────────────────────────────────────────────────────────────────────────┘
+│                                                         2025-01-04 23:00:00    │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeInJodaSyntaxOrZero">
@@ -1732,8 +1735,8 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                           2025-01-04 23:00:00 │
-└───────────────────────────────────────────────────────────────────────────────┘
+│                                                          2025-01-04 23:00:00   │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeOrNull">
@@ -1821,7 +1824,6 @@ SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 قُدِّمت في: v1.1.0
 
 تستخدم نفس تسلسل بايتات المصدر في الذاكرة للقيمة المعطاة `x`، وتُعيد تفسيره كنوع الوجهة.
-عندما يكون نوع الوجهة هو `String`، لا تكون المصفوفة المصدر `Array` مدعومة إلا إذا كان نوع عناصرها ثابت الحجم ومتجاورًا في الذاكرة (على سبيل المثال، `Array(UInt8)` أو `Array(FixedString(2))`)؛ وتُنسخ بايتات عناصرها حرفيًا بترتيبها الأصلي في الذاكرة، بحيث يمكن إعادة تفسير النتيجة مرة أخرى إلى النوع الأصلي `Array` على أي معمارية. أما المصفوفات التي تكون عناصرها متغيرة الطول (على سبيل المثال، `Array(String)`) أو قابلة لأن تكون `NULL` (على سبيل المثال، `Array(Nullable(Int32))`) فهي غير مدعومة.
 
 **البنية**
 
@@ -1831,7 +1833,7 @@ reinterpret(x, type)
 
 **الوسائط**
 
-* `x` — القيمة المطلوب إعادة تفسيرها. عند إعادة التفسير إلى `String`، يجب أن يحتوي المصدر `Array` على عناصر متجاورة ثابتة الحجم. [`Any`](/ar/reference/data-types/index)
+* `x` — أي نوع. [`Any`](/ar/reference/data-types/index)
 * `type` — النوع الهدف. إذا كان مصفوفة، فيجب أن يكون نوع عناصر المصفوفة من الأنواع ذات الطول الثابت. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
@@ -1864,18 +1866,6 @@ SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS str
 ┌─string_to_array_of_Float32─┐
 │ [5.626,6.626,5.626,6.626]  │
 └────────────────────────────┘
-```
-
-**مثال لتحويل Array إلى String**
-
-```sql title=Query
-SELECT hex(reinterpret([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8), 'String')) AS array_of_UInt8_to_string
-```
-
-```response title=Response
-┌─array_of_UInt8_to_string─┐
-│ 0102FF                   │
-└──────────────────────────┘
 ```
 
 <div id="reinterpretAsDate">
@@ -2315,9 +2305,8 @@ SELECT
 
 ظهر في: v1.1.0
 
-تعيد تفسير قيمة الإدخال كسلسلة نصية.
-بالنسبة إلى القيم scalar، يُطبَّع ترتيب البايتات إلى little endian، ويتم تجاهل وحدات null byte الموجودة في النهاية. على سبيل المثال، تُرجِع الدالة للقيمة 255 من النوع UInt32 سلسلة نصية تحتوي على محرف واحد.
-أما في حالة `Array` من عناصر ثابتة الحجم، فتُنسخ بايتات العناصر حرفيًا بترتيبها الأصلي داخل الذاكرة، من دون إزالة بايتات الصفر اللاحقة ومن دون التطبيع إلى little endian، بحيث يمكن إعادة تفسير النتيجة إلى نوع `Array` الأصلي على أي معمارية.
+تعيد تفسير قيمة الإدخال كسلسلة نصية (بافتراض ترتيب little endian).
+ويتم تجاهل وحدات null byte الموجودة في النهاية. على سبيل المثال، تُرجِع الدالة للقيمة 255 من النوع UInt32 سلسلة نصية تحتوي على محرف واحد.
 
 **البنية**
 
@@ -2325,9 +2314,9 @@ SELECT
 reinterpretAsString(x)
 ```
 
-**الوسائط**
+**الوسيطات**
 
-* `x` — القيمة المطلوب إعادة تفسيرها كسلسلة نصية. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`Array`](/ar/reference/data-types/array)
+* `x` — القيمة المطلوب إعادة تفسيرها كسلسلة نصية. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
 
 **القيمة المُعادة**
 
@@ -2347,18 +2336,6 @@ SELECT
 ┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
 │ A                                                      │ A                                         │
 └────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
-```
-
-**مثال على تحويل Array إلى String**
-
-```sql title=Query
-SELECT hex(reinterpretAsString([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8))) AS array_of_UInt8_to_string
-```
-
-```response title=Response
-┌─array_of_UInt8_to_string─┐
-│ 0102FF                   │
-└──────────────────────────┘
 ```
 
 <div id="reinterpretAsUInt128">
@@ -2753,7 +2730,7 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
 طُرح في: v1.1.0
 
 يحوّل قيمة إدخال من نوع String إلى قيمة من النوع BFloat16.
-إذا لم تكن السلسلة النصية تمثل قيمة بفاصلة عائمة، فستُرجع الدالة صفرًا.
+إذا لم تكن السلسلة النصية تمثل قيمة ذات فاصلة عائمة، فستُرجع الدالة صفرًا.
 
 الوسيطات المدعومة:
 
@@ -2911,7 +2888,7 @@ SELECT toDate(20297)
 أُضيف في: v21.9.0
 
 يحوّل الوسيطة إلى نوع البيانات [Date32](/ar/reference/data-types/date32).
-إذا كانت القيمة خارج النطاق `[0000-01-01, 9999-12-31]`، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
+إذا كانت القيمة خارج النطاق، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
 إذا كانت الوسيطة من النوع [`Date`](/ar/reference/data-types/date)، فتُؤخذ حدودها في الاعتبار.
 
 **البنية**
@@ -2920,7 +2897,7 @@ SELECT toDate(20297)
 toDate32(expr)
 ```
 
-**وسيط**
+**المعاملات**
 
 * `expr` — القيمة المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`UInt32`](/ar/reference/data-types/int-uint) أو [`Date`](/ar/reference/data-types/date)
 
@@ -2944,7 +2921,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**قبل عام 1900**
+**خارج النطاق**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2931,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1899-01-01
+value:           1900-01-01
 toTypeName(value): Date32
 ```
 
@@ -2962,11 +2939,9 @@ toTypeName(value): Date32
   ## toDate32OrDefault
 </div>
 
-أُضيف في: v21.11.0
+استُحدث في: v21.11.0
 
-يحوِّل الوسيط إلى نوع البيانات [Date32](/ar/reference/data-types/date32). إذا تعذّر تحويل الوسيط، بما في ذلك القيمة الرقمية الواقعة خارج نطاق [Date32](/ar/reference/data-types/date32)، فإن الدالة تُرجع قيمة افتراضية تكون إما الوسيط الثاني (إذا تم تحديده)، أو `1900-01-01` بخلاف ذلك، وهي القيمة الافتراضية التاريخية لـ [Date32](/ar/reference/data-types/date32) (وليست حدها الأدنى، وهو `0000-01-01`). وإذا كان الوسيط من النوع [Date](/ar/reference/data-types/date)، فتُؤخذ حدوده في الاعتبار.
-
-لاحظ أنه، بخلاف [toDate32](#toDate32)، لا تقيِّد هذه الدالة الوسيط الرقمي الواقع خارج النطاق ضمن حدود [Date32](/ar/reference/data-types/date32)؛ بل يُعامل هذا الوسيط على أنه غير قابل للتحويل.
+يحوِّل الوسيط إلى نوع البيانات [Date32](/ar/reference/data-types/date32). إذا كانت القيمة خارج النطاق، فإن `toDate32OrDefault` تُرجع قيمة الحد الأدنى التي يدعمها [Date32](/ar/reference/data-types/date32). وإذا كان الوسيط من النوع [Date](/ar/reference/data-types/date)، فتُؤخذ حدوده في الاعتبار. وتُرجع القيمة الافتراضية إذا كان الوسيط غير صالح.
 
 **البنية**
 
@@ -2999,16 +2974,6 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
-```
-
-```response title=Response
-2020-01-01
-```
-
-**رقم خارج النطاق**
-
-```sql title=Query
-SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3058,9 +3023,8 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 أُضيف في: v21.9.0
 
-يحوّل قيمة الإدخال إلى قيمة من النوع [Date32](/ar/reference/data-types/date32)، لكنه يعيد القيمة الافتراضية `1900-01-01` إذا كانت الوسيطة غير صالحة.
-وهو مماثل لـ [toDate32](#toDate32)، لكنه يعيد `1900-01-01` إذا كانت الوسيطة غير صالحة.
-لاحظ أن `1900-01-01` قيمة افتراضية تاريخية للإدخال غير الصالح، وليست الحد الأدنى لـ [Date32](/ar/reference/data-types/date32)، وهو `0000-01-01`.
+يحوّل قيمة مُدخلة إلى قيمة من النوع [Date32](/ar/reference/data-types/date32)، لكنه يعيد الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) إذا كانت الوسيطة غير صالحة.
+وهو مماثل لـ [toDate32](#toDate32)، لكنه يعيد الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) إذا كانت الوسيطة غير صالحة.
 
 انظر أيضًا:
 
@@ -3074,13 +3038,13 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 toDate32OrZero(x)
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * `x` — تمثيل نصي لتاريخ. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُعيد قيمة `Date32` عند النجاح، وإلا تُعيد القيمة الافتراضية التاريخية للإدخال غير الصالح (`1900-01-01`). [`Date32`](/ar/reference/data-types/date32)
+تُعيد قيمة `Date32` عند النجاح، وإلا تُعيد الحد الأدنى لقيم `Date32` (`1900-01-01`). [`Date32`](/ar/reference/data-types/date32)
 
 **أمثلة**
 
@@ -3149,7 +3113,6 @@ SELECT toDateOrDefault('', CAST('2023-01-01', 'Date'))
 
 يحوّل قيمة الإدخال إلى قيمة من النوع `Date`، لكنه يعيد `NULL` إذا تلقّى وسيطة غير صالحة.
 وهو مثل [`toDate`](#toDate)، لكنه يعيد `NULL` إذا تلقّى وسيطة غير صالحة.
-تُفسَّر الوسيطة الصحيحة بالطريقة نفسها المتّبعة في `toDate` (على أنها عدد الأيام منذ 1970-01-01 إذا لم تتجاوز 65535، وإلا فتُعد Unix timestamp)، وتُرجع `NULL` إذا كانت خارج نطاق النوع `Date`.
 
 **الصياغة**
 
@@ -3159,7 +3122,7 @@ toDateOrNull(x)
 
 **الوسائط**
 
-* `x` — تمثيل نصي لتاريخ، أو عدد صحيح من الأيام، أو Unix timestamp. [`String`](/ar/reference/data-types/string) أو [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+* `x` — تمثيل نصي لتاريخ. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -3175,8 +3138,8 @@ SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
 
 ```response title=Response
 ┌─toDateOrNull('2025-12-30')─┬─toDateOrNull('invalid')─┐
-│                 2025-12-30 │                    ᴺᵁᴸᴸ │
-└────────────────────────────┴─────────────────────────┘
+│                 2025-12-30 │                   ᴺᵁᴸᴸ │
+└────────────────────────────┴────────────────────────┘
 ```
 
 <div id="toDateOrZero">
@@ -3271,15 +3234,13 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
   ## toDateTime32
 </div>
 
-مُتاح منذ: v20.9.0
+استُحدثت في: v20.9.0
 
 يحوّل قيمة الإدخال إلى النوع `DateTime`.
-يدعم التحويل من `String` أو `FixedString` أو `Date` أو `Date32` أو `Time` أو `DateTime` أو `DateTime64` أو الأنواع الرقمية (`(U)Int8` أو `(U)Int16` أو `(U)Int32` أو `(U)Int64` أو `BFloat16` أو `Float32` أو `Float64`). لا تُدعم قيم `Decimal` و`Time64` وتؤدي إلى استثناء؛ أما النوع `Time` وأنواع الأعداد الصحيحة العريضة، مثل `(U)Int128`/`(U)Int256`، فتلتف قيمها بدلاً من إشباعها.
-`DateTime32` اسم مستعار لـ `DateTime` ويدعم التواريخ من `1970-01-01 00:00:00` إلى `2106-02-07 06:28:15`.
-عند التحويل من سلسلة أو من أحد الأنواع الرقمية القابلة للإشباع المذكورة أعلاه، تُقيَّد القيم الواقعة خارج هذا النطاق بحدوده. لا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وتؤدي إلى استثناء.
-تتبع التحويلات من أنواع التاريخ والوقت الأخرى، مثل `Date32` أو `DateTime64`، الإعداد `date_time_overflow_behavior`: فقد ينتج عن وضع `ignore` الافتراضي قيم ملتفة، بينما يقيّد `saturate` القيم بحدود النطاق، ويطرح `throw` استثناءً.
+يدعم التحويل من `String` و`FixedString` و`Date` و`Date32` و`DateTime` أو من الأنواع الرقمية (`(U)Int*` و`Float*` و`Decimal`).
+يوفّر DateTime32 نطاقًا أوسع مقارنةً بـ `DateTime`، إذ يدعم التواريخ من `1900-01-01` إلى `2299-12-31`.
 
-**الصيغة**
+**الصياغة**
 
 ```sql
 toDateTime32(x[, timezone])
@@ -3287,7 +3248,7 @@ toDateTime32(x[, timezone])
 
 **الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`Time`](/ar/reference/data-types/time) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`UInt*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `timezone` — اختياري. المنطقة الزمنية لقيمة `DateTime` المُعادة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
@@ -3296,40 +3257,45 @@ toDateTime32(x[, timezone])
 
 **أمثلة**
 
-**من سلسلة نصية**
+**القيمة ضمن النطاق**
 
 ```sql title=Query
-SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
+SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00 │ DateTime          │
-└─────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
+└─────────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-**من Unix timestamp**
+**كعدد عشري بدقة محددة**
 
 ```sql title=Query
-SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
+SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
+-- without the decimal point the value is still treated as Unix Timestamp in seconds
+SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
-└─────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
+└─────────────────────────┴──────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
+│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
+└─────────────────────────┴────────────────────────────────────────────┘
 ```
 
-**باستخدام منطقة زمنية**
+**مع تحديد منطقة زمنية**
 
 ```sql title=Query
-SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────value─┬─toTypeName(value)─────────┐
-│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
-└─────────────────────┴───────────────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
+└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -3453,19 +3419,16 @@ SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2
 
 يحوّل قيمة إدخال إلى قيمة من النوع `DateTime64`، لكنه يعيد `NULL` إذا كانت الوسيطة غير صالحة.
 وهو مماثل لـ `toDateTime64`، لكنه يعيد `NULL` إذا كانت الوسيطة غير صالحة.
-تُفسَّر الوسيطة الصحيحة على أنها Unix timestamp بالثواني الكاملة، وتنتج `NULL` إذا كانت خارج نطاق النوع `DateTime64`.
 
 **البنية**
 
 ```sql
-toDateTime64OrNull(x[, precision[, timezone]])
+toDateTime64OrNull(x)
 ```
 
 **الوسيطات**
 
-* `x` — تمثيل نصي لتاريخ ووقت بدقة أجزاء الثانية، أو طابع زمني Unix صحيح. [`String`](/ar/reference/data-types/string) أو [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
-* `precision` — اختياري. دقة أجزاء الثانية للقيمة المُعادة. [`UInt8`](/ar/reference/data-types/int-uint)
-* `timezone` — اختياري. المنطقة الزمنية للقيمة المُعادة. [`String`](/ar/reference/data-types/string)
+* `x` — تمثيل نصي لتاريخ ووقت بدقة أجزاء الثانية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -3481,8 +3444,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 ```response title=Response
 ┌─toDateTime64OrNull('2025-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
-│                       2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
-└───────────────────────────────────────────────┴───────────────────────────────┘
+│                         2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
+└─────────────────────────────────────────────────┴───────────────────────────────┘
 ```
 
 <div id="toDateTime64OrZero">
@@ -3524,8 +3487,8 @@ SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invali
 
 ```response title=Response
 ┌─toDateTime64OrZero('2025-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
-│                       2025-12-30 13:44:17.123 │       1970-01-01 00:00:00.000 │
-└───────────────────────────────────────────────┴───────────────────────────────┘
+│                         2025-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
+└─────────────────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
 <div id="toDateTimeOrDefault">
@@ -3582,18 +3545,16 @@ SELECT toDateTimeOrDefault('', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))
 
 يحوّل قيمة الإدخال إلى قيمة من النوع `DateTime`، لكنه يُرجع `NULL` إذا تلقّى وسيطًا غير صالح.
 وهو مماثل لـ [`toDateTime`](#toDateTime)، لكنه يُرجع `NULL` إذا تلقّى وسيطًا غير صالح.
-ويُفسَّر الوسيط الصحيح على أنه طابع زمني Unix، ويُنتج `NULL` إذا كان خارج نطاق النوع `DateTime`.
 
 **البنية**
 
 ```sql
-toDateTimeOrNull(x[, timezone])
+toDateTimeOrNull(x)
 ```
 
-**الوسيطات**
+**المعاملات**
 
-* `x` — تمثيل نصي لتاريخ ووقت، أو طابع زمني Unix صحيح. [`String`](/ar/reference/data-types/string) أو [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
-* `timezone` — اختياري. المنطقة الزمنية للقيمة المُعادة. [`String`](/ar/reference/data-types/string)
+* `x` — تمثيل نصي لتاريخ ووقت. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -3611,18 +3572,6 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
 ┌─toDateTimeOrNull('2025-12-30 13:44:17')─┬─toDateTimeOrNull('invalid')─┐
 │                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
-```
-
-**وسيط عدد صحيح مع منطقة زمنية**
-
-```sql title=Query
-SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(4294967296)
-```
-
-```response title=Response
-┌─toDateTimeOrNull(1583851242, 'Asia/Shanghai')─┬─toDateTimeOrNull(4294967296)─┐
-│                           2020-03-10 22:40:42 │                         ᴺᵁᴸᴸ │
-└───────────────────────────────────────────────┴──────────────────────────────┘
 ```
 
 <div id="toDateTimeOrZero">
@@ -3690,7 +3639,7 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
 <Warning>
   تحذف التحويلات الأرقام الزائدة، وقد تعمل بطريقة غير متوقعة عند التعامل مع مدخلات Float32/Float64 لأن العمليات تُنفَّذ باستخدام تعليمات الفاصلة العائمة.
   على سبيل المثال: `toDecimal128(1.15, 2)` يساوي `1.14` لأن 1.15 * 100 في الفاصلة العائمة يساوي 114.99.
-  يمكنك استخدام قيمة إدخال من نوع String بحيث تستخدم العمليات النوع الصحيح الأساسي: `toDecimal128('1.15', 2) = 1.15`
+  يمكنك استخدام مُدخل من نوع String بحيث تستخدم العمليات النوع الصحيح الأساسي: `toDecimal128('1.15', 2) = 1.15`
 </Warning>
 
 **الصياغة**
@@ -4070,7 +4019,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 الوسيطات غير المدعومة (تعيد `0`):
 
 * القيم أو التمثيلات النصية لقيم Float* `NaN` و`Inf` (غير حساسة لحالة الأحرف).
-* التمثيلات النصية للقيم الثنائية والسداسية عشرية.
+* التمثيلات النصية للقيم الثنائية والستّ عشرية.
 
 <Note>
   إذا تجاوزت قيمة الإدخال حدود `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`، فستعيد الدالة `0`.
@@ -4296,7 +4245,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 
 الوسائط غير المدعومة (تُرجِع `0`):
 
-* القيم أو التمثيلات النصية لقيم Float* `NaN` و`Inf` (دون مراعاة حالة الأحرف).
+* القيم أو التمثيلات النصية لقيم Float* `NaN` و`Inf` (دون حساسية لحالة الأحرف).
 * التمثيلات النصية للقيم الثنائية والسداسية عشرية.
 
 <Note>
@@ -5111,7 +5060,7 @@ toFloat64OrZero('abc'):  0
 الوسيطات غير المدعومة:
 
 * التمثيلات النصية لقيم Float*، بما في ذلك `NaN` و`Inf`.
-* التمثيلات النصية للقيم الثنائية والقيم السداسية العشرية، مثل `SELECT toInt128('0xc0fe');`.
+* التمثيلات النصية للقيم الثنائية والسداسية العشرية، مثل `SELECT toInt128('0xc0fe');`.
 
 <Note>
   إذا تعذّر تمثيل قيمة الإدخال ضمن حدود Int128، فقد يحدث تجاوز علوي أو سفلي في النتيجة.
@@ -5436,7 +5385,7 @@ SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))
 
 قُدِّمت في: v1.1.0
 
-مثل [`toInt16`](#toInt16)، تُحوِّل هذه الدالة قيمة الإدخال إلى قيمة من النوع [Int16](/ar/reference/data-types/int-uint)، لكنها تُعيد `NULL` في حال حدوث خطأ.
+مثل [`toInt16`](#toInt16)، تُحوِّل هذه الدالة قيمة الإدخال إلى قيمة من النوع [Int16](/ar/reference/data-types/int-uint)، لكنها تُعيد `NULL` عند حدوث خطأ.
 
 الوسيطات المدعومة:
 
@@ -5445,7 +5394,7 @@ SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))
 الوسيطات غير المدعومة (تُعيد `NULL`):
 
 * التمثيلات النصية لقيم Float*، بما في ذلك `NaN` و`Inf`.
-* التمثيلات النصية للقيم الثنائية والسداسية العشرية، مثل `SELECT toInt16OrNull('0xc0fe');`.
+* التمثيلات النصية للقيم الثنائية والستّ عشرية، مثل `SELECT toInt16OrNull('0xc0fe');`.
 
 <Note>
   إذا تعذّر تمثيل قيمة الإدخال ضمن حدود [Int16](/ar/reference/data-types/int-uint)، يحدث فيض أو نقص في النتيجة.
@@ -5571,7 +5520,7 @@ toInt16OrZero('abc'): 0
 * التمثيلات النصية للقيم الثنائية والسداسية العشرية، مثل `SELECT toInt256('0xc0fe');`.
 
 <Note>
-  إذا تعذّر تمثيل قيمة الإدخال ضمن حدود Int256، فقد يحدث تجاوز أو قصور في النتيجة.
+  إذا تعذّر تمثيل قيمة الإدخال ضمن حدود Int256، فقد يحدث فيض أو نقص في النتيجة.
   لا يُعدّ ذلك خطأً.
 </Note>
 
@@ -5789,7 +5738,7 @@ SELECT toInt256OrZero('abc')
 الوسيطات غير المدعومة:
 
 * التمثيلات النصية لقيم Float*، بما في ذلك `NaN` و`Inf`.
-* التمثيلات النصية للقيم الثنائية والقيم السداسية عشرية، على سبيل المثال `SELECT toInt32('0xc0fe');`.
+* التمثيلات النصية للقيم الثنائية والستّ عشرية، على سبيل المثال `SELECT toInt32('0xc0fe');`.
 
 <Note>
   إذا تعذّر تمثيل قيمة الإدخال ضمن حدود [Int32](/ar/reference/data-types/int-uint)، فستتجاوز النتيجة الحدّ الأعلى أو الأدنى للنطاق.
@@ -7100,7 +7049,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\0world')─┐
+┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
 │ hello                      │ hello                             │
 └────────────────────────────┴───────────────────────────────────┘
 ```
@@ -7109,23 +7058,10 @@ SELECT
   ## toTime
 </div>
 
-أُضيف في: v25.5.0
+أُضيف في: v1.1.0
 
 يحوّل قيمة الإدخال إلى النوع [Time](/ar/reference/data-types/time).
-يدعم التحويل من String وFixedString وDateTime وDateTime64 أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
-تُقيَّد القيم الرقمية الواقعة خارج نطاق النوع (`-999:59:59` إلى `999:59:59`، أي `-3599999` إلى `3599999` ثانية) بحدود النطاق، ولا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وينتج عن ذلك استثناء.
-
-<Info>
-  **`toTime` القديم**
-
-  قبل v25.5، كانت `toTime` دالة مختلفة تحوّل تاريخًا مع وقت إلى تاريخ ثابت (`1970-01-02`) مع الحفاظ على
-  مكوّن الوقت. ولا تزال تلك الدالة متاحة بالاسم [`toTimeWithFixedDate`](/ar/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
-
-  يؤدي أيضًا ضبط [`use_legacy_to_time`](/ar/reference/settings/session-settings#use_legacy_to_time) على `1` إلى إبقاء الاسم `toTime` مرتبطًا بالدالة القديمة،
-  أي إن استدعاءات `toTime` تُفسَّر على أنها `toTimeWithFixedDate` بدلًا من دالة التحويل الموضحة هنا.
-  أثناء تمكين الإعداد، استخدم `CAST(x AS Time)` أو `x::Time` للتحويل إلى النوع `Time`.
-  تكون القيمة الافتراضية للإعداد `0` منذ v26.7، لكنها كانت `1` من v25.6 إلى v26.6، ولهذا تضبطها الأمثلة أدناه صراحةً.
-</Info>
+يدعم التحويل من String وFixedString وDateTime أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
 
 **البنية**
 
@@ -7135,7 +7071,7 @@ toTime(x)
 
 **الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Float*`](/ar/reference/data-types/float)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 
@@ -7143,12 +7079,10 @@ toTime(x)
 
 **أمثلة**
 
-**التحويل من DateTime64 إلى Time**
+**تحويل String إلى Time**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
-SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
+SELECT toTime('14:30:25')
 ```
 
 ```response title=Response
@@ -7158,8 +7092,6 @@ SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 **التحويل من DateTime إلى Time**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7167,12 +7099,10 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**تحويل الأعداد الصحيحة (بالثواني منذ epoch) إلى Time**
+**تحويل القيم الصحيحة إلى Time**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
-SELECT toTime(toDateTime(52225, 'UTC'))
+SELECT toTime(52225)
 ```
 
 ```response title=Response
@@ -7186,53 +7116,49 @@ SELECT toTime(toDateTime(52225, 'UTC'))
 أُضيف في: v25.6.0
 
 يحوّل قيمة الإدخال إلى النوع [Time64](/ar/reference/data-types/time64).
-يدعم التحويل من String وFixedString وDateTime64 أو من الأنواع الرقمية التي تمثل الثواني منذ منتصف الليل.
-يوفّر دقة أقل من الثانية لقيم الوقت، حتى `scale` من الخانات الكسرية.
+ويدعم التحويل من String وFixedString وDateTime64 أو من أنواع رقمية تمثل الميكروثواني منذ منتصف الليل.
+ويوفّر دقة بالميكروثانية لقيم الوقت.
 
-**الصياغة**
+**البنية**
 
 ```sql
-toTime64(x, scale)
+toTime64(x)
 ```
 
-**الوسيطات**
+**الوسائط**
 
-* `x` — قيمة الإدخال المطلوب تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
-* `scale` — الدقة (عدد الخانات الكسرية، من `0` إلى `9`) في قيمة `Time64` الناتجة. [`(U)Int*`](/ar/reference/data-types/int-uint)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
-**القيمة المعادة**
+**القيمة المُعادة**
 
-تُرجِع القيمة المحوَّلة بالدقة `scale` المطلوبة. [`Time64`](/ar/reference/data-types/time64)
+تُعيد قيمة الإدخال بعد تحويلها بدقة الميكروثانية. [`Time64(6)`](/ar/reference/data-types/time64)
 
 **أمثلة**
 
 **تحويل String إلى Time64**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SELECT toTime64('14:30:25.123456', 6)
+SELECT toTime64('14:30:25.123456')
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**تحويل DateTime64 إلى Time64**
+**التحويل من DateTime64 إلى Time64**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**تحويل Float (عدد الثواني منذ منتصف الليل) إلى Time64**
+**تحويل القيم الصحيحة إلى Time64**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SELECT toTime64(52225.123456, 6)
+SELECT toTime64(52225123456)
 ```
 
 ```response title=Response
@@ -7288,7 +7214,7 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
 استُحدثت في: v25.6.0
 
 يحوِّل قيمة الإدخال إلى قيمة من النوع Time64، لكنه يُرجع `00:00:00.000` في حال حدوث خطأ.
-يشبه [`toTime64`](#toTime64)، لكنه يُرجع `00:00:00.000` بدلًا من طرح استثناء عند حدوث أخطاء في التحويل.
+يشبه [`toTime64`](#toTime64)، لكنه يُرجع `00:00:00.000` بدلًا من رفع استثناء عند حدوث أخطاء في التحويل.
 
 **البنية**
 
@@ -7296,7 +7222,7 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
 toTime64OrZero(x)
 ```
 
-**وسيطة**
+**المعاملات**
 
 * `x` — تمثيل نصي لوقت بدقة أجزاء من الثانية. [`String`](/ar/reference/data-types/string)
 
@@ -7314,15 +7240,15 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 
 ```response title=Response
 ┌─toTime64OrZero('12:30:45.123')─┬─toTime64OrZero('invalid')─┐
-│                   12:30:45.123 │              00:00:00.000 │
-└────────────────────────────────┴───────────────────────────┘
+│                   12:30:45.123 │             00:00:00.000 │
+└────────────────────────────────┴──────────────────────────┘
 ```
 
 <div id="toTimeOrNull">
   ## toTimeOrNull
 </div>
 
-طُرح في: v25.5.0
+طُرح في: v1.1.0
 
 يحوّل قيمة الإدخال إلى قيمة من النوع Time، ولكنه يعيد `NULL` في حال حدوث خطأ.
 يشبه [`toTime`](#toTime)، لكنه يعيد `NULL` بدلًا من طرح استثناء عند حدوث أخطاء في التحويل.
@@ -7332,13 +7258,13 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 * [`toTime`](#toTime)
 * [`toTimeOrZero`](#toTimeOrZero)
 
-**بنية**
+**الصياغة**
 
 ```sql
 toTimeOrNull(x)
 ```
 
-**وسيطة**
+**المعاملات**
 
 * `x` — تمثيل نصي لوقت. [`String`](/ar/reference/data-types/string)
 
@@ -7364,12 +7290,12 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-استُحدث في: v25.5.0
+استُحدث في: v1.1.0
 
 يحوّل قيمة الإدخال إلى قيمة من النوع Time، لكنه يعيد `00:00:00` في حال حدوث خطأ.
 يشبه toTime، لكنه يعيد `00:00:00` بدلًا من إطلاق استثناء عند حدوث أخطاء في التحويل.
 
-**بنية**
+**الصيغة**
 
 ```sql
 toTimeOrZero(x)
@@ -8450,7 +8376,7 @@ SELECT toUInt64OrDefault('abc', CAST('0', 'UInt64'))
 
 تم تقديمه في: v1.1.0
 
-على غرار [`toUInt64`](#toUInt64)، تحوّل هذه الدالة قيمة الإدخال إلى قيمة من النوع [`UInt64`](/ar/reference/data-types/int-uint)، ولكنها تُرجع `NULL` في حال حدوث خطأ.
+على غرار [`toUInt64`](#toUInt64)، تحوّل هذه الدالة قيمة إدخال إلى قيمة من النوع [`UInt64`](/ar/reference/data-types/int-uint)، ولكنها تُرجع `NULL` في حال حدوث خطأ.
 
 الوسيطات المدعومة:
 
@@ -8570,7 +8496,7 @@ toUInt64OrZero('abc'): 0
 
 تم تقديمه في: v1.1.0
 
-يحوّل قيمة الإدخال إلى قيمة من النوع [`UInt8`](/ar/reference/data-types/int-uint).
+يحوّل قيمة إدخال إلى قيمة من النوع [`UInt8`](/ar/reference/data-types/int-uint).
 يطرح استثناءً في حال حدوث خطأ.
 
 الوسيطات المدعومة:
@@ -8590,7 +8516,7 @@ toUInt64OrZero('abc'): 0
 </Note>
 
 <Note>
-  تستخدم الدالة [التقريب نحو الصفر](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)، ما يعني أنها تحذف الخانات الكسرية من الأعداد.
+  تستخدم الدالة [التقريب نحو الصفر](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)، ما يعني أنها تحذف الأرقام الكسرية من الأعداد.
 </Note>
 
 انظر أيضًا:
@@ -8909,7 +8835,7 @@ toUnixTimestamp64Micro(value)
 
 **القيمة المُعادة**
 
-يعيد طابعًا زمنيًا بتنسيق Unix بالميكروثانية. [`Int64`](/ar/reference/data-types/int-uint)
+يعيد طابعًا زمنيًا لـ Unix بالميكروثانية. [`Int64`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -8922,8 +8848,8 @@ SELECT toUnixTimestamp64Micro(dt64);
 
 ```response title=Response
 ┌─toUnixTimestamp64Micro(dt64)─┐
-│             1739489491011123 │
-└──────────────────────────────┘
+│               1739489491011123 │
+└────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Milli">

@@ -10,7 +10,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
 #include <Functions/castTypeToEither.h>
-#include <Functions/checkLpNormPArgument.h>
 #include <Functions/IFunction.h>
 
 namespace DB
@@ -18,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -1103,13 +1103,6 @@ public:
         if (tuple_size == 0)
             return std::make_shared<DataTypeUInt8>();
 
-        /// Validate `p` explicitly, consistently with the array carriers. Building `pow` below is not
-        /// enough: `pow` accepts `Decimal` exponents and any value, while the execute-time
-        /// `extractLpNormPArgument` does not, so analysis-only paths (e.g. `toTypeName`) would
-        /// advertise a return type for a `Decimal` or out-of-range `p` that execution rejects. The
-        /// check is skipped for empty tuples above, because execution never touches `p` for them either.
-        checkLpNormPArgumentForAnalysis(arguments[1], getName());
-
         const auto & p_column = arguments[1];
         auto abs = FunctionFactory::instance().get("abs", context);
         auto pow = FunctionFactory::instance().get("pow", context);
@@ -1161,9 +1154,20 @@ public:
         const auto & p_column = arguments[1];
 
         if (!isColumnConst(*p_column.column) && p_column.column->size() != 1)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument p of function {} must be constant", getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
-        Float64 p = extractLpNormPArgument(*p_column.column, getName());
+        double p = 0;
+        if (isFloat(p_column.column->getDataType()))
+            p = p_column.column->getFloat64(0);
+        else if (isUInt(p_column.column->getDataType()))
+            p = static_cast<double>(p_column.column->getUInt(0));
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
+
+        if (p < 1 || p >= HUGE_VAL)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Second argument for function {} must be not less than one and not be an infinity",
+                            getName());
 
         auto abs = FunctionFactory::instance().get("abs", context);
         auto pow = FunctionFactory::instance().get("pow", context);
@@ -1497,11 +1501,6 @@ extern FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 
-extern FunctionPtr createFunctionArrayL1Normalize(ContextPtr context_);
-extern FunctionPtr createFunctionArrayL2Normalize(ContextPtr context_);
-extern FunctionPtr createFunctionArrayLpNormalize(ContextPtr context_);
-extern FunctionPtr createFunctionArrayLinfNormalize(ContextPtr context_);
-
 extern FunctionPtr createFunctionArrayL1Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
@@ -1563,38 +1562,6 @@ struct LinfNormTraits
 
     static constexpr auto CreateTupleFunction = FunctionLinfNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfNorm;
-};
-
-struct L1NormalizeTraits
-{
-    static constexpr auto name = "L1Normalize";
-
-    static constexpr auto CreateTupleFunction = FunctionL1Normalize::create;
-    static constexpr auto CreateArrayFunction = createFunctionArrayL1Normalize;
-};
-
-struct L2NormalizeTraits
-{
-    static constexpr auto name = "L2Normalize";
-
-    static constexpr auto CreateTupleFunction = FunctionL2Normalize::create;
-    static constexpr auto CreateArrayFunction = createFunctionArrayL2Normalize;
-};
-
-struct LpNormalizeTraits
-{
-    static constexpr auto name = "LpNormalize";
-
-    static constexpr auto CreateTupleFunction = FunctionLpNormalize::create;
-    static constexpr auto CreateArrayFunction = createFunctionArrayLpNormalize;
-};
-
-struct LinfNormalizeTraits
-{
-    static constexpr auto name = "LinfNormalize";
-
-    static constexpr auto CreateTupleFunction = FunctionLinfNormalize::create;
-    static constexpr auto CreateArrayFunction = createFunctionArrayLinfNormalize;
 };
 
 struct L1DistanceTraits
@@ -1708,11 +1675,6 @@ using TupleOrArrayFunctionL2SquaredNorm = TupleOrArrayFunction<L2SquaredNormTrai
 using TupleOrArrayFunctionLpNorm = TupleOrArrayFunction<LpNormTraits>;
 using TupleOrArrayFunctionLinfNorm = TupleOrArrayFunction<LinfNormTraits>;
 
-using TupleOrArrayFunctionL1Normalize = TupleOrArrayFunction<L1NormalizeTraits>;
-using TupleOrArrayFunctionL2Normalize = TupleOrArrayFunction<L2NormalizeTraits>;
-using TupleOrArrayFunctionLpNormalize = TupleOrArrayFunction<LpNormalizeTraits>;
-using TupleOrArrayFunctionLinfNormalize = TupleOrArrayFunction<LinfNormalizeTraits>;
-
 using TupleOrArrayFunctionL1Distance = TupleOrArrayFunction<L1DistanceTraits>;
 using TupleOrArrayFunctionL2Distance = TupleOrArrayFunction<L2DistanceTraits>;
 using TupleOrArrayFunctionL2SquaredDistance = TupleOrArrayFunction<L2SquaredDistanceTraits>;
@@ -1741,8 +1703,8 @@ Calculates the element-wise sum of two or more tuples of the same size.
     };
     FunctionDocumentation::ReturnedValue returned_value_tuplePlus = {"Returns a tuple containing the element-wise sums.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tuplePlus = {
-        {"Two tuples", "SELECT tuplePlus((1, 2), (2, 3))", "(3,5)"},
-        {"Three tuples", "SELECT tuplePlus((1, 2), (2, 3), (3, 4))", "(6,9)"}
+        {"Two tuples", "SELECT tuplePlus((1, 2), (2, 3))", "(3, 5)"},
+        {"Three tuples", "SELECT tuplePlus((1, 2), (2, 3), (3, 4))", "(6, 9)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tuplePlus = {21, 11};
     FunctionDocumentation::Category category_tuplePlus = FunctionDocumentation::Category::Tuple;
@@ -1761,8 +1723,8 @@ Calculates the element-wise difference of two or more tuples of the same size, a
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleMinus = {"Returns a tuple containing the element-wise differences.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMinus = {
-        {"Two tuples", "SELECT tupleMinus((1, 2), (2, 3))", "(-1,-1)"},
-        {"Three tuples", "SELECT tupleMinus((10, 10), (3, 4), (2, 1))", "(5,5)"}
+        {"Two tuples", "SELECT tupleMinus((1, 2), (2, 3))", "(-1, -1)"},
+        {"Three tuples", "SELECT tupleMinus((10, 10), (3, 4), (2, 1))", "(5, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMinus = {21, 11};
     FunctionDocumentation::Category category_tupleMinus = FunctionDocumentation::Category::Tuple;
@@ -1781,8 +1743,8 @@ Calculates the element-wise product of two or more tuples of the same size.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleMultiply = {"Returns a tuple containing the element-wise products.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMultiply = {
-        {"Two tuples", "SELECT tupleMultiply((1, 2), (2, 3))", "(2,6)"},
-        {"Three tuples", "SELECT tupleMultiply((1, 2), (2, 3), (1, 2))", "(2,12)"}
+        {"Two tuples", "SELECT tupleMultiply((1, 2), (2, 3))", "(2, 6)"},
+        {"Three tuples", "SELECT tupleMultiply((1, 2), (2, 3), (1, 2))", "(2, 12)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMultiply = {21, 11};
     FunctionDocumentation::Category category_tupleMultiply = FunctionDocumentation::Category::Tuple;
@@ -1804,8 +1766,8 @@ Division by zero will return `inf`.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleDivide = {"Returns a tuple containing the element-wise quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleDivide = {
-        {"Two tuples", "SELECT tupleDivide((1, 2), (2, 3))", "(0.5,0.6666666666666666)"},
-        {"Three tuples", "SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0))", "(10,5)"}
+        {"Two tuples", "SELECT tupleDivide((1, 2), (2, 3))", "(0.5, 0.6666666666666666)"},
+        {"Three tuples", "SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0))", "(10, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleDivide = {21, 11};
     FunctionDocumentation::Category category_tupleDivide = FunctionDocumentation::Category::Tuple;
@@ -1823,8 +1785,8 @@ Returns a tuple of element-wise remainders from dividing two or more tuples of t
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleModulo = {"Returns a tuple of element-wise remainders. An exception is thrown for division by zero.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleModulo = {
-        {"Two tuples", "SELECT tupleModulo((15, 10, 5), (5, 3, 2))", "(0,1,1)"},
-        {"Three tuples", "SELECT tupleModulo((10, 20), (7, 9), (3, 5))", "(0,2)"}
+        {"Two tuples", "SELECT tupleModulo((15, 10, 5), (5, 3, 2))", "(0, 1, 1)"},
+        {"Three tuples", "SELECT tupleModulo((10, 20), (7, 9), (3, 5))", "(0, 2)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleModulo = {23, 8};
     FunctionDocumentation::Category category_tupleModulo = FunctionDocumentation::Category::Tuple;
@@ -1844,9 +1806,9 @@ Division by 0 causes an exception to be thrown.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleIntDiv = {"Returns a tuple of integer quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDiv = {
-        {"Two tuples", "SELECT tupleIntDiv((15, 10, 5), (5, 5, 5))", "(3,2,1)"},
-        {"With decimals", "SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))", "(2,1,0)"},
-        {"Three tuples", "SELECT tupleIntDiv((120, 60), (4, 3), (2, 4))", "(15,5)"}
+        {"Two tuples", "SELECT tupleIntDiv((15, 10, 5), (5, 5, 5))", "(3, 2, 1)"},
+        {"With decimals", "SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))", "(2, 1, 0)"},
+        {"Three tuples", "SELECT tupleIntDiv((120, 60), (4, 3), (2, 4))", "(15, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDiv = {23, 8};
     FunctionDocumentation::Category category_tupleIntDiv = FunctionDocumentation::Category::Tuple;
@@ -1866,8 +1828,8 @@ If any tuple contains non-integer elements, the result is calculated by rounding
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZero = {"Returns a tuple of integer quotients, with 0 for any element where the divisor is 0.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivOrZero = {
-        {"With zero divisors", "SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0))", "(0,0,0)"},
-        {"Three tuples", "SELECT tupleIntDivOrZero((120, 60), (4, 3), (2, 4))", "(15,5)"}
+        {"With zero divisors", "SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0))", "(0, 0, 0)"},
+        {"Three tuples", "SELECT tupleIntDivOrZero((120, 60), (4, 3), (2, 4))", "(15, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZero = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivOrZero = FunctionDocumentation::Category::Tuple;
@@ -1884,7 +1846,7 @@ Calculates the negation of the tuple elements.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleNegate = {"Returns a tuple with the result of negation.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleNegate = {
-        {"Basic usage", "SELECT tupleNegate((1, 2))", "(-1,-2)"}
+        {"Basic usage", "SELECT tupleNegate((1, 2))", "(-1, -2)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleNegate = {21, 11};
     FunctionDocumentation::Category category_tupleNegate = FunctionDocumentation::Category::Tuple;
@@ -1939,9 +1901,9 @@ subtractTupleOfIntervals(datetime, intervals)
 WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))
         )",
         R"(
-┌─subtractTupleOfIntervals(date, (toIntervalDay(1), toIntervalYear(1)))─┐
-│                                                            2016-12-31 │
-└───────────────────────────────────────────────────────────────────────┘
+┌─subtractTupl⋯alYear(1)))─┐
+│               2016-12-31 │
+└──────────────────────────┘
         )"
     }
     };
@@ -2041,7 +2003,7 @@ Returns a tuple with all elements multiplied by a number.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleMultiplyByNumber = {"Returns a tuple with multiplied elements.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMultiplyByNumber = {
-        {"Basic usage", "SELECT tupleMultiplyByNumber((1, 2), -2.1)", "(-2.1,-4.2)"}
+        {"Basic usage", "SELECT tupleMultiplyByNumber((1, 2), -2.1)", "(-2.1, -4.2)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMultiplyByNumber = {21, 11};
     FunctionDocumentation::Category category_tupleMultiplyByNumber = FunctionDocumentation::Category::Tuple;
@@ -2063,7 +2025,7 @@ Division by zero will return `inf`.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleDivideByNumber = {"Returns a tuple with divided elements.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleDivideByNumber = {
-        {"Basic usage", "SELECT tupleDivideByNumber((1, 2), 0.5)", "(2,4)"}
+        {"Basic usage", "SELECT tupleDivideByNumber((1, 2), 0.5)", "(2, 4)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleDivideByNumber = {21, 11};
     FunctionDocumentation::Category category_tupleDivideByNumber = FunctionDocumentation::Category::Tuple;
@@ -2081,7 +2043,7 @@ Returns a tuple of the moduli (remainders) of division operations of a tuple and
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleModuloByNumber = {"Returns tuple of the remainders of division. An error is thrown for division by zero.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleModuloByNumber = {
-        {"Basic usage", "SELECT tupleModuloByNumber((15, 10, 5), 2)", "(1,0,1)"}
+        {"Basic usage", "SELECT tupleModuloByNumber((15, 10, 5), 2)", "(1, 0, 1)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleModuloByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleModuloByNumber = FunctionDocumentation::Category::Tuple;
@@ -2100,7 +2062,7 @@ Unlike tupleModuloByNumber, the result is always non-negative.
     };
     FunctionDocumentation::ReturnedValue returned_value_tuplePositiveModuloByNumber = {"Returns a tuple of the non-negative remainders.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tuplePositiveModuloByNumber = {
-        {"Basic usage", "SELECT tuplePositiveModuloByNumber((15, 10, 5), 2)", "(1,0,1)"}
+        {"Basic usage", "SELECT tuplePositiveModuloByNumber((15, 10, 5), 2)", "(1, 0, 1)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tuplePositiveModuloByNumber = {26, 4};
     FunctionDocumentation::Category category_tuplePositiveModuloByNumber = FunctionDocumentation::Category::Tuple;
@@ -2120,8 +2082,8 @@ An error will be thrown for division by 0.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleIntDivByNumber = {"Returns a tuple of the quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivByNumber = {
-        {"Basic usage", "SELECT tupleIntDivByNumber((15, 10, 5), 5)", "(3,2,1)"},
-        {"With decimals", "SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)", "(2,1,0)"}
+        {"Basic usage", "SELECT tupleIntDivByNumber((15, 10, 5), 5)", "(3, 2, 1)"},
+        {"With decimals", "SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)", "(2, 1, 0)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivByNumber = FunctionDocumentation::Category::Tuple;
@@ -2141,8 +2103,8 @@ If either the tuple or div contain non-integer elements then the result is calcu
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZeroByNumber = {"Returns a tuple of the quotients with `0` for quotients where the divisor is `0`.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivOrZeroByNumber = {
-        {"Basic usage", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5)", "(3,2,1)"},
-        {"With zero divisor", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)", "(0,0,0)"}
+        {"Basic usage", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5)", "(3, 2, 1)"},
+        {"With zero divisor", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)", "(0, 0, 0)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZeroByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivOrZeroByNumber = FunctionDocumentation::Category::Tuple;
@@ -2284,12 +2246,12 @@ Calculates the p-norm of a vector, which is the p-th root of the sum of the p-th
 Special cases:
 - When p=1, it's equivalent to L1Norm (Manhattan distance).
 - When p=2, it's equivalent to L2Norm (Euclidean distance).
-- The value of `p` must be a finite number not less than one; for the maximum norm (the limit for p→∞), use `LinfNorm` instead.
+- When p=∞, it's equivalent to LinfNorm (maximum norm).
     )";
     FunctionDocumentation::Syntax syntax_lp_norm = "LpNorm(vector, p)";
     FunctionDocumentation::Arguments arguments_lp_norm = {
         {"vector", "Vector or tuple of numeric values.", {"Tuple(T)", "Array(T)"}},
-        {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Int*", "Float*"}}
+        {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_lp_norm = {"Returns the [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm).",{"Float64"}};
     FunctionDocumentation::Examples examples_lp_norm = {
@@ -2390,9 +2352,9 @@ Calculates the sum of the squares of the difference between the corresponding el
 SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
             )",
             R"(
-┌─L2SquaredDistance([1, 2, 3], [0, 0, 0])─┐
-│                                      14 │
-└─────────────────────────────────────────┘
+┌─L2SquaredDis⋯ [0, 0, 0])─┐
+│                       14 │
+└──────────────────────────┘
             )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_squared_distance = {22, 7};
@@ -2437,7 +2399,7 @@ Calculates the distance between two points (the elements of the vectors are the 
     FunctionDocumentation::Arguments arguments_lp_distance = {
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}},
-        {"p", "The power. Possible values: real number from `[1; inf)`.", {"UInt*", "Int*", "Float*"}}
+        {"p", "The power. Possible values: real number from `[1; inf)`.", {"UInt*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_lp_distance = {"Returns the p-norm distance. For `Array` inputs, returns `Float32` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Float64`. For `Tuple` inputs, always returns `Float64`.", {"Float*"}};
     FunctionDocumentation::Examples examples_lp_distance = {
@@ -2492,7 +2454,7 @@ Calculates the approximate distance between two points (the values of the vector
     )";
     FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read.", {"UInt"}}};
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only the stride groups covering these dimensions are read.", {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance. Always returns `Float64`.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
@@ -2502,9 +2464,9 @@ INSERT INTO qbit VALUES (1, [0, 1]);
 SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
-┌─L2DistanceTransposed(vec, [1, 2], 16)─┐
-│                    1.3922918381215914 │
-└───────────────────────────────────────┘
+┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
+│                       1.3922918381215914 │
+└──────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_l2_distance_transposed = {25, 10};
     FunctionDocumentation::Category category_l2_distance_transposed = FunctionDocumentation::Category::Distance;
@@ -2535,7 +2497,7 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
             {"UInt"}},
            {"used_dims",
             "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
-            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only "
+            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
             "the stride groups covering these dimensions are read.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
@@ -2548,9 +2510,9 @@ INSERT INTO qbit VALUES (1, [0, 1]);
 SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
-┌─cosineDistanceTransposed(vec, [1, 2], 16)─┐
-│                       0.10557280905788935 │
-└───────────────────────────────────────────┘
+┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
+│                          0.10557280905788935 │
+└──────────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_cosine_distance_transposed = {26, 1};
     FunctionDocumentation::Category category_cosine_distance_transposed = FunctionDocumentation::Category::Distance;
@@ -2581,7 +2543,7 @@ Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_produ
             {"UInt"}},
            {"used_dims",
             "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
-            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only "
+            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
             "the stride groups covering these dimensions are read.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_dot_product_transposed
@@ -2594,9 +2556,9 @@ INSERT INTO qbit VALUES (1, [0, 1]);
 SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
-┌─dotProductTransposed(vec, [1, 2], 16)─┐
-│                                2.0625 │
-└───────────────────────────────────────┘
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                   2.0625 │
+└──────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_dot_product_transposed = {26, 7};
     FunctionDocumentation::Category category_dot_product_transposed = FunctionDocumentation::Category::Distance;
@@ -2638,8 +2600,8 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
     const auto quantized_used_dims_argument = FunctionDocumentation::Argument{
         "used_dims",
         "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
-        "multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any "
-        "extra trailing elements are ignored). Only the stride groups covering these dimensions are read.",
+        "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
+        "the stride groups covering these dimensions are read.",
         {"UInt"}};
     const FunctionDocumentation::IntroducedIn introduced_in_transposed_quantized = {26, 7};
 
@@ -2667,11 +2629,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            R"(
-┌─L2DistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
-│                                                         0.004942022755037076 │
-└──────────────────────────────────────────────────────────────────────────────┘
-            )"}};
+            ""}};
     FunctionDocumentation::Category category_transposed_quantized = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_l2_distance_transposed_quantized
         = {description_l2_distance_transposed_quantized,
@@ -2710,11 +2668,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            R"(
-┌─cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
-│                                                          0.000027192636379513857 │
-└──────────────────────────────────────────────────────────────────────────────────┘
-            )"}};
+            ""}};
     FunctionDocumentation documentation_cosine_distance_transposed_quantized
         = {description_cosine_distance_transposed_quantized,
            syntax_cosine_distance_transposed_quantized,
@@ -2752,11 +2706,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            R"(
-┌─dotProductTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
-│                                                          0.25834959745407104 │
-└──────────────────────────────────────────────────────────────────────────────┘
-            )"}};
+            ""}};
     FunctionDocumentation documentation_dot_product_transposed_quantized
         = {description_dot_product_transposed_quantized,
            syntax_dot_product_transposed_quantized,
@@ -2782,13 +2732,13 @@ SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM q
 
     /// L1Normalize documentation
     FunctionDocumentation::Description description_l1_normalize = R"(
-Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
     )";
-    FunctionDocumentation::Syntax syntax_l1_normalize = "L1Normalize(vector)";
+    FunctionDocumentation::Syntax syntax_l1_normalize = "L1Normalize(tuple)";
     FunctionDocumentation::Arguments arguments_l1_normalize = {
-        {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
+        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
     FunctionDocumentation::Examples examples_l1_normalize = {
         {
             "Basic usage",
@@ -2805,18 +2755,18 @@ SELECT L1Normalize((1, 2))
     FunctionDocumentation::Category category_l1_normalize = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_l1_normalize = {description_l1_normalize, syntax_l1_normalize, arguments_l1_normalize, {}, returned_value_l1_normalize, examples_l1_normalize, introduced_in_l1_normalize, category_l1_normalize};
 
-    factory.registerFunction<TupleOrArrayFunctionL1Normalize>(documentation_l1_normalize);
-    factory.registerAlias("normalizeL1", TupleOrArrayFunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionL1Normalize>(documentation_l1_normalize);
+    factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
 
     /// L2Normalize documentation
     FunctionDocumentation::Description description_l2_normalize = R"(
-Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
+Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
     )";
-    FunctionDocumentation::Syntax syntax_l2_normalize = "L2Normalize(vector)";
+    FunctionDocumentation::Syntax syntax_l2_normalize = "L2Normalize(tuple)";
     FunctionDocumentation::Arguments arguments_l2_normalize = {
-        {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
+        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
     FunctionDocumentation::Examples examples_l2_normalize = {
         {
             "Basic usage",
@@ -2833,18 +2783,18 @@ SELECT L2Normalize((3, 4))
     FunctionDocumentation::Category category_l2_normalize = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_l2_normalize = {description_l2_normalize, syntax_l2_normalize, arguments_l2_normalize, {}, returned_value_l2_normalize, examples_l2_normalize, introduced_in_l2_normalize, category_l2_normalize};
 
-    factory.registerFunction<TupleOrArrayFunctionL2Normalize>(documentation_l2_normalize);
-    factory.registerAlias("normalizeL2", TupleOrArrayFunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionL2Normalize>(documentation_l2_normalize);
+    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
 
     /// LinfNormalize documentation
     FunctionDocumentation::Description description_linf_normalize = R"(
-Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
+Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
     )";
-    FunctionDocumentation::Syntax syntax_linf_normalize = "LinfNormalize(vector)";
+    FunctionDocumentation::Syntax syntax_linf_normalize = "LinfNormalize(tuple)";
     FunctionDocumentation::Arguments arguments_linf_normalize = {
-        {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
+        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
     FunctionDocumentation::Examples examples_linf_normalize = {
         {
             "Basic usage",
@@ -2861,20 +2811,20 @@ SELECT LinfNormalize((3, 4))
     FunctionDocumentation::Category category_linf_normalize = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_linf_normalize = {description_linf_normalize, syntax_linf_normalize, arguments_linf_normalize, {}, returned_value_linf_normalize, examples_linf_normalize, introduced_in_linf_normalize, category_linf_normalize};
 
-    factory.registerFunction<TupleOrArrayFunctionLinfNormalize>(documentation_linf_normalize);
-    factory.registerAlias("normalizeLinf", TupleOrArrayFunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionLinfNormalize>(documentation_linf_normalize);
+    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
 
     /// LpNormalize documentation
     {
         FunctionDocumentation::Description description_lp_normalize = R"(
-Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
+Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
         )";
-        FunctionDocumentation::Syntax syntax_lp_normalize = "LpNormalize(vector, p)";
+        FunctionDocumentation::Syntax syntax_lp_normalize = "LpNormalize(tuple, p)";
         FunctionDocumentation::Arguments arguments_lp_normalize = {
-            {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}},
-            {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Int*", "Float*"}}
+            {"tuple", "A tuple of numeric values.", {"Tuple(T)"}},
+            {"p", "The power. Possible values are any number in the range range from `[1; inf)`.", {"UInt*", "Float*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
+        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
         FunctionDocumentation::Examples examples_lp_normalize = {
             {
                 "Usage example",
@@ -2891,8 +2841,8 @@ SELECT LpNormalize((3, 4), 5)
         FunctionDocumentation::Category category_lp_normalize = FunctionDocumentation::Category::Distance;
         FunctionDocumentation documentation_lp_normalize = {description_lp_normalize, syntax_lp_normalize, arguments_lp_normalize, {}, returned_value_lp_normalize, examples_lp_normalize, introduced_in_lp_normalize, category_lp_normalize};
 
-        factory.registerFunction<TupleOrArrayFunctionLpNormalize>(documentation_lp_normalize);
+        factory.registerFunction<FunctionLpNormalize>(documentation_lp_normalize);
     }
-    factory.registerAlias("normalizeLp", TupleOrArrayFunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
 }
 }

@@ -8,11 +8,7 @@ doc_type: 'reference'
 
 テーブルの削除を取り消します。
 
-ClickHouse バージョン 23.3 以降では、`DROP TABLE` の実行後、[`database_atomic_delay_before_drop_table_sec`](/ja/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) で設定された期間中 (デフォルトでは 8 分) 、`Atomic` データベース内のテーブルを `UNDROP TABLE` で復元できます。
-`Atomic` データベースから削除されたテーブルは `system.dropped_tables` に一覧表示されます。
-
-ClickHouse Cloud の `Shared` データベースでは、この期間は [`database_shared_drop_table_delay_seconds`](/ja/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds) で制御され、デフォルトは 8 時間です。
-`Shared` データベースから削除されたテーブルは `system.dropped_tables` に一覧表示されません。
+ClickHouse バージョン 23.3 以降では、Atomic データベース内のテーブルについて、DROP TABLE ステートメントの実行から `database_atomic_delay_before_drop_table_sec` (デフォルトでは 8 分) 以内であれば、UNDROP できます。削除されたテーブルは、`system.dropped_tables` という system table に一覧表示されます。
 
 削除されたテーブルに、`TO` 句を持たない materialized view が関連付けられている場合は、その view の内部テーブルについても UNDROP する必要があります。
 

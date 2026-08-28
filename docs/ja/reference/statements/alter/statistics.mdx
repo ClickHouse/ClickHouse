@@ -1,12 +1,12 @@
 ---
-description: 'カラム STATISTICSの操作に関するドキュメント'
+description: '列STATISTICSの操作に関するドキュメント'
 sidebarTitle: 'STATISTICS'
 slug: /sql-reference/statements/alter/statistics
-title: 'カラム STATISTICSの操作'
+title: '列STATISTICSの操作'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -33,9 +33,9 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 2つのカラムに2種類のSTATISTICSを追加する例:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
 ```
 
 <Note>
-  STATISTICSは、[`*MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンのテーブル ([レプリケーション](/ja/reference/engines/table-engines/mergetree-family/replication) などのバリアントを含む) でのみサポートされています。
+  STATISTICSは、[`*MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンのテーブル ([Replicated](/ja/reference/engines/table-engines/mergetree-family/replication) などのバリアントを含む) でのみサポートされています。
 </Note>

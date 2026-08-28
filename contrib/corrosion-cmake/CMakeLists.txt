@@ -205,19 +205,15 @@ endif()
 # affects MemorySanitizer (freshly mapped memory looks uninitialized) and AddressSanitizer.
 # `--cfg=rustix_use_libc` is the mechanism `rustix` provides for transitive consumers to select
 # the libc backend; it also activates the `libc` dependency (already pinned in `Cargo.lock`).
-#
-# Note: "no sanitizer" must be tested with CMake truthiness, not `STREQUAL ""`: in build
-# directories configured before SANITIZE became a STRING cache variable, the cache holds
-# the BOOL value `OFF`, which is not equal to the empty string (see cmake/sanitize.cmake).
-if (SANITIZE)
+if (NOT SANITIZE STREQUAL "")
     list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
 endif()
 
 # Set metadata flag to force different hashes for different sanitizers
-if (SANITIZE)
-    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
-else()
+if (SANITIZE STREQUAL "")
     list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
+else()
+    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
 # Use v0 symbol mangling for shorter symbol names.
@@ -249,19 +245,11 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 # causes LLVM to use too much memory while compiling large crates like cranelift-codegen
 # and polyglot-sql (with all-dialects). Set opt-level and codegen-units via the Cargo
 # profile so that there is no conflict with the default profile flags.
-#
-# This condition used to be `NOT SANITIZE STREQUAL ""`, which also matched the value `OFF`
-# that the cache holds when the user does not pass -DSANITIZE=... (see cmake/sanitize.cmake),
-# so every default-configured local build silently compiled all vendored Rust crates with
-# `opt-level = 0` — up to an order of magnitude slower at runtime (e.g. the `PCO` codec,
-# Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
-if (SANITIZE)
+if (NOT SANITIZE STREQUAL "")
     set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 0
 codegen-units = 4")
-    message(STATUS "Rust release profile: unoptimized (opt-level = 0), to limit LLVM memory usage under sanitizers")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
-    message(STATUS "Rust release profile: optimized")
 endif()
 
 # The vendored Rust crates otherwise build with cargo's default dev profile (full DWARF debug=2 +

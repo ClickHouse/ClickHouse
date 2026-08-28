@@ -1,8 +1,7 @@
 ---
 sidebarTitle: 'Trabalhando com o tipo Map'
-searchable: true
 title: 'Trabalhando com o tipo Map no ClickHouse'
-useCases: ['Observabilidade']
+useCases: ['Observability']
 products: ['OSS']
 description: 'Aprenda a usar o tipo Map no ClickHouse para armazenar, consultar e agregar dados dinâmicos no formato chave-valor, usando atributos de recurso do OTel como exemplo prático.'
 ---
@@ -36,7 +35,9 @@ No OpenTelemetry, cada span de trace carrega um conjunto de **atributos de recur
 Neste guia de início rápido, você usará o `clickhouse-local` para carregar dados reais de traces do OTel de um arquivo CSV em uma tabela com colunas `Map(LowCardinality(String), String)` e aprenderá a consultar, filtrar, agregar e otimizar dados em map.
 
 <Steps titleSize="h3">
-  <Step title="Baixe os dados de exemplo" id="download-the-sample-data">
+  <Step>
+    ### Baixe os dados de exemplo
+
     O conjunto de dados contém 6.120 trace spans do OTel exportados de um aplicativo de demonstração com microsserviços. Cada linha inclui as colunas `ResourceAttributes` e `SpanAttributes`, que contêm pares chave-valor dinâmicos em maps JSON.
     Salve o arquivo em um diretório fácil de referenciar, por exemplo `~/data/data-otel-traces.csv`.
 
@@ -65,7 +66,9 @@ Neste guia de início rápido, você usará o `clickhouse-local` para carregar d
     ```
   </Step>
 
-  <Step title="Crie a tabela e carregue os dados" id="create-the-table-and-load-the-data">
+  <Step>
+    ### Crie a tabela e carregue os dados
+
     Inicie o `clickhouse-local` e crie a tabela a seguir com um esquema correspondente ao CSV.
     A coluna-chave é `ResourceAttributes Map(LowCardinality(String), String)` - usando `LowCardinality` no tipo da chave porque as chaves de atributo do OTel vêm de um conjunto relativamente pequeno e recorrente.
 
@@ -104,7 +107,9 @@ Neste guia de início rápido, você usará o `clickhouse-local` para carregar d
     Você verá 6.120 linhas.
   </Step>
 
-  <Step title="Consulte os dados" id="query-the-data">
+  <Step>
+    ### Consulte os dados
+
     **Acesse uma chave específica** — use a sintaxe de colchetes para obter um valor do map. Se a chave não existir em uma determinada linha, você receberá o valor padrão do tipo do valor (string vazia para `String`):
 
     ```sql
@@ -165,7 +170,7 @@ Neste guia de início rápido, você usará o `clickhouse-local` para carregar d
     LIMIT 20;
     ```
 
-    **Filtre maps com mapFilter** â extraia apenas os atributos do Kubernetes de cada span:
+    **Filtre maps com mapFilter** — extraia apenas os atributos do Kubernetes de cada span:
 
     ```sql
     SELECT
@@ -192,7 +197,9 @@ Neste guia de início rápido, você usará o `clickhouse-local` para carregar d
     ```
   </Step>
 
-  <Step title="Agregação em maps com o combinador -Map" id="aggregate-across-maps-with-the--map-combinator">
+  <Step>
+    ### Agregação em maps com o combinador -Map
+
     O combinador de agregação `-Map` do ClickHouse permite aplicar qualquer função de agregação a uma coluna `Map` e fazer com que ela opere em cada chave de forma independente. O resultado também é um `Map` — uma entrada por chave, com o valor agregado. Isso é especialmente útil para métricas OTel, em que counters ou gauges são armazenados como valores de map.
 
     Para demonstrar, crie uma pequena tabela de métricas em que cada linha registra contagens de códigos de status HTTP como um `Map(String, UInt64)`:
@@ -250,7 +257,9 @@ Neste guia de início rápido, você usará o `clickhouse-local` para carregar d
     **Por que isso é importante para OTel:** Quando seu OTel Collector grava, no ClickHouse, a discriminação por minuto dos códigos de status, `sumMap` permite consolidá-la em totais por hora ou por dia em uma única consulta — sem `ARRAY JOIN`, sem fazer unpivot, sem precisar conhecer de antemão o conjunto completo de chaves. Qualquer chave que apareça em alguma linha é incluída automaticamente no resultado.
   </Step>
 
-  <Step title="Otimize para chaves usadas com frequência em consultas" id="optimise-for-frequently-queried-keys">
+  <Step>
+    ### Otimize para chaves usadas com frequência em consultas
+
     Se você perceber que está sempre filtrando pela mesma chave do map — `host.name` é um exemplo comum —, pode extraí-la para uma coluna materializada. Assim, você evita a varredura linear no map a cada consulta:
 
     ```sql
@@ -269,9 +278,7 @@ Neste guia de início rápido, você usará o `clickhouse-local` para carregar d
   </Step>
 </Steps>
 
-<div id="key-takeaways">
-  ## Principais conclusões
-</div>
+## Principais conclusões
 
 * **`Map(LowCardinality(String), String)`** é o tipo idiomático para atributos do OTel — flexível o bastante para lidar com conjuntos de chaves variáveis, e `LowCardinality` mantém o armazenamento dessas chaves eficiente.
 * **A sintaxe com colchetes** (`map['key']`) é a forma mais comum de acessar valores, mas lembre-se de que ela faz uma varredura linear — funciona bem para maps com dezenas de chaves, mas não é ideal para centenas.
@@ -279,9 +286,7 @@ Neste guia de início rápido, você usará o `clickhouse-local` para carregar d
 * **`mapContains`, `mapKeys`, `mapValues`, `mapFilter`** e `ARRAY JOIN` oferecem um conjunto poderoso de ferramentas para explorar e transformar dados de map sem sair do SQL.
 * **O combinador de agregação `-Map`** (`sumMap`, `avgMap`, `maxMap`, etc.) agrega cada chave de forma independente em todas as linhas — ideal para consolidar contadores de métricas do OTel sem precisar conhecer o conjunto de chaves com antecedência. Ele também se combina com outros combinadores (por exemplo, `sumMapIf`).
 
-<div id="next-steps">
-  ## Próximos passos
-</div>
+## Próximos passos
 
 Confira estes guias de início rápido:
 

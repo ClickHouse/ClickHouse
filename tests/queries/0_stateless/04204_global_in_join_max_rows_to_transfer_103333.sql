@@ -36,7 +36,11 @@ SETTINGS max_rows_to_transfer = 10; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- Old analyzer — must throw the same error (sanity check that this code path
 -- has always worked and we didn't break it).
+SELECT t1.a, t2.b FROM t1_dist AS t1 GLOBAL JOIN t2_dist AS t2 ON t1.a = t2.a
+SETTINGS max_rows_to_transfer = 10, enable_analyzer = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
+SELECT count() FROM t1_dist WHERE a GLOBAL IN (SELECT a FROM t2_dist)
+SETTINGS max_rows_to_transfer = 10, enable_analyzer = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- `transfer_overflow_mode = break` must NOT throw; the result is allowed to be
 -- truncated. We only check that the query completes under the analyzer.

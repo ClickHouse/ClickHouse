@@ -60,13 +60,17 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
 * Cloudflare가 로그를 기록하는 S3 버킷 이름과 리전
 
 <Steps>
-  <Step title="S3 인증 구성" id="configure-auth">
+  <Step>
+    #### S3 인증 구성
+
     ClickPipes가 S3 버킷에서 읽을 수 있으려면 권한이 필요합니다. [Accessing S3 data securely](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely) 가이드를 따라 IAM 역할 기반 접근 또는 자격 증명 기반 접근을 구성하십시오.
 
     ClickPipes의 S3 인증 및 권한에 대한 전체 내용은 [S3 ClickPipes reference documentation](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)을 참조하십시오.
   </Step>
 
-  <Step title="ClickPipes 작업 생성" id="create-clickpipes">
+  <Step>
+    #### ClickPipes 작업 생성
+
     1. ClickHouse Cloud 콘솔 → **Data Sources** → **Create ClickPipe**
     2. **Source**: Amazon S3
 
@@ -103,7 +107,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     </Note>
   </Step>
 
-  <Step title="HyperDX 데이터 소스 구성" id="configure-source">
+  <Step>
+    #### HyperDX 데이터 소스 구성
+
     ClickPipes는 Cloudflare 로그를 Cloudflare의 기본 필드 이름을 사용하는 플랫 테이블로 수집합니다. HyperDX에서 이 로그를 보려면 Cloudflare 컬럼을 HyperDX의 로그 보기에 매핑하는 사용자 지정 데이터 소스를 구성하십시오.
 
     1. HyperDX → **Team Settings** → **Sources**를 엽니다
@@ -136,7 +142,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     이렇게 하면 데이터 변환이나 중복 없이 Cloudflare의 기본 컬럼이 HyperDX의 로그 뷰어에 직접 매핑됩니다. **Body**에는 `GET /api/v1/users 200`과 같은 요청 요약이 표시되며, 모든 Cloudflare 필드를 검색 가능한 속성으로 사용할 수 있습니다.
   </Step>
 
-  <Step title="HyperDX에서 데이터 확인" id="verify-hyperdx">
+  <Step>
+    #### HyperDX에서 데이터 확인
+
     **검색** 보기로 이동하여 **Cloudflare Logs** 소스를 선택합니다. 데이터가 포함되도록 시간 범위를 설정합니다. 다음과 같은 로그 항목이 표시되어야 합니다.
 
     * Body 컬럼의 요청 요약(예: `GET /api/v1/users 200`)
@@ -156,7 +164,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
 프로덕션 Cloudflare Logpush를 구성하기 전에 통합을 테스트하려는 사용자를 위해, 실제와 유사한 HTTP 요청 로그가 포함된 샘플 데이터세트를 제공합니다.
 
 <Steps>
-  <Step title="데모 데이터세트로 ClickPipes 시작" id="start-demo">
+  <Step>
+    #### 데모 데이터세트로 ClickPipes 시작
+
     1. ClickHouse Cloud 콘솔 → **데이터 소스** → **Create ClickPipe**
     2. **Source**: Amazon S3
     3. **Authentication**: Public
@@ -170,11 +180,15 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     이 데이터세트에는 여러 국가의 트래픽, 캐시 적중 및 미적중, API 및 정적 에셋 요청, 오류 응답, 보안 이벤트 등 실제와 유사한 패턴을 포함한 24시간 분량의 HTTP 요청 로그 항목 5,000개가 들어 있습니다.
   </Step>
 
-  <Step title="HyperDX 데이터 소스 구성" id="configure-demo-source">
+  <Step>
+    #### HyperDX 데이터 소스 구성
+
     [`cloudflare_http_logs` 테이블을 가리키는 HyperDX 소스를 만들려면 데이터 소스 구성 단계](#configure-source)를 따르십시오. 프로덕션 통합 섹션에서 이미 소스를 구성했다면 이 단계는 필요하지 않습니다.
   </Step>
 
-  <Step title="데모 데이터 확인" id="verify-demo">
+  <Step>
+    #### 데모 데이터 확인
+
     ```sql
     SELECT count() FROM cloudflare_http_logs;
     -- 5000을 반환해야 합니다
@@ -201,11 +215,13 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
 </div>
 
 <Steps>
-  <Step title="대시보드 구성 파일 다운로드" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">대시보드 구성 파일 다운로드</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">다운로드</TrackedLink> 대시보드 구성 파일
   </Step>
 
-  <Step title="대시보드 가져오기" id="import-dashboard">
+  <Step>
+    #### 대시보드 가져오기
+
     1. HyperDX → **Dashboards** → **Import Dashboard**
 
     <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="대시보드 가져오기" />
@@ -215,7 +231,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="대시보드 가져오기" />
   </Step>
 
-  <Step title="대시보드 보기" id="view-dashboard">
+  <Step>
+    #### 대시보드 보기
+
     <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="예시 대시보드" />
 
     <Note>
@@ -263,6 +281,6 @@ SELECT count() FROM cloudflare_http_logs;
   ## 프로덕션 환경으로 전환
 </div>
 
-이 가이드는 공개 데모 데이터세트를 사용해 Cloudflare 로그를 수집하는 방법을 보여줍니다. 프로덕션 배포에서는 Cloudflare Logpush가 자체 S3 버킷에 쓰도록 구성하고, 안전한 액세스를 위해 [IAM role 기반 인증](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)을 사용하여 ClickPipes를 설정하십시오. 스토리지 비용과 수집량을 줄이려면 필요한 [Logpush 필드](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)만 선택하십시오. 파일을 더 체계적으로 관리하려면 Logpush에서 일별 하위 폴더를 활성화하고, 하위 디렉터리 전체를 일치시키려면 ClickPipes 경로 패턴에 `**/*`를 사용하십시오.
+이 가이드는 공개 데모 데이터세트를 사용해 Cloudflare 로그를 수집하는 방법을 보여줍니다. 프로덕션 배포에서는 Cloudflare Logpush가 자체 S3 버킷에 쓰도록 구성하고, 안전한 액세스를 위해 [IAM 역할 기반 인증](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)으로 ClickPipes를 설정하십시오. 스토리지 비용과 수집량을 줄이려면 필요한 [Logpush 필드](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)만 선택하십시오. 파일을 더 체계적으로 관리할 수 있도록 Logpush에서 일별 하위 폴더를 활성화하고, 하위 디렉터리 전체를 일치시키려면 ClickPipes 경로 패턴에 `**/*`를 사용하십시오.
 
-백필과 순서가 뒤바뀐 파일 처리를 위한 [SQS 기반 비순차 수집](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order)을 비롯한 고급 구성 옵션은 [S3 ClickPipes 문서](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)를 참조하십시오.
+백필과 순서가 뒤바뀐 파일을 처리하기 위한 [SQS 기반 비순차 수집](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order)을 포함한 고급 구성 옵션은 [S3 ClickPipes 문서](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)를 참조하십시오.

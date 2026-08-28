@@ -33,7 +33,7 @@ ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에
 <Warning>
   **`ttl_only_drop_parts`**
 
-  항상 [`ttl_only_drop_parts=1`](/ko/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) 설정을 사용할 것을 권장합니다. 이 설정을 활성화하면 ClickHouse는 해당 파트의 모든 행이 만료되었을 때 파트 전체를 삭제합니다. `ttl_only_drop_parts=0`일 때 리소스를 많이 소비하는 뮤테이션으로 TTL이 적용된 행을 부분적으로 정리하는 대신, 파트 전체를 삭제하면 `merge_with_ttl_timeout` 시간을 더 짧게 설정할 수 있고 시스템 성능에 미치는 영향도 줄일 수 있습니다. TTL 만료를 수행하는 것과 동일한 단위(예: 일)로 데이터를 파티셔닝하면 파트에는 자연스럽게 정의된 인터벌의 데이터만 포함됩니다. 그러면 `ttl_only_drop_parts=1`을 효율적으로 적용할 수 있습니다.
+  항상 [`ttl_only_drop_parts=1`](/ko/reference/settings/merge-tree-settings#ttl_only_drop_parts) 설정을 사용할 것을 권장합니다. 이 설정을 활성화하면 ClickHouse는 해당 파트의 모든 행이 만료되었을 때 파트 전체를 삭제합니다. `ttl_only_drop_parts=0`일 때 리소스를 많이 소비하는 뮤테이션으로 TTL이 적용된 행을 부분적으로 정리하는 대신, 파트 전체를 삭제하면 `merge_with_ttl_timeout` 시간을 더 짧게 설정할 수 있고 시스템 성능에 미치는 영향도 줄일 수 있습니다. TTL 만료를 수행하는 것과 동일한 단위(예: 일)로 데이터를 파티셔닝하면 파트에는 자연스럽게 정의된 인터벌의 데이터만 포함됩니다. 그러면 `ttl_only_drop_parts=1`을 효율적으로 적용할 수 있습니다.
 </Warning>
 
 기본적으로 TTL이 만료된 데이터는 ClickHouse가 [데이터 파트를 머지할 때](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 제거됩니다. ClickHouse가 데이터가 만료되었음을 감지하면 예정되지 않은 머지를 수행합니다.

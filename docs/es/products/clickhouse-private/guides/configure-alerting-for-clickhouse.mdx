@@ -1,0 +1,49 @@
+---
+noindex: true
+title: "Configurar las alertas para ClickHouse"
+sidebarTitle: "Configurar alertas"
+description: "Configura los objetivos de scrape de Prometheus y las alertas para el servidor de ClickHouse, Keeper y el operador."
+---
+
+Configura los objetivos de scrape de Prometheus y las alertas para el servidor de ClickHouse, Keeper y el operador.
+
+<div id="set-up-prometheus-scrape-targets-for-clickhouse-server">
+  ## Configurar objetivos de scrape de Prometheus para el servidor de ClickHouse
+</div>
+
+Los pods del servidor de ClickHouse incluyen anotaciones `prometheus.io/*` que exponen métricas básicas. Para obtener el conjunto completo de métricas (incluidas `ClickHouse_CustomMetrics_*`), configure el endpoint `:8123/metrics` como objetivo de scrape de Prometheus en cada pod del servidor mediante un PodMonitor o equivalente.
+
+Este endpoint **requiere autenticación**. Autentíquese con un usuario específico que tenga privilegios de solo lectura.
+
+<div id="set-up-podmonitor-for-keeper">
+  ## Configurar PodMonitor para Keeper
+</div>
+
+Cree un PodMonitor orientado al endpoint `:8001/metrics` en los pods de Keeper para recopilar las métricas de Keeper.
+
+<div id="alert-rules">
+  ## Reglas de alerta
+</div>
+
+Para ver la lista completa de definiciones de alerta recomendadas (expresiones de Prometheus, umbrales y acciones), consulta [reference/metrics-and-alerts.md](/es/products/clickhouse-private/reference/metrics-and-alerts-reference).
+
+Entre las alertas clave se incluyen:
+
+| Alerta                                    | Métrica                                                | Propósito                                                        |
+| ----------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| El operador no está conciliando           | `last_cluster_reconcile`                               | El operador no ha conciliado dentro del intervalo esperado       |
+| Errores de conciliación del operador      | `controller_runtime_reconcile_errors_total`            | La tasa de errores supera el 5 % de los intentos de conciliación |
+| Partes detached dañadas                   | `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`  | Más de 100 partes detached dañadas durante más de 60 minutos     |
+| Pérdida de datos                          | `ClickHouse_CustomMetric_LostPartCount`                | Se detectaron partes perdidas (posible pérdida de datos)         |
+| Servidor bloqueado durante el apagado     | `ClickHouseMetrics_IsServerShuttingDown`               | El servidor lleva más de una hora apagándose                     |
+| Réplicas de tabla en modo de solo lectura | `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds` | La tabla lleva más de una hora en modo de solo lectura           |
+
+<div id="standard-kubernetes-alerts">
+  ## Alertas estándar de Kubernetes
+</div>
+
+Además de las alertas específicas de ClickHouse, agrega alertas estándar de Kubernetes para:
+
+* Pods en bucle de reinicio
+* Pods que no se pueden programar
+* Otros problemas de infraestructura propios de tu entorno

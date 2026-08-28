@@ -15,13 +15,13 @@ on:
         type: choice
         options: ['patch', 'new']
         default: patch
-      skip-repo:
-        description: Skip repo updates (package export/test); for recovery/rerun
+      only-repo:
+        description: Run only repo updates including docker (repo-recovery, tests)
         required: false
         type: boolean
         default: false
-      skip-docker:
-        description: Skip docker image builds; for recovery/rerun
+      only-docker:
+        description: Run only docker builds (repo-recovery, tests)
         required: false
         type: boolean
         default: false
@@ -46,13 +46,13 @@ on:
         required: true
         type: string
         default: patch
-      skip-repo:
-        description: Skip repo updates (package export/test); for recovery/rerun
+      only-repo:
+        description: Run only repo updates including docker (repo-recovery, tests)
         required: false
         type: boolean
         default: false
-      skip-docker:
-        description: Skip docker image builds; for recovery/rerun
+      only-docker:
+        description: Run only docker builds (repo-recovery, tests)
         required: false
         type: boolean
         default: false

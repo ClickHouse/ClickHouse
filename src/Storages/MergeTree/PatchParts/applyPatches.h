@@ -1,17 +1,14 @@
 #pragma once
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
-#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
 
 namespace DB
 {
 
-struct KeyDescription;
-
 /// Represents a patch that can be applied to the result block to update the data.
-struct PatchIndices
+struct PatchToApply
 {
     /// Blocks with data from patch parts.
     Blocks patch_blocks;
@@ -32,8 +29,8 @@ struct PatchIndices
     }
 };
 
-using PatchIndicesPtr = std::shared_ptr<const PatchIndices>;
-using PatchesIndices = std::vector<PatchIndicesPtr>;
+using PatchToApplyPtr = std::shared_ptr<const PatchToApply>;
+using PatchesToApply = std::vector<PatchToApplyPtr>;
 
 struct PatchReadResult
 {
@@ -59,44 +56,17 @@ struct PatchJoinReadResult : public PatchReadResult
     bool empty() const override { return entries.empty(); }
 };
 
-/// v2 patch-read result. Sort-key result columns are materialized on `block` by the reader.
-struct PatchMergeOnKeyReadResult : public PatchReadResult
-{
-    Block block;
+/// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
+PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry);
 
-    bool empty() const override { return block.rows() == 0; }
-};
-
-/// A read result of a patch part with the set of result-block columns updated from it.
-struct PatchReadResultToApply
-{
-    PatchPartInfoForReader patch;
-    PatchReadResultPtr read_result;
-    Names updated_columns;
-};
-
-/// Builds patches of all modes from patch read results and applies them to result_block.
-/// Patches updating the same set of columns are combined and applied together.
+/// Updates rows in result_block from patch_block at specified indices.
+/// versions_block is a shared block with current versions of rows for each updated column.
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
-    const std::vector<PatchReadResultToApply> & patch_read_results,
-    UInt64 source_data_version);
-
-/// Helpers defined in applyPatches.cpp, shared with the legacy formats (applyPatchesLegacy.cpp).
-const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const String & column_name);
-PaddedPODArray<UInt64> & getColumnUInt64Data(Block & block, const String & column_name);
-bool canApplyPatchInplace(const IColumn & column);
-IColumn::Versions & addDataVersionForColumn(Block & block, const String & column_name, UInt64 num_rows, UInt64 data_version);
-Block getUpdatedHeader(const PatchesIndices & patches);
-
-/// Applies each patch as-is, without combining row indices across patches.
-/// Patches may have multiple source blocks (e.g. built by applyPatchesMergeOnKey).
-void applyPatchesIndices(
-    Block & result_block,
-    Block & versions_block,
-    const PatchesIndices & patches,
-    const Block & updated_header,
+    const PatchesToApply & patches,
+    const Names & updated_columns,
     UInt64 source_data_version);
 
 }

@@ -4,11 +4,11 @@ sidebarTitle: 'Conexión a catálogos'
 slug: /use-cases/data-lake/getting-started/connecting-catalogs
 toc_max_heading_level: 3
 description: 'Conecta ClickHouse a catálogos de datos externos mediante el motor de base de datos DataLakeCatalog para exponer las tablas del catálogo como bases de datos nativas de ClickHouse.'
-keywords: ['lago de datos', 'lakehouse', 'catálogo', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake', 'seaweedfs']
+keywords: ['lago de datos', 'lakehouse', 'catálogo', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 En la [sección anterior](/es/guides/use-cases/data-warehousing/getting-started/querying-directly), consultaste formatos de tabla abiertos pasando las rutas de almacenamiento directamente. En la práctica, la mayoría de las organizaciones gestionan los metadatos de las tablas mediante un **catálogo de datos**: un registro central que realiza un seguimiento de las ubicaciones de las tablas, los esquemas y las particiones. Cuando conectas ClickHouse a un catálogo mediante el motor de base de datos [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake), el catálogo completo se expone como una base de datos de ClickHouse. Cada tabla del catálogo aparece automáticamente y puede consultarse con toda la potencia de ClickHouse SQL, sin necesidad de conocer la ruta de cada tabla ni de gestionar credenciales para cada una.
 
@@ -21,7 +21,6 @@ Esta guía explica cómo conectarse a [Databricks Unity Catalog](https://www.dat
 | Lakekeeper           | [Lakekeeper catalog](/es/guides/use-cases/data-warehousing/lakekeeper-catalog) |
 | Project Nessie       | [Nessie catalog](/es/guides/use-cases/data-warehousing/nessie-catalog)         |
 | Microsoft OneLake    | [Fabric OneLake](/es/guides/use-cases/data-warehousing/onelake-catalog)        |
-| SeaweedFS            | [SeaweedFS catalog](/es/guides/use-cases/data-warehousing/seaweedfs-catalog)   |
 
 <div id="connecting-to-unity-catalog">
   ## Conectarse a Unity Catalog
@@ -33,10 +32,11 @@ A modo de ejemplo, usaremos Unity Catalog.
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) proporciona una gobernanza centralizada para los datos de lakehouse de Databricks.
 
-Databricks admite múltiples formatos de datos para su lakehouse. Con ClickHouse, puede consultar tablas Delta e Iceberg de Unity Catalog que usan ubicaciones de almacenamiento externo.
+Databricks admite múltiples formatos de datos para su lakehouse. Con ClickHouse, puede consultar tablas de Unity Catalog tanto en formato Delta como Iceberg.
 
 <Note>
-  Actualmente, esta integración solo se admite en AWS. Las tablas del almacenamiento administrado de Databricks no son compatibles porque Unity Catalog no proporciona credenciales para esas ubicaciones. Consulte la [referencia de Unity Catalog](/es/guides/use-cases/data-warehousing/unity-catalog) para obtener más detalles.
+  La integración con Unity Catalog funciona con tablas administradas y externas.
+  Actualmente, esta integración solo se admite en AWS.
 </Note>
 
 <div id="configuring-unity-in-databricks">

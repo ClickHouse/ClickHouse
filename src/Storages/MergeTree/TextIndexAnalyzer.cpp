@@ -8,7 +8,6 @@ namespace ProfileEvents
 {
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
-    extern const Event TextIndexUsedEmbeddedPostings;
 }
 
 namespace DB
@@ -152,7 +151,7 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_post
 
     /// `All` mode fails as soon as the running intersection of readable postings becomes empty.
     bool need_all_tokens = query->getSearchMode() == TextSearchMode::All || query->getSearchMode() == TextSearchMode::Phrase;
-    if (need_all_tokens && postings->isEmpty())
+    if (need_all_tokens && postings->cardinality() == 0)
         markFailed();
 }
 
@@ -228,27 +227,23 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         query_builder.addTokenInfo(token, token_info, token_rows_range);
     });
 
-    if (!token_info->embedded_postings.empty())
-    {
-        PostingList embedded(token_info->embedded_postings.size(), token_info->embedded_postings.data());
-        addPostings(token, embedded);
-        ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
-    }
+    if (token_info->embedded_postings)
+        addPostings(token, token_info->embedded_postings);
 }
 
-void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)
+void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
 {
     tokens_with_postings.emplace(token);
 
     /// Clip the postings to the readable rows once.
     std::optional<PostingList> clipped_postings;
-    const auto * postings_ptr = &postings;
+    const auto * postings_ptr = postings.get();
 
     if (readable_rows)
     {
-        clipped_postings = readable_rows->clipPostings(postings);
+        clipped_postings = readable_rows->clipPostings(*postings);
 
-        if (clipped_postings->isEmpty())
+        if (clipped_postings->cardinality() == 0)
         {
             processTokenOperation(token, [&](QueryBuilder & query_builder)
             {
@@ -433,31 +428,6 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
     }
 }
 
-void TextIndexAnalyzer::detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder)
-{
-    /// Detach the full declared token set so yet-unseen tokens stop passing isTokenNeeded.
-    for (const auto & query_token : query_builder.query->getTokens())
-        queries_by_token[query_token].erase(query_hash);
-
-    /// Also detach already-discovered dynamic pattern tokens (not in `query->getTokens`).
-    for (const auto & [query_token, _] : query_builder.tokens)
-        queries_by_token[query_token].erase(query_hash);
-}
-
-void TextIndexAnalyzer::markAllQueriesFailed()
-{
-    always_false = true;
-
-    for (auto & [query_hash, query_builder] : query_builders)
-    {
-        if (query_builder.is_failed)
-            continue;
-
-        query_builder.markFailed();
-        detachQueryFromTokens(query_hash, query_builder);
-    }
-}
-
 template <typename Operation>
 void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation && operation)
 {
@@ -476,12 +446,16 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 
         if (query_builder.is_failed)
         {
-            detachQueryFromTokens(query_hash, query_builder);
-
-            /// One failed query in `All` global mode proves the whole conjunction false in this
-            /// part; the remaining queries cannot contribute to the result, so fail them all.
             if (global_search_mode == TextSearchMode::All)
-                markAllQueriesFailed();
+                always_false = true;
+
+            /// Erase the failed query for the full declared token set so yet-unseen tokens stop passing isTokenNeeded.
+            for (const auto & query_token : query_builder.query->getTokens())
+                queries_by_token[query_token].erase(query_hash);
+
+            /// Also erase for already-discovered dynamic pattern tokens (not in `query->getTokens`).
+            for (const auto & [query_token, _] : query_builder.tokens)
+                queries_by_token[query_token].erase(query_hash);
         }
     }
 }

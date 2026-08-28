@@ -1,9 +1,7 @@
 -- Tags: no-old-analyzer
 
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
+-- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
 SET explain_query_plan_default = 'legacy';
--- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
 SET distributed_plan_optimize_exchanges = 1;
 
@@ -12,7 +10,6 @@ ORDER BY tuple()
 SETTINGS auto_statistics_types = 'tdigest,uniq,basic';
 
 SET materialize_statistics_on_insert = 1;
-SET join_runtime_filter_min_probe_rows = 0;
 
 INSERT INTO test SELECT 'path' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path' || number::String, 'de', number FROM numbers(10);
@@ -38,7 +35,7 @@ SET use_statistics = 1, use_statistics_cache = 1;
 
 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de');
 
-SELECT REGEXP_REPLACE(REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID'), '\\[.*?\\d+\\]', '[N]') AS explain FROM (
+SELECT REGEXP_REPLACE(REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID'), '\\[\\d+\\]', '[N]') AS explain FROM (
     EXPLAIN actions = 1 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de')
 ) WHERE
     explain LIKE '%Join%' OR explain LIKE '%ReadFrom%' OR explain LIKE '%Aggregating%' OR explain LIKE '%Merging%' OR explain LIKE '%filter column%'
