@@ -70,7 +70,7 @@ WHERE number >= 100
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_bloomFilterContains = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in_bloomFilterContains = {26, 9};
     FunctionDocumentation::Category category_bloomFilterContains = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_bloomFilterContains = {
         description_bloomFilterContains,
