@@ -124,6 +124,12 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
         if (!client_id || !tenant_id)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both 'client_id' and 'tenant_id' need to be provided, but '{}' is missing", client_id ? "tenant_id" : "client_id");
 
+        /// Same heuristic as AzureBlobStorage::isConnectionString: a URL starts with http.
+        if (!connection_url.empty() && !connection_url.starts_with("http") && !connection_url.starts_with("abfss"))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Azure workload identity cannot be used with a connection_string; pass storage_account_url instead");
+
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
         Azure::Identity::WorkloadIdentityCredentialOptions options;

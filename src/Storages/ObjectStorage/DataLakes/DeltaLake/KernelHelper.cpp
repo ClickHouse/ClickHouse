@@ -385,8 +385,7 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     /// private endpoints). The builder still requires the storage account name, so
     /// hosts that do not encode it in the first label (custom domains) only work when
     /// endpoint.account_name is set, which the credential-based SQL paths cannot do
-    /// yet. For a parsed connection string, azure_endpoint is already set above and
-    /// storage_account_url holds the connection string, not a URL.
+    /// yet.
     if (endpoint.storage_account_url.starts_with("http://"))
     {
         set_option("azure_endpoint", connection_params.getConnectionURL());
