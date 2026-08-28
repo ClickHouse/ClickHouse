@@ -79,7 +79,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT 'shard saw the view call', count() > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
-    AND query LIKE '%v_pv_array%' AND query LIKE concat('%', currentDatabase(), '%');
+    AND has(databases, currentDatabase()) AND query LIKE '%v_pv_array%';
 
 DROP VIEW v_pv_array;
 DROP VIEW v_pv;
