@@ -702,7 +702,7 @@ public:
         format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
 
         /// Not a format setting: it governs these functions, so it is applied here rather than in
-        /// `getFormatSettings`, which would also reach the `JSON` data type's typed paths.
+        /// `getFormatSettings`, which would also reach the `JSON` data type.
         format_settings.json.extract_named_tuples_as_objects = context->getSettingsRef()[Setting::json_extract_named_tuples_as_objects];
     }
 

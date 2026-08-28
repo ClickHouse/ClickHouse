@@ -304,7 +304,7 @@ struct FormatSettings
         bool read_named_tuples_as_objects = false;
         /// Set from `json_extract_named_tuples_as_objects` by the JSON functions only, not by
         /// `getFormatSettings`: the setting governs the `JSONExtract` family, and the `JSON` data
-        /// type's typed paths must keep filling named tuples from arrays positionally.
+        /// type must keep filling named tuples from arrays positionally.
         bool extract_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
         bool write_named_tuples_as_objects = true;

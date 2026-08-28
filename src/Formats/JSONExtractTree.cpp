@@ -1489,8 +1489,7 @@ public:
             /// (like the scalar extraction path and the JSON input formats under
             /// `input_format_json_named_tuples_as_objects`), unless the historical
             /// positional behavior is requested via the setting. Only the JSON
-            /// functions set it, so the JSON data type's typed paths keep the
-            /// positional fill.
+            /// functions set it, so the JSON data type keeps the positional fill.
             if (!name_to_index_map.empty() && format_settings.json.extract_named_tuples_as_objects)
             {
                 error = "cannot read named Tuple value from JSON array. You can disable setting "
