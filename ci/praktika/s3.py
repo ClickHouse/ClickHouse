@@ -856,7 +856,7 @@ class S3:
             return True
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
-            if error_code == "PreconditionFailed":
+            if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
                 print("Precondition failed (concurrent write detected)")
                 return False
             print(f"ERROR: Failed to upload versioned file: {error_code}")
