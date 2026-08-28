@@ -1,5 +1,6 @@
 #include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <arrow/array/builder_binary.h>
 #include <arrow/flight/sql/column_metadata.h>
@@ -197,6 +199,11 @@ bool usesRegisteredColumnSizeAsPrecision(std::string_view family_name, const Xdb
 
 std::string getTypeFamilyName(const DataTypePtr & type)
 {
+    if (const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+    {
+        return getTypeFamilyName(unwrapType(simple_aggregate_function->getArgumentsDataTypes()[0]));
+    }
+
     /// Custom types such as `Bool` and `IPv4` share an underlying family with another
     /// ClickHouse type. Keep the custom identity so unsupported custom types do not
     /// claim the XDBC row of their underlying representation.

@@ -651,6 +651,103 @@ def test_wrapped_and_parameterized_type_metadata():
     assert _field_metadata(schema.field("bool_col"))[FLIGHT_SQL_PRECISION] == b"1"
 
 
+def test_simple_aggregate_function_type_metadata():
+    """`SimpleAggregateFunction` exposes metadata for its value type."""
+    client = get_client()
+    client.execute_update(
+        "CREATE TABLE mytable ("
+        "uint64_col SimpleAggregateFunction(sum, UInt64), "
+        "decimal_col SimpleAggregateFunction(anyLast, Decimal(18, 4)), "
+        "datetime64_col SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))), "
+        "bool_col SimpleAggregateFunction(anyLast, Bool), "
+        "enum8_col SimpleAggregateFunction(anyLast, Enum8('one' = 1, 'two' = 2)), "
+        "uint128_col SimpleAggregateFunction(anyLast, UInt128)"
+        ") ENGINE = Memory"
+    )
+    client.execute_update(
+        "INSERT INTO mytable VALUES "
+        "(42, 12.3456, '2024-01-02 03:04:05.123', true, 'one', 1)"
+    )
+
+    schema_from_get_schema = client.get_schema("SELECT * FROM mytable").schema
+    flight_info = client.execute("SELECT * FROM mytable")
+    table = client.do_get(flight_info.endpoints[0].ticket).read_all()
+
+    _assert_schema_equal_with_metadata(schema_from_get_schema, flight_info.schema)
+    _assert_schema_equal_with_metadata(flight_info.schema, table.schema)
+    assert table.num_rows == 1
+
+    tables_info = client.get_tables(
+        db_schema_filter_pattern="default",
+        table_name_filter_pattern="mytable",
+        include_schema=True,
+    )
+    tables = client.do_get(tables_info.endpoints[0].ticket).read_all()
+    table_schema = pa.ipc.read_schema(
+        pa.BufferReader(tables.column("table_schema")[0].as_py())
+    )
+    _assert_schema_equal_with_metadata(table.schema, table_schema)
+
+    expected = {
+        "uint64_col": (
+            pa.uint64(),
+            b"UInt64",
+            b"SimpleAggregateFunction(sum, UInt64)",
+        ),
+        "decimal_col": (
+            pa.decimal128(18, 4),
+            b"Decimal",
+            b"SimpleAggregateFunction(anyLast, Decimal(18, 4))",
+        ),
+        "datetime64_col": (
+            pa.timestamp("ms", tz="UTC"),
+            b"DateTime64",
+            b"SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC')))",
+        ),
+        "bool_col": (
+            pa.uint8(),
+            b"Bool",
+            b"SimpleAggregateFunction(anyLast, Bool)",
+        ),
+        "enum8_col": (
+            pa.int8(),
+            None,
+            b"SimpleAggregateFunction(anyLast, Enum8('one' = 1, 'two' = 2))",
+        ),
+        "uint128_col": (
+            pa.binary(16),
+            None,
+            b"SimpleAggregateFunction(anyLast, UInt128)",
+        ),
+    }
+    for name, (arrow_type, type_name, clickhouse_type_name) in expected.items():
+        field = table.schema.field(name)
+        metadata = _field_metadata(field)
+        assert field.type == arrow_type
+        if type_name is None:
+            assert FLIGHT_SQL_TYPE_NAME not in metadata
+            assert FLIGHT_SQL_PRECISION not in metadata
+        else:
+            assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
+        assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+    uint64_metadata = _field_metadata(table.schema.field("uint64_col"))
+    assert uint64_metadata[FLIGHT_SQL_PRECISION] == b"20"
+
+    decimal_metadata = _field_metadata(table.schema.field("decimal_col"))
+    assert decimal_metadata[FLIGHT_SQL_PRECISION] == b"18"
+    assert decimal_metadata[FLIGHT_SQL_SCALE] == b"4"
+
+    datetime64_field = table.schema.field("datetime64_col")
+    datetime64_metadata = _field_metadata(datetime64_field)
+    assert datetime64_field.nullable
+    assert datetime64_metadata[FLIGHT_SQL_PRECISION] == b"23"
+    assert datetime64_metadata[FLIGHT_SQL_SCALE] == b"3"
+
+    bool_metadata = _field_metadata(table.schema.field("bool_col"))
+    assert bool_metadata[FLIGHT_SQL_PRECISION] == b"1"
+
+
 def test_type_metadata_preserves_existing_metadata():
     """Adding Flight SQL metadata preserves the Arrow UUID extension."""
     client = get_client()
