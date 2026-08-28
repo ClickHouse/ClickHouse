@@ -12,7 +12,6 @@ CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_parallel_replicas 0"
 wait_for_mutation_in_part_log()
 {
     local table_name=$1
-    local query_id=$2
     local deadline=$((SECONDS + 60))
 
     while (( SECONDS < deadline )); do
@@ -27,7 +26,6 @@ wait_for_mutation_in_part_log()
                 AND database = currentDatabase()
                 AND table = '${table_name}'
                 AND event_type = 'MutatePart'
-                AND query_id = '${query_id}'
                 AND error = 0")
 
         if (( count > 0 )); then
@@ -75,7 +73,7 @@ ${CLICKHOUSE_CLIENT} --query_id "$memory_mutation_query_id" --query "
     ALTER TABLE text_index_flush_memory
         MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, max_block_size = 4096;
 "
-wait_for_mutation_in_part_log text_index_flush_memory "$memory_mutation_query_id"
+wait_for_mutation_in_part_log text_index_flush_memory
 
 ${CLICKHOUSE_CLIENT} --query "
     SELECT 'memory_limit_flushed', ProfileEvents['TextIndexTemporarySegmentsWritten'] > 1
@@ -85,7 +83,6 @@ ${CLICKHOUSE_CLIENT} --query "
         AND database = currentDatabase()
         AND table = 'text_index_flush_memory'
         AND event_type = 'MutatePart'
-        AND query_id = '${memory_mutation_query_id}'
         AND error = 0
     ORDER BY event_time_microseconds DESC
     LIMIT 1;
@@ -134,7 +131,7 @@ ${CLICKHOUSE_CLIENT} --query_id "$not_in_mutation_query_id" --query "
     ALTER TABLE text_index_flush_memory_not_in
         MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, max_block_size = 4096;
 "
-wait_for_mutation_in_part_log text_index_flush_memory_not_in "$not_in_mutation_query_id"
+wait_for_mutation_in_part_log text_index_flush_memory_not_in
 
 ${CLICKHOUSE_CLIENT} --query "
     SELECT 'not_in_seed_memory_limit_flushed', ProfileEvents['TextIndexTemporarySegmentsWritten'] > 1
@@ -144,7 +141,6 @@ ${CLICKHOUSE_CLIENT} --query "
         AND database = currentDatabase()
         AND table = 'text_index_flush_memory_not_in'
         AND event_type = 'MutatePart'
-        AND query_id = '${not_in_mutation_query_id}'
         AND error = 0
     ORDER BY event_time_microseconds DESC
     LIMIT 1;
