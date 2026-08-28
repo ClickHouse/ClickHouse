@@ -309,6 +309,68 @@ def test_prefetch_refiner_stops_after_max_execution_time(
     check_no_objects_after_drop(cluster, table_name=table)
 
 
+def test_non_prefetched_refiner_stops_s3_reads_after_max_execution_time(cluster):
+    node = cluster.instances["node"]
+    table = "s3_non_prefetched_refiner_cancellation"
+    query_id = uuid.uuid4().hex
+    pause_failpoint = "merge_tree_read_pool_pause_after_refine_read_ranges"
+
+    create_table(node, table, min_bytes_for_wide_part=0)
+    node.query(
+        f"INSERT INTO {table} SELECT toDate('2020-01-01'), number, repeat('x', 1024) FROM numbers(4096)"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    query_future = executor.submit(
+        node.query_and_get_answer_with_error,
+        f"SELECT sum(id) FROM {table} WHERE id < 2048 SETTINGS "
+        "max_execution_time=1, timeout_overflow_mode='throw', max_threads=1, "
+        "max_rows_to_read=0, max_rows_to_read_leaf=0, use_query_condition_cache=0, "
+        "use_skip_indexes=1, use_skip_indexes_on_data_read=1, "
+        "use_indexes_refiner_in_read_pools=1, load_marks_asynchronously=1, "
+        "allow_prefetched_read_pool_for_remote_filesystem=0, "
+        "remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, "
+        "filesystem_prefetches_limit=1, enable_filesystem_cache=0, use_uncompressed_cache=0",
+        query_id=query_id,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE", timeout=60)
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=20,
+            sleep_time=0.25,
+        )
+        s3_get_objects_at_cancellation = int(
+            node.query(
+                "SELECT ProfileEvents['S3GetObject'] FROM system.processes "
+                f"WHERE query_id='{query_id}'"
+            ).strip()
+        )
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+
+        _, error = query_future.result(timeout=10)
+        assert "TIMEOUT_EXCEEDED" in error, error
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    node.query("SYSTEM FLUSH LOGS")
+    s3_get_objects_after_query = int(
+        node.query(
+            "SELECT sum(ProfileEvents['S3GetObject']) FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type!='QueryStart'"
+        ).strip()
+    )
+    assert s3_get_objects_after_query == s3_get_objects_at_cancellation
+    assert node.query(f"SELECT sum(id) FROM {table}").strip() == str(sum(range(4096)))
+    check_no_objects_after_drop(cluster, table_name=table)
+
+
 @pytest.mark.parametrize(
     "min_rows_for_wide_part,files_per_part,node_name",
     [

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -32,6 +33,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_read_pool_pause_after_refine_read_ranges[];
 }
 
 
@@ -462,6 +468,7 @@ MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo &
 
     size_t marks_before = ranges.getNumberOfMarks();
     auto refined = ranges_refiner->refine(info, std::move(ranges));
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_read_pool_pause_after_refine_read_ranges);
     size_t marks_after = refined.getNumberOfMarks();
 
     if (marks_after > marks_before)
