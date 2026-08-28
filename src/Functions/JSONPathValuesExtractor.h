@@ -68,6 +68,10 @@ public:
 
     void consumeNull(std::string_view, bool) {}
     bool shouldConsumePath(std::string_view path) const { return shouldVisitPath(path); }
+    bool shouldConsumeValue(std::string_view path, const IDataType & data_type) const
+    {
+        return shouldIndexPath(path) || hasJSONDescendants(data_type);
+    }
     void setRow(size_t row) { consumer.setRow(row); }
     void finishRows(size_t rows) { consumer.finishRows(rows); }
 
@@ -107,13 +111,7 @@ public:
         const FormatSettings & format_settings)
     {
         const bool index_path = shouldIndexPath(path);
-        const auto unwrapped_type = removeLowCardinality(removeNullableOrLowCardinalityNullable(data_type.getPtr()));
-        const auto * unwrapped_array_type = typeid_cast<const DataTypeArray *>(unwrapped_type.get());
-        const bool has_json_descendants = unwrapped_type->getTypeId() == TypeIndex::Object
-            || (unwrapped_array_type
-                && removeLowCardinality(removeNullableOrLowCardinalityNullable(unwrapped_array_type->getNestedType()))->getTypeId()
-                    == TypeIndex::Object);
-        if (!index_path && !has_json_descendants)
+        if (!index_path && !hasJSONDescendants(data_type))
             return;
 
         preparePathType(path, data_type, type_name);
@@ -199,6 +197,16 @@ public:
     }
 
 private:
+    static bool hasJSONDescendants(const IDataType & data_type)
+    {
+        const auto unwrapped_type = removeLowCardinality(removeNullableOrLowCardinalityNullable(data_type.getPtr()));
+        const auto * unwrapped_array_type = typeid_cast<const DataTypeArray *>(unwrapped_type.get());
+        return unwrapped_type->getTypeId() == TypeIndex::Object
+            || (unwrapped_array_type
+                && removeLowCardinality(removeNullableOrLowCardinalityNullable(unwrapped_array_type->getNestedType()))->getTypeId()
+                    == TypeIndex::Object);
+    }
+
     bool shouldIndexPath(std::string_view path) const { return path_matcher.shouldIndex(path); }
     bool shouldVisitPath(std::string_view path) const { return path_matcher.shouldVisit(path); }
 
@@ -245,6 +253,10 @@ private:
         void setRow(size_t) {}
         void finishRows(size_t) {}
         bool shouldConsumePath(std::string_view path) const { return extractor.shouldConsumePath(prefixed(path)); }
+        bool shouldConsumeValue(std::string_view path, const IDataType & data_type) const
+        {
+            return extractor.shouldConsumeValue(prefixed(path), data_type);
+        }
 
     private:
         String prefixed(std::string_view path) const
@@ -315,6 +327,10 @@ private:
         void setRow(size_t) {}
         void finishRows(size_t) {}
         bool shouldConsumePath(std::string_view path) const { return extractor.shouldConsumePath(prefixed(path)); }
+        bool shouldConsumeValue(std::string_view path, const IDataType & data_type) const
+        {
+            return extractor.shouldConsumeValue(prefixed(path), data_type);
+        }
 
     private:
         String prefixed(std::string_view path) const

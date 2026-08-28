@@ -96,6 +96,10 @@ void enumerateJSONValues(
         SerializationPtr serialization;
         const auto & cache = getSimpleDataTypesCache();
         const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
+        const bool has_cached_type = cache.hasElement(binary_type_index);
+
+        if (has_cached_type && !consumer.shouldConsumeValue(path, *cache.getElement(binary_type_index).type))
+            return;
 
         if (binary_type_index == BinaryTypeIndex::String)
         {
@@ -134,7 +138,7 @@ void enumerateJSONValues(
         /// Resolve the type name once per value: `IDataType::getName` builds a String.
         const String * type_name = nullptr;
         String decoded_type_name;
-        if (cache.hasElement(binary_type_index))
+        if (has_cached_type)
         {
             ++buffer.position();
             const auto & element = cache.getElement(binary_type_index);
@@ -154,6 +158,8 @@ void enumerateJSONValues(
         }
 
         if (isNothing(type))
+            return;
+        if (!has_cached_type && !consumer.shouldConsumeValue(path, *type))
             return;
 
         auto [column_it, inserted] = shared_columns_cache.try_emplace(*type_name);

@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/JSONPathValues.h>
+#include <Functions/JSONValueEnumerator.h>
 
 #include <vector>
 
@@ -27,6 +30,53 @@ String toHex(std::string_view value)
     return result;
 }
 
+struct RejectingJSONValueConsumer
+{
+    bool shouldConsumePath(std::string_view) const { return true; }
+
+    bool shouldConsumeValue(std::string_view, const IDataType &)
+    {
+        ++value_checks;
+        return false;
+    }
+
+    void consumeSharedScalar(std::string_view, BinaryTypeIndex, std::string_view) { ++consumed_values; }
+    void consumeValue(
+        std::string_view,
+        const IDataType &,
+        std::string_view,
+        const ISerialization &,
+        const IColumn &,
+        size_t,
+        bool,
+        const FormatSettings &)
+    {
+        ++consumed_values;
+    }
+    void consumeNull(std::string_view, bool) {}
+    void setRow(size_t) {}
+    void finishRows(size_t) {}
+
+    size_t value_checks = 0;
+    size_t consumed_values = 0;
+};
+
+}
+
+GTEST_TEST(JSONPathValues, SharedValuesAreRejectedBeforeDeserialization)
+{
+    const auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths = 0)");
+    auto column = type->createColumn();
+    column->insert(Object{{"array", Array{Field{1u}, Field{2u}}}, {"string", Field{"ignored"}}});
+
+    RejectingJSONValueConsumer consumer;
+    enumerateJSONValues(
+        assert_cast<const ColumnObject &>(*column),
+        assert_cast<const DataTypeObject &>(*type),
+        consumer);
+
+    EXPECT_EQ(consumer.value_checks, 2);
+    EXPECT_EQ(consumer.consumed_values, 0);
 }
 
 GTEST_TEST(JSONPathValues, StableTokenBytes)
