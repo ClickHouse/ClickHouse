@@ -3,14 +3,15 @@
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/FailPoint.h>
 
 #include <cerrno>
 #include <utility>
 #include <unistd.h>
 
 #if defined(OS_LINUX)
-#include <Common/Epoll.h>
 #include <Common/logger_useful.h>
+#include <poll.h>
 #include <sys/timerfd.h>
 #include <fmt/format.h>
 #else
@@ -22,11 +23,17 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char timer_descriptor_drain_fail[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_CREATE_TIMER;
     extern const int CANNOT_SET_TIMER_PERIOD;
     extern const int CANNOT_READ_FROM_SOCKET;
+    extern const int FAULT_INJECTED;
 }
 
 /// Methods that do not depend on the underlying timer mechanism are shared between platforms.
@@ -86,6 +93,11 @@ void TimerDescriptor::drain() const
     if (timer_fd == -1)
         return;
 
+    fiu_do_on(FailPoints::timer_descriptor_drain_fail,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Manually triggered exception in TimerDescriptor::drain");
+    });
+
     /// It is expected that socket returns 8 bytes when readable.
     /// Read in loop anyway cause signal may interrupt read call.
 
@@ -97,12 +109,25 @@ void TimerDescriptor::drain() const
 
     /// Due to a bug in Linux Kernel, reading from timerfd in non-blocking mode can be still blocking.
     /// Avoid it with polling.
-    Epoll epoll;
-    epoll.add(timer_fd);
-    epoll_event event{};
-    event.data.fd = -1;
-    size_t ready_count = epoll.getManyReady(1, &event, 0);
-    if (!ready_count)
+    ///
+    /// Use `poll` rather than `Epoll`: `epoll_create1` needs a new file descriptor, so when the process
+    /// has run out of them this function would throw. `drain` and `reset` are used as a cleanup step,
+    /// and throwing there leaves the caller half torn down -- see
+    /// `RemoteQueryExecutorReadContext::clearAsyncEvent`. `poll` does not allocate anything.
+    pollfd poll_fd{};
+    poll_fd.fd = timer_fd;
+    poll_fd.events = POLLIN;
+
+    int poll_res;
+    do
+    {
+        poll_res = ::poll(&poll_fd, 1, /* timeout_ms= */ 0);
+    } while (poll_res < 0 && errno == EINTR);
+
+    if (poll_res < 0)
+        throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot poll timer_fd {}", timer_fd);
+
+    if (poll_res == 0)
         return;
 
     uint64_t buf = 0;
