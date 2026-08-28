@@ -406,9 +406,8 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         /// Keep last: the temporary-table branch below identifies this column by position.
         {"is_loaded", std::make_shared<DataTypeUInt8>(),
             "Whether the table engine exists in memory. With `lazy_load_tables` it is 0 until the first "
-            "access, and while it is the sorting, primary, partition and sampling key columns are empty, "
-            "the row and byte counts are NULL, and `system.columns`, `system.data_skipping_indices` and "
-            "`system.projections` report nothing for the table."
+            "access, and while it is the columns describing the table's structure, size and storage are "
+            "empty here and in `system.columns`, `system.data_skipping_indices` and `system.projections`."
         },
     };
 

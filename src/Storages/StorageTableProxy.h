@@ -86,8 +86,27 @@ public:
     }
 
     bool storesDataOnDisk() const override { return true; }
-    StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool isView() const override { return false; }
+
+    /// `system.tables` reads these, so answering must not load the table. While the storage does not
+    /// exist they are answered from the `CREATE` query, like `getName`, or reported as unknown.
+    StoragePolicyPtr getStoragePolicy() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->getStoragePolicy() : nullptr;
+    }
+
+    Strings getDataPaths() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->getDataPaths() : Strings{};
+    }
+
+    bool supportsReplication() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->supportsReplication() : engine_name.starts_with("Replicated");
+    }
 
     /// Startup is deferred until first access via `getNested`.
     void startup() override { }
