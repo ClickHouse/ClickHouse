@@ -8,7 +8,6 @@
     'Solutions':    '/products/cloud/getting-started/cloud-get-started',
     'Integrations': '/integrations/home',
   };
-  var MCP_GUIDE_URL = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
 
   // Locales with their own page tree; each has a localized homepage at
   // /<locale> and mirrors the English paths beneath it.
@@ -28,12 +27,6 @@
     var locale = currentLocale();
     var localized = locale ? '/' + locale + (url === '/' ? '' : url) : url;
     return BASE + localized;
-  }
-
-  function patchHomepageLinks() {
-    document.querySelectorAll('a[data-galaxy-event="docs.home.mcp-server"]').forEach(function (link) {
-      link.setAttribute('href', localizeUrl(MCP_GUIDE_URL));
-    });
   }
 
   function patchTabButtons() {
@@ -225,7 +218,6 @@
   function init() {
     applyHomepageClass();
     setupHomepageNavbar();
-    patchHomepageLinks();
     patchTabButtons();
     styleDropdownHeaders();
     markNavbarReady();
@@ -241,7 +233,6 @@
         applyHomepageClass();
         setupHomepageNavbar();
         updateLogoTheme();
-        patchHomepageLinks();
         patchTabButtons();
         styleDropdownHeaders();
         markNavbarReady();
@@ -253,7 +244,6 @@
     window.addEventListener('popstate', function () {
       applyHomepageClass();
       setupHomepageNavbar();
-      patchHomepageLinks();
     });
 
     // Failsafe: never leave the navbar hidden. If an injection never completes
