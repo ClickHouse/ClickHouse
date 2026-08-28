@@ -939,7 +939,8 @@ bool MergeTreeIndexConditionText::tryPrepareJSONPathValuesSet(
     const RPNBuilderTreeNode & index_column_node,
     const String & function_name,
     const std::vector<String> & values,
-    RPNElement & out) const
+    RPNElement & out,
+    TextIndexDirectReadMode direct_read_mode) const
 {
     auto json_index_info = tryMatchJSONPathValuesNode(index_column_node);
     if (!json_index_info
@@ -982,7 +983,7 @@ bool MergeTreeIndexConditionText::tryPrepareJSONPathValuesSet(
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
         function_name,
         TextSearchMode::Any,
-        TextIndexDirectReadMode::Exact,
+        direct_read_mode,
         std::move(tokens),
         std::vector<OptimizedRegularExpression>{},
         validation_tokens.empty()

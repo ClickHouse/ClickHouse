@@ -886,7 +886,8 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
                     if (index_argument
                         && !values.empty()
-                        && tryPrepareJSONPathValuesSet(*index_argument, function_name, values, out))
+                        && tryPrepareJSONPathValuesSet(
+                            *index_argument, function_name, values, out, TextIndexDirectReadMode::Exact))
                     {
                         out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
                         return true;
@@ -2081,7 +2082,12 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         for (size_t row = 0; row < total_row_count; ++row)
             values.emplace_back(set_column->getDataAt(row));
         chassert(json_index_node);
-        return tryPrepareJSONPathValuesSet(*json_index_node, function_name, values, out);
+        const auto direct_read_mode
+            = normalized_lhs->isFunction() && normalized_lhs->toFunctionNode().getFunctionName() == "tuple"
+            && normalized_lhs->toFunctionNode().getArgumentsSize() > 1
+            ? TextIndexDirectReadMode::Hint
+            : TextIndexDirectReadMode::Exact;
+        return tryPrepareJSONPathValuesSet(*json_index_node, function_name, values, out, direct_read_mode);
     }
 
     for (size_t row = 0; row < total_row_count; ++row)
