@@ -1151,8 +1151,15 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
         info.insert_time_default_columns.insert(col_decl.name);
 
     /** For columns with explicitly-specified type create two expressions:
-    * 1. default_expression aliased as column name with _tmp suffix
-    * 2. conversion of expression (1) to explicitly-specified type alias as column name
+    * 1. conversion of the default expression to the explicitly-specified type, aliased as the column name
+    * 2. the default expression itself, aliased as the column name with a _tmp suffix, so that the block
+    *    also carries the type the expression has before the conversion
+    *
+    * Expression (1) holds its own copy of the default expression rather than referring to the alias of
+    * expression (2). Referring to it made every error inside the default expression surface as a failure
+    * to resolve that alias: `DEFAULT nosuch` reported `Unknown expression or function identifier
+    * 'b_tmp_alter15627740530694008313'` - a name the user has never seen - and even offered it as the
+    * hint for itself. The two expressions are only analysed, never executed, so the copy costs nothing.
     */
     if (col_decl.getType())
     {
@@ -1161,7 +1168,7 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
         const auto * data_type_ptr = data_type.get();
 
         info.expr_list->children.emplace_back(setAlias(
-            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+            addTypeConversionToAST(col_default_expression->clone(), data_type_ptr->getName()), final_column_name));
 
         info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), tmp_column_name));
     }

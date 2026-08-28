@@ -981,14 +981,18 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     for (const ColumnWithTypeAndName & element : sample_block)
     {
         const ColumnPtr & column = element.column;
+        /// Name the offending element: a key can be long or an expression, and the message is the only
+        /// thing the user has to find which part of it is the problem.
         if (column && (isColumnConst(*column) || column->isDummy()))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain constants", key_name);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain constants, but {} is one",
+                key_name, backQuote(element.name));
 
         if (!allow_nullable_key && hasNullable(element.type))
             throw Exception(
                             ErrorCodes::ILLEGAL_COLUMN,
-                            "{} key contains nullable columns, "
-                            "but merge tree setting `allow_nullable_key` is disabled", key_name);
+                            "{} key contains nullable column {} of type {}, "
+                            "but merge tree setting `allow_nullable_key` is disabled",
+                            key_name, backQuote(element.name), element.type->getName());
     }
 }
 

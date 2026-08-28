@@ -1,0 +1,22 @@
+=== a DEFAULT expression that does not resolve names the identifier the user wrote
+--- CREATE TABLE t (a UInt32, b UInt32 DEFAULT nosuch) ENGINE = MergeTree ORDER BY a
+Code: 47. Unknown expression or function identifier `nosuch` in scope SELECT _CAST(nosuch, 'UInt32') AS b, nosuch AS b_tmp_alter<random> FROM dummy.dummy: default expression and column type are incompatible.. (UNKNOWN_IDENTIFIER)
+--- CREATE TABLE t (a UInt32, b UInt32 MATERIALIZED nosuch) ENGINE = MergeTree ORDER BY a
+Code: 47. Unknown expression or function identifier `nosuch` in scope SELECT _CAST(nosuch, 'UInt32') AS b, nosuch AS b_tmp_alter<random> FROM dummy.dummy: default expression and column type are incompatible.. (UNKNOWN_IDENTIFIER)
+--- CREATE TABLE t (a UInt32, b UInt32 ALIAS nosuch) ENGINE = MergeTree ORDER BY a
+Code: 47. Unknown expression or function identifier `nosuch` in scope SELECT _CAST(nosuch, 'UInt32') AS b, nosuch AS b_tmp_alter<random> FROM dummy.dummy: default expression and column type are incompatible.. (UNKNOWN_IDENTIFIER)
+--- CREATE TABLE t (aaaa UInt32, b UInt32 DEFAULT aaab) ENGINE = MergeTree ORDER BY aaaa
+Code: 47. Unknown expression or function identifier `aaab` in scope SELECT _CAST(aaab, 'UInt32') AS b, aaab AS b_tmp_alter<random> FROM dummy.dummy. Maybe you meant: ['aaaa']: default expression and column type are incompatible.. (UNKNOWN_IDENTIFIER)
+--- CREATE TABLE t (a UInt32, b DEFAULT nosuch) ENGINE = MergeTree ORDER BY a
+Code: 47. Unknown expression identifier `nosuch` in scope SELECT nosuch AS b FROM dummy.dummy: default expression and column type are incompatible.. (UNKNOWN_IDENTIFIER)
+--- CREATE TABLE t (a UInt32, b UInt32 DEFAULT 'not a number') ENGINE = MergeTree ORDER BY a
+Code: 6. Cannot parse string 'not a number' as UInt32: syntax error at begin of string. Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception: In scope SELECT _CAST('not a number', 'UInt32') AS b, 'not a number' AS b_tmp_alter<random> FROM dummy.dummy: default expression and column type are incompatible.. (CANNOT_PARSE_TEXT)
+
+=== a key that cannot be used names the element that cannot be used
+--- CREATE TABLE t (a UInt32, b Nullable(String), c UInt32) ENGINE = MergeTree ORDER BY (a, b, c)
+Code: 44. Sorting key contains nullable column `b` of type Nullable(String), but merge tree setting `allow_nullable_key` is disabled. (ILLEGAL_COLUMN)
+--- CREATE TABLE t (a UInt32, b Nullable(UInt32)) ENGINE = MergeTree PARTITION BY b ORDER BY a
+Code: 44. Partition key contains nullable column `b` of type Nullable(UInt32), but merge tree setting `allow_nullable_key` is disabled. (ILLEGAL_COLUMN)
+--- CREATE TABLE t (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, 1, b)
+Code: 44. Sorting key cannot contain constants, but `1` is one. (ILLEGAL_COLUMN)
+1	2	1
