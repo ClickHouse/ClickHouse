@@ -505,21 +505,21 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
 
-# The merge must open the source parts, because the patch has to be applied before the rows can
-# be dropped. read_rows is what separates that from the short-circuit, which reports 0 -- the row
-# count cannot, since these rows are expired either way.
+# The merge must open the source parts, because the patch has to be applied before TTL can be
+# evaluated. The pre-patch infos must not feed the drop-all fast path either: the 10 patched rows
+# are no longer expired and must survive the merge, which also separates it from the shortcut.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT DISTINCT
         merge_reason,
         rows,
-        read_rows
+        read_rows >= 100
     FROM system.part_log
     WHERE
         database = currentDatabase()
         AND table = 't_ttl_patched'
         AND event_type = 'MergeParts'
         AND length(merged_from) > 0
-    ORDER BY merge_reason, rows, read_rows;
+    ORDER BY ALL;
 "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patched;"

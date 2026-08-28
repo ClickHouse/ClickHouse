@@ -638,6 +638,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
+    /// A pending patch can change TTL inputs (e.g. push event_time into the future), so the source
+    /// parts' pre-patch infos can neither prove expiry nor feed TTLTransform's drop-all fast path.
+    if (global_ctx->metadata_snapshot->hasAnyTTL() && !global_ctx->future_part->patch_parts.empty())
+    {
+        global_ctx->new_data_part->ttl_infos = {};
+        ctx->need_remove_expired_values = true;
+        ctx->force_ttl = true;
+    }
+
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
