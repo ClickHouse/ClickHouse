@@ -90,7 +90,7 @@ function addSitemapFile(filesByRoute, route, content) {
   filesByRoute.set(route, content);
 }
 
-function emitSitemapTree(node, nodeRoute, filesByRoute) {
+function emitSitemapTree(node, nodeRoute, filesByRoute, additionalIndexEntries = []) {
   const childSitemapRoutes = [];
   for (const [segment, child] of [...node.children.entries()].sort(([left], [right]) => (
     left.localeCompare(right)
@@ -102,7 +102,7 @@ function emitSitemapTree(node, nodeRoute, filesByRoute) {
 
   const sortedRoutes = [...new Set(node.routes)].sort((left, right) => left.localeCompare(right));
   const sitemapRoute = `${nodeRoute}/sitemap.xml`;
-  if (childSitemapRoutes.length === 0) {
+  if (childSitemapRoutes.length === 0 && additionalIndexEntries.length === 0) {
     addSitemapFile(filesByRoute, sitemapRoute, renderReferenceSitemap(sortedRoutes));
     return;
   }
@@ -113,17 +113,17 @@ function emitSitemapTree(node, nodeRoute, filesByRoute) {
     addSitemapFile(filesByRoute, pagesSitemapRoute, renderReferenceSitemap(sortedRoutes));
     indexEntries.push(pagesSitemapRoute);
   }
-  indexEntries.push(...childSitemapRoutes);
+  indexEntries.push(...childSitemapRoutes, ...additionalIndexEntries);
   addSitemapFile(filesByRoute, sitemapRoute, renderSitemapIndex(indexEntries));
 }
 
-function hierarchicalReferenceSitemapFiles(baseRoute, routes) {
+function hierarchicalReferenceSitemapFiles(baseRoute, routes, additionalIndexEntries = []) {
   const root = createSitemapNode();
   for (const route of [baseRoute, ...routes]) {
     addRouteToSitemapTree(root, baseRoute, route);
   }
   const filesByRoute = new Map();
-  emitSitemapTree(root, baseRoute, filesByRoute);
+  emitSitemapTree(root, baseRoute, filesByRoute, additionalIndexEntries);
   return [...filesByRoute.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([route, content]) => ({ route, content }));
@@ -133,17 +133,14 @@ export function referenceSitemapFiles(manifest, routes, versions) {
   const baseRoute = manifest.channel === 'latest'
     ? '/docs/reference'
     : `/docs/reference/versions/${manifest.channel}`;
-  const files = hierarchicalReferenceSitemapFiles(
+  const additionalIndexEntries = manifest.channel === 'latest'
+    ? versions.versions
+      .filter(({ id }) => id !== 'latest')
+      .map(({ id }) => referenceSitemapRoute(id))
+    : [];
+  return hierarchicalReferenceSitemapFiles(
     baseRoute,
     routes.routes.map(({ route }) => route),
+    additionalIndexEntries,
   );
-  if (manifest.channel === 'latest') {
-    files.unshift({
-      route: '/sitemap.xml',
-      content: renderSitemapIndex(
-        versions.versions.map(({ id }) => referenceSitemapRoute(id)),
-      ),
-    });
-  }
-  return files;
 }

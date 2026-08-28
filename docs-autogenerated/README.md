@@ -136,11 +136,17 @@ included automatically.
 - **Latest** is the live bundle served at the clean `/docs/reference` routes.
 - Concrete versions are immutable bundles served beneath
   `/docs/reference/versions/<version>`.
-- `/sitemap.xml` is a sitemap index for the current reference sitemap and every
-  immutable version sitemap. Each channel sitemap is itself a hierarchical
-  index whose child sitemap files follow the reference URL tree, such as
-  `/docs/reference/settings/sitemap.xml`; a release freezes the same hierarchy
-  beneath `/docs/reference/versions/<version>`.
+- `/docs/reference/sitemap.xml` is the root index owned by this site. It points
+  to the current reference-family sitemaps and every immutable version sitemap.
+  The site-wide `/sitemap.xml` remains owned by `clickhouse.com` and only needs
+  one pointer to this reference index. Each channel sitemap follows the
+  reference URL tree, such as `/docs/reference/settings/sitemap.xml`; a release
+  freezes the same hierarchy beneath `/docs/reference/versions/<version>`.
+- Every page, generated Astro asset, search index, and copied shell asset is
+  emitted beneath `/docs/reference`. A version's page and runtime assets live
+  beneath `/docs/reference/versions/<version>`, so proxying the single
+  `/docs/reference/**` prefix is sufficient and frozen releases remain
+  self-contained.
 - Every archived HTML page emits `noindex,follow`; only `latest` is indexable.
 - The versions catalog is derived exclusively from bundles that are present.
   It has no speculative entries, publication status, or archive grouping.

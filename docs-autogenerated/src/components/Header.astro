@@ -27,6 +27,7 @@ const navigationTabs = headerNavigation.tabs as HeaderNavigationTab[];
 const referenceBaseRoute = manifest.channel === 'latest'
   ? '/docs/reference'
   : `/docs/reference/versions/${manifest.channel}`;
+const publicAssetBaseRoute = `${referenceBaseRoute}/_site`;
 const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationItem) => (
   tab.active && item.kind === 'link' && item.label === 'Reference'
 );
@@ -35,8 +36,8 @@ const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationIt
 <header id="navbar-transition-maple" class="site-header">
   <div class="mobile-header-primary">
     <a href={referenceBaseRoute} aria-label="ClickHouse Documentation home page">
-      <img class="logo-light" src="/_site/logo/light.svg" alt="ClickHouse Docs" />
-      <img class="logo-dark" src="/_site/logo/dark.svg" alt="ClickHouse Docs" />
+      <img class="logo-light" src={`${publicAssetBaseRoute}/logo/light.svg`} alt="ClickHouse Docs" />
+      <img class="logo-dark" src={`${publicAssetBaseRoute}/logo/dark.svg`} alt="ClickHouse Docs" />
     </a>
     <div class="mobile-actions">
       <button
@@ -105,7 +106,7 @@ const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationIt
   </div>
 </header>
 
-<script is:inline src="/_site/customizations/navbar-cta.js"></script>
+<script is:inline src={`${publicAssetBaseRoute}/customizations/navbar-cta.js`}></script>
 
 <script>
   let headerController: AbortController | undefined;

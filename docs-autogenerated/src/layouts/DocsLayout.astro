@@ -57,6 +57,7 @@ const sourceUrl = `https://github.com/ClickHouse/ClickHouse/blob/${manifest.sour
 const referenceBaseRoute = manifest.channel === 'latest'
   ? '/docs/reference'
   : `/docs/reference/versions/${manifest.channel}`;
+const publicAssetBaseRoute = `${referenceBaseRoute}/_site`;
 const routeSegments = document.route
   .replace(referenceBaseRoute, '')
   .split('/')
@@ -89,7 +90,7 @@ const entityKindLabel = entityKindLabels[document.entityKind];
     <meta name="viewport" content="width=device-width" />
     <meta name="description" content={document.description} />
     {manifest.channel !== 'latest' && <meta name="robots" content="noindex,follow" />}
-    <link rel="icon" href="/_site/favicon.svg" />
+    <link rel="icon" href={`${publicAssetBaseRoute}/favicon.svg`} />
     <link rel="canonical" href={canonical} />
     <title>{document.title} | ClickHouse Docs</title>
     <style is:inline>
@@ -200,8 +201,8 @@ const entityKindLabel = entityKindLabels[document.entityKind];
         }, 2000);
       });
     </script>
-    <script is:inline src="/_site/customizations/kapa-init.js"></script>
-    <script is:inline src="/_site/customizations/ask-ai-button.js"></script>
-    <script is:inline src="/_site/customizations/inkeep-init.js"></script>
+    <script is:inline src={`${publicAssetBaseRoute}/customizations/kapa-init.js`}></script>
+    <script is:inline src={`${publicAssetBaseRoute}/customizations/ask-ai-button.js`}></script>
+    <script is:inline src={`${publicAssetBaseRoute}/customizations/inkeep-init.js`}></script>
   </body>
 </html>

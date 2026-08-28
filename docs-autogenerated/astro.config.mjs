@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import mdx from '@astrojs/mdx';
@@ -16,6 +17,12 @@ import rewriteGeneratedCodeBlocks from './src/markdown/rewrite-generated-code-bl
 import versionSnapshotFiles from './scripts/lib/version-snapshot-files.mjs';
 
 const snapshotsDirectory = fileURLToPath(new URL('./.snapshots', import.meta.url));
+const generatedManifest = JSON.parse(
+  readFileSync(new URL('./src/generated/data/manifest.json', import.meta.url), 'utf8'),
+);
+const referenceBasePath = generatedManifest.channel === 'latest'
+  ? 'docs/reference'
+  : `docs/reference/versions/${generatedManifest.channel}`;
 
 export default defineConfig({
   site: 'https://clickhouse.com',
@@ -23,6 +30,9 @@ export default defineConfig({
   prefetch: false,
   publicDir: './src/generated/public',
   trailingSlash: 'ignore',
+  build: {
+    assets: `${referenceBasePath}/_astro`,
+  },
   markdown: {
     syntaxHighlight: false,
     processor: unified({

@@ -16,13 +16,14 @@ const { entries, currentRoute, stableId, featureStateByRoute = {} } = Astro.prop
 const referenceBaseRoute = manifest.channel === 'latest'
   ? '/docs/reference'
   : `/docs/reference/versions/${manifest.channel}`;
+const publicAssetBaseRoute = `${referenceBaseRoute}/_site`;
 ---
 
 <aside id="sidebar" class="sidebar" aria-label="Pages">
   <div class="sidebar-brand-row">
     <a class="sidebar-brand" href={referenceBaseRoute} aria-label="ClickHouse Documentation home page">
-      <img class="logo-light" src="/_site/logo/light.svg" alt="ClickHouse Docs" />
-      <img class="logo-dark" src="/_site/logo/dark.svg" alt="ClickHouse Docs" />
+      <img class="logo-light" src={`${publicAssetBaseRoute}/logo/light.svg`} alt="ClickHouse Docs" />
+      <img class="logo-dark" src={`${publicAssetBaseRoute}/logo/dark.svg`} alt="ClickHouse Docs" />
     </a>
 
     <div class="theme-preference" data-theme-preference-switch="pill" role="group" aria-label="Theme preference">

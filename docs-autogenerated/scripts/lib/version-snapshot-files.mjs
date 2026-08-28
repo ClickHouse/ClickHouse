@@ -71,7 +71,7 @@ export async function findVersionSnapshotFile(requestUrl, snapshotsDirectory) {
   if (relativePath.split('/').includes('..')) return null;
 
   const requestedVersion = requestedSnapshotVersion(relativePath);
-  const isSnapshotAsset = relativePath.startsWith('_astro/');
+  const isSnapshotAsset = /^docs\/reference\/(?:versions\/[^/]+\/)?_astro\//.test(relativePath);
   if (!requestedVersion && !isSnapshotAsset) return null;
 
   const snapshots = await snapshotRoots(snapshotsDirectory);

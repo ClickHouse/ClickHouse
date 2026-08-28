@@ -212,7 +212,10 @@ async function main() {
       snapshotVersionDirectory,
       'docs/reference/versions/26.8/sitemap.xml',
     );
-    const snapshotAssetPath = path.join(snapshotVersionDirectory, '_astro/frozen.js');
+    const snapshotAssetPath = path.join(
+      snapshotVersionDirectory,
+      'docs/reference/versions/26.8/_astro/frozen.js',
+    );
     await Promise.all([
       mkdir(path.dirname(snapshotHomepagePath), { recursive: true }),
       mkdir(path.dirname(snapshotPagePath), { recursive: true }),
@@ -232,7 +235,7 @@ async function main() {
       ['/docs/reference/versions/26.8/formats/Parquet/Parquet', snapshotPagePath],
       ['/docs/reference/_search/26.8.json', snapshotSearchPath],
       ['/docs/reference/versions/26.8/sitemap.xml', snapshotSitemapPath],
-      ['/_astro/frozen.js', snapshotAssetPath],
+      ['/docs/reference/versions/26.8/_astro/frozen.js', snapshotAssetPath],
     ]) {
       requireValue(
         (await findVersionSnapshotFile(requestUrl, snapshotFixtureDirectory))?.filePath
@@ -333,9 +336,11 @@ async function main() {
         path.join(versionedGeneratedDirectory, 'public/docs/reference/_search/26.8.json'),
       )
     ).records;
-    const sitemapIndex = await readFile(
-      path.join(generatedDirectory, 'public/sitemap.xml'),
-      'utf8',
+    const latestHeaderNavigation = await readJson(
+      path.join(generatedDirectory, 'data/header-navigation.json'),
+    );
+    const versionedHeaderNavigation = await readJson(
+      path.join(versionedGeneratedDirectory, 'data/header-navigation.json'),
     );
     const latestSitemapIndex = await readFile(
       path.join(generatedDirectory, 'public/docs/reference/sitemap.xml'),
@@ -379,6 +384,10 @@ async function main() {
     );
     const docsLayout = await readFile(
       path.join(projectDirectory, 'src/layouts/DocsLayout.astro'),
+      'utf8',
+    );
+    const astroConfig = await readFile(
+      path.join(projectDirectory, 'astro.config.mjs'),
       'utf8',
     );
     const inkeepTools = await readFile(
@@ -426,7 +435,11 @@ async function main() {
           'utf8',
         ),
         readFile(
-          path.join(generatedDirectory, 'public/_site/customizations', fileName),
+          path.join(
+            generatedDirectory,
+            'public/docs/reference/_site/customizations',
+            fileName,
+          ),
           'utf8',
         ),
       ]);
@@ -439,11 +452,43 @@ async function main() {
       inkeepTools.includes('id="search-bar-entry"')
         && inkeepTools.includes('Search...')
         && !inkeepTools.includes('Search reference')
-        && docsLayout.indexOf('/_site/customizations/kapa-init.js')
-          < docsLayout.indexOf('/_site/customizations/ask-ai-button.js')
-        && docsLayout.indexOf('/_site/customizations/ask-ai-button.js')
-          < docsLayout.indexOf('/_site/customizations/inkeep-init.js'),
+        && docsLayout.indexOf('/customizations/kapa-init.js')
+          < docsLayout.indexOf('/customizations/ask-ai-button.js')
+        && docsLayout.indexOf('/customizations/ask-ai-button.js')
+          < docsLayout.indexOf('/customizations/inkeep-init.js')
+        && docsLayout.includes('publicAssetBaseRoute'),
       'The sidebar does not use the docs-wide Inkeep search and Kapa Ask AI entry points',
+    );
+    for (const [channel, baseRoute, channelHeaderNavigation, channelGeneratedDirectory] of [
+      ['latest', '/docs/reference', latestHeaderNavigation, generatedDirectory],
+      [
+        '26.8',
+        '/docs/reference/versions/26.8',
+        versionedHeaderNavigation,
+        versionedGeneratedDirectory,
+      ],
+    ]) {
+      const icons = channelHeaderNavigation.tabs.flatMap(
+        (tab) => tab.items?.map((item) => item.icon).filter(Boolean) ?? [],
+      );
+      requireValue(
+        icons.length > 0 && icons.every((icon) => icon.startsWith(`${baseRoute}/images/`)),
+        `The ${channel} header icons are not contained by the reference proxy prefix`,
+      );
+      await readFile(
+        path.join(
+          channelGeneratedDirectory,
+          'public',
+          baseRoute,
+          '_site/favicon.svg',
+        ),
+      );
+    }
+    requireValue(
+      astroConfig.includes('assets: `${referenceBasePath}/_astro`')
+        && header.includes('publicAssetBaseRoute')
+        && sidebar.includes('publicAssetBaseRoute'),
+      'Astro-generated or shell assets can escape the proxied reference prefix',
     );
     requireValue(
       referenceIndex.includes('<ReferenceSearch />')
@@ -553,16 +598,6 @@ async function main() {
       'The second bundle was not prepared as an isolated versioned site',
     );
     requireValue(
-      sitemapIndex.includes('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
-        && sitemapIndex.includes(
-          '<loc>https://clickhouse.com/docs/reference/sitemap.xml</loc>',
-        )
-        && sitemapIndex.includes(
-          '<loc>https://clickhouse.com/docs/reference/versions/26.8/sitemap.xml</loc>',
-        ),
-      'The root sitemap index does not point to latest and immutable version sitemaps',
-    );
-    requireValue(
       latestSitemapIndex.includes(
         '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
       )
@@ -578,8 +613,10 @@ async function main() {
         && latestSitemapIndex.includes(
           '<loc>https://clickhouse.com/docs/reference/system-tables/sitemap.xml</loc>',
         )
-        && !latestSitemapIndex.includes('/docs/reference/versions/'),
-      'The latest sitemap index does not discover its reference-family sitemaps',
+        && latestSitemapIndex.includes(
+          '<loc>https://clickhouse.com/docs/reference/versions/26.8/sitemap.xml</loc>',
+        ),
+      'The proxied reference sitemap does not discover latest families and immutable versions',
     );
     requireValue(
       latestHomepageSitemap.includes('<loc>https://clickhouse.com/docs/reference</loc>')
@@ -616,12 +653,19 @@ async function main() {
     const generatedSitemapFiles = referenceSitemapFiles(latestManifest, routePayload, versions);
     const generatedSitemapRoutes = new Set(generatedSitemapFiles.map(({ route }) => route));
     const indexedReferenceSitemaps = generatedSitemapFiles
-      .filter(({ route, content }) => route !== '/sitemap.xml' && content.includes('<sitemapindex'))
+      .filter(({ content }) => content.includes('<sitemapindex'))
       .flatMap(({ content }) => [...content.matchAll(/<loc>([^<]+)<\/loc>/g)])
       .map((match) => new URL(match[1]).pathname);
+    const externallyPublishedVersionSitemaps = new Set(
+      versions.versions
+        .filter(({ id }) => id !== 'latest')
+        .map(({ id }) => `/docs/reference/versions/${id}/sitemap.xml`),
+    );
     requireValue(
-      indexedReferenceSitemaps.every((route) => generatedSitemapRoutes.has(route)),
-      'A reference sitemap index points to a sitemap file that was not generated',
+      indexedReferenceSitemaps.every((route) => (
+        generatedSitemapRoutes.has(route) || externallyPublishedVersionSitemaps.has(route)
+      )),
+      'A reference sitemap index points outside generated files and published version roots',
     );
     const expectedSitemapUrls = new Set([
       '/docs/reference',

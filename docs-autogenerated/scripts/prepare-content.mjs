@@ -173,7 +173,7 @@ function publishedDocsHref(page) {
   return normalized ? `https://clickhouse.com/docs/${normalized}` : 'https://clickhouse.com/docs';
 }
 
-async function headerNavigationConfig(sourceSiteConfig) {
+async function headerNavigationConfig(sourceSiteConfig, referenceBaseRoute) {
   const englishNavigation = sourceSiteConfig.navigation.languages.find(
     (navigation) => navigation.language === 'en',
   );
@@ -238,7 +238,18 @@ async function headerNavigationConfig(sourceSiteConfig) {
     tabs.push({ label: tab.tab, active: tab.tab === 'Database', items });
   }
 
-  return { schemaVersion: 1, tabs };
+  return {
+    schemaVersion: 1,
+    tabs: tabs.map((tab) => ({
+      ...tab,
+      items: tab.items?.map((item) => ({
+        ...item,
+        icon: item.icon?.startsWith('/images/')
+          ? `${referenceBaseRoute}${item.icon}`
+          : item.icon,
+      })),
+    })),
+  };
 }
 
 function parseArguments(argv) {
@@ -747,7 +758,7 @@ async function main() {
     sourceSiteConfig,
     navigation,
   );
-  const headerNavigation = await headerNavigationConfig(sourceSiteConfig);
+  const headerNavigation = await headerNavigationConfig(sourceSiteConfig, referenceBaseRoute);
   const versionConfig = versionsConfig(bundleCatalog);
   const sitemapFiles = referenceSitemapFiles(manifest, routes, versionConfig);
   const configuredPages = new Set();
@@ -865,9 +876,9 @@ async function main() {
   ]);
 
   await Promise.all([
-    mkdir(path.join(stagingDirectory, 'public/_site/logo'), { recursive: true }),
-    mkdir(path.join(stagingDirectory, 'public/_site/customizations'), { recursive: true }),
-    mkdir(path.join(stagingDirectory, 'public/images/icons'), { recursive: true }),
+    mkdir(path.join(stagingDirectory, 'public', referenceBaseRoute, '_site/logo'), { recursive: true }),
+    mkdir(path.join(stagingDirectory, 'public', referenceBaseRoute, '_site/customizations'), { recursive: true }),
+    mkdir(path.join(stagingDirectory, 'public', referenceBaseRoute, 'images/icons'), { recursive: true }),
   ]);
   const headerIcons = [...new Set(
     headerNavigation.tabs.flatMap((tab) => tab.items?.map((item) => item.icon).filter(Boolean) ?? []),
@@ -875,27 +886,34 @@ async function main() {
   await Promise.all([
     copyFile(
       path.join(sourceDocsDirectory, '_site/favicon.svg'),
-      path.join(stagingDirectory, 'public/_site/favicon.svg'),
+      path.join(stagingDirectory, 'public', referenceBaseRoute, '_site/favicon.svg'),
     ),
     copyFile(
       path.join(sourceDocsDirectory, '_site/logo/dark.svg'),
-      path.join(stagingDirectory, 'public/_site/logo/dark.svg'),
+      path.join(stagingDirectory, 'public', referenceBaseRoute, '_site/logo/dark.svg'),
     ),
     copyFile(
       path.join(sourceDocsDirectory, '_site/logo/light.svg'),
-      path.join(stagingDirectory, 'public/_site/logo/light.svg'),
+      path.join(stagingDirectory, 'public', referenceBaseRoute, '_site/logo/light.svg'),
     ),
     copyFile(
       path.join(sourceDocsDirectory, '_site/customizations/navbar-cta.js'),
-      path.join(stagingDirectory, 'public/_site/customizations/navbar-cta.js'),
+      path.join(stagingDirectory, 'public', referenceBaseRoute, '_site/customizations/navbar-cta.js'),
     ),
     ...['kapa-init.js', 'ask-ai-button.js', 'inkeep-init.js'].map((fileName) => copyFile(
       path.join(sourceDocsDirectory, '_site/customizations', fileName),
-      path.join(stagingDirectory, 'public/_site/customizations', fileName),
+      path.join(stagingDirectory, 'public', referenceBaseRoute, '_site/customizations', fileName),
     )),
     ...headerIcons.map((icon) => copyFile(
-      path.join(sourceDocsDirectory, icon.replace(/^\//, '')),
-      path.join(stagingDirectory, 'public', icon.replace(/^\//, '')),
+      path.join(
+        sourceDocsDirectory,
+        icon.replace(referenceBaseRoute, '').replace(/^\//, ''),
+      ),
+      path.join(
+        stagingDirectory,
+        'public',
+        icon.replace(/^\//, ''),
+      ),
     )),
   ]);
 
