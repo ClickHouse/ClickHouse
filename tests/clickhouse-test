@@ -924,44 +924,49 @@ def need_retry(args, stdout, stderr, total_time):
 
 
 def get_processlist_size(args):
+    # The rows are counted client-side: aggregation performs a memory limit check
+    # that a server over its per-user limit cannot pass, and this query has to
+    # answer in exactly that state.
     if args.replicated_database:
-        return int(
+        return len(
             clickhouse_execute(
                 args,
                 """
-                SELECT
-                    count()
+                SELECT 1
                 FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
                 """,
-            ).strip()
+            ).splitlines()
         )
     if args.shared_catalog:
-        return int(
+        return len(
             clickhouse_execute(
                 args,
                 """
-                SELECT
-                    count()
+                SELECT 1
                 FROM clusterAllReplicas('test_cluster_shared_catalog', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
                 """,
-            ).strip()
+            ).splitlines()
         )
-    return int(
+    return len(
         clickhouse_execute(
             args,
             """
-                SELECT
-                    count()
+                SELECT 1
                 FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
             """,
-        ).strip()
+        ).splitlines()
     )
+
+
+# The stacktrace query below is the one hung-check query that cannot avoid
+# aggregating, so it is the only one that needs the per-user limit lifted.
+HUNG_CHECK_QUERY_SETTINGS = {"max_memory_usage_for_user": 0}
 
 
 def get_processlist_with_stacktraces(args):
@@ -987,6 +992,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
             settings={
+                **HUNG_CHECK_QUERY_SETTINGS,
                 "allow_introspection_functions": 1,
             },
             timeout=120,
@@ -1013,6 +1019,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
             settings={
+                **HUNG_CHECK_QUERY_SETTINGS,
                 "allow_introspection_functions": 1,
             },
             timeout=120,
@@ -1034,6 +1041,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
         settings={
+            **HUNG_CHECK_QUERY_SETTINGS,
             "allow_introspection_functions": 1,
         },
         timeout=120,
@@ -1749,6 +1757,13 @@ class SettingsRandomizer:
         "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
+        # Independent DISTINCT per MergeTree partition
+        "allow_distinct_partitions_independently": lambda: random.random() > 0.05,
+        "force_distinct_partitions_independently": lambda: random.random() < 0.3,
+        "max_number_of_partitions_for_independent_distinct": threshold_generator(
+            0.2, 0.2, 1, 128
+        ),
+        "enable_parallel_single_level_merge": lambda: random.random() > 0.05,
     }
 
     dependent_settings = {
@@ -1766,6 +1781,8 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
+        # forcing independent DISTINCT is a no-op when the optimization is not allowed
+        "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
     }
 
     stress_test_only_settings = {
@@ -1868,6 +1885,7 @@ class MergeTreeSettingsRandomizer:
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
         "enable_block_number_column": lambda: random.randint(0, 1),
         "enable_block_offset_column": lambda: random.randint(0, 1),
+        "patch_parts_version": lambda: random.choice(["v1", "v2"]),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -4734,7 +4752,10 @@ def run_tests_array(
         stop_exit_code,
     ) = all_tests_with_params
 
-    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%2m.profraw"
+    # %c enables continuous mode so a client killed mid-write (query timeouts
+    # SIGKILL the whole process group) leaves a valid profile instead of a
+    # truncated one.
+    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%c%2m.profraw"
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])
@@ -5107,7 +5128,7 @@ def check_server_started(args):
 
     sys.stdout.flush()
     retry_count = args.server_check_retries
-    query = "SELECT version(), arrayStringConcat(groupArray(value), ' ') FROM system.build_options WHERE name IN ('GIT_HASH', 'GIT_BRANCH')"
+    query = "SELECT version(), (SELECT value FROM system.build_options WHERE name = 'GIT_HASH'), (SELECT value FROM system.build_options WHERE name = 'GIT_BRANCH')"
     while retry_count > 0:
         try:
             res = (
@@ -5851,7 +5872,7 @@ def main(args):
     tests_start_time = time()
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
+        msg = "Server is not responding. Cannot query the server version."
         if args.hung_check:
             print(msg)
             print_c_stacktraces(args)
