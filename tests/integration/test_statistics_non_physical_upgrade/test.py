@@ -19,6 +19,9 @@ node = cluster.add_instance(
 )
 
 _ILLEGAL_STATISTICS = "ILLEGAL_STATISTICS"
+# A mutation that was queued and then failed reports this, unlike a statement refused before any
+# mutation existed. The message carries the inner error's name, not this one's, so match on the text.
+_MUTATION_FAILED = "Exception happened during execution of mutation"
 _ZK_PATH = "/clickhouse/databases/rdb_stats"
 
 # One table per ALTER case: a case can consume the grandfathered state, and the current version
@@ -223,15 +226,21 @@ def test_materialize_statistics_leaves_no_unfinished_mutation(upgraded):
     )
 
     # Naming the column explicitly is refused before any mutation is queued today, and becomes a
-    # logged no-op once that synchronous check is removed (#115769), so both are accepted. It is
-    # left asynchronous so a failure surfaces as an unfinished mutation, not as an error string.
+    # logged no-op once that synchronous check is removed (#115769), so both are accepted. Only that
+    # refusal is: a queued mutation that then failed is the state this exists to catch.
     _, error = node.query_and_get_answer_with_error(
-        "ALTER TABLE t_materialize MATERIALIZE STATISTICS b"
+        "ALTER TABLE t_materialize MATERIALIZE STATISTICS b SETTINGS mutations_sync = 2"
     )
     if error:
         assert _ILLEGAL_STATISTICS in error, error
+        assert _MUTATION_FAILED not in error, error
     assert_eq_with_retry(node, pending, "0", retry_count=60, sleep_time=1)
 
+    # The table is still readable through the alias, and its definition is unchanged.
+    assert (
+        node.query("SELECT a, b, d FROM t_materialize ORDER BY a").strip()
+        == "1\t2\t100"
+    )
     _assert_grandfathered("t_materialize")
 
 
