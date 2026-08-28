@@ -2016,6 +2016,15 @@ void Counters::setTraceProfileEvent(Event event)
     trace_array[event].store(true, std::memory_order_relaxed);
 }
 
+/// A range adaptor that applies `trimWhitespace` to every element,
+/// e.g. `std::views::split(list, ',') | trimWhitespaceTransform`.
+/// It is kept local to this file on purpose: `Common/StringUtils.h` is directly included by more than
+/// two hundred translation units, and exporting this adaptor from there would pull `<ranges>` into all of them.
+static constexpr auto trimWhitespaceTransform = std::views::transform([](auto && token)
+{
+    return trimWhitespace(std::string_view(token.begin(), token.end()));
+});
+
 void Counters::setTraceProfileEvents(const String & events_list)
 {
     /// The list is written by a human, so allow spaces around the names and a trailing comma.

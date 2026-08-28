@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <cstring>
@@ -146,13 +145,6 @@ inline std::string_view trimWhitespace(std::string_view str)
         str.remove_suffix(1);
     return str;
 }
-
-/// A range adaptor that applies `trimWhitespace` to every element,
-/// e.g. `std::views::split(list, ',') | trimWhitespaceTransform`.
-inline constexpr auto trimWhitespaceTransform = std::views::transform([](auto && token)
-{
-    return trimWhitespace(std::string_view(token.begin(), token.end()));
-});
 
 inline bool isControlASCII(char c)
 {
