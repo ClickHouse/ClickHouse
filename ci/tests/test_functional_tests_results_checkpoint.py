@@ -952,14 +952,24 @@ def test_a_bugfix_job_killed_between_build_types_keeps_the_previous_build(tmp_pa
     )
 
 
-def test_a_kill_in_a_later_build_types_fatal_scan_keeps_that_builds_rows(tmp_path):
-    """The window between a later build type's rows and the checkpoint after them.
+@pytest.mark.parametrize(
+    "block_fatal_call,build_type,expected_rows,replaced",
+    [(1, "bt_first", 7, None), (2, "bt_second", 9, "bt_first")],
+)
+def test_a_kill_in_a_fatal_scan_keeps_that_build_types_labelled_rows(
+    tmp_path, block_fatal_call, build_type, expected_rows, replaced
+):
+    """The window between a build type's rows and the checkpoint that follows them.
 
     A build type's rows are complete when `FTResultsProcessor.run` returns, but
-    `check_fatal_messages_in_logs` scans the whole server log before the checkpoint that
-    persists them. The first build type has its own save before that scan; the later ones
-    are reached through the loop. Killed in that scan, the file still holds the PREVIOUS
-    build type's rows, so the one that just finished is missing entirely.
+    `check_fatal_messages_in_logs` scans the whole server log before the checkpoint after
+    it. Killed in that scan, the file holds whatever the previous checkpoint left: for a
+    later build type that is the PREVIOUS build type's rows, so the one that just finished
+    is missing entirely.
+
+    The build-type label is asserted, not just the row count. The job name carries only
+    the architecture (`Bugfix validation (functional tests, amd_release)`), so a row
+    published without its label cannot be attributed to the build that produced it.
 
     The `block_call` arms all block in `stop_server`, which is the next iteration - past
     this window - so none of them can see it.
@@ -968,20 +978,26 @@ def test_a_kill_in_a_later_build_types_fatal_scan_keeps_that_builds_rows(tmp_pat
         tmp_path,
         build_types=["bt_first", "bt_second"],
         rows=[7, 9],
-        block_fatal_call=2,
+        block_fatal_call=block_fatal_call,
     )
 
-    second = [name for name, _, _ in rows if name.startswith("bt_second_")]
-    stale = [name for name, _, _ in rows if name.startswith("bt_first_")]
-    assert len(second) == 9, (
-        f"the build type whose tests had finished published {len(second)} rows instead of "
-        f"9 (got {[name for name, _, _ in rows][:3]}...): a kill inside its fatal scan "
-        "loses the whole build type"
+    mine = [(name, labels) for name, _, labels in rows if name.startswith(build_type + "_")]
+    assert len(mine) == expected_rows, (
+        f"the build type whose tests had finished published {len(mine)} rows instead of "
+        f"{expected_rows} (got {[name for name, _, _ in rows][:3]}...): a kill inside its "
+        "fatal scan loses the whole build type"
     )
-    assert not stale, (
-        f"{len(stale)} row(s) of the previous build type are still published "
-        f"({stale[:3]}...) even though the loop has replaced them"
+    unlabelled = [name for name, labels in mine if build_type not in labels]
+    assert not unlabelled, (
+        f"{len(unlabelled)} row(s) published without the [{build_type}] label "
+        f"({unlabelled[:3]}...): nothing else in the report says which build type ran them"
     )
+    if replaced:
+        left = [name for name, _, _ in rows if name.startswith(replaced + "_")]
+        assert not left, (
+            f"{len(left)} row(s) of the previous build type are still published "
+            f"({left[:3]}...) even though the loop has replaced them"
+        )
     assert status == Result.Status.RUNNING, f"unexpected status [{status}]"
 
 

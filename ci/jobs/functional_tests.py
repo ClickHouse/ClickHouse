@@ -1161,6 +1161,12 @@ def main():
             is_bugfix_validation=is_labeled_bugfix_validation,
             allow_no_tests=is_flaky_check or is_targeted_check or is_selected_tests_run,
         )
+        if is_bugfix_validation:
+            # The job name carries only the architecture, so a row is attributable
+            # to a build type only through this label. Set before it is published.
+            for r in test_result.results:
+                r.set_label(build_types[0])
+
         # Before any teardown, so an overrun there cannot cost the results.
         # `results + [test_result]` is the shape `R` is built from below, so the
         # CIDB insert still finds the per-test rows under the "Tests" sub-result.
@@ -1175,9 +1181,6 @@ def main():
         # rather than in the outer CHECK_ERRORS stage, so that crashes in any
         # build type are detected even when logs are cleaned between builds.
         if is_bugfix_validation:
-            for r in test_result.results:
-                r.set_label(build_types[0])
-
             # Check fatal messages for the first build type before cleaning logs
             first_bt_fatals = CH.check_fatal_messages_in_logs()
             for r in first_bt_fatals:
@@ -1329,6 +1332,8 @@ def main():
                         runner_exit_code=bt_runner_exit_code,
                         is_bugfix_validation=is_labeled_bugfix_validation,
                     )
+                    for r in bt_result.results:
+                        r.set_label(bugfix_bt)
                     # Until this call the file holds the previous build type's
                     # rows, and the fatal scan below runs before the next one.
                     # Re-assigned after that scan, which can change both.
@@ -1350,8 +1355,6 @@ def main():
                         r.set_label(bugfix_bt)
                     reconcile_bugfix_crash_repro(bt_result, bt_fatals)
 
-                    for r in bt_result.results:
-                        r.set_label(bugfix_bt)
                     test_result.results = bt_result.results
                     test_result.status = bt_result.status
                     # Per build type, not once after the loop: this REPLACES the
