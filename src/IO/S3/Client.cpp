@@ -25,6 +25,7 @@
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Exception.h>
+#include <Poco/URI.h>
 
 #include <IO/Expect404ResponseScope.h>
 #include <IO/S3/Requests.h>
@@ -759,7 +760,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (!new_uri)
             return result;
 
-        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
+        if (Poco::URI(initial_endpoint).getHost() == "s3.amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
         client_configuration.remote_host_filter.checkURL(new_uri->uri);
