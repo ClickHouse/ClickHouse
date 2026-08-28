@@ -33,5 +33,10 @@ run "(1, 'Alice', '2020-01-02', notafunction(2))"
 run "(*, 'Alice', '2020-01-02', 7)"
 
 echo
+echo '=== the optional trailing comma before ) is accepted for an expression too, as it is for a literal'
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM format(Values, '$SCHEMA', \$\$(1, 'Alice', '2020-01-02', 7,)\$\$)" </dev/null
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM format(Values, '$SCHEMA', \$\$(2, 'Bob', toDate('2020-01-02') + 1, 3 + 5,)\$\$)" </dev/null
+
+echo
 echo '=== valid rows, including an expression and several rows at once'
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM format(Values, '$SCHEMA', \$\$(1, 'Alice', '2020-01-02', 7), (2, 'Bob', toDate('2020-01-02') + 1, 3 + 5)\$\$) ORDER BY id" </dev/null

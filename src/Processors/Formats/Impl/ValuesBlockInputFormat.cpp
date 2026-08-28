@@ -494,7 +494,29 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         expression_parsed = parser.parse(*token_iterator, ast, expected);
 
         /// The delimiter after the value ( ',' or ')' ) is considered part of the expression.
-        delimiter_found = (*token_iterator)->type == (is_last_column ? TokenType::ClosingRoundBracket : TokenType::Comma);
+        if (is_last_column)
+        {
+            /** The value of the last column may be followed by an optional trailing comma before ')' -
+              * `checkDelimiterAfterValue` accepts that on the streaming path and
+              * `03153_trailing_comma_in_values_list_in_insert` documents it. This path used to accept only
+              * ')', so `(1, 2, 3,)` worked while `(1, 2, toDate('2020-01-02') + 1,)` did not, purely
+              * because the last value needs the expression parser.
+              */
+            if ((*token_iterator)->type == TokenType::Comma)
+            {
+                auto after_comma = *token_iterator;
+                ++after_comma;
+                if (after_comma->type == TokenType::ClosingRoundBracket)
+                {
+                    ++(*token_iterator);
+                    delimiter_found = true;
+                }
+            }
+            else
+                delimiter_found = (*token_iterator)->type == TokenType::ClosingRoundBracket;
+        }
+        else
+            delimiter_found = (*token_iterator)->type == TokenType::Comma;
     }
 
     const auto text_here = [&]
