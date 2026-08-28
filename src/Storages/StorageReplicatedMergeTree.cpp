@@ -23,6 +23,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
+#include <Common/saturatedDuration.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -6066,7 +6067,7 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         restarting_thread.shutdown(/* part_of_full_shutdown */true);
         /// Explicitly set the event, because the restarting thread will not set it again
         startup_event.set();
-        shutdown_deadline.emplace(std::chrono::system_clock::now() + std::chrono::milliseconds((*settings_ptr)[MergeTreeSetting::wait_for_unique_parts_send_before_shutdown_ms].totalMilliseconds()));
+        shutdown_deadline.emplace(std::chrono::system_clock::now() + saturatedMilliseconds((*settings_ptr)[MergeTreeSetting::wait_for_unique_parts_send_before_shutdown_ms].totalMilliseconds()));
     }
     catch (...)
     {
@@ -11447,6 +11448,16 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
             if (source_part->info.isPatch())
                 patch_part_index = source_part->getPatchPartIndex().cloneEmpty();
+        }
+        else if (new_part_info.isPatch())
+        {
+            /// Metadata of a patch part (its columns and patch part index) can be taken only from a sibling
+            /// patch part. The partition id stores only a hash of the patch column names, so it cannot be
+            /// used to reconstruct them.
+            LOG_WARNING(log, "Empty part {} is not created instead of lost patch part because there are no active parts "
+                             "in patch partition {}, resolve this manually using DROP/DETACH PARTITION.",
+                        lost_part_name, new_part_info.getPartitionId());
+            return false;
         }
         else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
                      new_part_info.getPartitionId(),
