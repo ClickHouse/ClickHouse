@@ -812,8 +812,8 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         lines.append(
             f"{names}: smaller than the master baseline by the known offset "
             "between the two builds, so the difference is not shown. A delta "
-            "that differs from the offset by more than half of it is shown, in "
-            "either direction."
+            f"that differs from the offset by more than {XRAY_DEBUG_OFFSET_TOLERANCE:.0%} "
+            "of it is shown, in either direction."
         )
     if len(table) > 2 or within_offset:
         lines += ["", XRAY_DEBUG_OFFSET_NOTE]
