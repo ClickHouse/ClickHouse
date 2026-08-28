@@ -119,6 +119,11 @@ UInt64 ColumnMap::getNumberOfDefaultRows() const
     return nested->getNumberOfDefaultRows();
 }
 
+bool ColumnMap::hasOnlyTypeDefaults() const
+{
+    return nested->hasOnlyTypeDefaults();
+}
+
 std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());

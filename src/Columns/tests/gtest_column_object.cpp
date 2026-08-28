@@ -34,6 +34,21 @@ TEST(ColumnObject, CreateEmpty)
     ASSERT_EQ(col_object.getMaxDynamicPaths(), 20);
 }
 
+TEST(ColumnObject, HasOnlyTypeDefaults)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a UInt32)");
+    auto col = type->createColumn();
+    auto & object = assert_cast<ColumnObject &>(*col);
+
+    ASSERT_TRUE(object.hasOnlyTypeDefaults());
+    object.insert(Object{});
+    object.insert(Object{{"a", Field{0u}}});
+    ASSERT_TRUE(object.hasOnlyTypeDefaults());
+
+    object.insert(Object{{"b", Field{1u}}});
+    ASSERT_FALSE(object.hasOnlyTypeDefaults());
+}
+
 TEST(ColumnObject, GetName)
 {
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=20, b.d UInt32, a.b Array(String))");
