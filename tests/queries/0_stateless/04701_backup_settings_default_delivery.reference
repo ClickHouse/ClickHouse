@@ -28,3 +28,8 @@ CREATING_BACKUP
 0	1
 1	0
 0	1
+-- `compression` has no effect from a SETTINGS clause, so both forms are refused here too.
+shapes the HTTP response body
+shapes the HTTP response body
+shapes the HTTP response body
+BACKUP_CREATED

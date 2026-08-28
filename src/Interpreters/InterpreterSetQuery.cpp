@@ -309,6 +309,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
             if (!core.changes.empty())
                 context_->checkSettingsConstraints(core.changes, SettingSource::QUERY);
             context_->checkSettingsConstraintsForSettingsReset(core.default_names, SettingSource::QUERY);
+            rejectHTTPOnlyConstructionSettings(backup_query->settings->as<const ASTSetQuery &>());
 
             if (!core.changes.empty())
                 context_->applySettingsChanges(core.changes);

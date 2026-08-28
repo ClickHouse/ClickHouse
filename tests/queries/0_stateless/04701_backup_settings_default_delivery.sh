@@ -143,6 +143,25 @@ select id like '%_s4' as expected_sync, settings['async']
 from system.backups where id in ('${uniq}_s3', '${uniq}_s4', '${uniq}_s5') order by id
 "
 
+echo "-- \`compression\` has no effect from a SETTINGS clause, so both forms are refused here too."
+
+# Refused for the same reason as on an ordinary query: the HTTP response body is shaped before the
+# query runs. `compression_method` is a BACKUP setting and a different name, so it keeps working.
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_h1') settings compression = 'gz';
+" 2>&1 | grep -m1 -o "shapes the HTTP response body"
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_h2') settings compression = DEFAULT;
+" 2>&1 | grep -m1 -o "shapes the HTTP response body"
+${CLICKHOUSE_CLIENT} --query "
+restore table src as h3 from $backup_name settings compression = DEFAULT;
+" 2>&1 | grep -m1 -o "shapes the HTTP response body"
+
+# Control: the BACKUP-specific compression settings are unaffected, in both forms.
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_h4') settings compression_method = 'lz4', compression_level = DEFAULT;
+" | grep -o "BACKUP_CREATED"
+
 ${CLICKHOUSE_CLIENT} -m --query "
 drop table r1; drop table r2; drop table r3; drop table r4; drop table r5; drop table src;
 "

@@ -23,14 +23,14 @@ ASTBackupQuery * parseBackupQuery(ASTPtr & holder, const String & query)
 
 }
 
-/// `copySettingsToQuery` runs only from `BackupsWorker` on the non-internal ON CLUSTER path
-/// (`BackupsWorker.cpp:1135` for RESTORE), which stateless tests cannot reach: their configs offer a
-/// single-host cluster only, and `BACKUP/RESTORE ON CLUSTER` coverage lives in integration tests.
+/// `copySettingsToQuery` runs only from `BackupsWorker` on the non-internal ON CLUSTER path, which
+/// stateless tests cannot reach: their configs offer a single-host cluster only, and
+/// `BACKUP/RESTORE ON CLUSTER` coverage lives in integration tests.
 ///
 /// The rebuild emits the RESOLVED effective state, so only a CORE `name = DEFAULT` may ride along. A
-/// backup-specific one must not: `backup_uuid` is empty at parse time, generated later by BackupsWorker
-/// (`BackupsWorker.cpp:408-409`) and emitted as a change here, so a surviving `backup_uuid = DEFAULT`
-/// would reset it away on every receiving host.
+/// backup-specific one must not: `backup_uuid` is empty at parse time, generated later by
+/// `BackupsWorker` and emitted as a change here, so a surviving `backup_uuid = DEFAULT` would reset
+/// it away on every receiving host.
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryCarriesOnlyCoreDefaults)
 {
     const String query = "BACKUP TABLE t TO Disk('d', 'b') "
@@ -56,8 +56,8 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryCarriesOnlyCoreDefaults)
 }
 
 /// The RESTORE twin of the case above. `restore_uuid` is generated after parsing exactly like
-/// `backup_uuid` (`BackupsWorker.cpp:923-924`) and emitted by the `LIST_OF_RESTORE_SETTINGS` copy loop,
-/// so the same defect is possible on this side and is pinned the same way.
+/// `backup_uuid` and emitted by the `LIST_OF_RESTORE_SETTINGS` copy loop, so the same defect is
+/// possible on this side and is pinned the same way.
 TEST(BackupSettingsDefault, RestoreCopySettingsToQueryCarriesOnlyCoreDefaults)
 {
     const String query = "RESTORE TABLE t FROM Disk('d', 'b') "
@@ -82,7 +82,7 @@ TEST(BackupSettingsDefault, RestoreCopySettingsToQueryCarriesOnlyCoreDefaults)
         << "the generated restore_uuid was discarded";
 }
 
-/// `isAsync` decides whether the client waits (`InterpreterBackupQuery.cpp:47-49`) while
+/// `isAsync` decides whether the client waits in `InterpreterBackupQuery::execute` while
 /// `fromBackupQuery` decides the operation's effective `async`. They read the same clause separately, so
 /// they must agree on it, over duplicates and over value spellings alike.
 TEST(BackupSettingsDefault, IsAsyncAgreesWithFromBackupQuery)
