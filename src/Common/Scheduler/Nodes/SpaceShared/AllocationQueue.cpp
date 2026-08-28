@@ -432,6 +432,33 @@ void AllocationQueue::processActivation()
 
         if (memory_growth_suspension_retry_requested)
         {
+            /// Forced spill can change actual demand while the original request remains parked.
+            /// Reconcile it on the scheduler thread before the next fit check, so retry/eviction
+            /// never uses the stale pre-spill size.
+            if (suspended_growth && suspended_growth->increasing_hook.is_linked())
+            {
+                ResourceAllocation & recovering = *suspended_growth;
+                const ResourceCost old_size = recovering.increase.size;
+                const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
+                if (reconciled_size != old_size)
+                {
+                    increasing_allocations.erase(increasing_allocations.iterator_to(recovering));
+                    running_allocations.erase(running_allocations.iterator_to(recovering));
+                    recovering.increase.size = reconciled_size;
+                    recovering.fair_key = recovering.allocated + reconciled_size;
+                    running_allocations.insert(recovering);
+
+                    if (reconciled_size > 0)
+                        increasing_allocations.insert(recovering);
+                    else
+                    {
+                        clearMemoryGrowthSuspension();
+                        recovering.increaseCancelled();
+                    }
+                    memory_growth_suspension_changed = true;
+                }
+            }
+
             /// A release elsewhere in the constrained subtree starts a new fit-check round here.
             for (ResourceAllocation & pending : pending_allocations)
             {

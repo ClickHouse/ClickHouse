@@ -231,6 +231,30 @@ bool MemoryReservation::isGrowthRecoveryActive()
     return growth_recovery_active;
 }
 
+ResourceCost MemoryReservation::reconcilePendingIncrease(ResourceCost scheduler_allocated_size, ResourceCost requested_size)
+{
+    std::unique_lock lock(mutex);
+    if (!increase_enqueued)
+        return requested_size;
+
+    const ResourceCost reconciled_size
+        = actual_size > scheduler_allocated_size ? actual_size - scheduler_allocated_size : 0;
+    if (reconciled_size > enqueued_demand)
+        demand_increment.add(reconciled_size - enqueued_demand);
+    else if (reconciled_size < enqueued_demand)
+        demand_increment.sub(enqueued_demand - reconciled_size);
+    enqueued_demand = reconciled_size;
+    return reconciled_size;
+}
+
+void MemoryReservation::increaseCancelled()
+{
+    std::unique_lock lock(mutex);
+    enqueued_demand = 0;
+    increase_enqueued = false;
+    cv.notify_all();
+}
+
 void MemoryReservation::throwIfNeeded()
 {
     if (kill_reason)

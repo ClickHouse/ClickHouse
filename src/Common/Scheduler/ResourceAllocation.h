@@ -57,6 +57,11 @@ public:
     virtual void onGrowthPressureResolved() {}
     virtual bool isGrowthRecoveryActive() { return false; }
 
+    /// At an explicit recovery checkpoint, reconcile a parked request with the allocation's
+    /// current demand. Called by the scheduler thread under the allocation-queue mutex.
+    virtual ResourceCost reconcilePendingIncrease(ResourceCost, ResourceCost requested_size) { return requested_size; }
+    virtual void increaseCancelled() {}
+
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
 

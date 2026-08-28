@@ -76,6 +76,8 @@ private:
     GrowthPressureAction onGrowthPressure() override;
     void onGrowthPressureResolved() override;
     bool isGrowthRecoveryActive() override;
+    ResourceCost reconcilePendingIncrease(ResourceCost scheduler_allocated_size, ResourceCost requested_size) override;
+    void increaseCancelled() override;
 
     const ResourceCost reserved_size; // value of `reserve_memory` query setting
 

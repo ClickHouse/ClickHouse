@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <future>
 #include <iostream>
+#include <optional>
 #include <random>
 #include <thread>
 #include <vector>
@@ -603,6 +604,12 @@ struct ManualAllocation : public ResourceAllocation
         queue.notifyRecoveryProgress(*this);
     }
 
+    void reconcilePendingIncreaseTo(ResourceCost size)
+    {
+        std::unique_lock lock(mutex);
+        reconciled_increase_size = size;
+    }
+
 private: // interaction with the scheduler thread
     GrowthPressureAction onGrowthPressure() override
     {
@@ -629,6 +636,19 @@ private: // interaction with the scheduler thread
     {
         std::unique_lock lock(mutex);
         return recovery_active;
+    }
+
+    ResourceCost reconcilePendingIncrease(ResourceCost, ResourceCost requested_size) override
+    {
+        std::unique_lock lock(mutex);
+        return reconciled_increase_size.value_or(requested_size);
+    }
+
+    void increaseCancelled() override
+    {
+        std::unique_lock lock(mutex);
+        increase_enqueued = false;
+        cv.notify_all();
     }
 
     void increaseApproved(const IncreaseRequest & increase) override
@@ -677,6 +697,7 @@ private: // interaction with the scheduler thread
     size_t current_pressure_round = 0;
     size_t total_pressure_events = 0;
     bool recovery_active = false;
+    std::optional<ResourceCost> reconciled_increase_size;
 };
 
 
@@ -1252,6 +1273,31 @@ TEST(SchedulerSpaceShared, RecoveryLaneRunsBeforeSuctionBackstop)
 
     EXPECT_EQ(heavy.pressureCount(), 2u);
     EXPECT_EQ(heavy.killCount(), 1u);
+}
+
+
+/// A forced spill must shrink the parked reservation request before retry. The original +5000
+/// request no longer describes demand after reclaim leaves only +1000 outstanding.
+TEST(SchedulerSpaceShared, ForcedSpillReconcilesParkedIncrease)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.protectAfterPressureRounds(2);
+    heavy.increaseAsync(5000);
+
+    heavy.waitPressureCount(1);
+    heavy.reconcilePendingIncreaseTo(1000);
+    heavy.recoveryCheckpoint();
+    heavy.waitSynced();
+
+    EXPECT_EQ(heavy.size(), 9000);
+    EXPECT_EQ(heavy.pressureCount(), 1u);
+    EXPECT_EQ(heavy.killCount(), 0u);
 }
 
 
