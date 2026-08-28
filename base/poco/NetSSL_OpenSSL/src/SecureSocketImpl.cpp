@@ -340,10 +340,17 @@ void SecureSocketImpl::shutdown()
 			// done with it.
 			/// A zero result is not an error for `SSL_shutdown` and must not be passed to
 			/// `SSL_get_error`; it means that `close_notify` was sent but not received yet.
-			const auto result = performSSLOperation(_pSSL, [this]
+			SSLOperationResult result;
+			Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+			do
 			{
-				return SSL_shutdown(_pSSL);
-			}, false);
+				RemainingTimeCounter counter(remaining_time);
+				result = performSSLOperation(_pSSL, [this]
+				{
+					return SSL_shutdown(_pSSL);
+				}, false);
+			}
+			while (result.rc < 0 && mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
 			if (result.rc < 0)
 				handleError(result.rc, result.sslError, result.socketError, result.errorCode);
 			if (_pSocket->getBlocking())

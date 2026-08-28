@@ -28,9 +28,11 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
+#include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <latch>
 #include <string>
@@ -60,6 +62,79 @@ struct SecurePolicy
 
     Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::SecureFiberStreamSocketImpl(client_ctx); }
 };
+
+struct RetryOnceWriteBIOState
+{
+    int write_calls = 0;
+};
+
+int retryOnceWrite(BIO * bio, const char * data, int length)
+{
+    auto * state = static_cast<RetryOnceWriteBIOState *>(BIO_get_data(bio));
+    ++state->write_calls;
+
+    BIO_clear_retry_flags(bio);
+    if (state->write_calls == 1)
+    {
+        errno = EAGAIN;
+        BIO_set_retry_write(bio);
+        return -1;
+    }
+
+    const int result = BIO_write(BIO_next(bio), data, length);
+    BIO_copy_next_retry(bio);
+    return result;
+}
+
+long retryOnceWriteCtrl(BIO * bio, int command, long argument, void * data) // NOLINT(google-runtime-int)
+{
+    return BIO_ctrl(BIO_next(bio), command, argument, data);
+}
+
+int retryOnceWriteCreate(BIO * bio)
+{
+    BIO_set_init(bio, 1);
+    BIO_set_data(bio, nullptr);
+    return 1;
+}
+
+int retryOnceWriteDestroy(BIO *)
+{
+    return 1;
+}
+
+const BIO_METHOD * retryOnceWriteBIOMethod()
+{
+    static const BIO_METHOD * method = []
+    {
+        BIO_METHOD * result = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_FILTER, "retry-once-write");
+        BIO_meth_set_write(result, retryOnceWrite);
+        BIO_meth_set_ctrl(result, retryOnceWriteCtrl);
+        BIO_meth_set_create(result, retryOnceWriteCreate);
+        BIO_meth_set_destroy(result, retryOnceWriteDestroy);
+        return result;
+    }();
+    return method;
+}
+
+bool installRetryOnceWriteBIO(SSL * ssl, RetryOnceWriteBIOState & state)
+{
+    BIO * original_write_bio = SSL_get_wbio(ssl);
+    if (!original_write_bio || BIO_up_ref(original_write_bio) != 1)
+        return false;
+
+    BIO * retry_write_bio = BIO_new(retryOnceWriteBIOMethod());
+    if (!retry_write_bio)
+    {
+        BIO_free(original_write_bio);
+        return false;
+    }
+
+    BIO_set_data(retry_write_bio, &state);
+    BIO_push(retry_write_bio, original_write_bio);
+    SSL_set0_wbio(ssl, retry_write_bio);
+    return true;
+}
 
 }
 
@@ -430,6 +505,62 @@ TEST_F(SilkFiberSecureSocketTest, SslReadReturnsWantReadWithoutSuspending)
     EXPECT_LT(elapsed_us, 500'000U)
         << "SSL_read took " << elapsed_us
         << "us: the Silk TLS BIO suspended inside the OpenSSL operation";
+}
+
+
+TEST_F(SilkFiberSecureSocketTest, BlockingShutdownRetriesWantWrite)
+{
+    auto listener = policy.makeListener();
+    const uint16_t port = listener.address().port();
+
+    int shutdown_write_calls = 0;
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, impl = policy.makeClient(), &shutdown_write_calls]() -> int
+        {
+            RetryOnceWriteBIOState retry_state;
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+
+            /// Complete the TLS handshake before injecting the retry into the next TLS write.
+            socket.sendBytes("x", 1);
+            char pong[1] = {};
+            EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
+
+            auto * secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(socket.impl());
+            SSL * ssl = secure->ssl();
+            if (!installRetryOnceWriteBIO(ssl, retry_state))
+            {
+                ADD_FAILURE() << "Could not install the retry-once write BIO";
+                return 1;
+            }
+
+            socket.shutdown();
+            shutdown_write_calls = retry_state.write_calls;
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    char ping[1] = {};
+    ASSERT_EQ(peer.receiveBytes(ping, sizeof(ping)), 1);
+    peer.sendBytes("y", 1);
+
+    auto * peer_impl = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(peer.impl());
+    SSL * peer_ssl = peer_impl->ssl();
+    char data = 0;
+    ERR_clear_error();
+    const int read_result = SSL_read(peer_ssl, &data, 1);
+    const int ssl_error = SSL_get_error(peer_ssl, read_result);
+
+    EXPECT_EQ(client_future.wait(), 0);
+    peer.close();
+
+    EXPECT_GE(shutdown_write_calls, 2);
+    EXPECT_EQ(read_result, 0);
+    EXPECT_EQ(ssl_error, SSL_ERROR_ZERO_RETURN);
 }
 
 
