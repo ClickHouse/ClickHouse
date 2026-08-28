@@ -135,10 +135,17 @@ std::array<char, 3> controlCharacterPicture(unsigned char byte)
     return {static_cast<char>(0xE2), static_cast<char>(0x90), static_cast<char>(0x80 + code)};
 }
 
+/// The position where the trailing whitespace of `source` starts, or `source.size()` if there is none.
+size_t trailingWhitespaceStart(const String & source)
+{
+    const char * last_significant = find_last_not_symbols_or_null<' ', '\t', '\n', '\r', '\f', '\v'>(source.data(), source.data() + source.size());
+    return last_significant ? last_significant + 1 - source.data() : 0;
+}
+
 }
 
 
-String replaceControlCharactersWithPictures(String source)
+String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace)
 {
     bool has_control_characters = false;
     for (char c : source)
@@ -150,16 +157,27 @@ String replaceControlCharactersWithPictures(String source)
         }
     }
 
+    /// The trailing whitespace is detected on the original bytes: after the replacement, trailing
+    /// tabs and newlines are Control Pictures that `highlightTrailingSpaces` would not recognize.
+    const size_t highlight_start_pos = highlight_trailing_whitespace ? trailingWhitespaceStart(source) : source.size();
+    const bool highlight = highlight_start_pos < source.size();
+
     if (!has_control_characters)
-        return source;
+        return highlight ? highlightTrailingSpaces(std::move(source)) : source;
 
     String result;
     /// Every replaced byte expands to a 3-byte UTF-8 sequence.
     result.reserve(source.size() + source.size() / 2);
 
-    for (char c : source)
+    for (size_t i = 0; i < source.size(); ++i)
     {
-        const auto byte = static_cast<unsigned char>(c);
+        if (highlight && i == highlight_start_pos)
+        {
+            result += RED_COLOR;
+            result += UNDERSCORE;
+        }
+
+        const auto byte = static_cast<unsigned char>(source[i]);
         if (isControlCharacter(byte))
         {
             const auto picture = controlCharacterPicture(byte);
@@ -167,9 +185,12 @@ String replaceControlCharactersWithPictures(String source)
         }
         else
         {
-            result += c;
+            result += source[i];
         }
     }
+
+    if (highlight)
+        result += RESET_COLOR;
 
     return result;
 }
@@ -219,17 +240,9 @@ void WriteBufferReplacingControlCharacters::nextImpl()
 
 String highlightTrailingSpaces(String source)
 {
-    if (source.empty())
+    const size_t highlight_start_pos = trailingWhitespaceStart(source);
+    if (highlight_start_pos >= source.size())
         return source;
-
-    const char * last_significant = find_last_not_symbols_or_null<' ', '\t', '\n', '\r', '\f', '\v'>(source.data(), source.data() + source.size());
-    size_t highlight_start_pos = 0;
-    if (last_significant)
-    {
-        highlight_start_pos = last_significant + 1 - source.data();
-        if (highlight_start_pos >= source.size())
-            return source;
-    }
 
     return source.substr(0, highlight_start_pos) + RED_COLOR + UNDERSCORE + source.substr(highlight_start_pos, std::string::npos) + RESET_COLOR;
 }

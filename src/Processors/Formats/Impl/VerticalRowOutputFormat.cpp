@@ -96,15 +96,18 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
         }
 
         /// Make non-printable control characters visible instead of being silently swallowed.
+        /// Trailing whitespace is highlighted in the same pass: it must be detected on the
+        /// pre-replacement bytes, because the replacement turns trailing tabs and newlines into
+        /// Control Pictures that `highlightTrailingSpaces` would not recognize.
         if (format_settings.pretty.vertical_display_control_characters)
-            serialized_value = replaceControlCharactersWithPictures(serialized_value);
+            serialized_value = replaceControlCharactersWithPictures(std::move(serialized_value), format_settings.pretty.highlight_trailing_spaces);
 
         /// Highlight groups of thousands.
         if (format_settings.pretty.highlight_digit_groups && is_number[field_number])
             serialized_value = highlightDigitGroups(serialized_value);
 
         /// Highlight trailing spaces.
-        if (format_settings.pretty.highlight_trailing_spaces)
+        if (format_settings.pretty.highlight_trailing_spaces && !format_settings.pretty.vertical_display_control_characters)
             serialized_value = highlightTrailingSpaces(serialized_value);
 
         out.write(serialized_value.data(), serialized_value.size());
