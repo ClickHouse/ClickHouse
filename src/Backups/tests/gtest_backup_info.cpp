@@ -453,16 +453,36 @@ TEST(BackupInfo, CopyS3CredentialsToOverwritesTheDestinationRoleWithTheCopiedOne
     EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', extra_credentials(equals(role_arn, 'ROLEARN')))");
 }
 
-TEST(BackupInfo, CopyS3CredentialsToKeepsDestinationKeyPairBesideTheCopiedRole)
+TEST(BackupInfo, CopyS3CredentialsToDropsADestinationKeyPairItCannotReplay)
 {
+    /// A key pair the source has none of to lend cannot come back: `withoutS3Credentials` strips it from
+    /// the metadata and re-copying restores only the role. Keeping it would open the base backup here and
+    /// leave it unopenable on restore, so it goes and the locator stays reconstructable.
     auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN'))");
     auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET')");
 
     source.copyS3CredentialsTo(dest);
 
-    EXPECT_EQ(
-        dest.toString(),
-        "S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET', extra_credentials(equals(role_arn, 'ROLEARN')))");
+    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', extra_credentials(equals(role_arn, 'ROLEARN')))");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToRoundTripsTheMergedLocatorThroughRedaction)
+{
+    /// What `BackupImpl::writeBackupMetadata` compares before it may replace the credentials with the
+    /// `<base_backup_copy_s3_credentials_from_backup>` marker: strip the copied locator, copy onto the
+    /// stripped form again, and the two must agree. A destination role survives redaction, so the merge
+    /// this performs has to survive the round trip too.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', extra_credentials(role_arn = 'OTHERROLE'))");
+
+    source.copyS3CredentialsTo(dest);
+
+    auto stripped = dest.withoutS3Credentials();
+    EXPECT_NE(stripped.toString(), dest.toString());
+
+    auto replayed = stripped;
+    source.copyS3CredentialsTo(replayed);
+    EXPECT_EQ(replayed.toString(), dest.toString());
 }
 
 TEST(BackupInfo, CopyS3CredentialsToDropsADestinationClauseNamingNoRole)

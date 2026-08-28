@@ -376,10 +376,15 @@ void BackupInfo::copyS3CredentialsTo(BackupInfo & dest, ContextPtr context) cons
             "role_arn, got {}",
             toStringForLogging());
 
-    /// Each kind the source names overwrites the same kind on the destination; a kind it does not name is
-    /// left alone, so lending credentials never takes authentication away. A destination clause naming no
-    /// role is the exception: it assumes nothing, and keeping it would leave the locator unreconstructable
-    /// from its stripped form, which is what `writeBackupMetadata` compares before emitting the marker.
+    /// What the destination may keep is what the metadata can carry back. `withoutS3Credentials` strips a
+    /// positional key pair and only a source key pair can replay it, so one the source cannot reproduce
+    /// would open the base backup here and fail to on restore -- it is dropped. A `role_arn` survives
+    /// redaction, so a destination role is kept when the source names none, and lending credentials does
+    /// not cost the destination the identity it named. A clause naming no role assumes nothing, and keeping
+    /// it would only leave the locator unreconstructable from its stripped form, which is what
+    /// `writeBackupMetadata` compares before emitting the marker.
+    if (dest.args.size() > 1)
+        dest.args.resize(1);
     if (!hasRoleToAssume(dest.function_arg, context))
         dest.function_arg = nullptr;
 
