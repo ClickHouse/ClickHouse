@@ -5,25 +5,16 @@
 #include <mutex>
 #include <unordered_map>
 #include <base/types.h>
+#include <Common/ProcessorMemoryStats.h>
 
 namespace DB
 {
 class IProcessor;
-struct ProcessorMemoryStats
-{
-    // The total spillable memory in the processor
-    Int64 spillable_memory_bytes = 0;
-    // To avoid this processor cause OOM, at least `reserved_memory_bytes` should be reserved.
-    // including auxiliary memory to finish the spilling process.
-    Int64 need_reserved_memory_bytes = 0;
-};
 
 // MemorySpillScheduler is bound to one thread group. It's a query-scoped manager to trigger processor spill.
 class MemorySpillScheduler
 {
 public:
-    using Ptr = std::shared_ptr<MemorySpillScheduler>;
-
     enum class ForcedSpillOutcome : UInt8
     {
         Pending,
@@ -82,4 +73,7 @@ private:
 
     Int64 getHardLimit();
 };
+
+using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
+
 }
