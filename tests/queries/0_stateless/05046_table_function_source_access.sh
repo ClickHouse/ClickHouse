@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# In a Replicated database a CREATE TABLE ... AS <table function> is carried out by the DDL worker,
+# which runs with no user and therefore full access, so a check at the execution seam cannot deny.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -86,7 +89,9 @@ as_user "SELECT count() FROM mergeTreeAnalyzeIndexesUUID('$MT_UUID')"
 
 echo "=== viewIfPermitted delegation is a no-op for a function with no source ==="
 $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT * FROM viewIfPermitted(SELECT 1 AS x ELSE null('x UInt8'))"
-$CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM viewIfPermitted(SELECT 1 ELSE mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none'))" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
+# The primary query must be one this user cannot run, or viewIfPermitted answers with it instead
+# of the ELSE function, so it reads a table this user can see but not read.
+$CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM viewIfPermitted(SELECT * FROM t_alias_src ELSE mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none'))" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
 
 echo "=== the column mismatch diagnostic is unchanged (default user) ==="
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM viewIfPermitted(SELECT 1 AS x ELSE null('y UInt8'))" 2>&1 | grep -o "requires a SELECT query with the result columns matching a table function after 'ELSE'" | uniq
@@ -158,7 +163,7 @@ $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() > 0 FROM mergeTreeInde
 $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() > 0 FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_source_access)"
 $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none')" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
 # The delegated check must also be satisfiable: a granted caller reaches the index lookup.
-$CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM viewIfPermitted(SELECT 1 ELSE mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none'))" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
+$CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM viewIfPermitted(SELECT * FROM t_alias_src ELSE mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none'))" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
 
 echo "=== an authorized user still gets the original error for a source that does not exist ==="
 $CLICKHOUSE_CLIENT -q "GRANT SHOW COLUMNS, SELECT ON $CLICKHOUSE_DATABASE.t_missing TO $user_name"
