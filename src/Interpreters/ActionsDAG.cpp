@@ -2918,13 +2918,16 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     /// after: split keeps the ARRAY_JOIN in `first`, so `second` is array-join-free and takes its result as input `name`.
     ActionsDAG after = split({array_join}).second;
 
-    /// The element column is matched by name below. Bail if that name is ambiguous (duplicate column names)
-    /// or the join result is unused, so we never wire the wrong column.
-    size_t element_inputs = 0;
+    /// The before/after hand-off matches columns by name. Bail if the element column is missing/ambiguous, or
+    /// any consumed name is duplicated (ActionsDAG allows it), so we never wire the wrong column.
+    std::unordered_map<std::string_view, size_t> after_input_counts;
     for (const auto * input : after.inputs)
-        element_inputs += (input->result_name == name);
-    if (element_inputs != 1)
+        ++after_input_counts[input->result_name];
+    if (after_input_counts[name] != 1)
         return {};
+    for (const auto & [input_name, count] : after_input_counts)
+        if (count > 1)
+            return {};
 
     /// before: splitting on the argument keeps the ARRAY_JOIN (its parent) out, so `before` just computes the array.
     const Node * arg = array_join->children.at(0);
