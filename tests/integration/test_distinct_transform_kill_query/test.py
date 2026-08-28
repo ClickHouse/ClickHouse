@@ -764,10 +764,12 @@ def test_lc_null_keys_break_prefix(started_cluster):
     fix the prepass stops at the paused row and `buildLowCardinalityMask` scans the whole pre-latched prefix;
     without it the scan drops `[4096, begin)` of the committed prefix.
 
-    The exact preserved-prefix value cannot be asserted from the client because an interrupted break-mode query
-    returns no rows to the client in this harness (verified: `system.query_log.result_rows` is 0); the test
-    therefore asserts the mechanism: the prepass pauses on the second boundary, never on a third, and the query
-    finishes with no error in break mode.
+    The preserved prefix cannot be observed from the client (an interrupted break-mode query returns no rows),
+    so the test asserts the downstream contract directly: after the prepass breaks, `buildLowCardinalityMask`
+    must scan the *whole* committed 8192-row prefix. It pauses on `distinct_transform_lc_pause` at row 4096, and
+    a re-armed pause must be reached again at row 8192; if the prefix were truncated downstream to 4096 only the
+    first pause would occur. The test also asserts the upstream control flow (prepass pauses on the second
+    boundary, never a third) and that break mode finishes with no error.
     """
     node1.query(
         "CREATE TABLE IF NOT EXISTS null_keys_mt_lc (k LowCardinality(Nullable(UInt64))) "
@@ -776,20 +778,25 @@ def test_lc_null_keys_break_prefix(started_cluster):
     )
     node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc")
     ## Partition 0 large enough to reach the second 4096-row sub-range (and hit the failpoint); partitions
-    ## 1/2/3 stay below the boundary so only partition 0 can pause.
+    ## 1/2/3 stay below the boundary so only partition 0 can pause. No NULLs, so the null-filter keeps the
+    ## whole committed 8192-row prefix and `buildLowCardinalityMask` scans it in full.
     node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(0) FROM numbers(1000000)")
     node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(1) FROM numbers(100)")
     node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(2) FROM numbers(100)")
     node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(3) FROM numbers(100)")
 
     query = """SELECT count() FROM numbers(1000000)
-WHERE number IN (SELECT k FROM null_keys_mt_lc)
-FORMAT Null
-SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
-         max_execution_time=5, timeout_overflow_mode='break'"""
+ WHERE number IN (SELECT k FROM null_keys_mt_lc)
+ FORMAT Null
+ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+          max_execution_time=5, timeout_overflow_mode='break'"""
 
     query_id = str(uuid.uuid4())
+    ## Arm both failpoints up front: the prepass pauses on `null_pause`, and the pre-latched
+    ## `buildLowCardinalityMask` (which runs after the prepass breaks) must already find `lc_pause`
+    ## armed when it reaches its first 4096-row boundary.
     node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
 
     thread_error = [None]
     query_error = [None]
@@ -850,8 +857,23 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
         if done:
             third_pause_future.result()
             assert False, "prepass reached a third boundary: soft-timeout latch is broken"
+
+        ## Downstream observation: `buildLowCardinalityMask` must scan the *whole* committed 8192-row prefix,
+        ## not drop `[4096, 8192)`. It pauses on `lc_pause` at row 4096; re-arm and assert it reaches a second
+        ## pause at row 8192 (the full prefix). If the prefix were truncated downstream, only one pause occurs.
+        wait_failpoint(LC_FAULT_NAME)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+        second_downstream_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {LC_FAULT_NAME} PAUSE")
+        done, _ = concurrent.futures.wait([second_downstream_future], timeout=10)
+        if not done:
+            assert False, "buildLowCardinalityMask dropped the committed prefix: second LC pause not reached"
+        second_downstream_future.result()
+        ## Release the second pause so the query can finish (break mode returns 0 rows to the client).
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
         pool.shutdown(wait=False, cancel_futures=True)
 
     query_thread.join(timeout=60)
@@ -970,10 +992,14 @@ def test_mixed_null_keys_break_prefix(started_cluster):
     key columns must not re-zero the keep mask from row 0 (which previously reset `committed_source_rows` and
     dropped the already-committed prefix for multi-key `IN` set builds).
 
-    Uses a two-column `LowCardinality(Nullable)` key so the prepass runs the LC null-marking loop once per column.
-    The exact preserved-prefix value cannot be asserted (an interrupted break-mode query returns no rows in this
-    harness), so the test asserts the mechanism: the prepass pauses on the first boundary, never on a third, and the
-    query finishes with no error.
+    Uses a two-column key (one plain `Nullable` and one `LowCardinality(Nullable)`) so the prepass runs the LC
+    null-marking loop for the `LowCardinality` column while the plain `Nullable` column's null-map scan commits the
+    prefix. The preserved prefix cannot be observed from the client (an interrupted break-mode query returns no
+    rows), so the test asserts the downstream contract directly: after the prepass breaks, `buildFilter` (the
+    downstream stage for this mixed key) must reach its first `distinct_transform_pause` at row 4096, proving the
+    committed prefix survived downstream (the re-zero regression would shrink the chunk to 0 rows and pause nowhere).
+    The test also asserts the upstream control flow (prepass pauses on the first boundary, never a third) and that
+    break mode finishes with no error.
     """
     node1.query(
         "CREATE TABLE IF NOT EXISTS null_keys_mt_mixed "
@@ -983,23 +1009,29 @@ def test_mixed_null_keys_break_prefix(started_cluster):
     )
     node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_mixed")
     ## Spread rows across all four partitions (so the set build runs with >1 stream and the
-    ## `DistinctTransform`/`skip_null_keys` prepass is actually engaged) and inject NULLs so the
-    ## combined null map is non-zero: the plain-nullable null-marking prepass runs first and pauses,
-    ## after which the `LowCardinality(Nullable)` key column's prepass must preserve the already
-    ## committed source-row boundary (the second prepass used to re-zero the keep mask from row 0).
+    ## `DistinctTransform`/`skip_null_keys` prepass is actually engaged) and inject NULLs into the plain-nullable
+    ## `k1` so the combined null map is non-zero: the plain-nullable null-marking prepass (DistinctTransform.cpp:541)
+    ## runs first and commits the 8192-row prefix; the second `LowCardinality(Nullable)` key column's prepass must
+    ## preserve the already-committed source-row boundary (it previously re-zeroed the keep mask from row 0). The
+    ## downstream stage here is `buildFilter` (the mixed plain+`LowCardinality` key does not take the
+    ## `buildLowCardinalityMask` fast path); null-filtering keeps its surviving row count below 8192.
     node1.query(
         "INSERT INTO null_keys_mt_mixed "
         "SELECT if(number % 7 = 0, NULL, number % 4), toNullable(toString(number % 1000)) FROM numbers(1000000)"
     )
 
     query = """SELECT count() FROM numbers(1000000)
-WHERE (number, number) IN (SELECT k1, k2 FROM null_keys_mt_mixed)
-FORMAT Null
-SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
-         max_execution_time=5, timeout_overflow_mode='break'"""
+ WHERE (number, number) IN (SELECT k1, k2 FROM null_keys_mt_mixed)
+ FORMAT Null
+ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+          max_execution_time=5, timeout_overflow_mode='break'"""
 
     query_id = str(uuid.uuid4())
+    ## Arm both failpoints up front: the prepass pauses on `null_pause`, and the pre-latched `buildFilter`
+    ## (the downstream stage for this mixed plain+`LowCardinality` key, which runs after the prepass breaks)
+    ## must already find `distinct_transform_pause` armed when it reaches its first 4096-row boundary.
     node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {HASHMAP_FAULT_NAME}")
 
     thread_error = [None]
     query_error = [None]
@@ -1061,8 +1093,18 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
         if done:
             third_pause_future.result()
             assert False, "prepass reached a third boundary: soft-timeout latch is broken"
+
+        ## Downstream observation: `buildFilter` (the downstream stage for this mixed key) must reach its first
+        ## `distinct_transform_pause` at row 4096. The committed-source-row re-zero regression (round 18) makes
+        ## the materialization truncate the chunk to 0 rows, so `buildFilter` would receive 0 rows and pause
+        ## nowhere; a pause here proves the committed prefix survived into downstream processing. (The full
+        ## 8192-row prefix contract is checked by `test_lc_null_keys_break_prefix`; here null-filtering keeps the
+        ## surviving row count below 8192, so a single pause at 4096 is the observable contract.)
+        wait_failpoint(HASHMAP_FAULT_NAME)
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {HASHMAP_FAULT_NAME}")
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {HASHMAP_FAULT_NAME}")
         pool.shutdown(wait=False, cancel_futures=True)
 
     query_thread.join(timeout=60)
@@ -1087,21 +1129,27 @@ def test_null_keys_break_prefix(started_cluster):
     )
     node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_plain")
     ## Partition 0 large enough to reach the second 4096-row sub-range (and therefore the failpoint); the
-    ## `skip_null_keys` null-map scan is the stage that observes the timeout. Rows must contain real NULLs so
-    ## the null-map scan loop actually runs (the failpoint sits inside the `!memoryIsZero(null_map)` branch).
+    ## `skip_null_keys` null-map scan (DistinctTransform.cpp:541, `!memoryIsZero` branch) is the stage that
+    ## observes the timeout, so real NULLs are required for the `distinct_transform_null_pause` failpoint to
+    ## fire. The break commits ~3 slices (>= 12288 source rows); the null-filtered keep count still exceeds 8192,
+    ## so `buildFilter` reaches its second `distinct_transform_pause` at row 8192.
     node1.query("INSERT INTO null_keys_mt_plain SELECT if(number % 9 = 0, NULL, number % 100) FROM numbers(1000000)")
     node1.query("INSERT INTO null_keys_mt_plain SELECT toNullable(1) FROM numbers(100)")
     node1.query("INSERT INTO null_keys_mt_plain SELECT toNullable(2) FROM numbers(100)")
     node1.query("INSERT INTO null_keys_mt_plain SELECT toNullable(3) FROM numbers(100)")
 
     query = """SELECT count() FROM numbers(1000000)
-WHERE number IN (SELECT k FROM null_keys_mt_plain)
-FORMAT Null
-SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
-         max_execution_time=5, timeout_overflow_mode='break'"""
+ WHERE number IN (SELECT k FROM null_keys_mt_plain)
+ FORMAT Null
+ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+          max_execution_time=5, timeout_overflow_mode='break'"""
 
     query_id = str(uuid.uuid4())
+    ## Arm both failpoints up front: the prepass pauses on `null_pause`, and the pre-latched `buildFilter`
+    ## (which runs after the prepass breaks) must already find `distinct_transform_pause` armed when it reaches
+    ## its first 4096-row boundary.
     node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {HASHMAP_FAULT_NAME}")
 
     thread_error = [None]
     query_error = [None]
@@ -1160,8 +1208,18 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
         if done:
             third_pause_future.result()
             assert False, "prepass reached a third boundary: soft-timeout latch is broken"
+
+        ## Downstream observation: `buildFilter` (the plain-nullable downstream stage) must reach its first
+        ## `distinct_transform_pause` at row 4096. The `processed_prefix == 0` regression makes `buildFilter`
+        ## return at row 0 (before the `i > 0` pause guard) so no pause occurs; a pause here proves the
+        ## committed prefix survived into downstream processing. (The full 8192-row prefix contract is checked
+        ## by `test_lc_null_keys_break_prefix`; here null-filtering keeps the surviving row count below 8192,
+        ## so a single pause at 4096 is the observable contract.)
+        wait_failpoint(HASHMAP_FAULT_NAME)
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {HASHMAP_FAULT_NAME}")
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {HASHMAP_FAULT_NAME}")
         pool.shutdown(wait=False, cancel_futures=True)
 
     query_thread.join(timeout=60)
