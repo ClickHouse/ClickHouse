@@ -976,22 +976,53 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 linux_version.toString());
         else if (linux_version >= VersionNumber{4, 16, 0} && linux_version < VersionNumber{4, 16, 4})
         {
-            /// The corruption bug lives in ext4, so warn only when the <path> directory actually
-            /// resides on ext4: identical kernels with ClickHouse on xfs, zfs or any other
-            /// filesystem are not affected and must not raise a system.warnings alarm. Warn as
-            /// before when the filesystem cannot be told - going quiet on an unreadable
-            /// /proc/self/mounts would trade a false alarm for a blind spot.
-            /// Only <path> is probed: covering other disks would materialize every configured disk
-            /// right here (getDisksMap() is lazy and starts object-storage disks), and a disk's
-            /// getPath() cannot be told apart reliably from a remote object prefix - so the
-            /// warning text names the limitation instead.
-            const String data_fs_type = getDirectoryFilesystemType(data_path);
-            if (data_fs_type.empty() || data_fs_type == "ext4")
+            /// The corruption bug lives in ext4, so warn only when a directory ClickHouse writes
+            /// to resides on ext4 - or when that cannot be told (an unreadable /proc/self/mounts
+            /// must not trade the false alarm for a blind spot). The disk objects are not probed
+            /// (getDisksMap() is lazy and would start object-storage disks right here, and a
+            /// disk's getPath() cannot be told apart from a remote object prefix), but the
+            /// configured strings can be: every path/metadata_path declared under
+            /// storage_configuration.disks that exists as a local directory joins <path> in the
+            /// probe. Defaulted metadata paths live under <path> and share its filesystem.
+            std::vector<String> probe_paths{data_path};
+            if (server.config().has("storage_configuration.disks"))
+            {
+                Poco::Util::AbstractConfiguration::Keys disk_names;
+                server.config().keys("storage_configuration.disks", disk_names);
+                for (const auto & disk_name : disk_names)
+                    for (const auto & key : {"path", "metadata_path"})
+                    {
+                        const String configured
+                            = server.config().getString("storage_configuration.disks." + disk_name + "." + key, "");
+                        std::error_code ec;
+                        if (!configured.empty() && fs::is_directory(configured, ec))
+                            probe_paths.push_back(configured);
+                    }
+            }
+
+            String affected_path;
+            String undetermined_path;
+            for (const auto & probe_path : probe_paths)
+            {
+                const String fs_type = getDirectoryFilesystemType(probe_path);
+                if (fs_type == "ext4")
+                {
+                    affected_path = probe_path;
+                    break;
+                }
+                if (fs_type.empty() && undetermined_path.empty())
+                    undetermined_path = probe_path;
+            }
+            if (!affected_path.empty())
                 kernel_warning = PreformattedMessage::create(
-                    "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). "
-                    "Only the server's data path directory was checked; other configured disks are not covered by this check. "
-                    "Consider upgrading the kernel.",
-                    linux_version.toString());
+                    "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4) "
+                    "and the directory {} resides on ext4. Consider upgrading the kernel.",
+                    linux_version.toString(), affected_path);
+            else if (!undetermined_path.empty())
+                kernel_warning = PreformattedMessage::create(
+                    "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4) "
+                    "and the filesystem of {} could not be determined. Consider upgrading the kernel.",
+                    linux_version.toString(), undetermined_path);
         }
         else if (linux_version >= VersionNumber{5, 5, 0} && linux_version < VersionNumber{5, 6, 13})
             kernel_warning = PreformattedMessage::create(
