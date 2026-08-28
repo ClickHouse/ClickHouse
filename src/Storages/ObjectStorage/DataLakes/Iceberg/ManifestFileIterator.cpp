@@ -7,6 +7,8 @@
 #include <optional>
 #include <unordered_set>
 
+#include <base/arithmeticOverflow.h>
+
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -96,7 +98,10 @@ namespace
             for (UInt32 i = 1; i < scale; ++i)
                 scaler *= 10;
 
-            unscaled_value += scaler;
+            /// The bound is stored as raw bytes and is never checked against the declared precision, so
+            /// widening it can leave the type. A value that has no widened form is not a usable bound.
+            if (common::addOverflow(unscaled_value, scaler, unscaled_value))
+                return std::nullopt;
         }
 
         return DB::DecimalField<DecimalType>(unscaled_value, scale);
@@ -523,7 +528,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                     continue;
 
                 /// Decimal bounds come back moved one integral unit outwards to undo Iceberg's rounding, which
-                /// can order an inverted pair, so the values as declared are tested alongside the pair that is used.
+                /// can order an inverted pair, so the ordering is tested on the values as declared.
                 std::optional<DB::Field> declared_left = left;
                 std::optional<DB::Field> declared_right = right;
                 if (DB::WhichDataType(DB::removeNullable(name_and_type.type)).isDecimal())
@@ -537,7 +542,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 /// Nothing orders the bounds read from the manifest, while `mayBeTrueInRange` requires a
                 /// lower bound that does not exceed the upper one. An inverted pair describes an empty
                 /// range, which would prune a file that holds matching rows.
-                if (accurateLess(*declared_right, *declared_left) || accurateLess(*right, *left))
+                if (accurateLess(*declared_right, *declared_left))
                 {
                     LOG_WARNING(
                         getLogger("ManifestFileIterator"),

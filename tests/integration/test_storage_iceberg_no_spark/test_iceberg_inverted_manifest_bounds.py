@@ -255,9 +255,9 @@ def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
 
 def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spark):
     """Decimal bounds are decoded one integral unit outwards, so an inversion narrower than two
-    integral units still orders after that shift and only the values as declared reveal it. The shift
-    can also invert a pair that is ordered as declared, which only the shifted values reveal, so both
-    columns below are needed: one inversion of each kind.
+    integral units still orders after that shift and only the values as declared reveal it. A bound
+    close enough to the edge of its type has no shifted form at all, which is a second way to lose
+    the min/max condition, so both columns below are needed: one column for each.
 
     pyiceberg writes the table because the ClickHouse Iceberg writer rejects Decimal, which is also
     why this exercises the S3 storage backend rather than the local one."""
@@ -351,10 +351,10 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     assert pruned_files(d_expr) == 0
     assert pruned_files(id_expr) == 1
 
-    # `e` is a Decimal32, so its unscaled bound is closed by a cast to Int32. A bound out of the
-    # column's declared precision is still a legal encoding, and nothing rejects one: the pair below
-    # is ordered as declared, yet the upper bound leaves Int32 once shifted outwards and comes back
-    # negative, so only the shifted pair is inverted. It is the pair that reaches `mayBeTrueInRange`.
+    # `e` is a Decimal32, so its unscaled bound is an Int32. A bound out of the column's declared
+    # precision is still a legal encoding, and nothing rejects one: the pair below is ordered as
+    # declared, yet shifting the upper bound one integral unit outwards leaves Int32. A bound with no
+    # shifted form gives the column no min/max condition at all, so again nothing may be pruned on it.
     e_expr = "e < toDecimal32(0.5, 1)"
     assert pruned_files(e_expr) == 1
     assert _set_bounds_in_manifests(manifests, 3, b"\x7f\xff\xff\xf0", b"\x7f\xff\xff\xfa") > 0
