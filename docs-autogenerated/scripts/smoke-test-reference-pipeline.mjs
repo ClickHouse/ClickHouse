@@ -340,6 +340,18 @@ async function main() {
       path.join(projectDirectory, 'src/layouts/DocsLayout.astro'),
       'utf8',
     );
+    const inkeepTools = await readFile(
+      path.join(projectDirectory, 'src/components/InkeepTools.astro'),
+      'utf8',
+    );
+    const referenceIndex = await readFile(
+      path.join(projectDirectory, 'src/components/ReferenceIndex.astro'),
+      'utf8',
+    );
+    const referenceSearch = await readFile(
+      path.join(projectDirectory, 'src/components/ReferenceSearch.astro'),
+      'utf8',
+    );
     const alterModifyQueryPage = await readFile(
       path.join(
         generatedDirectory,
@@ -356,6 +368,41 @@ async function main() {
     const systemTableNavigation = findNavigationNode(
       navigation.root,
       'reference:system-tables/background_schedule_pool_log',
+    );
+
+    for (const fileName of ['kapa-init.js', 'ask-ai-button.js', 'inkeep-init.js']) {
+      const [sourceCustomization, preparedCustomization] = await Promise.all([
+        readFile(
+          path.join(repositoryDirectory, 'docs/_site/customizations', fileName),
+          'utf8',
+        ),
+        readFile(
+          path.join(generatedDirectory, 'public/_site/customizations', fileName),
+          'utf8',
+        ),
+      ]);
+      requireValue(
+        preparedCustomization === sourceCustomization,
+        `Prepared customization ${fileName} differs from the docs-wide integration`,
+      );
+    }
+    requireValue(
+      inkeepTools.includes('id="search-bar-entry"')
+        && inkeepTools.includes('Search...')
+        && !inkeepTools.includes('Search reference')
+        && docsLayout.indexOf('/_site/customizations/kapa-init.js')
+          < docsLayout.indexOf('/_site/customizations/ask-ai-button.js')
+        && docsLayout.indexOf('/_site/customizations/ask-ai-button.js')
+          < docsLayout.indexOf('/_site/customizations/inkeep-init.js'),
+      'The sidebar does not use the docs-wide Inkeep search and Kapa Ask AI entry points',
+    );
+    requireValue(
+      referenceIndex.includes('<ReferenceSearch />')
+        && !referenceIndex.includes('reference-stats')
+        && referenceSearch.includes(
+          'data-search-index={`/docs/reference/_search/${manifest.channel}.json`}',
+        ),
+      'The reference homepage does not use the selected artifact search index',
     );
 
     requireValue(

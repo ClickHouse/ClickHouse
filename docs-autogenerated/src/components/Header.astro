@@ -35,7 +35,12 @@ const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationIt
       <img class="logo-dark" src="/_site/logo/dark.svg" alt="ClickHouse Docs" />
     </a>
     <div class="mobile-actions">
-      <button id="search-bar-entry-mobile" class="mobile-search" type="button" aria-label="Open search">
+      <button
+        id="search-bar-entry-mobile"
+        class="mobile-search"
+        type="button"
+        aria-label="Open search"
+      >
         <span class="search-icon" aria-hidden="true"></span>
       </button>
     </div>
@@ -108,7 +113,6 @@ const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationIt
     const menuButton = document.querySelector<HTMLButtonElement>('.mobile-menu');
     const sidebar = document.querySelector<HTMLElement>('#sidebar');
     const sidebarScrim = document.querySelector<HTMLElement>('.sidebar-scrim');
-    const mobileSearch = document.querySelector<HTMLButtonElement>('#search-bar-entry-mobile');
     const navDropdowns = [...document.querySelectorAll<HTMLElement>('[data-nav-dropdown]')];
 
     function setNavDropdownOpen(dropdown: HTMLElement, open: boolean, focusFirst = false) {
@@ -186,10 +190,6 @@ const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationIt
     menuButton?.addEventListener('click', () => {
       const open = document.body.classList.toggle('sidebar-open');
       menuButton.setAttribute('aria-expanded', String(open));
-    }, { signal });
-
-    mobileSearch?.addEventListener('click', () => {
-      document.querySelector<HTMLButtonElement>('#search-bar-entry')?.click();
     }, { signal });
 
     sidebarScrim?.addEventListener('click', () => {

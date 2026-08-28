@@ -889,6 +889,10 @@ async function main() {
       path.join(sourceDocsDirectory, '_site/customizations/navbar-cta.js'),
       path.join(stagingDirectory, 'public/_site/customizations/navbar-cta.js'),
     ),
+    ...['kapa-init.js', 'ask-ai-button.js', 'inkeep-init.js'].map((fileName) => copyFile(
+      path.join(sourceDocsDirectory, '_site/customizations', fileName),
+      path.join(stagingDirectory, 'public/_site/customizations', fileName),
+    )),
     ...headerIcons.map((icon) => copyFile(
       path.join(sourceDocsDirectory, icon.replace(/^\//, '')),
       path.join(stagingDirectory, 'public', icon.replace(/^\//, '')),

@@ -178,7 +178,9 @@ that publisher.
   `docs/snippets/components` through the artifact-generated component registry.
 - The shell matches the current Mintlify Maple layout in both color schemes and
   at the current desktop and mobile breakpoints.
-- Search is a compact, lazy-loaded client index for the selected artifact.
+- The sidebar reuses the docs-wide Inkeep search and Kapa Ask AI integrations.
+  The homepage provides a dedicated, version-aware search over the selected
+  reference artifact.
 - A generated `versions.json` manifest powers the sidebar selector. It lists
   only existing bundles, and every entry resolves pages by stable document ID.
 

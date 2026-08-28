@@ -1,0 +1,182 @@
+---
+import manifest from '@generated/data/manifest.json';
+
+const searchVersionLabel = manifest.channel === 'latest' ? 'Latest' : manifest.channel;
+---
+
+<section
+  class="reference-search"
+  data-reference-search
+  data-search-index={`/docs/reference/_search/${manifest.channel}.json`}
+>
+  <p class="reference-search-intro">
+    Search functions, settings, system tables, formats, metrics, and profile events in the
+    <strong>{searchVersionLabel}</strong> reference.
+  </p>
+  <div class="search-panel reference-search-panel">
+    <div class="search-input-row">
+      <span class="search-icon" aria-hidden="true"></span>
+      <label class="sr-only" for="reference-search">Search this reference version</label>
+      <input
+        id="reference-search"
+        type="search"
+        placeholder="Search functions, settings, metrics, profile events…"
+        autocomplete="off"
+        aria-describedby="reference-search-status"
+      />
+    </div>
+    <div id="reference-search-status" class="search-status" aria-live="polite">
+      Start typing to search this version.
+    </div>
+    <ol class="search-results"></ol>
+    <footer class="search-footer">
+      <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+      <span><kbd>↵</kbd> open</span>
+      <span class="search-version">{searchVersionLabel} · English</span>
+    </footer>
+  </div>
+</section>
+
+<script>
+  import { entityKindLabels } from '../lib/entity-kinds';
+
+  interface SearchRecord {
+    id: string;
+    title: string;
+    description: string;
+    aliases: string[];
+    route: string;
+    entityKind: string;
+    headings: string[];
+  }
+
+  let referenceSearchController: AbortController | undefined;
+
+  function initializeReferenceSearch() {
+    referenceSearchController?.abort();
+    referenceSearchController = new AbortController();
+    const signal = referenceSearchController.signal;
+    const root = document.querySelector<HTMLElement>('[data-reference-search]');
+    const input = root?.querySelector<HTMLInputElement>('#reference-search');
+    const results = root?.querySelector<HTMLOListElement>('.search-results');
+    const status = root?.querySelector<HTMLElement>('.search-status');
+    let records: SearchRecord[] | null = null;
+    let activeIndex = -1;
+
+    if (!root || !input || !results || !status) return;
+
+    async function loadIndex() {
+      if (records) return records;
+      const indexUrl = root.dataset.searchIndex;
+      if (!indexUrl) throw new Error('Search index URL is missing');
+      const response = await fetch(indexUrl);
+      if (!response.ok) throw new Error(`Search index request failed: ${response.status}`);
+      const payload = await response.json();
+      records = payload.records;
+      return records;
+    }
+
+    function score(record: SearchRecord, query: string) {
+      const title = record.title.toLocaleLowerCase();
+      const aliases = record.aliases.map((alias) => alias.toLocaleLowerCase());
+      const headings = record.headings.map((heading) => heading.toLocaleLowerCase());
+      if (title === query || aliases.includes(query)) return 100;
+      if (title.startsWith(query) || aliases.some((alias) => alias.startsWith(query))) return 80;
+      if (title.includes(query)) return 60;
+      if (headings.some((heading) => heading.includes(query))) return 40;
+      if (record.description.toLocaleLowerCase().includes(query)) return 20;
+      return 0;
+    }
+
+    function setActive(index: number) {
+      const links = [...results.querySelectorAll<HTMLAnchorElement>('a')];
+      links.forEach((link) => link.classList.remove('active'));
+      if (links.length === 0) {
+        activeIndex = -1;
+        return;
+      }
+      activeIndex = (index + links.length) % links.length;
+      links[activeIndex].classList.add('active');
+      links[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+
+    function render(matches: SearchRecord[], query: string, totalMatches = matches.length) {
+      results.replaceChildren();
+      activeIndex = -1;
+
+      if (!query) {
+        status.textContent = 'Start typing to search this version.';
+        return;
+      }
+
+      status.textContent = totalMatches === 0
+        ? `No generated reference pages match “${query}”.`
+        : totalMatches > matches.length
+          ? `${totalMatches} results (showing first ${matches.length})`
+          : `${totalMatches} result${totalMatches === 1 ? '' : 's'}`;
+
+      for (const record of matches) {
+        const item = document.createElement('li');
+        const link = document.createElement('a');
+        const copy = document.createElement('span');
+        const title = document.createElement('strong');
+        const kind = document.createElement('em');
+
+        link.href = record.route;
+        link.dataset.entityKind = record.entityKind;
+        title.textContent = record.title;
+        kind.textContent = entityKindLabels[record.entityKind]
+          ?? record.entityKind.replaceAll('-', ' ');
+        copy.append(title, kind);
+        link.append(copy);
+        item.append(link);
+        results.append(item);
+      }
+      setActive(0);
+    }
+
+    async function runSearch() {
+      const query = input.value.trim().toLocaleLowerCase();
+      if (!query) {
+        render([], '');
+        return;
+      }
+
+      try {
+        const index = await loadIndex();
+        const rankedMatches = index
+          .map((record) => ({ record, rank: score(record, query) }))
+          .filter(({ rank }) => rank > 0)
+          .sort((left, right) => (
+            right.rank - left.rank || left.record.title.localeCompare(right.record.title)
+          ));
+        render(
+          rankedMatches.slice(0, 200).map(({ record }) => record),
+          input.value.trim(),
+          rankedMatches.length,
+        );
+      } catch {
+        status.textContent = 'The search index could not be loaded.';
+      }
+    }
+
+    input.addEventListener('input', runSearch, { signal });
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActive(activeIndex + 1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActive(activeIndex - 1);
+      } else if (event.key === 'Enter' && activeIndex >= 0) {
+        results.querySelectorAll<HTMLAnchorElement>('a')[activeIndex]?.click();
+      }
+    }, { signal });
+
+    void loadIndex().catch(() => {
+      status.textContent = 'The search index could not be loaded.';
+    });
+  }
+
+  document.addEventListener('astro:page-load', initializeReferenceSearch);
+</script>
