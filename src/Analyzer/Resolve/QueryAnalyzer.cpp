@@ -177,20 +177,36 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
-/// Call only on a subtree known to be evaluated more than once at runtime. See the call site.
-void requireMaterializationForMaterializedCTEsInRepeatedSubtree(const QueryTreeNodePtr & node)
+/// Marks the materialized CTEs referenced from a repeatedly evaluated subtree, and rejects the ones
+/// whose definition depends on the recursion state. Call only on such a subtree. See the call site.
+void requireMaterializationForMaterializedCTEsInRepeatedSubtree(
+    const QueryTreeNodePtr & node, const StoragePtr & recursive_cte_storage, const String & recursive_cte_name)
 {
     if (!node)
         return;
 
     if (auto * table_node = node->as<TableNode>(); table_node && table_node->isMaterializedCTE())
     {
+        /// A materialized CTE is populated once, so its definition must not depend on the recursion
+        /// state. Inside a recursive member the recursive CTE's name resolves to the step-local
+        /// working table, so materializing such a helper would freeze the first step's contents and
+        /// silently change the fixed point. Reject instead: the same query without `MATERIALIZED`
+        /// keeps working, and not marking would not be enough because two reference sites would
+        /// materialize it through the ordinary use count anyway.
+        if (isStorageUsedInTree(recursive_cte_storage, table_node->getMaterializedCTESubquery().get()))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Materialized CTE '{}' cannot be used from the recursive member of recursive CTE '{}' "
+                "because its definition reads '{}'",
+                table_node->getMaterializedCTE()->cte_name,
+                recursive_cte_name,
+                recursive_cte_name);
+
         table_node->getMaterializedCTE()->requireMaterialization();
         return;
     }
 
     for (const auto & child : node->getChildren())
-        requireMaterializationForMaterializedCTEsInRepeatedSubtree(child);
+        requireMaterializationForMaterializedCTEsInRepeatedSubtree(child, recursive_cte_storage, recursive_cte_name);
 }
 
 }
@@ -6981,7 +6997,8 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         /// the temporary table is populated, however often the reference site runs. A recursive CTE
         /// nested inside such a body marks its own recursive members when it reaches this point.
         for (size_t i = 1; i < queries_nodes_size; ++i)
-            requireMaterializationForMaterializedCTEsInRepeatedSubtree(queries_nodes[i]);
+            requireMaterializationForMaterializedCTEsInRepeatedSubtree(
+                queries_nodes[i], recursive_cte_table->storage, union_node_typed.getCTEName());
 
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
     }

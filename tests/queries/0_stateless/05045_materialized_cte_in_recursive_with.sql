@@ -4,8 +4,9 @@
 -- inside the recursive term. The same rule applies to a materialized CTE declared in an
 -- enclosing `WITH` and read from a recursive member, because it is about where a reference
 -- executes rather than where the CTE is declared. A helper whose body is a top-level set
--- operation is out of scope and still raises `UNSUPPORTED_METHOD`; the recursive CTE's own
--- rejection is covered by `03927_recursive_materialized_cte`.
+-- operation is out of scope and still raises `UNSUPPORTED_METHOD`, and so is a helper whose own
+-- definition reads the recursive CTE; the recursive CTE's own rejection is covered by
+-- `03927_recursive_materialized_cte`.
 --
 -- Temporary table names created for a materialized CTE are random, so raw `EXPLAIN` output is
 -- never pinned directly; instead we count how many
@@ -149,14 +150,75 @@ SELECT uniqExactIf(r, n > 0) FROM
     SELECT * FROM walk
 );
 
--- H. Negative: a helper whose body is a top-level set operation is out of scope for this
+-- H. Negative: a materialized helper whose own definition reads the recursive CTE. Inside a
+--    recursive member the recursive CTE's name resolves to the step-local working table, so a
+--    single materialization would freeze the first step's contents and change the fixed point.
+--    Rejected, rather than silently returning a different result than the same query without
+--    `MATERIALIZED`. H2 has two reference sites, so the ordinary use count would materialize the
+--    helper even if it were merely left unmarked: the rejection has to be explicit. H3 hides the
+--    read one materialized CTE deeper.
+WITH RECURSIVE helper AS MATERIALIZED (SELECT n + 1 AS n FROM walk),
+walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n FROM helper WHERE n < 3)
+SELECT * FROM walk ORDER BY n; -- { serverError UNSUPPORTED_METHOD }
+
+WITH RECURSIVE helper AS MATERIALIZED (SELECT n + 1 AS n FROM walk),
+walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT h1.n FROM helper AS h1 CROSS JOIN helper AS h2 WHERE h1.n < 3 AND h2.n < 3)
+SELECT * FROM walk ORDER BY n; -- { serverError UNSUPPORTED_METHOD }
+
+WITH RECURSIVE helper AS MATERIALIZED (WITH inner_h AS MATERIALIZED (SELECT n + 1 AS n FROM walk) SELECT n FROM inner_h),
+walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n FROM helper WHERE n < 3)
+SELECT * FROM walk ORDER BY n; -- { serverError UNSUPPORTED_METHOD }
+
+-- H4. The same rejection when the helper is declared in an enclosing `WITH`, since the rule follows
+--     where a reference executes rather than where the CTE is declared. This shape is accepted
+--     before this change: with one reference site the helper happened to be inlined and so gave the
+--     right answer, but with two reference sites the ordinary use count materialized it and it
+--     silently returned `0` instead of `0, 1, 2`. Both are rejected now.
+WITH h AS MATERIALIZED (SELECT n + 1 AS n FROM walk)
+SELECT * FROM
+(
+    WITH RECURSIVE walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n FROM h WHERE n < 3)
+    SELECT * FROM walk
+)
+ORDER BY n; -- { serverError UNSUPPORTED_METHOD }
+
+WITH h AS MATERIALIZED (SELECT n + 1 AS n FROM walk)
+SELECT * FROM
+(
+    WITH RECURSIVE walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT h1.n FROM h AS h1 CROSS JOIN h AS h2 WHERE h1.n < 3 AND h2.n < 3)
+    SELECT * FROM walk
+)
+ORDER BY n; -- { serverError UNSUPPORTED_METHOD }
+
+-- I. Controls for `H`, so the rejection cannot grow beyond the shape it is meant to catch. Without
+--    `MATERIALIZED` the same mutual reference is an ordinary CTE and still works -- including from an
+--    enclosing `WITH` -- and a materialized CTE that reads a recursive CTE from outside its recursive
+--    members is untouched: there it reads the finished fixed point rather than the step-local
+--    working table.
+WITH RECURSIVE helper AS (SELECT n + 1 AS n FROM walk),
+walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n FROM helper WHERE n < 3)
+SELECT * FROM walk ORDER BY n;
+
+WITH h AS (SELECT n + 1 AS n FROM walk)
+SELECT * FROM
+(
+    WITH RECURSIVE walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n FROM h WHERE n < 3)
+    SELECT * FROM walk
+)
+ORDER BY n;
+
+WITH RECURSIVE walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n + 1 FROM walk WHERE n < 3),
+helper AS MATERIALIZED (SELECT sum(n) AS s FROM walk)
+SELECT s FROM helper;
+
+-- J. Negative: a helper whose body is a top-level set operation is out of scope for this
 --    implementation. At query tree build time it is indistinguishable from the recursive CTE
 --    itself, which is why both are rejected the same way.
 WITH RECURSIVE steps AS MATERIALIZED (SELECT toUInt64(1) AS step UNION ALL SELECT toUInt64(2) AS step),
 walk AS (SELECT toUInt64(0) AS x UNION ALL SELECT x + step FROM walk CROSS JOIN steps WHERE x < 2)
 SELECT * FROM walk ORDER BY x; -- { serverError UNSUPPORTED_METHOD }
 
--- I. That rejection is unconditional: it does not depend on `enable_materialized_cte`.
+-- K. That rejection is unconditional: it does not depend on `enable_materialized_cte`.
 SET enable_materialized_cte = 0;
 WITH RECURSIVE steps AS MATERIALIZED (SELECT toUInt64(1) AS step UNION ALL SELECT toUInt64(2) AS step),
 walk AS (SELECT toUInt64(0) AS x UNION ALL SELECT x + step FROM walk CROSS JOIN steps WHERE x < 2)
