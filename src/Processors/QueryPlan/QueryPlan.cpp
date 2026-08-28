@@ -854,21 +854,14 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizationSettings effective_settings = optimization_settings;
 
-    /// The single decision point on whether this plan is distributed, taken before the passes:
-    /// second-pass index analysis can synchronously execute a set subquery, and no set may be
-    /// built for a query the decision rejects. Some plans reach `optimize` more than once
-    /// (re-optimized StorageMerge child plans, set subplans); a plan that already contains
-    /// logical exchanges has passed the decision before, and deciding again could flip the
-    /// setting off and orphan the exchanges (they execute as no-op steps and silently produce
-    /// wrong results), so such plans skip it.
-    const bool make_distributed_plan = effective_settings.make_distributed_plan && !QueryPlanOptimizations::planContainsLogicalExchange(*root);
-    if (make_distributed_plan)
+    /// Skip verification for fallback to local execution if plan already contains logical exchanges inserted by first optimize pass.
+    if (effective_settings.make_distributed_plan && !QueryPlanOptimizations::planContainsLogicalExchange(*root))
     {
-        if (auto res = hasPlanUnsupportedStepForDistributed(*root, optimization_settings); res.has_value())
+        if (const auto res = hasPlanUnsupportedStepForDistributed(*root, optimization_settings); res.has_value())
         {
             if (!effective_settings.distributed_plan_fallback_to_local_execution)
             {
-                throw Exception(std::move(*res), ErrorCodes::SUPPORT_IS_DISABLED);
+                throw Exception(*res, ErrorCodes::SUPPORT_IS_DISABLED);
             }
             LOG_INFO(
                 getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", res->text);
