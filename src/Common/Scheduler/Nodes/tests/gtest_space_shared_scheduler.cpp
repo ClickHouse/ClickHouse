@@ -635,7 +635,7 @@ private: // interaction with the scheduler thread
     GrowthPressureAction onGrowthPressure() override
     {
         std::function<void()> callback;
-        GrowthPressureAction action;
+        GrowthPressureAction action = GrowthPressureAction::Yield;
         {
             std::unique_lock lock(mutex);
             ++current_pressure_round;
