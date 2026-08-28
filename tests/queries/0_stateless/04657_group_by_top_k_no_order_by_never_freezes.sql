@@ -52,10 +52,13 @@ SYSTEM FLUSH LOGS query_log;
 -- Without `ORDER BY`: no freeze, and the heap rejects every one of the 500000
 -- exploded keys.  A rejected row never reaches the hash table, so this count is
 -- also what bounds it: a key that leaked in would be a row that was not skipped.
-SELECT 'no_order_by: frozen, rejected_all';
+-- A lone `count()` state lives inline in the hash-table cell, so this shape
+-- allocates no aggregate-state arena at all.
+SELECT 'no_order_by: frozen, rejected_all, no arena';
 SELECT
     max(ProfileEvents['AggregationTopKHeapsFrozen']),
-    max(ProfileEvents['AggregationTopKRowsSkipped']) = 500000
+    max(ProfileEvents['AggregationTopKRowsSkipped']) = 500000,
+    max(ProfileEvents['ArenaAllocBytes']) = 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase()
     AND type = 'QueryFinish' AND log_comment = '04657_no_order_by';
