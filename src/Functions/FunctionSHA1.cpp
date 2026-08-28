@@ -820,7 +820,7 @@ Calculates the SHA1 hash of the given string.
 SELECT HEX(SHA1('abc'));
         )",
             R"(
-┌─hex(SHA1('abc'))─────────────────────────┐
+┌─HEX(SHA1('abc'))─────────────────────────┐
 │ A9993E364706816ABA3E25717850C26C9CD0D89D │
 └──────────────────────────────────────────┘
         )"}};

@@ -149,6 +149,7 @@
       "group": "指南",
       "pages": [
         {
+          "expanded": true,
           "group": "摄取数据",
           "pages": [
             "zh/clickstack/ingesting-data/index",
