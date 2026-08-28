@@ -11,6 +11,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # slot just like an explicit-partition OPTIMIZE, so it cannot bypass merge capacity or begin
 # work during executor shutdown. Pause its projection merge and verify that the executor task
 # metric rises together with the visible merge.
+#
+# Unlike an explicit-partition OPTIMIZE, a table-wide OPTIMIZE goes through the merge selector
+# and respects `max_bytes_to_merge_at_max_space_in_pool`, so that setting cannot be used to keep
+# background merges away. A huge `merge_selector_base` is used instead: background selection
+# never reaches the required score, while an aggressive (OPTIMIZE-driven) selection overrides
+# the base to 1 and picks the parts immediately.
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_optimize_without_partition_slot SYNC"
 $CLICKHOUSE_CLIENT --query "
@@ -22,7 +28,7 @@ $CLICKHOUSE_CLIENT --query "
     )
     ENGINE = MergeTree
     ORDER BY k
-    SETTINGS optimize_on_insert = 0, max_bytes_to_merge_at_max_space_in_pool = 1, min_age_to_force_merge_seconds = 0"
+    SETTINGS optimize_on_insert = 0, merge_selector_base = 1000"
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_optimize_without_partition_slot SELECT number, number FROM numbers(1000)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_optimize_without_partition_slot SELECT number + 1000, number FROM numbers(1000)"
