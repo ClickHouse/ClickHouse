@@ -45,6 +45,12 @@ SELECT 'A4', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FRO
     WHERE k4 < 3500 ORDER BY k1, k2, k3, k4 LIMIT 10)
     WHERE explain LIKE '%Prefix sort description:%k1%k2%k3%k4%';
 
+-- `exact_rows_before_limit` makes the base read pay its selected marks, and the candidate is still
+-- declined. A deliberate cost, like A10.
+SELECT 'A17', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FROM t_bp
+    WHERE k4 < 3500 ORDER BY k1, k2, k3, k4 LIMIT 10 SETTINGS exact_rows_before_limit = 1)
+    WHERE explain LIKE '%ReadFromMergeTree (%.t_bp)%';
+
 SELECT 'A6', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FROM t_bp
     WHERE k4 < 3500 ORDER BY k1, k2, k3, k4) WHERE explain LIKE '%ReadFromMergeTree (p_narrow)%';
 
