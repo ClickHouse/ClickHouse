@@ -2444,7 +2444,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, StorageResolution::Load) != nullptr;
+        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, StorageResolution::Peek) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
                             "Only tables with a Replicated engine "
@@ -2456,7 +2456,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
-    auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(res, StorageResolution::Load).get();
+    /// `res` is the storage this query just built, and for a table function it is a proxy that
+    /// resolving would run during CREATE.
+    auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(res, StorageResolution::Peek).get();
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
