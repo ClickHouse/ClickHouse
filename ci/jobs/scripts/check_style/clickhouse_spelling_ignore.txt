@@ -16,6 +16,8 @@ ci/jobs/scripts/check_style/clickhouse_spelling_ignore.txt
 ci/jobs/scripts/check_style/clickhouse_spelling.py
 # This focused checker test uses misspellings as fixtures.
 ci/tests/test_clickhouse_spelling_check.py
+# The changelog editing skill spells out the misspellings this check rejects.
+.claude/skills/edit-changelog/SKILL.md	`Clickhouse`
 ci/tests/test_pr_body_check.py
 ci/jobs/check_style.py	`Clickhouse`
 ci/jobs/check_style.py	`click_house`
