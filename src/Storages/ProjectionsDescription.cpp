@@ -256,6 +256,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
 
+    /// The name is used unescaped as a directory name (`getDirectoryName`) inside a part directory,
+    /// so a '/' in it would address files outside of the part and outside of the data directory.
+    if (projection_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Projection name ({}) cannot contain '/'", projection_definition->name);
+
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
@@ -905,6 +910,19 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
 
     projections.erase(it->second);
     map.erase(it);
+}
+
+void ProjectionsDescription::replace(ProjectionDescription && projection)
+{
+    auto it = map.find(projection.name);
+    if (it == map.end())
+        throw Exception(
+            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+            "There is no projection {} in table{}",
+            projection.name,
+            getHintsMessage(projection.name));
+
+    *it->second = std::move(projection);
 }
 
 VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const

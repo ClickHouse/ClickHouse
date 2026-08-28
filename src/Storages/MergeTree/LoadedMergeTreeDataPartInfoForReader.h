@@ -37,6 +37,8 @@ public:
 
     const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
 
+    const MergeTreePartition & getPartition() const override { return data_part->partition; }
+
     Int64 getMinDataVersion() const override
     {
         return data_part->info.isPatch()

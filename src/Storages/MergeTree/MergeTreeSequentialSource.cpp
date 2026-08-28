@@ -339,6 +339,9 @@ Pipe createMergeTreeSequentialSource(
         info->part_starting_offset_in_query);
     info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
+    /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value
+    /// `ReadFromMergeTree` publishes for a query without `SAMPLE`.
+    info->const_virtual_fields.emplace("_sample_factor", 1.0);
 
     /// The part might have some rows masked by lightweight deletes
     bool has_lightweight_delete = info->data_part_info->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
