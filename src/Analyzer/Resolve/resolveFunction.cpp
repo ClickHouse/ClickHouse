@@ -54,6 +54,7 @@
 
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 
@@ -1092,7 +1093,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 String name;
                 if (arg->hasAlias())
-                    name = arg->getAlias();
+                {
+                    /// Only trust aliases written in the query text: analyzer passes synthesize aliases
+                    /// through setAlias too (for example for JOIN USING and generated ARRAY JOIN columns),
+                    /// and such internal names must not opt a positional tuple into the named form.
+                    /// The original AST carries the alias only when the user wrote it explicitly.
+                    const auto * ast_with_alias = arg->hasOriginalAST() ? dynamic_cast<const ASTWithAlias *>(arg->getOriginalAST().get()) : nullptr;
+                    if (ast_with_alias && ast_with_alias->alias == arg->getAlias())
+                        name = arg->getAlias();
+                }
 
                 if (name.empty() || !isUnquotedIdentifier(name) || !name_set.insert(name).second)
                 {
