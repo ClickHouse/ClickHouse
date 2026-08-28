@@ -316,6 +316,18 @@ SELECT if(false, semi_anti_qual_r.b, 42) FROM {CLICKHOUSE_DATABASE:Identifier}.s
 SELECT if(false, {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l.a, 42) FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r ON true;
 -- Live branch referencing the fully qualified non-preserved side: also denied.
 SELECT if(true, {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r.b, 42) FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- A skipped-side table whose name equals the current database name must not deny a preserved-side
+-- fully qualified reference: with analyzer_compatibility_prefer_alias_over_subcolumn the first
+-- identifier part binds the skipped right side first, and the denial must wait until the
+-- database-qualified fallback has resolved `db.table.column` from the preserved side.
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier} (x UInt64) ENGINE = Memory;
+INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier} VALUES (7);
+SELECT {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l.a FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier} ON true
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+-- A reference that really names the skipped-side table stays denied.
+SELECT {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier}.x FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier} ON true
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier};
 DROP TABLE semi_anti_qual_l;
 DROP TABLE semi_anti_qual_r;
 
