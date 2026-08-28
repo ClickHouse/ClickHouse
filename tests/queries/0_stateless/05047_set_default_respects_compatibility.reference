@@ -12,7 +12,7 @@ an explicitly assigned setting is left alone by a later compatibility change
 0
 SETTINGS name = DEFAULT in a query
 1
-1
+0
 a reset that lands on a value the profile forbids is rejected
 SETTING_CONSTRAINT_VIOLATION
 1
@@ -27,3 +27,9 @@ resetting a CONST compatibility is still rejected
 SETTING_CONSTRAINT_VIOLATION
 26.7
 1
+SET compatibility = DEFAULT re-applies the settings post-processors
+0
+1
+0
+and the spelling it has to agree with reaches the same state
+0

@@ -75,11 +75,12 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.6'"
 read_setting "$U" "${P}"
 
 echo 'SETTINGS name = DEFAULT in a query'
-# A different dispatch hop than the standalone statement above.
+# A different dispatch hop than the standalone statement above. `P` is assigned first, so the
+# query-local reset has to move it while the session keeps the assigned value.
 U=$(session_url a5)
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = 0"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SELECT value FROM system.settings WHERE name = '${P}' SETTINGS ${P} = DEFAULT"
-# and the session itself is untouched
 read_setting "$U" "${P}"
 
 echo 'a reset that lands on a value the profile forbids is rejected'
@@ -107,6 +108,29 @@ U=$(user_session_url a9 "${USER_CONST}")
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
 read_setting "$U" "compatibility"
 read_setting "$U" "${P}"
+
+echo 'SET compatibility = DEFAULT re-applies the settings post-processors'
+# `compile_expressions` is forced off while `make_distributed_plan` is on, and its 25.5 history row
+# makes it compatibility-derivable, so reverting the derivation must not resurrect it. The two reads
+# before the reset arm the arm: the setting is derived off, and the adjustment has a reason to act.
+U=$(session_url a10)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '25.4'"
+read_setting "$U" compile_expressions
+${CLICKHOUSE_CURL} -sS "$U" -d "SET make_distributed_plan = 1"
+read_setting "$U" make_distributed_plan
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = DEFAULT"
+# Each query re-runs the adjustment on its own context, so the session value is only legible once
+# `make_distributed_plan` is off again, which by itself never moves `compile_expressions`.
+${CLICKHOUSE_CURL} -sS "$U" -d "SET make_distributed_plan = 0"
+read_setting "$U" compile_expressions
+
+echo 'and the spelling it has to agree with reaches the same state'
+U=$(session_url a11)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '25.4'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET make_distributed_plan = 1"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = ''"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET make_distributed_plan = 0"
+read_setting "$U" compile_expressions
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_PROF}"
 ${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_COMPAT}"

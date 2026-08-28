@@ -1173,3 +1173,26 @@ def test_transaction_id_rejected_for_create_prepared_statement():
     action = flight.Action("CreatePreparedStatement", req.SerializeToString())
     with pytest.raises(pa.lib.ArrowNotImplementedError, match="transaction_id is not supported"):
         list(client.client.do_action(action, client._flight_call_options()))
+
+
+def test_reset_session_option_respects_compatibility():
+    """A reset lands on the value an active `compatibility` implies, not the declared default."""
+    compatibility_session_id = 'compatibility_' + ''.join(
+        random.choices(string.ascii_letters + string.digits, k=16)
+    )
+    client = get_client(compatibility_session_id)
+    setting = "input_format_read_datetime_number_as_raw_value"
+
+    result = client.set_session_options({"compatibility": "26.7"})
+    assert len(result.errors) == 0
+    # The 26.8 history row makes the era value the opposite of the declared default. Without this
+    # read a reset landing on the declared default would be indistinguishable from a correct one.
+    assert _query_setting(client, setting) == "1"
+
+    result = client.set_session_options({setting: "0"})
+    assert len(result.errors) == 0
+    assert _query_setting(client, setting) == "0"
+
+    result = client.set_session_options({setting: None})
+    assert len(result.errors) == 0
+    assert _query_setting(client, setting) == "1"

@@ -1267,7 +1267,7 @@ public:
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     /// `changes` is the rest of the same statement and `reset_target` the context the resets will be
     /// applied to: the value a reset restores depends on both, so the statement is replayed on a copy.
-    void checkSettingsConstraintsForSettingsReset(const ContextMutablePtr & reset_target, const SettingsChanges & changes, const std::vector<String> & names, SettingSource source);
+    void checkSettingsConstraintsForSettingsReset(const ContextPtr & reset_target, const SettingsChanges & changes, const std::vector<String> & names, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 

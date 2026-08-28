@@ -3618,12 +3618,12 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsForSettingsReset(const ContextMutablePtr & reset_target, const SettingsChanges & changes, const std::vector<String> & names, SettingSource source)
+void Context::checkSettingsConstraintsForSettingsReset(const ContextPtr & reset_target, const SettingsChanges & changes, const std::vector<String> & names, SettingSource source)
 {
     if (names.empty())
         return;
-    /// The default a reset restores depends on `compatibility` and on the profile, either of which
-    /// the same statement may itself change, so the value cannot be modelled and has to be observed.
+    /// The default a reset restores depends on the active `compatibility`, which the same statement
+    /// may change directly or by switching the profile, so it has to be observed.
     auto after_reset = Context::createCopy(reset_target);
     after_reset->applySettingsChanges(changes);
     after_reset->resetSettingsToDefaultValueRespectingCompatibility(names);
@@ -3662,6 +3662,11 @@ void Context::resetSettingsToDefaultValueRespectingCompatibility(const std::vect
     std::lock_guard lock(mutex);
     for (const String & name : names)
         settings->setDefaultValueRespectingCompatibility(name);
+    /// A reset can move a setting the same way an assignment can, so the invariants the assignment
+    /// path establishes have to be re-established here too.
+    applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
+    contextSanityClampSettingsWithLock(*this, *settings, lock);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
