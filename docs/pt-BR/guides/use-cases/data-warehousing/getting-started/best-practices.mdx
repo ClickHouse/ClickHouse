@@ -336,7 +336,7 @@ ORDER BY rows DESC;
   ### Verifique o volume de leitura
 </div>
 
-Compare `read_rows` e `read_bytes` em [system.query&#95;log](/pt-BR/reference/system-tables/query_log) antes e depois de adicionar filtros ou ajustar configurações. ProfileEvents como `ReadBufferFromS3Bytes` e `CachedReadBufferReadFromCacheBytes` mostram quanto dos dados veio do armazenamento de objetos em comparação com o cache local. Consulte [Otimização de consultas](/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization) para um passo a passo completo sobre o query&#95;log e o EXPLAIN.
+Compare `read_rows` e `read_bytes` em [`system.query&#95;log`](/pt-BR/reference/system-tables/query_log) antes e depois de adicionar filtros ou ajustar configurações. ProfileEvents como `ReadBufferFromS3Bytes` e `CachedReadBufferReadFromCacheBytes` mostram quanto dos dados veio do armazenamento de objetos em comparação com o cache local. Consulte [Diagnostique consultas lentas](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) para um passo a passo completo sobre o `query&#95;log` e o `EXPLAIN`.
 
 Desative [enable&#95;filesystem&#95;cache](/pt-BR/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) durante o benchmarking para que os acertos de cache não mascarem as mudanças entre execuções.
 

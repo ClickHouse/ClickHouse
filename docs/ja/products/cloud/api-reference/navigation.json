@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "組織",
     "pages": [
       {
-        "group": "Organization",
+        "group": "組織",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -19,7 +19,7 @@
         ]
       },
       {
-        "group": "Billing",
+        "group": "請求",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "ja/products/cloud/api-reference/billing/active-balances-get",
@@ -27,7 +27,7 @@
         ]
       },
       {
-        "group": "User management",
+        "group": "ユーザー管理",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +40,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "ロール管理",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -69,10 +69,10 @@
     ]
   },
   {
-    "group": "Service",
+    "group": "サービス",
     "pages": [
       {
-        "group": "Service",
+        "group": "サービス",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",

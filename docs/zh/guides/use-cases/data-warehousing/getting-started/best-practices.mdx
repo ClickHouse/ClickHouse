@@ -336,7 +336,7 @@ ORDER BY rows DESC;
   ### 检查扫描量
 </div>
 
-在添加过滤器或调整设置前后，对比 [system.query&#95;log](/zh/reference/system-tables/query_log) 中的 `read_rows` 和 `read_bytes`。`ReadBufferFromS3Bytes` 和 `CachedReadBufferReadFromCacheBytes` 等 ProfileEvents 可显示有多少数据来自对象存储，以及有多少来自本地缓存。有关 query&#95;log 和 EXPLAIN 的完整说明，请参阅 [查询优化](/zh/guides/clickhouse/performance-and-monitoring/query-optimization)。
+在添加过滤器或调整设置前后，对比 [`system.query&#95;log`](/zh/reference/system-tables/query_log) 中的 `read_rows` 和 `read_bytes`。`ReadBufferFromS3Bytes` 和 `CachedReadBufferReadFromCacheBytes` 等 `ProfileEvents` 可显示有多少数据来自对象存储，以及有多少来自本地缓存。有关 `query_log` 和 `EXPLAIN` 的完整说明，请参阅 [诊断慢查询](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)。
 
 进行基准测试时，请禁用 [enable&#95;filesystem&#95;cache](/zh/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache)，以免缓存命中掩盖不同运行之间的变化。
 

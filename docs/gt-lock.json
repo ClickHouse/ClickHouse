@@ -4,40 +4,40 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "561bcbda96c0af9ec69d805129d6d1066836ea40b546e1b0eff115d8377128df",
+      "versionId": "bdb363cb446e4ccb0b2c1e2d3bf00da395bc5b2ff5f4a71ca20e80f5f7657f54",
       "translations": {
-        "pt-BR": {
-          "updatedAt": "2026-08-27T23:00:16.709Z",
-          "fileName": "docs.json"
-        },
         "ja": {
-          "updatedAt": "2026-08-27T23:00:16.359Z",
-          "fileName": "docs.json"
-        },
-        "fr": {
-          "updatedAt": "2026-08-27T23:00:17.454Z",
-          "fileName": "docs.json",
-          "postProcessHash": "47c29a38b6c5f242671c4d3640510ed78c5ce852555d5f34a3015240471d652f"
-        },
-        "es": {
-          "updatedAt": "2026-08-27T23:00:16.172Z",
-          "fileName": "docs.json"
-        },
-        "ko": {
-          "updatedAt": "2026-08-27T23:00:16.529Z",
-          "fileName": "docs.json"
-        },
-        "ru": {
-          "updatedAt": "2026-08-27T23:00:16.907Z",
+          "updatedAt": "2026-08-28T09:29:10.529Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-27T23:00:17.102Z",
+          "updatedAt": "2026-08-28T09:29:10.760Z",
+          "fileName": "docs.json"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T09:29:11.135Z",
+          "fileName": "docs.json"
+        },
+        "es": {
+          "updatedAt": "2026-08-28T09:29:11.435Z",
+          "fileName": "docs.json"
+        },
+        "ko": {
+          "updatedAt": "2026-08-28T09:29:11.667Z",
+          "fileName": "docs.json"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-28T09:29:11.884Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-27T23:00:17.285Z",
+          "updatedAt": "2026-08-28T09:29:12.120Z",
           "fileName": "docs.json"
+        },
+        "fr": {
+          "updatedAt": "2026-08-28T09:29:12.366Z",
+          "fileName": "docs.json",
+          "postProcessHash": "d1105e3934f66b60445bfab5271edd04df3b7a14fef5a3da739e9222037b7966"
         }
       },
       "fileName": "docs.json"
@@ -35505,47 +35505,47 @@
     },
     {
       "fileId": "526077dabef5c2afa6f97393c607d96524075f739416aec32feb518edc5f791f",
-      "versionId": "de1aba70b163dec9e33b8a1d1ac542e1d23aaff70a8f1c017f084bc97790d9c2",
+      "versionId": "49c5cfa66bd0c9163cf83c12f59d5eb0b343c708617b550f031d96ca99be259f",
       "translations": {
+        "ko": {
+          "updatedAt": "2026-08-28T09:29:10.287Z",
+          "fileName": "ko/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
+          "postProcessHash": "19cc9f7f741cb5d790676febeaccf3a82abe7bae7b23d6f6341340ed45521ee2"
+        },
         "es": {
-          "updatedAt": "2026-08-26T08:10:27.099Z",
+          "updatedAt": "2026-08-28T09:29:10.289Z",
           "fileName": "es/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
-          "postProcessHash": "ca0b95114f61078c67fdbbdb9e706265403c96685edaaf63ba2b7830c59769d0"
+          "postProcessHash": "daa7989ae8464c10f8d9f6daeb2101e5fdf38e9e55c14a0fb2ba52863d29cfb5"
         },
         "ja": {
-          "updatedAt": "2026-08-26T08:10:27.101Z",
+          "updatedAt": "2026-08-28T09:29:10.290Z",
           "fileName": "ja/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
-          "postProcessHash": "68ee03bb0c2469bd969ef6a4d681c5250b427b41a28390919c1c22dad62d8d63"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:27.102Z",
-          "fileName": "ko/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
-          "postProcessHash": "b4b497bae24c186efd3679e02d2247055393dd53a0541396f6c6501c99ce9a15"
+          "postProcessHash": "4c2b347d3cb4ebb3a44d62f979a5165d042f8db42e4c4b7dbdb08b7455499023"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:27.103Z",
+          "updatedAt": "2026-08-28T09:29:10.290Z",
           "fileName": "pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
-          "postProcessHash": "e0af6c3c08795b00842043b8103489b1e07463b6b96c5c80f7ad4cca1400f443"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:27.105Z",
-          "fileName": "ru/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
-          "postProcessHash": "266d612350accc941ca9ba9368d0bfc70701dc64209ca5b87cf64e4c1e891a37"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:27.106Z",
-          "fileName": "zh/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
-          "postProcessHash": "eb15e40e5998be7c48c34f97d5ded8b8df075c92e9a2ad86ea20634022425d36"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:27.107Z",
-          "fileName": "ar/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
-          "postProcessHash": "e82d56d9df4d27584b8fc0a58aa3cf6f414e8ddf611315f582629fa36500b4d1"
+          "postProcessHash": "10acac25ca7af5d5d604dcf7f96986963bbee989e3c9b6d5f2f0a3e1e919eb5c"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:27.109Z",
+          "updatedAt": "2026-08-28T09:29:10.292Z",
           "fileName": "fr/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
-          "postProcessHash": "9d4532b9a312b64513e25508a01061f9036ae25a5a3c6549ff269c25c5ef8317"
+          "postProcessHash": "217d3dc05edc8980c77de5f5c9f48a6cf6d92ca99da5899f619a6f9817e53d19"
+        },
+        "zh": {
+          "updatedAt": "2026-08-28T09:29:10.292Z",
+          "fileName": "zh/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
+          "postProcessHash": "90f7b739987fe525968631734ccf30298e9060a4455c28c9d3074c2f42baef8b"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T09:29:11.137Z",
+          "fileName": "ru/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
+          "postProcessHash": "5a330ab4a76333eb36dd20259d518715ec796fe6e8cbf60821be9acffd4927f5"
+        },
+        "ar": {
+          "updatedAt": "2026-08-28T09:29:11.890Z",
+          "fileName": "ar/guides/clickhouse/performance-and-monitoring/query-optimization.mdx",
+          "postProcessHash": "8b325f2c9ad90aa168721d44aff10dc91828fe6bf74e4bf1a6d302125b3b03d8"
         }
       },
       "fileName": "guides/clickhouse/performance-and-monitoring/query-optimization.mdx"
@@ -48208,47 +48208,47 @@
     },
     {
       "fileId": "d3dcc2b7d5d1ed1980a5f378e7252008e8d257fb1b0cfcd532442a80b2912909",
-      "versionId": "8697c292069b7f640f09cfd57c0026518456af21bbec514c118254ef502ee445",
+      "versionId": "153a157ab4f824af2c9ca3456de4f83d1c321f16dcdf850a01487c0ebaf3aaee",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:27.665Z",
-          "fileName": "es/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "08c3c17fdee1e1e0e692320b716f954c82b3bc44a9a2666dbb21fe2f45180669"
-        },
         "ja": {
-          "updatedAt": "2026-08-26T08:10:27.666Z",
+          "updatedAt": "2026-08-28T09:29:10.530Z",
           "fileName": "ja/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "750ed538153396dcff35782e668a41dee9b11e641f95d176c884619a3f731d94"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:27.666Z",
-          "fileName": "ko/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "c95d26fc601879f25bfbaecee24295597b629530300db9071940365748fb4e79"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:27.667Z",
-          "fileName": "pt-BR/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "768454e37086d42f51065bf183a9b3cee846376f461494ad3e249565ca20cd83"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:27.667Z",
-          "fileName": "ru/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "9da4503950ff32cbc74f066c5d80571460d334de0ae05a6c1698798e9909d870"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:27.668Z",
-          "fileName": "zh/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "7f63bf31a089c7fc9a4ac8b8507c1ab7c231fb81524efbf33c900afd62409fac"
+          "postProcessHash": "93eebedd7fd5e79cb201ae536866a8da77cde05b2bfdc4eb4fc30a94eff45984"
         },
         "ar": {
-          "updatedAt": "2026-08-26T08:10:27.668Z",
+          "updatedAt": "2026-08-28T09:29:11.136Z",
           "fileName": "ar/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "a52e888e4f4d2b7c900c43d2b519caaf6b28535d726d2a3de08f8870c483f4b4"
+          "postProcessHash": "6a066868f6047d9451d0f6df3fd5ca45faa12238452b8f0bb2db2db50b40b022"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:27.669Z",
+          "updatedAt": "2026-08-28T09:29:11.668Z",
           "fileName": "fr/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "0a9d4207e0ddaf081fbc8b04ce5c48304e6e05512102b5449bc799f315e83238"
+          "postProcessHash": "e4cdbb32bf1d4646f85b03f38f5656d98b2889973dffde00ec6d1c0df5c2cba5"
+        },
+        "es": {
+          "updatedAt": "2026-08-28T09:29:11.886Z",
+          "fileName": "es/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "ef6d743d6fafcd847f33c10898437a22ebb3c5ba4dc0e85996719e9357afea06"
+        },
+        "zh": {
+          "updatedAt": "2026-08-28T09:29:11.887Z",
+          "fileName": "zh/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "6b754ec00b7581c6645e56bf25a502d5c155b8846200810cb722ee526743a927"
+        },
+        "ko": {
+          "updatedAt": "2026-08-28T09:29:11.887Z",
+          "fileName": "ko/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "ab69762baa060575c7975dd7943a42ba0c0e2d1a42c8c8d2951dfb471fb51a42"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T09:29:12.367Z",
+          "fileName": "ru/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "74084946b5d32a2ccb1b986b052d4940dbd729aa069c3f14025d4b66c8cca25e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-28T09:29:12.367Z",
+          "fileName": "pt-BR/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "eaa0745e4bf678185edf0edcf83ec904cb040c5fd8aaa6345c77eb28fb464dd7"
         }
       },
       "fileName": "products/cloud/reference/supported-regions.mdx"
@@ -125588,47 +125588,47 @@
     },
     {
       "fileId": "071bcc9f5d1be565ef793f9b8ed719a209f81ac79ae97703395e2f33d0bce668",
-      "versionId": "041f09d07db55d5cc6c638000c6cf152315f77c2313981c14efb87ac7fb236e8",
+      "versionId": "4b99e15c9153f775b0318fff0c6f1f335860b3dc682907f286e3217569beac16",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:30.709Z",
-          "fileName": "es/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
-          "postProcessHash": "1c841cb1513b8e71d5b581b4ae3faff262df826a2f1e23e3b059f498f2a4a982"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:30.710Z",
-          "fileName": "ja/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
-          "postProcessHash": "204e4698f2d04ef0441f867655d5b1552440f78ad3862a4577392323f55096c2"
+        "zh": {
+          "updatedAt": "2026-08-28T09:29:10.288Z",
+          "fileName": "zh/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
+          "postProcessHash": "b6349adbf088c1da1553342f8f91fab7de0ff3be45e043fe927aaa84a1bf338f"
         },
         "ko": {
-          "updatedAt": "2026-08-26T08:10:30.711Z",
+          "updatedAt": "2026-08-28T09:29:10.289Z",
           "fileName": "ko/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
-          "postProcessHash": "78c8153109ab80b4747f78030f820b5519f201bbb4c812204fdb9b921301bae7"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:30.712Z",
-          "fileName": "pt-BR/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
-          "postProcessHash": "57f4b5e53d24f25b806d6d911e35a87e0364bef189a6a845e5ade574c325287e"
+          "postProcessHash": "cbd35ac47aa25f0e7a3467af08151d42ab5754ea4e0f44ac7d200f72b13c738d"
         },
         "ru": {
-          "updatedAt": "2026-08-26T08:10:30.714Z",
+          "updatedAt": "2026-08-28T09:29:10.291Z",
           "fileName": "ru/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
-          "postProcessHash": "3ac7feeb3c1fbf830194ded17a21b2ecfdea8004b1d64be50a0a261e35863c07"
+          "postProcessHash": "a341810a968b3c25b47ec34145dadcfa8a4b93bd7d68ade044ce4dd1e3ec7fee"
         },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:30.715Z",
-          "fileName": "zh/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
-          "postProcessHash": "9d8481a1de004d1e63218e77398c593881f752451c5f51af673c556ef0708eb6"
+        "pt-BR": {
+          "updatedAt": "2026-08-28T09:29:10.293Z",
+          "fileName": "pt-BR/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
+          "postProcessHash": "3753754aa449d15738163ff30b1fe247cb0d903a8c8368bdca8d0f5c8629d1a5"
         },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:30.716Z",
-          "fileName": "ar/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
-          "postProcessHash": "006797ac5e300b3ee472c71b55942d8332b9787106e723490b01b8cb66ff2e42"
+        "ja": {
+          "updatedAt": "2026-08-28T09:29:11.138Z",
+          "fileName": "ja/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
+          "postProcessHash": "b763c96f0019df4995e805f18c9dfe9baf1f0872ee0514741bd8675d7cf3864b"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:30.717Z",
+          "updatedAt": "2026-08-28T09:29:11.886Z",
           "fileName": "fr/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
-          "postProcessHash": "54884f41010290631e6c1fe9865cadc3c22a8caa0ecdde938d134a4ec0c13529"
+          "postProcessHash": "e9ca1d3695b5a9b25181b18807c10043ca3dd4138322eee501e48594682a70fc"
+        },
+        "ar": {
+          "updatedAt": "2026-08-28T09:29:12.123Z",
+          "fileName": "ar/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
+          "postProcessHash": "3f073a9987eba3c933f4e04d50af9de054ffd5717a7dbdf01d586f74fa2986db"
+        },
+        "es": {
+          "updatedAt": "2026-08-28T09:29:12.368Z",
+          "fileName": "es/guides/use-cases/data-warehousing/getting-started/best-practices.mdx",
+          "postProcessHash": "0316fdc5293ae03edb065519465e0bee3d0fc2b3bd7cdf5142545a170da7726c"
         }
       },
       "fileName": "guides/use-cases/data-warehousing/getting-started/best-practices.mdx"
@@ -137100,6 +137100,241 @@
         }
       },
       "fileName": "snippets/components/Glossary/Glossary.jsx"
+    },
+    {
+      "fileId": "cbbef823df7bfd4b695f27aae1a20370fb7b9636522c91b8797b1ca69cf751f9",
+      "versionId": "a8dcd7a0416751e576fdc56b18654051bccde7d967f827f15cb538f7e9367642",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-08-28T09:29:10.284Z",
+          "fileName": "snippets/ko/_nyc_taxi_example_dataset.mdx",
+          "postProcessHash": "f804426a1a3879f0b8787e359877e972d9cdca733f781bc950d770e839698e53"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-28T09:29:10.285Z",
+          "fileName": "snippets/pt-BR/_nyc_taxi_example_dataset.mdx",
+          "postProcessHash": "56284eb067b696972a9e406893fdb764ac33fcdb7057f9fed4d6760ec4e7f171"
+        },
+        "fr": {
+          "updatedAt": "2026-08-28T09:29:10.285Z",
+          "fileName": "snippets/fr/_nyc_taxi_example_dataset.mdx",
+          "postProcessHash": "275abf94137ea73a905e7a45ad83bc6c38bd2599c9859502333f9684af9d12c3"
+        },
+        "zh": {
+          "updatedAt": "2026-08-28T09:29:10.286Z",
+          "fileName": "snippets/zh/_nyc_taxi_example_dataset.mdx",
+          "postProcessHash": "62e3fc744bb4f2805fc24bfb81aae942dcc3e7f1e01c19ec771b0bd8ddb05d1f"
+        },
+        "ar": {
+          "updatedAt": "2026-08-28T09:29:10.286Z",
+          "fileName": "snippets/ar/_nyc_taxi_example_dataset.mdx",
+          "postProcessHash": "fc523239494c6a1465fb4844071a6d446de6f473aa63b2aef10a1bdb11584d68"
+        },
+        "ja": {
+          "updatedAt": "2026-08-28T09:29:10.286Z",
+          "fileName": "snippets/ja/_nyc_taxi_example_dataset.mdx",
+          "postProcessHash": "35fe7a40b9508792e8be42996bb48a3907e406f560e4d0bc16968e06f65fe0af"
+        },
+        "es": {
+          "updatedAt": "2026-08-28T09:29:10.287Z",
+          "fileName": "snippets/es/_nyc_taxi_example_dataset.mdx",
+          "postProcessHash": "df62fd754095356922a8947b701a515f120423e488f9c96d3ec4eb2aa2458566"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T09:29:10.287Z",
+          "fileName": "snippets/ru/_nyc_taxi_example_dataset.mdx",
+          "postProcessHash": "1cafa088251bcd2505b9d5ee26ee07eecd6b315d04c0e6a83d6a206e5cc4fa91"
+        }
+      },
+      "fileName": "snippets/_nyc_taxi_example_dataset.mdx"
+    },
+    {
+      "fileId": "79791ef7b7d73457353bb3a32ceff75c0785862d5f4177d5d9df94eccc2f9d27",
+      "versionId": "7c3c157ca39d4bb774a26f60d2f2d9cc5b5b0dae2b84dbb89bc51aca20ccad5f",
+      "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-08-28T09:29:10.293Z",
+          "fileName": "pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx",
+          "postProcessHash": "a1856ab66d1fc5392e569f233f1587c8ce1da908b75dd9ffb9d8b7d1717eeaff"
+        },
+        "fr": {
+          "updatedAt": "2026-08-28T09:29:10.530Z",
+          "fileName": "fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx",
+          "postProcessHash": "4f478afbb99e1e24b962070c96e91e1ad5400ac71343a1ee7ed2740859904303"
+        },
+        "ko": {
+          "updatedAt": "2026-08-28T09:29:11.436Z",
+          "fileName": "ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx",
+          "postProcessHash": "5d63f1bfcf8ddece836bfd5b09d8166054bb28f7e88a2a349dc5f70fb3846062"
+        },
+        "zh": {
+          "updatedAt": "2026-08-28T09:29:11.437Z",
+          "fileName": "zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx",
+          "postProcessHash": "d0d3f64a6b04fca95f39a6e7f015d67a9380fff355143066e6aaf22dad8188e0"
+        },
+        "es": {
+          "updatedAt": "2026-08-28T09:29:11.885Z",
+          "fileName": "es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx",
+          "postProcessHash": "be4bad30cd4ef8cf44ce0e4b8ae5411262f8596dfbb800b5ba9634e529bce39c"
+        },
+        "ja": {
+          "updatedAt": "2026-08-28T09:29:11.888Z",
+          "fileName": "ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx",
+          "postProcessHash": "13b1d01a3c56ce8b810310d07e7b944bbf7a2fa7ccfe249df8381ea0ed1beb37"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T09:29:12.121Z",
+          "fileName": "ru/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx",
+          "postProcessHash": "a3edc40eeb88a1f14d193740b9f29dd596172d6472522cb6fb19c8d058d15592"
+        },
+        "ar": {
+          "updatedAt": "2026-08-28T09:29:12.374Z",
+          "fileName": "ar/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx",
+          "postProcessHash": "eb9c924bec47e96f92a068b710649ed754d1e574ada68d7b728c0dc95b05d3b9"
+        }
+      },
+      "fileName": "guides/clickhouse/performance-and-monitoring/diagnose-slow-queries.mdx"
+    },
+    {
+      "fileId": "590290a9030f58a684bc1ef75164d637d5b9d745c452519ad00e03842b4b4b29",
+      "versionId": "8e23346bf58f5a146fd501f635d0721e672a60e83d31d0663a81c91bd4e25401",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-08-28T09:29:11.889Z",
+          "fileName": "es/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx",
+          "postProcessHash": "fef47f7895be3b1956eb2df96b65e77e1d7cf3762a04f7c6b4789354c6a8ec5e"
+        },
+        "fr": {
+          "updatedAt": "2026-08-28T09:29:12.122Z",
+          "fileName": "fr/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx",
+          "postProcessHash": "0ed47a7a4fcf5992a7b67b74fc6af40e6a28e5401f5880cf2f4698be27036284"
+        },
+        "zh": {
+          "updatedAt": "2026-08-28T09:29:12.369Z",
+          "fileName": "zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx",
+          "postProcessHash": "bb0cfc3d136b87201450c2925380163229033d2393eea5e611ab4aea2abd02cc"
+        },
+        "ar": {
+          "updatedAt": "2026-08-28T09:29:12.371Z",
+          "fileName": "ar/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx",
+          "postProcessHash": "8014876de19b17e2bd560999eff2d6323df1ffd1556c22c0af969287325ac87b"
+        },
+        "ja": {
+          "updatedAt": "2026-08-28T09:29:12.375Z",
+          "fileName": "ja/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx",
+          "postProcessHash": "c0743c6ac999f97b5cdd3d30c8100da2bbf76ed2464c8d526b889bbaef6bca84"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T09:29:12.376Z",
+          "fileName": "ru/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx",
+          "postProcessHash": "c45b7bac4415c76b8d1761591c479f79eb3f6accf17e49ba0d573fac04d29be4"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-28T09:29:12.377Z",
+          "fileName": "pt-BR/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx",
+          "postProcessHash": "bea75f1f1f69e04793b3519d4d0bfa0521e586a635815c9aee874433d0554655"
+        },
+        "ko": {
+          "updatedAt": "2026-08-28T09:29:12.377Z",
+          "fileName": "ko/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx",
+          "postProcessHash": "f21c65c61195267a34797c59bd1bb7ed20e64a5dfbb1de63a1ab5328465301d1"
+        }
+      },
+      "fileName": "guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks.mdx"
+    },
+    {
+      "fileId": "75120acc896d2ab86f9eb5c836400fdc3f0f165ca21fca8419205a5a9e7af0f7",
+      "versionId": "b2e7b7ecd3914ff23d5892974b232de354f19d778ab50c2ca4056d590f328806",
+      "translations": {
+        "fr": {
+          "updatedAt": "2026-08-28T09:29:11.889Z",
+          "fileName": "fr/guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx",
+          "postProcessHash": "efad45bcb7aed197b456a9364d1fb65b2bb57995438d4229c67074f6718dc452"
+        },
+        "zh": {
+          "updatedAt": "2026-08-28T09:29:12.369Z",
+          "fileName": "zh/guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx",
+          "postProcessHash": "29b97b2da59627e4d36b8f8ee3ea24591d7074137b3f3b60cc91e93c99cce97b"
+        },
+        "es": {
+          "updatedAt": "2026-08-28T09:29:12.370Z",
+          "fileName": "es/guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx",
+          "postProcessHash": "1b00037e96ea9d942e4f06ecfbe14495cc484401585c3cfcf00afc1acbdcc551"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-28T09:29:12.370Z",
+          "fileName": "pt-BR/guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx",
+          "postProcessHash": "f464f7cfe0d1a9b974c88788cd4289e2787af1ca5935e66d15b7d466b000e1f6"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T09:29:12.373Z",
+          "fileName": "ru/guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx",
+          "postProcessHash": "4188bb765cf8983c9e74247a51a1557eb16e087ea4a9b4e4dcf517c48dda7999"
+        },
+        "ja": {
+          "updatedAt": "2026-08-28T09:29:12.374Z",
+          "fileName": "ja/guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx",
+          "postProcessHash": "86b5e65f09e99394a982a4ce3a6937d5ef4216e399d97fc0739931aa5916d915"
+        },
+        "ko": {
+          "updatedAt": "2026-08-28T09:29:12.376Z",
+          "fileName": "ko/guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx",
+          "postProcessHash": "f054b3e9d88bbb909b6887b1fd8f9064f1d28d6b1cab83e4c05296e18378cab0"
+        },
+        "ar": {
+          "updatedAt": "2026-08-28T09:29:12.378Z",
+          "fileName": "ar/guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx",
+          "postProcessHash": "556b1dac8e17f8520321a694c3d5b635991b2ba90a261daf975e7f699b5afa9b"
+        }
+      },
+      "fileName": "guides/clickhouse/performance-and-monitoring/optimization-approaches.mdx"
+    },
+    {
+      "fileId": "5e8725333911eac31359c4603db1a04c507a2f1e3e0222a29c0db14a4983b951",
+      "versionId": "a695fd33db6c129deb81092d4b3ff51a96b39f9dcb9cbb6d3e96f07e3621fec8",
+      "translations": {
+        "zh": {
+          "updatedAt": "2026-08-28T09:29:11.890Z",
+          "fileName": "zh/guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx",
+          "postProcessHash": "b7e0efb815f5f3f9e822859add9fc8b505491dbd9ce142454f29c6acc8b98a83"
+        },
+        "fr": {
+          "updatedAt": "2026-08-28T09:29:12.124Z",
+          "fileName": "fr/guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx",
+          "postProcessHash": "3df5ae57028fc88e7ea8386d79894228675f61d0961e59e8934764f035ec7acf"
+        },
+        "ar": {
+          "updatedAt": "2026-08-28T09:29:12.371Z",
+          "fileName": "ar/guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx",
+          "postProcessHash": "6ffe74729333a03fe51cfab40c076129597e225cdbfa153d117d344026808423"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-28T09:29:12.372Z",
+          "fileName": "pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx",
+          "postProcessHash": "f4f253608b8d4cd81a71493c8f677478dca491644cea5c968482b7d2ce13af86"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T09:29:12.372Z",
+          "fileName": "ru/guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx",
+          "postProcessHash": "a6f79c11f0dec12e2b227c908abec6df6b089e5474ec091a14587780d13d6654"
+        },
+        "es": {
+          "updatedAt": "2026-08-28T09:29:12.373Z",
+          "fileName": "es/guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx",
+          "postProcessHash": "3cebbe72835d46fa0821b34e99550f32ab599dc231624fc16e8762ad194fb197"
+        },
+        "ja": {
+          "updatedAt": "2026-08-28T09:29:12.375Z",
+          "fileName": "ja/guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx",
+          "postProcessHash": "d44218e2ef8058cf4835cd300389587f118454cf556a57e7820b4c5539cd5e50"
+        },
+        "ko": {
+          "updatedAt": "2026-08-28T09:29:12.377Z",
+          "fileName": "ko/guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx",
+          "postProcessHash": "1d6919079a18c3fc44d7ea37aa979ccb982a2e7ea5c6495a567996efa83b987e"
+        }
+      },
+      "fileName": "guides/clickhouse/performance-and-monitoring/query-optimization-example.mdx"
     }
   ]
 }

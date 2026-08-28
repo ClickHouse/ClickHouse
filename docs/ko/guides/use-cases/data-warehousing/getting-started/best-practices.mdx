@@ -336,7 +336,7 @@ ORDER BY rows DESC;
   ### 스캔량 확인
 </div>
 
-필터를 추가하거나 설정을 조정하기 전후의 [system.query&#95;log](/ko/reference/system-tables/query_log)에서 `read_rows`와 `read_bytes`를 비교하십시오. `ReadBufferFromS3Bytes` 및 `CachedReadBufferReadFromCacheBytes` 같은 ProfileEvents는 객체 스토리지와 로컬 캐시에서 각각 얼마나 많은 데이터를 읽어 왔는지 보여줍니다. `query_log`와 EXPLAIN에 대한 전체 설명은 [쿼리 최적화](/ko/guides/clickhouse/performance-and-monitoring/query-optimization)를 참조하십시오.
+필터를 추가하거나 설정을 조정하기 전후의 [`system.query&#95;log`](/ko/reference/system-tables/query_log)에서 `read_rows`와 `read_bytes`를 비교하십시오. `ReadBufferFromS3Bytes` 및 `CachedReadBufferReadFromCacheBytes` 같은 `ProfileEvents`는 객체 스토리지와 로컬 캐시에서 각각 얼마나 많은 데이터를 읽어 왔는지 보여줍니다. `query_log`와 `EXPLAIN`에 대한 전체 설명은 [느린 쿼리 진단](/ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)을 참조하십시오.
 
 벤치마크할 때는 실행 간 차이가 캐시 적중으로 가려지지 않도록 [enable&#95;filesystem&#95;cache](/ko/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache)를 비활성화하십시오.
 

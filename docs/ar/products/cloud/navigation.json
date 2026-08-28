@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "البدء",
       "pages": [
         "ar/products/cloud/getting-started/cloud-get-started",
         "ar/products/cloud/getting-started/intro",
@@ -9,13 +9,13 @@
       ]
     },
     {
-      "group": "Services and infrastructure",
+      "group": "الخدمات والبنية التحتية",
       "pages": [
         "ar/products/cloud/reference/architecture",
         "ar/products/cloud/features/cli",
         {
           "expanded": false,
-          "group": "Plan and deploy",
+          "group": "التخطيط والنشر",
           "pages": [
             "ar/products/cloud/features/cloud-tiers",
             "ar/products/cloud/reference/supported-regions",
@@ -27,7 +27,7 @@
         },
         {
           "expanded": false,
-          "group": "Configure and scale",
+          "group": "التهيئة والتوسّع",
           "pages": [
             "ar/products/cloud/features/autoscaling/overview",
             "ar/products/cloud/reference/settings",
@@ -42,7 +42,7 @@
         },
         {
           "expanded": false,
-          "group": "Compute and storage",
+          "group": "الحوسبة والتخزين",
           "pages": [
             "ar/products/cloud/features/large-single-replica-services",
             "ar/products/cloud/features/infrastructure/parallel-replicas",
@@ -54,7 +54,7 @@
         },
         {
           "expanded": false,
-          "group": "Reliability and maintenance",
+          "group": "الموثوقية والصيانة",
           "pages": [
             "ar/products/cloud/reference/service-uptime",
             "ar/products/cloud/reference/data-resiliency",
@@ -63,7 +63,7 @@
         },
         {
           "expanded": false,
-          "group": "Production planning",
+          "group": "تخطيط الإنتاج",
           "pages": [
             "ar/products/cloud/guides/best-practices/index",
             "ar/products/cloud/guides/production-readiness",
@@ -77,14 +77,14 @@
       "$ref": "../bring-your-own-cloud/navigation.json"
     },
     {
-      "group": "Data and integrations",
+      "group": "البيانات والتكاملات",
       "pages": [
         "ar/products/cloud/features/integrations",
         "ar/products/cloud/features/data-catalogs",
         "ar/products/cloud/guides/migration/upload-a-csv-file",
         {
           "expanded": false,
-          "group": "Data sources",
+          "group": "مصادر البيانات",
           "pages": [
             "ar/products/cloud/guides/data-sources/index",
             "ar/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -97,14 +97,14 @@
       ]
     },
     {
-      "group": "Connect and query",
+      "group": "الاتصال والاستعلام",
       "pages": [
         "ar/products/cloud/features/sql-console-features/sql-console",
         "ar/products/cloud/guides/sql-console/connection-details",
         "ar/products/cloud/features/sql-console-features/query-insights",
         {
           "expanded": false,
-          "group": "Query API endpoints",
+          "group": "نقاط نهاية واجهة برمجة تطبيقات الاستعلام",
           "pages": [
             "ar/products/cloud/features/sql-console-features/query-endpoints",
             "ar/products/cloud/guides/sql-console/query-endpoints"
@@ -116,12 +116,12 @@
       ]
     },
     {
-      "group": "Access management",
+      "group": "إدارة الوصول",
       "pages": [
         "ar/products/cloud/guides/security/cloud-access-management/index",
         {
           "expanded": false,
-          "group": "Cloud accounts and roles",
+          "group": "حسابات Cloud والأدوار",
           "pages": [
             "ar/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
@@ -132,7 +132,7 @@
         },
         {
           "expanded": false,
-          "group": "Database users and permissions",
+          "group": "مستخدمو قاعدة البيانات والأذونات",
           "pages": [
             "ar/products/cloud/guides/security/cloud-access-management/manage-database-users",
             "ar/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
@@ -141,7 +141,7 @@
         },
         {
           "expanded": false,
-          "group": "Identity providers",
+          "group": "موفرو الهوية",
           "pages": [
             "ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
             "ar/products/cloud/guides/security/saml-sso-removal",
@@ -153,17 +153,17 @@
       ]
     },
     {
-      "group": "Security and compliance",
+      "group": "الأمان والامتثال",
       "pages": [
         "ar/products/cloud/features/security",
         {
           "expanded": false,
-          "group": "Network access",
+          "group": "الوصول إلى الشبكة",
           "pages": [
             "ar/products/cloud/guides/security/connectivity/setting-ip-filters",
             {
               "expanded": false,
-              "group": "Private networking",
+              "group": "الشبكات الخاصة",
               "pages": [
                 "ar/products/cloud/guides/security/connectivity/private-networking/index",
                 "ar/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -175,7 +175,7 @@
         },
         {
           "expanded": false,
-          "group": "Audit logging",
+          "group": "تسجيل التدقيق",
           "pages": [
             "ar/products/cloud/guides/security/audit-logging/index",
             "ar/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -186,7 +186,7 @@
         },
         {
           "expanded": false,
-          "group": "Data security",
+          "group": "أمان البيانات",
           "pages": [
             "ar/products/cloud/guides/security/data-masking",
             "ar/products/cloud/guides/security/cmek"
@@ -194,7 +194,7 @@
         },
         {
           "expanded": false,
-          "group": "Compliance and privacy",
+          "group": "الامتثال والخصوصية",
           "pages": [
             "ar/products/cloud/reference/security/compliance-overview",
             "ar/products/cloud/guides/security/compliance/hipaa-onboarding",
@@ -206,11 +206,11 @@
       ]
     },
     {
-      "group": "Monitoring and backups",
+      "group": "المراقبة والنسخ الاحتياطية",
       "pages": [
         {
           "expanded": false,
-          "group": "Monitoring",
+          "group": "المراقبة",
           "pages": [
             "ar/products/cloud/features/monitoring/overview",
             "ar/products/cloud/features/monitoring/cloud-console",
@@ -223,19 +223,19 @@
         },
         {
           "expanded": false,
-          "group": "Backups",
+          "group": "النسخ الاحتياطية",
           "pages": [
             "ar/products/cloud/features/backups/overview",
             {
               "expanded": false,
-              "group": "Manage backups",
+              "group": "إدارة النسخ الاحتياطية",
               "pages": [
                 "ar/products/cloud/guides/backups/index",
                 "ar/products/cloud/guides/backups/review-and-restore-backups",
                 "ar/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "Bring Your Own Backup",
+                  "group": "استخدم نسختك الاحتياطية الخاصة",
                   "pages": [
                     "ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "ar/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -249,7 +249,7 @@
       ]
     },
     {
-      "group": "AI tools and agents",
+      "group": "أدوات ووكلاء الذكاء الاصطناعي",
       "pages": [
         "ar/products/cloud/features/ai-ml/index",
         "ar/products/cloud/features/ai-ml/aichat/using-ai-chat",
@@ -293,13 +293,13 @@
       ]
     },
     {
-      "group": "Cloud API",
+      "group": "واجهة برمجة تطبيقات Cloud",
       "pages": [
         "ar/products/cloud/features/admin-features/api/api-overview",
         "ar/products/cloud/features/admin-features/api/openapi",
         "ar/products/cloud/features/admin-features/api/postman",
         {
-          "group": "API reference",
+          "group": "مرجع واجهة برمجة التطبيقات",
           "openapi": {
             "directory": "ar/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"
@@ -311,12 +311,12 @@
       ]
     },
     {
-      "group": "Billing",
+      "group": "الفوترة",
       "pages": [
         "ar/products/cloud/reference/billing/billing-overview",
         {
           "expanded": false,
-          "group": "Marketplace",
+          "group": "السوق",
           "pages": [
             "ar/products/cloud/reference/billing/marketplace/overview",
             "ar/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -345,7 +345,7 @@
       ]
     },
     {
-      "group": "Support",
+      "group": "الدعم",
       "pages": [
         "ar/products/cloud/features/support",
         "ar/products/cloud/reference/account-close"
