@@ -152,8 +152,10 @@ def with_reapply(line, pr):
 
 
 def not_restored(reverts, text):
+    """What `verify_edit` demands back: the required restorations that are not
+    attributed in the in-progress section."""
     section = cl.extract_in_progress_section(text, ANCHOR) or ""
-    return sorted(pr for pr in reverts["restore"] if not cl.is_attributed(section, pr))
+    return sorted(pr for pr in reverts["required"] if not cl.is_attributed(section, pr))
 
 
 def uncredited(reverts, before, after):
@@ -207,6 +209,7 @@ def test_revert_of_revert_arrives_after_the_entry_was_deleted(monkeypatch):
             "line": FIX,
             "removed_by": ["114911"],
             "reapplied_by": ["114912"],
+            "required": True,
         }
     ]
     assert reverts["unresolved"] == []
@@ -268,6 +271,7 @@ def test_branch_without_a_ledger_keeps_the_previous_behaviour(monkeypatch):
     assert reverts == {
         "credits": {},
         "restore": {},
+        "required": [],
         "missing": [],
         "withheld": {},
         "cancelling": [],
@@ -417,6 +421,7 @@ def test_restoring_into_a_merged_bullet_names_the_surviving_siblings(monkeypatch
             "line": MERGED,
             "removed_by": ["115000"],
             "reapplied_by": ["115001"],
+            "required": True,
         }
     ]
     prompt = cl._edit_prompt(VERSION, reverts)
@@ -446,6 +451,7 @@ def test_a_merged_bullet_is_restored_once_for_all_its_pull_requests(monkeypatch)
             "line": MERGED,
             "removed_by": ["115000"],
             "reapplied_by": ["115001"],
+            "required": True,
         }
     ]
     prompt = cl._edit_prompt(VERSION, reverts)
@@ -1442,3 +1448,93 @@ def test_a_pull_request_github_will_not_return_is_skipped(monkeypatch):
     reverts = analyze(monkeypatch, changelog([], [raw]), [])
     assert reverts["credits"] == {}
     assert reverts["unresolved"] == []
+
+
+JUNK = "NOT FOR CHANGELOG / INSIGNIFICANT"
+PROMOTABLE = _entry("110700", "Fix a crash in `arrayJoin` with an empty array")
+
+
+def test_a_revert_of_a_promotable_raw_entry_cancels_it(monkeypatch, tmp_path):
+    """The entry arrives under `NOT FOR CHANGELOG` and its revert arrives in
+    the same run under a real category. Both go, and both are allowed to: the
+    entry because the revert licenses it, the revert because it cancels
+    something of this release, whatever category it was filed under."""
+    PULL_REQUESTS["115950"] = {
+        "title": 'Revert "Fix a crash in `arrayJoin` with an empty array"',
+        "body": "Reverts ClickHouse/ClickHouse#110700",
+    }
+    revert = _entry("115950", "Undo the `arrayJoin` change")
+    old_text = changelog(
+        [], raw_sections=[(JUNK, [PROMOTABLE]), (STRICT, [revert])]
+    )
+    reverts = analyze(monkeypatch, old_text, [])
+    assert reverts["credits"] == {"110700": "115950"}
+    assert reverts["cancelling"] == ["115950"]
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([]), reverts) is None
+    )
+
+
+def test_a_promotable_entry_cancelled_in_one_run_is_still_recorded(monkeypatch):
+    """The entry never reached the section - it arrived and was cancelled in the
+    same run - so nothing but the ledger can know it existed when the revert is
+    itself reverted later. It is recorded, and then offered rather than
+    required: whether a `NOT FOR CHANGELOG` bullet belongs in the changelog is
+    the editing rules' call, not the verifier's."""
+    PULL_REQUESTS["115950"] = {
+        "title": 'Revert "Fix a crash in `arrayJoin` with an empty array"',
+        "body": "Reverts ClickHouse/ClickHouse#110700",
+    }
+    PULL_REQUESTS["115951"] = {
+        "title": 'Revert "Revert "Fix a crash in `arrayJoin` with an empty array""',
+        "body": "Reverts ClickHouse/ClickHouse#115950",
+    }
+    revert = _entry("115950", "Undo the `arrayJoin` change")
+    deletion_run = changelog(
+        [], raw_sections=[(JUNK, [PROMOTABLE]), (STRICT, [revert])]
+    )
+
+    # What the deletion run writes to the ledger.
+    def fake_get_output(command, strict=False, verbose=False, retries=1, delay=2):
+        if command.startswith("gh api graphql"):
+            return fake_graphql(command)
+        if command.startswith("git show"):
+            return deletion_run
+        return "Update changelog"
+
+    monkeypatch.setattr(cl.Shell, "get_output", staticmethod(fake_get_output))
+    monkeypatch.setattr(
+        cl, "Info", lambda: type("I", (), {"repo_name": "ClickHouse/ClickHouse"})()
+    )
+    monkeypatch.setattr(cl, "_read_changelog", lambda: changelog([]))
+    recorded = cl.revert_licensed_deletions(
+        "base", VERSION, {"110700": "115950"}, ["115950"]
+    )
+    assert recorded == {"110700": (JUNK, PROMOTABLE)}
+
+    # The later run that takes the revert back finds it there.
+    reverts = analyze(
+        monkeypatch,
+        changelog(
+            [],
+            raw_sections=[
+                (
+                    "NO CL ENTRY",
+                    [_entry("115951", 'Revert "Revert "Fix a crash..."" ')],
+                )
+            ],
+        ),
+        [
+            f"Changelog-deleted-entry: 110700 [{JUNK}] {PROMOTABLE}",
+            'Changelog-revert: 115950 110700 Revert "Fix a crash in `arrayJoin` '
+            'with an empty array"',
+        ],
+    )
+    assert reverts["restore"] == {"110700": (JUNK, PROMOTABLE)}
+    assert [group["prs"] for group in reverts["missing"]] == [["110700"]]
+    # Offered, not required: the verifier does not force a pruned bullet back.
+    assert reverts["required"] == []
+    assert not_restored(reverts, changelog([])) == []
+    prompt = cl._edit_prompt(VERSION, reverts)
+    assert PROMOTABLE in prompt
+    assert "offered rather than required" in prompt

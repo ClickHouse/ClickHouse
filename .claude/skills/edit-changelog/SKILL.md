@@ -171,6 +171,12 @@ rule does not protect it, because it is not a change that ships.
    is an entry like any other: if it is deleted and later restored, it takes
    the link of the PR that restored it too.
 
+   An entry the autogenerator had filed under `NOT FOR CHANGELOG` or as CI
+   plumbing is *offered* back, not required: §3 and §4 were free to prune it,
+   so decide again whether it describes a user-visible change. What matters is
+   that the choice is possible — the entry is quoted for you because nothing
+   in the file remembers it any more.
+
    Restore it under the category it was in, which is not necessarily the one
    its PR declares: the entry may have been promoted out of `NOT FOR
    CHANGELOG` (§3) or moved (§6) by the edit that first added it, and

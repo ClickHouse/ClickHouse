@@ -680,8 +680,10 @@ def analyze_reverts(text, anchor):
                    deletion of its entry;
     `restore`    - pull request -> the (category, bullet) an earlier run
                    deleted whose revert has since been reverted, so the change
-                   ships after all and the entry has to be in the in-progress
-                   section;
+                   ships after all;
+    `required`   - the subset of `restore` that has to be in the in-progress
+                   section; the rest were prunable raw bullets and are only
+                   offered back;
     `missing`    - the work the editing agent has to do: the part of `restore`
                    that is not in `text` yet, grouped by the bullet it was
                    recorded from (one merged bullet covers several pull
@@ -720,6 +722,17 @@ def analyze_reverts(text, anchor):
     section = extract_in_progress_section(text, anchor) or ""
     restore = {
         pr: record for pr, record in deleted.items() if pr not in credits
+    }
+    # Whether the entry has to come back or is merely offered. The ledger
+    # records every revert-licensed deletion, including a raw bullet the edit
+    # was free to prune (`NOT FOR CHANGELOG`, CI plumbing). Demanding those
+    # back would push an entry into the changelog that the rules say does not
+    # belong there, so for them the prompt asks and the agent decides - the
+    # point of recording them is that the decision is possible at all.
+    required = {
+        pr
+        for pr, (category, _) in restore.items()
+        if category in STRICT_RETENTION_CATEGORIES
     }
 
     def revert_chain(prs):
@@ -777,11 +790,12 @@ def analyze_reverts(text, anchor):
     # something in this release leaves no trace (skill section 2); one of an
     # earlier release is rewritten into a visible entry (case 5) and stays. The
     # difference is whether its target belongs to this cycle - which is what
-    # the section, this run's raw entries, the recorded deletions and the
-    # revert graph itself between them say.
+    # the section, this run's raw entries (all of them, whatever category the
+    # generator filed them under), the recorded deletions and the revert graph
+    # itself between them say.
     cycle_entries = (
         set(PR_ATTRIBUTION_RE.findall(section))
-        | strict_prs
+        | all_prs
         | set(deleted)
         | set(targets)
     )
@@ -832,9 +846,11 @@ def analyze_reverts(text, anchor):
     for group in missing:
         group["removed_by"] = removed_by(group["prs"])
         group["reapplied_by"] = reapplied_by(group["prs"])
+        group["required"] = bool(set(group["prs"]) & required)
     return {
         "credits": credits,
         "restore": restore,
+        "required": sorted(required, key=int),
         "missing": missing,
         "withheld": withheld,
         "cancelling": sorted(cancelling, key=int),
@@ -1102,6 +1118,15 @@ def _edit_prompt(version, reverts, previous_error=None):
                 else ""
             )
             + (
+                ""
+                if group["required"]
+                else f"\n     The generator had filed this one under "
+                f"`#### {group['category']}`, which the rules let an edit "
+                f"prune, so it is offered rather than required: bring it back "
+                f"only if it describes a user-visible change (skill section 3 "
+                f"and 4), and leave it out otherwise."
+            )
+            + (
                 f"\n     Leave {_pr_list(group['withheld'])} off that bullet: "
                 f"the line above attributes {_them(group['withheld'])} because "
                 f"the entries were merged, but "
@@ -1193,17 +1218,31 @@ def disappeared_entries(old_text, text, anchor, exempt=()):
     return lost - set(exempt)
 
 
-def revert_licensed_deletions(base_sha, version, exempt=()):
-    """The entries the verified edit deleted, each with the category and the
-    bullet it had before, for the ledger: when the revert that licensed the
-    deletion is itself reverted — possibly weeks later, when nothing in the
-    file or in the raw blocks remembers the entry — it has to be restorable
-    exactly, in the category the edit had put it in."""
+def revert_licensed_deletions(base_sha, version, credits, exempt=()):
+    """The entries the verified edit deleted that a revert licensed, each with
+    the category and the bullet it had before: when the revert is itself
+    reverted — possibly weeks later, when nothing in the file or in the raw
+    blocks remembers the entry — it has to be restorable exactly, in the
+    category the edit had put it in.
+
+    Deliberately wider than `disappeared_entries`. That one guards the entries
+    the rules may not drop; the ledger has to remember every entry a revert
+    took out, including one the generator filed under `NOT FOR CHANGELOG` that
+    the edit was free to prune. If the revert is later reverted, that change
+    ships, and by then this record is the only thing that knows the entry ever
+    existed. Whether it then comes back is the agent's call, see
+    `analyze_reverts`."""
     old_text = Shell.get_output(f"git show {base_sha}:{CHANGELOG_FILE}", strict=True)
+    text = _read_changelog()
+    old_section = extract_in_progress_section(old_text, _anchor_id(version)) or ""
+    all_prs, _, _ = raw_prs_and_reverts(old_text)
+    candidates = (
+        set(PR_ATTRIBUTION_RE.findall(old_section)) | all_prs
+    ) - set(exempt)
     deletions = {}
-    for pr in disappeared_entries(
-        old_text, _read_changelog(), _anchor_id(version), exempt
-    ):
+    for pr in sorted(candidates, key=int):
+        if pr not in credits or is_attributed(text, pr):
+            continue
         category, line = entry_placement(old_text, pr)
         if line:
             deletions[pr] = (category, line)
@@ -1266,7 +1305,7 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     # not as a mention inside someone else's bullet. Nothing here disappeared
     # — the entry went away days ago — so only the ledger can tell.
     not_restored = sorted(
-        pr for pr in reverts["restore"] if not is_attributed(section, pr)
+        pr for pr in reverts["required"] if not is_attributed(section, pr)
     )
     if not_restored:
         return (
@@ -1286,6 +1325,10 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
         if not group["category"]:
             continue
         for pr in group["prs"]:
+            if not is_attributed(section, pr):
+                # Absent: required ones already failed the check above, the
+                # rest were prunable and staying out is a valid decision.
+                continue
             found = entry_placement(section, pr)[0]
             if found != group["category"]:
                 misplaced.append(
@@ -1305,7 +1348,13 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     split = [
         f"{_pr_list(group['prs'])} on {len(bullets)} bullets"
         for group in reverts["missing"]
-        for bullets in [{entry_placement(section, pr)[1] for pr in group["prs"]}]
+        for bullets in [
+            {
+                entry_placement(section, pr)[1]
+                for pr in group["prs"]
+                if is_attributed(section, pr)
+            }
+        ]
         if len(bullets) > 1
     ]
     if split:
@@ -1457,7 +1506,7 @@ def edit_raw_entries(version):
         f"{DELETED_TRAILER} {pr} [{category}] {line}"
         for pr, (category, line) in sorted(
             revert_licensed_deletions(
-                base_sha, version, reverts["cancelling"]
+                base_sha, version, reverts["credits"], reverts["cancelling"]
             ).items(),
             key=lambda kv: int(kv[0]),
         )
