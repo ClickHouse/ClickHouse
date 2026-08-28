@@ -1797,6 +1797,35 @@ def test_range_functions_with_varying_scalar_on_float32_table():
         node.query("DROP TABLE prometheus_f32_range SYNC")
 
 
+# Regression test: a literal quantile level used to be cast to the TimeSeries table's scalar type before the
+# phi edge cases were applied, so on a Float32 table `quantile_over_time(1.00000003, ...)` rounded phi back
+# to 1.0 and returned the window maximum instead of +Inf as Prometheus specifies for phi > 1.
+def test_quantile_over_time_literal_phi_edge_case_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_phi (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        node.query(
+            "INSERT INTO prometheus_f32_phi (metric_name, tags, time_series) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30)])"
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_phi, 'quantile_over_time(1.00000003, m[30])', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',inf),('1970-01-01 00:02:00.000',inf)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_phi SYNC")
+
+
 # Regression test: a varying scalar argument was carried as an array of the TimeSeries table's scalar (value)
 # type, so on a Float32 table a `time()` grid was rounded to ~128-second granularity before the function used
 # it - 1770582640 became 1770582656 - and the prediction horizon was off by tens of seconds on every step.

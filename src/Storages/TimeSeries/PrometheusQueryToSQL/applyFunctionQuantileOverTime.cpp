@@ -98,7 +98,9 @@ ASTPtr makePhiAST(PhiSource & phi_source, ConverterContext & context)
     switch (phi_source.store_method)
     {
         case StoreMethod::CONST_SCALAR:
-            return timeSeriesScalarToAST(phi_source.const_value, context.scalar_data_type);
+            /// Keep the literal at Float64: casting phi to a Float32 scalar type would round
+            /// e.g. 1.00000003 to 1.0 and hide the phi > 1 edge case below.
+            return make_intrusive<ASTLiteral>(phi_source.const_value);
 
         case StoreMethod::SINGLE_SCALAR:
         {
