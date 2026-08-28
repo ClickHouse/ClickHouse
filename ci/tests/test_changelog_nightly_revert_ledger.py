@@ -62,7 +62,8 @@ LEDGER_REVERT = (
 LEDGER_REVERT_OF_REVERT = (
     f'Changelog-revert: 114912 114911 Revert "Revert "{FIX_TITLE}""'
 )
-LEDGER_DELETED = f"Changelog-deleted-entry: 109946 {FIX}"
+BUG_FIX = "Bug Fix (user-visible misbehavior in an official stable release)"
+LEDGER_DELETED = f"Changelog-deleted-entry: 109946 [{BUG_FIX}] {FIX}"
 
 
 def changelog(entries, raw_bullets=None, released=()):
@@ -114,7 +115,8 @@ def analyze(monkeypatch, text, ledger=()):
 
 
 def not_restored(reverts, text):
-    return sorted(pr for pr in reverts["restore"] if f"/pull/{pr})" not in text)
+    section = cl.extract_in_progress_section(text, ANCHOR) or ""
+    return sorted(pr for pr in reverts["restore"] if f"/pull/{pr})" not in section)
 
 
 def uncredited(reverts, before, after):
@@ -146,7 +148,7 @@ def test_revert_alone_licenses_the_deletion(monkeypatch):
     assert reverts["restore"] == {}
     assert reverts["ledger"] == [LEDGER_REVERT]
     assert uncredited(reverts, before, changelog([])) == []
-    assert cl.entry_line(before, "109946") == FIX
+    assert cl.entry_placement(before, "109946") == (BUG_FIX, FIX)
 
 
 def test_revert_of_revert_arrives_after_the_entry_was_deleted(monkeypatch):
@@ -158,11 +160,12 @@ def test_revert_of_revert_arrives_after_the_entry_was_deleted(monkeypatch):
     reverts = analyze(monkeypatch, before, [LEDGER_REVERT, LEDGER_DELETED])
     # The cancelled revert no longer licenses the deletion of the fix.
     assert reverts["credits"] == {"114911": "114912"}
-    assert reverts["restore"] == {"109946": FIX}
+    assert reverts["restore"] == {"109946": (BUG_FIX, FIX)}
     assert reverts["missing"] == [
         {
             "prs": ["109946"],
             "siblings": [],
+            "category": BUG_FIX,
             "line": FIX,
             "removed_by": ["114911"],
             "reapplied_by": ["114912"],
@@ -305,14 +308,14 @@ def test_restoring_uses_the_newest_recorded_bullet(monkeypatch):
             ],
         ),
         [
-            f"Changelog-deleted-entry: 109946 {reapplied}",
+            f"Changelog-deleted-entry: 109946 [{BUG_FIX}] {reapplied}",
             f'Changelog-revert: 115500 114912 Revert "Revert "Revert "{FIX_TITLE}"""',
             LEDGER_REVERT_OF_REVERT,
             LEDGER_DELETED,
             LEDGER_REVERT,
         ],
     )
-    assert reverts["restore"] == {"109946": reapplied}
+    assert reverts["restore"] == {"109946": (BUG_FIX, reapplied)}
     assert [group["line"] for group in reverts["missing"]] == [reapplied]
     assert reapplied in cl._edit_prompt(VERSION, reverts)
 
@@ -351,21 +354,22 @@ def test_restoring_into_a_merged_bullet_names_the_surviving_siblings(monkeypatch
         "body": "Reverts ClickHouse/ClickHouse#115000",
     }
     # The bullet #109000 is recorded from is the merged one, siblings included.
-    assert cl.entry_line(changelog([MERGED]), "109000") == MERGED
+    assert cl.entry_placement(changelog([MERGED]), "109000") == (BUG_FIX, MERGED)
 
     reverts = analyze(
         monkeypatch,
         changelog([SOLO], [REVERT_OF_MERGED]),
         [
-            f"Changelog-deleted-entry: 109000 {MERGED}",
+            f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {MERGED}",
             f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
         ],
     )
-    assert reverts["restore"] == {"109000": MERGED}
+    assert reverts["restore"] == {"109000": (BUG_FIX, MERGED)}
     assert reverts["missing"] == [
         {
             "prs": ["109000"],
             "siblings": ["109006"],
+            "category": BUG_FIX,
             "line": MERGED,
             "removed_by": ["115000"],
             "reapplied_by": ["115001"],
@@ -383,8 +387,8 @@ def test_a_merged_bullet_is_restored_once_for_all_its_pull_requests(monkeypatch)
         monkeypatch,
         changelog([], [REVERT_OF_MERGED]),
         [
-            f"Changelog-deleted-entry: 109000 {MERGED}",
-            f"Changelog-deleted-entry: 109006 {MERGED}",
+            f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {MERGED}",
+            f"Changelog-deleted-entry: 109006 [{BUG_FIX}] {MERGED}",
             f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
             f'Changelog-revert: 115000 109006 Revert "{MERGED_TITLE}"',
         ],
@@ -393,6 +397,7 @@ def test_a_merged_bullet_is_restored_once_for_all_its_pull_requests(monkeypatch)
         {
             "prs": ["109000", "109006"],
             "siblings": [],
+            "category": BUG_FIX,
             "line": MERGED,
             "removed_by": ["115000"],
             "reapplied_by": ["115001"],
@@ -467,7 +472,7 @@ def test_verify_edit_accepts_only_the_exact_merged_bullet_restoration(
         monkeypatch,
         old_text,
         [
-            f"Changelog-deleted-entry: 109000 {MERGED}",
+            f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {MERGED}",
             f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
         ],
     )
@@ -475,7 +480,8 @@ def test_verify_edit_accepts_only_the_exact_merged_bullet_restoration(
     left_out = run_verify_edit(
         monkeypatch, tmp_path, old_text, changelog([SOLO]), reverts
     )
-    assert left_out is not None and "still missing (['109000'])" in left_out
+    assert left_out is not None and "missing from the in-progress section" in left_out
+    assert "['109000']" in left_out
 
     pasted = run_verify_edit(
         monkeypatch, tmp_path, old_text, changelog([SOLO, MERGED]), reverts
@@ -512,7 +518,7 @@ def test_a_numeric_revert_title_resolves_across_runs(monkeypatch):
     # `#114911` is cancelled, so it licenses nothing any more ...
     assert reverts["credits"] == {"114911": "114913"}
     # ... and the fix it removed has to come back.
-    assert reverts["restore"] == {"109946": FIX}
+    assert reverts["restore"] == {"109946": (BUG_FIX, FIX)}
     assert [group["prs"] for group in reverts["missing"]] == [["109946"]]
     assert not_restored(reverts, changelog([])) == ["109946"]
 
@@ -578,7 +584,7 @@ def test_a_sibling_surviving_only_in_a_released_section_is_not_a_bullet(monkeypa
         },
     )
     ledger = [
-        f"Changelog-deleted-entry: 109000 {MERGED}",
+        f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {MERGED}",
         f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
     ]
     # The sibling is in the in-progress section: there is a bullet to merge into.
@@ -595,3 +601,99 @@ def test_a_sibling_surviving_only_in_a_released_section_is_not_a_bullet(monkeypa
     assert [group["siblings"] for group in below["missing"]] == [[]]
     prompt = cl._edit_prompt(VERSION, below)
     assert "That bullet also carries" not in prompt
+
+
+def test_a_released_copy_does_not_stand_in_for_the_restoration(
+    monkeypatch, tmp_path
+):
+    """The entry was in the in-progress section before it was deleted, so that
+    is where it has to come back. The same pull request appearing in an
+    already-released section further down - published in the last release, or
+    backported - is not the restoration, and must not let the edit pass."""
+    old_text = changelog([], [REVERT_OF_REVERT], released=[FIX])
+    reverts = analyze(monkeypatch, old_text, [LEDGER_REVERT, LEDGER_DELETED])
+    # The link is in the file, but not in the section: still to be restored.
+    assert "/pull/109946)" in old_text
+    assert [group["prs"] for group in reverts["missing"]] == [["109946"]]
+
+    left_out = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([], released=[FIX]), reverts
+    )
+    assert left_out is not None
+    assert "missing from the in-progress section" in left_out
+    assert "['109946']" in left_out
+
+    assert (
+        run_verify_edit(
+            monkeypatch, tmp_path, old_text, changelog([FIX], released=[FIX]), reverts
+        )
+        is None
+    )
+
+
+PROMOTED = (
+    "* Make the parser reject a trailing comma in `GROUP BY`. "
+    "[#110500](https://github.com/ClickHouse/ClickHouse/pull/110500) "
+    "([Someone](https://github.com/someone))."
+)
+
+
+def improvement_changelog(entries, raw_bullets=None):
+    """The helper's in-progress section with an `Improvement` header instead of
+    the `Bug Fix` one, to place a restored entry under a second category."""
+    return changelog(entries, raw_bullets).replace(
+        "#### Bug Fix (user-visible misbehavior in an official stable release)",
+        "#### Improvement",
+        1,
+    )
+
+
+def test_a_promoted_entry_is_restored_under_the_category_it_was_moved_to(
+    monkeypatch, tmp_path
+):
+    """`#110500` came out of `NOT FOR CHANGELOG` (skill section 3) into
+    `Improvement`, so its pull request does not say where it belongs. The
+    ledger records the category the edit chose, and the restoration has to use
+    it - re-deriving it from the pull request would undo that decision."""
+    PULL_REQUESTS["115700"] = {
+        "title": 'Revert "Make the parser reject a trailing comma in `GROUP BY`"',
+        "body": "Reverts ClickHouse/ClickHouse#110500",
+    }
+    PULL_REQUESTS["115701"] = {
+        "title": (
+            'Revert "Revert "Make the parser reject a trailing comma in '
+            '`GROUP BY`""'
+        ),
+        "body": "Reverts ClickHouse/ClickHouse#115700",
+    }
+    raw = [
+        "* NO CL ENTRY: 'Revert \"Revert \"Make the parser reject a trailing "
+        "comma in `GROUP BY`\"\"'. "
+        "[#115701](https://github.com/ClickHouse/ClickHouse/pull/115701) "
+        "([Someone](https://github.com/someone))."
+    ]
+    ledger = [
+        f"Changelog-deleted-entry: 110500 [Improvement] {PROMOTED}",
+        'Changelog-revert: 115700 110500 Revert "Make the parser reject a '
+        'trailing comma in `GROUP BY`"',
+    ]
+    old_text = improvement_changelog([], raw)
+    reverts = analyze(monkeypatch, old_text, ledger)
+    assert reverts["restore"] == {"110500": ("Improvement", PROMOTED)}
+    assert [group["category"] for group in reverts["missing"]] == ["Improvement"]
+    assert "which sat under `#### Improvement`" in cl._edit_prompt(VERSION, reverts)
+
+    # Back under `Improvement`: accepted.
+    assert (
+        run_verify_edit(
+            monkeypatch, tmp_path, old_text, improvement_changelog([PROMOTED]), reverts
+        )
+        is None
+    )
+    # Back under the category of its own pull request instead: rejected.
+    wrong = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([PROMOTED]), reverts
+    )
+    assert wrong is not None
+    assert "wrong category" in wrong
+    assert "#110500 under Bug Fix" in wrong

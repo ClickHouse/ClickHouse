@@ -347,11 +347,18 @@ def _older_than(prs, pr):
 # `Changelog-generated-up-to:`, the branch carries its own state and the pull
 # request diff stays clean:
 #   `Changelog-revert: <revert> <reverted> <title of the revert>`
-#   `Changelog-deleted-entry: <pull request> <its bullet as it was deleted>`
+#   `Changelog-deleted-entry: <pull request> [<category>] <bullet as deleted>`
+# The category is the `#### <Category>` the bullet sat under, which is not
+# derivable from the pull request: the editing rules promote entries out of
+# `NOT FOR CHANGELOG` (skill section 3) and move them between real categories
+# (section 6), so the category an entry ends up in is a decision of the edit,
+# and a restoration has to reproduce it rather than start over.
 REVERT_TRAILER = "Changelog-revert:"
 DELETED_TRAILER = "Changelog-deleted-entry:"
 REVERT_TRAILER_RE = re.compile(rf"^{REVERT_TRAILER}\s+(\d+)\s+(\d+)\s*(.*)$")
-DELETED_TRAILER_RE = re.compile(rf"^{DELETED_TRAILER}\s+(\d+)\s+(.*)$")
+DELETED_TRAILER_RE = re.compile(
+    rf"^{DELETED_TRAILER}\s+(\d+)\s+(?:\[([^\]]*)\]\s+)?(.*)$"
+)
 
 
 # `Revert #NNNNN` / `Reverts #NNNNN` / `Revert of PR #NNNNN`: the title names
@@ -460,7 +467,8 @@ def read_revert_ledger():
     Returns (targets, titles, deleted): `targets` maps a revert to what it
     reverts, `titles` gives those reverts' titles (for nested-title matching
     of a later revert of a revert), `deleted` maps a pull request whose entry
-    a revert licensed us to delete to the bullet it had at that moment.
+    a revert licensed us to delete to the (category, bullet) it had at that
+    moment.
 
     All three are empty on a branch whose edit commits predate the trailers,
     which degrades to the previous behaviour: chains are then only seen inside
@@ -482,25 +490,27 @@ def read_revert_ledger():
             # can be deleted, restored and deleted again, gaining a re-apply
             # link each time it comes back: the newest record holds the text
             # to restore, the older ones are superseded.
-            deleted.setdefault(m.group(1), m.group(2))
+            deleted.setdefault(m.group(1), (m.group(2) or "", m.group(3)))
     return targets, titles, deleted
 
 
-def entry_line(text, pr):
-    """The bullet of `text` that carries the changelog entry of `pr`,
-    preferring the bullet `pr` is attributed to over one that only mentions it
-    inline."""
+def entry_placement(text, pr):
+    """Where the changelog entry of `pr` sits in `text`: the (category, bullet)
+    of the bullet `pr` is attributed to, falling back to one that only mentions
+    it inline. ("", "") when there is none."""
     link = rf"\[#{pr}\]\(https://github\.com/[^/)]+/[^/)]+/pull/{pr}\)"
     attributed = re.compile(link + r" \(\[")
     mentioned = re.compile(link)
-    fallback = ""
+    category = ""
+    fallback = ("", "")
     for line in text.splitlines():
-        if not line.startswith("* "):
-            continue
-        if attributed.search(line):
-            return line
-        if not fallback and mentioned.search(line):
-            fallback = line
+        if line.startswith("#### "):
+            category = line[5:].strip()
+        elif line.startswith("* "):
+            if attributed.search(line):
+                return category, line
+            if not fallback[1] and mentioned.search(line):
+                fallback = (category, line)
     return fallback
 
 
@@ -519,10 +529,10 @@ def group_restorations(restore, section):
     (published in the last release, or backported), and a sibling that
     survives only there is no bullet to merge into."""
     groups = {}
-    for pr, line in restore.items():
-        groups.setdefault(line, []).append(pr)
+    for pr, (category, line) in restore.items():
+        groups.setdefault((category, line), []).append(pr)
     out = []
-    for line, prs in groups.items():
+    for (category, line), prs in groups.items():
         siblings = set(PR_ATTRIBUTION_RE.findall(line)) - set(prs)
         out.append(
             {
@@ -530,6 +540,7 @@ def group_restorations(restore, section):
                 "siblings": sorted(
                     (p for p in siblings if f"/pull/{p})" in section), key=int
                 ),
+                "category": category,
                 "line": line,
             }
         )
@@ -556,9 +567,10 @@ def analyze_reverts(text, anchor):
 
     `credits`    - pull request -> the uncancelled revert that licenses the
                    deletion of its entry;
-    `restore`    - pull request -> the bullet an earlier run deleted whose
-                   revert has since been reverted, so the change ships after
-                   all and the entry has to be in the file;
+    `restore`    - pull request -> the (category, bullet) an earlier run
+                   deleted whose revert has since been reverted, so the change
+                   ships after all and the entry has to be in the in-progress
+                   section;
     `missing`    - the work the editing agent has to do: the part of `restore`
                    that is not in `text` yet, grouped by the bullet it was
                    recorded from (one merged bullet covers several pull
@@ -584,7 +596,10 @@ def analyze_reverts(text, anchor):
     # Neither the current CHANGELOG.md (the entry is gone from it) nor the
     # current raw blocks (they hold only the newest revert) could tell the
     # agent that, which is why the ledger keeps the text.
-    restore = {pr: line for pr, line in deleted.items() if pr not in credits}
+    section = extract_in_progress_section(text, anchor) or ""
+    restore = {
+        pr: record for pr, record in deleted.items() if pr not in credits
+    }
 
     def removed_by(prs):
         return sorted({r for pr in prs for r in reverted_by.get(pr, ())}, key=int)
@@ -600,18 +615,21 @@ def analyze_reverts(text, anchor):
             key=int,
         )
 
-    # Whether an entry is missing is asked of the whole file, like everywhere
-    # else here: a pull request whose link sits in an already-released section
-    # was published there and has no business in this release. Whether the
-    # bullet to merge into still exists is asked of the in-progress section
-    # only.
+    # Everything about a restoration is asked of the in-progress section, not
+    # of the whole file. A recorded entry was in that section before it was
+    # deleted, so that is where it has to come back; the same pull request
+    # appearing in an already-released section further down (published in the
+    # last release, or backported) is neither the entry nor a bullet to merge
+    # into. This is not the question `disappeared_entries` asks of a raw entry
+    # that never made it in, where a released copy is a legitimate reason for
+    # it not to be in this section at all.
     missing = group_restorations(
         {
-            pr: line
-            for pr, line in restore.items()
-            if f"/pull/{pr})" not in text
+            pr: record
+            for pr, record in restore.items()
+            if f"/pull/{pr})" not in section
         },
-        extract_in_progress_section(text, anchor) or "",
+        section,
     )
     for group in missing:
         group["removed_by"] = removed_by(group["prs"])
@@ -860,7 +878,8 @@ def _edit_prompt(version, reverts, previous_error=None):
             f"{_pr_list(group['removed_by'])} reverted "
             f"{'them' if len(group['prs']) > 1 else 'it'}, re-applied by "
             f"{_pr_list(group['reapplied_by'])}. The bullet when it was "
-            f"deleted:\n     {group['line']}"
+            f"deleted, which sat under `#### {group['category']}`:"
+            f"\n     {group['line']}"
             + (
                 f"\n     That bullet also carries {_pr_list(group['siblings'])}, "
                 f"which {'are' if len(group['siblings']) > 1 else 'is'} still in "
@@ -874,7 +893,7 @@ def _edit_prompt(version, reverts, previous_error=None):
             for group in reverts["missing"]
         )
         restore = f"""
-Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section — once, even where it covers several pull requests — with the link of the pull request that re-applied it appended, and do not add a bullet for the reverts themselves. The bullet does not say which category it came from: use the `Changelog category` of its own pull request (`gh pr view <N> --json body`). No pull request may end up attributed twice in the section.
+Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section — once, even where it covers several pull requests — under the `#### <Category>` header named with it, with the link of the pull request that re-applied it appended, and do not add a bullet for the reverts themselves. Use that category as given: it is where the entry was when it was deleted, which is a decision of the earlier edit (an entry promoted out of `NOT FOR CHANGELOG` or moved between categories does not go back to the category of its pull request). No pull request may end up attributed twice in the section.
 {entries}
 """
     retry = ""
@@ -927,16 +946,17 @@ def disappeared_entries(old_text, text, anchor):
 
 
 def revert_licensed_deletions(base_sha, version):
-    """The entries the verified edit deleted, each with the bullet it had
-    before, for the ledger: when the revert that licensed the deletion is
-    itself reverted — possibly weeks later, when nothing in the file or in
-    the raw blocks remembers the entry — it has to be restorable."""
+    """The entries the verified edit deleted, each with the category and the
+    bullet it had before, for the ledger: when the revert that licensed the
+    deletion is itself reverted — possibly weeks later, when nothing in the
+    file or in the raw blocks remembers the entry — it has to be restorable
+    exactly, in the category the edit had put it in."""
     old_text = Shell.get_output(f"git show {base_sha}:{CHANGELOG_FILE}", strict=True)
     deletions = {}
     for pr in disappeared_entries(old_text, _read_changelog(), _anchor_id(version)):
-        line = entry_line(old_text, pr)
+        category, line = entry_placement(old_text, pr)
         if line:
-            deletions[pr] = line
+            deletions[pr] = (category, line)
     return deletions
 
 
@@ -993,13 +1013,37 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     # reverted itself has to be back in the file. Nothing here disappeared —
     # the entry went away days ago — so only the ledger can tell.
     not_restored = sorted(
-        pr for pr in reverts["restore"] if f"/pull/{pr})" not in text
+        pr for pr in reverts["restore"] if f"/pull/{pr})" not in section
     )
     if not_restored:
         return (
             f"Entries deleted by an earlier run for a revert that was itself "
-            f"reverted are still missing ({not_restored}); those changes ship "
-            f"in this release, so their entries have to be restored"
+            f"reverted are still missing from the in-progress section "
+            f"({not_restored}); those changes ship in this release, so their "
+            f"entries have to be restored"
+        )
+    # A restoration also has to land where the entry was, which the pull
+    # request itself does not say: the editing rules promote entries out of
+    # `NOT FOR CHANGELOG` and move them between categories, and re-deriving
+    # the category from the pull request would undo that decision. Only this
+    # run's restorations are checked - a later edit may legitimately move the
+    # entry again, and the ledger keeps the record for the rest of the cycle.
+    misplaced = []
+    for group in reverts["missing"]:
+        if not group["category"]:
+            continue
+        for pr in group["prs"]:
+            found = entry_placement(section, pr)[0]
+            if found != group["category"]:
+                misplaced.append(
+                    f"#{pr} under {found or 'no category'} "
+                    f"instead of {group['category']}"
+                )
+    if misplaced:
+        return (
+            f"Restored entries were put under the wrong category "
+            f"({sorted(misplaced)}); a restoration keeps the category the "
+            f"entry had when it was deleted"
         )
     # A restored bullet may have been a merged one (skill section 7), carrying
     # pull requests that were never deleted and are still in the section.
@@ -1101,8 +1145,8 @@ def edit_raw_entries(version):
     # revert of one of today's reverts, whenever it arrives, still finds the
     # relation and the text of the entry it has to bring back.
     trailers = reverts["ledger"] + [
-        f"{DELETED_TRAILER} {pr} {line}"
-        for pr, line in sorted(
+        f"{DELETED_TRAILER} {pr} [{category}] {line}"
+        for pr, (category, line) in sorted(
             revert_licensed_deletions(base_sha, version).items(),
             key=lambda kv: int(kv[0]),
         )

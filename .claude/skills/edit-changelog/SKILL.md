@@ -134,10 +134,15 @@ section. For each:
    on the second, and the third brings only the revert of the revert. The
    original entry is then not in the file to be kept — it has to be re-added
    from the text it had when it was deleted, which the caller supplies (the
-   `NightlyChangelog` job lists such entries with their previous text under
-   "Entries to restore"). If nothing supplies it, reconstruct the entry from
-   the original PR with `gh pr view <N> --json title,body`; do not leave the
-   release without it.
+   `NightlyChangelog` job lists such entries with their previous text and
+   category under "Entries to restore"). If nothing supplies it, reconstruct
+   the entry from the original PR with `gh pr view <N> --json title,body`; do
+   not leave the release without it.
+
+   Restore it under the category it was in, which is not necessarily the one
+   its PR declares: the entry may have been promoted out of `NOT FOR
+   CHANGELOG` (§3) or moved (§6) by the edit that first added it, and
+   re-deriving the category from the PR would undo that.
 
    If the deleted entry shared a bullet with other PRs (§7) and those are
    still in the in-progress section, that bullet is still there too: append
