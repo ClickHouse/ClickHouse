@@ -466,7 +466,6 @@ bool IcebergMetadata::optimize(
 #else
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
         compactIcebergTable(
             snapshots_info,
@@ -474,7 +473,6 @@ bool IcebergMetadata::optimize(
             object_storage,
             data_lake_settings,
             format_settings,
-            sample_block,
             context,
             write_format);
         return true;

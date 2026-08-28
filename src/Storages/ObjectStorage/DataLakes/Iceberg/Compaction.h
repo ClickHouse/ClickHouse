@@ -25,13 +25,13 @@ bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update
 /// field id, so a rename survives, while a dropped id, an added id or a changed type does not.
 void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr & initial_metadata_object);
 
+/// Takes the table schema from the metadata file it reads, so it needs no header from the caller.
 void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
     DB::ObjectStoragePtr object_storage_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<DB::FormatSettings> & format_settings_,
-    DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
     const String & write_format);
 

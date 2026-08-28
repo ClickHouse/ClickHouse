@@ -500,6 +500,22 @@ static Plan getPlan(
     return plan;
 }
 
+/// Compaction reads the metadata file itself, so its `current-schema-id` -- not the schema of the
+/// caller's storage snapshot -- is the schema the rewritten files are written under.
+static SharedHeader buildCurrentSchemaHeader(
+    const Poco::JSON::Object::Ptr & metadata_object, const IcebergSchemaProcessorPtr & schema_processor)
+{
+    auto current_schema_id = static_cast<Int32>(metadata_object->getValue<Int64>(Iceberg::f_current_schema_id));
+    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    for (UInt32 i = 0; i < schemas->size(); ++i)
+        schema_processor->addIcebergTableSchema(schemas->getObject(i));
+
+    Block header;
+    for (const auto & name_and_type : *schema_processor->getClickHouseTableSchemaById(current_schema_id))
+        header.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
+    return std::make_shared<const Block>(std::move(header));
+}
+
 static void writeDataFiles(
     Plan & initial_plan,
     SharedHeader sample_block,
@@ -1883,7 +1899,6 @@ void compactIcebergTable(
     ObjectStoragePtr object_storage_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
-    SharedHeader sample_block_,
     ContextPtr context_,
     const String & write_format)
 {
@@ -1899,6 +1914,12 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        /// `OPTIMIZE` does not refresh external metadata, so the caller's storage snapshot can be on
+        /// an older schema than the metadata read above, and its column names would then resolve to
+        /// the wrong field ids of the schema the rewritten files are written under.
+        auto current_schema_block = buildCurrentSchemaHeader(
+            plan.initial_metadata_object, persistent_table_components.schema_processor);
+
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         /// Nothing references the rewritten files until the metadata commit publishes them, so on
         /// any failure they must be removed rather than left to accumulate a full copy of the table
@@ -1920,7 +1941,7 @@ void compactIcebergTable(
         {
             writeDataFiles(
                 plan,
-                sample_block_,
+                current_schema_block,
                 object_storage_,
                 persistent_table_components.path_resolver,
                 persistent_table_components.schema_processor,
@@ -1933,7 +1954,7 @@ void compactIcebergTable(
                 persistent_table_components.path_resolver,
                 object_storage_,
                 context_,
-                sample_block_,
+                current_schema_block,
                 write_format,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
         }
