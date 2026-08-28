@@ -20,7 +20,6 @@ BUGFIX_VALIDATE_CHECK=0
 PREVIOUS_RELEASE_CONFIG=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
-WASM_ENGINE=""
 REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 
@@ -45,7 +44,6 @@ while [[ "$#" -gt 0 ]]; do
         --previous-release) PREVIOUS_RELEASE_CONFIG=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
-        --wasm-engine) WASM_ENGINE=$2 && shift ;;
         --remote-database-disk) REMOTE_DATABASE_DISK=1 ;;
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
@@ -566,23 +564,6 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
 fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
-
-if [ "$WASM_ENGINE" == "wasmedge" ]; then
-    # WasmEdge is compiled out on some platforms (e.g. musl builds, see
-    # contrib/wasmedge-cmake). Configuring it anyway would fail every WASM UDF
-    # with SUPPORT_IS_DISABLED, so keep the default engine instead: the tests
-    # still run, just under wasmtime.
-    if [ "$(clickhouse local --query "SELECT value FROM system.build_options WHERE name = 'USE_WASMEDGE'")" != "1" ]; then
-        echo "WasmEdge engine requested, but the binary is built without WasmEdge support; keeping wasmtime"
-        WASM_ENGINE=""
-    fi
-fi
-
-if [ ! -z "$WASM_ENGINE" ]; then
-    # ensure that default entry exists and we correctly replace it
-    grep -q -F ">wasmtime<" $DEST_SERVER_PATH/config.d/wasm_udf.xml || exit 1
-    sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
-fi
 
 if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; then
     function remove_keeper_config()
