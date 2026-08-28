@@ -406,15 +406,16 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(command);
             }
             else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
-                          has_column = part_columns.has(command.column_name),
-                          has_nested_column = share_nested && part_columns.hasNested(command.column_name);
+                          name_in_part = nameInPart(command.column_name),
+                          has_column = part_columns.has(name_in_part),
+                     has_nested_column = share_nested && part_columns.hasNested(name_in_part);
                      has_column || has_nested_column)
             {
                 if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
                     if (has_nested_column)
                     {
-                        const auto & nested = part_columns.getNested(command.column_name);
+                        const auto & nested = part_columns.getNested(name_in_part);
                         chassert(!nested.empty());
                         for (const auto & nested_column : nested)
                             mutated_columns.emplace(nested_column.name);
@@ -428,10 +429,12 @@ static void splitAndModifyMutationCommands(
                         if (command.clear)
                         {
                             for_interpreter.push_back(command);
-                            for_file_renames.push_back(command); /// For packed parts
+                            auto command_in_part = command;
+                            command_in_part.column_name = name_in_part;
+                            for_file_renames.push_back(std::move(command_in_part)); /// For packed parts
                         }
                         else
-                            dropped_columns.emplace(command.column_name);
+                            dropped_columns.emplace(name_in_part);
                     }
                 }
             }
@@ -446,7 +449,9 @@ static void splitAndModifyMutationCommands(
                         for_interpreter.push_back(command);
                         mutated_columns.emplace(command.column_name);
                     }
-                    for_file_renames.push_back(command);
+                    auto command_in_part = command;
+                    command_in_part.column_name = marker_name;
+                    for_file_renames.push_back(std::move(command_in_part));
                 }
             }
         }

@@ -125,6 +125,37 @@ SELECT key, b FROM t_skip_empty_physical_rename_drop ORDER BY key;
 
 DROP TABLE t_skip_empty_physical_rename_drop;
 
+DROP TABLE IF EXISTS t_skip_empty_physical_rename_drop_compact;
+
+CREATE TABLE t_skip_empty_physical_rename_drop_compact
+(
+    key UInt64,
+    a UInt64,
+    force UInt8
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_rows_for_wide_part = 1000000,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_physical_rename_drop_compact VALUES (1, 123, 0);
+SYSTEM STOP MERGES t_skip_empty_physical_rename_drop_compact;
+ALTER TABLE t_skip_empty_physical_rename_drop_compact RENAME COLUMN a TO b, DROP COLUMN b, ADD COLUMN b UInt64 DEFAULT 999;
+
+SELECT 'physical_rename_drop_compact_pending';
+SELECT key, b FROM t_skip_empty_physical_rename_drop_compact ORDER BY key;
+
+SYSTEM START MERGES t_skip_empty_physical_rename_drop_compact;
+SET mutations_sync = 2;
+ALTER TABLE t_skip_empty_physical_rename_drop_compact UPDATE force = force WHERE 1;
+
+SELECT 'physical_rename_drop_compact_materialized';
+SELECT key, b FROM t_skip_empty_physical_rename_drop_compact ORDER BY key;
+
+DROP TABLE t_skip_empty_physical_rename_drop_compact;
+
 -- With independent dotted columns, DROP n must not invalidate the marker for n.a.
 DROP TABLE IF EXISTS t_skip_empty_unshared_dotted;
 

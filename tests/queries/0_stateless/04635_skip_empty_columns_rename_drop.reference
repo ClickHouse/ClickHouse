@@ -10,6 +10,10 @@ physical_rename_drop_pending
 1	999
 physical_rename_drop_materialized
 1	999
+physical_rename_drop_compact_pending
+1	999
+physical_rename_drop_compact_materialized
+1	999
 unshared_dotted_pending
 1	0
 unshared_dotted_materialized
