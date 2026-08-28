@@ -44,7 +44,6 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -66,6 +65,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -205,25 +205,6 @@ namespace fs = std::filesystem;
 namespace
 {
 
-void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
-{
-    if (auto * function = ast->as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
-        function->name = "toTimeWithFixedDate";
-
-    for (auto & child : ast->children)
-        replaceLegacyToTimeInCreateQuery(child);
-
-    /// A TTL element keeps these outside `children`, so they need the same walk `FunctionNameNormalizer`
-    /// gives them: a GROUP BY key rewritten inconsistently with the primary key stops being its prefix.
-    if (auto * ttl_element = ast->as<ASTTTLElement>())
-    {
-        for (auto & group_by_key : ttl_element->group_by_key)
-            replaceLegacyToTimeInCreateQuery(group_by_key);
-        for (auto & group_by_assignment : ttl_element->group_by_assignments)
-            replaceLegacyToTimeInCreateQuery(group_by_assignment);
-    }
-}
-
 /// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
 /// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
 /// engine with a function body. Key expressions live in several places (storage, a view's inner
@@ -257,7 +238,7 @@ void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & conte
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         substituteUserDefinedFunctionsOutsideEngines(query, context);
-    replaceLegacyToTimeInCreateQuery(query);
+    replaceLegacyToTime(*query);
 }
 
 }
@@ -1975,7 +1956,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
         && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
     {
-        replaceLegacyToTimeInCreateQuery(query_ptr);
+        replaceLegacyToTime(*query_ptr);
 
         /// `properties` was derived before the rewrite, and the live table below is built from it while
         /// the metadata written to disk comes from the rewritten query. `CREATE TABLE ... AS src` copies
