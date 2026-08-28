@@ -67,10 +67,10 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
         auto info = new_elements[i]->createSerializationInfo(elem_settings);
 
         std::optional<size_t> old_position;
-        if (old_elements.size() == new_elements.size())
-            old_position = i;
-        else
+        if (old_tuple.hasExplicitNames() && new_tuple.hasExplicitNames())
             old_position = old_tuple.tryGetPositionByName(new_names[i]);
+        else if (i < old_elements.size())
+            old_position = i;
 
         if (old_position && elems[*old_position]->structureEquals(*info))
             info = elems[*old_position]->createWithType(*old_elements[*old_position], *new_elements[i], elem_settings);
