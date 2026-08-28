@@ -192,9 +192,9 @@ ORDER BY n; -- { serverError UNSUPPORTED_METHOD }
 
 -- I. Controls for `H`, so the rejection cannot grow beyond the shape it is meant to catch. Without
 --    `MATERIALIZED` the same mutual reference is an ordinary CTE and still works -- including from an
---    enclosing `WITH` -- and a materialized CTE that reads a recursive CTE from outside its recursive
---    members is untouched: there it reads the finished fixed point rather than the step-local
---    working table.
+--    enclosing `WITH` -- a materialized CTE that reads a recursive CTE from outside its recursive
+--    members is untouched, because there it reads the finished fixed point rather than the
+--    step-local working table, and the rejection itself is conditional on the setting.
 WITH RECURSIVE helper AS (SELECT n + 1 AS n FROM walk),
 walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n FROM helper WHERE n < 3)
 SELECT * FROM walk ORDER BY n;
@@ -210,6 +210,12 @@ ORDER BY n;
 WITH RECURSIVE walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n + 1 FROM walk WHERE n < 3),
 helper AS MATERIALIZED (SELECT sum(n) AS s FROM walk)
 SELECT s FROM helper;
+
+-- I4. Unlike the two syntactic rejections in `J` below, `H` depends on `enable_materialized_cte`:
+--     with the setting off `MATERIALIZED` is ignored, the CTE is an ordinary one, and the query runs.
+WITH RECURSIVE helper AS MATERIALIZED (SELECT n + 1 AS n FROM walk),
+walk AS (SELECT toUInt64(0) AS n UNION ALL SELECT n FROM helper WHERE n < 3)
+SELECT * FROM walk ORDER BY n SETTINGS enable_materialized_cte = 0;
 
 -- J. Negative: a helper whose body is a top-level set operation is out of scope for this
 --    implementation. At query tree build time it is indistinguishable from the recursive CTE
