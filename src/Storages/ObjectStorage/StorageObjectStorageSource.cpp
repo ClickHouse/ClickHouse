@@ -220,6 +220,70 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
         && object_info.data_lake_metadata->excluded_rows->size() > 0;
 }
 
+static bool readsIdentityPartitionColumn(
+    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    if (identity_partition_columns.empty())
+        return false;
+
+    for (const auto & required : dag.getRequiredColumns())
+        for (const auto & [name, _] : identity_partition_columns)
+            if (name == required.name)
+                return true;
+    return false;
+}
+
+static ActionsDAG substituteIdentityPartitionColumns(
+    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    std::unordered_map<std::string_view, const Field *> values_by_name;
+    for (const auto & [name, value] : identity_partition_columns)
+        values_by_name.emplace(name, &value);
+
+    ActionsDAG substitution;
+    for (const auto & required : dag.getRequiredColumns())
+    {
+        auto it = values_by_name.find(required.name);
+        if (it == values_by_name.end())
+            continue;
+
+        const auto & constant
+            = substitution.addColumn(required.type->createColumnConst(0, *it->second), required.type, required.name);
+        substitution.getOutputs().push_back(&substitution.materializeNode(constant));
+    }
+
+    return ActionsDAG::merge(std::move(substitution), dag.clone());
+}
+
+static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
+    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    std::unordered_map<std::string_view, const Field *> values_by_name;
+    for (const auto & [name, value] : identity_partition_columns)
+        if (header.has(name))
+            values_by_name.emplace(name, &value);
+
+    if (values_by_name.empty())
+        return {};
+
+    ActionsDAG dag;
+    auto & outputs = dag.getOutputs();
+    for (const auto & column : header)
+    {
+        const auto & input = dag.addInput(column.name, column.type);
+        auto it = values_by_name.find(column.name);
+        if (it == values_by_name.end())
+        {
+            outputs.push_back(&input);
+            continue;
+        }
+
+        const auto & constant = dag.addColumn(column.type->createColumnConst(1, *it->second), column.type, column.name);
+        outputs.push_back(&dag.materializeNode(constant));
+    }
+    return dag;
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     const StorageID & storage_id_,
     String name_,
@@ -270,13 +334,9 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    auto path = object_info.getPath();
-    if (path.starts_with("/"))
-        path = path.substr(1);
-
-    std::string result = include_connection_info
-        ? fs::path(configuration.getDataSourceDescription()) / path
-        : fs::path(configuration.getNamespace()) / path;
+    std::string result = joinPathUnderPrefix(
+        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
+        object_info.getPath());
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -407,7 +467,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             {
                 for (const auto & path : paths.value())
                 {
-                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                    /// `path` is a `_path` column value, so it needs that column's formatter
+                    /// inverted rather than a plain relative().
+                    const auto relative_path = relativizePathUnderPrefix(configuration->getNamespace(), path);
                     const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
                     if (RE2::FullMatch(path_for_matching, matcher))
                         validated_paths.push_back(relative_path);
@@ -486,7 +548,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(fs::path(configuration->getNamespace()) / key);
+                paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), key));
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -1069,6 +1131,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
             schema_changed = true;
         }
+        std::vector<std::pair<String, Field>> identity_partition_columns;
+#if USE_AVRO
+        if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+            identity_partition_columns = iceberg_info->info.identity_partition_columns;
+#endif
+
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
         /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
@@ -1094,6 +1162,37 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     stripped_row_level_filter = format_filter_info->row_level_filter;
                 if (format_filter_info->prewhere_info)
                     stripped_prewhere_info = format_filter_info->prewhere_info;
+            }
+
+            auto row_level_filter = format_filter_info->row_level_filter;
+            auto prewhere_info = format_filter_info->prewhere_info;
+            bool filters_substituted = false;
+            /// A filter evaluated inside the reader must see the identity-partitioned columns of this
+            /// data file as the manifest defines them, because the file itself need not store them.
+            if (format_supports_prewhere && !identity_partition_columns.empty()
+                && (!schema_changed || configuration->getSchemaTransformer(context_, object_info) == nullptr))
+            {
+                if (row_level_filter && readsIdentityPartitionColumn(row_level_filter->actions, identity_partition_columns))
+                {
+                    auto substituted = std::make_shared<FilterDAGInfo>();
+                    substituted->actions
+                        = substituteIdentityPartitionColumns(row_level_filter->actions, identity_partition_columns);
+                    substituted->column_name = row_level_filter->column_name;
+                    substituted->do_remove_column = row_level_filter->do_remove_column;
+                    row_level_filter = std::move(substituted);
+                    filters_substituted = true;
+                }
+                if (prewhere_info && readsIdentityPartitionColumn(prewhere_info->prewhere_actions, identity_partition_columns))
+                {
+                    auto substituted = std::make_shared<PrewhereInfo>();
+                    substituted->prewhere_actions
+                        = substituteIdentityPartitionColumns(prewhere_info->prewhere_actions, identity_partition_columns);
+                    substituted->prewhere_column_name = prewhere_info->prewhere_column_name;
+                    substituted->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+                    substituted->need_filter = prewhere_info->need_filter;
+                    prewhere_info = std::move(substituted);
+                    filters_substituted = true;
+                }
             }
 
             if (schema_changed)
@@ -1124,8 +1223,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     auto result = std::make_shared<FormatFilterInfo>(
                         format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
-                        keep_in_reader ? format_filter_info->row_level_filter : nullptr,
-                        keep_in_reader ? format_filter_info->prewhere_info : nullptr);
+                        keep_in_reader ? row_level_filter : nullptr,
+                        keep_in_reader ? prewhere_info : nullptr);
                     /// `mapper` is scoped to the schema this specific file was written under, so it
                     /// maps field_id -> the column name *that file* used. Keep the current/query-side
                     /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
@@ -1142,6 +1241,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
+
+            if (filters_substituted)
+                return std::make_shared<FormatFilterInfo>(
+                    format_filter_info->filter_actions_dag,
+                    format_filter_info->context.lock(),
+                    format_filter_info->column_mapper,
+                    row_level_filter, prewhere_info);
 
             return format_filter_info;
         }();
@@ -1251,6 +1357,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
+
+        if (!identity_partition_columns.empty())
+        {
+            if (auto dag = buildIdentityPartitionColumnsDag(builder.getHeader(), identity_partition_columns))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, actions);
+                });
+            }
+        }
 
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
@@ -1391,6 +1509,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    pipeline->disableProfileEventUpdate();
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
