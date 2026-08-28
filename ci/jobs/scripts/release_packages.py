@@ -10,6 +10,8 @@ stops the producer and the checker from drifting apart — a drift would only
 surface at the next scheduled `AutoReleases` run, never in regular PR CI.
 """
 
+import subprocess
+
 # The six packages built for every release, per arch.
 PACKAGES = (
     "clickhouse-client",
@@ -25,6 +27,10 @@ PACKAGE_ARCHS = ("amd", "arm")
 # The macOS binary is stored under the darwin build-job dir as this fixed,
 # version-less object name.
 MACOS_S3_OBJECT = "clickhouse"
+
+MACOS_SIGNED_S3_OBJECT = "clickhouse-macos.zip"
+
+SIGN_MACOS_JOB_SCRIPT = "ci/jobs/sign_macos_binary.py"
 
 
 def s3_release_prefix(release: str) -> str:
@@ -67,6 +73,11 @@ def iter_package_objects(version: str):
             yield "tgz", f"{tgz}.sha512", job
 
 
+def sign_macos_job_name(package_arch: str) -> str:
+    """CI job dir that holds the signed macOS zip for this arch."""
+    return f"sign_macos_binary_{package_arch}_darwin"
+
+
 def iter_macos_objects():
     """Yield `(package_arch, job_name)` for each per-arch macOS build. The S3
     object basename is always `MACOS_S3_OBJECT`."""
@@ -74,7 +85,43 @@ def iter_macos_objects():
         yield package_arch, darwin_job_name(package_arch)
 
 
-def expected_s3_objects(version: str):
+def iter_macos_signed_objects():
+    """Yield `(package_arch, job_name)` for each per-arch signed macOS zip. The
+    S3 object basename is always `MACOS_SIGNED_S3_OBJECT`."""
+    for package_arch in PACKAGE_ARCHS:
+        yield package_arch, sign_macos_job_name(package_arch)
+
+
+def commit_has_macos_signing(commit_sha: str) -> bool:
+    """Whether this commit's tree carries the macOS signing job, i.e. whether its
+    `ReleaseBranchCI` produces the signed zips.
+
+    `ReleaseBranchCI` is a `push` workflow, so a release branch runs its **own**
+    workflow definition, while `AutoReleases` and `CreateRelease` run from
+    `master`. A release branch cut before signing existed therefore never uploads
+    the zips, and requiring them unconditionally would reject every commit on it.
+    Read the requirement off the release commit itself instead.
+
+    Raises when `commit_sha` is not present locally rather than assuming the
+    absence of signing - guessing would silently publish a release without its
+    signed assets."""
+    resolved = subprocess.run(
+        ["git", "cat-file", "-e", f"{commit_sha}^{{commit}}"],
+        capture_output=True,
+    )
+    if resolved.returncode != 0:
+        raise RuntimeError(
+            f"Commit [{commit_sha}] is not present in the local repository, cannot"
+            f" tell whether it produces signed macOS artifacts"
+        )
+    present = subprocess.run(
+        ["git", "cat-file", "-e", f"{commit_sha}:{SIGN_MACOS_JOB_SCRIPT}"],
+        capture_output=True,
+    )
+    return present.returncode == 0
+
+
+def expected_s3_objects(version: str, with_signed_macos: bool):
     """`{job_name: set(object_basenames)}` — every object `CreateRelease`
     downloads from `<s3_release_prefix>/<commit_sha>/<job_name>/` for this
     version."""
@@ -83,11 +130,14 @@ def expected_s3_objects(version: str):
         by_job.setdefault(job, set()).add(filename)
     for _package_arch, job in iter_macos_objects():
         by_job.setdefault(job, set()).add(MACOS_S3_OBJECT)
+    if with_signed_macos:
+        for _package_arch, job in iter_macos_signed_objects():
+            by_job.setdefault(job, set()).add(MACOS_SIGNED_S3_OBJECT)
     return by_job
 
 
 def release_build_artifacts_ready(
-    s3, release: str, commit_sha: str, version: str
+    s3, release: str, commit_sha: str, version: str, with_signed_macos: bool
 ) -> bool:
     """Whether every object `CreateRelease` will download for this commit is
     already present in S3.
@@ -108,7 +158,7 @@ def release_build_artifacts_ready(
     `tests/ci` `S3Helper`); it is passed in so this module stays dependency-free.
     """
     prefix = s3_release_prefix(release)
-    for job, expected_files in expected_s3_objects(version).items():
+    for job, expected_files in expected_s3_objects(version, with_signed_macos).items():
         job_prefix = f"{prefix}/{commit_sha}/{job}/"
         present = {key.rsplit("/", 1)[-1] for key in s3.list_prefix(job_prefix)}
         missing = expected_files - present

@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(String)`](/ja/reference/data-types/array) または [`Array(FixedString)`](/ja/reference/data-types/array)
 * `needles` — 検索するトークン。[`String`](/ja/reference/data-types/string) または [`Array(String)`](/ja/reference/data-types/array)
-* `tokenizer` — 使用するトークナイザー。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定されていない場合のデフォルト値は `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
+* `tokenizer` — 使用するトークナイザー。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定されていない場合のデフォルト値は `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) or [`FixedString`](/ja/reference/data-types/fixedstring) or [`Nullable(String)`](/ja/reference/data-types/nullable) or [`Nullable(FixedString)`](/ja/reference/data-types/nullable) or [`Array(String)`](/ja/reference/data-types/array) or [`Array(FixedString)`](/ja/reference/data-types/array) or [`Array(Nullable(String))`](/ja/reference/data-types/array) or [`Array(Nullable(FixedString))`](/ja/reference/data-types/array)
 * `needles` — 検索対象のトークン。[`String`](/ja/reference/data-types/string) または [`Array(String)`](/ja/reference/data-types/array)
-* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
+* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Arrayでトークン化せずに検索するneedleを指定する**
+**ArrayでAS-IS (トークン化なし) で検索するneedleを指定する**
 
 ```sql title=Query
 CREATE TABLE doc (
