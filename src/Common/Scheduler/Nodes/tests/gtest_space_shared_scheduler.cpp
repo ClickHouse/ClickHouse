@@ -990,7 +990,50 @@ TEST(SchedulerSpaceShared, SuspendedIncreaseIsHiddenThroughFairHierarchy)
 
 TEST(SchedulerSpaceShared, SuspendedIncreaseIsHiddenThroughPrecedenceHierarchy)
 {
-    suspendedIncreaseIsHiddenThroughPolicyHierarchy<PrecedenceAllocation>();
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+
+    auto limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+    auto policy = std::make_shared<PrecedenceAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    policy->basename = "policy";
+    limit->attachChild(policy);
+
+    SchedulerNodeInfo high_info;
+    high_info.setPrecedence(0);
+    auto high_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, high_info);
+    AllocationQueue * high_queue_ptr = high_queue.get();
+    policy->attachChild(high_queue);
+
+    SchedulerNodeInfo low_info;
+    low_info.setPrecedence(1);
+    auto low_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, low_info);
+    AllocationQueue * low_queue_ptr = low_queue.get();
+    policy->attachChild(low_queue);
+
+    r.root_node = limit;
+    low_queue.reset();
+    high_queue.reset();
+    policy.reset();
+    limit.reset();
+    r.registerResource();
+
+    ManualAllocation heavy(high_queue_ptr, "heavy", 8000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(5000);
+    auto lower_precedence = std::make_unique<ManualAllocation>(
+        low_queue_ptr, "lower_precedence", 1000, /* wait_for_admission = */ false);
+    release.set_value();
+
+    /// Suspension does not override workload precedence. The high-precedence request reaches its
+    /// existing last resort before lower-precedence work can be admitted merely because it fits.
+    heavy.waitKills(1);
+    EXPECT_EQ(heavy.killCount(), 1u);
+    EXPECT_EQ(lower_precedence->size(), 0);
 }
 
 
