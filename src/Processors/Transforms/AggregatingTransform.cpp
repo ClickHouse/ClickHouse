@@ -442,6 +442,14 @@ private:
         if (!chunks_to_merge)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with ChunksToMerge info in {}", getName());
 
+        /// This transform drops the `ChunksToMerge` wrapper and emits the chunks it holds, so the ids of the
+        /// buckets which `GroupingAggregatedTransform` still owes would be lost. It is used only over
+        /// `ConvertingAggregatedToChunksSource`, which produces the buckets in order of their id-s and never
+        /// delays any of them, so there is nothing to report and nothing to lose. If that ever changes, the
+        /// chunks have to be stamped here with `chunks_to_merge->out_of_order_buckets`, otherwise the node
+        /// which merges this result can finalize a bucket before all of its data is sent.
+        chassert(chunks_to_merge->out_of_order_buckets.empty());
+
         if (chunks_to_merge->chunks)
             for (auto & cur_chunk : *chunks_to_merge->chunks)
                 chunks.emplace_back(std::move(cur_chunk));
@@ -1088,7 +1096,9 @@ AggregatingTransform::AggregatingTransform(
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
 {
-    if (many_data->adaptive_session)
+    /// `AggregatingStep` leaves its engagement verdict in the flag. Without a producer nothing is ever
+    /// staged, so the merge-time drains find empty backlogs and do nothing.
+    if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
         adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
 }
 
@@ -1306,7 +1316,7 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
     }
 
-    if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
+    if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
         /// Note: we reset aggregation state here to release memory earlier.
         /// It might cause extra memory usage for complex queries othervise.
@@ -1361,7 +1371,9 @@ void AggregatingTransform::initGenerate()
         if (shared.early_drain_variants->hasData())
         {
             /// Early-drained records live in the routing table: it holds part of the result
-            /// and joins the merge set like any other variant.
+            /// and joins the merge set like any other variant. Only the last finisher gets
+            /// here, so growing `variants` is safe as long as nothing else reads it - hence
+            /// the barrier above counts `num_producers` rather than the size of this vector.
             many_data->variants.push_back(shared.early_drain_variants);
         }
     }
