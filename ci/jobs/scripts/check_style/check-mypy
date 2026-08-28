@@ -9,7 +9,10 @@
 GIT_ROOT=$(git rev-parse --show-cdup)
 GIT_ROOT=${GIT_ROOT:-.}
 CONFIG="$GIT_ROOT/ci/tools/.mypy.ini"
-DIRS=("$GIT_ROOT/ci/tools/" "$GIT_ROOT/tests/ci/"*/)
+# `ci/tools/` and its subdirectories are the new home of this tooling. `tests/ci/` is kept
+# in the scope because the synchronized private repository still has its own scripts and
+# self-contained lambda packages there; directories without Python files are skipped below.
+DIRS=("$GIT_ROOT/ci/tools/" "$GIT_ROOT/ci/tools/"*/ "$GIT_ROOT/tests/ci/" "$GIT_ROOT/tests/ci/"*/)
 tmp=$(mktemp)
 
 for dir in "${DIRS[@]}"; do
