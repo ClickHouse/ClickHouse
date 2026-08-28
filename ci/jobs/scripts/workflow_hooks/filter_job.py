@@ -116,6 +116,10 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
+    # are continuous-mode kill-safe.
+    "ci/jobs/scripts/clickhouse_proc.py",
+    "tests/integration/helpers/cluster.py",
     "ci/defs/job_configs.py",
     "ci/defs/defs.py",
     "tests/clickhouse-test",

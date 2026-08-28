@@ -35,8 +35,27 @@ class _FakeInfo:
         return self._kv
 
 
+def _stub_declared_settings(monkeypatch, kv):
+    """Make every reported name look like a declared setting.
+
+    The check exempts settings that are no longer declared - a setting a change removes from the
+    code cannot be recorded in the history at all (see
+    ci/tests/test_settings_history_removed_setting.py). These cells are about the source-file gate
+    and the rename path, not about which settings exist, and the names they use are placeholders
+    that no declaration file contains - `_run_standalone` even runs in a directory that holds no
+    declaration file at all."""
+    reported = kv.get("settings_history_changed_settings") or []
+    names = {item["name"] for item in reported}
+    monkeypatch.setattr(
+        check_style,
+        "declared_setting_names",
+        lambda: ({"Session": set(names), "MergeTree": set(names)}, ""),
+    )
+
+
 def _run(monkeypatch, kv):
     monkeypatch.setattr(check_style, "Info", _FakeInfo(kv))
+    _stub_declared_settings(monkeypatch, kv)
     monkeypatch.chdir(REPO_ROOT)
     return check_style.check_settings_changes_history()
 
@@ -47,7 +66,8 @@ def _run_standalone(monkeypatch, tmp_path, kv, version, file_lines):
     The check resolves the current version block from the version file and looks the
     reported names up in the history file, so a cell asserting that a name IS recorded
     has to supply both; reading the repo's own files would tie the outcome to whichever
-    release the checkout happens to be on.
+    release the checkout happens to be on. The settings declarations the check also reads are
+    stubbed out by `_stub_declared_settings`.
     """
     (tmp_path / "cmake").mkdir(parents=True, exist_ok=True)
     (tmp_path / "src" / "Core").mkdir(parents=True, exist_ok=True)
@@ -57,6 +77,7 @@ def _run_standalone(monkeypatch, tmp_path, kv, version, file_lines):
     )
     (tmp_path / HISTORY).write_text("\n".join(file_lines) + "\n", encoding="utf-8")
     monkeypatch.setattr(check_style, "Info", _FakeInfo(kv))
+    _stub_declared_settings(monkeypatch, kv)
     monkeypatch.chdir(tmp_path)
     return check_style.check_settings_changes_history()
 
