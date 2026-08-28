@@ -17,23 +17,23 @@ CREATE TABLE t_adaptive_on
     f Array(Int32)         -- candidate leaf -> T64
 )
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 CREATE TABLE t_adaptive_off AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 0;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 
 CREATE TABLE t_adaptive_insert AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 CREATE TABLE t_adaptive_mutation AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 CREATE TABLE t_adaptive_compact AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 1000000000, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 1000000000, enable_adaptive_codec_selection = 1;
 
 
 -- Merge with the setting ON: default-coded columns with a specialized candidate (a, e, f) get T64,

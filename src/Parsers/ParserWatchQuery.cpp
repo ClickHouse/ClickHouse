@@ -86,18 +86,15 @@ void registerStatementWatch(StatementFactory & factory)
 {
     factory.registerStatement("WATCH",
     {
-        .description = R"(
-Returns the successive results of a live view as they change. This statement is deprecated together with live views and
-will be removed in the future.
+        .description = R"DOCS_MD(
+import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
-**Examples**
+<DeprecatedBadge/>
 
-**Watch a live view**
+This feature is deprecated and will be removed in the future.
 
-```sql title="Query"
-WATCH lv EVENTS LIMIT 1;
-```
-)",
+For your convenience, the old documentation is located [here](https://pastila.nl/?007cd3ec/47276db1eb25eb10c6ee043a44fdf597#AESDirdloBX4wF5BjPSZSA==)
+)DOCS_MD",
         .syntax = R"(
 WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 )",
