@@ -1410,6 +1410,12 @@ def main():
     res = True
     results = []
 
+    # Fix the check start time once, for the whole job: the system log export,
+    # `compare.sh` and the report uploads must all stamp the same run identity,
+    # otherwise the exported `system.*_log` rows cannot be correlated with the
+    # perf report of the same shard on `check_start_time`.
+    os.environ.setdefault("CHPC_CHECK_START_TIMESTAMP", str(int(Utils.timestamp())))
+
     # add right CH location to PATH
     Utils.add_to_PATH(perf_right)
     # TODO:
@@ -1743,7 +1749,8 @@ def main():
             Utils.normalize_string(info.job_name)
         )
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME"] = info.job_name
-        os.environ["CHPC_CHECK_START_TIMESTAMP"] = str(int(Utils.timestamp()))
+        # `CHPC_CHECK_START_TIMESTAMP` is initialized once at the start of the
+        # job - do not reset it here, the export stage has already used it.
 
         commands = [
             f"PR_TO_TEST={info.pr_number} "

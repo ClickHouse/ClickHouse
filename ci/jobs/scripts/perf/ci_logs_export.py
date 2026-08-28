@@ -137,15 +137,23 @@ def _scrub(text):
 def _run_client(args, sql, timeout, env=None):
     """Run clickhouse-client with the query on stdin (so that credentials
     inside the query never appear in the process list)."""
-    result = subprocess.run(
-        ["clickhouse-client"] + args,
-        input=sql,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            ["clickhouse-client"] + args,
+            input=sql,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=timeout,
+        )
+    except subprocess.SubprocessError as e:
+        # `TimeoutExpired` and the other subprocess exceptions stringify the
+        # full argv, which contains the real CI Logs host. Re-raise a scrubbed
+        # error, and suppress the exception chaining, so that the original
+        # unscrubbed message cannot reach the public job log through a
+        # traceback either.
+        raise RuntimeError(f"clickhouse-client failed: {_scrub(str(e))}") from None
     if result.returncode != 0:
         raise RuntimeError(f"clickhouse-client failed with code {result.returncode}: {_scrub(result.stderr.strip())}")
     return result.stdout
