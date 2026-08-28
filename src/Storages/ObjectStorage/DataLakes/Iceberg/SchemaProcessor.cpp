@@ -895,12 +895,22 @@ std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(P
     return result;
 }
 
+void IcebergSchemaProcessor::updateLastColumnId(Int32 last_column_id_)
+{
+    Int64 current = last_column_id.load();
+    while (last_column_id_ > current && !last_column_id.compare_exchange_weak(current, last_column_id_))
+        ;
+}
+
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);
     if (!schema)
         return nullptr;
-    return createColumnMapper(schema);
+    auto column_mapper = createColumnMapper(schema);
+    if (Int64 known_last_column_id = last_column_id.load(); known_last_column_id >= 0)
+        column_mapper->setLastAssignedFieldId(known_last_column_id);
+    return column_mapper;
 }
 
 ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)

@@ -32,6 +32,7 @@ namespace DB::ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int NOT_IMPLEMENTED;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace DB::Parquet
@@ -168,6 +169,18 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
         /// (> 2147483447), e.g. the v3 row-lineage fields `_row_id` and
         /// `_last_updated_sequence_number`. A reader projects by field id, so such a column is
         /// simply not selected (https://iceberg.apache.org/spec/#column-projection).
+        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
+        auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
+        if (element.field_id <= iceberg_max_user_field_id && last_assigned_field_id.has_value()
+            && element.field_id > *last_assigned_field_id)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Parquet file has column {} with field_id {} that is not in datalake metadata and is above the highest field id "
+                "the table ever assigned ({})",
+                element.name,
+                element.field_id,
+                *last_assigned_field_id);
+
         out_not_in_schema = true;
         return element.name;
     }
