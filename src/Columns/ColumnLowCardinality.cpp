@@ -479,8 +479,8 @@ namespace
 template <typename IndexColumn, bool stable>
 struct LowCardinalityComparator
 {
-    const IndexColumn & real_indexes;                   /// Indexes column
-    const PaddedPODArray<UInt64> & position_by_index;   /// Maps original dictionary index to position in sorted dictionary
+    const IndexColumn & real_indexes;               /// Indexes column
+    const PaddedPODArray<UInt64> & rank_by_index;   /// Maps original dictionary index to its rank in the sorted dictionary
 
     inline bool operator () (size_t lhs, size_t rhs) const
     {
@@ -492,7 +492,7 @@ struct LowCardinalityComparator
         if (lhs_index == rhs_index)
             ret = 0;
         else
-            ret = CompareHelper<UInt64>::compare(position_by_index[lhs_index], position_by_index[rhs_index], 0);
+            ret = CompareHelper<UInt64>::compare(rank_by_index[lhs_index], rank_by_index[rhs_index], 0);
 
         if (stable && ret == 0)
             return lhs < rhs;
@@ -505,22 +505,24 @@ struct LowCardinalityComparator
 
 template <typename IndexColumn>
 void ColumnLowCardinality::updatePermutationWithIndexType(
-    IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
+    IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & rank_by_index,
     IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
     /// Cast indexes column to the real type so that compareAt and getUInt methods can be inlined.
     const IndexColumn * real_indexes = assert_cast<const IndexColumn *>(&getIndexes());
 
-    auto equal_comparator = [real_indexes](size_t lhs, size_t rhs)
+    auto equal_comparator = [real_indexes, &rank_by_index](size_t lhs, size_t rhs)
     {
-        return real_indexes->getUInt(lhs) == real_indexes->getUInt(rhs);
+        const UInt64 lhs_index = real_indexes->getUInt(lhs);
+        const UInt64 rhs_index = real_indexes->getUInt(rhs);
+        return lhs_index == rhs_index || rank_by_index[lhs_index] == rank_by_index[rhs_index];
     };
 
     const bool stable = (stability == IColumn::PermutationSortStability::Stable);
     if (stable)
-        updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, true>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, true>{*real_indexes, rank_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
     else
-        updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, false>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, false>{*real_indexes, rank_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -534,24 +536,41 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Dictionary permutation size {} is equal to dictionary size {}. It is a bug.",
             dict_perm.size(), getDictionary().size());
-    PaddedPODArray<UInt64> position_by_index(dict_perm.size());
-    for (size_t i = 0; i < dict_perm.size(); ++i)
-        position_by_index[dict_perm[i]] = i;
+    PaddedPODArray<UInt64> rank_by_index(dict_perm.size());
+    /// A floating-point dictionary is not canonicalized, so distinct entries can compare equal: -0.0 and
+    /// +0.0, and the different NaN bit patterns. Value-equal entries must share a rank, otherwise equality
+    /// by rank is stricter than compareAt and the remaining sort columns never reach such a pair.
+    if (WhichDataType(getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat())
+    {
+        const IColumnUnique & dict = getDictionary();
+        UInt64 rank = 0;
+        for (size_t i = 0; i < dict_perm.size(); ++i)
+        {
+            if (i != 0 && dict.compareAt(dict_perm[i - 1], dict_perm[i], dict, nan_direction_hint) != 0)
+                ++rank;
+            rank_by_index[dict_perm[i]] = rank;
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < dict_perm.size(); ++i)
+            rank_by_index[dict_perm[i]] = i;
+    }
 
     /// Dispatch by index column type.
     switch (idx.getSizeOfIndexType())
     {
         case sizeof(UInt8):
-            updatePermutationWithIndexType<ColumnUInt8>(stability, limit, position_by_index, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt8>(stability, limit, rank_by_index, res, equal_ranges);
             return;
         case sizeof(UInt16):
-            updatePermutationWithIndexType<ColumnUInt16>(stability, limit, position_by_index, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt16>(stability, limit, rank_by_index, res, equal_ranges);
             return;
         case sizeof(UInt32):
-            updatePermutationWithIndexType<ColumnUInt32>(stability, limit, position_by_index, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt32>(stability, limit, rank_by_index, res, equal_ranges);
             return;
         case sizeof(UInt64):
-            updatePermutationWithIndexType<ColumnUInt64>(stability, limit, position_by_index, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt64>(stability, limit, rank_by_index, res, equal_ranges);
             return;
         default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
     }
