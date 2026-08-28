@@ -782,7 +782,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
             data.asofToJoinKeys();
         }
 
-        if (!analyzed_join.oneDisjunct() && !analyzed_join.isHashFamilyEnabled())
+        if (!analyzed_join.oneDisjunct() && !analyzed_join.isHashFamilyEnabled() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::AUTO))
             throw DB::Exception(
                 ErrorCodes::NOT_IMPLEMENTED, "Only `hash` and `parallel_hash` joins support multiple ORs for keys in JOIN ON section");
     }
