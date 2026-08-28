@@ -58,6 +58,12 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
     return comment;
 }
 
+void rejectNilUUIDClause(bool attach, bool has_uuid_clause, const UUID & uuid)
+{
+    if (attach && has_uuid_clause && uuid == UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ATTACH queries cannot use a Nil UUID");
+}
+
 }
 
 bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -485,6 +491,12 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
                     primary_key_from_columns = makeASTOperator("tuple");
                 auto column_identifier = make_intrusive<ASTIdentifier>(cd->name);
                 primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
+                /// The specifier's meaning has been transferred to `primary_key_from_columns`, which
+                /// `ParserCreateQuery` normalizes into the storage definition. Clear it so the final
+                /// AST is the same as for a query that spelled the primary key at the table level:
+                /// formatting prints only the storage-level PRIMARY KEY, so a kept flag would not
+                /// survive a format+parse round trip, and the tree hash would differ.
+                cd->primary_key_specifier = false;
             }
             columns->children.push_back(elem);
         }
@@ -856,11 +868,23 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     auto * table_id = table->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, table_id->has_uuid, table_id->uuid);
 
     /// A shortcut for ATTACH a previously detached table.
     bool short_attach = attach && !from_path;
     if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {
+        /// The short `ATTACH` form takes the whole table definition from the stored metadata, so it has
+        /// nowhere to keep the parsed `TO INNER UUID` value: only the presence flag would survive, and
+        /// `formatQueryImpl` prints the clause from `targets`, which this form never builds. The clause
+        /// would therefore be silently dropped by formatting - and the query is rejected downstream
+        /// anyway (`InterpreterCreateQuery` refuses to change the definition of a short `ATTACH`).
+        /// Reject it here so that no `ASTCreateQuery` that cannot be formatted back is ever produced.
+        if (to_inner_uuid)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ATTACH applies the table definition from stored metadata, so a 'TO INNER UUID' clause "
+                "cannot be specified in the query itself");
+
         auto query = make_intrusive<ASTCreateQuery>();
         node = query;
 
@@ -873,7 +897,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
         query->has_uuid_clause = table_id->has_uuid;
-        query->has_inner_uuid_clause = to_inner_uuid != nullptr;
         query->setIsTemporary(is_temporary);
 
         query->attach_as_replicated = attach_as_replicated;
@@ -1062,11 +1085,19 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->storage, storage);
     query->set(query->as_table_function, as_table_function);
 
-    if (comment)
-        query->set(query->comment, comment);
-    if (sql_security)
-        query->set(query->sql_security, sql_security);
+    /// A table created from a table function has no storage definition of its own, the same rule
+    /// that rejects an explicit `ENGINE` above, so the one synthesized below is formatted after the
+    /// table function, where the grammar has no production for it and metadata cannot be read back.
+    if (query->as_table_function && query->columns_list
+        && (query->columns_list->primary_key || query->columns_list->primary_key_from_columns))
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR, "PRIMARY KEY is not allowed in the column list of a table created from a table function");
 
+    /// Normalize a PRIMARY KEY declared inside the column list into the storage definition
+    /// before the comment child is appended: when there is no explicit ENGINE clause, the
+    /// storage node is synthesized here, and it must land in `children` where a fresh parse
+    /// of the formatted query would put it - before the comment - or the tree hash would
+    /// not survive a format+parse round trip.
     if (query->columns_list && query->columns_list->primary_key)
     {
         /// If engine is not set will use default one
@@ -1098,6 +1129,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->storage->normalizeChildrenOrder();
     }
 
+    if (comment)
+        query->set(query->comment, comment);
+    if (sql_security)
+        query->set(query->sql_security, sql_security);
+
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
@@ -1113,8 +1149,12 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (targets)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());
 
+        const UUID inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>());
+        if (inner_uuid == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID cannot use a Nil UUID");
+
         auto view_targets = make_intrusive<ASTViewTargets>();
-        view_targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+        view_targets->setInnerUUID(ViewTarget::To, inner_uuid);
 
         targets = view_targets;
     }
@@ -1548,6 +1588,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->uuid = uuid;
     query->has_uuid = uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = has_uuid_clause;
+    rejectNilUUIDClause(attach, has_uuid_clause, uuid);
     query->cluster = cluster_str;
     query->database = database;
 
@@ -1811,6 +1852,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->setIsTemporary(is_temporary);
 
     auto * table_id = table->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, table_id->has_uuid, table_id->uuid);
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
@@ -1832,6 +1874,21 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->set(query->comment, comment);
     if (sql_security)
         query->set(query->sql_security, sql_security);
+
+    /// A PRIMARY KEY declared in the column list is normalized into the storage definition below.
+    /// A plain view has no storage, and a materialized view with `TO [db].[table]` must not declare
+    /// one - the same rule that rejects an explicit `ENGINE` above. Without this check the parser
+    /// synthesizes a storage definition that formatting prints as a table-level `PRIMARY KEY`, and
+    /// the formatted query no longer parses back - which also means such a view could not be loaded
+    /// from its metadata after a restart.
+    if (query->columns_list && (query->columns_list->primary_key || query->columns_list->primary_key_from_columns))
+    {
+        if (is_ordinary_view)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "PRIMARY KEY is not allowed in the column list of a view");
+        if (to_table)
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'PRIMARY KEY'");
+    }
 
     if (query->columns_list && query->columns_list->primary_key)
     {
@@ -1877,7 +1934,12 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
         }
         if (to_inner_uuid)
-            targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+        {
+            const UUID inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>());
+            if (inner_uuid == UUIDHelpers::Nil)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID cannot use a Nil UUID");
+            targets->setInnerUUID(ViewTarget::To, inner_uuid);
+        }
         if (storage)
             targets->setInnerEngine(ViewTarget::To, storage);
     }
@@ -2046,6 +2108,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->replace_table = replace;
 
     auto * dict_id = name->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, dict_id->has_uuid, dict_id->uuid);
     query->database = dict_id->getDatabase();
     query->table = dict_id->getTable();
     query->uuid = dict_id->uuid;
@@ -3125,7 +3188,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge/>
 
-The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`allow_experimental_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
 
 A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.
 
@@ -3137,7 +3200,7 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;
