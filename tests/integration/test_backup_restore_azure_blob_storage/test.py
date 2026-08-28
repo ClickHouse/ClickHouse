@@ -590,6 +590,77 @@ def test_incremental_backup_restore_on_log(cluster, max_single_part_upload_size)
     azure_query(node, "DROP TABLE test_incremental_log_restored")
 
 
+def test_incremental_backup_restore_on_log_with_native_copy(cluster):
+    # An incremental backup of an append-only file writes only its tail, i.e. `start_pos` is non-zero.
+    # An Azure-to-Azure copy (`CopyFromUri` / `StartCopyFromUri`) carries no byte range and always
+    # transfers the whole source blob, so the backup writer must not take that route for a range, or
+    # the incremental backup silently stores the whole file where only the tail belongs.
+    #
+    # A `Log` data file on an Azure disk normally gets one object per `INSERT`, and a multi-object
+    # source is already excluded from the native copy. To reach the native copy with a non-zero
+    # `start_pos`, the source must be a single object whose prefix is in the base backup: the table is
+    # truncated and refilled by one `INSERT` that writes the same blocks, with `max_block_size = 1`
+    # keeping every row in its own compressed block so that the first block stays byte-identical to
+    # the one the base backup holds.
+    node = cluster.instances["node_native_copy"]
+    one_row_per_block = {
+        "max_block_size": 1,
+        "min_insert_block_size_rows": 0,
+        "min_insert_block_size_bytes": 0,
+    }
+    azure_query(node, "DROP TABLE IF EXISTS test_native_copy_incremental_log SYNC")
+    azure_query(
+        node,
+        "CREATE TABLE test_native_copy_incremental_log (key UInt64, data String) Engine = Log "
+        "SETTINGS storage_policy='blob_storage_policy_native_copy'",
+    )
+    azure_query(
+        node,
+        "INSERT INTO test_native_copy_incremental_log SELECT number, 'aaa' FROM numbers(1)",
+        settings=one_row_per_block,
+    )
+
+    base_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_native_copy_incremental_log TO {base_backup_destination}",
+    )
+
+    azure_query(node, "TRUNCATE TABLE test_native_copy_incremental_log")
+    azure_query(
+        node,
+        "INSERT INTO test_native_copy_incremental_log SELECT number, 'aaa' FROM numbers(2)",
+        settings=one_row_per_block,
+    )
+
+    incremental_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_native_copy_incremental_log TO {incremental_backup_destination} "
+        f"SETTINGS base_backup = {base_backup_destination}",
+    )
+
+    azure_query(
+        node, "DROP TABLE IF EXISTS test_native_copy_incremental_log_restored SYNC"
+    )
+    azure_query(
+        node,
+        f"RESTORE TABLE test_native_copy_incremental_log AS test_native_copy_incremental_log_restored "
+        f"FROM {incremental_backup_destination}",
+    )
+
+    assert (
+        azure_query(
+            node,
+            "SELECT key, data FROM test_native_copy_incremental_log_restored ORDER BY key",
+        )
+        == "0\taaa\n1\taaa\n"
+    )
+
+    azure_query(node, "DROP TABLE test_native_copy_incremental_log")
+    azure_query(node, "DROP TABLE test_native_copy_incremental_log_restored")
+
+
 def test_backup_restore_keeper_map_reference_copy(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
