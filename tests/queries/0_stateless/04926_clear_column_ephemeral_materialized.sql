@@ -16,7 +16,11 @@ CREATE TABLE t_clear_ephemeral
     me2 Int32 MATERIALIZED me + 100,
     mk Int32 MATERIALIZED x + 1
 )
-ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple();
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple()
+-- The runner randomizes both of these together with `min_bytes_for_wide_part`, and on a Wide part
+-- with either block column on the mutation does not recompute MATERIALIZED columns at all, so `mk`
+-- would keep its pre-clear value and the recompute this test is about would never run.
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_clear_ephemeral (x, y, e) VALUES (1, 0, 7);
 SELECT x, me, me2, mk FROM t_clear_ephemeral;
