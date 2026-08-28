@@ -10,7 +10,7 @@ CREATE TABLE t_non_candidate_fallback
     compressible String     -- repetitive bytes the default codec shrinks -> LZ4
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 INSERT INTO t_non_candidate_fallback SELECT reinterpretAsString(sipHash128(number)), repeat('a', 16) FROM numbers(100000);
 INSERT INTO t_non_candidate_fallback SELECT reinterpretAsString(sipHash128(number)), repeat('a', 16) FROM numbers(100000, 100000);
