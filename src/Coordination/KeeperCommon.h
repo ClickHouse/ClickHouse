@@ -88,10 +88,13 @@ struct KeeperRequestBatch
 {
     std::vector<KeeperRequestForSession> requests;
     /// Which server's Keeper[Request]Dispatcher produced this batch. That dispatcher owns the
-    /// sessions of all requests in the batch. Only that server needs to produce responses to
-    /// these requests when committing this batch. -1 if unknown (e.g. if parsed from log entry in old format).
-    //TODO(keeper-batch3): Use this to avoid producing useless responses on servers that don't own the
-    ///       corresponding client sessions. Probably pass the flag all the way to processRequest so we don't waste time creating responses at all.
+    /// sessions of all requests in the batch, so only that server produces responses to these
+    /// requests when committing this batch (see produce_responses in KeeperStateMachine::commit).
+    /// -1 if unknown (e.g. if parsed from log entry in old format); then all servers produce
+    /// responses, and the ones that don't own the session discard them in their response threads.
+    /// (TODO: the per-request-type `process` functions still construct the response object even
+    ///  when it won't be used, because response construction is interleaved with applying the
+    ///  committed deltas; skipping that too would require changing every `process` overload.)
     int32_t dispatcher_server_id{-1};
     /// Lower bound on last committed log entry idx. Used on startup.
     /// (This doesn't particularly need to be stored in each log entry; a single latest commit point

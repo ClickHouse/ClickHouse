@@ -24,7 +24,8 @@ public:
     KeeperResponsesForSessions processOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
-        std::optional<int64_t> new_last_zxid) override;
+        std::optional<int64_t> new_last_zxid,
+        bool produce_response) override;
 
     /// Returns false if the request was rejected and rolled back.
     bool preprocessOneRequest(

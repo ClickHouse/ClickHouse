@@ -669,13 +669,13 @@ KeeperResponsesForSessions KeeperStorage::processRequest(
     const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid)
 {
     if (!new_last_zxid)
-        return processOneRequest(request, session_id, new_last_zxid);
+        return processOneRequest(request, session_id, new_last_zxid, /*produce_response=*/true);
 
     KeeperRequestBatch batch;
     batch.requests.push_back(KeeperRequestForSession{.session_id = session_id, .request = request});
     batch.first_zxid = *new_last_zxid;
 
-    auto responses = processOneRequest(request, session_id, new_last_zxid);
+    auto responses = processOneRequest(request, session_id, new_last_zxid, /*produce_response=*/true);
     endProcessBatch(batch);
     return responses;
 }

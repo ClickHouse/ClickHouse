@@ -1868,7 +1868,8 @@ template <typename NS>
 KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
-    std::optional<int64_t> new_last_zxid)
+    std::optional<int64_t> new_last_zxid,
+    bool produce_response)
 {
     Stopwatch watch;
     SCOPE_EXIT({
@@ -1950,12 +1951,15 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
         clearDeadWatches(session_id);
 
         /// Finish connection
-        auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
-        response->xid = zk_request->xid;
-        response->zxid = commit_zxid;
         session_expiry_queue.remove(session_id);
         session_and_timeout.erase(session_id);
-        results.push_back(KeeperResponseForSession{session_id, response});
+        if (produce_response)
+        {
+            auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+            response->xid = zk_request->xid;
+            response->zxid = commit_zxid;
+            results.push_back(KeeperResponseForSession{session_id, response});
+        }
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
@@ -1964,10 +1968,12 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
             std::lock_guard lock(storage_mutex);
             response = process(dynamic_cast<const Coordination::ZooKeeperHeartbeatRequest &>(*zk_request), *this, deltas_range, session_id);
         }
-        response->xid = zk_request->xid;
-        response->zxid = commit_zxid;
-
-        results.push_back(KeeperResponseForSession{session_id, response});
+        if (produce_response)
+        {
+            response->xid = zk_request->xid;
+            response->zxid = commit_zxid;
+            results.push_back(KeeperResponseForSession{session_id, response});
+        }
     }
     else /// normal requests processing
     {
@@ -1991,10 +1997,12 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
                 results.insert(results.end(), watch_responses.begin(), watch_responses.end());
             }
 
-            response->xid = zk_request->xid;
-            response->zxid = commit_zxid;
-
-            results.push_back(KeeperResponseForSession{session_id, response});
+            if (produce_response)
+            {
+                response->xid = zk_request->xid;
+                response->zxid = commit_zxid;
+                results.push_back(KeeperResponseForSession{session_id, response});
+            }
         };
 
         callOnConcreteRequestType(*zk_request, process_request);

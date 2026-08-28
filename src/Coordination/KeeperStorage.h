@@ -318,12 +318,15 @@ public:
     void endProcessBatch(const KeeperRequestBatch & batch);
 
     /// Commit one previously preprocessed request of the current batch. Apply the changes to the
-    /// committed state. Produce response for the request + triggered watch notifications.
+    /// committed state. Produce triggered watch notifications, and the response for the request
+    /// itself if produce_response is set (the response is only needed on the server that owns the
+    /// request's client session; other servers would discard it in their response threads).
     /// Caller must call endProcessBatch at the end of batch.
     virtual KeeperResponsesForSessions processOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
-        std::optional<int64_t> new_last_zxid) = 0;
+        std::optional<int64_t> new_last_zxid,
+        bool produce_response) = 0;
 
     /// Convenience wrapper for tools and tests: commit a single request as a batch of one.
     KeeperResponsesForSessions processRequest(

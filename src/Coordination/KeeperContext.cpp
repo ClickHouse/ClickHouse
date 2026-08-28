@@ -107,6 +107,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     updateKeeperMemorySoftLimit(config);
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    server_id = config.getInt("keeper_server.server_id", -1);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
 
     initializeFeatureFlags(config);

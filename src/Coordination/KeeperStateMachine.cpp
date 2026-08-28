@@ -886,6 +886,13 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     if (!keeper_context->localLogsPreprocessed() && !preprocessBatch(*batch, /*lock_mutex=*/ true))
         return nullptr;
 
+    /// Responses are only needed on the server that owns the batch's client sessions (the one
+    /// whose dispatcher produced the batch); other servers would just discard them in their
+    /// response threads. -1 means the owner is unknown (e.g. a legacy log entry), then produce
+    /// responses everywhere.
+    const bool produce_responses = batch->dispatcher_server_id == -1
+        || batch->dispatcher_server_id == keeper_context->getServerID();
+
     for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
     {
         const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
@@ -922,19 +929,22 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             {
                 const Coordination::ZooKeeperSessionIDRequest & session_id_request
                     = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
-                int64_t session_id = 0;
-                std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
-                KeeperResponseForSession response_for_session;
-                response_for_session.session_id = -1;
-                response_for_session.response = response;
-                response_for_session.request = request_for_session.request;
 
                 KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-                session_id = storage->getSessionID(session_id_request.session_timeout_ms);
+                int64_t session_id = storage->getSessionID(session_id_request.session_timeout_ms);
                 LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
-                response->session_id = session_id;
-                if (response_callback)
+
+                if (produce_responses && response_callback)
+                {
+                    std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response
+                        = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
+                    response->session_id = session_id;
+                    KeeperResponseForSession response_for_session;
+                    response_for_session.session_id = -1;
+                    response_for_session.response = std::move(response);
+                    response_for_session.request = request_for_session.request;
                     response_callback(std::move(response_for_session));
+                }
 
                 if (is_last_in_batch)
                     storage->endProcessBatch(*batch);
@@ -950,8 +960,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                 {
                     KEEPER_STORAGE_LOCK_SHARED(lock);
                     ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
-                    KeeperResponsesForSessions responses_for_sessions
-                        = storage->processOneRequest(request_for_session.request, request_for_session.session_id, batch->getZxid(request_idx));
+                    KeeperResponsesForSessions responses_for_sessions = storage->processOneRequest(
+                        request_for_session.request, request_for_session.session_id, batch->getZxid(request_idx), produce_responses);
                     for (auto & response_for_session : responses_for_sessions)
                     {
                         if (response_for_session.response->xid != Coordination::WATCH_XID)
