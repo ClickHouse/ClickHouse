@@ -755,6 +755,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             required_access.emplace_back(AccessType::ALTER_ADD_PROJECTION, database, table);
             break;
         }
+        case ASTAlterCommand::MODIFY_PROJECTION:
+        {
+            required_access.emplace_back(AccessType::ALTER_MODIFY_PROJECTION, database, table);
+            break;
+        }
         case ASTAlterCommand::DROP_PROJECTION:
         {
             if (command.clear_projection)
