@@ -28,7 +28,7 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
 ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
 {
     return ColumnsDescription({
-        {TimeSeriesColumnNames::ID, config.id_data_type},
+        {TimeSeriesColumnNames::ID, config.narrowed_id_data_type ? config.narrowed_id_data_type : config.id_data_type},
         {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type},
         {TimeSeriesColumnNames::Value, config.scalar_data_type}
     });

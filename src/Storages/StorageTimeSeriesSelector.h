@@ -22,6 +22,14 @@ public:
         DataTypePtr timestamp_data_type;
         DataTypePtr scalar_data_type;
 
+        /// When set, the `id` column returned by the selector is only the second component of a
+        /// two-component id `Tuple(F, LowCardinality(S))`, and this is that component's type.
+        /// With the canonical id generator the second component (a hash of all the tags) alone
+        /// identifies a time series, and returning only it keeps the identifiers
+        /// dictionary-encoded end-to-end: the `IN <ids>` filter over the samples table and
+        /// `timeSeriesIdToGroup` are then executed per dictionary key instead of per row.
+        DataTypePtr narrowed_id_data_type;
+
         PrometheusQueryTree selector;
 
         /// The scale of these fields is the same as the scale used in `timestamp_data_type`.

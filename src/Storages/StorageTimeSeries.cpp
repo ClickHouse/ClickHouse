@@ -965,7 +965,9 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 The `id` column can be of any comparable non-Nullable type. The `id` types declared in the samples and tags inner tables must match.
 
-If no `DEFAULT` expression is given for the `id` column and the `id_generator` setting is not set, ClickHouse will choose the `DEFAULT` expression automatically based on the `id` type, but only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, or a tuple of two of those types. For such a tuple the automatically chosen expression calculates a hash of the metric name in the first component and a hash of all the tags in the second component.
+If no `DEFAULT` expression is given for the `id` column and the `id_generator` setting is not set, ClickHouse will choose the `DEFAULT` expression automatically based on the `id` type, but only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, the same types wrapped in `LowCardinality`, or a tuple of two of those types. For such a tuple the automatically chosen expression calculates a hash of the metric name in the first component and a hash of all the tags in the second component.
+
+A `LowCardinality` identifier type, e.g. `Tuple(UInt64, LowCardinality(UUID))`, keeps the identifiers dictionary-encoded: the samples table stores small per-block dictionaries with dictionary indexes instead of repeating the full identifier in every row, and queries filter and group the samples per dictionary key instead of per row.
 
 The `id_generator` setting offers the same customization without using the `INNER COLUMNS` clause:
 

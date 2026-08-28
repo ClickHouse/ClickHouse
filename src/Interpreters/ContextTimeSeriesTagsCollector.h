@@ -10,6 +10,7 @@
 
 namespace DB
 {
+class ColumnLowCardinality;
 class ColumnString;
 
 /// Mapping between identifiers and tags which are collected in the context of the currently executed query.
@@ -86,11 +87,15 @@ public:
     /// Returns the groups assigned to the sets of tags which were added to the collector
     /// with identifiers from a column. Throws an exception if some identifier is unknown.
     /// `id_column` must not be Nullable.
+    /// A LowCardinality column is processed per dictionary key, and only the keys referenced by
+    /// some row are looked up: a shared dictionary can also contain identifiers whose rows were
+    /// all filtered out and which are therefore unknown to the collector.
     VectorWithMemoryTracking<Group> getGroupByID(const ColumnPtr & id_column) const;
 
     /// Returns the sets of tags which were added to the collector with identifiers from a column.
     /// Throws an exception if some identifier is unknown.
     /// `id_column` must not be Nullable.
+    /// A LowCardinality column is processed the same way as in getGroupByID.
     VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const ColumnPtr & id_column) const;
 
     /// Removes a tag from a group and returns the result group.
@@ -140,6 +145,10 @@ public:
     VectorWithMemoryTracking<Group> replaceTag(const VectorWithMemoryTracking<Group> & groups, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
 
 private:
+    /// Resolves the groups for a dictionary-encoded id column: one lookup per dictionary key
+    /// referenced by some row, gathered to the rows through the dictionary indexes.
+    VectorWithMemoryTracking<Group> getGroupByLowCardinalityID(const ColumnLowCardinality & id_column) const;
+
     /// Transforms the set of tags assigned to a group using a one-argument function, returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     template <typename TransformFunc>

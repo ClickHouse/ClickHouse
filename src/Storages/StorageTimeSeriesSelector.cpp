@@ -73,6 +73,50 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
 }
 
+namespace
+{
+
+/// An identifier for the raw `id` column of a table, qualified so that it resolves
+/// to the table column and not to a same-named alias of the SELECT list.
+ASTPtr makeQualifiedIDIdentifier(const StorageID & table_id)
+{
+    return make_intrusive<ASTIdentifier>(
+        std::vector<String>{table_id.database_name, table_id.table_name, TimeSeriesColumnNames::ID});
+}
+
+/// An expression extracting the specified component of a multi-component series id.
+ASTPtr makeIDComponent(ASTPtr id, UInt64 component_index)
+{
+    return makeASTFunction("tupleElement", std::move(id), make_intrusive<ASTLiteral>(component_index));
+}
+
+/// Returns the canonical id generator for `id_data_type` if it is also the effective id
+/// generator of the table, null otherwise. The resolution order of the effective generator
+/// mirrors `TimeSeriesSink`: the `id_generator` setting, then the DEFAULT of the tags-table
+/// `id` column, then the canonical generator.
+ASTPtr tryGetCanonicalIDGenerator(
+    const DataTypePtr & id_data_type,
+    const TimeSeriesSettings & time_series_settings,
+    const ColumnsDescription & tags_table_columns)
+{
+    ASTPtr canonical_generator = TimeSeriesIDGenerator::tryGetDefault(id_data_type);
+    if (!canonical_generator)
+        return nullptr;
+
+    ASTPtr id_generator = time_series_settings[TimeSeriesSetting::id_generator].value;
+    if (!id_generator)
+    {
+        if (const auto * tags_id_column = tags_table_columns.tryGet(TimeSeriesColumnNames::ID))
+            id_generator = tags_id_column->default_desc.expression;
+    }
+    if (id_generator && (id_generator->getTreeHash(/*ignore_aliases=*/true) != canonical_generator->getTreeHash(/*ignore_aliases=*/true)))
+        return nullptr;
+
+    return canonical_generator;
+}
+
+}
+
 StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
 {
     std::string_view function_name = "timeSeriesSelector";
@@ -130,6 +174,25 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
+    /// With the canonical id generator for a two-component id `Tuple(F, S)` the second component
+    /// alone (a hash of all the tags) identifies a time series, so the selector can read and
+    /// return only that component. This narrowing is applied when S is a LowCardinality type:
+    /// the identifiers then stay dictionary-encoded end-to-end, and both the `IN <ids>` filter
+    /// over the samples table and `timeSeriesIdToGroup` run per dictionary key instead of per row.
+    DataTypePtr narrowed_id_data_type;
+    if (const auto * id_tuple_type = typeid_cast<const DataTypeTuple *>(id_data_type.get());
+        id_tuple_type && (id_tuple_type->getElements().size() == 2)
+        && typeid_cast<const DataTypeLowCardinality *>(id_tuple_type->getElements()[1].get()))
+    {
+        auto samples_target_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, context)->getInMemoryMetadataPtr(context, false);
+        auto samples_id_column = samples_target_metadata->getColumns().tryGetPhysical(TimeSeriesColumnNames::ID);
+        bool samples_table_stores_same_id_type = samples_id_column && (samples_id_column->type->getName() == id_data_type->getName());
+
+        if (samples_table_stores_same_id_type
+            && tryGetCanonicalIDGenerator(id_data_type, *time_series_storage->getStorageSettings(), tags_target_metadata->columns))
+            narrowed_id_data_type = id_tuple_type->getElements()[1];
+    }
+
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
     PrometheusQueryTree selector{getStringConstArgument(args[argument_index++], context, "selector")};
@@ -147,6 +210,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     config.id_data_type = std::move(id_data_type);
     config.timestamp_data_type = std::move(timestamp_data_type);
     config.scalar_data_type = std::move(scalar_data_type);
+    config.narrowed_id_data_type = std::move(narrowed_id_data_type);
     config.selector = std::move(selector);
     config.min_time = min_time;
     config.max_time = max_time;
@@ -268,17 +332,29 @@ namespace
         const std::unordered_map<String, String> & column_name_by_tag_name,
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
-        const DataTypePtr & timestamp_data_type)
+        const DataTypePtr & timestamp_data_type,
+        bool narrow_id_to_second_component,
+        bool return_first_component_too)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         /// SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)
+        ///
+        /// With id narrowing (see `Configuration::narrowed_id_data_type`) the stored identifier is
+        /// only the second id component:
+        ///     SELECT timeSeriesStoreTags(tupleElement(id, 2), tags, ...)
+        /// and when the id set must also serve primary-key index analysis over the samples table
+        /// (`return_first_component_too`), the full-shaped id is reassembled around it:
+        ///     SELECT tuple(tupleElement(id, 1), timeSeriesStoreTags(tupleElement(id, 2), tags, ...))
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
             ASTs args;
-            args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            ASTPtr stored_id = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID);
+            if (narrow_id_to_second_component)
+                stored_id = makeIDComponent(std::move(stored_id), 2);
+            args.push_back(std::move(stored_id));
             args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
             args.push_back(make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName));
             args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
@@ -289,7 +365,16 @@ namespace
                 args.push_back(make_intrusive<ASTIdentifier>(column_name));
             }
 
-            select_list.push_back(makeASTFunction("timeSeriesStoreTags", std::move(args)));
+            ASTPtr select_expression = makeASTFunction("timeSeriesStoreTags", std::move(args));
+            if (return_first_component_too)
+            {
+                select_expression = makeASTFunction(
+                    "tuple",
+                    makeIDComponent(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), 1),
+                    std::move(select_expression));
+            }
+
+            select_list.push_back(std::move(select_expression));
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
 
@@ -332,6 +417,7 @@ namespace
         DateTime64 min_time,
         DateTime64 max_time,
         const DataTypePtr & timestamp_data_type,
+        ASTPtr id_in_left_arg,
         ASTs whole_metric_id_range_conditions)
     {
         ASTs conditions;
@@ -358,8 +444,11 @@ namespace
 
         /// id IN (SELECT id FROM (select_id_query))
         /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
+        /// The left argument is passed by the caller: it is the bare `id` identifier normally
+        /// (which binds to the narrowed alias of the SELECT list when the id is narrowed),
+        /// or the qualified raw column when the set is full-shaped for index analysis.
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+        conditions.push_back(makeASTFunction("in", std::move(id_in_left_arg), std::move(select_as_subquery)));
 
         /// For a whole-metric selector over a metric-clustered id layout two more conditions are
         /// added: <raw id column> >= tuple(hash(metric_name), min) AND <raw id column> <= tuple(
@@ -377,6 +466,8 @@ namespace
                                         DateTime64 min_time,
                                         DateTime64 max_time,
                                         const DataTypePtr & timestamp_data_type,
+                                        bool narrow_id_to_second_component,
+                                        ASTPtr id_in_left_arg,
                                         ASTs whole_metric_id_range_conditions)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -389,11 +480,22 @@ namespace
         /// columns, degrading the index analysis and the ordering of the PREWHERE conditions.
         /// The casts to the declared types are applied by an outer SELECT instead
         /// (see `makeSelectQuery`).
+        ///
+        /// With id narrowing the id entry becomes `tupleElement(<qualified id>, 2) AS id`:
+        /// the alias makes the bare `id` of the WHERE conditions and of the outer SELECT resolve
+        /// to the narrowed component, while the qualified argument still resolves to the raw
+        /// table column (and reads only its second-component subcolumn).
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            if (narrow_id_to_second_component)
+            {
+                select_list.push_back(makeIDComponent(makeQualifiedIDIdentifier(data_table_id), 2));
+                select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+            }
+            else
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
 
@@ -421,7 +523,8 @@ namespace
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
             auto where_filter = makeWhereFilterForDataTable(
-                select_query_from_tags_table, min_time, max_time, timestamp_data_type, std::move(whole_metric_id_range_conditions));
+                select_query_from_tags_table, min_time, max_time, timestamp_data_type,
+                std::move(id_in_left_arg), std::move(whole_metric_id_range_conditions));
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -525,6 +628,11 @@ namespace
     /// series id. The supported types are the ones `TimeSeriesIDGenerator` can generate hashes for.
     std::optional<std::pair<ASTPtr, ASTPtr>> makeMinMaxLiteralsForIDComponent(const IDataType & type)
     {
+        /// A LowCardinality component has the value space of its dictionary type: the range bounds
+        /// are the dictionary type's bounds (constants have no dictionary encoding of their own).
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+            return makeMinMaxLiteralsForIDComponent(*low_cardinality_type->getDictionaryType());
+
         WhichDataType which(type);
 
         if (which.isUInt64())
@@ -602,7 +710,6 @@ namespace
         const StorageID & tags_table_id,
         const ColumnsDescription & tags_table_columns,
         const TimeSeriesSettings & time_series_settings,
-        const StorageID & time_series_storage_id,
         const DataTypePtr & id_data_type,
         const DataTypePtr & timestamp_data_type,
         const std::optional<DateTime64> & min_time_to_filter_ids,
@@ -644,19 +751,9 @@ namespace
         if (!data_table_id_column || (data_table_id_column->type->getName() != id_data_type->getName()))
             return {};
 
-        /// 2b. The id generator is the canonical one for this id type. The resolution order mirrors
-        /// `TimeSeriesSink`: the `id_generator` setting, then the DEFAULT of the tags-table `id`
-        /// column, then the canonical generator.
-        /// `getDefault` cannot throw here: two-component tuples of the types accepted above are
-        /// exactly the tuple types it supports.
-        ASTPtr canonical_generator = TimeSeriesIDGenerator::getDefault(id_data_type, time_series_storage_id);
-        ASTPtr id_generator = time_series_settings[TimeSeriesSetting::id_generator].value;
-        if (!id_generator)
-        {
-            if (const auto * tags_id_column = tags_table_columns.tryGet(TimeSeriesColumnNames::ID))
-                id_generator = tags_id_column->default_desc.expression;
-        }
-        if (id_generator && (id_generator->getTreeHash(/*ignore_aliases=*/true) != canonical_generator->getTreeHash(/*ignore_aliases=*/true)))
+        /// 2b. The id generator is the canonical one for this id type.
+        ASTPtr canonical_generator = tryGetCanonicalIDGenerator(id_data_type, time_series_settings, tags_table_columns);
+        if (!canonical_generator)
             return {};
 
         /// The first id component for this metric, e.g. sipHash64('my_metric'), as a constant
@@ -751,20 +848,14 @@ namespace
 
         /// The range conditions on the raw samples-table `id` column, qualified so that they
         /// resolve to the table column and not to the same-named alias of the SELECT list.
-        auto make_qualified_id = [&]
-        {
-            return make_intrusive<ASTIdentifier>(
-                std::vector<String>{data_table_id.database_name, data_table_id.table_name, TimeSeriesColumnNames::ID});
-        };
-
         ASTs conditions;
         conditions.push_back(makeASTFunction(
             "greaterOrEquals",
-            make_qualified_id(),
+            makeQualifiedIDIdentifier(data_table_id),
             makeASTFunction("tuple", first_component->clone(), std::move(min_max_second_component->first))));
         conditions.push_back(makeASTFunction(
             "lessOrEquals",
-            make_qualified_id(),
+            makeQualifiedIDIdentifier(data_table_id),
             makeASTFunction("tuple", std::move(first_component), std::move(min_max_second_component->second))));
         return conditions;
     }
@@ -800,9 +891,6 @@ void StorageTimeSeriesSelector::readImpl(
         max_time_to_filter_ids = config.max_time;
     }
 
-    ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
-
     auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, context)->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
 
@@ -814,13 +902,37 @@ void StorageTimeSeriesSelector::readImpl(
         tags_table_id,
         tags_table_metadata->getColumns(),
         *time_series_settings,
-        config.time_series_storage_id,
         config.id_data_type,
         config.timestamp_data_type,
         min_time_to_filter_ids,
         max_time_to_filter_ids,
         context,
         log);
+
+    const bool narrow_id = config.narrowed_id_data_type != nullptr;
+    const bool whole_metric = !whole_metric_id_range_conditions.empty();
+
+    /// With id narrowing the id set contains only second id components, so it cannot serve
+    /// primary-key index analysis over the samples table. For a whole-metric selector the range
+    /// conditions handle the index analysis anyway (and the set is excluded from it below); for
+    /// other selectors the tags subquery reassembles the full-shaped ids around the narrowed
+    /// component, and the `IN` compares the raw `id` column, keeping the index analysis intact.
+    const bool narrowed_set = narrow_id && whole_metric;
+
+    ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
+        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type,
+        /*narrow_id_to_second_component=*/narrow_id,
+        /*return_first_component_too=*/narrow_id && !narrowed_set);
+
+    /// The bare `id` binds to the narrowed alias of the SELECT list when the id is narrowed.
+    ASTPtr id_in_left_arg;
+    if (narrow_id && !narrowed_set)
+        id_in_left_arg = makeQualifiedIDIdentifier(samples_table_id);
+    else
+        id_in_left_arg = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID);
+
+    if (narrow_id)
+        LOG_DEBUG(log, "Reading only the second id component for selector {}", quoteString(config.selector.toString()));
 
     ContextPtr interpreter_context = context;
     if (!whole_metric_id_range_conditions.empty())
@@ -846,11 +958,13 @@ void StorageTimeSeriesSelector::readImpl(
         config.min_time,
         config.max_time,
         config.timestamp_data_type,
+        /*narrow_id_to_second_component=*/narrow_id,
+        std::move(id_in_left_arg),
         std::move(whole_metric_id_range_conditions));
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_data_table),
-        config.id_data_type,
+        narrow_id ? config.narrowed_id_data_type : config.id_data_type,
         config.timestamp_data_type,
         config.scalar_data_type);
 

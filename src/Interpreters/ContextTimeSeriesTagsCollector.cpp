@@ -1,5 +1,6 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -1002,6 +1003,10 @@ void ContextTimeSeriesTagsCollector::storeTags(const ColumnPtr & id_column, cons
 
 VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(const ColumnPtr & id_column) const
 {
+    ColumnPtr full_column = id_column->convertToFullIfWrapped();
+    if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(full_column.get()))
+        return getGroupByLowCardinalityID(*low_cardinality_column);
+
     auto unwrapped = unwrapIDColumn(id_column);
     if (unwrapped.null_map)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column->getName());
@@ -1037,8 +1042,64 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(con
 }
 
 
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByLowCardinalityID(const ColumnLowCardinality & id_column) const
+{
+    if (id_column.nestedIsNullable())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column.getName());
+
+    const auto & dictionary = id_column.getDictionary().getNestedColumn();
+    size_t num_rows = id_column.size();
+
+    Arena temp_arena;
+
+    /// Groups per dictionary key, resolved lazily: only the keys referenced by some row are
+    /// looked up. A shared dictionary can also contain identifiers whose rows were all filtered
+    /// out (e.g. by the `IN <ids>` condition of `timeSeriesSelector`) and which are therefore
+    /// unknown to this collector.
+    VectorWithMemoryTracking<Group> group_by_key(dictionary->size(), INVALID_GROUP);
+
+    VectorWithMemoryTracking<Group> res;
+    res.reserve(num_rows);
+
+    SharedLockGuard lock{mutex};
+
+    for (size_t i = 0; i != num_rows; ++i)
+    {
+        size_t key_index = id_column.getIndexAt(i);
+        Group group = group_by_key[key_index];
+        if (group == INVALID_GROUP)
+        {
+            const char * begin = nullptr;
+            auto key = dictionary->serializeValueIntoArena(key_index, temp_arena, begin, /* settings = */ nullptr);
+            const auto * it = groups_by_id.find(key);
+            if (!it)
+                throwUnknownID(*dictionary, key_index);
+            group = it->getMapped();
+            group_by_key[key_index] = group;
+        }
+        res.push_back(group);
+    }
+
+    return res;
+}
+
+
 VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID(const ColumnPtr & id_column) const
 {
+    ColumnPtr full_column = id_column->convertToFullIfWrapped();
+    if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(full_column.get()))
+    {
+        auto groups_for_rows = getGroupByLowCardinalityID(*low_cardinality_column);
+
+        VectorWithMemoryTracking<TagNamesAndValuesPtr> res;
+        res.reserve(groups_for_rows.size());
+
+        SharedLockGuard lock{mutex};
+        for (Group group : groups_for_rows)
+            res.push_back(groups.at(group));
+        return res;
+    }
+
     auto unwrapped = unwrapIDColumn(id_column);
     if (unwrapped.null_map)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column->getName());
