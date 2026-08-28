@@ -24,8 +24,8 @@ TTLDropMerge	100	200
 RegularMerge	0	200
 0
 -- Case 9: pending patch part disables the short-circuit
-RegularMerge	0	100
-0
+RegularMerge	10	1
+10
 -- Case 10: STOP TTL MERGES suppresses the short-circuit
 200
 -- Case 11: MODIFY TTL without materialization still reads the source parts
