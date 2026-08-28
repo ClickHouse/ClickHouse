@@ -2,6 +2,9 @@
 #include <memory>
 #include <set>
 
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
+
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
@@ -53,6 +56,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentThread.h>
@@ -1152,6 +1156,25 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     {
         optimize_trivial_count = !columns_context.has_array_join;
 
+        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
+        NamesAndTypesList accessible_columns;
+        if (alias)
+        {
+            /// An `Alias` fallback must read a column granted on both the alias and its target.
+            auto query_context = CurrentThread::tryGetQueryContext();
+            auto access = query_context ? query_context->getAccess() : nullptr;
+            const auto & storage_id = storage->getStorageID();
+            for (const auto & column : source_columns)
+            {
+                if (access
+                    && access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                    && alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name))
+                    accessible_columns.push_back(column);
+            }
+        }
+
+        const auto & columns_for_fallback = alias && !accessible_columns.empty() ? accessible_columns : source_columns;
+
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
@@ -1173,7 +1196,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         if (storage)
         {
             auto column_sizes = storage->getColumnSizes();
-            for (auto & source_column : source_columns)
+            for (const auto & source_column : columns_for_fallback)
             {
                 auto c = column_sizes.find(source_column.name);
                 if (c == column_sizes.end())
@@ -1185,9 +1208,9 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else if (!source_columns.empty())
+        else if (!columns_for_fallback.empty())
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
-            required.insert(ExpressionActions::getSmallestColumn(source_columns).name);
+            required.insert(ExpressionActions::getSmallestColumn(columns_for_fallback).name);
     }
     else if (is_select && storage_snapshot && !columns_context.has_array_join)
     {

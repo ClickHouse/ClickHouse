@@ -32,6 +32,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -174,6 +175,8 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
         else if (token == "tlsv1_2")
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
+        else if (token == "tlsv1_3")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_3;
     }
 
     auto prefer_server_cypher = config.getBool(config_prefix + "preferServerCiphers", false);
@@ -923,18 +926,8 @@ void KeeperServer::startLeaderMetricsPolling(int32_t poll_interval_ms)
 
 void KeeperServer::stopLeaderMetricsPolling()
 {
-    nuraft::ptr<nuraft::delayed_task> polling_task;
-    {
-        std::lock_guard lock(leader_unavailable_metrics_mutex);
-        if (!leader_unavailable_polling_task)
-            return;
-
-        polling_task = *leader_unavailable_polling_task;
-        leader_unavailable_polling_task.reset();
-    }
-
-    if (asio_service)
-        asio_service->cancel(polling_task);
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    leader_unavailable_polling_task.reset();
 }
 
 void KeeperServer::collectLeaderMetrics()
@@ -1011,6 +1004,13 @@ void KeeperServer::resetLeaderMetrics()
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
+    /// We / nuraft currently don't have a good way to recover from exceptions here, the whole
+    /// server crashes if this throws. So we suppress MEMORY_LIMIT_EXCEEDED and take the risk of OOM.
+    /// The soft limit check in KeeperRequestDispatcher should mostly keep memory in check.
+    /// (Although that check is not always applied on the correct node - a request we're applying
+    ///  here could come from the dispatcher on another node.)
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     if (type == nuraft::cb_func::BecomeLeader)
     {
         startLeaderUptimeMetrics();
@@ -1407,7 +1407,7 @@ void KeeperServer::waitInit()
     std::unique_lock lock(initialized_mutex);
 
     int64_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::startup_timeout].totalMilliseconds();
-    if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
+    if (!initialized_cv.wait_for(lock, saturatedWaitMilliseconds(timeout), [&] { return initialized_flag.load(); }))
         LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 
