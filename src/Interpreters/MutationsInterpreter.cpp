@@ -1326,7 +1326,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                 /// A column that is not physically stored has no data in any block, so there is
                 /// nothing to build. Such a definition can only be inherited from a version that
                 /// still accepted it; skip it so a queued mutation drains instead of failing.
-                if (columns_desc.has(stat_column_name) && !columns_desc.hasPhysical(stat_column_name))
+                /// A non-physical column without any statistics description is not grandfathered,
+                /// it is simply a wrong argument, so it still reaches the throw below.
+                if (columns_desc.has(stat_column_name)
+                    && !columns_desc.hasPhysical(stat_column_name)
+                    && !columns_desc.get(stat_column_name).statistics.empty())
                 {
                     LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
                     continue;
