@@ -27,7 +27,7 @@ The trace context is propagated to downstream services in the following cases:
 
 For a distributed `SELECT`, every read from a remote shard is covered by a `RemoteQueryExecutor::execute` span, on both the asynchronous connection paths (the default) and the synchronous path (`async_socket_for_remote = 0`). The span covers the whole fragment execution: establishing the connections, sending the query and reading the data until the end of stream, an exception or a cancellation. These spans carry attributes identifying the query fragment:
 
-* `clickhouse.cluster` and `clickhouse.shard_num` — the cluster and the shard the executor reads from (when the query goes through a cluster);
+* `clickhouse.cluster` and `clickhouse.shard_num` — the cluster and the shard the executor reads from. Currently filled for reads from `Distributed` tables and from `*Cluster` table functions such as `s3Cluster`; a `*Cluster` function uses every replica of the cluster as a shard, so `clickhouse.shard_num` numbers those fan-out entries. Other distributed flows (for example reads with parallel replicas) do not fill these attributes yet;
 * `clickhouse.processed_stage` — the query processing stage requested from the shard;
 * `clickhouse.query_id` and `clickhouse.initial_query_id` — the query ids from the initiator's perspective;
 * `clickhouse.target_host` — the addresses of the established connections (added once the connections are established).
