@@ -103,11 +103,46 @@ depends on `settings_constraints_replace_previous`:
   the remaining fields are kept from the earlier one.
 
 A profile applied with [`SET profile`](/sql-reference/statements/set) follows a
-stricter rule, whatever `settings_constraints_replace_previous` is set to. It can
-only narrow what is already in effect: raise a `min`, lower a `max`, add
-`disallowed` values, or make a setting `readonly`. It cannot lift a constraint or
-grant `changeable_in_readonly`. Any user can run `SET profile` with any profile,
-so a session profile is not a way around the constraints in your configuration.
+different rule. It can add restrictions, but it cannot remove or weaken a
+restriction that already applies to the session. This rule does not depend on
+`settings_constraints_replace_previous`.
+
+For example, suppose the profile assigned to a user limits `max_threads` to `8`:
+
+```xml
+<restricted>
+  <constraints>
+    <max_threads>
+      <max>8</max>
+    </max_threads>
+  </constraints>
+</restricted>
+```
+
+The user can apply another profile with a lower limit:
+
+```xml
+<single_threaded>
+  <constraints>
+    <max_threads>
+      <max>1</max>
+    </max_threads>
+  </constraints>
+</single_threaded>
+```
+
+```sql
+SET profile = 'single_threaded';
+SET max_threads = 1; -- allowed
+SET max_threads = 8; -- an exception: the active limit is now 1
+```
+
+In a new session with the original limit of `8`, a profile that sets
+`max_threads` to `16` cannot raise that limit. The session remains limited to
+`8` after `SET profile` applies that profile. The same rule means that `SET
+profile` cannot remove `readonly`, remove a disallowed value, or grant
+`changeable_in_readonly` access. Any user can apply a settings profile, so a
+session profile cannot bypass the constraints in your configuration.
 
 ## Read-only mode {#read-only}
 
