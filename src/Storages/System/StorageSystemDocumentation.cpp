@@ -29,7 +29,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/StatementFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -77,7 +76,6 @@ enum class EntityType : int8_t
     CurrentMetric = 18,
     AsynchronousMetric = 19,
     SystemTable = 20,
-    Statement = 21,
 };
 
 std::vector<std::pair<String, Int8>> getTypeEnumValues()
@@ -103,7 +101,6 @@ std::vector<std::pair<String, Int8>> getTypeEnumValues()
         {"Current Metric", static_cast<Int8>(EntityType::CurrentMetric)},
         {"Asynchronous Metric", static_cast<Int8>(EntityType::AsynchronousMetric)},
         {"System Table", static_cast<Int8>(EntityType::SystemTable)},
-        {"Statement", static_cast<Int8>(EntityType::Statement)},
     };
 }
 
@@ -199,7 +196,6 @@ String composeMarkdown(
     const String & returned_value,
     const String & examples,
     const String & introduced_in,
-    const String & parent,
     const std::vector<String> & related)
 {
     String result = boost::algorithm::trim_copy(description);
@@ -234,14 +230,6 @@ String composeMarkdown(
         result += "**Introduced in:** " + introduced;
     }
 
-    const String enclosing = boost::algorithm::trim_copy(parent);
-    if (!enclosing.empty())
-    {
-        if (!result.empty())
-            result += "\n\n";
-        result += "**Part of:** `" + enclosing + "`";
-    }
-
     if (!related.empty())
     {
         String related_str;
@@ -273,7 +261,6 @@ String renderDoc(const Documentation & doc)
         /*returned_value=*/ "",
         doc.examplesAsString(),
         doc.introducedInAsString(),
-        doc.parent,
         doc.related);
 }
 
@@ -291,7 +278,6 @@ String renderFunctionDoc(const FunctionDocumentation & doc)
         doc.returnedValueAsString(),
         doc.examplesAsString(),
         doc.introducedInAsString(),
-        /*parent=*/ "",
         /*related=*/ {});
 }
 
@@ -360,24 +346,6 @@ void addDocumented(MutableColumns & res_columns, EntityType type, const Factory 
     {
         const auto & documentation = factory.getDocumentation(name);
         addRow(res_columns, type, name, renderDoc(documentation), makeRepoRelative(documentation.source));
-    }
-}
-
-/// For factories whose `Documentation::description` is always the complete reference page.
-/// Structured fields such as `syntax` remain available through the component-specific system table, but appending
-/// them here would duplicate sections already present in the page body.
-template <typename Factory>
-void addFullPageDocumented(MutableColumns & res_columns, EntityType type, const Factory & factory)
-{
-    for (const auto & name : factory.getAllRegisteredNames())
-    {
-        const auto & documentation = factory.getDocumentation(name);
-        addRow(
-            res_columns,
-            type,
-            name,
-            boost::algorithm::trim_copy(documentation.description),
-            makeRepoRelative(documentation.source));
     }
 }
 
@@ -973,9 +941,6 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 value.documentation ? boost::algorithm::trim_copy(String(value.documentation)) : String{},
                 makeRepoRelative(value.source));
     }
-
-    /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
-    addFullPageDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
 
     /// System tables document themselves with their table comment, authored at the attachment site.
     if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))

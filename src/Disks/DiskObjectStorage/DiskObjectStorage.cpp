@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.h>
 #include <Common/CurrentThread.h>
 
@@ -83,7 +84,7 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal);
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal, getReadResourceName(), getWriteResourceName());
 }
 
 DiskObjectStorage::DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_)
@@ -121,7 +122,7 @@ DiskObjectStoragePtr DiskObjectStorage::wrapWithMemoryMetadata()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
-    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, to_disk.copy_object_pool);
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, to_disk.copy_object_pool, getReadResourceName(), to_disk.getWriteResourceName());
 }
 
 DiskObjectStorage::DiskObjectStorage(
@@ -254,8 +255,6 @@ DiskObjectStorage::DiskObjectStorage(
                 LOG_INFO(log, "Using resource '{}' instead of '{}' for READ", new_read_resource, old_read_resource);
             if (old_write_resource != new_write_resource)
                 LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
-
-            propagateResourceNamesNoLock();
         });
     cluster->applyNewSettings(config, config_prefix);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
@@ -791,6 +790,18 @@ bool DiskObjectStorage::supportsHardLinks() const
     return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
 
+String DiskObjectStorage::getReadResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return getReadResourceNameNoLock();
+}
+
+String DiskObjectStorage::getWriteResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return getWriteResourceNameNoLock();
+}
+
 String DiskObjectStorage::getReadResourceNameNoLock() const
 {
     if (read_resource_name_from_config.empty())
@@ -805,23 +816,6 @@ String DiskObjectStorage::getWriteResourceNameNoLock() const
         return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
     else
         return write_resource_name_from_config;
-}
-
-void DiskObjectStorage::propagateResourceNamesNoLock() const
-{
-    String read_resource = getReadResourceNameNoLock();
-    String write_resource = getWriteResourceNameNoLock();
-
-    /// TODO(Michicosun): too adhoc, need to introduce WrappedObjectStorage that will simply delegate all methods.
-    if (wrapped_disk)
-    {
-        object_storages->takePointingTo(cluster->getLocalLocation())->setIOSchedulingResourceNames(read_resource, write_resource);
-    }
-    else
-    {
-        for (const auto & [location, storage] : object_storages->getRegistry())
-            storage->setIOSchedulingResourceNames(read_resource, write_resource);
-    }
 }
 
 void DiskObjectStorage::prepareRead(
@@ -852,7 +846,7 @@ void DiskObjectStorage::prepareRead(
 
     const StoredObjects storage_objects = metadata_storage->getStorageObjects(path);
 
-    auto read_settings = settings;
+    auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 

@@ -2,7 +2,6 @@
 
 #include <string>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -413,10 +412,8 @@ public:
     /// such storages instead of failing close at read time.
     virtual bool supportsObjectGenerationComparison() const { return true; }
 
-    void setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_);
-    std::pair<String, String> getIOSchedulingResourceNames() const;
-
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
     virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
@@ -465,11 +462,6 @@ public:
     /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
-
-private:
-    mutable std::mutex io_scheduling_mutex;
-    String read_resource_name;
-    String write_resource_name;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

@@ -362,14 +362,6 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
     if (!query_condition_cache)
         return;
 
-    /// A transform between the reading step and this filter (e.g. `FilterSortedStreamByRange`
-    /// when the read is split into layers for FINAL or for join-by-PK-ranges) already dropped
-    /// rows from the chunk. "No rows matched" then holds only for the surviving rows, not for
-    /// every row of the chunk's mark ranges: rows of the same granules in another layer may
-    /// still match. Writing such ranges would poison the cache for later queries.
-    if (mark_ranges_info && mark_ranges_info->has_dropped_rows)
-        return;
-
     if (!mark_ranges_info)
     {
         /// FilterTransform has finished, we need to flush to the query result cache.

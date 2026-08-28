@@ -4772,88 +4772,6 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
-## pgGetUserById {#pgGetUserById}
-
-Introduced in: v26.8.0
-
-Compatibility function for the PostgreSQL wire protocol, an analog of `pg_catalog.pg_get_userbyid`.
-PostgreSQL clients (for example, the `\d` command in `psql`) use it to display the owner of a table.
-ClickHouse does not track table ownership, so the function ignores the argument and returns the name of the current user.
-    
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
-
-**Syntax**
-
-```sql
-pgGetUserById(oid)
-```
-
-**Aliases**: `pg_get_userbyid`
-
-**Arguments**
-
-- `oid` — Object identifier of the role. The value is ignored. [`UInt32`](/reference/data-types/int-uint)
-
-**Returned value**
-
-Returns the name of the current user. [`String`](/reference/data-types/string)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT pg_get_userbyid(10)
-```
-
-```response title=Response
-┌─pgGetUserById(10)─┐
-│ default           │
-└───────────────────┘
-```
-
-## pgTableIsVisible {#pgTableIsVisible}
-
-Introduced in: v26.8.0
-
-Compatibility function for the PostgreSQL wire protocol, an analog of `pg_catalog.pg_table_is_visible`.
-PostgreSQL clients (for example, the `\d` command in `psql`) use it to filter tables visible in the search path.
-Since the `pg_class` view emulated by ClickHouse exposes only the tables of the current database, which are all visible, the function unconditionally returns `1`.
-    
-
-**Syntax**
-
-```sql
-pgTableIsVisible(oid)
-```
-
-**Aliases**: `pg_table_is_visible`
-
-**Arguments**
-
-- `oid` — Object identifier of the table, as exposed by the emulated `pg_class` view. The value is ignored. [`UInt32`](/reference/data-types/int-uint)
-
-**Returned value**
-
-Always returns `1`. [`UInt8`](/reference/data-types/int-uint)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT pg_table_is_visible(0)
-```
-
-```response title=Response
-┌─pgTableIsVisible(0)─┐
-│                   1 │
-└─────────────────────┘
-```
-
 ## queryID {#queryID}
 
 Introduced in: v21.9.0
@@ -5463,13 +5381,8 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 Introduced in: v22.6.0
 
 Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
-An empty map is returned if the server has no certificate, for example, when the certificate is provisioned with ACME and has not been issued yet.
 See [Configuring TLS](/concepts/features/security/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
     
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
 
 **Syntax**
 

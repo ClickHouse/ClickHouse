@@ -339,11 +339,8 @@ Introduced in: v26.8.0
 
 Evaluates a natural-language condition against the given text using an LLM provider and returns a boolean (`UInt8`) suitable for `WHERE`, `PREWHERE`, and `JOIN ... ON`.
 
-The function asks the model to respond with only lowercase `true` or `false`. Any complete response other
-than `true` (including `false` and unrecognised text) maps to `0`, so the row is filtered out. A
-provider-signalled incomplete reply — truncated, content-filtered, or requiring further action — is instead
-treated as an error: with `ai_function_throw_on_error` enabled (the default) the query is aborted; with it
-disabled the row maps to `0` and is filtered out.
+The function asks the model to respond with only lowercase `true` or `false`. Failed requests (when
+`ai_function_throw_on_error` is disabled) and unrecognised responses map to `0`, so the row is filtered out.
 
 **Warning:** Do not trust `aiFilter` results without scrutiny. LLM-based predicates can be incorrect
 or inconsistent; use them only where false positives and false negatives are acceptable.
@@ -469,9 +466,8 @@ newline, and carriage return are also normalized to spaces before the request, s
 byte-identical to inputs that contain them.
 
 Because `aiRedact` returns the whole input text with PII replaced, the output is about as long as the input.
-Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit is
-rejected with `AI_PROVIDER_RESPONSE_TRUNCATED` (or yields the column default when `ai_function_throw_on_error`
-is disabled) rather than returning partially redacted text.
+Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit
+will be incomplete.
 
 **Syntax**
 
@@ -485,7 +481,7 @@ aiRedact(text, categories[, params])
 
 - `text` — Text to redact. [`String`](/reference/data-types/string)
 - `categories` — Constant list of PII categories to redact (e.g. `['name', 'ssn', 'credit_card']`). An empty array falls back to a default set of common categories (name, email, phone number, address, credit card, IP address). [`Array(String)`](/reference/data-types/array)
-- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens; a reply truncated by a too-low limit is rejected rather than returning partially redacted text), `replacement` (token that replaces each detected PII span; default `[REDACTED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens or the reply may be truncated and incomplete), `replacement` (token that replaces each detected PII span; default `[REDACTED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 

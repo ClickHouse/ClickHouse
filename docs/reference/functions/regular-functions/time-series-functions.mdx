@@ -564,40 +564,6 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## timeSeriesMetricTypeToSuffixes {#timeSeriesMetricTypeToSuffixes}
-
-Introduced in: v26.8.0
-
-Returns the metric-name suffixes for a metric family of the given Prometheus type.
-
-**Syntax**
-
-```sql
-timeSeriesMetricTypeToSuffixes(type)
-```
-
-**Arguments**
-
-- `type` — Prometheus metric type (`counter`, `gauge`, `histogram`, `summary`, ...). [`String`](/reference/data-types/string)
-
-**Returned value**
-
-Returns the suffixes for a family of that type. [`Array(String)`](/reference/data-types/array)
-
-**Examples**
-
-**Example**
-
-```sql title=Query
-SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
-```
-
-```response title=Response
-┌─suffixes──────────────────────┐
-│ ['_bucket','_count','_sum']   │
-└───────────────────────────────┘
-```
-
 ## timeSeriesRange {#timeSeriesRange}
 
 Introduced in: v25.8.0
@@ -917,45 +883,6 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ┌─group1─┬─group2─┬─empty_group─┬─same_group2─┬─throwIf(notEquals(same_group2, group2))─┬─timeSeriesGroupToTags(group2)──┐
 │      1 │      2 │           0 │           2 │                                       0 │ [('__name__','http_failures')] │
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
-```
-
-## timeSeriesTagsToMap {#timeSeriesTagsToMap}
-
-Introduced in: v26.8.0
-
-Combines an array of `(tag_name, tag_value)` pairs with separate tag name/value arguments into a single map.
-The result is sorted by tag name, and duplicate tag names and tags with empty values are removed.
-    
-
-**Syntax**
-
-```sql
-timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
-```
-
-**Arguments**
-
-- `tags_array` — Array of pairs (tag_name, tag_value). [`Array(Tuple(String, String))`](/reference/data-types/array) or [`Map(String, String)`](/reference/data-types/map) or [`NULL`](/reference/syntax#null)
-- `tag_name_i` — The name of a tag. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
-- `tag_value_i` — The value of a tag. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable)
-
-**Returned value**
-
-Returns a map of tag names to tag values, sorted by tag name, without duplicate tag names or empty tag values.
-         [`Map(String, String)`](/reference/data-types/map)
-
-**Examples**
-
-**Example**
-
-```sql title=Query
-SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
-```
-
-```response title=Response
-┌─tags───────────────────────────────────────────────────────────┐
-│ {'__name__':'http_requests_count','env':'dev','region':'eu'}    │
-└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## timeSeriesThrowDuplicateSeriesIf {#timeSeriesThrowDuplicateSeriesIf}
