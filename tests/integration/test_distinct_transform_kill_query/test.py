@@ -24,6 +24,7 @@ HASHMAP_FAULT_NAME = "distinct_transform_pause"
 LC_FAULT_NAME = "distinct_transform_lc_pause"
 NULL_FAULT_NAME = "distinct_transform_null_pause"
 FILTER_FAULT_NAME = "distinct_transform_filter_pause"
+EXECUTOR_TIMEOUT_FAULT_NAME = "distinct_transform_soft_timeout_executor"
 
 
 def run_kill_query_failpoint_test(query, fault_name, query_id=None):
@@ -506,6 +507,7 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
     query_id = str(uuid.uuid4())
 
     node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {EXECUTOR_TIMEOUT_FAULT_NAME}")
 
     thread_error = [None]
     query_error = [None]
@@ -543,7 +545,7 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
         ## interactive_delay the pull loop observes it via checkTimeLimitSoft() and cancels the
         ## pipeline with CancelledByTimeout (`cancel_reason` stays UNDEFINED), then blocks the
         ## pipeline thread at the failpoint until we notify it.
-        time.sleep(30)
+        time.sleep(8)
 
         ## Do NOT arm the hashmap failpoint: in throw mode `buildFilter` must throw at the
         ## `isCancelled()` check (`timeoutShouldThrow` -> `checkTimeLimit()`) before it could pause
@@ -551,8 +553,19 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
         ## result. Without the fix the executor-side cancel is wrongly treated as a soft break timeout
         ## and the query returns a partial prefix without error.
         node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+
+        ## The `CancellationChecker` can also deliver a `TIMEOUT_EXCEEDED` (it cancels the query at the
+        ## same deadline), so the assertion above alone does not prove the *executor-side* throw path.
+        ## The dedicated failpoint fires only inside this transform's `timeoutShouldThrow()` branch,
+        ## i.e. once the pipeline thread resumes from the hold and the executor poll loop reports the
+        ## timeout. If the checker had won, this branch would still be reached (the failpoint wait is
+        ## not interruptible by `cancelQuery`), proving the executor-side raise regardless of who noticed
+        ## the deadline first. A thrown `TIMEOUT_EXCEEDED` from this branch is the contract under test.
+        wait_failpoint(EXECUTOR_TIMEOUT_FAULT_NAME)
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {EXECUTOR_TIMEOUT_FAULT_NAME}")
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {EXECUTOR_TIMEOUT_FAULT_NAME}")
         pool.shutdown(wait=False, cancel_futures=True)
 
     query_thread.join(timeout=60)

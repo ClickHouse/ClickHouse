@@ -452,11 +452,23 @@ bool DistinctTransform::timeoutShouldThrow() const
     if (!process_list_element)
         return false;
 
-    /// A timeout observed via the executor poll loop (or `checkTimeLimit`) leaves the cancel reason
-    /// `UNDEFINED`, while a `KILL QUERY` sets a real cancel reason. Only a timeout in THROW mode must
-    /// surface as `TIMEOUT_EXCEEDED`; a KILL is reported by the pipeline on its own.
-    return process_list_element->getCancelReason() == DB::CancelReason::UNDEFINED
-        && process_list_element->getOverflowMode() == OverflowMode::THROW;
+    if (process_list_element->getOverflowMode() != OverflowMode::THROW)
+        return false;
+
+    /// In `timeout_overflow_mode = 'throw'` both the executor poll loop (which leaves the cancel reason
+    /// `UNDEFINED`) and the global `CancellationChecker` (which sets `cancel_reason = TIMEOUT`) detect a
+    /// `max_execution_time` overrun. Either way this transform must raise `TIMEOUT_EXCEEDED` from its own
+    /// `checkTimeLimit()` so the throw is surfaced deterministically from the executor-side path. A genuine
+    /// `KILL QUERY` carries a different cancel reason and must propagate as-is.
+    const auto reason = process_list_element->getCancelReason();
+    const bool should = reason == DB::CancelReason::UNDEFINED || reason == DB::CancelReason::TIMEOUT;
+    if (should)
+    {
+        /// Fire a failpoint so a regression test can prove the executor-side (not just the global
+        /// `CancellationChecker`) raised this `TIMEOUT_EXCEEDED`.
+        FailPointInjection::pauseFailPoint("distinct_transform_soft_timeout_executor");
+    }
+    return should;
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -613,14 +625,14 @@ void DistinctTransform::transform(Chunk & chunk)
             /// prefix must not be truncated here; only a soft timeout that fires *during* this pass may.
             const bool filter_pre_latched = time_limit_exceeded;
 
-            if (isCancelled() && !isCancelledBySoftTimeout())
-            {
-                if (timeoutShouldThrow())
-                    process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
-                chunk.clear();
-                stopReading();
-                return;
-            }
+        if (isCancelled() && !isCancelledBySoftTimeout())
+        {
+            if (timeoutShouldThrow())
+                process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
+            chunk.clear();
+            stopReading();
+            return;
+        }
 
             /// The keep-mask application is a monolithic pass over every key column; poll for a hard
             /// cancellation between columns and within each column's materialization so a KILL arriving
@@ -670,7 +682,7 @@ void DistinctTransform::transform(Chunk & chunk)
                         stopReading();
                         return;
                     }
-                    if (offset > 0 && !filter_pre_latched && isSoftTimeout())
+                    if (isSoftTimeout())
                     {
                         truncated_at = offset; /// break-mode: stop materializing, emit the processed prefix
                         break;
@@ -702,6 +714,13 @@ void DistinctTransform::transform(Chunk & chunk)
 
             if (num_rows == 0)
             {
+                if (time_limit_exceeded)
+                {
+                    /// Break-mode soft timeout: the preserved prefix filtered down to zero rows (for example
+                    /// when the committed prefix is all `NULL`s), so behave as if the source ended at the
+                    /// timeout instead of draining (and discarding) the remaining chunks after the deadline.
+                    stopReading();
+                }
                 chunk.setColumns(std::move(columns), 0);
                 return;
             }
@@ -725,6 +744,8 @@ void DistinctTransform::transform(Chunk & chunk)
 
             if (isCancelled() && !isCancelledBySoftTimeout())
             {
+                if (timeoutShouldThrow())
+                    process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
                 chunk.clear();
                 stopReading();
                 return;
