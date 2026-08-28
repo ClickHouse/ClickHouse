@@ -48,7 +48,7 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
         SharedHeader right_sample_block,
-        const StatsCollectingParams & stats_collecting_params_,
+        const HashJoinStatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false,
         size_t external_join_threshold_ = 0);
 
@@ -56,13 +56,19 @@ public:
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
+    /// Computes the probe side zero copy decision.
+    void initialize(const Block & left_sample_block) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+
+    StepAnalysisReport getAnalysisReport() const override;
+
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
@@ -112,6 +118,12 @@ public:
 
     void onBuildPhaseFinish() override;
 
+    void onProbePhaseFinish(size_t matched_right_rows) override
+    {
+        hash_table_matches = matched_right_rows;
+        probe_phase_finished = true;
+    }
+
     void setEnableLazyColumnsIndexing(bool value) override
     {
         std::ranges::for_each(hash_joins, [value](auto & hash_join) { hash_join->data->setEnableLazyColumnsIndexing(value); });
@@ -138,9 +150,17 @@ private:
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     bool build_phase_finished = false;
+    bool probe_phase_finished = false;
+    bool use_zero_copy_right = false;
+    bool use_zero_copy_left = false;
+    size_t hash_table_matches = 0;
+    std::once_flag row_store_init_flag;
 
-    StatsCollectingParams stats_collecting_params;
+    HashJoinStatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;
+
+    /// Sum of per-slot build peaks captured right before the build finishes
+    size_t peak_build_bytes = 0;
 
     std::mutex totals_mutex;
     Block totals;
@@ -150,7 +170,16 @@ private:
     std::atomic<size_t> global_total_rows{0};
     std::atomic<size_t> global_total_bytes{0};
 
-    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    size_t getRightTableRowCount() const;
+    size_t getUniqueKeys() const;
+
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    JoinAnalysisCounters collectMatchedRowsCounters() const;
+
+    static bool useZeroCopyApproach(const Block & from_block);
+    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block, bool use_zero_copy);
+
     std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
     void resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
 };

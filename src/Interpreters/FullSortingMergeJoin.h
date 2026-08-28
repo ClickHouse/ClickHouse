@@ -157,6 +157,11 @@ public:
 
     bool alwaysReturnsEmptySet() const override { return false; }
 
+    StepAnalysisReport getAnalysisReport() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getAnalysisReport should not be called");
+    }
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {

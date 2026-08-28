@@ -14,7 +14,7 @@ keywords: ['AWS PrivateLink', '私有 RDS', 'ClickPipes']
 
 <Info>
   此方法使用 AWS Endpoint Service，主要适用于跨区域访问。如果您需要同一区域访问，
-  则建议改为[创建 VPC 资源](/zh/integrations/clickpipes/aws-privatelink#vpc-resource)。
+  则建议改为[创建 VPC 资源](/zh/integrations/clickpipes/networking/aws-privatelink#vpc-resource)。
 </Info>
 
 <div id="private-link-creation">
@@ -60,7 +60,7 @@ keywords: ['AWS PrivateLink', '私有 RDS', 'ClickPipes']
 7. **可选**：如果您的数据库区域与 ClickPipes 区域不同，请启用跨区域支持
    * 在 VPC 控制台的 `Endpoint Services` 下，选择您的端点服务。
    * 点击 `Actions` 按钮，然后选择 `Modify supported Regions`。
-   * 添加您希望允许访问该端点服务的区域。ClickPipes 区域列表请[参见此处](/zh/integrations/clickpipes/home#list-of-static-ips)。
+   * 添加您希望允许访问该端点服务的区域。ClickPipes 区域列表请[参见此处](/zh/integrations/clickpipes/networking/static-ips)。
 
 8. **MySQL 推荐设置**
    * 如果您使用的是 MySQL，建议在源数据库中将 `skip_name_resolve=1` 设置为参数。
@@ -72,7 +72,7 @@ keywords: ['AWS PrivateLink', '私有 RDS', 'ClickPipes']
   ## 发起连接
 </div>
 
-完成后，您可以按照指南[发起连接](/zh/integrations/clickpipes/aws-privatelink#creating-clickpipe)。
+完成后，您可以按照指南[发起连接](/zh/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)。
 
 当 Console 中的状态显示为 `Ready` 后，您就可以按照下一节创建 ClickPipe。
 
