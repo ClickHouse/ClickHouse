@@ -1,4 +1,7 @@
 #include <Storages/System/StorageSystemInstrumentation.h>
+
+#if USE_XRAY
+
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -9,8 +12,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InstrumentationManager.h>
 
-#if USE_XRAY
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -20,8 +21,6 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
-
-#endif
 
 namespace DB
 {
@@ -52,8 +51,6 @@ ColumnsDescription getInstrumentationColumnsDescription()
 }
 
 }
-
-#if USE_XRAY
 
 ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
 {
@@ -99,11 +96,7 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
     }
 }
 
-#endif
-
 }
-
-#if USE_XRAY
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemInstrumentation) }

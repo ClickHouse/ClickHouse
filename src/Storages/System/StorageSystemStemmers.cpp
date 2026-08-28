@@ -1,4 +1,7 @@
 #include "config.h"
+
+#if USE_LIBSTEMMER
+
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -19,8 +22,6 @@ ColumnsDescription getStemmersColumnsDescription()
 }
 
 }
-
-#if USE_LIBSTEMMER
 
 #include <Storages/System/StorageSystemStemmers.h>
 #include <Interpreters/Context.h>

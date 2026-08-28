@@ -1,4 +1,7 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
+
+#if USE_RDKAFKA
+
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -47,8 +50,6 @@ ColumnsDescription getKafkaConsumersColumnsDescription()
 }
 
 }
-
-#if USE_RDKAFKA
 
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnNullable.h>
