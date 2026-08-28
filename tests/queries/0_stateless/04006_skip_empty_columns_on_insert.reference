@@ -84,3 +84,8 @@ case17_json_data
 2	2	0	bob	0
 3	1	0		11
 3	2	0		12
+case18_negative_zero_columns
+key
+value
+case18_negative_zero_bits
+9223372036854775808

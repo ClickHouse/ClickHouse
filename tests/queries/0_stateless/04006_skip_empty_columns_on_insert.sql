@@ -561,3 +561,33 @@ FROM t_skip_empty_partitioned_json
 ORDER BY tenant, key;
 
 DROP TABLE t_skip_empty_partitioned_json;
+
+-- ============================================================================
+-- CASE 18: Const -0.0 is numerically equal to the type default but has a
+-- different bit pattern, so it must remain physical and round-trip unchanged.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_const_negative_zero;
+
+CREATE TABLE t_skip_empty_const_negative_zero
+(
+    key UInt64,
+    value Float64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_const_negative_zero SELECT 1, -0.0;
+
+SELECT 'case18_negative_zero_columns';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_const_negative_zero' AND active
+ORDER BY column;
+
+SELECT 'case18_negative_zero_bits';
+SELECT reinterpretAsUInt64(value) FROM t_skip_empty_const_negative_zero;
+
+DROP TABLE t_skip_empty_const_negative_zero;
