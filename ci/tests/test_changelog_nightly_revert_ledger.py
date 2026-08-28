@@ -8,6 +8,7 @@ revert arriving days after the entry was already deleted.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -112,13 +113,24 @@ def changelog(
     )
 
 
+def fake_graphql(command):
+    """The batched pull request lookup, answered from `PULL_REQUESTS`. A number
+    that is not there comes back as a null node, the shape GitHub uses for a
+    pull request it will not return."""
+    nodes = {}
+    for pr in re.findall(r"p(\d+): pullRequest", command):
+        data = PULL_REQUESTS.get(pr)
+        nodes[f"p{pr}"] = None if data is None else dict(data)
+    return json.dumps({"data": {"repository": nodes}})
+
+
 def analyze(monkeypatch, text, ledger=()):
-    """`analyze_reverts` with `gh pr view` and the branch log stubbed out.
-    `ledger` is newest first, the order `git log` walks the branch in."""
+    """`analyze_reverts` with the pull request lookup and the branch log stubbed
+    out. `ledger` is newest first, the order `git log` walks the branch in."""
 
     def fake_get_output(command, strict=False, verbose=False, retries=1, delay=2):
-        if command.startswith("gh pr view"):
-            return json.dumps(PULL_REQUESTS[command.split()[3]])
+        if command.startswith("gh api graphql"):
+            return fake_graphql(command)
         assert command.startswith("git log origin/master..HEAD"), command
         return "\n".join(["Update changelog: edit new entries", "", *ledger])
 
@@ -258,6 +270,7 @@ def test_branch_without_a_ledger_keeps_the_previous_behaviour(monkeypatch):
         "restore": {},
         "missing": [],
         "withheld": {},
+        "cancelling": [],
         "reapply": {},
         "reapply_allowance": {},
         "amend": [],
@@ -1323,3 +1336,109 @@ def test_a_restored_visible_revert_records_its_reapply(monkeypatch, tmp_path):
         )
         is None
     )
+
+
+def test_a_revert_under_a_real_category_is_still_a_revert(monkeypatch, tmp_path):
+    """The generator renders the author's own `Changelog entry` under the
+    author's own `Changelog category`, so a revert can arrive under
+    `Improvement` reading "Disable the setting again" - nothing about the
+    bullet says revert. The pull request metadata does, and it is what
+    decides."""
+    PULL_REQUESTS["115800"] = {
+        "title": f'Revert "{FIX_TITLE}"',
+        "body": (
+            "Reverts ClickHouse/ClickHouse#109946\n\n"
+            "### Changelog category\n- Improvement\n"
+        ),
+    }
+    disguised = _entry("115800", "Do not propagate the settings after all")
+    old_text = changelog(
+        [FIX], raw_sections=[("Improvement", [disguised])]
+    )
+    reverts = analyze(monkeypatch, old_text, [])
+    assert reverts["credits"] == {"109946": "115800"}
+    assert reverts["cancelling"] == ["115800"]
+
+    # The only correct edit deletes both, and it passes: the entry because the
+    # revert licenses it, the revert's own bullet because it cancels an entry
+    # of this release.
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([]), reverts) is None
+    )
+    # Keeping the reverted entry is still rejected.
+    kept = run_verify_edit(monkeypatch, tmp_path, old_text, changelog([FIX]), reverts)
+    assert kept is not None
+    assert "whose revert still stands" in kept
+
+
+def test_a_literal_revert_bullet_under_a_real_category_may_be_deleted(
+    monkeypatch, tmp_path
+):
+    """The same shape with the bullet left as the title. Before, the strict
+    retention rule demanded the revert's own link survive while skill section 2
+    demands it leave no trace, so the only correct edit could not pass."""
+    old_text = changelog(
+        [], raw_sections=[(STRICT, [FIX]), (STRICT, [REVERT])]
+    )
+    reverts = analyze(monkeypatch, old_text, [])
+    assert reverts["credits"] == {"109946": "114911"}
+    assert reverts["cancelling"] == ["114911"]
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([]), reverts) is None
+    )
+
+
+def test_a_revert_of_an_older_release_is_not_exempt(monkeypatch, tmp_path):
+    """A revert of a change that shipped earlier is rewritten into a visible
+    entry (skill section 2, case 5), so it is a real entry and the retention
+    rule applies to it. Its target is not in this cycle, so it is not in
+    `cancelling`."""
+    PULL_REQUESTS["115900"] = {
+        "title": 'Revert "Something from 26.3"',
+        "body": "Reverts ClickHouse/ClickHouse#90000",
+    }
+    visible = _entry("115900", "The setting is no longer enabled by default")
+    old_text = changelog([], raw_sections=[(STRICT, [visible])])
+    reverts = analyze(monkeypatch, old_text, [])
+    assert reverts["cancelling"] == []
+
+    dropped = run_verify_edit(monkeypatch, tmp_path, old_text, changelog([]), reverts)
+    assert dropped is not None
+    assert "Entries disappeared in the edit without a matching revert" in dropped
+    assert "['115900']" in dropped
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([visible]), reverts)
+        is None
+    )
+
+
+def test_a_failed_pull_request_lookup_fails_the_run(monkeypatch):
+    """A lookup that comes back empty must not be read as "not a revert". With
+    the ledger already recording `#109946` as deleted by `#114911`, a silently
+    unresolved `#114912` leaves the old deletion credit standing, asks for no
+    restoration, and loses the shipped fix for good."""
+
+    def broken(command, strict=False, verbose=False, retries=1, delay=2):
+        if command.startswith("gh api graphql"):
+            return ""  # what `Shell.get_output` returns for a failed command
+        return "\n".join(["Update changelog", "", LEDGER_REVERT, LEDGER_DELETED])
+
+    monkeypatch.setattr(cl.Shell, "get_output", staticmethod(broken))
+    monkeypatch.setattr(
+        cl, "Info", lambda: type("I", (), {"repo_name": "ClickHouse/ClickHouse"})()
+    )
+    try:
+        cl.analyze_reverts(changelog([], [REVERT_OF_REVERT]), ANCHOR)
+    except RuntimeError as e:
+        assert "Cannot look up pull requests" in str(e)
+    else:
+        raise AssertionError("a failed lookup was accepted")
+
+
+def test_a_pull_request_github_will_not_return_is_skipped(monkeypatch):
+    """One deleted or inaccessible pull request must not wedge the job for the
+    rest of the cycle, so a null node is left out rather than fatal."""
+    raw = _entry("999999", "Something whose pull request is gone")
+    reverts = analyze(monkeypatch, changelog([], [raw]), [])
+    assert reverts["credits"] == {}
+    assert reverts["unresolved"] == []

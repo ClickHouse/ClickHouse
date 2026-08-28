@@ -96,6 +96,17 @@ These are revert PRs (`Revert "..."`) that the autogenerator includes
 because the revert PR has no `Changelog entry`. Walk every bullet in this
 section. For each:
 
+**A revert is not always in this section.** The autogenerator renders the
+author's own `Changelog entry` under the author's own `Changelog category`, so
+a revert whose author filled both in appears as an ordinary bullet — under
+`Improvement`, reading "Disable the setting again", with nothing to give it
+away. When a bullet undoes something you have seen in this release, check its
+PR (`gh pr view <N> --json title,body`; the title of a revert says `Revert`,
+and GitHub adds a `Reverts owner/repo#NNNNN` line to the body) and treat it by
+the rules below. Such a revert's own bullet is deleted with the entry it
+cancels, exactly like one from this section — the "never delete a real entry"
+rule does not protect it, because it is not a change that ships.
+
 1. Read the title of the revert PR (`gh pr view <N> --json title,body`) to
    identify which earlier PR it reverts. Most reverts have a title of the
    form `Revert "<original PR title>"` or `Revert #NNNNN`, and GitHub puts a

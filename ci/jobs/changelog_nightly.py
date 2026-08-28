@@ -313,23 +313,88 @@ _REVERT_ENTRY_RE = re.compile(
 )
 
 
-def raw_strict_prs_and_reverts(text):
-    """From the raw marker blocks in `text`: the attribution PR numbers of
-    entries under the strict-retention categories, and the PR numbers of the
-    revert entries (each licenses the deletion of the entry it reverts)."""
+def raw_prs_and_reverts(text):
+    """From the raw marker blocks in `text`: every attributed pull request, the
+    ones under a strict-retention category, and the ones whose bullet reads like
+    a revert. Returns (all_prs, strict_prs, text_reverts).
+
+    The bullet is only a hint. `tests/ci/changelog.py` renders the author's own
+    `Changelog entry` under the author's own `Changelog category`, so a revert
+    can perfectly well arrive under `Improvement` reading "Disable X again" -
+    nothing about the rendered line says revert. Revert-ness is therefore
+    settled from the pull request metadata in `resolve_revert_targets`; this
+    signal only adds the bullets that quote a `This reverts commit ...` message
+    without any marker to find."""
+    all_prs = set()
     strict_prs = set()
-    revert_prs = []
+    text_reverts = set()
     for block in extract_raw_blocks(text):
         category = None
         for line in block.splitlines():
             if line.startswith("#### "):
                 category = line[5:].strip()
             elif line.startswith("* "):
-                if _REVERT_ENTRY_RE.match(line) or "this reverts commit" in line.lower():
-                    revert_prs.extend(PR_ATTRIBUTION_RE.findall(line))
+                attributed = set(PR_ATTRIBUTION_RE.findall(line))
+                all_prs |= attributed
+                lowered = line.lower()
+                if _REVERT_ENTRY_RE.match(line) or "this reverts commit" in lowered:
+                    text_reverts |= attributed
                 if category in STRICT_RETENTION_CATEGORIES:
-                    strict_prs.update(PR_ATTRIBUTION_RE.findall(line))
-    return strict_prs, revert_prs
+                    strict_prs |= attributed
+    return all_prs, strict_prs, text_reverts
+
+
+# One GraphQL query covers a whole run's raw entries; batched anyway so that a
+# first run of a cycle, which can carry hundreds, does not build one enormous
+# query.
+PR_LOOKUP_BATCH = 50
+
+
+def fetch_pull_requests(prs):
+    """The title and body of each pull request, as {number: (title, body)}.
+
+    Batched into one GraphQL query per `PR_LOOKUP_BATCH` rather than a
+    `gh pr view` apiece: the whole raw block has to be classified, not only the
+    bullets that already look like reverts.
+
+    A transport failure raises. A lookup that quietly came back empty would be
+    read as "not a revert", and an unnoticed revert either wedges the job (no
+    deletion credit for an edit that is right) or, worse, leaves a stale
+    deletion credit standing so that a shipped entry never comes back. A single
+    pull request GitHub does not return - deleted, or inaccessible - is left out
+    instead, so one of those cannot wedge the job for the rest of the cycle."""
+    owner, _, name = Info().repo_name.partition("/")
+    found = {}
+    ordered = sorted(set(prs), key=int)
+    for start in range(0, len(ordered), PR_LOOKUP_BATCH):
+        batch = ordered[start : start + PR_LOOKUP_BATCH]
+        fields = " ".join(
+            f"p{pr}: pullRequest(number: {pr}) {{ title body }}" for pr in batch
+        )
+        query = (
+            f'{{ repository(owner: "{owner}", name: "{name}") {{ {fields} }} }}'
+        )
+        out = Shell.get_output(
+            f"gh api graphql -f query={shlex.quote(query)}", retries=3
+        )
+        try:
+            repository = json.loads(out)["data"]["repository"]
+        except (KeyError, TypeError, ValueError) as e:
+            raise RuntimeError(
+                f"Cannot look up pull requests {batch[0]}..{batch[-1]}: "
+                f"the GraphQL query returned no repository data. Refusing to "
+                f"classify reverts without it."
+            ) from e
+        for pr in batch:
+            node = repository.get(f"p{pr}")
+            if node is None:
+                print(f"WARNING: GitHub returned nothing for pull request {pr}")
+                continue
+            found[pr] = (
+                " ".join((node.get("title") or "").split()),
+                node.get("body") or "",
+            )
+    return found
 
 
 def _older_than(prs, pr):
@@ -370,28 +435,47 @@ _REVERT_NUMBER_TITLE_RE = re.compile(
 )
 
 
-def resolve_revert_targets(revert_prs, known_titles=None):
-    """Bind every pull request of `revert_prs` to the pull request it reverts,
-    via the `Reverts owner/repo#N` line GitHub puts into revert pull request
-    bodies. `known_titles` supplies the titles of the reverts earlier runs of
-    the job already resolved, so a revert of a revert binds to its target even
-    when that target is not in the current raw block. Returns (targets, titles,
-    unresolved): `targets` maps a revert to the pull requests it reverts,
-    `titles` holds the titles looked up here, and `unresolved` lists the
-    reverts whose target stayed unknown (a manual revert without the marker, a
-    failed lookup, or a nested title that fits several earlier reverts equally
-    well) — those grant no deletion credit, and the caller fails closed on any
-    disappearance it cannot bind to a resolved, uncancelled revert."""
+# A pull request whose title announces a revert. The bullet may say anything
+# (the author writes the changelog entry), but the title of a revert says so:
+# `Revert "X"`, `Reverts #N`, `Revert of the thing`.
+_REVERT_TITLE_RE = re.compile(r"(?i)^\s*revert(s|ed)?\b")
+
+
+def resolve_revert_targets(raw_prs, text_reverts=(), known_titles=None):
+    """Find the reverts among `raw_prs` and bind each to what it reverts.
+
+    A pull request is a revert when its title announces one, when its body
+    carries the `Reverts owner/repo#N` line GitHub puts into revert bodies, or
+    when its rendered bullet quoted a revert commit message (`text_reverts`).
+    The metadata decides, not the bullet: the bullet is the author's own
+    changelog entry and need not mention the revert at all.
+
+    `known_titles` supplies the titles of the reverts earlier runs already
+    resolved, so a revert of a revert binds to its target even when that target
+    is not in the current raw block. Returns (targets, titles, unresolved):
+    `targets` maps a revert to the pull requests it reverts, `titles` holds the
+    titles looked up here, and `unresolved` lists the reverts whose target
+    stayed unknown (a manual revert without the marker, or a nested title that
+    fits several earlier reverts equally well) — those grant no deletion
+    credit, and the caller fails closed on any disappearance it cannot bind to
+    a resolved, uncancelled revert."""
+    metadata = fetch_pull_requests(raw_prs)
+    titles = {pr: title for pr, (title, _) in metadata.items()}
+    revert_prs = sorted(
+        (
+            pr
+            for pr, (title, body) in metadata.items()
+            if _REVERT_TITLE_RE.match(title)
+            or re.search(r"(?i)reverts\s+[\w.-]+/[\w.-]+#\d+", body)
+            or pr in text_reverts
+        ),
+        key=int,
+    )
     targets = {}
-    titles = {}
     for pr in revert_prs:
-        out = Shell.get_output(
-            f"gh pr view {pr} --repo {shlex.quote(Info().repo_name)} "
-            "--json title,body"
+        found = re.findall(
+            r"(?i)reverts\s+[\w.-]+/[\w.-]+#(\d+)", metadata[pr][1]
         )
-        data = json.loads(out) if out else {}
-        titles[pr] = " ".join(data.get("title", "").split())
-        found = re.findall(r"(?i)reverts\s+[\w.-]+/[\w.-]+#(\d+)", data.get("body", ""))
         # A revert is always merged after what it reverts, so it always has the
         # higher number. That is the invariant `revert_net_effect` settles
         # whole chains in a single descending pass with, so a relation that
@@ -411,13 +495,15 @@ def resolve_revert_targets(revert_prs, known_titles=None):
             continue
         # The skill's other common form, and an exact one: no title matching
         # needed, and nothing to be ambiguous about.
-        numbered = _REVERT_NUMBER_TITLE_RE.match(titles[pr])
+        numbered = _REVERT_NUMBER_TITLE_RE.match(titles.get(pr, ""))
         if numbered:
             older = _older_than([numbered.group(1)], pr)
             if older:
                 targets[pr] = older
                 continue
-        nested = re.match(r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', titles[pr])
+        nested = re.match(
+            r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', titles.get(pr, "")
+        )
         matched = (
             {
                 p
@@ -601,6 +687,9 @@ def analyze_reverts(text, anchor):
                    recorded from (one merged bullet covers several pull
                    requests) and annotated with the reverts that removed and
                    re-applied it;
+    `cancelling` - the reverts that cancel an entry of this release, so their
+                   own bullet is deleted with it and the strict-retention rule
+                   does not apply to them;
     `withheld`   - pull request -> the uncancelled revert that still licenses
                    the deletion of its recorded entry, so it must not be in
                    the section: neither left there nor brought back as part of
@@ -610,8 +699,10 @@ def analyze_reverts(text, anchor):
     `ledger`     - the trailer lines to record on the edit commit.
     """
     ledger_targets, ledger_titles, deleted = read_revert_ledger()
-    _, revert_prs = raw_strict_prs_and_reverts(text)
-    new_targets, titles, unresolved = resolve_revert_targets(revert_prs, ledger_titles)
+    all_prs, strict_prs, text_reverts = raw_prs_and_reverts(text)
+    new_targets, titles, unresolved = resolve_revert_targets(
+        all_prs, text_reverts, ledger_titles
+    )
     targets = {pr: set(reverted) for pr, reverted in ledger_targets.items()}
     for pr, reverted in new_targets.items():
         targets.setdefault(pr, set()).update(reverted)
@@ -682,6 +773,19 @@ def analyze_reverts(text, anchor):
     # (a recorded merged bullet can attribute one next to an entry that is
     # being restored).
     withheld = dict(credits)
+    # The reverts whose own bullet goes with the entry they cancel. A revert of
+    # something in this release leaves no trace (skill section 2); one of an
+    # earlier release is rewritten into a visible entry (case 5) and stays. The
+    # difference is whether its target belongs to this cycle - which is what
+    # the section, this run's raw entries, the recorded deletions and the
+    # revert graph itself between them say.
+    cycle_entries = (
+        set(PR_ATTRIBUTION_RE.findall(section))
+        | strict_prs
+        | set(deleted)
+        | set(targets)
+    )
+    cancelling = {pr for pr in targets if targets[pr] & cycle_entries}
     # Which pull requests have to carry which re-applying links. Asked of every
     # entry that ships and was ever reverted, not only of the restorations:
     # when the whole chain arrives in one raw block the entry never left the
@@ -733,6 +837,7 @@ def analyze_reverts(text, anchor):
         "restore": restore,
         "missing": missing,
         "withheld": withheld,
+        "cancelling": sorted(cancelling, key=int),
         "reapply": reapply,
         "reapply_allowance": allowance,
         "amend": amend,
@@ -1054,10 +1159,17 @@ The `gh` CLI is authenticated; use `gh pr view <N> --json title,body` when the s
 {restore}{amend}{retry}"""
 
 
-def disappeared_entries(old_text, text, anchor):
+def disappeared_entries(old_text, text, anchor, exempt=()):
     """Pull requests whose changelog entry the edit lost: an entry the previous
     runs had already accumulated in the in-progress section, or one of this
     run's raw entries from a strict-retention category.
+
+    `exempt` are the same-cycle reverts of `analyze_reverts`: a revert that
+    cancels an entry of this release leaves no trace of its own (skill section
+    2), so its bullet is deleted along with the entry it cancels — even when
+    the generator put it under a real category because its author filled in a
+    changelog entry. A revert of an *earlier* release is not exempt: that one
+    is rewritten into a visible entry (case 5) and has to survive.
 
     An entry means an attribution, `[#N](.../pull/N) ([Author](...))`, not any
     link: a bullet attributed to another pull request that mentions `#N` in its
@@ -1076,11 +1188,12 @@ def disappeared_entries(old_text, text, anchor):
     removed = set(PR_ATTRIBUTION_RE.findall(old_section)) - set(
         PR_ATTRIBUTION_RE.findall(section)
     )
-    strict_prs, _ = raw_strict_prs_and_reverts(old_text)
-    return removed | {pr for pr in strict_prs if not is_attributed(text, pr)}
+    _, strict_prs, _ = raw_prs_and_reverts(old_text)
+    lost = removed | {pr for pr in strict_prs if not is_attributed(text, pr)}
+    return lost - set(exempt)
 
 
-def revert_licensed_deletions(base_sha, version):
+def revert_licensed_deletions(base_sha, version, exempt=()):
     """The entries the verified edit deleted, each with the category and the
     bullet it had before, for the ledger: when the revert that licensed the
     deletion is itself reverted — possibly weeks later, when nothing in the
@@ -1088,7 +1201,9 @@ def revert_licensed_deletions(base_sha, version):
     exactly, in the category the edit had put it in."""
     old_text = Shell.get_output(f"git show {base_sha}:{CHANGELOG_FILE}", strict=True)
     deletions = {}
-    for pr in disappeared_entries(old_text, _read_changelog(), _anchor_id(version)):
+    for pr in disappeared_entries(
+        old_text, _read_changelog(), _anchor_id(version), exempt
+    ):
         category, line = entry_placement(old_text, pr)
         if line:
             deletions[pr] = (category, line)
@@ -1130,7 +1245,9 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     # has already advanced past it). A revert usually names the original PR
     # only in its title, so the deletion it licenses is bound to a PR number
     # through `analyze_reverts`, not through the entry text.
-    unmatched = disappeared_entries(old_text, text, anchor) - set(reverts["credits"])
+    unmatched = disappeared_entries(
+        old_text, text, anchor, reverts["cancelling"]
+    ) - set(reverts["credits"])
     if unmatched:
         return (
             f"Entries disappeared in the edit without a matching revert "
@@ -1339,7 +1456,9 @@ def edit_raw_entries(version):
     trailers = reverts["ledger"] + [
         f"{DELETED_TRAILER} {pr} [{category}] {line}"
         for pr, (category, line) in sorted(
-            revert_licensed_deletions(base_sha, version).items(),
+            revert_licensed_deletions(
+                base_sha, version, reverts["cancelling"]
+            ).items(),
             key=lambda kv: int(kv[0]),
         )
     ]
