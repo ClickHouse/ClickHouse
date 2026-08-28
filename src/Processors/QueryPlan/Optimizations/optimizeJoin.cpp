@@ -587,7 +587,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 }
 
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & optimization_settings)
+bool optimizeJoinLegacy(
+    QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & /*optimization_settings*/)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -644,10 +645,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     updated_table_join->swapSides();
     /// After the swap the old left stream is the build side. Recompute the layout from that
     /// estimate; `HashJoin::clone` would keep the pre-swap `use_parallel_layout`.
-    const bool use_parallel_layout = preferParallelHashLayout(
-        updated_table_join->kind(),
-        lhs_estimation,
-        optimization_settings.parallel_hash_join_threshold);
+    const bool use_parallel_layout
+        = preferParallelHashLayout(updated_table_join->kind(), lhs_estimation, updated_table_join->parallelHashJoinThreshold());
     JoinPtr updated_join;
     if (const auto * hash_join = typeid_cast<const HashJoin *>(join.get()))
         updated_join = hash_join->cloneWithParallelLayout(

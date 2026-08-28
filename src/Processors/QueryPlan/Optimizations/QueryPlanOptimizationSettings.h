@@ -224,9 +224,6 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
-    /// Used when `optimizeJoinLegacy` clones a HashJoin after `swapSides()`.
-    UInt64 parallel_hash_join_threshold = 100'000;
-
     size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
