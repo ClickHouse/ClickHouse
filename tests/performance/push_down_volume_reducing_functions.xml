@@ -34,8 +34,12 @@
     <query>SELECT length(s), empty(s) FROM (SELECT s, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
 
     <!-- `FixedString` is the other supported wide type. `Array` is deliberately absent: the pass
-         never admits it, so such a query would measure nothing. -->
+         never admits it, so such a query would measure nothing. `lengthUTF8` is admitted by its own
+         branch of `isSupportedArgumentType`, which requires `FixedString(N)` with `N` wider than a
+         `UInt64`, so it needs a query of its own: `FixedString(64)` is the positive side of that
+         condition, while the stateless test covers the negative `FixedString(4)` side. -->
     <query>SELECT length(fs) FROM (SELECT fs, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
+    <query>SELECT lengthUTF8(fs) FROM (SELECT fs, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
 
     <!-- The filter reads `s` to evaluate its condition, but nothing above it needs the strings, so
          `length(s)` is computed before the filter and the surviving strings are not copied. This
