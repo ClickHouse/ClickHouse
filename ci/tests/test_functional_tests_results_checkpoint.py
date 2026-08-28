@@ -35,7 +35,9 @@ process death, which no in-process stub can produce.
 """
 
 import ast
+import contextlib
 import dataclasses
+import io
 import json
 import os
 import signal
@@ -414,7 +416,7 @@ def test_checkpoint_preserves_ext(tmp_path):
     )
 
 
-def test_a_failing_write_degrades_to_a_no_op(tmp_path, capsys):
+def test_a_failing_write_degrades_to_a_no_op(tmp_path):
     """A write that raises must cost nothing: the helper returns, the file is untouched.
 
     The load-bearing arm for the guard. `main()` has no enclosing try and the checkpoint
@@ -435,11 +437,18 @@ def test_a_failing_write_degrades_to_a_no_op(tmp_path, capsys):
         return real_open(*args, **kwargs)
 
     original = Settings.TEMP_DIR
+    # Captured in-test rather than with `capsys`, so the standalone runner below can
+    # call this arm directly. Both streams: an unguarded traceback goes to stderr.
+    captured = io.StringIO()
     try:
         _seed_running_result(tmp_path)
         builtins.open = failing_open
         try:
-            checkpoint_collected_results(_JOB_NAME, _children(3), False)
+            with (
+                contextlib.redirect_stdout(captured),
+                contextlib.redirect_stderr(captured),
+            ):
+                checkpoint_collected_results(_JOB_NAME, _children(3), False)
         finally:
             builtins.open = real_open
         reread = Result.from_fs(_JOB_NAME)
@@ -460,8 +469,7 @@ def test_a_failing_write_degrades_to_a_no_op(tmp_path, capsys):
     # scans `job.log` with `/^Traceback \(most recent call last\):/`, turns a hit into a
     # failing `Exception in test runner` row, and bugfix validation reads a failing
     # LOG_CHECK row as the bug reproducing.
-    printed = capsys.readouterr()
-    logged = printed.out + printed.err
+    logged = captured.getvalue()
     assert "Failed to checkpoint collected results" in logged, (
         "the guard swallowed the failure silently, leaving no diagnostic at all"
     )
