@@ -220,7 +220,8 @@ private:
         const RPNBuilderTreeNode & index_column_node,
         const String & function_name,
         const std::vector<String> & values,
-        RPNElement & out) const;
+        RPNElement & out,
+        TextIndexDirectReadMode direct_read_mode) const;
 
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.

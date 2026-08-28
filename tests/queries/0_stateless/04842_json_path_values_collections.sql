@@ -205,6 +205,10 @@ SET transform_null_in = 0;
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_nullable_in WHERE data.s IN ('alpha', 'gamma')
 SETTINGS force_data_skipping_indices = 'tokens';
 
+INSERT INTO json_index_tokens_nullable_in VALUES (6, '{"s":"alpha","fixed":"two"}');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_nullable_in WHERE (data.s, id) IN (('alpha', 1), ('gamma', 3))
+SETTINGS force_data_skipping_indices = 'tokens';
+
 DROP TABLE json_index_tokens_nullable_in;
 DROP TABLE IF EXISTS json_path_values_array_json_leaves;
 
