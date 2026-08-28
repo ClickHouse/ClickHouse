@@ -125,6 +125,14 @@ FROM prometheusQuery(
     'label_replace(timestamp(vector(1)), "dst", "x", "", "") unless vector(0)',
     toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
 
+-- An always-empty composition keeps the Float64 override in its schema: clamp() proves emptiness
+-- from its constant bounds (max < min) and used to fall back to the table's Float32 value type.
+SELECT toTypeName(any(value)), count()
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'clamp(timestamp(vector(1)), 2, 1)',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
 DROP TABLE promql_timestamp_float32;
 DROP TABLE promql_timestamp_float32_tags;
 DROP TABLE promql_timestamp_float32_samples;

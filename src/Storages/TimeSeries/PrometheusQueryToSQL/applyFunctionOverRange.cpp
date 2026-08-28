@@ -184,7 +184,11 @@ SQLQueryPiece applyFunctionOverRange(
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
-        return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        res.value_data_type = arguments[0].value_data_type;
+        return res;
+    }
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
