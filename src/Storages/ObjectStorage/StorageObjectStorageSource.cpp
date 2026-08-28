@@ -181,6 +181,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_iceberg_manifest_object_metadata;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -968,7 +969,22 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            if (query_settings.ignore_non_existent_file)
+            /// An engine that records the object's size itself (Iceberg, in the manifest entry) can
+            /// answer without a metadata request. Only the size is known that way, so the object
+            /// store is still asked for anything else the query wants from the response.
+            const bool needs_object_store_response = with_tags
+                || query_settings.ignore_non_existent_file
+                || read_from_format_info.requested_virtual_columns.contains("_etag")
+                || read_from_format_info.requested_virtual_columns.contains("_time");
+
+            std::optional<ObjectMetadata> metadata_without_request;
+            if (!needs_object_store_response
+                && context_->getSettingsRef()[Setting::use_iceberg_manifest_object_metadata])
+                metadata_without_request = object_info->tryGetObjectMetadataWithoutRequest();
+
+            if (metadata_without_request)
+                object_info->setObjectMetadata(*metadata_without_request);
+            else if (query_settings.ignore_non_existent_file)
             {
                 auto metadata = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
                 if (!metadata)
@@ -1045,10 +1061,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
             const auto metadata = object_info->getObjectMetadata();
+            if (!metadata)
+                return std::nullopt;
+            /// Contents pinned by the path cannot go stale, so a cached row count for this path stays
+            /// valid however old it is. Reporting the epoch says exactly that.
+            if (metadata->contents_identified_by_path)
+                return std::optional<time_t>(0);
             /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
             /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
             /// it as unavailable makes the count cache re-read the file instead.
-            if (!metadata || !metadata->is_last_modified_known)
+            if (!metadata->is_last_modified_known)
                 return std::nullopt;
             return std::optional<time_t>(metadata->last_modified.epochTime());
         };
@@ -1312,7 +1334,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
+            && object_info->getObjectMetadata()->getContentCacheToken().has_value())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
@@ -1578,9 +1600,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
 
-    if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    if (use_page_cache && !object_info.metadata->getContentCacheToken())
     {
-        LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
+        LOG_WARNING(log, "Cannot use page cache, the object's contents cannot be identified");
         use_page_cache = false;
     }
 
@@ -1654,15 +1676,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_filesystem_cache)
     {
         chassert(object_info.metadata.has_value());
-        if (!object_info.metadata->isEtagUsableAsCacheKey())
+        const auto content_cache_token = object_info.metadata->getContentCacheToken();
+        if (!content_cache_token)
         {
-            LOG_WARNING(log, "Cannot use filesystem cache, etag is missing or not a strong content identifier");
+            LOG_WARNING(log, "Cannot use filesystem cache, the object's contents cannot be identified");
         }
         else
         {
             SipHash hash;
             hash.update(object_info.getPath());
-            hash.update(object_info.metadata->etag);
+            hash.update(*content_cache_token);
 
             auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
@@ -1676,10 +1699,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
             LOG_TRACE(
                 log,
-                "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                "Using filesystem cache `{}` (path: {}, content token: {}, hash: {})",
                 filesystem_cache_name,
                 object_info.getPath(),
-                object_info.metadata->etag,
+                *content_cache_token,
                 toString(hash.get128()));
         }
     }
@@ -1697,7 +1720,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         pipeline.needMemoryCache(
             getPageCachePathForObjectStorage(object_info, object_storage),
-            "etag:" + object_info.metadata->etag,
+            "content:" + *object_info.metadata->getContentCacheToken(),
             modified_read_settings.page_cache_settings);
     }
 

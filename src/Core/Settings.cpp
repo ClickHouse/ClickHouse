@@ -5986,6 +5986,20 @@ Threshold for compaction data files in iceberg.
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Threshold for compaction data files in iceberg.
 )", 0) \
+    DECLARE(Bool, use_iceberg_manifest_object_metadata, true, R"(
+Take the size of an Iceberg data file from the `file_size_in_bytes` its manifest entry already
+records, instead of asking the object store for it. This removes one metadata request (an S3
+`HeadObject`) per data file per query, on the coordinator and on every cluster function worker.
+
+It relies on the Iceberg spec guarantee that data files are immutable: a new snapshot writes new
+files rather than rewriting an existing path. No ETag is fetched, so caches key on the path alone -
+as the query condition cache already does for every data lake - and `s3_validate_etag_on_read`
+cannot detect a mid-read overwrite of these files. Turn this off for a table whose data files are
+rewritten in place; a reader may otherwise serve data cached for the previous contents.
+
+The object store is still asked when the query needs something the manifest does not record: the
+`_etag`, `_time` or `_tags` virtual columns, or `ignore_non_existent_file`.
+)", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 

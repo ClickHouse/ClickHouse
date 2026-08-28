@@ -13,9 +13,15 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+namespace ProfileEvents
+{
+    extern const Event IcebergManifestObjectMetadataUsed;
+}
 
 namespace DB::ErrorCodes
 {
@@ -84,6 +90,26 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & pa
     : ObjectInfo(path_)
     , info(info_)
 {
+}
+
+std::optional<ObjectMetadata> IcebergDataObjectInfo::tryGetObjectMetadataWithoutRequest() const
+{
+    /// A negative size would mean a malformed manifest; fall back to asking the object store.
+    if (!info.file_size_in_bytes.has_value() || *info.file_size_in_bytes < 0)
+        return std::nullopt;
+
+    ObjectMetadata metadata;
+    metadata.size_bytes = static_cast<uint64_t>(*info.file_size_in_bytes);
+    metadata.is_size_known = true;
+    /// The manifest records no modification time, and the default presented as known would look
+    /// older than any cached entry to the schema and count caches.
+    metadata.is_last_modified_known = false;
+    /// The spec makes data files immutable: a new snapshot writes new files rather than rewriting an
+    /// existing path. So the path identifies the contents, and no ETag is needed to cache them.
+    metadata.contents_identified_by_path = true;
+
+    ProfileEvents::increment(ProfileEvents::IcebergManifestObjectMetadataUsed);
+    return metadata;
 }
 
 std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransformer(
