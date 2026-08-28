@@ -17,8 +17,8 @@ namespace DB::QueryPlanOptimizations
 /// primary key. Deliberately limited to a chain of `Expression`/`Filter` steps between the join and
 /// the source filter, and between the join and the target `ReadFromMergeTree`:
 ///  - a copied conjunct only pays off if `optimizePrimaryKeyConditionAndLimit` can reach it, and
-///    that walk stops at everything else, so lifting over a `Distinct`, a `Sorting` or a nested
-///    join would add a filter that never prunes;
+///    that walk stops at everything else, so lifting over a `Distinct` or a nested join would add
+///    a filter that never prunes;
 ///  - a predicate that first-pass pushdown has already sunk below a nested join is therefore not
 ///    a lift candidate either, even though the keys are provably equal.
 

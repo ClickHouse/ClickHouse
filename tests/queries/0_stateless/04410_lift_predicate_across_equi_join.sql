@@ -203,8 +203,8 @@ FROM (
         ON o.orderkey = l.orderkey
 );
 
--- `DISTINCT` and `ORDER BY` between the join and the read are out of contract: index analysis
--- cannot reach a filter placed above them, so the pass leaves the predicate on the source side
+-- `DISTINCT` between the join and the read is out of contract: index analysis cannot reach a
+-- filter placed above it, so the pass leaves the predicate on the source side
 SELECT 'distinct target',
        countIf(explain LIKE '%ilter column:%orderkey = 4242%')
 FROM (
@@ -214,6 +214,7 @@ FROM (
     INNER JOIN (SELECT DISTINCT orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
 );
 
+-- A subquery `ORDER BY` feeding a join is removed before the pass runs, so this one does lift
 SELECT 'sorted target',
        countIf(explain LIKE '%ilter column:%orderkey = 4242%')
 FROM (
