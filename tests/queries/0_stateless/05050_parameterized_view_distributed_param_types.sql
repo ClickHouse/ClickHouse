@@ -1,7 +1,9 @@
--- A parameterised view's arguments are re-serialised when the query is forwarded to a shard, so
--- every non-String parameter travels as its CAST-wrapped literal. Serialising that literal without
--- its target type produced text the receiving side could not parse back, and the shard failed with
--- CANNOT_PARSE_QUOTED_STRING. Only reachable with parallel_distributed_insert_select enabled.
+-- A parameterised view's arguments are re-serialised whenever its call is rendered into a
+-- per-shard query, so every non-String parameter travels as its CAST-wrapped literal. Serialising
+-- that literal without its target type produced text the receiving side could not parse back and
+-- the query failed with CANNOT_PARSE_QUOTED_STRING. The INSERT cases below keep the issue's exact
+-- repro (with parallel_distributed_insert_select the source now falls back to shipping blocks);
+-- the final SELECT forces a real forwarded query and proves it shard-side via system.query_log.
 
 DROP TABLE IF EXISTS t_pv_dist;
 DROP TABLE IF EXISTS t_pv;
@@ -61,6 +63,23 @@ SELECT * FROM v_pv_array(tuples = [('a1', 'y'), ('a2', 'x')])
 SETTINGS parallel_distributed_insert_select = 2;
 
 SELECT 'array', name, val FROM t_pv ORDER BY name;
+
+-- A non-GLOBAL IN subquery is forwarded to the shard as query text, and prefer_localhost_replica=0
+-- forces a real connection, so the view call and its parameters must survive rendering and re-parsing.
+TRUNCATE TABLE t_pv;
+INSERT INTO t_pv VALUES ('a1', 'y', '2020-01-02', '00000000-0000-0000-0000-000000000001', '1.2.3.4', 1.25), ('zz', 'x', '2020-01-02', '00000000-0000-0000-0000-000000000001', '1.2.3.4', 1.25);
+
+SELECT 'forwarded-in', count() FROM t_pv_dist
+WHERE (name, val) IN (SELECT name, val FROM v_pv_array(tuples = [('a1', 'y'), ('a2', 'x')]))
+SETTINGS prefer_localhost_replica = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The shard really received the view call as text: a non-initial query mentioning it was executed.
+SELECT 'shard saw the view call', count() > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
+    AND query LIKE '%v_pv_array%' AND query LIKE concat('%', currentDatabase(), '%');
 
 DROP VIEW v_pv_array;
 DROP VIEW v_pv;
