@@ -199,7 +199,7 @@ export const kbIndex = {
     {
       "id": "configuration-settings/change-the-prompt-in-clickhouse-client",
       "title": "Change the prompt in clickhouse-client",
-      "description": "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      "description": "本文介绍如何将 ClickHouse 客户端和 clickhouse-local 终端窗口中的提示符从 :) 更改为“前缀 + :)”的形式",
       "href": "/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       "category": "Configuration & settings",
       "tags": [
@@ -1118,6 +1118,16 @@ export const kbIndex = {
       "category": "Tables & schema",
       "tags": [
         "Deployments and Scaling"
+      ]
+    },
+    {
+      "id": "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "title": "设置 ClickHouse 文档 MCP 服务器",
+      "description": "通过 Model Context Protocol 将 AI 工具连接到 ClickHouse 文档。",
+      "href": "/zh/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "category": "Setup & installation",
+      "tags": [
+        "Tools and Utilities"
       ]
     },
     {
