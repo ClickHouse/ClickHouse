@@ -105,6 +105,22 @@ namespace MergeTreeSetting
 namespace
 {
 
+/// The entry a settings list already holds for this setting, under whichever of its names it was
+/// written with: a `MergeTree` setting can have two, and both name one setting.
+SettingsChanges::iterator findStoredSetting(SettingsChanges & settings, const String & name)
+{
+    auto resolved_name = MergeTreeSettings::hasBuiltin(name) ? MergeTreeSettings::resolveName(name) : std::string_view(name);
+    return std::find_if(
+        settings.begin(),
+        settings.end(),
+        [&](const SettingChange & change)
+        {
+            auto resolved_change_name
+                = MergeTreeSettings::hasBuiltin(change.name) ? MergeTreeSettings::resolveName(change.name) : std::string_view(change.name);
+            return resolved_change_name == resolved_name;
+        });
+}
+
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
     if (property.empty())
@@ -1167,11 +1183,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
-            auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
-            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+            auto it = findStoredSetting(settings_from_storage, change.name);
 
             if (it != settings_from_storage.end())
+            {
+                /// The statement states the setting under a name of its own choosing, which need not be the
+                /// one the definition was written with. It is still the same setting, so it keeps one entry.
+                it->name = change.name;
                 it->value = change.value;
+            }
             else
                 settings_from_storage.push_back(change);
         }
@@ -1211,8 +1231,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & setting_name : settings_resets)
         {
-            auto finder = [&setting_name](const SettingChange & c) { return c.name == setting_name; };
-            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+            auto it = findStoredSetting(settings_from_storage, setting_name);
 
             if (it != settings_from_storage.end())
             {

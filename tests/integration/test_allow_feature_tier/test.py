@@ -895,6 +895,28 @@ def test_both_names_of_a_merge_tree_setting_hold_one_value(start_cluster):
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_both_names")
 
 
+def test_dropping_a_merge_tree_setting_from_a_profile_under_either_name(start_cluster):
+    # A profile holds one element for one setting, so dropping it works under the name that wrote it
+    # and under its other name alike
+    canonical = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING_CANONICAL
+    alias = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING
+
+    for stated, dropped in [(alias, canonical), (canonical, alias)]:
+        instance.query("DROP SETTINGS PROFILE IF EXISTS profile_dropping_either_name")
+        instance.query(
+            f"CREATE SETTINGS PROFILE profile_dropping_either_name SETTINGS {stated} = 1"
+        )
+        instance.query(
+            f"ALTER SETTINGS PROFILE profile_dropping_either_name DROP SETTING {dropped}"
+        )
+        output = instance.query(
+            "SHOW CREATE SETTINGS PROFILE profile_dropping_either_name"
+        )
+        assert "block_number_column" not in output, output
+
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_dropping_either_name")
+
+
 def test_alter_replays_on_a_replica_that_would_not_have_allowed_it(start_cluster):
     # A `Replicated` database runs the ALTER again on every other replica. The replica that took the query
     # from the user is the one that decides whether it is allowed; the others must apply it even when their
