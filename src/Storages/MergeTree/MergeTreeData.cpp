@@ -5390,11 +5390,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             for (const auto & column_name : metadata_snapshot->getSortingKey().expression->getRequiredColumns())
                 sorting_key_required_columns.insert(column_name);
 
+        const std::initializer_list<std::pair<const char *, const String &>> block_column_settings
+            = {{"enable_block_number_column", BlockNumberColumn::name}, {"enable_block_offset_column", BlockOffsetColumn::name}};
+
         for (const auto & command : commands)
         {
-            for (const auto & [setting_name, column_name] : {
-                std::pair{"enable_block_number_column", BlockNumberColumn::name},
-                std::pair{"enable_block_offset_column", BlockOffsetColumn::name}})
+            for (const auto & [setting_name, column_name] : block_column_settings)
             {
                 if (!merging_params.is_queue && !sorting_key_required_columns.contains(column_name))
                     continue;
