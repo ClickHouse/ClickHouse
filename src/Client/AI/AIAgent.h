@@ -70,8 +70,11 @@ private:
     void refreshToolSet();
     void pushUserMessage(const String & text);
     void trimHistory();
-    /// Replace the payload of the oldest tool results of the history, keeping the newest, until
-    /// `total_bytes` (the size of the history at the call) is within the byte budget.
+    /// Replace the payload of the oldest tool results of the history until `total_bytes` (the
+    /// size of the history at the call) is within the byte budget. The results of the newest
+    /// tool-results message go last, and only its final result is guaranteed to survive: one
+    /// step may return several large results at once, so keeping the whole message would leave
+    /// the budget broken.
     void elideOldestToolResults(size_t total_bytes);
     static ai::JsonValue truncateOversizedToolResult(ai::JsonValue value);
     ai::ToolResult executeToolCall(const ai::ToolCall & call);

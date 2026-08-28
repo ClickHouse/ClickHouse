@@ -349,8 +349,8 @@ void AIAgent::elideOldestToolResults(size_t total_bytes)
     /// the oldest tool results instead. They are elided in place rather than removed, so that
     /// every tool call keeps the result that answers it - providers reject an unanswered call.
 
-    /// The newest tool results are what the model is about to reason over, so they are kept:
-    /// stop before the last tool-results message of the history.
+    /// The newest tool results are what the model is about to reason over, so they are kept
+    /// when possible: the messages before the last tool-results message of the history go first.
     size_t last = messages.size();
     while (last > 0 && !messages[last - 1].has_tool_results())
         --last;
@@ -363,23 +363,37 @@ void AIAgent::elideOldestToolResults(size_t total_bytes)
          "Re-run the tool with a stricter filter or a smaller limit if you still need it."}};
     const size_t elided_bytes = elided.dump().size();
 
-    for (size_t i = 0; i < last && total_bytes > max_history_bytes; ++i)
+    const auto elide = [&](ai::ToolResultContentPart & result)
     {
+        /// Nothing to gain from an already elided or a small result, and the accounting below
+        /// must not go backwards.
+        const size_t result_bytes = result.result.dump().size();
+        if (result_bytes <= elided_bytes)
+            return;
+
+        result.result = elided;
+        total_bytes -= result_bytes - elided_bytes;
+    };
+
+    for (size_t i = 0; i < last && total_bytes > max_history_bytes; ++i)
         for (auto & part : messages[i].content)
-        {
-            auto * result = std::get_if<ai::ToolResultContentPart>(&part);
-            if (!result)
-                continue;
+            if (auto * result = std::get_if<ai::ToolResultContentPart>(&part))
+                elide(*result);
 
-            /// Nothing to gain from an already elided or a small result, and the accounting below
-            /// must not go backwards.
-            const size_t result_bytes = result->result.dump().size();
-            if (result_bytes <= elided_bytes)
-                continue;
-
-            result->result = elided;
-            total_bytes -= result_bytes - elided_bytes;
-        }
+    /// One step may return several tool calls at once, so the last tool-results message alone
+    /// can be over the budget even though each of its results is within the per-result cap.
+    /// Elide its results too, oldest first, but keep the final one: the model must have at
+    /// least something left to reason over, and one result is bounded by the per-result cap.
+    if (total_bytes > max_history_bytes && last < messages.size() && messages[last].has_tool_results())
+    {
+        auto & content = messages[last].content;
+        size_t final_result_pos = 0;
+        for (size_t i = 0; i < content.size(); ++i)
+            if (std::holds_alternative<ai::ToolResultContentPart>(content[i]))
+                final_result_pos = i;
+        for (size_t i = 0; i < final_result_pos && total_bytes > max_history_bytes; ++i)
+            if (auto * result = std::get_if<ai::ToolResultContentPart>(&content[i]))
+                elide(*result);
     }
 }
 

@@ -415,6 +415,55 @@ TEST(AIAgent, HistoryIsTrimmedWithinOneTurn)
     EXPECT_FALSE(last.back().get_tool_results().at(0).result.contains("elided"));
 }
 
+TEST(AIAgent, HistoryIsTrimmedWhenOneStepReturnsManyLargeResults)
+{
+    /// One step may return several tool calls at once, so the newest tool-results message alone
+    /// can be over the byte budget even though every single result is within the per-result cap.
+    /// The budget must hold before the next model call anyway: the oldest results of that message
+    /// are elided too, and only its final result is guaranteed to survive.
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.run_visible = [](const String &, bool, bool) { return String(32 * 1024, 'x'); };
+
+    AIAgentStep many_calls;
+    for (size_t i = 0; i < 12; ++i)
+        many_calls.tool_calls.emplace_back("call_" + std::to_string(i), "run_query", ai::JsonValue{{"query", "SELECT 1"}});
+
+    AgentWithMock harness({many_calls, textStep("done")}, hooks, /*max_steps=*/ 2);
+    harness.agent->chat("read a lot at once");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 2u);
+    const auto & last = harness.transport->conversations.back();
+    EXPECT_LE(conversationBytes(last), 256 * 1024);
+
+    /// Every tool call is still answered (the results are elided in place, not removed).
+    size_t calls = 0;
+    size_t results = 0;
+    size_t elided = 0;
+    for (const auto & message : last)
+    {
+        calls += message.get_tool_calls().size();
+        for (const auto & result : message.get_tool_results())
+        {
+            ++results;
+            if (result.result.is_object() && result.result.contains("elided"))
+                ++elided;
+        }
+    }
+    EXPECT_EQ(calls, 12u);
+    EXPECT_EQ(calls, results);
+    EXPECT_GT(elided, 0u);
+
+    /// The final result of the step survives: the model has something left to reason over.
+    ASSERT_TRUE(last.back().has_tool_results());
+    EXPECT_FALSE(last.back().get_tool_results().back().result.contains("elided"));
+}
+
 TEST(AIAgent, DisplaySanitizesControlCharacters)
 {
     EXPECT_EQ(
