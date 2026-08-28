@@ -1,3 +1,4 @@
+#include <atomic>
 #include <memory>
 #include <IO/WriteBufferFromString.h>
 #include <Common/CurrentMemoryTracker.h>
@@ -70,55 +71,66 @@ namespace
     /// The constructor may throw `MEMORY_LIMIT_EXCEEDED` (the throwing path is intentional);
     /// it must be invoked inside the worker's `try` block so the error propagates through
     /// the pipeline like any other job failure.
-    struct SpeculativeMemoryReservationState
+    ///
+    /// The reservation state is kept in the guard object rather than in the thread-local
+    /// block: a nested guard only needs the *depth* to know that an outer scope already
+    /// reserved, and the release may run on a different thread than the reservation (see
+    /// `CurrentMemoryTracker::allocGlobal`), in which case a destructor reading the
+    /// current thread's block would underflow that thread's depth and release a
+    /// reservation the thread never took. Each guard therefore remembers the depth
+    /// counter it incremented and decrements exactly that one; the counter is atomic
+    /// because it can be reached from more than one thread for the same reason.
+    struct SpeculativeMemoryReservationDepth
     {
-        Int64 size = 0;
-        MemoryTracker * credited_query_tracker = nullptr;
-        size_t nesting_level = 0;
+        std::atomic<size_t> value{0};
     };
 
-    thread_local SpeculativeMemoryReservationState speculative_memory_reservation_state;
+    thread_local SpeculativeMemoryReservationDepth speculative_memory_reservation_depth;
 
     struct SpeculativeMemoryReservation
     {
         SpeculativeMemoryReservation()
         {
-            auto & state = speculative_memory_reservation_state;
+            auto & depth = speculative_memory_reservation_depth;
 
-            if (state.nesting_level)
+            /// A nested executor driven on this thread shares the outermost reservation,
+            /// because it also shares that thread's single untracked-memory buffer.
+            if (depth.value.load(std::memory_order_relaxed) == 0)
             {
-                ++state.nesting_level;
-                return;
+                const Int64 requested = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
+                if (requested > 0)
+                {
+                    /// May throw `MEMORY_LIMIT_EXCEEDED`. Nothing has been modified yet,
+                    /// so a throw leaves no state to unwind.
+                    credited_query_tracker = CurrentMemoryTracker::allocGlobal(requested);
+                    size = requested;
+                }
             }
 
-            const Int64 size = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
-            MemoryTracker * credited_query_tracker = size > 0 ? CurrentMemoryTracker::allocGlobal(size) : nullptr;
-
-            state.size = size;
-            state.credited_query_tracker = credited_query_tracker;
-            state.nesting_level = 1;
+            depth.value.fetch_add(1, std::memory_order_relaxed);
+            owner_depth = &depth;
         }
 
         ~SpeculativeMemoryReservation()
         {
-            auto & state = speculative_memory_reservation_state;
-            chassert(state.nesting_level);
+            chassert(owner_depth->value.load(std::memory_order_relaxed) > 0);
+            owner_depth->value.fetch_sub(1, std::memory_order_relaxed);
 
-            if (--state.nesting_level)
-                return;
-
-            if (state.size > 0)
-                CurrentMemoryTracker::freeGlobal(state.size, state.credited_query_tracker);
-
-            state.size = 0;
-            state.credited_query_tracker = nullptr;
+            if (size > 0)
+                CurrentMemoryTracker::freeGlobal(size, credited_query_tracker);
         }
 
-        bool shouldFlushUntrackedMemory() const
-        {
-            const auto & state = speculative_memory_reservation_state;
-            return state.nesting_level == 1 && state.size > 0;
-        }
+        SpeculativeMemoryReservation(const SpeculativeMemoryReservation &) = delete;
+        SpeculativeMemoryReservation & operator=(const SpeculativeMemoryReservation &) = delete;
+
+        /// Only the guard that took the reservation, i.e. the outermost scope on its
+        /// thread, flushes the thread's untracked memory before releasing it.
+        bool shouldFlushUntrackedMemory() const { return size > 0; }
+
+    private:
+        Int64 size = 0;
+        MemoryTracker * credited_query_tracker = nullptr;
+        SpeculativeMemoryReservationDepth * owner_depth = nullptr;
     };
 }
 
