@@ -391,7 +391,7 @@ FROM
         R"(
 ┌─timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
 │ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                     │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -410,7 +410,7 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
         R"(
 ┌─timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
 │ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                       │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -1164,10 +1164,10 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
 timeSeriesStddevToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesStddevToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesStddevToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
@@ -1199,8 +1199,8 @@ FROM
         )",
         R"(
 ┌─timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.94280905,1.299038,0.5,0,0,1.4142135]                                       │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.9428090415820634,1.299038105676658,0.5,0,0,1.4142135623730951]            │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -1218,8 +1218,8 @@ SELECT timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
         )",
         R"(
 ┌─timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.94280905,1.299038,0.5,0,0,1.4142135]                                         │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.9428090415820634,1.299038105676658,0.5,0,0,1.4142135623730951]              │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -1251,10 +1251,10 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
 timeSeriesStdvarToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesStdvarToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesStdvarToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
@@ -1286,8 +1286,8 @@ FROM
         )",
         R"(
 ┌─timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.8888889,1.6875,0.25,0,0,2]                                                │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.8888888888888888,1.6875,0.25,0,0,2]                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -1305,8 +1305,8 @@ SELECT timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
         )",
         R"(
 ┌─timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.8888889,1.6875,0.25,0,0,2]                                                  │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.8888888888888888,1.6875,0.25,0,0,2]                                         │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
