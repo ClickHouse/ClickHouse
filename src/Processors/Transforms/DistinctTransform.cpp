@@ -503,7 +503,7 @@ void DistinctTransform::transform(Chunk & chunk)
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);
 
-    auto num_rows = chunk.getNumRows();
+    size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
     /// Special case, - only const columns, return single row
