@@ -132,6 +132,27 @@ public:
     template <class Word>
     static void transposeBits(Word src, size_t row_i, size_t total_bits, char * const * __restrict dst);
 
+    /** The CPU-dispatched kernel that transposes a whole stride group at once (see resolveTransposeBitsBatch).
+      *
+      * `src` points at `count` little-endian elements of `sizeof(Word)` bytes, `dst` at the group's bit
+      * planes, and the result is the same as calling transposeBits for element 0, 1, ... in turn. As
+      * there, the planes' bytes must start out zeroed.
+      *
+      * Doing it in one call lets the kernel work on eight elements at a time. Those eight share a byte
+      * position in every plane and contribute one bit each, so they form an 8 x `sizeof(Word) * 8` bit
+      * matrix whose transpose is the eight planes' bytes - which is one instruction per plane on a CPU
+      * that can extract the top bit of every lane at once. Unlike the per-element kernel, which walks
+      * the set bits of each value, that costs the same whatever the data is.
+      */
+    template <typename Word>
+    using TransposeBitsBatchFn
+        = void (*)(const char * __restrict src, size_t count, size_t total_bits, char * const * __restrict dst);
+
+    /// Resolve the batch kernel by CPU capability. Resolve it once and call the function in a loop to
+    /// keep the check out of the hot path.
+    template <typename Word>
+    static TransposeBitsBatchFn<Word> resolveTransposeBitsBatch();
+
     /// The CPU-dispatched kernel that untransposes one bit plane (see resolveUntransposeBitPlane).
     template <typename T>
     using UntransposeBitPlaneFn = void (*)(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask);

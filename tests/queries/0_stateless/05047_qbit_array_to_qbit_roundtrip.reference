@@ -1,0 +1,22 @@
+dimension 100 (partial trailing group)
+0
+0
+0
+0
+dimension 64 (whole groups only)
+0
+0
+0
+0
+dimension 5 (shorter than one group)
+0
+0
+strided
+0
+0
+0
+0
+NULL rows stay NULL and leave their neighbours alone
+34	0
+all-zero vectors
+0

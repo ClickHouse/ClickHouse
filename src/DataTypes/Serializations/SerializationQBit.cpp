@@ -632,6 +632,109 @@ _Pragma("clang attribute pop")
 
 #endif
 
+/// Batch transposition of one stride group. See TransposeBitsBatchFn for what the kernels compute.
+
+DECLARE_DEFAULT_CODE(
+    template <typename Word>
+    void transposeBitsBatchImpl(const char * __restrict src, size_t count, size_t total_bits, char * const * __restrict dst)
+    {
+        for (size_t i = 0; i < count; ++i)
+        {
+            Word w;
+            std::memcpy(&w, src + i * sizeof(Word), sizeof(Word));
+            SerializationQBit::transposeBits<Word>(w, i, total_bits, dst);
+        }
+    }
+)
+
+DECLARE_X86_64_V4_SPECIFIC_CODE(
+    template <typename Word>
+    void transposeBitsBatchImpl(const char * __restrict src, size_t count, size_t total_bits, char * const * __restrict dst)
+    {
+        constexpr size_t planes = sizeof(Word) * 8;
+
+        size_t i = 0;
+        for (; i + 8 <= count; i += 8)
+        {
+            /// Elements i .. i + 7 share one byte of every plane, element i + t contributing bit t:
+            /// transposeBits places element `row_i` at bit `total_bits - 1 - (row_i ^ 7)`, and xor-ing
+            /// with 7 only reorders within the group because i is a multiple of 8.
+            const size_t byte_pos = (total_bits - 8 - i) / 8;
+            const char * group = src + i * sizeof(Word);
+
+            /// Plane p holds bit `planes - 1 - p` of each element, so walk the bit mask down from the
+            /// top and let the mask-extract instruction gather that bit from all eight elements.
+            if constexpr (sizeof(Word) == 8)
+            {
+                const __m512i x = _mm512_loadu_si512(group);
+                __m512i bit = _mm512_set1_epi64(static_cast<long long>(1ULL << 63));
+                for (size_t p = 0; p < planes; ++p)
+                {
+                    dst[p][byte_pos] = static_cast<char>(_mm512_test_epi64_mask(x, bit));
+                    bit = _mm512_srli_epi64(bit, 1);
+                }
+            }
+            else if constexpr (sizeof(Word) == 4)
+            {
+                const __m256i x = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(group));
+                __m256i bit = _mm256_set1_epi32(static_cast<int>(1U << 31));
+                for (size_t p = 0; p < planes; ++p)
+                {
+                    dst[p][byte_pos] = static_cast<char>(_mm256_test_epi32_mask(x, bit));
+                    bit = _mm256_srli_epi32(bit, 1);
+                }
+            }
+            else if constexpr (sizeof(Word) == 2)
+            {
+                const __m128i x = _mm_loadu_si128(reinterpret_cast<const __m128i *>(group));
+                __m128i bit = _mm_set1_epi16(static_cast<short>(0x8000));
+                for (size_t p = 0; p < planes; ++p)
+                {
+                    dst[p][byte_pos] = static_cast<char>(_mm_test_epi16_mask(x, bit));
+                    bit = _mm_srli_epi16(bit, 1);
+                }
+            }
+            else
+            {
+                /// There is no 8-bit shift, so widen the eight bytes into 16-bit lanes and reuse the
+                /// 16-bit extract, starting from the bit the byte's top bit now sits at.
+                const __m128i x = _mm_cvtepu8_epi16(_mm_loadl_epi64(reinterpret_cast<const __m128i *>(group)));
+                __m128i bit = _mm_set1_epi16(static_cast<short>(0x0080));
+                for (size_t p = 0; p < planes; ++p)
+                {
+                    dst[p][byte_pos] = static_cast<char>(_mm_test_epi16_mask(x, bit));
+                    bit = _mm_srli_epi16(bit, 1);
+                }
+            }
+        }
+
+        /// A stride that is not a multiple of 8 leaves a tail. It writes the one byte the loop above
+        /// never reached, so the per-element kernel can finish the group as it is.
+        for (; i < count; ++i)
+        {
+            Word w;
+            std::memcpy(&w, src + i * sizeof(Word), sizeof(Word));
+            SerializationQBit::transposeBits<Word>(w, i, total_bits, dst);
+        }
+    }
+
+    /// Instantiate inside the target-specific region so the bodies are compiled for it.
+    template void transposeBitsBatchImpl<uint8_t>(const char *, size_t, size_t, char * const *);
+    template void transposeBitsBatchImpl<UInt16>(const char *, size_t, size_t, char * const *);
+    template void transposeBitsBatchImpl<UInt32>(const char *, size_t, size_t, char * const *);
+    template void transposeBitsBatchImpl<UInt64>(const char *, size_t, size_t, char * const *);
+)
+
+template <typename Word>
+SerializationQBit::TransposeBitsBatchFn<Word> SerializationQBit::resolveTransposeBitsBatch()
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        return TargetSpecific::x86_64_v4::transposeBitsBatchImpl<Word>;
+#endif
+    return TargetSpecific::Default::transposeBitsBatchImpl<Word>;
+}
+
 template <typename T>
 SerializationQBit::UntransposeBitPlaneFn<T> SerializationQBit::resolveUntransposeBitPlane()
 {
@@ -664,6 +767,11 @@ template void SerializationQBit::transposeBits(uint8_t src, const size_t row_i, 
 template void SerializationQBit::transposeBits(UInt16 src, const size_t row_i, const size_t total_bits, char * const * dst);
 template void SerializationQBit::transposeBits(UInt32 src, const size_t row_i, const size_t total_bits, char * const * dst);
 template void SerializationQBit::transposeBits(UInt64 src, const size_t row_i, const size_t total_bits, char * const * dst);
+
+template SerializationQBit::TransposeBitsBatchFn<uint8_t> SerializationQBit::resolveTransposeBitsBatch<uint8_t>();
+template SerializationQBit::TransposeBitsBatchFn<UInt16> SerializationQBit::resolveTransposeBitsBatch<UInt16>();
+template SerializationQBit::TransposeBitsBatchFn<UInt32> SerializationQBit::resolveTransposeBitsBatch<UInt32>();
+template SerializationQBit::TransposeBitsBatchFn<UInt64> SerializationQBit::resolveTransposeBitsBatch<UInt64>();
 
 template SerializationQBit::UntransposeBitPlaneFn<UInt64> SerializationQBit::resolveUntransposeBitPlane<UInt64>();
 template SerializationQBit::UntransposeBitPlaneFn<UInt32> SerializationQBit::resolveUntransposeBitPlane<UInt32>();

@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Columns/QBitPlaneBlock.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -1289,45 +1290,44 @@ ColumnPtr FunctionCast::convertArrayToQBit(
         tuple_columns[i] = std::move(column);
     }
 
+    /// Transpose into a block of rows at a time and append each bit plane to its column in one copy,
+    /// rather than writing a row straight into the columns: see QBitPlaneBlock for why that is faster.
+    QBitPlaneBlock block(num_columns, bytes_per_fixedstring);
+    const auto transpose = SerializationQBit::resolveTransposeBitsBatch<Word>();
+    VectorWithMemoryTracking<char *> row_ptrs(num_columns);
+
     prev_offset = 0;
-    for (size_t row = 0; row < arrays_count; ++row)
+    for (size_t block_begin = 0; block_begin < arrays_count; block_begin += QBitPlaneBlock::BLOCK_ROWS)
     {
-        auto off = offsets[row];
+        const size_t block_rows = std::min(QBitPlaneBlock::BLOCK_ROWS, arrays_count - block_begin);
+        block.start();
 
-        /// For NULL rows, insert default (zero) values — the result will be masked by NULL.
-        if (null_map && (*null_map)[row])
+        for (size_t row_in_block = 0; row_in_block < block_rows; ++row_in_block)
         {
-            for (size_t j = 0; j < num_columns; ++j)
-                assert_cast<ColumnFixedString &>(*tuple_columns[j]).insertDefault();
+            const size_t row = block_begin + row_in_block;
+            const auto off = offsets[row];
+
+            /// NULL rows keep the zeroed planes — the result will be masked by NULL anyway, and their
+            /// nested arrays may have default (empty) values that don't match the expected dimension.
+            if (!(null_map && (*null_map)[row]))
+            {
+                for (size_t j = 0; j < num_columns; ++j)
+                    row_ptrs[j] = block.planeRow(j, row_in_block);
+
+                /// Dimension `i` belongs to stride group `i / stride` and is written into that group's
+                /// `size` bit planes (tuple indices [group * size, group * size + size)).
+                for (size_t group = 0; group < num_strides; ++group)
+                    transpose(
+                        reinterpret_cast<const char *>(&data[prev_offset + group * stride]),
+                        stride,
+                        padded_stride,
+                        row_ptrs.data() + group * size);
+            }
+
             prev_offset = off;
-            continue;
         }
 
-        /// Insert default values for each FixedString column and keep pointers to them
-        VectorWithMemoryTracking<char *> row_ptrs(num_columns);
-        for (size_t j = 0; j < num_columns; ++j)
-        {
-            auto & fixed_string_column = assert_cast<ColumnFixedString &>(*tuple_columns[j]);
-            fixed_string_column.insertDefault();
-            auto & chars = fixed_string_column.getChars();
-            row_ptrs[j] = reinterpret_cast<char *>(&chars[chars.size() - bytes_per_fixedstring]);
-        }
-
-        /// Transpose bits right inside the FixedStrings. Dimension `i` belongs to stride group `i / stride` and is written into
-        /// that group's `size` bit planes (tuple indices [group * size, group * size + size)).
-        for (size_t i = 0; i < n; ++i)
-        {
-            Word w = 0;
-
-            FloatType v = data[prev_offset + i];
-            std::memcpy(&w, &v, sizeof(Word));
-
-            const size_t group = i / stride;
-            const size_t local_i = i - group * stride;
-            SerializationQBit::transposeBits<Word>(w, local_i, padded_stride, row_ptrs.data() + group * size);
-        }
-
-        prev_offset = off;
+        block.flush(tuple_columns, block_rows);
     }
 
     ColumnPtr tuple = ColumnTuple::create(std::move(tuple_columns));
