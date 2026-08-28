@@ -349,7 +349,7 @@ public:
     /// Number of right-side rows ingested into the build.
     size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
     /// Peak bytes the build occupied
-    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+    size_t getPeakBuildBytes() const { return peak_build_bytes.load(std::memory_order_relaxed); }
 
     StepAnalysisReport getAnalysisReport() const override;
     const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
@@ -792,6 +792,33 @@ public:
         std::atomic<size_t> keys_to_join = 0;
         std::atomic<size_t> bucket_bytes = 0;
 
+        /// Exact `allocated_size + nullmaps_allocated_size + bucket_bytes`. The three parts are
+        /// independent atomics, so a concurrent sum can miss one worker's update and under-count
+        /// `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
+        std::atomic<size_t> total_bytes = 0;
+
+        /// Add `total_bytes` first so a concurrent size-limit check cannot under-count.
+        void addBytes(std::atomic<size_t> & part, size_t n)
+        {
+            total_bytes.fetch_add(n, std::memory_order_relaxed);
+            part.fetch_add(n, std::memory_order_relaxed);
+        }
+
+        void subBytes(std::atomic<size_t> & part, size_t n)
+        {
+            part.fetch_sub(n, std::memory_order_relaxed);
+            total_bytes.fetch_sub(n, std::memory_order_relaxed);
+        }
+
+        void setBytes(std::atomic<size_t> & part, size_t n)
+        {
+            const size_t old = part.exchange(n, std::memory_order_relaxed);
+            if (n >= old)
+                total_bytes.fetch_add(n - old, std::memory_order_relaxed);
+            else
+                total_bytes.fetch_sub(old - n, std::memory_order_relaxed);
+        }
+
         /// Whether the right table reranged by key
         bool sorted = false;
         /// Whether row-major storage is used or not and its layout if it is.
@@ -974,8 +1001,16 @@ private:
     std::atomic<bool> shrink_blocks = false;
     std::atomic<Int64> memory_usage_before_adding_blocks = 0;
 
-    /// Peak of bytes observed in the hash table during the build phase
-    size_t peak_build_bytes = 0;
+    /// Peak of bytes observed during the build. Workers update it concurrently.
+    std::atomic<size_t> peak_build_bytes = 0;
+
+    void updatePeakBuildBytes(size_t bytes)
+    {
+        size_t prev = peak_build_bytes.load(std::memory_order_relaxed);
+        while (prev < bytes && !peak_build_bytes.compare_exchange_weak(prev, bytes, std::memory_order_relaxed))
+        {
+        }
+    }
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
