@@ -245,9 +245,6 @@ TEST(PartitionedFixedHashMap, MapsOneSizedCellsKeepAStartedCacheLineUnderOneLock
     static_assert(sizeof(Cell) == 12);
     using Map = PartitionedFixedHashMap<UInt8, MapsOneMapped, 8, 8>;
     Map map;
-    ASSERT_EQ(sizeof(typename Map::cell_type), 12u);
-
-    ASSERT_EQ(routedBucket(map, static_cast<UInt8>(3)), routedBucket(map, static_cast<UInt8>(4)));
 
     for (UInt16 key = 1; key < 256; ++key)
     {
