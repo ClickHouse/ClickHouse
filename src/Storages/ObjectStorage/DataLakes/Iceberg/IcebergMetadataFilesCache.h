@@ -61,6 +61,7 @@ struct ManifestFileCacheKey
     Iceberg::ManifestFileContentType content_type;
     /// Partition spec the manifest was written with, needed to rewrite each manifest under its own spec during compaction after partition evolution.
     Int32 partition_spec_id;
+    std::optional<UInt64> first_row_id;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
