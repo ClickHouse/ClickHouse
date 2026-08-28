@@ -28,7 +28,7 @@ namespace DB
         /// Asked while attaching, so this must not load a lazy table. `getName` answers from the
         /// `CREATE` query in that case, whereas a cast would see only the proxy.
         const auto engine = storage->getName();
-        if (engine.starts_with("Replicated") && engine.ends_with("MergeTree"))
+        if ((engine.starts_with("Replicated") || engine.starts_with("Shared")) && engine.ends_with("MergeTree"))
         {
             return {CurrentMetrics::AttachedTable, CurrentMetrics::AttachedReplicatedTable};
         }

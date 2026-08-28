@@ -105,7 +105,12 @@ public:
     bool supportsReplication() const override
     {
         std::lock_guard lock{nested_mutex};
-        return nested ? nested->supportsReplication() : engine_name.starts_with("Replicated");
+        if (nested)
+            return nested->supportsReplication();
+        /// The `Replicated` and `Shared` MergeTree engines are the replicating ones, so the answer
+        /// here matches what the storage itself would say once it exists.
+        return (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared"))
+            && engine_name.ends_with("MergeTree");
     }
 
     /// Startup is deferred until first access via `getNested`.
