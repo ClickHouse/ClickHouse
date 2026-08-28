@@ -7,6 +7,7 @@
 --
 -- Join-order stats stay on so the planner AUTO path gets MergeTree `totalRows` (200).
 -- The legacy analyzer has no join-order pass; it walks `joined_plan` with `estimateReadRowsCount`.
+-- `missing_estimate_parallel` turns join-order off: no rhs estimate, high threshold still parallel.
 --
 -- Legacy `EXPLAIN PIPELINE` collapses identical fillers to `FillingRightJoinSide × N`.
 -- The analyzer writes N separate processors (squashing sits between them).
@@ -75,6 +76,18 @@ FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
     SETTINGS max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0, enable_analyzer = 1, join_algorithm = 'auto', parallel_hash_join_threshold = 1
+);
+
+SELECT 'missing_estimate_parallel';
+SET join_algorithm = 'hash';
+SET parallel_hash_join_threshold = 100000;
+SELECT coalesce(
+    nullIf(max(toUInt64OrZero(extract(explain, 'FillingRightJoinSide × (\\d+)'))), 0),
+    countIf(explain LIKE '%FillingRightJoinSide%'))
+FROM (
+    EXPLAIN PIPELINE
+    SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
+    SETTINGS max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 0, query_plan_optimize_join_order_randomize = 0, enable_analyzer = 1, join_algorithm = 'hash', parallel_hash_join_threshold = 100000
 );
 
 DROP TABLE t05045_l;
