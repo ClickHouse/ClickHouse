@@ -1,5 +1,5 @@
 SET enable_json_type = 1;
-SET mutations_sync = 0, alter_sync = 0;
+SET mutations_sync = 2, alter_sync = 2;
 
 DROP TABLE IF EXISTS json_path_values_per_part_config;
 
@@ -19,14 +19,25 @@ SETTINGS index_granularity = 1;
 INSERT INTO json_path_values_per_part_config VALUES (1, '{"old_path":"old","new_path":"old-hit"}');
 
 SYSTEM STOP MERGES json_path_values_per_part_config;
+ALTER TABLE json_path_values_per_part_config DETACH PART 'all_1_1_0';
 ALTER TABLE json_path_values_per_part_config DROP INDEX idx;
-KILL MUTATION WHERE table = 'json_path_values_per_part_config' AND database = currentDatabase() FORMAT Null;
 ALTER TABLE json_path_values_per_part_config ADD INDEX idx data TYPE text(tokenizer = jsonPathValues(
     max_token_bytes = 64,
     include_paths = ['new_path'],
     skip_paths = ['old_path'])) GRANULARITY 1;
+ALTER TABLE json_path_values_per_part_config ATTACH PART 'all_1_1_0';
 
 INSERT INTO json_path_values_per_part_config VALUES (2, '{"old_path":"new","new_path":"new-hit"}');
+
+SELECT arraySort(groupArray((has_old_path, has_new_path)))
+FROM
+(
+    SELECT
+        countIf(startsWith(hex(token), concat(hex('old_path'), '0000'))) > 0 AS has_old_path,
+        countIf(startsWith(hex(token), concat(hex('new_path'), '0000'))) > 0 AS has_new_path
+    FROM mergeTreeTextIndex(currentDatabase(), 'json_path_values_per_part_config', 'idx')
+    GROUP BY part_name
+);
 
 SELECT groupArray(id) FROM json_path_values_per_part_config WHERE data.new_path = 'old-hit'
 SETTINGS force_data_skipping_indices = 'idx', query_plan_direct_read_from_text_index = 1;
