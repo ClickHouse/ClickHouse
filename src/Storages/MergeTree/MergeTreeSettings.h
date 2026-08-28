@@ -52,6 +52,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, UniqueKeyConflictAction) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \

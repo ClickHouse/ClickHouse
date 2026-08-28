@@ -245,6 +245,11 @@ IMPLEMENT_SETTING_ENUM(UniqueKeyProbeImplementation, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", UniqueKeyProbeImplementation::Auto},
      {"simple", UniqueKeyProbeImplementation::Simple}})
 
+IMPLEMENT_SETTING_ENUM(UniqueKeyConflictAction, ErrorCodes::BAD_ARGUMENTS,
+    {{"overwrite", UniqueKeyConflictAction::Overwrite},
+     {"ignore", UniqueKeyConflictAction::Ignore},
+     {"abort", UniqueKeyConflictAction::Abort}})
+
 IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", AlterColumnSecondaryIndexMode::THROW},
      {"drop", AlterColumnSecondaryIndexMode::DROP},

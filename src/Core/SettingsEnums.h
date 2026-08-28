@@ -254,6 +254,15 @@ enum class UniqueKeyProbeImplementation : uint8_t
 
 DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
 
+enum class UniqueKeyConflictAction : uint8_t
+{
+    Overwrite = 0, /// Incoming row supersedes the existing live row (UPSERT).
+    Ignore,        /// Existing row wins; the conflicting incoming row is dropped.
+    Abort,         /// INSERT fails on the first live duplicate; nothing is published.
+};
+
+DECLARE_SETTING_ENUM(UniqueKeyConflictAction)
+
 enum class MySQLDataTypesSupport : uint8_t
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable

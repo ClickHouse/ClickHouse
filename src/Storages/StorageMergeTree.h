@@ -344,6 +344,9 @@ private:
     friend class MergeTreeSinkPatch;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
+    /// Publishes a unique-key merge, so it needs the same reach as `MergePlainMergeTreeTask`:
+    /// the rename runs inside the commit's critical section.
+    friend class UniqueKeyTxnCommit;
     friend class MutatePlainMergeTreeTask;
     friend class MergeTreeCleanupThread;
 

@@ -2367,6 +2367,17 @@ Possible values:
     DECLARE(Seconds, refresh_statistics_interval, 300, R"(
 The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
 )", 0) \
+    DECLARE(UniqueKeyConflictAction, unique_key_conflict_action, UniqueKeyConflictAction::Overwrite, R"(
+For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
+
+- `overwrite` — the incoming row supersedes the existing live row (UPSERT). Default.
+- `ignore` — the existing row is kept and the conflicting incoming row is dropped.
+- `abort` — the INSERT fails on the first live duplicate and publishes nothing.
+
+The policy is a property of the table, so every writer is held to it. Note that an INSERT is
+atomic only when it produces a single part, so `abort` may reject one part of a multi-part
+INSERT after earlier parts committed, exactly as plain MergeTree does.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
 Minimal number of parts to activated distributed index analysis
 )", EXPERIMENTAL) \

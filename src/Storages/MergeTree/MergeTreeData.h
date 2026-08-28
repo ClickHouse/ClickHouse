@@ -63,6 +63,7 @@ class MutationCommands;
 class Context;
 struct JobAndPool;
 class MergeTreeTransaction;
+class UniqueKeyTxnManager;
 struct ZeroCopyLock;
 struct ZooKeeperRetriesInfo;
 
@@ -1024,6 +1025,14 @@ public:
         return outdated_data_parts_loading_finished.load(std::memory_order_relaxed);
     }
 
+    UniqueKeyTxnManager & uniqueKeyTxnManager() const;
+
+    /// Announce a part's directory to the bitmap store, which indexes the sidecars in it.
+    void loadUniqueKeyBitmaps(const DataPartPtr & part);
+
+    /// Forget the bitmap-store bookkeeping of parts that have left the part set.
+    void dropUniqueKeyBitmaps(const DataPartsVector & parts);
+
     /// Moves to outdated state patch parts that do not need to be applied to regular parts.
     virtual size_t clearUnusedPatchParts();
 
@@ -1358,11 +1367,14 @@ public:
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
+    /// With `precommit_storage = false` the returned part's storage transaction is still open, so
+    /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<PatchPartIndex> patch_part_index) const;
+        std::optional<PatchPartIndex> patch_part_index,
+        bool precommit_storage = true) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1642,6 +1654,12 @@ public:
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:
+    /// The table's unique-key write surface: partition locks, the delete-bitmap store, and the
+    /// commit protocol that uses them. Null on a table without a unique key, and constructed once
+    /// in the constructor rather than on first use -- every caller already sits behind
+    /// `hasUniqueKey()`, so there is nothing for a lazy path to protect.
+    std::unique_ptr<UniqueKeyTxnManager> unique_key_txn_manager;
+
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
