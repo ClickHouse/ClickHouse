@@ -25,8 +25,9 @@ The compiler side is fixed in llvm/llvm-project#219100.
 
 Every pull request therefore used to show a "-3.06 MiB" headline row that no
 pull request could influence. These tests pin the suppression, and - just as
-importantly - pin that it never swallows a delta pointing the other way or one
-large enough to be flagged.
+importantly - pin that it never swallows a delta pointing the other way, one
+that differs from the offset in either direction - including a pull request that
+grows the binary by less than the offset - or one large enough to be flagged.
 """
 
 import os
@@ -38,6 +39,7 @@ from ci.jobs.build_profile_diff_job import (
     BINARY_SIG_BYTES,
     HEADLINE_BINARIES,
     XRAY_DEBUG_OFFSET_RATIO,
+    XRAY_DEBUG_OFFSET_TOLERANCE,
     Side,
     compare_binaries,
 )
@@ -93,11 +95,36 @@ def test_measured_offset_is_not_shown():
     assert "XRay" in section.body
 
 
-def test_offset_band_covers_the_measurement_with_headroom():
-    """The band is wide enough for the measured offset and stays under 1%."""
+def test_offset_window_brackets_the_measurement():
+    """The window is centred on the measured offset and its far edge stays under 1%."""
     measured_ratio = (MASTER_SIZE - PR_SIZE) / MASTER_SIZE
-    assert measured_ratio < XRAY_DEBUG_OFFSET_RATIO < 0.01
-    assert XRAY_DEBUG_OFFSET_RATIO > 1.5 * measured_ratio
+    assert (
+        XRAY_DEBUG_OFFSET_RATIO * (1 - XRAY_DEBUG_OFFSET_TOLERANCE)
+        < measured_ratio
+        < XRAY_DEBUG_OFFSET_RATIO * (1 + XRAY_DEBUG_OFFSET_TOLERANCE)
+        < 0.01
+    )
+
+
+def test_growth_smaller_than_the_offset_is_still_reported():
+    """The regression the window must not swallow.
+
+    A pull request that adds 2 MiB to the comparable `-g0` binary still compares
+    ~1.06 MiB *smaller* than the official master build, because the offset is
+    larger than the growth. Suppressing everything up to the offset would report
+    that as no change at all; the window around the offset shows it.
+    """
+    section = compare(PR_SIZE + (2 << 20), MASTER_SIZE)
+    assert "| Binary |" in section.body
+    assert "-1.06 MiB" in section.body
+    assert not section.significant
+
+
+def test_a_shrink_inside_the_window_is_not_shown():
+    """Just off the measurement is still the offset, not a signal."""
+    section = compare(PR_SIZE - (1 << 20), MASTER_SIZE)
+    assert "MiB" not in section.body
+    assert "clickhouse-stripped" in section.body
 
 
 def test_a_bigger_binary_is_always_shown():
@@ -108,9 +135,11 @@ def test_a_bigger_binary_is_always_shown():
     assert not section.significant
 
 
-def test_a_shrink_beyond_the_band_is_shown():
+def test_a_shrink_beyond_the_window_is_shown():
     """More shrinkage than the offset explains is a real signal, even if unflagged."""
-    delta = -int(MASTER_SIZE * XRAY_DEBUG_OFFSET_RATIO) - (1 << 20)
+    delta = -int(
+        MASTER_SIZE * XRAY_DEBUG_OFFSET_RATIO * (1 + XRAY_DEBUG_OFFSET_TOLERANCE)
+    ) - (1 << 20)
     assert abs(delta) < BINARY_SIG_BYTES  # deliberately below the flagging bar
     section = compare(MASTER_SIZE + delta, MASTER_SIZE)
     assert "| Binary |" in section.body

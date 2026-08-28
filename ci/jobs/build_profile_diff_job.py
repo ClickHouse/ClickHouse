@@ -117,9 +117,9 @@ UPLOAD_DELAY_DAYS = 4
 # under different load and need generous margins.
 BINARY_SIG_BYTES = 8 << 20  # stripped binary: 8 MiB and
 BINARY_SIG_RATIO = 0.01  # 1%
-# The band in which a *smaller* pull request binary is the known debug-info
-# offset rather than anything the pull request did - such a row is not shown at
-# all, see compare_binaries.
+# The size by which the official master binary exceeds a pull request one for
+# reasons no pull request can influence. A delta that lands on this offset is
+# not shown at all, see compare_binaries.
 #
 # Pull request builds pass -DDISABLE_ALL_DEBUG_SYMBOLS=1 and the official master
 # build does not (build_clickhouse.py), and `strip --strip-debug` does not undo
@@ -134,12 +134,17 @@ BINARY_SIG_RATIO = 0.01  # 1%
 # add. The offset is always in the same direction, because the official build is
 # the one carrying the extra sleds.
 #
-# The band is roughly twice the measured offset and stays below
-# BINARY_SIG_RATIO, so a delta large enough to be flagged is never hidden.
-#
 # The compiler side is fixed in llvm/llvm-project#219100; once that reaches the
-# toolchain this band can go away, and the headline row becomes exact again.
-XRAY_DEBUG_OFFSET_RATIO = 0.008
+# toolchain this offset can go away, and the headline row becomes exact again.
+XRAY_DEBUG_OFFSET_RATIO = 0.0043
+# How far a delta may sit from that offset and still be read as the offset. This
+# is deliberately a window *around* the measurement rather than everything up to
+# it: a pull request that grows the binary by less than the offset still compares
+# smaller than master, and hiding the whole `[-offset, 0]` range would turn such
+# a regression into a silent omission. At half the offset the window is
+# +-1.53 MiB around -3.06 MiB, so any real change past that shows up, in either
+# direction, and its upper edge stays below BINARY_SIG_RATIO.
+XRAY_DEBUG_OFFSET_TOLERANCE = 0.5
 # Shown whenever the headline size section says anything at all, so that a
 # rendered negative delta is read with the offset in mind rather than as a size
 # win of that size.
@@ -721,15 +726,17 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
     pull request build leaves alone, worth ~0.43% of the binary. That is not
     something a pull request can influence, and reporting it as a -3 MiB change
     on every pull request only invites a hunt for a size win that does not
-    exist - so a smaller-binary delta inside that band is not shown at all, just
-    named. A delta in the other direction cannot be the offset, and one large
-    enough to be significant is always shown.
+    exist - so a delta that lands on the offset is not shown at all, just named.
+    The window is centred on the measured offset rather than reaching up to it
+    (XRAY_DEBUG_OFFSET_TOLERANCE), so a pull request that grows the binary while
+    still comparing smaller than master is reported rather than swallowed, and a
+    delta large enough to be significant is always shown.
 
-    This does hide a genuine shrink of the same size, and there is no way around
-    that while the baseline is the official build: a 3 MiB saving and the offset
-    are indistinguishable here. Recovering it needs a baseline compiled with the
-    pull request's flags - the warmup build, once it links a binary of its own -
-    or the offset gone from the compiler.
+    This does hide a genuine change of exactly the offset's size, and there is no
+    way around that while the baseline is the official build: a 3 MiB saving and
+    the offset are indistinguishable here. Recovering it needs a baseline
+    compiled with the pull request's flags - the warmup build, once it links a
+    binary of its own - or the offset gone from the compiler.
 
     This is the check's headline size signal, so it must never disappear
     silently: a headline binary whose size row the PR build did not upload
@@ -775,11 +782,16 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         if not pr_size or not base_size:
             continue
         delta = pr_size - base_size
+        offset = base_size * XRAY_DEBUG_OFFSET_RATIO
         name = strip_build_dir(file)
         if abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
             section.significant = True
             summaries.append(f"{name}: {format_bytes_delta(delta, base_size)}")
-        elif -base_size * XRAY_DEBUG_OFFSET_RATIO <= delta <= 0:
+        elif (
+            -offset * (1 + XRAY_DEBUG_OFFSET_TOLERANCE)
+            <= delta
+            <= -offset * (1 - XRAY_DEBUG_OFFSET_TOLERANCE)
+        ):
             # The known debug-info/XRay offset, not the pull request. Checked
             # after significance, so a flagged delta is never hidden by it.
             within_offset.append(name)
@@ -798,8 +810,10 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
             lines.append("")
         names = ", ".join(md_code(name) for name in within_offset)
         lines.append(
-            f"{names}: smaller than the master baseline by less than the known "
-            "offset between the two builds, so the difference is not shown."
+            f"{names}: smaller than the master baseline by the known offset "
+            "between the two builds, so the difference is not shown. A delta "
+            "that differs from the offset by more than half of it is shown, in "
+            "either direction."
         )
     if len(table) > 2 or within_offset:
         lines += ["", XRAY_DEBUG_OFFSET_NOTE]
