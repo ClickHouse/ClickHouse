@@ -19,10 +19,11 @@ from bottle import request, response, route, run
 OWN_IP = socket.gethostbyname(socket.gethostname())
 REDIRECT_TARGET = OWN_IP + ":8080"
 ALLOWED_REDIRECT_TARGET = "redirected:8080"
+UNREACHABLE_REDIRECT_TARGET = "unreachable:8081"
 VIRTUAL_HOSTED_REDIRECT_TARGET = "bucket.s3.resolver:8080"
 
 followed_redirect = {"hit": False}
-initial_requests = {"cache": 0}
+initial_requests = {"cache": 0, "network": 0}
 
 
 @route("/forbidden_hit/<_path:path>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
@@ -59,8 +60,8 @@ def server(_bucket, _path=""):
         initial_requests[_bucket] += 1
 
     suffix = _bucket if not _path else _bucket + "/" + _path
-    if _bucket in ("cache", "head"):
-        target = ALLOWED_REDIRECT_TARGET
+    if _bucket in ("cache", "head", "network"):
+        target = UNREACHABLE_REDIRECT_TARGET if _bucket == "network" else ALLOWED_REDIRECT_TARGET
         target_path = suffix
     elif _bucket == "virtual":
         target = VIRTUAL_HOSTED_REDIRECT_TARGET

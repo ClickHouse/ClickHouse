@@ -62,6 +62,9 @@ def cluster():
         cluster.instances["node"].append_hosts(
             "redirected", cluster.get_instance_ip("resolver")
         )
+        cluster.instances["node"].append_hosts(
+            "unreachable", cluster.get_instance_ip("resolver")
+        )
         run_endpoint(cluster)
 
         yield cluster
@@ -136,5 +139,21 @@ def test_head_redirect_is_cached_after_list_access_denied(cluster):
         error = node.query_and_get_error(f"SELECT * FROM {table}")
         assert "AccessDenied" in error
         assert node.query(f"SELECT * FROM {table}") == "1\n"
+    finally:
+        node.query(f"DROP TABLE {table}")
+
+
+def test_head_redirect_is_not_cached_after_network_error(cluster):
+    node = cluster.instances["node"]
+    table = "s3_head_redirect_network_error"
+    node.query(f"DROP TABLE IF EXISTS {table}")
+    node.query(
+        f"CREATE TABLE {table} (x UInt8) "
+        "ENGINE = S3('http://resolver:8080/network/key.csv', NOSIGN, 'CSV')"
+    )
+    try:
+        for _ in range(2):
+            assert node.query_and_get_error(f"SELECT * FROM {table}")
+        assert _initial_requests(cluster, "network") == "4"
     finally:
         node.query(f"DROP TABLE {table}")

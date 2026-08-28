@@ -3,6 +3,7 @@
     <remote_url_allow_hosts>
         <host>resolver:8080</host>
         <host>redirected:8080</host>
+        <host>unreachable:8081</host>
         <host>s3.resolver:8080</host>
     </remote_url_allow_hosts>
     <!-- Keep retries low so the test fails fast. -->
