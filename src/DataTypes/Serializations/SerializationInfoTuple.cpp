@@ -62,7 +62,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
     for (size_t i = 0; i < new_elements.size(); ++i)
     {
         auto elem_settings = new_settings;
-        if (!new_settings.canUseSparseSerialization(*new_elements[i]))
+        if (!new_settings.shouldCollectSerializationInfo(*new_elements[i]))
             elem_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
         auto info = new_elements[i]->createSerializationInfo(elem_settings);
 

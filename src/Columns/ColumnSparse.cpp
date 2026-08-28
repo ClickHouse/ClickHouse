@@ -979,7 +979,7 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
         auto full_nested_column = recursiveRemoveSparse(column_nullable->getNestedColumnPtr());
         if (full_nested_column.get() == column_nullable->getNestedColumnPtr().get())
             return column;
-        return ColumnNullable::create(std::move(full_nested_column), column_nullable->getNullMapColumnPtr());
+        return ColumnNullable::create(full_nested_column, column_nullable->getNullMapColumnPtr());
     }
 
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))

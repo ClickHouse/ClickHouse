@@ -57,7 +57,7 @@ ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
         auto nested = materializeObjectTypedPaths(nullable->getNestedColumnPtr());
         if (nested.get() == nullable->getNestedColumnPtr().get())
             return column;
-        return ColumnNullable::create(std::move(nested), nullable->getNullMapColumnPtr());
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
     }
 
     if (typeid_cast<const ColumnObject *>(column.get()))

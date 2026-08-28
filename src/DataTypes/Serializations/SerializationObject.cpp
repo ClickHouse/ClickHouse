@@ -101,6 +101,14 @@ SerializationObject::SerializationObject(
         path_regexps_to_skip.emplace_back(regexp_str);
 }
 
+MutableColumnPtr SerializationObject::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    auto & typed_paths = assert_cast<ColumnObject &>(*column).getTypedPaths();
+    for (auto & [path, path_column] : typed_paths)
+        path_column = typed_paths_serializations.at(path)->wrapColumnForDeserialization(path_column->cloneEmpty());
+    return column;
+}
+
 bool SerializationObject::shouldSkipPath(const String & path) const
 {
     if (paths_to_skip.contains(path))

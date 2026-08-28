@@ -859,7 +859,9 @@ getColumnsForNewDataPart(
                     continue;
 
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
-                if (old_info->structureEquals(*rebuilt_info) || (isObject(source_type) && isObject(storage_type)))
+                if (old_info->structureEquals(*rebuilt_info)
+                    || (isObject(source_type) && isObject(storage_type))
+                    || (isTuple(source_type) && isTuple(storage_type)))
                     rebuilt_info = old_info->createWithType(*source_type, *storage_type, settings);
 
                 new_serialization_infos.emplace(new_name, std::move(rebuilt_info));
@@ -877,7 +879,9 @@ getColumnsForNewDataPart(
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
-        if (!old_info->structureEquals(*new_info) && !(isObject(old_type) && isObject(new_type)))
+        if (!old_info->structureEquals(*new_info)
+            && !(isObject(old_type) && isObject(new_type))
+            && !(isTuple(old_type) && isTuple(new_type)))
         {
             new_serialization_infos.emplace(new_name, std::move(new_info));
             continue;
