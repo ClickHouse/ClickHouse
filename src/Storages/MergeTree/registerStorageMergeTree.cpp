@@ -238,7 +238,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const String & engine_name,
     ASTs & engine_args,
     LoadingStrictnessLevel mode,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    bool validate_substitutions)
 {
     chassert(isReplicated(engine_name));
 
@@ -253,7 +254,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
     {
-        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context);
+        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate_substitutions);
         ast_zk_path->value = res.full_path_for_metadata;
         ast_replica_name->value = res.replica_name_for_metadata;
         return res;
@@ -365,8 +366,11 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
 
     try
     {
+        /// This only reads back the path of an already-created table, so it must never reject it:
+        /// the `catch` below turns a rejection into `nullopt`, which silently drops the table from a backup.
         auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context);
+            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context,
+            /*validate_substitutions=*/ false);
         return res.full_path;
     }
     catch (Exception & e)
@@ -572,8 +576,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        /// Only a freshly supplied definition is validated: a CREATE, or a full-definition ATTACH.
+        /// Every other route re-derives a table that already exists and must keep loading. Such a
+        /// replay can arrive at CREATE, so `mode` cannot tell it apart and the context carries it.
+        const bool validate_substitutions = (args.mode <= LoadingStrictnessLevel::CREATE
+                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
+            && !args.is_restore_from_backup
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext());
+            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext(),
+            validate_substitutions);
 
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
@@ -903,12 +915,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// experimental codec (e.g. `ZXC`) could slip in through `SETTINGS default_compression_codec = ...`.
         /// For freshly introduced definitions (`is_fresh_definition` above) the merged value (explicit or
         /// inherited from the current `<merge_tree>` config defaults) is checked against
-        /// `allow_experimental_codecs`. For stored definitions values written in the stored `SETTINGS`
+        /// the experimental-codec gate. For stored definitions values written in the stored `SETTINGS`
         /// clause were already gated when they were introduced and are exempt, so existing tables
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
         /// introduce an experimental codec into existing tables via a config default plus a restart, without
-        /// anyone enabling `allow_experimental_codecs` (at startup the check runs against the default
+        /// anyone enabling that codec (at startup the check runs against the default
         /// profile, which is where such a config default can be legitimately allowed). `FORCE_RESTORE` is
         /// documented to skip all sanity checks and is left alone.
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE && !local_settings[Setting::allow_experimental_codecs])
@@ -928,7 +940,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (codec.empty())
                     return;
                 if (is_fresh_definition || !is_stored_in_definition(name))
-                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
             };
 
             validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);

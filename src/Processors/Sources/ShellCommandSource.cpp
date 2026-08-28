@@ -86,26 +86,46 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
 
     int res = 0;
 
+    /// Account against one anchor in microseconds: the per-iteration millisecond stopwatch this
+    /// replaces truncated a sub-millisecond interruption to 0, so a signal arriving faster than once
+    /// per millisecond - the query profiler under load - left the budget untouched and the poll never
+    /// expired. Same accounting as `ReadBufferFromFileDescriptor::poll` and `Epoll::getManyReady`.
+    /// Clamp before scaling: `timeout_milliseconds` comes from the unrestricted `command_read_timeout` /
+    /// `command_write_timeout` settings, so a huge value would wrap in the multiplication and could then
+    /// round a non-zero remainder down to zero.
+    const UInt64 timeout_microseconds
+        = std::min<UInt64>(timeout_milliseconds, std::numeric_limits<UInt64>::max() / 1000) * 1000;
+    UInt64 remaining_microseconds = timeout_microseconds;
+    Stopwatch watch;
+
     while (true)
     {
-        Stopwatch watch;
-
         LOG_TEST(logger, "Polling descriptors: {}", fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "));
 
-        res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
+        res = poll(
+            pfds,
+            static_cast<nfds_t>(num),
+            static_cast<int>(std::min<UInt64>(
+                (remaining_microseconds + 999) / 1000, static_cast<UInt64>(std::numeric_limits<int>::max()))));
 
         if (res < 0)
         {
             if (errno != EINTR)
                 throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll");
 
-            const auto elapsed = watch.elapsedMilliseconds();
-            if (timeout_milliseconds <= elapsed)
+            /// A zero timeout is a non-blocking readiness probe, so there is no deadline to exhaust:
+            /// retry it rather than letting a signal report the descriptor as not ready.
+            if (timeout_microseconds == 0)
+                continue;
+
+            const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+            if (elapsed_microseconds >= timeout_microseconds)
             {
-                LOG_TEST(logger, "Timeout exceeded: elapsed={}, timeout={}", elapsed, timeout_milliseconds);
+                LOG_TEST(logger, "Timeout exceeded: elapsed={}us, timeout={}us", elapsed_microseconds, timeout_microseconds);
+                res = 0;
                 break;
             }
-            timeout_milliseconds -= elapsed;
+            remaining_microseconds = timeout_microseconds - elapsed_microseconds;
         }
         else
         {
