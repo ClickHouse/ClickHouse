@@ -1492,6 +1492,17 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
     if (materialized_view && current != init_table_id)
     {
+        /// A view selects from its own source, never from the view that forwards into it, so on a target edge
+        /// the check below is never satisfied and the path is abandoned with no output header. Abandoning is
+        /// right for a view reached as a dependent, which is skipped, but `createPreSink` requires the header
+        /// of the view the insert addresses.
+        if (parent == init_table_id && isView(parent) && inner_tables.at(parent) == current)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Table '{}' is a materialized view, so it cannot be the target of materialized view '{}'. "
+                "Use the target table of '{}' instead.",
+                current, parent, current);
+
         StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
         if (select_table_id != parent)
         {
@@ -1981,6 +1992,19 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 }
 
 
+/// A half-built view can reach the log with its query stored but not its context. The context
+/// only supplies the log cut-off, so the init one stands in for a missing one.
+String InsertDependenciesBuilder::getViewQueryForLog(StorageID view_id) const
+{
+    auto query_it = select_queries.find(view_id);
+    if (query_it == select_queries.end())
+        return {};
+
+    auto context_it = select_contexts.find(view_id);
+    return getCleanQueryAst(query_it->second, context_it == select_contexts.end() ? init_context : context_it->second);
+}
+
+
 void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start) const
 {
     const auto & settings = init_context->getSettingsRef();
@@ -2025,7 +2049,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
             element.view_name = view_id.getFullTableName();
             element.view_uuid = view_id.uuid;
             element.view_type = view_type;
-            element.view_query = getCleanQueryAst(select_queries.at(view_id), select_contexts.at(view_id));
+            element.view_query = getViewQueryForLog(view_id);
             element.view_target = inner_table_id.getFullTableName();
 
             element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;

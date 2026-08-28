@@ -9,6 +9,11 @@ worktree_base="$scratch/worktree"
 pr_file="$scratch/prs"
 runner_pid=""
 
+# Keep this test independent of the host filesystem capacity. The production
+# default is deliberately high, but these assertions do not cover low-space
+# cleanup.
+export CONTINUE_ALL_PRS_MIN_FREE_GB=1
+
 cleanup()
 {
     [[ -z "$runner_pid" ]] || kill "$runner_pid" 2>/dev/null || true
