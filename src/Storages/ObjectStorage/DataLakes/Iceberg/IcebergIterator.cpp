@@ -247,7 +247,7 @@ void IcebergIterator::ensureDeletesReady()
         std::rethrow_exception(deletes_exception);
 }
 
-Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const ManifestFileCacheKey & manifest_list_entry) const
+Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const ManifestFileCacheKey & manifest_list_entry, std::function<bool()> stop_condition) const
 {
     auto manifest_file_cacheable_part = Iceberg::getManifestFile(
         object_storage,
@@ -266,22 +266,17 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const Manif
         manifest_list_entry.added_snapshot_id,
         local_context,
         manifest_filter_dag,
-        table_state_snapshot->schema_id);
+        table_state_snapshot->schema_id,
+        std::move(stop_condition));
 }
 
-std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManifest(const ManifestFileCacheKey & manifest_list_entry, bool abort_when_queue_finished) const
+std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManifest(const ManifestFileCacheKey & manifest_list_entry, std::function<bool()> stop_condition) const
 {
-    static constexpr size_t abort_check_period = 256;
-
-    auto manifest_file_iterator = createManifestIterator(manifest_list_entry);
+    auto manifest_file_iterator = createManifestIterator(manifest_list_entry, std::move(stop_condition));
 
     ManifestEntryBatch batch;
     while (auto entry = manifest_file_iterator->next())
-    {
         batch.push_back(entry);
-        if (abort_when_queue_finished && batch.size() % abort_check_period == 0 && blocking_queue.isFinished())
-            break;
-    }
     /// Iterator and deserializer die here, before the batch is handed over.
     return batch;
 }
@@ -320,7 +315,7 @@ void IcebergIterator::decodeDeleteManifests()
         while (in_flight.size() < max_in_flight && next_to_decode < delete_manifests.size())
         {
             auto decode = [this, manifest_list_entry = delete_manifests[next_to_decode++]]()
-            { return decodeManifest(manifest_list_entry, /* abort_when_queue_finished */ false); };
+            { return decodeManifest(manifest_list_entry, /* stop_condition */ {}); };
             in_flight.push_back(decode_runner(std::move(decode), Priority{}));
         }
 
@@ -368,7 +363,7 @@ void IcebergIterator::decodeDataManifests()
         {
             if (blocking_queue.isFinished())
                 return;
-            auto manifest_file_iterator = createManifestIterator(manifest_list_entry);
+            auto manifest_file_iterator = createManifestIterator(manifest_list_entry, [this] { return blocking_queue.isFinished(); });
             while (auto entry = manifest_file_iterator->next())
             {
                 if (!blocking_queue.push(std::move(entry)))
@@ -397,7 +392,7 @@ void IcebergIterator::decodeDataManifests()
         while (in_flight.size() < max_in_flight && next_to_decode < data_manifests.size())
         {
             auto decode = [this, manifest_list_entry = data_manifests[next_to_decode++]]()
-            { return decodeManifest(manifest_list_entry, /* abort_when_queue_finished */ true); };
+            { return decodeManifest(manifest_list_entry, [this] { return blocking_queue.isFinished(); }); };
             in_flight.push_back(decode_runner(std::move(decode), Priority{}));
         }
 

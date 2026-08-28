@@ -251,7 +251,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     Int64 inherited_snapshot_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    std::function<bool()> stop_condition_)
 {
     insertRowToLogTable(
         context_,
@@ -354,7 +355,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         std::move(partition_key_description),
         total_rows,
         std::move(filter_dag_),
-        table_snapshot_schema_id_));
+        table_snapshot_schema_id_,
+        std::move(stop_condition_)));
 }
 
 ManifestFileIterator::ManifestFileIterator(
@@ -371,7 +373,8 @@ ManifestFileIterator::ManifestFileIterator(
     std::optional<DB::KeyDescription> partition_key_description_,
     size_t total_rows_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    std::function<bool()> stop_condition_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
     , format_version(format_version_)
@@ -384,6 +387,7 @@ ManifestFileIterator::ManifestFileIterator(
     , partition_key_description(std::move(partition_key_description_))
     , table_snapshot_schema_id(table_snapshot_schema_id_)
     , total_rows(total_rows_)
+    , stop_condition(std::move(stop_condition_))
     , data_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , position_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , equality_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
@@ -580,6 +584,8 @@ bool ManifestFileIterator::isInitialized() const
 
 ProcessedManifestFileEntryPtr ManifestFileIterator::next()
 {
+    static constexpr size_t stop_check_period = 256;
+
     if (fully_initialized.load())
         return nullptr;
 
@@ -593,6 +599,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::next()
             fully_initialized.store(true);
             return nullptr;
         }
+        if (stop_condition && row_index % stop_check_period == 0 && stop_condition())
+            return nullptr;
         auto entry = processRow(row_index);
         if (entry)
             return entry;

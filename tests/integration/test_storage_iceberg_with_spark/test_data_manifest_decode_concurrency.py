@@ -231,6 +231,20 @@ def test_data_manifest_decode_large_manifest(started_cluster_iceberg_with_spark)
             result == expected
         ), f"wrong result with iceberg_data_manifest_decode_concurrency={concurrency}"
 
+    # A filter pruning every entry keeps the row loop inside `ManifestFileIterator::next`
+    # busy for the whole manifest without yielding.
+    for concurrency in [1, 16]:
+        count = instance.query(
+            f"SELECT count() FROM {TABLE_NAME} WHERE id < 0",
+            settings={
+                "iceberg_data_manifest_decode_concurrency": concurrency,
+                "use_iceberg_metadata_files_cache": 0,
+            },
+        )
+        assert (
+            int(count.strip()) == 0
+        ), f"fully pruned read returned rows with iceberg_data_manifest_decode_concurrency={concurrency}"
+
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
