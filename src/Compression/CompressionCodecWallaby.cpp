@@ -2168,6 +2168,7 @@ uint8_t CompressionCodecWallaby::getMethodByte() const
 void CompressionCodecWallaby::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, /* ignore_aliases */ true);
+    hash.update(float_width);
 }
 
 String CompressionCodecWallaby::getDescription() const
