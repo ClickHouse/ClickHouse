@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemUserDefinedFunctions.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -193,53 +192,3 @@ void StorageSystemUserDefinedFunctions::fillData(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemUserDefinedFunctions) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "user_defined_functions",
-    .description = R"DOCS_MD(
-Contains loading status, error information, and configuration metadata for [User-Defined Functions (UDFs)](/reference/functions/regular-functions/udf).
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-View all UDFs and their loading status:
-
-```sql
-SELECT
-    name,
-    load_status,
-    type,
-    command,
-    return_type,
-    argument_types
-FROM system.user_defined_functions
-FORMAT Vertical;
-```
-
-```response
-Row 1:
-──────
-name:           my_sum_udf
-load_status:    Success
-type:           executable
-command:        /var/lib/clickhouse/user_scripts/sum.py
-return_type:    UInt64
-argument_types: ['UInt64','UInt64']
-```
-
-Find failed UDFs:
-
-```sql
-SELECT
-    name,
-    loading_error_message
-FROM system.user_defined_functions
-WHERE load_status = 'Failed';
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
--   [User-Defined Functions](/reference/functions/regular-functions/udf) — How to create and configure UDFs.
-)DOCS_MD")
-
-}

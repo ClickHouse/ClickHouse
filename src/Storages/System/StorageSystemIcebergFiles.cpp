@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemIcebergFiles.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
@@ -489,14 +488,3 @@ void StorageSystemIcebergFiles::readImpl(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemIcebergFiles) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "iceberg_files",
-    .description = R"DOCS_MD(
-This system table contains per-file metadata for Iceberg tables existing in ClickHouse, with one row per data or delete file referenced by the current snapshot of each table. It will be empty if you don't have any Iceberg tables in ClickHouse.
-)DOCS_MD")
-
-}

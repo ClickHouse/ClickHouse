@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -76,28 +75,5 @@ void ObjectStorageQueueLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(transaction_start_time);
     columns[i++]->insert(get_object_time_ms);
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "azure_queue_log",
-    .description = R"DOCS_MD(
-Contains log entries with information about files processed by the AzureQueue engine.
-
-It is safe to truncate or drop this table at any time.
-)DOCS_MD",
-    .get_columns = ObjectStorageQueueLogElement::getColumnsDescription)
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "s3queue_log",
-    .description = R"DOCS_MD(
-Contains log entries with information about files processed by the S3Queue engine.
-
-It is safe to truncate or drop this table at any time.
-)DOCS_MD",
-    .get_columns = ObjectStorageQueueLogElement::getColumnsDescription)
 
 }

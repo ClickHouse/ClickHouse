@@ -1,5 +1,5 @@
 -- System tables expose consistently structured reference pages assembled from
--- their embedded fields and live column schemas.
+-- their metadata comment sections and live column schemas.
 SELECT
     name,
     source,
@@ -10,19 +10,18 @@ FROM system.documentation
 WHERE type = 'System Table' AND name IN ('documentation', 'parts')
 ORDER BY name;
 
--- The registration set, rather than the tables attached in the current
--- environment, determines which system-table pages are exposed. In particular,
--- `transactions` is normally gated by a disabled server setting.
+-- Documentation follows the attached system tables. In particular,
+-- `transactions` is normally gated by a disabled server setting and absent.
 SELECT
     name,
     source,
     description LIKE '%## Columns {#columns}%' AS has_columns
 FROM system.documentation
-WHERE type = 'System Table' AND name IN ('asynchronous_metrics', 'trace_log', 'transactions')
+WHERE type = 'System Table' AND name IN ('asynchronous_metrics', 'transactions')
 ORDER BY name;
 
 -- Every attached table remains visible, including optional/private tables
--- which rely on their metadata comment instead of structured documentation.
+-- which rely on an ordinary metadata comment instead of section markers.
 SELECT count()
 FROM system.tables
 WHERE database = 'system'
@@ -31,7 +30,7 @@ WHERE database = 'system'
         FROM system.documentation
         WHERE type = 'System Table');
 
--- A table which is both attached and registered is emitted exactly once.
+-- Every attached table is emitted exactly once.
 SELECT count()
 FROM
 (
@@ -59,14 +58,12 @@ SELECT
             description,
             multiIf(
                 name = 'disk_types', '## Configuration examples {#configuration-examples}',
-                name = 'events', '## Event descriptions {#event-descriptions}',
-                '## Row shapes {#row-shapes}'))
+                '## Event descriptions {#event-descriptions}'))
         AND position(
             description,
             multiIf(
                 name = 'disk_types', '## Configuration examples {#configuration-examples}',
-                name = 'events', '## Event descriptions {#event-descriptions}',
-                '## Row shapes {#row-shapes}'))
+                '## Event descriptions {#event-descriptions}'))
             < position(description, '## Columns {#columns}') AS additional_section_in_description,
     position(description, '## Columns {#columns}')
         < position(description, '## Examples {#examples}') AS columns_before_examples,
@@ -75,7 +72,7 @@ SELECT
             < position(description, '## See also {#see-also}') AS examples_before_see_also
 FROM system.documentation
 WHERE type = 'System Table'
-    AND name IN ('disk_types', 'events', 'predicate_statistics_log')
+    AND name IN ('disk_types', 'events')
 ORDER BY name;
 
 -- Catalogs which are themselves exposed through system tables are rendered
@@ -98,11 +95,12 @@ WHERE type = 'System Table'
         OR description LIKE '%{{CURRENT_METRICS}}%'
         OR description LIKE '%{{ASYNCHRONOUS_METRICS}}%');
 
--- MDX JSX comments and admonition wrappers are authoring details
--- and must not be exposed to consumers of the rendered Markdown.
+-- MDX JSX comments, admonition wrappers, and metadata section markers are
+-- authoring details and must not be exposed to consumers of the rendered Markdown.
 SELECT count()
 FROM system.documentation
 WHERE type = 'System Table'
     AND (
         position(description, '{/*') > 0
-        OR match(description, '<(/)?(Tip|Note|Info|Warning|Important|Danger)>'));
+        OR match(description, '<(/)?(Tip|Note|Info|Warning|Important|Danger)>')
+        OR match(description, '(^|\\n)\\.(description|columns_notes|examples|see_also)(\\n|$)'));

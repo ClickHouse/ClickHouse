@@ -1,5 +1,4 @@
 #include <mutex>
-#include <Common/SystemTableDocumentation.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <Core/Field.h>
@@ -225,14 +224,3 @@ Block StorageSystemIcebergHistory::getFilterSampleBlock() const
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemIcebergHistory) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "iceberg_history",
-    .description = R"DOCS_MD(
-This system table contains the snapshot history of Iceberg tables existing in ClickHouse. It will be empty if you don't have any Iceberg tables in ClickHouse.
-)DOCS_MD")
-
-}

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemKeeperCluster.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include "config.h"
@@ -75,30 +74,3 @@ void StorageSystemKeeperCluster::fillData(MutableColumns & res_columns, ContextP
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKeeperCluster) }
 
 #endif
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "keeper_cluster",
-    .description = R"DOCS_MD(
-This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft cluster member, fusing static cluster topology (from the Raft configuration) with the local node's own log position.
-
-Every node fills exactly one `last_log_index` value — the row matching its own `server_id`. Peer log positions are not surfaced here because they are tracked only on the leader and that view is not symmetric across the cluster.
-)DOCS_MD",
-    .get_columns = StorageSystemKeeperCluster::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.keeper_cluster ORDER BY server_id;
-```
-
-```text
-┌─server_id─┬─host──┬─endpoint───┬─is_observer─┬─priority─┬─is_leader─┬─is_self─┬─last_log_index─┐
-│         1 │ node1 │ node1:9234 │ false       │        3 │ true      │ true    │             42 │
-│         2 │ node2 │ node2:9234 │ false       │        2 │ false     │ false   │           ᴺᵁᴸᴸ │
-│         3 │ node3 │ node3:9234 │ true        │        1 │ false     │ false   │           ᴺᵁᴸᴸ │
-└───────────┴───────┴────────────┴─────────────┴──────────┴───────────┴─────────┴────────────────┘
-```
-)DOCS_MD")
-
-}

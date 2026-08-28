@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemInstrumentation.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -110,69 +109,3 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemInstrumentation) }
 
 #endif
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "instrumentation",
-    .description = R"DOCS_MD(
-Contains the instrumentation points using LLVM's XRay feature.
-
-<Info>
-**Availability**
-
-`system.instrumentation` is present only in ClickHouse builds compiled with LLVM XRay support (`USE_XRAY`). On builds without it, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. You can check whether your build has it enabled with:
-
-```sql
-SELECT value FROM system.build_options WHERE name = 'USE_XRAY';
-```
-</Info>
-)DOCS_MD",
-    .get_columns = getInstrumentationColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.instrumentation FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-id:            0
-function_id:   231280
-function_name: QueryMetricLog::startQuery
-handler:       log
-entry_type:    Entry
-symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
-arguments:     ['test']
-
-Row 2:
-──────
-id:            1
-function_id:   231280
-function_name: QueryMetricLog::startQuery
-handler:       profile
-entry_type:    EntryAndExit
-symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
-arguments:     []
-
-Row 3:
-──────
-id:            2
-function_id:   231280
-function_name: QueryMetricLog::startQuery
-handler:       sleep
-entry_type:    Exit
-symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
-arguments:     [0.3]
-
-3 rows in set. Elapsed: 0.302 sec.
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [SYSTEM INSTRUMENT](/reference/statements/system#instrument) — Add or remove instrumentation points.
-- [system.trace_log](/reference/system-tables/trace_log) — Inspect profiling log.
-- [system.symbols](/reference/system-tables/symbols) — Inspect symbols to add instrumentation points.
-)DOCS_MD")
-
-}

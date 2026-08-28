@@ -1,5 +1,4 @@
 #include <atomic>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <memory>
 #include <string_view>
@@ -396,72 +395,3 @@ void StorageSystemParts::processNextStorage(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemParts) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "parts",
-    .description = R"DOCS_MD(
-Contains information about parts of [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
-
-Each row describes one data part.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.parts LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-partition:                             tuple()
-name:                                  all_1_4_1_6
-part_type:                             Wide
-part_storage_type:                     Full
-active:                                1
-marks:                                 2
-rows:                                  6
-bytes_on_disk:                         310
-data_compressed_bytes:                 157
-data_uncompressed_bytes:               91
-secondary_indices_compressed_bytes:    58
-secondary_indices_uncompressed_bytes:  6
-secondary_indices_marks_bytes:         48
-marks_bytes:                           144
-modification_time:                     2020-06-18 13:01:49
-remove_time:                           1970-01-01 00:00:00
-refcount:                              1
-min_date:                              1970-01-01
-max_date:                              1970-01-01
-min_time:                              1970-01-01 00:00:00
-max_time:                              1970-01-01 00:00:00
-partition_id:                          all
-min_block_number:                      1
-max_block_number:                      4
-level:                                 1
-data_version:                          6
-primary_key_bytes_in_memory:           8
-primary_key_bytes_in_memory_allocated: 64
-is_frozen:                             0
-database:                              default
-table:                                 months
-engine:                                MergeTree
-disk_name:                             default
-path:                                  /var/lib/clickhouse/data/default/months/all_1_4_1_6/
-hash_of_all_files:                     2d0657a16d9430824d35e327fcbd87bf
-hash_of_uncompressed_files:            84950cc30ba867c77a408ae21332ba29
-uncompressed_hash_of_compressed_files: 1ad78f1c6843bbfb99a2c931abe7df7d
-delete_ttl_info_min:                   1970-01-01 00:00:00
-delete_ttl_info_max:                   1970-01-01 00:00:00
-move_ttl_info.expression:              []
-move_ttl_info.min:                     []
-move_ttl_info.max:                     []
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [MergeTree family](/reference/engines/table-engines/mergetree-family/mergetree)
-- [TTL for Columns and Tables](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)
-)DOCS_MD")
-
-}

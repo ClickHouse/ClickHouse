@@ -1,5 +1,4 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Common/SystemTableDocumentation.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
@@ -106,40 +105,5 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
         attributes_map.push_back(Tuple{attribute.getKey(), attribute.getValue()});
     columns[i++]->insert(std::move(attributes_map));
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "opentelemetry_span_log",
-    .description = R"DOCS_MD(
-Contains information about [trace spans](https://opentracing.io/docs/overview/spans/) for executed queries.
-)DOCS_MD",
-    .get_columns = OpenTelemetrySpanLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.opentelemetry_span_log LIMIT 1 FORMAT Vertical;
-```
-
-```text title="Response"
-Row 1:
-──────
-trace_id:         cdab0847-0d62-61d5-4d38-dd65b19a1914
-span_id:          701487461015578150
-parent_span_id:   2991972114672045096
-operation_name:   DB::Block DB::InterpreterSelectQuery::getSampleBlockImpl()
-kind:             INTERNAL
-start_time_us:    1612374594529090
-finish_time_us:   1612374594529108
-finish_date:      2021-02-03
-attribute.names:  []
-attribute.values: []
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [OpenTelemetry](/guides/oss/deployment-and-scaling/monitoring/opentelemetry)
-)DOCS_MD")
 
 }

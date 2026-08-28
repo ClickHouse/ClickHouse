@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -309,57 +308,3 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKafkaConsumers) }
 
 #endif
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "kafka_consumers",
-    .description = R"DOCS_MD(
-Contains information about Kafka consumers.
-Applicable for [Kafka table engine](/reference/engines/table-engines/integrations/kafka) (native ClickHouse integration).
-
-<Info>
-**Availability**
-
-`system.kafka_consumers` is present only in ClickHouse builds compiled with Kafka support (`USE_RDKAFKA`). On builds without it, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. You can check whether your build has it enabled with:
-
-```sql
-SELECT value FROM system.build_options WHERE name = 'USE_RDKAFKA';
-```
-</Info>
-)DOCS_MD",
-    .get_columns = getKafkaConsumersColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT *
-FROM system.kafka_consumers
-FORMAT Vertical
-```
-
-```text
-Row 1:
-──────
-database:                      test
-table:                         kafka
-consumer_id:                   ClickHouse-instance-test-kafka-1caddc7f-f917-4bb1-ac55-e28bd103a4a0
-assignments.topic:             ['system_kafka_cons']
-assignments.partition_id:      [0]
-assignments.current_offset:    [18446744073709550615]
-exceptions.time:               []
-exceptions.text:               []
-last_poll_time:                2006-11-09 18:47:47
-num_messages_read:             4
-last_commit_time:              2006-11-10 04:39:40
-num_commits:                   1
-last_rebalance_time:           1970-01-01 00:00:00
-num_rebalance_revocations:     0
-num_rebalance_assignments:     1
-is_currently_used:             1
-rdkafka_stat:                  {...}
-dependencies:                  [['test.mv2','test.target2'],['test.mv1','test.target1']]
-missing_dependencies:          []
-```
-)DOCS_MD")
-
-}

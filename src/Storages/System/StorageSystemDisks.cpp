@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDisks.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -132,27 +131,3 @@ Pipe StorageSystemDisks::read(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDisks) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "disks",
-    .description = R"DOCS_MD(
-Contains information about disks defined in the [server configuration](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.disks;
-```
-
-```response
-┌─name────┬─path─────────────────┬───free_space─┬──total_space─┬─keep_free_space─┐
-│ default │ /var/lib/clickhouse/ │ 276392587264 │ 490652508160 │               0 │
-└─────────┴──────────────────────┴──────────────┴──────────────┴─────────────────┘
-
-1 rows in set. Elapsed: 0.001 sec.
-```
-)DOCS_MD")
-
-}

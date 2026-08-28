@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Core/Settings.h>
@@ -397,20 +396,3 @@ void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipe
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedParts) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "detached_parts",
-    .description = R"DOCS_MD(
-Contains information about detached parts of [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. The `reason` column specifies why the part was detached.
-
-For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION\|PART](/reference/statements/alter/partition#attach-partitionpart) command.
-
-For the description of other columns, see [system.parts](/reference/system-tables/parts).
-
-If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](/reference/statements/alter/partition#drop-detached-partitionpart).
-)DOCS_MD")
-
-}

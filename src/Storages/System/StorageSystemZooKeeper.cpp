@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -855,71 +854,3 @@ void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeper) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "zookeeper",
-    .description = R"DOCS_MD(
-The table does not exist unless ClickHouse Keeper or ZooKeeper is configured. The `system.zookeeper` table exposes data from the Keeper clusters defined in the config.
-The query must either have a `path =`   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children that you want to get data for.
-
-The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
-To output data for all root nodes, write path = '/'.
-If the path specified in 'path' does not exist, an exception will be thrown.
-
-The query `SELECT * FROM system.zookeeper WHERE path IN ('/', '/clickhouse')` outputs data for all children on the `/` and `/clickhouse` node.
-If in the specified 'path' collection has does not exist path, an exception will be thrown.
-It can be used to do a batch of Keeper path queries.
-
-The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse' AND zookeeperName = 'auxiliary_cluster'` outputs data in `auxiliary_cluster` ZooKeeper cluster.
-If the specified 'auxiliary_cluster' does not exists, an exception will be thrown.
-)DOCS_MD",
-    .get_columns = StorageSystemZooKeeper::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT *
-FROM system.zookeeper
-WHERE path = '/clickhouse/tables/01-08/visits/replicas'
-FORMAT Vertical
-```
-
-```text
-Row 1:
-──────
-name:           example01-08-1
-value:
-czxid:          932998691229
-mzxid:          932998691229
-ctime:          2015-03-27 16:49:51
-mtime:          2015-03-27 16:49:51
-version:        0
-cversion:       47
-aversion:       0
-ephemeralOwner: 0
-dataLength:     0
-numChildren:    7
-pzxid:          987021031383
-path:           /clickhouse/tables/01-08/visits/replicas
-
-Row 2:
-──────
-name:           example01-08-2
-value:
-czxid:          933002738135
-mzxid:          933002738135
-ctime:          2015-03-27 16:57:01
-mtime:          2015-03-27 16:57:01
-version:        0
-cversion:       37
-aversion:       0
-ephemeralOwner: 0
-dataLength:     0
-numChildren:    7
-pzxid:          987021252247
-path:           /clickhouse/tables/01-08/visits/replicas
-```
-)DOCS_MD")
-
-}

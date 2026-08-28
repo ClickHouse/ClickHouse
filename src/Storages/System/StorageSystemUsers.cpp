@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemUsers.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
@@ -564,17 +563,3 @@ void StorageSystemUsers::restoreDataFromBackup(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemUsers) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "users",
-    .description = R"DOCS_MD(
-Contains a list of [user accounts](/concepts/features/security/access-rights#user-account-management) configured on the server.
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [SHOW USERS](/reference/statements/show#show-users)
-)DOCS_MD")
-
-}

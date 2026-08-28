@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemProjectionParts.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
@@ -305,14 +304,3 @@ void StorageSystemProjectionParts::processNextStorage(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjectionParts) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "projection_parts",
-    .description = R"DOCS_MD(
-This table contains information about projection parts for tables of the MergeTree family.
-)DOCS_MD")
-
-}

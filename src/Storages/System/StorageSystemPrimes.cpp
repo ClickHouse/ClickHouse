@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemPrimes.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -54,54 +53,3 @@ void StorageSystemPrimes::readImpl(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPrimes) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "primes",
-    .description = R"DOCS_MD(
-This table contains a single UInt64 column named `prime` that contains prime numbers in ascending order, starting from 2.
-
-You can use this table for tests, or if you need to do a brute force search over prime numbers.
-
-Reads from this table are not parallelized.
-
-This is similar to the [`primes`](/reference/functions/table-functions/primes) table function.
-
-You can also limit the output by predicates.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-The first 10 primes.
-```sql
-SELECT * FROM system.primes LIMIT 10;
-```
-
-```response
-  ┌─prime─┐
-  │     2 │
-  │     3 │
-  │     5 │
-  │     7 │
-  │    11 │
-  │    13 │
-  │    17 │
-  │    19 │
-  │    23 │
-  │    29 │
-  └───────┘
-```
-
-The first prime greater than 1e15.
-```sql
-SELECT prime FROM system.primes WHERE prime > 1e15 LIMIT 1;
-```
-
-```response
-  ┌────────────prime─┐
-  │ 1000000000000037 │ -- 1.00 quadrillion
-  └──────────────────┘
-```
-)DOCS_MD")
-
-}

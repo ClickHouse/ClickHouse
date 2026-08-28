@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -84,21 +83,3 @@ template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>) }
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "azure_queue_settings",
-    .description = R"DOCS_MD(
-Contains information about settings of [AzureQueue](/reference/engines/table-engines/integrations/azure-queue) tables.
-Available from `24.10` server version.
-)DOCS_MD")
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "s3_queue_settings",
-    .description = R"DOCS_MD(
-Contains information about the settings of [S3Queue](/reference/engines/table-engines/integrations/s3queue) tables. Available from server version `24.10`.
-)DOCS_MD")
-
-}

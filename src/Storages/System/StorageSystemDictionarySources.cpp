@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDictionarySources.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
@@ -52,32 +51,3 @@ void StorageSystemDictionarySources::fillData(MutableColumns & res_columns, Cont
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionarySources) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "dictionary_sources",
-    .description = R"DOCS_MD(
-Contains the list of dictionary sources supported by the server, along with embedded documentation for each source. A dictionary source determines where the dictionary data is loaded from; it is specified in the `SOURCE` clause of a `CREATE DICTIONARY` query.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT name, syntax
-FROM system.dictionary_sources
-WHERE name IN ('clickhouse', 'file')
-ORDER BY name
-```
-
-```text title="Response"
-┌─name───────┬─syntax─────────────────────────────────────────────────────────────────────────┐
-│ clickhouse │ SOURCE(CLICKHOUSE(host 'host' port 9000 user 'default' password '' db 'db' table 'table')) │
-│ file       │ SOURCE(FILE(path '/path/to/file' format 'CSV'))                                  │
-└────────────┴────────────────────────────────────────────────────────────────────────────────┘
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Dictionary sources](/reference/statements/create/dictionary/sources/overview) — Information about dictionaries and their sources.
-)DOCS_MD")
-
-}

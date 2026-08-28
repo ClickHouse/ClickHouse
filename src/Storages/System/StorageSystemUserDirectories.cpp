@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemUserDirectories.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -57,14 +56,3 @@ void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, Contex
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemUserDirectories) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "user_directories",
-    .description = R"DOCS_MD(
-Contains the information about configured user directories - directories on the file system from which ClickHouse server is allowed to read user provided data.
-)DOCS_MD")
-
-}

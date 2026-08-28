@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDroppedTables.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
@@ -69,37 +68,3 @@ void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextP
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDroppedTables) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "dropped_tables",
-    .description = R"DOCS_MD(
-Contains information about tables that drop table has been executed on but for which data cleanup has not yet been performed.
-)DOCS_MD",
-    .columns_notes = R"DOCS_MD(
-This table lists only tables dropped from `Atomic` databases. For these tables, `table_dropped_time` is normally based on [`database_atomic_delay_before_drop_table_sec`](/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec). For a `Shared` database in ClickHouse Cloud, the recovery period is instead controlled by [`database_shared_drop_table_delay_seconds`](/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds), which defaults to 8 hours; dropped tables from `Shared` databases don't appear in `system.dropped_tables`.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-The following example shows how to get information about `dropped_tables`.
-
-```sql
-SELECT *
-FROM system.dropped_tables\G
-```
-
-```text
-Row 1:
-──────
-index:                 0
-database:              default
-table:                 test
-uuid:                  03141bb2-e97a-4d7c-a172-95cc066bb3bd
-engine:                MergeTree
-metadata_dropped_path: /data/ClickHouse/build/programs/data/metadata_dropped/default.test.03141bb2-e97a-4d7c-a172-95cc066bb3bd.sql
-table_dropped_time:    2023-03-16 23:43:31
-```
-)DOCS_MD")
-
-}

@@ -1,5 +1,4 @@
 #include <future>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <memory>
 
@@ -471,64 +470,3 @@ Chunk SystemReplicasSource::generate()
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicas) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "replicas",
-    .description = R"DOCS_MD(
-Contains information and status for replicated tables residing on the local server.
-This table can be used for monitoring. The table contains a row for every Replicated\* table.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT *
-FROM system.replicas
-WHERE table = 'test_table'
-FORMAT Vertical
-```
-
-```text
-Query id: dc6dcbcb-dc28-4df9-ae27-4354f5b3b13e
-
-Row 1:
-───────
-database:                    db
-table:                       test_table
-engine:                      ReplicatedMergeTree
-is_leader:                   1
-can_become_leader:           1
-is_readonly:                 0
-is_session_expired:          0
-future_parts:                0
-parts_to_check:              0
-zookeeper_path:              /test/test_table
-replica_name:                r1
-replica_path:                /test/test_table/replicas/r1
-columns_version:             -1
-queue_size:                  27
-inserts_in_queue:            27
-merges_in_queue:             0
-part_mutations_in_queue:     0
-queue_oldest_time:           2021-10-12 14:48:48
-inserts_oldest_time:         2021-10-12 14:48:48
-merges_oldest_time:          1970-01-01 03:00:00
-part_mutations_oldest_time:  1970-01-01 03:00:00
-oldest_part_to_get:          1_17_17_0
-oldest_part_to_merge_to:
-oldest_part_to_mutate_to:
-log_max_index:               206
-log_pointer:                 207
-last_queue_update:           2021-10-12 14:50:08
-absolute_delay:              99
-total_replicas:              5
-active_replicas:             5
-lost_part_count:             0
-last_queue_update_exception:
-zookeeper_exception:
-replica_is_active:           {'r1':1,'r2':1}
-```
-)DOCS_MD")
-
-}

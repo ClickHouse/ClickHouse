@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemObjectStorageQueueMetadata.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnArray.h>
@@ -398,22 +397,3 @@ template class StorageSystemObjectStorageQueueMetadata<ObjectStorageType::Azure>
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueMetadata<ObjectStorageType::Azure>) }
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueMetadata<ObjectStorageType::S3>) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "azure_queue_metadata",
-    .description = R"DOCS_MD(
-Contains the current number of processed, processing and failed nodes in keeper for each AzureQueue metadata object and, on demand, their contents. Unlike system.azure_queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.
-)DOCS_MD",
-    .get_columns = StorageSystemObjectStorageQueueMetadata<ObjectStorageType::Azure>::getColumnsDescription)
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "s3_queue_metadata",
-    .description = R"DOCS_MD(
-Contains the current number of processed, processing and failed nodes in keeper for each S3Queue metadata object and, on demand, their contents. Unlike system.s3queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.
-)DOCS_MD",
-    .get_columns = StorageSystemObjectStorageQueueMetadata<ObjectStorageType::S3>::getColumnsDescription)
-
-}

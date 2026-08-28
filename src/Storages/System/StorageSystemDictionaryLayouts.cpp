@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDictionaryLayouts.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
@@ -55,33 +54,3 @@ void StorageSystemDictionaryLayouts::fillData(MutableColumns & res_columns, Cont
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionaryLayouts) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "dictionary_layouts",
-    .description = R"DOCS_MD(
-Contains the list of dictionary layouts supported by the server, along with embedded documentation for each layout. A dictionary layout determines how a dictionary is stored in memory (or on disk) and how it is looked up; it is specified in the `LAYOUT` clause of a `CREATE DICTIONARY` query.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT name, is_complex, syntax
-FROM system.dictionary_layouts
-WHERE name IN ('flat', 'hashed', 'complex_key_hashed')
-ORDER BY name
-```
-
-```text title="Response"
-┌─name───────────────┬─is_complex─┬─syntax───────────────────────────────────────────────────┐
-│ complex_key_hashed │          1 │ LAYOUT(COMPLEX_KEY_HASHED())                             │
-│ flat               │          0 │ LAYOUT(FLAT([INITIAL_ARRAY_SIZE n] [MAX_ARRAY_SIZE n]))  │
-│ hashed             │          0 │ LAYOUT(HASHED())                                         │
-└────────────────────┴────────────┴──────────────────────────────────────────────────────────┘
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Dictionary layouts](/reference/statements/create/dictionary/layouts/overview) — Information about dictionaries and their layouts.
-)DOCS_MD")
-
-}

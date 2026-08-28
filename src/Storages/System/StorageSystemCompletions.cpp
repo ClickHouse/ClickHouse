@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -371,14 +370,3 @@ void StorageSystemCompletions::fillData(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCompletions) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "completions",
-    .description = R"DOCS_MD(
-Contains a list of completion tokens.
-)DOCS_MD")
-
-}

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDetachedTables.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
@@ -278,29 +277,3 @@ void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pip
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedTables) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "detached_tables",
-    .description = R"DOCS_MD(
-Contains information about each detached table.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.detached_tables FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:                   base
-table:                      t1
-uuid:                       81b1c20a-b7c6-4116-a2ce-7583fb6b6736
-metadata_path:              /var/lib/clickhouse/store/461/461cf698-fd0b-406d-8c01-5d8fd5748a91/t1.sql
-is_permanently:             1
-```
-)DOCS_MD")
-
-}

@@ -1,5 +1,4 @@
 #include <Core/ServerSettings.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 
@@ -133,29 +132,3 @@ void StorageSystemViewRefreshes::fillData(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemViewRefreshes) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "view_refreshes",
-    .description = R"DOCS_MD(
-Information about [Refreshable Materialized Views](/reference/statements/create/view#refreshable-materialized-view). Contains all refreshable materialized views, regardless of whether there's a refresh in progress or not.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT
-    database,
-    view,
-    status,
-    last_refresh_time,
-    next_refresh_time
-FROM system.view_refreshes
-
-┌─database─┬─view───────────────────────┬─status────┬───last_refresh_time─┬───next_refresh_time─┐
-│ default  │ hello_documentation_reader │ Scheduled │ 2023-12-01 01:24:00 │ 2023-12-01 01:25:00 │
-└──────────┴────────────────────────────┴───────────┴─────────────────────┴─────────────────────┘
-```
-)DOCS_MD")
-
-}

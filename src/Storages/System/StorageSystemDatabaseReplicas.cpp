@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <future>
@@ -341,35 +340,3 @@ void StorageSystemDatabaseReplicas::readImpl(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabaseReplicas) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "database_replicas",
-    .description = R"DOCS_MD(
-Contains information of each Replicated database replicas.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.database_replicas FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:            db_2
-is_readonly:         0
-max_log_ptr:         2
-replica_name:        replica1
-replica_path:        /test/db_2/replicas/shard1|replica1
-zookeeper_path:      /test/db_2
-shard_name:          shard1
-log_ptr:             2
-total_replicas:      1
-zookeeper_exception:
-is_session_expired:  0
-```
-)DOCS_MD")
-
-}

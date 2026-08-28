@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemRoles.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -82,17 +81,3 @@ void StorageSystemRoles::restoreDataFromBackup(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRoles) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "roles",
-    .description = R"DOCS_MD(
-Contains information about configured [roles](/concepts/features/security/access-rights#role-management).
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [SHOW ROLES](/reference/statements/show#show-roles)
-)DOCS_MD")
-
-}

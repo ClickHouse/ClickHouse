@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemTokenizers.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -35,36 +34,3 @@ void StorageSystemTokenizers::fillData(MutableColumns & res_columns, ContextPtr,
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTokenizers) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "tokenizers",
-    .description = R"DOCS_MD(
-Shows all available tokenizers.
-These can be used in functions [tokens](/reference/functions/regular-functions/splitting-merging-functions#tokens), [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens), and the [text index](/reference/engines/table-engines/mergetree-family/textindexes).
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.tokenizers;
-```
-
-```text
-┌─name────────────┐
-│ ngrams          │
-│ splitByNonAlpha │
-│ sparseGrams     │
-│ tokenbf_v1      │
-│ ngrambf_v1      │
-│ array           │
-│ splitByString   │
-│ sparse_grams    │
-│ asciiCJK        │
-│ icu             │
-│ japanese        │
-└─────────────────┘
-```
-)DOCS_MD")
-
-}

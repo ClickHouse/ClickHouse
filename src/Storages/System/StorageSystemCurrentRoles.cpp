@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemCurrentRoles.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -57,14 +56,3 @@ void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, ContextPt
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCurrentRoles) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "current_roles",
-    .description = R"DOCS_MD(
-Contains active roles of a current user. `SET ROLE` changes the contents of this table.
-)DOCS_MD")
-
-}

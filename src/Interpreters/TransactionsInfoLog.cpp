@@ -1,5 +1,4 @@
 #include <Core/NamesAndTypes.h>
-#include <Common/SystemTableDocumentation.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -114,37 +113,5 @@ catch (...)
 {
     tryLogCurrentException(log);
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "transactions_info_log",
-    .description = R"DOCS_MD(
-Contains information about all transactions executed on a current server.
-
-<Info>
-**Availability**
-
-`system.transactions_info_log` is created only when the server configuration contains a `transactions_info_log` section. Transactions must also be enabled with `allow_experimental_transactions` for the table to accumulate rows. Without the log section, queries against the table fail with `UNKNOWN_TABLE`; without experimental transactions, the configured table remains empty.
-
-```xml
-<clickhouse>
-    <allow_experimental_transactions>1</allow_experimental_transactions>
-    <transactions_info_log>
-        <database>system</database>
-        <table>transactions_info_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </transactions_info_log>
-</clickhouse>
-```
-</Info>
-
-It is safe to truncate or drop this table at any time.
-)DOCS_MD",
-    .get_columns = TransactionsInfoLogElement::getColumnsDescription)
 
 }

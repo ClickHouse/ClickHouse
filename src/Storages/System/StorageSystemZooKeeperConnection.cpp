@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <DataTypes/DataTypeArray.h>
@@ -98,39 +97,3 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperConnection) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "zookeeper_connection",
-    .description = R"DOCS_MD(
-This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_connection' table shows current connections to ZooKeeper (including auxiliary ZooKeepers). Each row shows information about one connection.
-)DOCS_MD",
-    .get_columns = StorageSystemZooKeeperConnection::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT
-    name,
-    host,
-    port,
-    index,
-    connected_time,
-    session_uptime_elapsed_seconds,
-    is_expired,
-    keeper_api_version,
-    client_id,
-    xid,
-    enabled_feature_flags,
-    availability_zone
-FROM system.zookeeper_connection;
-```
-
-```text
-┌─name────┬─host──────┬─port─┬─index─┬──────connected_time─┬─session_uptime_elapsed_seconds─┬─is_expired─┬─keeper_api_version─┬─client_id─┬─xid─┬─enabled_feature_flags────────────────────────────────────────────────────┬─availability_zone─┐
-│ default │ 127.0.0.1 │ 2181 │     0 │ 2025-04-10 14:30:00 │                            943 │          0 │                  0 │       420 │  69 │ ['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS'] │ eu-west-1b        │
-└─────────┴───────────┴──────┴───────┴─────────────────────┴────────────────────────────────┴────────────┴────────────────────┴───────────┴─────┴──────────────────────────────────────────────────────────────────────────┴───────────────────┘
-```
-)DOCS_MD")
-
-}

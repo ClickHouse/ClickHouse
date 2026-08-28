@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
@@ -452,65 +451,3 @@ void StorageSystemPartsColumns::processNextStorage(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPartsColumns) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "parts_columns",
-    .description = R"DOCS_MD(
-Contains information about parts and columns of [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
-Each row describes one data part.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.parts_columns LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-partition:                             tuple()
-name:                                  all_1_2_1
-part_type:                             Wide
-active:                                1
-marks:                                 2
-rows:                                  2
-bytes_on_disk:                         155
-data_compressed_bytes:                 56
-data_uncompressed_bytes:               4
-marks_bytes:                           96
-modification_time:                     2020-09-23 10:13:36
-remove_time:                           2106-02-07 06:28:15
-refcount:                              1
-min_date:                              1970-01-01
-max_date:                              1970-01-01
-partition_id:                          all
-min_block_number:                      1
-max_block_number:                      2
-level:                                 1
-data_version:                          1
-primary_key_bytes_in_memory:           2
-primary_key_bytes_in_memory_allocated: 64
-database:                              default
-table:                                 53r93yleapyears
-engine:                                MergeTree
-disk_name:                             default
-path:                                  /var/lib/clickhouse/data/default/53r93yleapyears/all_1_2_1/
-column:                                id
-type:                                  Int8
-column_position:                       1
-default_kind:
-default_expression:
-column_bytes_on_disk:                  76
-column_data_compressed_bytes:          28
-column_data_uncompressed_bytes:        2
-column_marks_bytes:                    48
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [MergeTree family](/reference/engines/table-engines/mergetree-family/mergetree)
-- [Calculating the number and size of compact and wide parts](/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type)
-)DOCS_MD")
-
-}

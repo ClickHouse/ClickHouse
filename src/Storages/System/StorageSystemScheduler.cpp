@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemScheduler.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -297,54 +296,3 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemScheduler) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "scheduler",
-    .description = R"DOCS_MD(
-Contains information about and status of [scheduling nodes](/concepts/features/configuration/server-config/workload-scheduling#hierarchy) residing on the local server.
-This table can be used for monitoring. The table contains a row for every scheduling node.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT *
-FROM system.scheduler
-WHERE resource = 'network_read' AND path = '/prio/fair/prod'
-FORMAT Vertical
-```
-
-```text
-Row 1:
-──────
-resource:          network_read
-path:              /prio/fair/prod
-type:              fifo
-weight:            5
-priority:          0
-is_active:         0
-active_children:   0
-dequeued_requests: 67
-canceled_requests: 0
-dequeued_cost:     4692272
-canceled_cost:     0
-busy_periods:      63
-vruntime:          938454.1999999989
-system_vruntime:   ᴺᵁᴸᴸ
-queue_length:      0
-queue_cost:        0
-budget:            -60524
-is_satisfied:      ᴺᵁᴸᴸ
-inflight_requests: ᴺᵁᴸᴸ
-inflight_cost:     ᴺᵁᴸᴸ
-max_requests:      ᴺᵁᴸᴸ
-max_cost:          ᴺᵁᴸᴸ
-max_speed:         ᴺᵁᴸᴸ
-max_burst:         ᴺᵁᴸᴸ
-throttling_us:     ᴺᵁᴸᴸ
-tokens:            ᴺᵁᴸᴸ
-```
-)DOCS_MD")
-
-}

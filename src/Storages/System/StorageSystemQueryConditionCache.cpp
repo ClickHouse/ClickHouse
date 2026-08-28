@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeUUID.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <DataTypes/DataTypeString.h>
@@ -73,32 +72,3 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQueryConditionCache) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "query_condition_cache",
-    .description = R"DOCS_MD(
-Shows the content of the [query condition cache](/concepts/features/performance/caches/query-condition-cache).
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.query_condition_cache FORMAT Vertical;
-```
-
-```text title="Response"
-Row 1:
-──────
-table_uuid:     28270a24-ea27-49f6-99cd-97b9bee976ac
-part_name:      all_1_1_0
-condition:      or(equals(b, 10000_UInt16), equals(c, 10000_UInt16))
-condition_hash: 5456494897146899690 -- 5.46 quintillion
-entry_size:     40
-matching_marks: 111111110000000000000000000000000000000000000000000000000111111110000000000000000
-
-1 row in set. Elapsed: 0.004 sec.
-```
-)DOCS_MD")
-
-}

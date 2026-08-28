@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -225,66 +224,3 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemClusters) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "clusters",
-    .description = R"DOCS_MD(
-Contains information about clusters available in the config file and the servers in them.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.clusters LIMIT 2 FORMAT Vertical;
-```
-
-```text title="Response"
-Row 1:
-──────
-cluster:                 test_cluster_two_shards
-shard_num:               1
-shard_name:              shard_01
-shard_weight:            1
-replica_num:             1
-host_name:               127.0.0.1
-host_address:            127.0.0.1
-port:                    9000
-is_local:                1
-user:                    default
-default_database:
-errors_count:            0
-slowdowns_count:         0
-estimated_recovery_time: 0
-database_shard_name:
-database_replica_name:
-is_active:               NULL
-
-Row 2:
-──────
-cluster:                 test_cluster_two_shards
-shard_num:               2
-shard_name:              shard_02
-shard_weight:            1
-replica_num:             1
-host_name:               127.0.0.2
-host_address:            127.0.0.2
-port:                    9000
-is_local:                0
-user:                    default
-default_database:
-errors_count:            0
-slowdowns_count:         0
-estimated_recovery_time: 0
-database_shard_name:
-database_replica_name:
-is_active:               NULL
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Table engine Distributed](/reference/engines/table-engines/special/distributed)
-- [distributed_replica_error_cap setting](/reference/settings/session-settings/distributed-replica#distributed_replica_error_cap)
-- [distributed_replica_error_half_life setting](/reference/settings/session-settings/distributed-replica#distributed_replica_error_half_life)
-)DOCS_MD")
-
-}

@@ -1,5 +1,4 @@
 #include <Interpreters/AsynchronousInsertLog.h>
-#include <Common/SystemTableDocumentation.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
@@ -82,50 +81,5 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(flush_query_id);
     columns[i++]->insert(timeout_milliseconds);
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "asynchronous_insert_log",
-    .description = R"DOCS_MD(
-Contains information about async inserts. Each entry represents an insert query buffered into an async insert query.
-
-To start logging configure parameters in the [asynchronous_insert_log](/reference/settings/server-settings/settings/asynchronous#asynchronous_insert_log) section.
-
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [asynchronous_insert_log](/reference/settings/server-settings/settings/asynchronous#asynchronous_insert_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/reference/statements/system#flush-logs) query.
-
-ClickHouse does not delete data from the table automatically. See [Introduction](/reference/system-tables/overview#system-tables-introduction) for more details.
-)DOCS_MD",
-    .get_columns = AsynchronousInsertLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.asynchronous_insert_log LIMIT 1 \G;
-```
-
-```text title="Response"
-hostname:                clickhouse.eu-central1.internal
-event_date:              2023-06-08
-event_time:              2023-06-08 10:08:53
-event_time_microseconds: 2023-06-08 10:08:53.199516
-query:                   INSERT INTO public.data_guess (user_id, datasource_id, timestamp, path, type, num, str) FORMAT CSV
-database:                public
-table:                   data_guess
-format:                  CSV
-query_id:                b46cd4c4-0269-4d0b-99f5-d27668c6102e
-bytes:                   133223
-exception:
-status:                  Ok
-flush_time:              2023-06-08 10:08:55
-flush_time_microseconds: 2023-06-08 10:08:55.139676
-flush_query_id:          cd2c1e43-83f5-49dc-92e4-2fbc7f8d3716
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [system.query_log](/reference/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
-- [system.asynchronous_inserts](/reference/system-tables/asynchronous_inserts) — This table contains information about pending asynchronous inserts in queue.
-)DOCS_MD")
 
 }

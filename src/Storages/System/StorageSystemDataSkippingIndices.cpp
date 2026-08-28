@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
@@ -317,49 +316,3 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDataSkippingIndices) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "data_skipping_indices",
-    .description = R"DOCS_MD(
-Contains information about existing data skipping indices in all the tables.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.data_skipping_indices LIMIT 2 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:                default
-table:                   user_actions
-name:                    clicks_idx
-type:                    minmax
-type_full:               minmax
-expr:                    clicks
-creation:                Explicit
-granularity:             1
-data_compressed_bytes:   58
-data_uncompressed_bytes: 6
-marks_bytes:             48
-
-Row 2:
-──────
-database:                default
-table:                   users
-name:                    contacts_null_idx
-type:                    minmax
-type_full:               minmax
-expr:                    assumeNotNull(contacts_null)
-creation:                Explicit
-granularity:             1
-data_compressed_bytes:   58
-data_uncompressed_bytes: 6
-marks_bytes:             48
-```
-)DOCS_MD")
-
-}

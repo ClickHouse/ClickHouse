@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemQueryResultCache.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -68,35 +67,3 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQueryResultCache) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "query_cache",
-    .description = R"DOCS_MD(
-Shows the content of the [query cache](/concepts/features/performance/caches/query-cache).
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.query_cache FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-query:       SELECT 1 SETTINGS use_query_cache = 1
-query_id:    7c28bbbb-753b-4eba-98b1-efcbe2b9bdf6
-result_size: 128
-tag:
-stale:       0
-shared:      0
-compressed:  1
-expires_at:  2023-10-13 13:35:45
-key_hash:    12188185624808016954
-
-1 row in set. Elapsed: 0.004 sec.
-```
-)DOCS_MD")
-
-}

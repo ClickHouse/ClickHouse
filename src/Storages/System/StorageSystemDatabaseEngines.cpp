@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -47,29 +46,3 @@ void StorageSystemDatabaseEngines::fillData(MutableColumns & res_columns, Contex
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabaseEngines) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "database_engines",
-    .description = R"DOCS_MD(
-Contains the list of database engines supported by the server.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT name
-FROM system.database_engines
-WHERE name IN ('Atomic', 'Ordinary')
-ORDER BY name
-```
-
-```text title="Response"
-┌─name─────┐
-│ Atomic   │
-│ Ordinary │
-└──────────┘
-```
-)DOCS_MD")
-
-}

@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
@@ -36,14 +35,3 @@ void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr cont
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMacros) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "macros",
-    .description = R"DOCS_MD(
-Contains a list of all macros defined in server configuration.
-)DOCS_MD")
-
-}

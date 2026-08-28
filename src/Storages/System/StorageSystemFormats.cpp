@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -85,14 +84,3 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr con
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFormats) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "formats",
-    .description = R"DOCS_MD(
-Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.
-)DOCS_MD")
-
-}

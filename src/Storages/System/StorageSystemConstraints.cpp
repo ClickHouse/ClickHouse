@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemConstraints.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
@@ -285,39 +284,3 @@ void ReadFromSystemConstraints::initializePipeline(QueryPipelineBuilder & pipeli
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemConstraints) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "constraints",
-    .description = R"DOCS_MD(
-Contains information about existing constraints in all tables.
-
-Constraints defined on [temporary tables](/reference/statements/create/table/temporary-table) are visible in `system.constraints` only in the session where they were created. They are shown with an empty `database` field.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.constraints LIMIT 2 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:    default
-table:       hits
-name:        check_hits
-type:        CHECK
-expression:  CounterID > 0
-
-Row 2:
-──────
-database:    default
-table:       hits
-name:        assume_positive
-type:        ASSUME
-expression:  WatchID > 0
-```
-)DOCS_MD")
-
-}

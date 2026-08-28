@@ -1,5 +1,4 @@
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
@@ -156,14 +155,3 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGraphite) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "graphite_retentions",
-    .description = R"DOCS_MD(
-Contains information about parameters [graphite_rollup](/reference/settings/server-settings/settings/graphite#graphite_rollup) which are used in tables with [\*GraphiteMergeTree](/reference/engines/table-engines/mergetree-family/graphitemergetree) engines.
-)DOCS_MD")
-
-}

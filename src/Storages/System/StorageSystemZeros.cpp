@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemZeros.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -149,20 +148,3 @@ Pipe StorageSystemZeros::read(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZeros) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "zeros",
-    .description = R"DOCS_MD(
-Produces unlimited number of non-materialized zeros.
-)DOCS_MD")
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "zeros_mt",
-    .description = R"DOCS_MD(
-Multithreaded version of system.zeros.
-)DOCS_MD")
-
-}

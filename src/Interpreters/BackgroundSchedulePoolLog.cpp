@@ -1,5 +1,4 @@
 #include <Interpreters/BackgroundSchedulePoolLog.h>
-#include <Common/SystemTableDocumentation.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
@@ -64,47 +63,5 @@ void BackgroundSchedulePoolLogElement::appendToBlock(MutableColumns & columns) c
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "background_schedule_pool_log",
-    .description = R"DOCS_MD(
-The `system.background_schedule_pool_log` table is created only if the [background_schedule_pool_log](/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_log) server setting is specified.
-
-This table contains the history of background schedule pool task executions. Background schedule pools are used for executing periodic tasks such as distributed sends, buffer flushes, and message broker operations.
-)DOCS_MD",
-    .get_columns = BackgroundSchedulePoolLogElement::getColumnsDescription,
-    .columns_notes = R"DOCS_MD(
-The `system.background_schedule_pool_log` table is created after the first background task execution.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.background_schedule_pool_log LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-hostname:                clickhouse.eu-central1.internal
-event_date:              2025-12-18
-event_time:              2025-12-18 10:30:15
-event_time_microseconds: 2025-12-18 10:30:15.123456
-query_id:
-database:                default
-table:                   data
-table_uuid:              00000000-0000-0000-0000-000000000000
-log_name:                default.data
-duration_ms:             42
-error:                   0
-exception:
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [system.background_schedule_pool](/reference/system-tables/background_schedule_pool) — Contains information about currently scheduled tasks in background schedule pools.
-)DOCS_MD")
 
 }

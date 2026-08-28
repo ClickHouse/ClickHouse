@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemKeeperSnapshots.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #if USE_NURAFT
@@ -78,27 +77,3 @@ void StorageSystemKeeperSnapshots::fillData(MutableColumns & res_columns, Contex
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKeeperSnapshots) }
 
 #endif
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "keeper_snapshots",
-    .description = R"DOCS_MD(
-This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft snapshot file tracked by the in-process Keeper state machine, including snapshots currently being received from the leader.
-)DOCS_MD",
-    .get_columns = StorageSystemKeeperSnapshots::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.keeper_snapshots ORDER BY last_log_index;
-```
-
-```text
-┌─last_log_index─┬─path──────────────────────────┬─disk_name─┬─size_bytes─┬────last_modified_at─┬─is_received─┬─exists_on_disk─┐
-│           1000 │ snapshot_1000.bin.zstd        │ default   │      32468 │ 2026-05-22 14:00:00 │ false       │ true           │
-│           2000 │ snapshot_2000.bin.zstd        │ default   │      48217 │ 2026-05-22 14:15:00 │ false       │ true           │
-└────────────────┴───────────────────────────────┴───────────┴────────────┴─────────────────────┴─────────────┴────────────────┘
-```
-)DOCS_MD")
-
-}

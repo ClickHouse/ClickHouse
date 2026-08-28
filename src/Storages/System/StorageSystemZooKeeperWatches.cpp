@@ -1,5 +1,4 @@
 #include <chrono>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemZooKeeperWatches.h>
 
@@ -103,43 +102,3 @@ void StorageSystemZooKeeperWatches::fillData(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperWatches) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "zookeeper_watches",
-    .description = R"DOCS_MD(
-Shows currently active [watches](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) registered by this ClickHouse server on ZooKeeper nodes (including auxiliary ZooKeepers). Each row represents one watch.
-
-<Info>
-**Availability**
-
-`system.zookeeper_watches` exists only when ClickHouse Keeper or ZooKeeper is configured. On servers without either configured, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`.
-</Info>
-)DOCS_MD",
-    .get_columns = StorageSystemZooKeeperWatches::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.zookeeper_watches FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-zookeeper_name:           default
-create_time:              2026-03-16 12:00:00
-create_time_microseconds: 2026-03-16 12:00:00.123456
-path:                     /clickhouse/task_queue/ddl
-session_id:               106662742089334927
-request_xid:              10858
-op_num:                   List
-watch_type:               Children
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
--   [ZooKeeper](/guides/oss/best-practices/tips#zookeeper)
--   [ZooKeeper guide](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)
-)DOCS_MD")
-
-}

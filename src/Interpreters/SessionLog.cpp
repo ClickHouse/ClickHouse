@@ -1,5 +1,4 @@
 #include <Interpreters/SessionLog.h>
-#include <Common/SystemTableDocumentation.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <Access/ContextAccess.h>
@@ -334,82 +333,5 @@ void SessionLog::addLogOut(
         fillCertificateInfo(log_entry, certificate_info);
     });
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "session_log",
-    .description = R"DOCS_MD(
-Contains information about all successful and failed login and logout events.
-
-<Info>
-**Availability**
-
-`system.session_log` is created only when the server configuration contains a `session_log` section. The section is commented out in the default configuration, so queries against the table fail with `UNKNOWN_TABLE` until it is enabled. For example:
-
-```xml
-<clickhouse>
-    <session_log>
-        <database>system</database>
-        <table>session_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </session_log>
-</clickhouse>
-```
-</Info>
-
-## Reading rotated tables after an upgrade {#reading-rotated-tables-after-an-upgrade}
-
-When a new value is added to the `interface` enumeration, the table already stored on disk keeps the older `Enum8` definition. On the first start of the new version, `system.session_log` is renamed to `system.session_log_<N>` and a fresh table with the current schema is created in its place; the schema of the rotated table is not changed.
-
-If a login was recorded over an interface that was missing from the enumeration of the version that wrote it — for example an `ArrowFlight` login on a version where `ArrowFlight` was absent from the `interface` enumeration — the rotated table contains a raw value that its own enumeration does not define, and a `SELECT` from it throws `Unexpected value 10 in enum`. Extend the enumeration of that table to read it; this is a metadata-only operation which does not rewrite any data:
-
-```sql
-ALTER TABLE system.session_log_1
-    MODIFY COLUMN interface Enum8('TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10);
-```
-)DOCS_MD",
-    .get_columns = SessionLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.session_log LIMIT 1 FORMAT Vertical;
-```
-
-```text title="Response"
-Row 1:
-──────
-hostname:                clickhouse.eu-central1.internal
-type:                    LoginSuccess
-auth_id:                 45e6bd83-b4aa-4a23-85e6-bd83b4aa1a23
-session_id:
-event_date:              2021-10-14
-event_time:              2021-10-14 20:33:52
-event_time_microseconds: 2021-10-14 20:33:52.104247
-user:                    default
-auth_type:               PLAINTEXT_PASSWORD
-profiles:                ['default']
-roles:                   []
-settings:                [('load_balancing','random'),('max_memory_usage','10000000000')]
-client_address:          ::ffff:127.0.0.1
-client_port:             38490
-interface:               TCP
-client_hostname:
-client_name:             ClickHouse client
-client_revision:         54449
-client_version_major:    21
-client_version_minor:    10
-client_version_patch:    0
-failure_reason:
-certificate_subjects:    []
-certificate_serial:
-certificate_issuer:
-certificate_not_before:  ᴺᵁᴸᴸ
-certificate_not_after:   ᴺᵁᴸᴸ
-```
-)DOCS_MD")
 
 }

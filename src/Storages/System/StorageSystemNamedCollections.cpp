@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemNamedCollections.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <base/EnumReflection.h>
@@ -88,14 +87,3 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemNamedCollections) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "named_collections",
-    .description = R"DOCS_MD(
-Contains a list of all named collections which were created via SQL query or parsed from configuration file.
-)DOCS_MD")
-
-}

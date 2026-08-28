@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemOne.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnConst.h>
@@ -78,31 +77,3 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemOne) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "one",
-    .description = R"DOCS_MD(
-This table contains a single row with a single `dummy` UInt8 column containing the value 0.
-
-This table is used if a `SELECT` query does not specify the `FROM` clause.
-
-This is similar to the `DUAL` table found in other DBMSs.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.one LIMIT 10;
-```
-
-```response
-┌─dummy─┐
-│     0 │
-└───────┘
-
-1 rows in set. Elapsed: 0.001 sec.
-```
-)DOCS_MD")
-
-}

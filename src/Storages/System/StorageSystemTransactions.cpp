@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemTransactions.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeEnum.h>
@@ -56,27 +55,3 @@ void StorageSystemTransactions::fillData(MutableColumns & res_columns, ContextPt
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTransactions) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "transactions",
-    .description = R"DOCS_MD(
-Contains a list of transactions and their state.
-
-<Info>
-**Availability**
-
-`system.transactions` is created only when the `allow_experimental_transactions` server configuration option is enabled. By default, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. Enable it in the server configuration with:
-
-```xml
-<clickhouse>
-    <allow_experimental_transactions>1</allow_experimental_transactions>
-</clickhouse>
-```
-</Info>
-)DOCS_MD",
-    .get_columns = StorageSystemTransactions::getColumnsDescription)
-
-}

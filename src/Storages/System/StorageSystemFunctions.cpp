@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -291,31 +290,3 @@ void StorageSystemFunctions::restoreDataFromBackup(RestorerFromBackup & restorer
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFunctions) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "functions",
-    .description = R"DOCS_MD(
-Contains information about normal and aggregate functions.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
- SELECT name, is_aggregate, deterministic, case_insensitive, alias_to FROM system.functions LIMIT 5;
-```
-
-```text title="Response"
-┌─name─────────────────────┬─is_aggregate─┬─deterministic─┬─case_insensitive─┬─alias_to─┐
-│ BLAKE3                   │            0 │                1 │                0 │          │
-│ sipHash128Reference      │            0 │                1 │                0 │          │
-│ mapExtractKeyLike        │            0 │                1 │                0 │          │
-│ sipHash128ReferenceKeyed │            0 │                1 │                0 │          │
-│ mapPartialSort           │            0 │                1 │                0 │          │
-└──────────────────────────┴──────────────┴──────────────────┴──────────────────┴──────────┘
-
-5 rows in set. Elapsed: 0.002 sec.
-```
-)DOCS_MD")
-
-}

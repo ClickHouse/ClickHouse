@@ -1,5 +1,4 @@
 #include <Interpreters/QueryThreadLog.h>
-#include <Common/SystemTableDocumentation.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
@@ -138,81 +137,5 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
     }
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "query_thread_log",
-    .description = R"DOCS_MD(
-Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
-
-To start logging:
-
-1.  Configure parameters in the [query_thread_log](/reference/settings/server-settings/settings/query#query_thread_log) section.
-2.  Set [log_query_threads](/reference/settings/session-settings/log-query#log_query_threads) to 1.
-
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](/reference/settings/server-settings/settings/query#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/reference/statements/system#flush-logs) query.
-
-ClickHouse does not delete data from the table automatically. See [Introduction](/reference/system-tables/overview#system-tables-introduction) for more details.
-
-You can use the [log_queries_probability](/reference/settings/session-settings/log-queries#log_queries_probability)) setting to reduce the number of queries, registered in the `query_thread_log` table.
-)DOCS_MD",
-    .get_columns = QueryThreadLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
- SELECT * FROM system.query_thread_log LIMIT 1 \G
-```
-
-```text
-Row 1:
-──────
-hostname:                      clickhouse.eu-central1.internal
-event_date:                    2020-09-11
-event_time:                    2020-09-11 10:08:17
-event_time_microseconds:       2020-09-11 10:08:17.134042
-query_start_time:              2020-09-11 10:08:17
-query_start_time_microseconds: 2020-09-11 10:08:17.063150
-query_duration_ms:             70
-read_rows:                     0
-read_bytes:                    0
-written_rows:                  1
-written_bytes:                 12
-memory_usage:                  4300844
-peak_memory_usage:             4300844
-thread_name:                   TCPHandler
-thread_id:                     638133
-master_thread_id:              638133
-query:                         INSERT INTO test1 VALUES
-is_initial_query:              1
-user:                          default
-query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
-address:                       ::ffff:127.0.0.1
-port:                          33452
-initial_user:                  default
-initial_query_id:              50a320fd-85a8-49b8-8761-98a86bcbacef
-initial_address:               ::ffff:127.0.0.1
-initial_port:                  33452
-interface:                     1
-os_user:                       bharatnc
-client_hostname:               tower
-client_name:                   ClickHouse
-client_revision:               54437
-client_version_major:          20
-client_version_minor:          7
-client_version_patch:          2
-http_method:                   0
-http_user_agent:
-quota_key:
-revision:                      54440
-ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [system.query_log](/reference/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
-- [system.query_views_log](/reference/system-tables/query_views_log) — This table contains information about each view executed during a query.
-)DOCS_MD")
 
 }

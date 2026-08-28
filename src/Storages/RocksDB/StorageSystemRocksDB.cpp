@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -140,14 +139,3 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRocksDB) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "rocksdb",
-    .description = R"DOCS_MD(
-Contains a list of metrics exposed from embedded RocksDB.
-)DOCS_MD")
-
-}

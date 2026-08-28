@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemQuotaLimits.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -136,14 +135,3 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQuotaLimits) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "quota_limits",
-    .description = R"DOCS_MD(
-Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to one quota.
-)DOCS_MD")
-
-}

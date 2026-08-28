@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
@@ -443,21 +442,3 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperInfo) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "zookeeper_info",
-    .description = R"DOCS_MD(
-This table outputs combined introspection about zookeeper and the nodes are taken from config.
-
-<Info>
-**Availability**
-
-`system.zookeeper_info` exists only when ClickHouse Keeper or ZooKeeper is configured. On servers without either configured, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`.
-</Info>
-)DOCS_MD",
-    .get_columns = StorageSystemZooKeeperInfo::getColumnsDescription)
-
-}

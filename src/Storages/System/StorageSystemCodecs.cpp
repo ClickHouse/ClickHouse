@@ -1,6 +1,5 @@
 
 #include <Storages/System/StorageSystemCodecs.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
@@ -40,34 +39,3 @@ void StorageSystemCodecs::fillData(MutableColumns & res_columns, ContextPtr, con
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCodecs) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "codecs",
-    .description = R"DOCS_MD(
-Contains information about compression and encryption codecs.
-
-You can use this table to get information about the available compression and encryption codecs
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.codecs WHERE name='LZ4'
-```
-
-```text title="Response"
-Row 1:
-──────
-name:                   LZ4
-method_byte:            130
-is_compression:         1
-is_generic_compression: 1
-is_encryption:          0
-is_timeseries_codec:    0
-is_experimental:        0
-description:            Extremely fast; good compression; balanced speed and efficiency.
-```
-)DOCS_MD")
-
-}

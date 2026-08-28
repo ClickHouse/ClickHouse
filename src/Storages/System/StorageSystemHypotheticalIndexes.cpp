@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -74,40 +73,3 @@ void StorageSystemHypotheticalIndexes::fillData(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemHypotheticalIndexes) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "hypothetical_indexes",
-    .description = R"DOCS_MD(
-Lists every hypothetical (what-if) skip index defined in the current session. See [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index) and [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif).
-
-The contents are session-scoped: each connection sees only its own hypothetical indexes, and the table is empty when no indexes have been created in the current session.
-
-The current `(database, table)` are resolved by UUID at query time, so they reflect `RENAME TABLE` and entries for dropped tables are hidden automatically.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-CREATE HYPOTHETICAL INDEX i1 ON t (b) TYPE bloom_filter(0.01)  GRANULARITY 1;
-CREATE HYPOTHETICAL INDEX i2 ON t (b) TYPE bloom_filter(0.001) GRANULARITY 1;
-
-SELECT database, table, name, type, type_full, expression, granularity
-FROM system.hypothetical_indexes;
-```
-
-```text
-┌─database─┬─table─┬─name─┬─type─────────┬─type_full───────────┬─expression─┬─granularity─┐
-│ default  │ t     │ i1   │ bloom_filter │ bloom_filter(0.01)  │ b          │           1 │
-│ default  │ t     │ i2   │ bloom_filter │ bloom_filter(0.001) │ b          │           1 │
-└──────────┴───────┴──────┴──────────────┴─────────────────────┴────────────┴─────────────┘
-```
-
-`type` is the base type name and `type_full` includes the arguments, so users can distinguish between parametrized variants like `bloom_filter(0.01)` and `bloom_filter(0.001)`.
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index)
-- [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif)
-)DOCS_MD")
-
-}

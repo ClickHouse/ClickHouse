@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemFilesystemCache.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
@@ -294,14 +293,3 @@ void StorageSystemFilesystemCache::readImpl(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFilesystemCache) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "filesystem_cache",
-    .description = R"DOCS_MD(
-Contains information about all entries inside filesystem cache for remote objects.
-)DOCS_MD")
-
-}

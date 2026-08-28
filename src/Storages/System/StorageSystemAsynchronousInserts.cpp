@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
@@ -104,36 +103,3 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemAsynchronousInserts) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "asynchronous_inserts",
-    .description = R"DOCS_MD(
-Contains information about pending asynchronous inserts in queue.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.asynchronous_inserts LIMIT 1 \G;
-```
-
-```text title="Response"
-Row 1:
-──────
-query:            INSERT INTO public.data_guess (user_id, datasource_id, timestamp, path, type, num, str) FORMAT CSV
-database:         public
-table:            data_guess
-format:           CSV
-first_update:     2023-06-08 10:08:54.199606
-total_bytes:      133223
-entries.query_id: ['b46cd4c4-0269-4d0b-99f5-d27668c6102e']
-entries.bytes:    [133223]
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [system.query_log](/reference/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
-- [system.asynchronous_insert_log](/reference/system-tables/asynchronous_insert_log) — This table contains information about async inserts performed.
-)DOCS_MD")
-
-}

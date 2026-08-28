@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -211,35 +210,3 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDistributionQueue) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "distribution_queue",
-    .description = R"DOCS_MD(
-Contains information about local files that are in the queue to be sent to the shards. These local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.distribution_queue LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:              default
-table:                 dist
-data_path:             ./store/268/268bc070-3aad-4b1a-9cf2-4987580161af/default@127%2E0%2E0%2E2:9000/
-is_blocked:            1
-error_count:           0
-data_files:            1
-data_compressed_bytes: 499
-last_exception:
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Distributed table engine](/reference/engines/table-engines/special/distributed)
-)DOCS_MD")
-
-}

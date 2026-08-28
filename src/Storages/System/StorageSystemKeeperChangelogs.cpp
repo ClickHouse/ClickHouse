@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemKeeperChangelogs.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #if USE_NURAFT
@@ -102,27 +101,3 @@ void StorageSystemKeeperChangelogs::fillData(MutableColumns & res_columns, Conte
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKeeperChangelogs) }
 
 #endif
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "keeper_changelogs",
-    .description = R"DOCS_MD(
-This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft changelog file (`changelog_<from>_<to>.bin[.zstd]`) tracked by the in-process Keeper log store, including the active file currently being appended to.
-)DOCS_MD",
-    .get_columns = StorageSystemKeeperChangelogs::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT from_log_index, to_log_index, entries, path, active FROM system.keeper_changelogs ORDER BY from_log_index;
-```
-
-```text
-┌─from_log_index─┬─to_log_index─┬─entries─┬─path───────────────────────────┬─active─┐
-│              1 │         1000 │    1000 │ changelog_1_1000.bin.zstd      │ false  │
-│           1001 │         2000 │     537 │ changelog_1001_2000.bin.zstd   │ true   │
-└────────────────┴──────────────┴─────────┴────────────────────────────────┴────────┘
-```
-)DOCS_MD")
-
-}

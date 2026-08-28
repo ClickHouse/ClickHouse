@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -449,39 +448,3 @@ Chunk SystemRemoteDataPathsSource::generate()
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRemoteDataPaths) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "remote_data_paths",
-    .description = R"DOCS_MD(
-Contains information about data files stored on remote disks (e.g. S3, Azure Blob Storage), including the mapping between local metadata paths and remote blob paths.
-
-Each row represents one remote blob object associated with a data file.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.remote_data_paths LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-disk_name:              s3
-path:                   /var/lib/clickhouse/disks/s3/
-cache_base_path:        /var/lib/clickhouse/disks/s3_cache/
-local_path:             store/123/1234abcd-1234-1234-1234-1234abcd1234/all_0_0_0/data.bin
-remote_path:            abc123/all_0_0_0/data.bin
-size:                   1048576
-common_prefix_for_blobs:
-cache_paths:            ['/var/lib/clickhouse/disks/s3_cache/a1/b2/c3d4e5f6']
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Using external storage for data storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)
-- [Configuring external storage](/concepts/features/configuration/server-config/storing-data#configuring-external-storage)
-- [system.disks](/reference/system-tables/disks)
-)DOCS_MD")
-
-}

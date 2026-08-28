@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
 #include <DataTypes/DataTypeArray.h>
@@ -172,43 +171,5 @@ void ErrorLog::stepFunction(TimePoint current_time)
         }
     }
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "error_log",
-    .description = R"DOCS_MD(
-Contains history of error values from table `system.errors`, periodically flushed to disk.
-)DOCS_MD",
-    .get_columns = ErrorLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.error_log LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-hostname:            clickhouse.testing.internal
-event_date:          2025-11-11
-event_time:          2025-11-11 11:35:28
-code:                60
-error:               UNKNOWN_TABLE
-value:               1
-remote:              0
-last_error_time:     2025-11-11 11:35:28
-last_error_message:  Unknown table expression identifier 'system.table_not_exist' in scope SELECT * FROM system.table_not_exist
-last_error_query_id: 77ad9ece-3db7-4236-9b5a-f789bce4aa2e
-last_error_trace:    [100506790044914,100506534488542,100506409937998,100506409936517,100506425182891,100506618154123,100506617994473,100506617990486,100506617988112,100506618341386,100506630272160,100506630266232,100506630276900,100506629795243,100506633519500,100506633495783,100506692143858,100506692248921,100506790779783,100506790781278,100506790390399,100506790380047,123814948752036,123814949330028]
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [error_log setting](/reference/settings/server-settings/settings/other#error_log) — Enabling and disabling the setting.
-- [system.errors](/reference/system-tables/errors) — Contains error codes with the number of times they have been triggered.
-- [Monitoring](/guides/oss/deployment-and-scaling/monitoring/monitoring) — Base concepts of ClickHouse monitoring.
-)DOCS_MD")
 
 }

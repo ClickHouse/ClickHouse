@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemKeeperStorage.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #if USE_NURAFT
@@ -173,33 +172,3 @@ Pipe StorageSystemKeeperStorage::read(
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKeeperStorage) }
 
 #endif
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "keeper_storage",
-    .description = R"DOCS_MD(
-The table only exists for ClickHouse Keeper deployments that use the `clickhouse server` (and not `clickhouse keeper`) process. It contains one row per node of the data tree stored on the local Keeper node, including the `/keeper` system nodes.
-
-Unlike `system.zookeeper`, this table does not send requests to a Keeper cluster. It reads the committed state of the local Keeper directly from a consistent lock-free view, without affecting request processing. Reading the table does not require a path condition and returns the whole tree, so it is suitable for queries that scan all nodes, such as finding the nodes with the most children or the largest data.
-)DOCS_MD",
-    .get_columns = StorageSystemKeeperStorage::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT path, num_children, data_length
-FROM system.keeper_storage
-ORDER BY num_children DESC
-LIMIT 3;
-```
-
-```text
-┌─path──────────────┬─num_children─┬─data_length─┐
-│ /                 │            3 │           0 │
-│ /clickhouse/tasks │            2 │           0 │
-│ /keeper           │            1 │           0 │
-└───────────────────┴──────────────┴─────────────┘
-```
-)DOCS_MD")
-
-}

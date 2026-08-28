@@ -1,5 +1,4 @@
 #include <Interpreters/ProcessorsProfileLog.h>
-#include <Common/SystemTableDocumentation.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -165,66 +164,4 @@ void logProcessorProfile(ContextPtr context, const Processors & processors)
     auto profile_infos = getProcessorsProfileLogInfo(processors);
     logProcessorProfile(context, profile_infos, pipeline_dump);
 }
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "processors_profile_log",
-    .description = R"DOCS_MD(
-This table contains profiling on processors level (that you can find in [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)).
-)DOCS_MD",
-    .get_columns = ProcessorProfileLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql title="Query"
-EXPLAIN PIPELINE
-SELECT sleep(1)
-┌─explain─────────────────────────┐
-│ (Expression)                    │
-│ ExpressionTransform             │
-│   (SettingQuotaAndLimits)       │
-│     (ReadFromStorage)           │
-│     SourceFromSingleChunk 0 → 1 │
-└─────────────────────────────────┘
-
-SELECT sleep(1)
-SETTINGS log_processors_profiles = 1
-Query id: feb5ed16-1c24-4227-aa54-78c02b3b27d4
-┌─sleep(1)─┐
-│        0 │
-└──────────┘
-1 rows in set. Elapsed: 1.018 sec.
-
-SELECT
-    name,
-    elapsed_us,
-    input_wait_elapsed_us,
-    output_wait_elapsed_us
-FROM system.processors_profile_log
-WHERE query_id = 'feb5ed16-1c24-4227-aa54-78c02b3b27d4'
-ORDER BY name ASC
-```
-
-```text title="Response"
-┌─name────────────────────┬─elapsed_us─┬─input_wait_elapsed_us─┬─output_wait_elapsed_us─┐
-│ ExpressionTransform     │    1000497 │                  2823 │                    197 │
-│ LazyOutputFormat        │         36 │               1002188 │                      0 │
-│ LimitsCheckingTransform │         10 │               1002994 │                    106 │
-│ NullSource              │          5 │               1002074 │                      0 │
-│ NullSource              │          1 │               1002084 │                      0 │
-│ SourceFromSingleChunk   │         45 │                  4736 │                1000819 │
-└─────────────────────────┴────────────┴───────────────────────┴────────────────────────┘
-```
-
-Here you can see:
-
-- `ExpressionTransform` was executing `sleep(1)` function, so it `work` will takes 1e6, and so `elapsed_us` > 1e6.
-- `SourceFromSingleChunk` need to wait, because `ExpressionTransform` does not accept any data during execution of `sleep(1)`, so it will be in `PortFull` state for 1e6 us, and so `output_wait_elapsed_us` > 1e6.
-- `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` need to wait until `ExpressionTransform` will execute `sleep(1)` to process the result, so `input_wait_elapsed_us` > 1e6.
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
-)DOCS_MD")
-
 }

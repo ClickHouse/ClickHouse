@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
@@ -51,14 +50,3 @@ void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, Context
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTableFunctions) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "table_functions",
-    .description = R"DOCS_MD(
-Contains a list of all available table functions with their descriptions.
-)DOCS_MD")
-
-}

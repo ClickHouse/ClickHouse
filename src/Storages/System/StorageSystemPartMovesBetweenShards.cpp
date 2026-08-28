@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -153,14 +152,3 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPartMovesBetweenShards) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "part_moves_between_shards",
-    .description = R"DOCS_MD(
-Contains information about parts which are currently in a process of moving between shards and their progress.
-)DOCS_MD")
-
-}

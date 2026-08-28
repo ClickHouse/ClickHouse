@@ -1,5 +1,4 @@
 #include <Interpreters/AggregatedZooKeeperLog.h>
-#include <Common/SystemTableDocumentation.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -149,25 +148,5 @@ void AggregatedZooKeeperLog::EntryStats::observe(UInt64 latency_microseconds, Co
     total_latency_microseconds += latency_microseconds;
     errors.increment(error);
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "aggregated_zookeeper_log",
-    .description = R"DOCS_MD(
-This table contains aggregated statistics of ZooKeeper operations (e.g. number of operations, average latency, errors) grouped by `(session_id, parent_path, operation, component, is_subrequest)` and periodically flushed to disk.
-
-Unlike [system.zookeeper_log](/reference/system-tables/zookeeper_log) which logs every individual request and response, this table aggregates operations into groups, making it much more lightweight and therefore more suitable for production workloads.
-
-Operations that are part of a `Multi` or `MultiRead` batch are tracked separately via the `is_subrequest` column. Subrequests have zero latency because the total latency is attributed to the enclosing `Multi`/`MultiRead` operation.
-)DOCS_MD",
-    .get_columns = AggregatedZooKeeperLogElement::getColumnsDescription,
-    .see_also = R"DOCS_MD(
-- [system.zookeeper_log](/reference/system-tables/zookeeper_log) — Detailed per-request ZooKeeper log.
-- [ZooKeeper](/guides/oss/best-practices/tips#zookeeper)
-)DOCS_MD")
 
 }

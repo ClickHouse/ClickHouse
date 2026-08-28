@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Generate system-table documentation from a ClickHouse binary.
 
-Queries system.documentation and system.tables via clickhouse-local, then
-generates/updates Markdown documentation files. The C++ registration provides
-the description, examples and related material; system.documentation combines
-those parts with either registered or live column metadata into a consistently
-structured page. Asynchronous metric descriptions are extracted directly from
-their C++ registrations because clickhouse-local has no live metrics instance.
+Queries system.documentation via clickhouse-local, then generates or updates
+Markdown documentation files. Structured table metadata comments provide the
+description, examples and related material; system.documentation combines those
+parts with the live column metadata into a consistently structured page.
+Asynchronous metric descriptions are extracted directly from their C++
+registrations because clickhouse-local has no live metrics instance.
 
 Usage:
     python3 utils/generate-system-tables-docs --binary ./build/programs/clickhouse --docs-dir docs/reference/system-tables/
@@ -320,22 +320,18 @@ doc_type: 'reference'
         f.write(content)
 
 
-def generate_pages(docs_dir, full_documentation, table_comments):
-    """Generate every registered page, even if its table is not attached."""
+def generate_pages(docs_dir, full_documentation):
+    """Generate every system-table page exposed by system.documentation."""
     updated = 0
     created = 0
     skipped = 0
 
-    # The structured registration is the source of truth. It includes gated
-    # tables and system logs which are not attached by the default
-    # clickhouse-local environment, so iterating system.tables here would omit
-    # their pages.
     for table_name in sorted(full_documentation):
         if re.search(r"_\d+$", table_name):
             continue
 
         documentation_md = full_documentation[table_name]
-        comment = table_comments.get(table_name) or extract_page_summary(documentation_md)
+        comment = extract_page_summary(documentation_md)
 
         for doc_filename in documentation_filenames(table_name):
             doc_filepath = os.path.join(docs_dir, doc_filename)
@@ -407,24 +403,7 @@ def main():
         print(f"Error: docs directory not found: {docs_dir}", file=sys.stderr)
         sys.exit(1)
 
-    # Query table metadata.
-    # Filter out rotated log tables (e.g., query_log_0, trace_log_1) and
-    # user-created tables by requiring a non-empty comment (all real system
-    # tables have comments set during registration).
-    print("Querying system tables...")
-    tables = run_query(
-        binary,
-        config,
-        "SELECT name, comment FROM system.tables"
-        " WHERE database = 'system'"
-        " AND comment != ''"
-        " AND NOT match(name, '_\\\\d+$')"
-        " ORDER BY name",
-        use_client,
-        extra_args,
-    )
-
-    # Each row is already assembled from the structured C++ documentation and
+    # Each row is already assembled from the structured table comment and
     # the live schema into the complete generated Markdown body.
     print("Querying structured system table documentation...")
     documentation = run_query(
@@ -437,13 +416,10 @@ def main():
         extra_args,
     )
     full_documentation = {row["name"]: row["description"] for row in documentation}
-    table_comments = {t["name"]: t["comment"] for t in tables}
     metric_count = populate_asynchronous_metrics_catalog(full_documentation)
     print(f"Loaded {metric_count} asynchronous metric descriptions from C++ source.")
 
-    updated, created, skipped = generate_pages(
-        docs_dir, full_documentation, table_comments
-    )
+    updated, created, skipped = generate_pages(docs_dir, full_documentation)
 
     print(f"\nDone: {updated} updated, {created} created, {skipped} unchanged.")
 

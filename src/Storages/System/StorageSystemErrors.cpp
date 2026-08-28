@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -77,42 +76,3 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemErrors) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "errors",
-    .description = R"DOCS_MD(
-Contains error codes with the number of times they have been triggered.
-
-To show all possible error codes, including ones which were not triggered, set setting [system_events_show_zero_values](/reference/settings/session-settings/system#system_events_show_zero_values) to 1.
-)DOCS_MD",
-    .columns_notes = R"DOCS_MD(
-<Note>
-Counters for some errors may increase during successful query execution. It's not recommended to use this table for server monitoring purposes unless you are sure that corresponding error can not be a false positive.
-</Note>
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT name, code, value
-FROM system.errors
-WHERE value > 0
-ORDER BY code ASC
-LIMIT 1
-
-┌─name─────────────┬─code─┬─value─┐
-│ CANNOT_OPEN_FILE │   76 │     1 │
-└──────────────────┴──────┴───────┘
-```
-
-```sql title="Response"
-WITH arrayMap(x -> demangle(addressToSymbol(x)), last_error_trace) AS all
-SELECT name, arrayStringConcat(all, '\n') AS res
-FROM system.errors
-LIMIT 1
-SETTINGS allow_introspection_functions=1\G
-```
-)DOCS_MD")
-
-}

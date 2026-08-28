@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemProjections.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
@@ -298,41 +297,3 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjections) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "projections",
-    .description = R"DOCS_MD(
-Contains information about existing projections in all tables.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.projections LIMIT 2 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:    default
-table:       landing
-name:        improved_sorting_key
-type:        Normal
-sorting_key: ['user_id','date']
-query:       SELECT * ORDER BY user_id, date
-settings:     {}
-
-Row 2:
-──────
-database:    default
-table:       landing
-name:        agg_no_key
-type:        Aggregate
-sorting_key: []
-query:       SELECT count()
-settings:     {}
-```
-)DOCS_MD")
-
-}

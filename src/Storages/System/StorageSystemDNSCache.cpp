@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
@@ -64,30 +63,3 @@ void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, c
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDNSCache) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "dns_cache",
-    .description = R"DOCS_MD(
-Contains information about cached DNS records.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.dns_cache;
-```
-
-| hostname | ip\_address | ip\_family | cached\_at |
-| :--- | :--- | :--- | :--- |
-| localhost | ::1 | IPv6 | 2024-02-11 17:04:40 |
-| localhost | 127.0.0.1 | IPv4 | 2024-02-11 17:04:40 |
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [disable_internal_dns_cache setting](/reference/settings/server-settings/settings/disable#disable_internal_dns_cache)
-- [dns_cache_max_entries setting](/reference/settings/server-settings/settings/dns-cache#dns_cache_max_entries)
-- [dns_cache_update_period setting](/reference/settings/server-settings/settings/dns-cache#dns_cache_update_period)
-- [dns_max_consecutive_failures setting](/reference/settings/server-settings/settings/other#dns_max_consecutive_failures)
-)DOCS_MD")
-
-}

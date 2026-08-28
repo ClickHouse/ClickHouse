@@ -1,5 +1,4 @@
 #include <Core/SettingsChangesHistory.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -72,34 +71,3 @@ void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, Contex
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSettingsChanges) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "settings_changes",
-    .description = R"DOCS_MD(
-Contains information about setting changes in previous ClickHouse versions.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT *
-FROM system.settings_changes
-WHERE version = '23.5'
-FORMAT Vertical
-```
-
-```text
-Row 1:
-──────
-type:    Core
-version: 23.5
-changes: [('input_format_parquet_preserve_order','1','0','Allow Parquet reader to reorder rows for better parallelism.'),('parallelize_output_from_storages','0','1','Allow parallelism when executing queries that read from file/url/s3/etc. This may reorder rows.'),('use_with_fill_by_sorting_prefix','0','1','Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows with different values in sorting prefix are filled independently'),('output_format_parquet_compliant_nested_types','0','1','Change an internal field name in output Parquet file schema.')]
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Settings](/reference/system-tables/overview#system-tables-introduction)
-- [system.settings](/reference/system-tables/settings)
-)DOCS_MD")
-
-}

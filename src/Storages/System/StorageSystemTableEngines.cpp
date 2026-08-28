@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -77,44 +76,3 @@ void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPt
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTableEngines) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "table_engines",
-    .description = R"DOCS_MD(
-Contains description of table engines supported by server and their feature support information.
-
-This table contains the following columns (the column type is shown in brackets):
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT
-    name,
-    supports_settings,
-    supports_skipping_indices,
-    supports_sort_order,
-    supports_ttl,
-    supports_replication,
-    supports_deduplication,
-    supports_parallel_insert
-FROM system.table_engines
-WHERE name IN ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
-```
-
-```text title="Response"
-┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┬─supports_parallel_insert─┐
-│ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │                        1 │
-│ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │                        0 │
-│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                   1 │            1 │                    1 │                      1 │                        1 │
-└───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┴──────────────────────────┘
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- MergeTree family [query clauses](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-query-clauses)
-- Kafka [settings](/reference/engines/table-engines/integrations/kafka#creating-a-table)
-- Join [settings](/reference/engines/table-engines/special/join#join-limitations-and-settings)
-)DOCS_MD")
-
-}

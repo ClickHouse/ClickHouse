@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemEnabledRoles.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -61,14 +60,3 @@ void StorageSystemEnabledRoles::fillData(MutableColumns & res_columns, ContextPt
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemEnabledRoles) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "enabled_roles",
-    .description = R"DOCS_MD(
-Contains all active roles at the moment, including the current role of the current user and granted roles for the current role.
-)DOCS_MD")
-
-}

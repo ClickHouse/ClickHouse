@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemSettingsProfileElements.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -214,18 +213,3 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSettingsProfileElements) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "settings_profile_elements",
-    .description = R"DOCS_MD(
-Describes the content of the settings profile:
-
-- Constraints.
-- Roles and users that the setting applies to.
-- Parent settings profiles.
-)DOCS_MD")
-
-}

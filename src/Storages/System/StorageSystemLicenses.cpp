@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/StorageSystemLicenses.h>
@@ -34,28 +33,3 @@ void StorageSystemLicenses::fillData(MutableColumns & res_columns, ContextPtr, c
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemLicenses) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "licenses",
-    .description = R"DOCS_MD(
-Contains licenses of third-party libraries that are located in the [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) directory of ClickHouse sources.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
-```
-
-```text
-┌─library_name───────┬─license_type─┬─license_path────────────────────────┐
-│ aws-c-common       │ Apache       │ /contrib/aws-c-common/LICENSE       │
-│ boost              │ Boost        │ /contrib/boost/LICENSE_1_0.txt      │
-│ brotli             │ MIT          │ /contrib/brotli/LICENSE             │
-│ [...]              │ [...]        │ [...]                               │
-└────────────────────┴──────────────┴─────────────────────────────────────┘
-```
-)DOCS_MD")
-
-}

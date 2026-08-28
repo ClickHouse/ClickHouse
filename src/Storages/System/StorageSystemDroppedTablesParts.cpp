@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
@@ -87,21 +86,3 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDroppedTablesParts) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "dropped_tables_parts",
-    .description = R"DOCS_MD(
-Contains information about parts of [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) dropped tables from [system.dropped_tables](/reference/system-tables/dropped_tables)
-
-The schema of this table is the same as [system.parts](/reference/system-tables/parts)
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [MergeTree family](/reference/engines/table-engines/mergetree-family/mergetree)
-- [system.parts](/reference/system-tables/parts)
-- [system.dropped_tables](/reference/system-tables/dropped_tables)
-)DOCS_MD")
-
-}

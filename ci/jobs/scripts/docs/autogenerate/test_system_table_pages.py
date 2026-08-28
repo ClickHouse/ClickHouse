@@ -12,15 +12,17 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[4]
 GENERATOR = REPO_ROOT / "utils" / "generate-system-tables-docs"
 SOURCE_ROOT = REPO_ROOT / "src"
+ATTACH_SOURCE = SOURCE_ROOT / "Storages" / "System" / "attachSystemTables.cpp"
+SYSTEM_LOG_HEADER = SOURCE_ROOT / "Interpreters" / "SystemLog.h"
 
 EXPECTED_DOCUMENTATION_COUNT = 168
-EXPECTED_SOURCE_COUNT = 161
-EXPECTED_COLUMNS_PROVIDER_COUNT = 48
+EXPECTED_ATTACH_DOCUMENTATION_COUNT = 138
+EXPECTED_SYSTEM_LOG_DOCUMENTATION_COUNT = 30
 EXPECTED_FIELD_COUNTS = {
-    ".description": EXPECTED_DOCUMENTATION_COUNT,
-    ".columns_notes": 10,
-    ".examples": 105,
-    ".see_also": 59,
+    "description": EXPECTED_DOCUMENTATION_COUNT,
+    "columns_notes": 10,
+    "examples": 105,
+    "see_also": 59,
 }
 PLACEHOLDERS = {
     "{{PROFILE_EVENTS}}": 1,
@@ -42,67 +44,93 @@ def load_generator():
 def main():
     generator = load_generator()
 
-    source_documents = {}
-    table_names = []
-    registration_re = re.compile(
-        r'REGISTER_SYSTEM_TABLE_DOCUMENTATION\(\s*"([^"]+)",'
-        r'\s*\.description\s*=\s*R"DOCS_MD\(',
-        re.DOTALL,
+    attach_source = ATTACH_SOURCE.read_text(encoding="utf-8")
+    attach_documents = dict(
+        re.findall(
+            r'attach(?:NoDescription)?<[^;\n]+>\(context,\s*system_database,\s*"([^"]+)",'
+            r'\s*R"DOCS_MD\((.*?)\)DOCS_MD"',
+            attach_source,
+            re.DOTALL,
+        )
     )
-    for source_file in SOURCE_ROOT.rglob("*.cpp"):
-        source = source_file.read_text(encoding="utf-8")
-        names = registration_re.findall(source)
-        if not names:
-            continue
-        registrations_offset = source.index("REGISTER_SYSTEM_TABLE_DOCUMENTATION(")
-        source_documents[source_file] = source[registrations_offset:]
-        table_names.extend(names)
-        assert "#include <Common/SystemTableDocumentation.h>" in source
+    assert len(attach_documents) == EXPECTED_ATTACH_DOCUMENTATION_COUNT
 
-    assert len(table_names) == EXPECTED_DOCUMENTATION_COUNT
+    system_log_source = SYSTEM_LOG_HEADER.read_text(encoding="utf-8")
+    system_log_constants = dict(
+        re.findall(
+            r'inline constexpr char SYSTEM_LOG_DOCUMENTATION_([A-Z0-9_]+)\[\] = '
+            r'R"DOCS_MD\((.*?)\)DOCS_MD";',
+            system_log_source,
+            re.DOTALL,
+        )
+    )
+    system_log_names = dict(
+        re.findall(
+            r'^\s*M\([^,]+,\s*([a-zA-Z0-9_]+)\s*,'
+            r'\s*DB::SYSTEM_LOG_DOCUMENTATION_([A-Z0-9_]+)\)',
+            system_log_source,
+            re.MULTILINE,
+        )
+    )
+    system_log_documents = {
+        table_name: system_log_constants[constant_name]
+        for table_name, constant_name in system_log_names.items()
+    }
+    assert len(system_log_documents) == EXPECTED_SYSTEM_LOG_DOCUMENTATION_COUNT
+
+    documents = attach_documents | system_log_documents
+    assert len(documents) == EXPECTED_DOCUMENTATION_COUNT
+    table_names = list(documents)
     assert len(table_names) == len(set(table_names))
-    assert len(source_documents) == EXPECTED_SOURCE_COUNT
     assert "statements" in table_names
 
-    registry = "\n".join(source_documents.values())
+    structured_comments = "\n".join(documents.values())
     for field, expected_count in EXPECTED_FIELD_COUNTS.items():
-        assert registry.count(field + " = R\"DOCS_MD(") == expected_count
-    assert ".additional_sections =" not in registry
-    assert registry.count(".get_columns = ") == EXPECTED_COLUMNS_PROVIDER_COUNT
-    assert "{{SYSTEM_TABLE_COLUMNS}}" not in registry
-    assert "SystemTableCloud" not in registry
-    assert not re.search(r"^import ", registry, re.MULTILINE)
-    assert set(re.findall(r"\{\{[A-Z_]+\}\}", registry)) == set(PLACEHOLDERS)
+        assert len(re.findall(rf"(?m)^\.{field}$", structured_comments)) == expected_count
+    assert ".additional_sections" not in structured_comments
+    assert ".get_columns" not in structured_comments
+    assert "{{SYSTEM_TABLE_COLUMNS}}" not in structured_comments
+    assert "SystemTableCloud" not in structured_comments
+    assert not re.search(r"^import ", structured_comments, re.MULTILINE)
+    assert set(re.findall(r"\{\{[A-Z_]+\}\}", structured_comments)) == set(PLACEHOLDERS)
     for placeholder, expected_count in PLACEHOLDERS.items():
-        assert registry.count(placeholder) == expected_count
+        assert structured_comments.count(placeholder) == expected_count
+
+    for source_file in SOURCE_ROOT.rglob("*.cpp"):
+        source = source_file.read_text(encoding="utf-8")
+        assert "REGISTER_SYSTEM_DOCS_MDUMENTATION" not in source
+        assert "Common/SystemTableDocumentation.h" not in source
+    assert "REGISTER_SYSTEM_DOCS_MDUMENTATION" not in system_log_source
 
     availability_requirements = {
-        SOURCE_ROOT / "Interpreters" / "TransactionsInfoLog.cpp": (
+        "transactions_info_log": (
             "transactions_info_log",
             "allow_experimental_transactions",
         ),
-        SOURCE_ROOT / "Interpreters" / "SessionLog.cpp": ("session_log",),
-        SOURCE_ROOT / "Interpreters" / "PredicateStatisticsLog.cpp": (
+        "session_log": ("session_log",),
+        "predicate_statistics_log": (
             "predicate_statistics_log",
             "predicate_statistics_sample_rate",
         ),
-        SOURCE_ROOT / "Interpreters" / "DeadLetterQueue.cpp": (
+        "dead_letter_queue": (
             "dead_letter_queue",
             "handle_error_mode",
         ),
-        SOURCE_ROOT / "Storages" / "System" / "StorageSystemUserQueryLog.cpp": (
+        "user_query_log": (
             "query_log.enable_user_query_log",
             "exists but is empty",
         ),
     }
-    for source_file, requirements in availability_requirements.items():
-        documentation = source_documents[source_file]
+    for table_name, requirements in availability_requirements.items():
+        documentation = documents[table_name]
         assert "**Availability**" in documentation
         assert "UNKNOWN_TABLE" in documentation
         for requirement in requirements:
             assert requirement in documentation
 
     for old_registry_file in (
+        SOURCE_ROOT / "Common" / "SystemTableDocumentation.cpp",
+        SOURCE_ROOT / "Common" / "SystemTableDocumentation.h",
         SOURCE_ROOT / "Storages" / "System" / "SystemTableDocumentation.cpp",
         SOURCE_ROOT / "Storages" / "System" / "SystemTableDocumentation.h",
         SOURCE_ROOT / "Storages" / "System" / "SystemTableDocumentation.inc",
@@ -288,28 +316,26 @@ This entry came from live runtime state.
         assert generator.AUTOGENERATED_START + "\n" + generated_body in created_text
         assert created_text.endswith(generator.AUTOGENERATED_END + "\n")
 
-        # The generator must use the documentation registration as its source
-        # of truth even when `system.tables` has no attached table/comment.
-        registered_only = Path(directory) / "registered_only.mdx"
+        # Every row exposed by system.documentation drives a page, and rotated
+        # system-log table names remain excluded.
+        documented_only = Path(directory) / "documented_only.mdx"
         assert generator.generate_pages(
             directory,
             {
-                "registered_only": generated_body,
+                "documented_only": generated_body,
                 "query_log_0": generated_body,
             },
-            {},
         ) == (0, 1, 0)
-        registered_only_text = registered_only.read_text(encoding="utf-8")
-        assert "description: 'Structured embedded prose.'" in registered_only_text
-        assert generator.AUTOGENERATED_START + "\n" + generated_body in registered_only_text
+        documented_only_text = documented_only.read_text(encoding="utf-8")
+        assert "description: 'Structured embedded prose.'" in documented_only_text
+        assert generator.AUTOGENERATED_START + "\n" + generated_body in documented_only_text
         assert not (Path(directory) / "query_log_0.mdx").exists()
 
         # Both published filenames for a legacy duplicate are refreshed from
-        # the same structured registration and remain deterministic.
+        # the same structured comment and remain deterministic.
         assert generator.generate_pages(
             directory,
             {"warnings": generated_body},
-            {},
         ) == (0, 2, 0)
         for filename in generator.documentation_filenames("warnings"):
             duplicate_text = (Path(directory) / filename).read_text(encoding="utf-8")
@@ -317,12 +343,12 @@ This entry came from live runtime state.
         assert generator.generate_pages(
             directory,
             {"warnings": generated_body},
-            {},
         ) == (0, 0, 2)
 
     print(
-        f"OK: {len(table_names)} structured system-table documents in "
-        f"{len(source_documents)} defining C++ files; generated pages preserve "
+        f"OK: {len(documents)} structured system-table comments: "
+        f"{len(attach_documents)} attached tables and "
+        f"{len(system_log_documents)} system logs; generated pages preserve "
         "their MDX preamble and published section headings and update deterministically"
     )
     return 0

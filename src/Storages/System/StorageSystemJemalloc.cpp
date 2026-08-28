@@ -1,5 +1,4 @@
 #include <Columns/ColumnsNumber.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -165,44 +164,3 @@ Pipe StorageSystemJemallocBins::read(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemJemallocBins) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "jemalloc_bins",
-    .description = R"DOCS_MD(
-Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas.
-These statistics might not be absolutely accurate because of thread local caching in jemalloc.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-Find the sizes of allocations that contributed the most to the current overall memory usage.
-
-```sql
-SELECT
-    *,
-    allocations - deallocations AS active_allocations,
-    size * active_allocations AS allocated_bytes
-FROM system.jemalloc_bins
-WHERE allocated_bytes > 0
-ORDER BY allocated_bytes DESC
-LIMIT 10
-```
-
-```text
-┌─index─┬─large─┬─────size─┬─allocactions─┬─deallocations─┬─active_allocations─┬─allocated_bytes─┐
-│    82 │     1 │ 50331648 │            1 │             0 │                  1 │        50331648 │
-│    10 │     0 │      192 │       512336 │        370710 │             141626 │        27192192 │
-│    69 │     1 │  5242880 │            6 │             2 │                  4 │        20971520 │
-│     3 │     0 │       48 │     16938224 │      16559484 │             378740 │        18179520 │
-│    28 │     0 │     4096 │       122924 │        119142 │               3782 │        15491072 │
-│    61 │     1 │  1310720 │        44569 │         44558 │                 11 │        14417920 │
-│    39 │     1 │    28672 │         1285 │           913 │                372 │        10665984 │
-│     4 │     0 │       64 │      2837225 │       2680568 │             156657 │        10026048 │
-│     6 │     0 │       96 │      2617803 │       2531435 │              86368 │         8291328 │
-│    36 │     1 │    16384 │        22431 │         21970 │                461 │         7553024 │
-└───────┴───────┴──────────┴──────────────┴───────────────┴────────────────────┴─────────────────┘
-```
-)DOCS_MD")
-
-}

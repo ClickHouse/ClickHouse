@@ -1,5 +1,4 @@
 #include <Interpreters/BlobStorageLog.h>
-#include <Common/SystemTableDocumentation.h>
 #include <base/getFQDNOrHostName.h>
 
 #include <Common/DateLUTImpl.h>
@@ -112,47 +111,5 @@ void BlobStorageLog::prepareTable()
         LOG_DEBUG(log, "Will ignore blobs with prefix {}", prefix_to_ignore);
     }
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "blob_storage_log",
-    .description = R"DOCS_MD(
-Contains logging entries with information about various blob storage operations such as uploads and deletes.
-)DOCS_MD",
-    .get_columns = BlobStorageLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-Suppose a blob storage operation uploads a file, and an event is logged:
-
-```sql
-SELECT * FROM system.blob_storage_log WHERE query_id = '7afe0450-504d-4e4b-9a80-cd9826047972' ORDER BY event_date, event_time_microseconds \G
-```
-
-```text
-Row 1:
-──────
-hostname:                clickhouse.eu-central1.internal
-event_date:              2023-10-31
-event_time:              2023-10-31 16:03:40
-event_time_microseconds: 2023-10-31 16:03:40.481437
-event_type:              Upload
-query_id:                7afe0450-504d-4e4b-9a80-cd9826047972
-thread_id:               2381740
-disk_name:               disk_s3
-bucket:                  bucket1
-remote_path:             rrr/kxo/tbnqtrghgtnxkzgtcrlutwuslgawe
-local_path:              store/654/6549e8b3-d753-4447-8047-d462df6e6dbe/tmp_insert_all_1_1_0/checksums.txt
-data_size:               259
-error:
-```
-
-In this example, upload operation was associated with the `INSERT` query with ID `7afe0450-504d-4e4b-9a80-cd9826047972`. The local metadata file `store/654/6549e8b3-d753-4447-8047-d462df6e6dbe/tmp_insert_all_1_1_0/checksums.txt` refers to remote path `rrr/kxo/tbnqtrghgtnxkzgtcrlutwuslgawe` in bucket `bucket1` on disk `disk_s3`, with a size of 259 bytes.
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [External Disks for Storing Data](/concepts/features/configuration/server-config/storing-data)
-)DOCS_MD")
 
 }

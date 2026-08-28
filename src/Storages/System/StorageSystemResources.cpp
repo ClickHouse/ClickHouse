@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -79,37 +78,3 @@ void StorageSystemResources::restoreDataFromBackup(RestorerFromBackup & /*restor
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemResources) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "resources",
-    .description = R"DOCS_MD(
-Contains information about [resources](/concepts/features/configuration/server-config/workload-scheduling#workload_entity_storage) residing on the local server. The table contains a row for every resource.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT *
-FROM system.resources
-FORMAT Vertical
-```
-
-```text
-Row 1:
-──────
-name:         io_read
-read_disks:   ['s3']
-write_disks:  []
-create_query: CREATE RESOURCE io_read (READ DISK s3)
-
-Row 2:
-──────
-name:         io_write
-read_disks:   []
-write_disks:  ['s3']
-create_query: CREATE RESOURCE io_write (WRITE DISK s3)
-```
-)DOCS_MD")
-
-}

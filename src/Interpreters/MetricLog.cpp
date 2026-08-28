@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/HistogramMetrics.h>
 #include <Core/Settings.h>
@@ -172,86 +171,5 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
             element, current_time, TSA_SUPPRESS_WARNING_FOR_WRITE(previous_profile_events), show_zero_values);
     });
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "metric_log",
-    .description = R"DOCS_MD(
-Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
-)DOCS_MD",
-    .get_columns = MetricLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-hostname:                                                        clickhouse.eu-central1.internal
-event_date:                                                      2020-09-05
-event_time:                                                      2020-09-05 16:22:33
-event_time_microseconds:                                         2020-09-05 16:22:33.196807
-ProfileEvent_Query:                                              0
-ProfileEvent_SelectQuery:                                        0
-ProfileEvent_InsertQuery:                                        0
-ProfileEvent_FailedQuery:                                        0
-ProfileEvent_FailedSelectQuery:                                  0
-...
-...
-CurrentMetric_Revision:                                          54439
-CurrentMetric_VersionInteger:                                    20009001
-CurrentMetric_RWLockWaitingReaders:                              0
-CurrentMetric_RWLockWaitingWriters:                              0
-CurrentMetric_RWLockActiveReaders:                               0
-CurrentMetric_RWLockActiveWriters:                               0
-CurrentMetric_GlobalThread:                                      74
-CurrentMetric_GlobalThreadActive:                                26
-CurrentMetric_LocalThread:                                       0
-CurrentMetric_LocalThreadActive:                                 0
-CurrentMetric_DistributedFilesToInsert:                          0
-```
-
-**Schema**
-This table can be configured with different schema types using the XML tag `<schema_type>`. The default schema type is `wide`, where each metric or profile event is stored as a separate column. This schema is the most performant and efficient for single-column reads.
-
-The `bucketed` schema stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)), so the table consists of a few columns instead of thousands. The `Map` uses the bucketed serialization (`map_serialization_version = 'with_buckets'`) with a constant number of 128 buckets, so reading a single metric reads only one of the 128 buckets. Zero values are not stored: reading a missing key returns `0`. Every metric is also exposed through an `ALIAS` column named as the metric itself (for example, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), so all queries written for the `wide` schema continue to work. Profile events are stored as increments during the collection interval, and current metrics are stored as values at the moment of collection.
-
-```xml
-<clickhouse>
-    <metric_log>
-        <schema_type>bucketed</schema_type>
-    </metric_log>
-</clickhouse>
-```
-
-The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
-
-**Histograms**
-
-Each row also carries a snapshot of every registered histogram metric in a `histograms` Nested column with fields `metric`, `labels`, `histogram`, `count`, and `sum`. Bucket counts are cumulative since server startup. By default, histograms whose total `count` is zero are not emitted, and zero-counter buckets within an emitted histogram are omitted from the `histogram` map; set `system_metric_log_show_zero_values_in_histograms = 1` (in the default user profile) to keep all histograms and all buckets.
-
-Example query:
-
-```sql
-SELECT h.metric, h.labels, h.histogram, h.count, h.sum
-FROM system.metric_log
-ARRAY JOIN histograms AS h
-WHERE h.metric = 'keeper_response_time_ms' AND h.labels['operation_type'] = 'readonly'
-ORDER BY event_time DESC
-LIMIT 1;
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [metric_log setting](/reference/settings/server-settings/settings/other#metric_log) — Enabling and disabling the setting.
-- [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
-- [system.events](/reference/system-tables/events) — Contains a number of events that occurred.
-- [system.metrics](/reference/system-tables/metrics) — Contains instantly calculated metrics.
-- [Monitoring](/guides/oss/deployment-and-scaling/monitoring/monitoring) — Base concepts of ClickHouse monitoring.
-)DOCS_MD")
 
 }

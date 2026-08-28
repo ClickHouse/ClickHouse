@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeArray.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -225,65 +224,3 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionaries) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "dictionaries",
-    .description = R"DOCS_MD(
-Contains information about [dictionaries](/reference/statements/create/dictionary).
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-Configure the dictionary:
-
-```sql
-CREATE DICTIONARY dictionary_with_comment
-(
-    id UInt64,
-    value String
-)
-PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'source_table'))
-LAYOUT(FLAT())
-LIFETIME(MIN 0 MAX 1000)
-COMMENT 'The temporary dictionary';
-```
-
-Make sure that the dictionary is loaded.
-
-```sql
-SELECT * FROM system.dictionaries LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:                    default
-name:                        dictionary_with_comment
-uuid:                        4654d460-0d03-433a-8654-d4600d03d33a
-status:                      NOT_LOADED
-origin:                      4654d460-0d03-433a-8654-d4600d03d33a
-type:
-key.names:                   ['id']
-key.types:                   ['UInt64']
-attribute.names:             ['value']
-attribute.types:             ['String']
-bytes_allocated:             0
-query_count:                 0
-hit_rate:                    0
-found_rate:                  0
-element_count:               0
-load_factor:                 0
-source:
-lifetime_min:                0
-lifetime_max:                0
-loading_start_time:          1970-01-01 00:00:00
-last_successful_update_time: 1970-01-01 00:00:00
-loading_duration:            0
-last_exception:
-comment:                     The temporary dictionary
-```
-)DOCS_MD")
-
-}

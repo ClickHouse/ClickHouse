@@ -1,5 +1,4 @@
 #include <optional>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -573,73 +572,3 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemColumns) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "columns",
-    .description = R"DOCS_MD(
-Contains information about columns in all tables.
-
-You can use this table to get information similar to the [DESCRIBE TABLE](/reference/statements/describe-table) query, but for multiple tables at once.
-
-Columns from [temporary tables](/reference/statements/create/table/temporary-table) are visible in the `system.columns` only in those session where they have been created. They are shown with the empty `database` field.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.columns LIMIT 2 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:                INFORMATION_SCHEMA
-table:                   COLUMNS
-name:                    table_catalog
-type:                    String
-position:                1
-default_kind:
-default_expression:
-data_compressed_bytes:   0
-data_uncompressed_bytes: 0
-marks_bytes:             0
-comment:
-is_in_partition_key:     0
-is_in_sorting_key:       0
-is_in_primary_key:       0
-is_in_sampling_key:      0
-compression_codec:
-character_octet_length:  ᴺᵁᴸᴸ
-numeric_precision:       ᴺᵁᴸᴸ
-numeric_precision_radix: ᴺᵁᴸᴸ
-numeric_scale:           ᴺᵁᴸᴸ
-datetime_precision:      ᴺᵁᴸᴸ
-
-Row 2:
-──────
-database:                INFORMATION_SCHEMA
-table:                   COLUMNS
-name:                    table_schema
-type:                    String
-position:                2
-default_kind:
-default_expression:
-data_compressed_bytes:   0
-data_uncompressed_bytes: 0
-marks_bytes:             0
-comment:
-is_in_partition_key:     0
-is_in_sorting_key:       0
-is_in_primary_key:       0
-is_in_sampling_key:      0
-compression_codec:
-character_octet_length:  ᴺᵁᴸᴸ
-numeric_precision:       ᴺᵁᴸᴸ
-numeric_precision_radix: ᴺᵁᴸᴸ
-numeric_scale:           ᴺᵁᴸᴸ
-datetime_precision:      ᴺᵁᴸᴸ
-```
-)DOCS_MD")
-
-}

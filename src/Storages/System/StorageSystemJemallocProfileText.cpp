@@ -1,5 +1,4 @@
 #include "config.h"
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -97,14 +96,3 @@ Pipe StorageSystemJemallocProfileText::read(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemJemallocProfileText) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "jemalloc_profile_text",
-    .description = R"DOCS_MD(
-Displays the symbolized jemalloc heap profile. Run 'SYSTEM JEMALLOC FLUSH PROFILE' to generate a profile first.
-)DOCS_MD")
-
-}

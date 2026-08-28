@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/StorageFile.h>
@@ -95,67 +94,3 @@ void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, C
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSchemaInferenceCache) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "schema_inference_cache",
-    .description = R"DOCS_MD(
-Contains information about all cached file schemas.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-Let's say we have a file `data.jsonl` with this content:
-```json
-{"id" :  1, "age" :  25, "name" :  "Josh", "hobbies" :  ["football", "cooking", "music"]}
-{"id" :  2, "age" :  19, "name" :  "Alan", "hobbies" :  ["tennis", "art"]}
-{"id" :  3, "age" :  32, "name" :  "Lana", "hobbies" :  ["fitness", "reading", "shopping"]}
-{"id" :  4, "age" :  47, "name" :  "Brayan", "hobbies" :  ["movies", "skydiving"]}
-```
-
-<Tip>
-Place `data.jsonl` in the `user_files_path` directory.  You can find this by looking
-in your ClickHouse configuration files. The default is:
-```sql
-<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
-```
-</Tip>
-
-Open `clickhouse-client` and run the `DESCRIBE` query:
-
-```sql
-DESCRIBE file('data.jsonl') SETTINGS input_format_try_infer_integers=0;
-```
-
-```response
-┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ id      │ Nullable(Float64)       │              │                    │         │                  │                │
-│ age     │ Nullable(Float64)       │              │                    │         │                  │                │
-│ name    │ Nullable(String)        │              │                    │         │                  │                │
-│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
-└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-Let's see the content of the `system.schema_inference_cache` table:
-
-```sql
-SELECT *
-FROM system.schema_inference_cache
-FORMAT Vertical
-```
-```response
-Row 1:
-──────
-storage:                File
-source:                 /home/droscigno/user_files/data.jsonl
-format:                 JSONEachRow
-additional_format_info: schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, schema_inference_make_columns_nullable=true, try_infer_integers=false, try_infer_dates=true, try_infer_datetimes=true, try_infer_numbers_from_strings=true, read_bools_as_numbers=true, try_infer_objects=false
-registration_time:      2022-12-29 17:49:52
-schema:                 id Nullable(Float64), age Nullable(Float64), name Nullable(String), hobbies Array(Nullable(String))
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Automatic schema inference from input data](/concepts/features/interfaces/schema-inference)
-)DOCS_MD")
-
-}

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/DDLTask.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -396,63 +395,3 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDDLWorkerQueue) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "distributed_ddl_queue",
-    .description = R"DOCS_MD(
-Contains information about [distributed ddl queries (ON CLUSTER clause)](/reference/statements/distributed-ddl) that were executed on a cluster.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT *
-FROM system.distributed_ddl_queue
-WHERE cluster = 'test_cluster'
-LIMIT 2
-FORMAT Vertical
-
-Query id: f544e72a-6641-43f1-836b-24baa1c9632a
-
-Row 1:
-──────
-entry:             query-0000000000
-entry_version:     5
-initiator_host:    clickhouse01
-initiator_port:    9000
-cluster:           test_cluster
-query:             CREATE DATABASE test_db UUID '4a82697e-c85e-4e5b-a01e-a36f2a758456' ON CLUSTER test_cluster
-settings:          {'max_threads':'16','use_uncompressed_cache':'0'}
-query_create_time: 2023-09-01 16:15:14
-host:              clickhouse-01
-port:              9000
-status:            Finished
-exception_code:    0
-exception_text:
-query_finish_time: 2023-09-01 16:15:14
-query_duration_ms: 154
-
-Row 2:
-──────
-entry:             query-0000000001
-entry_version:     5
-initiator_host:    clickhouse01
-initiator_port:    9000
-cluster:           test_cluster
-query:             CREATE DATABASE test_db UUID '4a82697e-c85e-4e5b-a01e-a36f2a758456' ON CLUSTER test_cluster
-settings:          {'max_threads':'16','use_uncompressed_cache':'0'}
-query_create_time: 2023-09-01 16:15:14
-host:              clickhouse-01
-port:              9000
-status:            Finished
-exception_code:    630
-exception_text:    Code: 630. DB::Exception: Cannot drop or rename test_db, because some tables depend on it:
-query_finish_time: 2023-09-01 16:15:14
-query_duration_ms: 154
-
-2 rows in set. Elapsed: 0.025 sec.
-```
-)DOCS_MD")
-
-}

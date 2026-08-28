@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -59,37 +58,3 @@ void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, Conte
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDataTypeFamilies) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "data_type_families",
-    .description = R"DOCS_MD(
-Contains information about supported [data types](/reference/data-types/index).
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT name, case_insensitive, alias_to FROM system.data_type_families WHERE alias_to = 'String'
-```
-
-```text
-┌─name───────┬─case_insensitive─┬─alias_to─┐
-│ LONGBLOB   │                1 │ String   │
-│ LONGTEXT   │                1 │ String   │
-│ TINYTEXT   │                1 │ String   │
-│ TEXT       │                1 │ String   │
-│ VARCHAR    │                1 │ String   │
-│ MEDIUMBLOB │                1 │ String   │
-│ BLOB       │                1 │ String   │
-│ TINYBLOB   │                1 │ String   │
-│ CHAR       │                1 │ String   │
-│ MEDIUMTEXT │                1 │ String   │
-└────────────┴──────────────────┴──────────┘
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Syntax](/reference/syntax) — Information about supported syntax.
-)DOCS_MD")
-
-}

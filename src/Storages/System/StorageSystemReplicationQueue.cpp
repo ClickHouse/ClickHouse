@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -187,46 +186,3 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicationQueue) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "replication_queue",
-    .description = R"DOCS_MD(
-Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.replication_queue LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:               merge
-table:                  visits_v2
-replica_name:           mtgiga001-1t
-position:               15
-node_name:              queue-0009325559
-type:                   MERGE_PARTS
-create_time:            2020-12-07 14:04:21
-required_quorum:        0
-source_replica:         mtgiga001-1t
-new_part_name:          20201130_121373_121384_2
-parts_to_merge:         ['20201130_121373_121378_1','20201130_121379_121379_0','20201130_121380_121380_0','20201130_121381_121381_0','20201130_121382_121382_0','20201130_121383_121383_0','20201130_121384_121384_0']
-is_detach:              0
-is_currently_executing: 0
-num_tries:              36
-last_exception:         Code: 226, e.displayText() = DB::Exception: Marks file '/opt/clickhouse/data/merge/visits_v2/tmp_fetch_20201130_121373_121384_2/CounterID.mrk' does not exist (version 20.8.7.15 (official build))
-last_attempt_time:      2020-12-08 17:35:54
-num_postponed:          0
-postpone_reason:
-last_postpone_time:     1970-01-01 03:00:00
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Managing ReplicatedMergeTree Tables](/reference/statements/system#managing-replicatedmergetree-tables)
-)DOCS_MD")
-
-}

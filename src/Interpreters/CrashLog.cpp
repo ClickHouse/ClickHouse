@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeArray.h>
-#include <Common/SystemTableDocumentation.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -157,41 +156,4 @@ void collectCrashLog(
                 Poco::Environment::osArchitecture()};
         });
     }
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "crash_log",
-    .description = R"DOCS_MD(
-Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.
-)DOCS_MD",
-    .get_columns = CrashLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.crash_log ORDER BY event_time DESC LIMIT 1;
-```
-
-```text title="Response"
-Row 1:
-──────
-hostname:     clickhouse.eu-central1.internal
-event_date:   2020-10-14
-event_time:   2020-10-14 15:47:40
-timestamp_ns: 1602679660271312710
-signal:       11
-thread_id:    23624
-query_id:     428aab7c-8f5c-44e9-9607-d16b44467e69
-trace:        [188531193,...]
-trace_full:   ['3. DB::(anonymous namespace)::FunctionFormatReadableTimeDelta::executeImpl(std::__1::vector<DB::ColumnWithTypeAndName, std::__1::allocator<DB::ColumnWithTypeAndName> >&, std::__1::vector<unsigned long, std::__1::allocator<unsigned long> > const&, unsigned long, unsigned long) const @ 0xb3cc1f9 in /home/username/work/ClickHouse/build/programs/clickhouse',...]
-version:      ClickHouse 20.11.1.1
-revision:     54442
-build_id:
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [trace_log](/reference/system-tables/trace_log) system table
-)DOCS_MD")
-
 }

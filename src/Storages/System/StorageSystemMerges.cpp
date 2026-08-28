@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
@@ -108,14 +107,3 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, ContextPtr cont
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMerges) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "merges",
-    .description = R"DOCS_MD(
-Contains information about merges and part mutations currently in process for tables in the MergeTree family.
-)DOCS_MD")
-
-}

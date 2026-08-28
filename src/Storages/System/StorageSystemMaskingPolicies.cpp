@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemMaskingPolicies.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeArray.h>
@@ -52,18 +51,5 @@ void StorageSystemMaskingPolicies::fillData(MutableColumns &, ContextPtr context
     /// any entities to list and the table is always empty. The table and the access grant still exist so
     /// that introspection queries such as `SHOW MASKING POLICIES` work and do not throw.
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "masking_policies",
-    .description = R"DOCS_MD(
-Contains information about all masking policies defined in the system.
-
-Masking policies can only be created and applied in ClickHouse Cloud. In open-source builds the `system.masking_policies` table is always empty, but it is still present so that introspection queries such as `SHOW MASKING POLICIES` work and return an empty result instead of throwing.
-)DOCS_MD")
 
 }

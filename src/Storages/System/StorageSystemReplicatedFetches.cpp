@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
@@ -71,43 +70,3 @@ void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, Cont
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicatedFetches) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "replicated_fetches",
-    .description = R"DOCS_MD(
-Contains information about currently running background fetches.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.replicated_fetches LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:                    default
-table:                       t
-elapsed:                     7.243039876
-progress:                    0.41832135995612835
-result_part_name:            all_0_0_0
-result_part_path:            /var/lib/clickhouse/store/700/70080a04-b2de-4adf-9fa5-9ea210e81766/all_0_0_0/
-partition_id:                all
-total_size_bytes_compressed: 1052783726
-bytes_read_compressed:       440401920
-source_replica_path:         /clickhouse/test/t/replicas/1
-source_replica_hostname:     node1
-source_replica_port:         9009
-interserver_scheme:          http
-URI:                         http://node1:9009/?endpoint=DataPartsExchange%3A%2Fclickhouse%2Ftest%2Ft%2Freplicas%2F1&part=all_0_0_0&client_protocol_version=4&compress=false
-to_detached:                 0
-thread_id:                   54
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Managing ReplicatedMergeTree Tables](/reference/statements/system#managing-replicatedmergetree-tables)
-)DOCS_MD")
-
-}

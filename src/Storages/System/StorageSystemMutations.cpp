@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <DataTypes/DataTypeString.h>
@@ -206,67 +205,3 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMutations) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "mutations",
-    .description = R"DOCS_MD(
-The table contains information about [mutations](/reference/statements/alter/index#mutations) of [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables and their progress. Each mutation command is represented by a single row.
-
-## Monitoring Mutations {#monitoring-mutations}
-
-To track the progress on the `system.mutations` table, use the following query:
-
-```sql
-SELECT * FROM clusterAllReplicas('cluster_name', 'system', 'mutations')
-WHERE is_done = 0 AND table = 'tmp';
-
--- or
-
-SELECT * FROM clusterAllReplicas('cluster_name', 'system.mutations')
-WHERE is_done = 0 AND table = 'tmp';
-```
-
-Note: this requires read permissions on the `system.*` tables.
-
-<Tip>
-**Cloud usage**
-
-In ClickHouse Cloud the `system.mutations` table on each node has all the mutations in the cluster, and there is no need for `clusterAllReplicas`.
-</Tip>
-)DOCS_MD",
-    .columns_notes = R"DOCS_MD(
-<Note>
-- If a part name is not in `parts_postpone_reasons` and has not yet been mutated, it means the part is yet not scheduled for mutation.
-- The part name `all_parts` represents all parts that have not yet been mutated.
-</Note>
-
-- `is_killed` ([UInt8](/reference/data-types/int-uint)) — Indicates whether a mutation has been killed. **Only available in ClickHouse Cloud.**
-
-<Note>
-`is_killed=1` does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
-</Note>
-
-- `is_done` ([UInt8](/reference/data-types/int-uint)) — The flag whether the mutation is done or not. Possible values:
-  - `1` if the mutation is completed,
-  - `0` if the mutation is still in process.
-
-<Note>
-Even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not completed yet because of a long-running `INSERT` query, that will create a new data part needed to be mutated.
-</Note>
-
-If there were problems with mutating some data parts, the following columns contain additional information:
-
-- `latest_failed_part` ([String](/reference/data-types/string)) — The name of the most recent part that could not be mutated.
-- `latest_fail_time` ([DateTime](/reference/data-types/datetime)) — The date and time of the most recent part mutation failure.
-- `latest_fail_reason` ([String](/reference/data-types/string)) — The exception message that caused the most recent part mutation failure.
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [Mutations](/reference/statements/alter/index#mutations)
-- [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table engine
-- [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) family
-)DOCS_MD")
-
-}

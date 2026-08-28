@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemBackgroundSchedulePool.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -73,38 +72,3 @@ void StorageSystemBackgroundSchedulePool::fillData(MutableColumns & res_columns,
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemBackgroundSchedulePool) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "background_schedule_pool",
-    .description = R"DOCS_MD(
-Contains information about tasks in background schedule pools. Background schedule pools are used for executing periodic tasks such as distributed sends, buffer flushes, message broker operations, streaming queries background jobs, and Iceberg table metadata refresh.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT * FROM system.background_schedule_pool LIMIT 5 FORMAT Vertical;
-```
-
-```text title="Response"
-Row 1:
-──────
-pool:        distributed
-database:    default
-table:       data
-table_uuid:  00000000-0000-0000-0000-000000000000
-query_id:
-elapsed_ms:  0
-log_name:    BackgroundJobsAssignee:DataProcessing
-deactivated: 0
-scheduled:   1
-delayed:     0
-executing:   0
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [system.background_schedule_pool_log](/reference/system-tables/background_schedule_pool_log) — Contains history of background schedule pool task executions.
-)DOCS_MD")
-
-}

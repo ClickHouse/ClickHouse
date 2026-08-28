@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeDate.h>
-#include <Common/SystemTableDocumentation.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -109,59 +108,5 @@ void AsynchronousMetricLog::addValues(const AsynchronousMetricValues & values)
         }
     }
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "asynchronous_metric_log",
-    .description = R"DOCS_MD(
-Contains the historical values for `system.asynchronous_metrics`, which are saved once per time interval (one second by default). Enabled by default.
-
-Key-value metrics of `system.asynchronous_metrics` (those broken down per CPU core, block device, network interface, or disk) are logged as one row per key, with the key in the `key` column. For scalar metrics the `key` column is empty.
-)DOCS_MD",
-    .get_columns = AsynchronousMetricLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.asynchronous_metric_log LIMIT 3 \G
-```
-
-```text
-Row 1:
-──────
-hostname:   clickhouse.eu-central1.internal
-event_date: 2023-11-14
-event_time: 2023-11-14 14:39:07
-metric:     AsynchronousHeavyMetricsCalculationTimeSpent
-key:
-value:      0.001
-
-Row 2:
-──────
-hostname:   clickhouse.eu-central1.internal
-event_date: 2023-11-14
-event_time: 2023-11-14 14:39:08
-metric:     AsynchronousHeavyMetricsCalculationTimeSpent
-key:
-value:      0
-
-Row 3:
-──────
-hostname:   clickhouse.eu-central1.internal
-event_date: 2023-11-14
-event_time: 2023-11-14 14:39:09
-metric:     AsynchronousHeavyMetricsCalculationTimeSpent
-key:
-value:      0
-```
-
-**See Also**
-
-- [asynchronous_metric_log setting](/reference/settings/server-settings/settings/asynchronous#asynchronous_metric_log) — Enabling and disabling the setting.
-- [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) — Contains metrics, calculated periodically in the background.
-- [system.metric_log](/reference/system-tables/metric_log) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
-)DOCS_MD")
 
 }

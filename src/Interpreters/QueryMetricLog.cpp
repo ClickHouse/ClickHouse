@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -349,51 +348,5 @@ std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElemen
 
     return elem;
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "query_metric_log",
-    .description = R"DOCS_MD(
-Contains a history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
-
-Once a query starts, data is collected at periodic intervals of `query_metric_log_interval` milliseconds (which is set to 1000
-by default). The data is also collected when the query finishes if the query takes longer than `query_metric_log_interval`.
-)DOCS_MD",
-    .get_columns = QueryMetricLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.query_metric_log LIMIT 1 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-query_id:                                                        97c8ba04-b6d4-4bd7-b13e-6201c5c6e49d
-hostname:                                                        clickhouse.eu-central1.internal
-event_date:                                                      2020-09-05
-event_time:                                                      2020-09-05 16:22:33
-event_time_microseconds:                                         2020-09-05 16:22:33.196807
-memory_usage:                                                    313434219
-peak_memory_usage:                                               598951986
-ProfileEvent_Query:                                              0
-ProfileEvent_SelectQuery:                                        0
-ProfileEvent_InsertQuery:                                        0
-ProfileEvent_FailedQuery:                                        0
-ProfileEvent_FailedSelectQuery:                                  0
-...
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [query_metric_log setting](/reference/settings/server-settings/settings/query#query_metric_log) — Enabling and disabling the setting.
-- [query_metric_log_interval](/reference/settings/session-settings/other#query_metric_log_interval)
-- [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
-- [system.events](/reference/system-tables/events) — Contains a number of events that occurred.
-- [system.metrics](/reference/system-tables/metrics) — Contains instantly calculated metrics.
-- [Monitoring](/guides/oss/deployment-and-scaling/monitoring/monitoring) — Base concepts of ClickHouse monitoring.
-)DOCS_MD")
 
 }

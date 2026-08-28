@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemQuotaUsage.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -218,17 +217,3 @@ void StorageSystemQuotaUsage::fillDataImpl(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQuotaUsage) }
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "quota_usage",
-    .description = R"DOCS_MD(
-Quota usage by the current user: how much is used and how much is left.
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [SHOW QUOTA](/reference/statements/show#show-quota))
-)DOCS_MD")
-
-}
