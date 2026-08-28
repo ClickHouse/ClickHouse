@@ -463,7 +463,7 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
 
     if (isAnyTierRestricted())
     {
-        if (auto tier_checker = getTierChecker(setting_name, MergeTreeSettings::getBuiltinTier(setting_name)))
+        if (auto tier_checker = getTierChecker(setting_name, MergeTreeSettings::tryGetTierOfBuiltin(setting_name).value_or(SettingsTierType::PRODUCTION)))
             return tier_checker->check(change, new_value, reaction, SettingSource::QUERY);
     }
 

@@ -2215,7 +2215,7 @@ Possible values:
 Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
+    DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
 Only integer-like types are currently adaptive.
@@ -3111,13 +3111,9 @@ bool MergeTreeSettings::hasBuiltin(std::string_view name)
     return MergeTreeSettingsImpl::hasBuiltin(name);
 }
 
-SettingsTierType MergeTreeSettings::getBuiltinTier(std::string_view name)
+std::optional<SettingsTierType> MergeTreeSettings::tryGetTierOfBuiltin(std::string_view name)
 {
-    const auto & accessor = MergeTreeSettingsImpl::Traits::Accessor::instance();
-    size_t index = accessor.find(MergeTreeSettingsImpl::Traits::resolveName(name));
-    if (index == static_cast<size_t>(-1))
-        BaseSettingsHelpers::throwSettingNotFound(name);
-    return accessor.getTier(index);
+    return MergeTreeSettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view MergeTreeSettings::resolveName(std::string_view name)

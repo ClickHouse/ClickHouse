@@ -10,6 +10,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
+#include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -480,6 +481,15 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
 }
+
+/// Per-query deviations from the server-level distributed cache switches. The background and buffer
+/// contexts are built once at startup, so a value coming from their profile would pin them for the
+/// lifetime of the server - which is exactly what makes the switch unobservable for merges,
+/// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
+/// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
+/// it is already shared with running threads when profiles are applied, so a reset would race there.
+static const std::vector<String> distributed_cache_force_setting_names
+    = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
 {                                                       \
@@ -3991,6 +4001,7 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
     ContextMutablePtr background_context_ptr = Context::createCopy(shared_from_this());
     background_context_ptr->setCurrentProfile(shared->background_profile_name);
     background_context_ptr->is_background_operation = true;
+    background_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
 
     background_context_instance = background_context_ptr;
     background_context = background_context_ptr;
@@ -4309,6 +4320,20 @@ WasmModuleManager * Context::initWasmModuleManager()
         return nullptr;
 
     String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
+    /// Validated on every build, including the ones that cannot run WebAssembly at all, so that a stale
+    /// engine name in the configuration is reported the same way everywhere instead of being ignored.
+    WasmModuleManager::validateEngineName(engine_name);
+
+#if !USE_WASMTIME
+    /// This build has no WebAssembly engine, so fail close: do not expose any WebAssembly UDF surface at all.
+    /// In particular, `system.webassembly_modules` is not attached and persisted `LANGUAGE WASM` functions are
+    /// not loaded at startup (loading them would compile the modules and abort the server startup).
+    LOG_WARNING(
+        shared->log,
+        "WebAssembly UDFs are enabled in the configuration, but this build of ClickHouse does not include "
+        "a WebAssembly engine, so WebAssembly UDFs remain unavailable");
+    return nullptr;
+#else
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
@@ -4316,6 +4341,7 @@ WasmModuleManager * Context::initWasmModuleManager()
     shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
 
     return shared->wasm_module_manager.get();
+#endif
 }
 
 bool Context::hasWasmModuleManager() const
@@ -4328,7 +4354,15 @@ WasmModuleManager & Context::getWasmModuleManager() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->wasm_module_manager)
+    {
+#if USE_WASMTIME
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WebAssembly support is not enabled");
+#else
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "WebAssembly support is not enabled: this build of ClickHouse does not include a WebAssembly engine");
+#endif
+    }
     return *shared->wasm_module_manager;
 }
 
@@ -7800,8 +7834,11 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     makeBackgroundContext(config);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    buffer_context = Context::createCopy(shared_from_this());
-    buffer_context->setCurrentProfile(shared->buffer_profile_name);
+    /// Settle the settings before publishing the context, so that a reader never sees them being changed.
+    ContextMutablePtr buffer_context_ptr = Context::createCopy(shared_from_this());
+    buffer_context_ptr->setCurrentProfile(shared->buffer_profile_name);
+    buffer_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
+    buffer_context = buffer_context_ptr;
 }
 
 String Context::getDefaultProfileName() const

@@ -61,9 +61,7 @@ inline SettingsTierType settingGetTier(std::string_view full_name)
     return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)
     {
         /// A custom setting is not a feature of the server, so no tier applies to it.
-        if (!T::hasBuiltin(short_name))
-            return SettingsTierType::PRODUCTION;
-        return T::getBuiltinTier(short_name);
+        return T::tryGetTierOfBuiltin(short_name).value_or(SettingsTierType::PRODUCTION);
     });
 }
 

@@ -10,6 +10,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 
+#include <optional>
+
 namespace boost
 {
 namespace program_options
@@ -116,8 +118,7 @@ struct MergeTreeSettings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
-    /// Same as `getTier`, but without an instance. Built-in settings only.
-    static SettingsTierType getBuiltinTier(std::string_view name);
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static bool isReadonlySetting(const String & name);
     static void checkCanSet(std::string_view name, const Field & value);
