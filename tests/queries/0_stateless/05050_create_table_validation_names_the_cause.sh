@@ -30,6 +30,15 @@ run "CREATE TABLE t (a UInt32, b DEFAULT nosuch) ENGINE = MergeTree ORDER BY a"
 run "CREATE TABLE t (a UInt32, b UInt32 DEFAULT 'not a number') ENGINE = MergeTree ORDER BY a"
 
 echo
+echo '=== the same for ALTER, which builds the pair of expressions in its own place'
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE at (a UInt32, s String) ORDER BY a"
+run "ALTER TABLE at ADD COLUMN z UInt32 DEFAULT nosuch"
+run "ALTER TABLE at MODIFY COLUMN s DEFAULT nosuch"
+# Changing the type of a column that has a default re-checks the existing default expression.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE at2 (a UInt32, b UInt32 DEFAULT a * 2) ORDER BY a"
+run "ALTER TABLE at2 MODIFY COLUMN b Date"
+
+echo
 echo '=== a key that cannot be used names the element that cannot be used'
 run "CREATE TABLE t (a UInt32, b Nullable(String), c UInt32) ENGINE = MergeTree ORDER BY (a, b, c)"
 run "CREATE TABLE t (a UInt32, b Nullable(UInt32)) ENGINE = MergeTree PARTITION BY b ORDER BY a"

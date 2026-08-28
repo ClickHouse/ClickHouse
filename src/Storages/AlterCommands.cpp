@@ -2406,8 +2406,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto & final_column_name = column_name;
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
+                /// The conversion holds its own copy of the default expression rather than referring to the
+                /// alias of the expression below, for the reason explained in `getDefaultExpressionInfoInto`:
+                /// referring to it made every error inside the default expression surface as a failure to
+                /// resolve a synthetic name the user has never seen.
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
+                    addTypeConversionToAST(command.default_expression->clone(), data_type_ptr->getName()),
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -2428,7 +2432,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+                    addTypeConversionToAST(column_in_table.default_desc.expression->clone(), data_type_ptr->getName()),
+                    final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
 
