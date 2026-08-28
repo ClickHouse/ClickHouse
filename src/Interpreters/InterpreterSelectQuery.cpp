@@ -81,6 +81,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -90,6 +91,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
@@ -182,6 +184,7 @@ namespace Setting
     extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_uniq_to_count;
@@ -430,6 +433,7 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
 void checkAccessRightsForSelect(
     const ContextPtr & context,
     const StorageID & table_id,
+    const StoragePtr & storage,
     const StorageMetadataPtr & table_metadata,
     const TreeRewriterResult & syntax_analyzer_result)
 {
@@ -441,9 +445,12 @@ void checkAccessRightsForSelect(
         /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
         /// which is probably not the same column as the column the current user has access to.
         auto access = context->getAccess();
+        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
         for (const auto & column : table_metadata->getColumns())
         {
-            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+            /// An `Alias` also requires access to the same column of its target table.
+            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name)
+                && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
                 return;
         }
         throw Exception(
@@ -1111,7 +1118,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already
         /// checked in ITableFunction::execute().
-        checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_analyzer_result);
+        checkAccessRightsForSelect(context, table_id, storage, metadata_snapshot, *syntax_analyzer_result);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
@@ -3093,7 +3100,8 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::enable_parallel_single_level_merge],
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
-        settings[Setting::adaptive_aggregator_freeze_threshold]};
+        settings[Setting::adaptive_aggregator_freeze_threshold],
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -3347,10 +3355,26 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             /// would produce incomplete data and cause the pipeline to get stuck.
             sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
+            /// The sort scatters rows across threads by the hash of the partition columns it is given,
+            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
+            /// the two disagree the scatter would split one logical partition across threads, so such
+            /// windows sort in a single merged stream instead.
+            SortDescription scatter_partition_by = window.partition_by;
+            const auto & sort_input_header = query_plan.getCurrentHeader();
+            for (const auto & partition_column : window.partition_by)
+            {
+                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
+                        *sort_input_header->getByName(partition_column.column_name).type))
+                {
+                    scatter_partition_by.clear();
+                    break;
+                }
+            }
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window.full_sort_description,
-                window.partition_by,
+                scatter_partition_by,
                 0 /* LIMIT */,
                 sort_settings);
             sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
