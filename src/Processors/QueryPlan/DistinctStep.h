@@ -45,7 +45,7 @@ public:
         explicit Settings(const DB::Settings & settings_);
         explicit Settings(const QueryPlanSerializationSettings & settings_);
 
-        void updatePlanSettings(QueryPlanSerializationSettings & plan_settings) const;
+        void updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const;
     };
 
     DistinctStep(

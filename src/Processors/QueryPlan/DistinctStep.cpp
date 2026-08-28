@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -141,15 +142,18 @@ DistinctStep::Settings::Settings(const QueryPlanSerializationSettings & settings
     temporary_files_buffer_size = settings_[QueryPlanSerializationSetting::temporary_files_buffer_size];
 }
 
-void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & plan_settings) const
+void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
 {
     plan_settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
     plan_settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;
     plan_settings[QueryPlanSerializationSetting::distinct_overflow_mode] = set_size_limits.overflow_mode;
     plan_settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 
-    plan_settings[QueryPlanSerializationSetting::max_bytes_before_external_distinct] = max_bytes_before_external_distinct;
-    plan_settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct] = max_bytes_ratio_before_external_distinct;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT)
+    {
+        plan_settings[QueryPlanSerializationSetting::max_bytes_before_external_distinct] = max_bytes_before_external_distinct;
+        plan_settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct] = max_bytes_ratio_before_external_distinct;
+    }
 
     plan_settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     plan_settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
@@ -351,9 +355,9 @@ void DistinctStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 /*version*/) const
+void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
 {
-    settings.updatePlanSettings(plan_settings);
+    settings.updatePlanSettings(plan_settings, version);
 }
 
 void DistinctStep::serialize(Serialization & ctx) const
