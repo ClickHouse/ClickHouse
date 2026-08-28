@@ -140,9 +140,14 @@ $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}; CREATE USER ${user} NOT IDEN
 $CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL PROJECTION p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl (SELECT a, b ORDER BY b);" 2>&1 | grep -m1 -o 'ACCESS_DENIED'
 # a missing column must give the same answer, not UNKNOWN_IDENTIFIER
 $CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL PROJECTION p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl (SELECT nosuchcol ORDER BY nosuchcol);" 2>&1 | grep -m1 -oE 'ACCESS_DENIED|UNKNOWN_IDENTIFIER'
+echo "--- dropping needs it too, so the drop cannot probe the table either ---"
+$CLICKHOUSE_CLIENT --user "${user}" -q "DROP HYPOTHETICAL PROJECTION IF EXISTS p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl;" 2>&1 | grep -m1 -oE 'ACCESS_DENIED' || echo "no error"
+# a table that does not exist must give the same answer, not UNKNOWN_TABLE
+$CLICKHOUSE_CLIENT --user "${user}" -q "DROP HYPOTHETICAL PROJECTION IF EXISTS p_priv ON ${CLICKHOUSE_DATABASE}.t_no_such_table;" 2>&1 | grep -m1 -oE 'ACCESS_DENIED|UNKNOWN_TABLE' || echo "no error"
 $CLICKHOUSE_CLIENT -q "GRANT ALTER ADD PROJECTION ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl TO ${user};"
 # that privilege alone is enough; reading the columns is not required until estimation exists
 $CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL PROJECTION p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl (SELECT a, b ORDER BY b); SELECT 'granted user can create';" 2>&1 | grep -m1 -oE 'granted user can create|ACCESS_DENIED'
+$CLICKHOUSE_CLIENT --user "${user}" -q "DROP HYPOTHETICAL PROJECTION IF EXISTS p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl; SELECT 'granted user can drop';" 2>&1 | grep -m1 -oE 'granted user can drop|ACCESS_DENIED'
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user};"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_ddl; DROP TABLE IF EXISTS t_hypo_proj_log; DROP TABLE IF EXISTS t_hypo_proj_drift; DROP TABLE IF EXISTS t_hypo_proj_co;"

@@ -41,4 +41,8 @@ No hypothetical indexes or projections defined for this table. Use CREATE HYPOTH
 --- creating needs the same privilege as a real ADD PROJECTION ---
 ACCESS_DENIED
 ACCESS_DENIED
+--- dropping needs it too, so the drop cannot probe the table either ---
+ACCESS_DENIED
+ACCESS_DENIED
 granted user can create
+granted user can drop

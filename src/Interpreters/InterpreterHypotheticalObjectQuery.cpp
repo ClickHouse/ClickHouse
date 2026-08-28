@@ -217,8 +217,9 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
         return {};
     }
 
-    /// same privilege as the real ADD PROJECTION, before the table is resolved so nothing about it leaks
-    if (is_projection && query.kind == ASTHypotheticalObjectQuery::Create)
+    /// same privilege as the real ADD PROJECTION, before the table is resolved so nothing about it leaks;
+    /// dropping needs it too, otherwise the drop alone would answer what the caller may not ask
+    if (is_projection)
         context->checkAccess(
             AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
 
@@ -247,8 +248,6 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
 
     if (query.kind == ASTHypotheticalObjectQuery::Drop)
     {
-        /// No access check. a session-local drop leaks nothing (unlike CREATE), and every entry
-        /// in the session store already passed that check at creation
         auto object_name = query.object_name->as<ASTIdentifier &>().name();
         if (is_projection)
             store.removeProjection(table_id, object_name, query.if_exists);
