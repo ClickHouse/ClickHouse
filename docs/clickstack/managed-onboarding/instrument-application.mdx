@@ -15,7 +15,7 @@ This guide walks you through instrumenting a small Node.js application with Open
 
 The [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) is a Node.js app that queries the HackerNews dataset hosted in the public ClickHouse demo. Every chart, table, and search box is backed by a real ClickHouse query, so every interaction produces a trace whose main span is the HTTPS call from the backend out to ClickHouse.
 
-This guide assumes you've completed [Setting up your OpenTelemetry Collector](/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) and have a ClickStack collector running and reachable from the machine you run this application on. **Ensure you have recorded its OTLP endpoint** and the `OTLP_AUTH_TOKEN` you set when deploying it. You will put those values in `.env` before running the agent.
+This guide assumes you've completed [Setting up your OpenTelemetry Collector](/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) and have a ClickStack collector running and reachable from the machine you run this application on. **Ensure you have recorded its OTLP endpoint** and the `OTLP_AUTH_TOKEN` you set when deploying it. You will put those values in `.env` before instrumenting.
 
 ## Prerequisites {#prerequisites}
 
@@ -34,13 +34,12 @@ npm install
 cp .env.example .env
 ```
 
-You'll fill `.env` in the next steps, then run the agent from this directory.
+You'll fill `.env` in the next steps, then instrument from this directory.
 
 <InstrumentApplication />
 
 ## Further reading {#further-reading}
 
-- [Agent instructions](https://github.com/ClickHouse/hn-news-analyzer/blob/main/agent.md): the prompt the Agent-Assisted Setup card copies.
 - [Monitoring Kubernetes](/clickstack/managed-onboarding/monitoring-kubernetes): collect logs, infra metrics, and Kubernetes events from a cluster.
 - [Monitoring AWS CloudWatch logs](/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): forward CloudWatch logs via the OpenTelemetry CloudWatch receiver.
 - [Session Replay](/clickstack/features/session-replay): feature overview, SDK options, and privacy controls.
