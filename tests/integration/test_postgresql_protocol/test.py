@@ -411,6 +411,13 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
         for password in ("p123", "other_password")
     ]
 
+    # The same password stored twice as `scram_sha256_password` gets two different random salts. Only one of them can
+    # be sent on the wire, so the fail-close ambiguity scan of the access layer cannot match the other method and the
+    # configuration must be refused instead of logging in with weaker checks than the native protocol.
+    expired_shared_salt_hash = hashlib.pbkdf2_hmac(
+        "sha256", b"p123", base64.b64decode(shared_salt), 4096
+    ).hex()
+
     users = {
         "user_scram_then_ssh": f"scram_sha256_password BY 'p123', ssh_key BY KEY '{ssh_key}' TYPE 'ssh-ed25519'",
         "user_ssh_then_scram": f"ssh_key BY KEY '{ssh_key}' TYPE 'ssh-ed25519', scram_sha256_password BY 'p123'",
@@ -418,20 +425,43 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
         "user_two_scram": "scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
         "user_plaintext_and_two_scram": "plaintext_password BY 'p123', scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
         "user_expired_then_live_scram": "scram_sha256_password BY 'expired' VALID UNTIL '2010-01-01', scram_sha256_password BY 'p123'",
+        "user_shared_password_expired_scram": "scram_sha256_password BY 'p123' VALID UNTIL '2010-01-01', scram_sha256_password BY 'p123'",
+        "user_shared_password_limited_scram": "scram_sha256_password BY 'p123' GRANTS (SELECT ON system.numbers), scram_sha256_password BY 'p123'",
         "user_expired_only_scram": "scram_sha256_password BY 'p123' VALID UNTIL '2010-01-01'",
         "user_plaintext_and_expired_scram": "plaintext_password BY 'p123', scram_sha256_password BY 'old' VALID UNTIL '2010-01-01'",
         "user_two_scram_same_salt": (
             f"scram_sha256_hash BY '{shared_salt_hashes[0]}' SALT '{shared_salt}', "
             f"scram_sha256_hash BY '{shared_salt_hashes[1]}' SALT '{shared_salt}'"
         ),
+        "user_expired_and_live_same_salt": (
+            f"scram_sha256_hash BY '{expired_shared_salt_hash}' SALT '{shared_salt}' VALID UNTIL '2010-01-01', "
+            f"scram_sha256_hash BY '{expired_shared_salt_hash}' SALT '{shared_salt}'"
+        ),
     }
+
+    # PostgreSQL SCRAM cannot represent these configurations: either it cannot choose between the salts of several
+    # live verifiers, or a method that would narrow the session (`VALID UNTIL`, `GRANTS`) cannot be matched by a
+    # client proof bound to the salt that is sent on the wire.
+    unsupported_configuration_users = {
+        "user_two_scram",
+        "user_expired_then_live_scram",
+        "user_shared_password_expired_scram",
+        "user_shared_password_limited_scram",
+    }
+
+    # The exchange runs, but no method can accept the credential: the only verifier has expired, or the shared salt
+    # lets the fail-close scan match the expired method and expire the whole login.
+    invalid_credentials_users = {
+        "user_expired_only_scram",
+        "user_expired_and_live_same_salt",
+    }
+
     try:
         for name, methods in users.items():
             node.query(f"CREATE USER {name} IDENTIFIED WITH {methods}", password="123")
             node.query(f"GRANT SELECT ON system.one TO {name}", password="123")
 
-            if name == "user_two_scram":
-                # Two live verifiers: PostgreSQL SCRAM cannot choose between their salts.
+            if name in unsupported_configuration_users:
                 with pytest.raises(py_psql.OperationalError, match="Authentication configuration is not supported"):
                     py_psql.connect(
                         host=node.ip_address,
@@ -442,7 +472,7 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
                     )
                 continue
 
-            if name == "user_expired_only_scram":
+            if name in invalid_credentials_users:
                 with pytest.raises(py_psql.OperationalError, match="Invalid user or password"):
                     py_psql.connect(
                         host=node.ip_address,

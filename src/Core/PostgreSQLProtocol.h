@@ -1539,8 +1539,9 @@ class ScrambleSHA256Auth : public AuthenticationMethod
         Live,
         /// Only expired verifiers: the salt is still usable to run the exchange and report invalid credentials.
         ExpiredOnly,
-        /// Live verifiers that PostgreSQL SCRAM cannot represent: a second factor, or several different salts to
-        /// choose from.
+        /// A live verifier that PostgreSQL SCRAM cannot represent: a second factor, several different salts to
+        /// choose from, or another method that narrows the session and which a SCRAM client proof cannot be checked
+        /// against.
         UnsupportedConfiguration,
     };
 
@@ -1551,6 +1552,13 @@ class ScrambleSHA256Auth : public AuthenticationMethod
         /// The user has another live authentication method that the PostgreSQL protocol can offer on the wire.
         bool has_live_alternative = false;
     };
+
+    /// A method that limits the session (`GRANTS`) or its lifetime (`VALID UNTIL`) takes part in the fail-close
+    /// combination of `IAccessStorage::authenticateImpl` when it accepts the same credential.
+    static bool methodNarrowsSession(const AuthenticationData & auth_method)
+    {
+        return auth_method.getValidUntil() != 0 || !auth_method.getGrants().structurallyEmpty();
+    }
 
     ScramSalt getScramSalt(const String & user_name, Session & session) const
     {
@@ -1566,22 +1574,14 @@ class ScrambleSHA256Auth : public AuthenticationMethod
         {
             if (auto user = access_control.tryRead<User>(*id))
             {
+                /// First pass: choose the salt that `AuthenticationSASLContinue` would send.
                 for (const auto & auth_method : user->authentication_methods)
                 {
-                    const auto valid_until = auth_method.getValidUntil();
-                    const bool expired = valid_until && now > valid_until;
-
                     if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
-                    {
-                        /// The only other authentication methods the PostgreSQL protocol can offer on the wire.
-                        if (!expired
-                            && (auth_method.getType() == AuthenticationType::NO_PASSWORD
-                                || auth_method.getType() == AuthenticationType::PLAINTEXT_PASSWORD))
-                            result.has_live_alternative = true;
                         continue;
-                    }
 
-                    if (expired)
+                    const auto valid_until = auth_method.getValidUntil();
+                    if (valid_until && now > valid_until)
                     {
                         if (!expired_scram_salt)
                             expired_scram_salt = auth_method.getSalt();
@@ -1606,6 +1606,42 @@ class ScrambleSHA256Auth : public AuthenticationMethod
                     }
 
                     live_scram_salt = auth_method.getSalt();
+                }
+
+                /// Second pass: look for the other authentication methods of the user.
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    const auto type = auth_method.getType();
+                    const auto valid_until = auth_method.getValidUntil();
+                    const bool expired = valid_until && now > valid_until;
+
+                    /// The only other authentication methods the PostgreSQL protocol can offer on the wire.
+                    if (!expired
+                        && (type == AuthenticationType::NO_PASSWORD || type == AuthenticationType::PLAINTEXT_PASSWORD))
+                        result.has_live_alternative = true;
+
+                    if (!live_scram_salt)
+                        continue;
+
+                    /// `IAccessStorage::authenticateImpl` fails close for ambiguous credentials: when the same
+                    /// credential is accepted by several methods, the session is limited to the intersection of their
+                    /// `GRANTS` and expires at the earliest of their `VALID UNTIL`, even when that moment has already
+                    /// passed. That scan re-checks the credential against the other methods, but a SCRAM client proof
+                    /// can only be checked against a `scram_sha256_password` method that uses the very salt sent in
+                    /// `AuthenticationSASLContinue`: the proof is derived from the salted password and the salt is part
+                    /// of the authentication message. A method that could narrow the session but cannot be matched by
+                    /// the proof would silently drop out of the combination, so a password shared with such a method
+                    /// would be accepted over PostgreSQL while the native protocol rejects it as expired or grants it
+                    /// less. Refuse to run the exchange in that case instead of authenticating with weaker checks.
+                    if (!methodNarrowsSession(auth_method))
+                        continue;
+                    /// Methods verified against an external system never take part in the combination.
+                    if (!authenticationTypeIsVerifiedLocally(type))
+                        continue;
+                    if (type == AuthenticationType::SCRAM_SHA256_PASSWORD && auth_method.getSalt() == *live_scram_salt)
+                        continue;
+
+                    unsupported_configuration = true;
                 }
             }
         }
