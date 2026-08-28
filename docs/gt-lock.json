@@ -7,37 +7,37 @@
       "versionId": "ea2304dc9fa982a3f83bf0c7ae1291d3556812451cc241e9cfb1779e7fea75bf",
       "translations": {
         "ja": {
-          "updatedAt": "2026-08-28T21:03:17.593Z",
+          "updatedAt": "2026-08-28T21:25:15.882Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-28T21:03:17.845Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-08-28T21:25:17.138Z",
+          "fileName": "docs.json",
+          "postProcessHash": "4414ae0284cd0044ee763931fd4e6eaf09067d8509b73f18fc8ab8788de128cd"
         },
         "ko": {
-          "updatedAt": "2026-08-28T21:03:18.088Z",
+          "updatedAt": "2026-08-28T21:25:16.093Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-28T21:03:18.349Z",
+          "updatedAt": "2026-08-28T21:25:16.737Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-28T21:03:18.629Z",
+          "updatedAt": "2026-08-28T21:25:16.948Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-28T21:03:18.912Z",
+          "updatedAt": "2026-08-28T21:25:16.518Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-28T21:03:19.164Z",
+          "updatedAt": "2026-08-28T21:25:15.659Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-28T21:03:19.422Z",
-          "fileName": "docs.json",
-          "postProcessHash": "6dc174a54cf5166562ff01650148e75fefc5b7980eb1eb120139947965efc714"
+          "updatedAt": "2026-08-28T21:25:16.317Z",
+          "fileName": "docs.json"
         }
       },
       "fileName": "docs.json"
@@ -72057,51 +72057,50 @@
     },
     {
       "fileId": "133ba8b53018f205cc269304a301f372358821f18bf2a53b2806aec682f60fe5",
-      "versionId": "d69d2229e435a5e39d18632f555791e93a199001fc29e0cbe7065fd97d0da518",
+      "versionId": "b75a27d35b0e131fed2713fcbc19e8cfff25fe7198fe53d21150f7120de5ab56",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:07.832Z",
+          "updatedAt": "2026-08-28T21:25:21.702Z",
           "fileName": "es/concepts/features/configuration/server-config/quotas.mdx",
-          "postProcessHash": "73e2606f91e29ac462db30bc6065a0459369c0666c6ddc6eb00bfc740d865ffb"
+          "postProcessHash": "7a1e9c10f2c6280d8b2209335635f22c188a3f8bfad74f7bc1f42653b7b5b3f1"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:07.832Z",
+          "updatedAt": "2026-08-28T21:25:21.703Z",
           "fileName": "ja/concepts/features/configuration/server-config/quotas.mdx",
-          "postProcessHash": "98089ff8662602976cf98ef74eef00caf798c2f9fa664a00f12b4f29e2276b4a"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.832Z",
-          "fileName": "ko/concepts/features/configuration/server-config/quotas.mdx",
-          "postProcessHash": "c37644fd7c2b50fe5546f115723569213901bbe85621347153d39b3e7e971ef4"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.833Z",
-          "fileName": "pt-BR/concepts/features/configuration/server-config/quotas.mdx",
-          "postProcessHash": "54d8f5bb8b4b429eaf9e75c7e1589f929956ca812287a2586ca1d7639ca8547c"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.833Z",
-          "fileName": "ru/concepts/features/configuration/server-config/quotas.mdx",
-          "postProcessHash": "c5bc2032cc9b7439ccbe37b0d1f431cb2731266b93e14c1bf642335fab8a88dd"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:07.833Z",
-          "fileName": "zh/concepts/features/configuration/server-config/quotas.mdx",
-          "postProcessHash": "6a6bd694a29496ee803ab0393aa152a069b83182d7389facfe45218f12250577"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.833Z",
-          "fileName": "ar/concepts/features/configuration/server-config/quotas.mdx",
-          "postProcessHash": "8dd80fc3befc9dfac1dfcce85b5a35346aa210544490db420cc6d9b92739a823"
+          "postProcessHash": "2ea58178b5457ba21e3b4f6e080b33feff7779381d976060b88318be7096a65a"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.833Z",
+          "updatedAt": "2026-08-28T21:25:21.704Z",
           "fileName": "fr/concepts/features/configuration/server-config/quotas.mdx",
-          "postProcessHash": "2b76a0143fdf228eb4eef3ef7531339132c702bdc952c7bb8c63482c6d37c680"
+          "postProcessHash": "d3f6071155f6d887c4bd31d00adbb4291d56ba05ebe4867b1c1e42072bafe544"
+        },
+        "zh": {
+          "updatedAt": "2026-08-28T21:25:21.704Z",
+          "fileName": "zh/concepts/features/configuration/server-config/quotas.mdx",
+          "postProcessHash": "1d07d581f12ede63a3d9b7916e84a75001a4f319d4b6326438c20d917b753bfb"
+        },
+        "ru": {
+          "updatedAt": "2026-08-28T21:25:21.705Z",
+          "fileName": "ru/concepts/features/configuration/server-config/quotas.mdx",
+          "postProcessHash": "261454ba2b941707b74ae74b6ab6164a83ab9ff016dfe953ad07570f6eab9c7d"
+        },
+        "ko": {
+          "updatedAt": "2026-08-28T21:25:21.705Z",
+          "fileName": "ko/concepts/features/configuration/server-config/quotas.mdx",
+          "postProcessHash": "857ee13ea06616b5d17f87edd1cb89c9199046baab92a63dff2eb99e24ae2b63"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-28T21:25:21.706Z",
+          "fileName": "pt-BR/concepts/features/configuration/server-config/quotas.mdx",
+          "postProcessHash": "7046758a4d15f427d8f1c18bb84380c711ef7a181b508a66b9188e9f5b6f41a3"
+        },
+        "ar": {
+          "updatedAt": "2026-08-28T21:25:21.706Z",
+          "fileName": "ar/concepts/features/configuration/server-config/quotas.mdx",
+          "postProcessHash": "aff4e85a2f477bde3fc78991252b825739a79c4c775ba099052dbd16819ece76"
         }
       },
-      "fileName": "concepts/features/configuration/server-config/quotas.mdx",
-      "staged": false
+      "fileName": "concepts/features/configuration/server-config/quotas.mdx"
     },
     {
       "fileId": "c47635a4f41e66d26629e5b438f75891b8d9b1e2a6e51441d019b8da473fbbd0",

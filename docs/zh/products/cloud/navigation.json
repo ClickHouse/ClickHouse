@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "开始使用",
+      "group": "Get started",
       "pages": [
         "zh/products/cloud/getting-started/cloud-get-started",
         "zh/products/cloud/getting-started/intro",
@@ -9,13 +9,13 @@
       ]
     },
     {
-      "group": "服务和基础设施",
+      "group": "Services and infrastructure",
       "pages": [
         "zh/products/cloud/reference/architecture",
         "zh/products/cloud/features/cli",
         {
           "expanded": false,
-          "group": "规划和部署",
+          "group": "Plan and deploy",
           "pages": [
             "zh/products/cloud/features/cloud-tiers",
             "zh/products/cloud/reference/supported-regions",
@@ -27,7 +27,7 @@
         },
         {
           "expanded": false,
-          "group": "配置和扩展",
+          "group": "Configure and scale",
           "pages": [
             "zh/products/cloud/features/autoscaling/overview",
             "zh/products/cloud/reference/settings",
@@ -42,7 +42,7 @@
         },
         {
           "expanded": false,
-          "group": "计算和存储",
+          "group": "Compute and storage",
           "pages": [
             "zh/products/cloud/features/large-single-replica-services",
             "zh/products/cloud/features/infrastructure/parallel-replicas",
@@ -54,7 +54,7 @@
         },
         {
           "expanded": false,
-          "group": "可靠性和维护",
+          "group": "Reliability and maintenance",
           "pages": [
             "zh/products/cloud/reference/service-uptime",
             "zh/products/cloud/reference/data-resiliency",
@@ -63,7 +63,7 @@
         },
         {
           "expanded": false,
-          "group": "生产环境规划",
+          "group": "Production planning",
           "pages": [
             "zh/products/cloud/guides/best-practices/index",
             "zh/products/cloud/guides/production-readiness",
@@ -77,14 +77,14 @@
       "$ref": "../bring-your-own-cloud/navigation.json"
     },
     {
-      "group": "数据和集成",
+      "group": "Data and integrations",
       "pages": [
         "zh/products/cloud/features/integrations",
         "zh/products/cloud/features/data-catalogs",
         "zh/products/cloud/guides/migration/upload-a-csv-file",
         {
           "expanded": false,
-          "group": "数据源",
+          "group": "Data sources",
           "pages": [
             "zh/products/cloud/guides/data-sources/index",
             "zh/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -97,14 +97,14 @@
       ]
     },
     {
-      "group": "连接和查询",
+      "group": "Connect and query",
       "pages": [
         "zh/products/cloud/features/sql-console-features/sql-console",
         "zh/products/cloud/guides/sql-console/connection-details",
         "zh/products/cloud/features/sql-console-features/query-insights",
         {
           "expanded": false,
-          "group": "查询 API 端点",
+          "group": "Query API endpoints",
           "pages": [
             "zh/products/cloud/features/sql-console-features/query-endpoints",
             "zh/products/cloud/guides/sql-console/query-endpoints"
@@ -116,12 +116,12 @@
       ]
     },
     {
-      "group": "访问管理",
+      "group": "Access management",
       "pages": [
         "zh/products/cloud/guides/security/cloud-access-management/index",
         {
           "expanded": false,
-          "group": "Cloud 账户和角色",
+          "group": "Cloud accounts and roles",
           "pages": [
             "zh/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
@@ -132,7 +132,7 @@
         },
         {
           "expanded": false,
-          "group": "数据库用户和权限",
+          "group": "Database users and permissions",
           "pages": [
             "zh/products/cloud/guides/security/cloud-access-management/manage-database-users",
             "zh/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
@@ -141,7 +141,7 @@
         },
         {
           "expanded": false,
-          "group": "身份提供商",
+          "group": "Identity providers",
           "pages": [
             "zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
             "zh/products/cloud/guides/security/saml-sso-removal",
@@ -153,17 +153,17 @@
       ]
     },
     {
-      "group": "安全和合规",
+      "group": "Security and compliance",
       "pages": [
         "zh/products/cloud/features/security",
         {
           "expanded": false,
-          "group": "网络访问",
+          "group": "Network access",
           "pages": [
             "zh/products/cloud/guides/security/connectivity/setting-ip-filters",
             {
               "expanded": false,
-              "group": "私有网络",
+              "group": "Private networking",
               "pages": [
                 "zh/products/cloud/guides/security/connectivity/private-networking/index",
                 "zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -175,7 +175,7 @@
         },
         {
           "expanded": false,
-          "group": "审计日志",
+          "group": "Audit logging",
           "pages": [
             "zh/products/cloud/guides/security/audit-logging/index",
             "zh/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -186,7 +186,7 @@
         },
         {
           "expanded": false,
-          "group": "数据安全",
+          "group": "Data security",
           "pages": [
             "zh/products/cloud/guides/security/data-masking",
             "zh/products/cloud/guides/security/cmek"
@@ -194,7 +194,7 @@
         },
         {
           "expanded": false,
-          "group": "合规和隐私",
+          "group": "Compliance and privacy",
           "pages": [
             "zh/products/cloud/reference/security/compliance-overview",
             "zh/products/cloud/guides/security/compliance/hipaa-onboarding",
@@ -206,11 +206,11 @@
       ]
     },
     {
-      "group": "监控和备份",
+      "group": "Monitoring and backups",
       "pages": [
         {
           "expanded": false,
-          "group": "监控",
+          "group": "Monitoring",
           "pages": [
             "zh/products/cloud/features/monitoring/overview",
             "zh/products/cloud/features/monitoring/cloud-console",
@@ -223,19 +223,19 @@
         },
         {
           "expanded": false,
-          "group": "备份",
+          "group": "Backups",
           "pages": [
             "zh/products/cloud/features/backups/overview",
             {
               "expanded": false,
-              "group": "管理备份",
+              "group": "Manage backups",
               "pages": [
                 "zh/products/cloud/guides/backups/index",
                 "zh/products/cloud/guides/backups/review-and-restore-backups",
                 "zh/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "自备备份",
+                  "group": "Bring Your Own Backup",
                   "pages": [
                     "zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -249,7 +249,7 @@
       ]
     },
     {
-      "group": "AI 工具和智能体",
+      "group": "AI tools and agents",
       "pages": [
         "zh/products/cloud/features/ai-ml/index",
         "zh/products/cloud/features/ai-ml/aichat/using-ai-chat",
@@ -257,20 +257,20 @@
         "zh/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
-          "group": "远程 MCP",
+          "group": "Remote MCP",
           "pages": [
             "zh/products/cloud/features/ai-ml/remote-mcp",
             "zh/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
         {
-          "group": "ClickHouse 智能体",
+          "group": "ClickHouse Agents",
           "pages": [
             "zh/products/cloud/features/ai-ml/agents/index",
             "zh/products/cloud/features/ai-ml/agents/quickstart",
             "zh/products/cloud/features/ai-ml/agents/chat",
             {
-              "group": "智能体构建器",
+              "group": "Agent Builder",
               "pages": [
                 "zh/products/cloud/features/ai-ml/agents/builder/index",
                 "zh/products/cloud/features/ai-ml/agents/builder/model-parameters",
@@ -299,7 +299,7 @@
         "zh/products/cloud/features/admin-features/api/openapi",
         "zh/products/cloud/features/admin-features/api/postman",
         {
-          "group": "API 参考文档",
+          "group": "API reference",
           "openapi": {
             "directory": "zh/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"
@@ -311,12 +311,12 @@
       ]
     },
     {
-      "group": "计费",
+      "group": "Billing",
       "pages": [
         "zh/products/cloud/reference/billing/billing-overview",
         {
           "expanded": false,
-          "group": "市场",
+          "group": "Marketplace",
           "pages": [
             "zh/products/cloud/reference/billing/marketplace/overview",
             "zh/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -345,7 +345,7 @@
       ]
     },
     {
-      "group": "支持",
+      "group": "Support",
       "pages": [
         "zh/products/cloud/features/support",
         "zh/products/cloud/reference/account-close"

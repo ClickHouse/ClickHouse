@@ -99,7 +99,7 @@
               ]
             },
             {
-              "group": "Источник",
+              "group": "Source",
               "pages": [
                 "ru/integrations/clickpipes/postgres/source/alloydb",
                 "ru/integrations/clickpipes/postgres/source/rds",
@@ -139,7 +139,7 @@
               ]
             },
             {
-              "group": "Источник",
+              "group": "Source",
               "pages": [
                 "ru/integrations/clickpipes/mysql/source/rds",
                 "ru/integrations/clickpipes/mysql/source/aurora",
@@ -174,7 +174,7 @@
               ]
             },
             {
-              "group": "Источник",
+              "group": "Source",
               "pages": [
                 "ru/integrations/clickpipes/mongodb/source/atlas",
                 "ru/integrations/clickpipes/mongodb/source/generic",
@@ -194,7 +194,7 @@
       ]
     },
     {
-      "group": "Программный доступ",
+      "group": "Programmatic access",
       "icon": "code",
       "pages": [
         "ru/integrations/clickpipes/programmatic-access/openapi",
@@ -202,7 +202,7 @@
       ]
     },
     {
-      "group": "Сеть",
+      "group": "Networking",
       "icon": "network-wired",
       "pages": [
         "ru/integrations/clickpipes/networking/index",

@@ -115,6 +115,18 @@ Voici les quantités pouvant être limitées :
 
 Si la limite est dépassée sur au moins un intervalle de temps, une exception est levée avec un message indiquant quelle restriction a été dépassée, pour quel intervalle, et quand le nouvel intervalle commence (c’est-à-dire quand des requêtes peuvent à nouveau être envoyées).
 
+<Note>
+  **Requêtes exclues du calcul des quotas**
+
+  Pour permettre d’examiner la configuration et l’utilisation des quotas même lorsqu’un quota est épuisé, les requêtes `SELECT` qui lisent exclusivement l’une des tables système suivantes ne sont pas imputées aux quotas et ne sont pas soumises aux limites de complexité des requêtes :
+
+  * `system.quotas`
+  * `system.quota_limits`
+  * `system.quota_usage`
+  * `system.quotas_usage`
+  * `system.one`
+</Note>
+
 Les quotas peuvent utiliser la fonctionnalité de « clé de quota » pour suivre l’utilisation des ressources indépendamment pour plusieurs clés. En voici un exemple :
 
 ```xml
