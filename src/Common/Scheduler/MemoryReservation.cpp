@@ -214,7 +214,7 @@ ResourceAllocation::GrowthPressureAction MemoryReservation::onGrowthPressure()
     }
 
     if (!scheduler)
-        return GrowthPressureAction::Yield;
+        return GrowthPressureAction::Protect;
 
     const auto spill_request = scheduler->requestForcedSpill();
     {

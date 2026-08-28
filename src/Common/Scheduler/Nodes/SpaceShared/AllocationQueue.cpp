@@ -131,8 +131,12 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
     allocation.memory_growth_suspension_attempted = true;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
+        /// Protection is externally injected suction priority, not permission to bypass fitting
+        /// work. Remember it, then hide the blocked growth for one complete policy-scoped search.
+        /// AllocationLimit consumes the decision only after every currently visible alternative
+        /// has been considered.
         if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
-            return false;
+            allocation.memory_growth_suction_priority = true;
         if (!suspended_growth)
             suspended_growth = &allocation;
     }
@@ -302,7 +306,10 @@ void AllocationQueue::approveIncrease()
     allocation.allocated += increase->size;
     allocation.last_increase_approval_epoch = increase->approval_epoch;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
+    {
+        allocation.memory_growth_suction_priority = false;
         allocation.onGrowthPressureResolved();
+    }
 
     if (suspended_growth == &allocation)
     {
@@ -616,6 +623,7 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     {
         suspended_growth->onGrowthPressureResolved();
         suspended_growth->memory_growth_suspended = false;
+        suspended_growth->memory_growth_suction_priority = false;
     }
     suspended_growth = nullptr;
     memory_growth_suspension_retry_requested = false;

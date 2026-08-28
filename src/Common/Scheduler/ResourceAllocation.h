@@ -53,7 +53,10 @@ public:
 
     /// External query-level pressure controller. The allocation scheduler only consumes the
     /// decision; reclaim/spill policy and accumulated suction priority live outside its hierarchy.
-    virtual GrowthPressureAction onGrowthPressure() { return GrowthPressureAction::Yield; }
+    /// Without an external recovery controller there is no reclaim episode to wait for, so the
+    /// deterministic choice is to inject suction immediately. AllocationLimit still performs one
+    /// complete fitting-work search before consuming this decision.
+    virtual GrowthPressureAction onGrowthPressure() { return GrowthPressureAction::Protect; }
     virtual void onGrowthPressureResolved() {}
     virtual bool isGrowthRecoveryActive() { return false; }
 
@@ -81,6 +84,7 @@ private:
     /// request can be considered. The allocation can still decrease or be removed while growth is parked.
     bool memory_growth_suspended = false; /// Scheduler-thread only.
     bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
+    bool memory_growth_suction_priority = false; /// External controller has authorized the last-resort path.
     IncreaseRequest increase;
     DecreaseRequest decrease;
 

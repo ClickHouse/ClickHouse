@@ -616,11 +616,9 @@ private: // interaction with the scheduler thread
     GrowthPressureAction onGrowthPressure() override
     {
         std::unique_lock lock(mutex);
-        if (protection_round == 0)
-            return GrowthPressureAction::Yield;
         ++current_pressure_round;
         ++total_pressure_events;
-        const bool protect = current_pressure_round >= protection_round;
+        const bool protect = protection_round != 0 && current_pressure_round >= protection_round;
         recovery_active = !protect;
         cv.notify_all();
         return protect ? GrowthPressureAction::Protect : GrowthPressureAction::Yield;
@@ -695,7 +693,7 @@ private: // interaction with the scheduler thread
     bool removed = false;
     size_t kills = 0;
     ResourceCost allocated_size = 0;
-    size_t protection_round = 0;
+    size_t protection_round = 1;
     size_t current_pressure_round = 0;
     size_t total_pressure_events = 0;
     bool recovery_active = false;
@@ -1228,6 +1226,56 @@ TEST(SchedulerSpaceShared, FairHierarchySearchesPastNonFittingSibling)
 
     fitting.reset();
     heavy.waitKills(1);
+}
+
+
+/// Suction is a distinct external decision. Arrivals submitted before that decision is released must
+/// all receive their policy-scoped fit check before the protected growth can reach eviction.
+TEST(SchedulerSpaceShared, ConcurrentFittingArrivalsPrecedeExternalSuction)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.protectAfterPressureRounds(2);
+    heavy.increaseAsync(5000);
+    heavy.waitPressureCount(1);
+
+    constexpr size_t query_count = 8;
+    std::barrier<> start(query_count + 1);
+    std::barrier<> submitted(query_count + 1);
+    std::vector<std::unique_ptr<ManualAllocation>> fitting(query_count);
+    std::vector<std::thread> threads;
+    threads.reserve(query_count);
+
+    for (size_t index = 0; index < query_count; ++index)
+    {
+        threads.emplace_back([&, index]
+        {
+            start.arrive_and_wait();
+            fitting[index] = std::make_unique<ManualAllocation>(
+                queue, fmt::format("fitting_{}", index), 250, false);
+            submitted.arrive_and_wait();
+            fitting[index]->waitSynced();
+        });
+    }
+
+    start.arrive_and_wait();
+    submitted.arrive_and_wait();
+
+    /// This models the query controller's explicit no-reclaim completion. All fitting arrivals are
+    /// already queue events; the second pressure observation injects suction only after their search.
+    heavy.recoveryCheckpoint();
+
+    for (auto & thread : threads)
+        thread.join();
+
+    for (const auto & allocation : fitting)
+        EXPECT_EQ(allocation->size(), 250);
+    EXPECT_EQ(heavy.killCount(), 0u);
 }
 
 
