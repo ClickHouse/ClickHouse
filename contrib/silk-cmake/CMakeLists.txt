@@ -47,6 +47,22 @@ if (USE_MUSL)
 endif ()
 add_library(ch_contrib::silk_util ALIAS _silk_util)
 
+# fcontext - silk's vendored Boost.Context switching assembly
+# (make_fcontext/jump_fcontext), replacing the boost::context dependency.
+if(ARCH_AMD64)
+    set(SILK_FCONTEXT_ASM
+        "${SILK_SOURCE_DIR}/contrib/fcontext/asm/jump_x86_64_sysv_elf_gas.S"
+        "${SILK_SOURCE_DIR}/contrib/fcontext/asm/make_x86_64_sysv_elf_gas.S"
+    )
+else()
+    set(SILK_FCONTEXT_ASM
+        "${SILK_SOURCE_DIR}/contrib/fcontext/asm/jump_arm64_aapcs_elf_gas.S"
+        "${SILK_SOURCE_DIR}/contrib/fcontext/asm/make_arm64_aapcs_elf_gas.S"
+    )
+endif()
+add_library(_silk_fcontext STATIC ${SILK_FCONTEXT_ASM})
+target_include_directories(_silk_fcontext SYSTEM INTERFACE "${SILK_SOURCE_DIR}/contrib/fcontext")
+
 # silk-fibers
 file(GLOB SILK_FIBERS_SOURCES CONFIGURE_DEPENDS "${SILK_SOURCE_DIR}/src/fibers/*.cpp")
 add_library(_silk_fibers STATIC ${SILK_FIBERS_SOURCES})
@@ -56,6 +72,6 @@ target_include_directories(_silk_fibers SYSTEM
 )
 target_link_libraries(_silk_fibers
     PUBLIC _silk_util
-    PRIVATE boost::context ch_contrib::liburing
+    PRIVATE _silk_fcontext ch_contrib::liburing
 )
 add_library(ch_contrib::silk_fibers ALIAS _silk_fibers)
