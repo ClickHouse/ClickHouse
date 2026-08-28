@@ -6,23 +6,14 @@ namespace DB
 namespace
 {
 
-/// Operator types after normalisation to the paper's "left" canonical form. ClickHouse encodes
-/// semi/anti as a JoinStrictness on top of a JoinKind, and it also has RIGHT variants that the
-/// paper only defines as left forms; `normalize` folds all of that into these five categories by
-/// swapping the children of every RIGHT variant (a valid equivalence: A OP_right B == B OP_left A).
-///
-/// The enumerators double as row/column indices into the property matrices below, so their order
-/// and contiguity matter: adding a new operator type means adding an entry here (before `Count`)
-/// and a matching row/column to each matrix -- no code logic changes. This is the extensibility the
-/// paper's table-driven approach is designed for (SIGMOD'13, Section 5.1).
 enum class Category : size_t
 {
-    Join = 0,  /// inner / cross / comma  (paper: join, cross product)
-    LeftOuter, /// left/right outer join  (paper: left outerjoin)
-    FullOuter, /// full outer join        (paper: full outerjoin)
-    Semi,      /// left/right semi join   (paper: left semijoin)
-    Anti,      /// left/right anti join   (paper: left antijoin)
-    Count,
+    Join = 0,  /// inner / cross / comma 
+    LeftOuter, /// left/right outer join
+    FullOuter, /// full outer join
+    Semi,      /// left/right semi join
+    Anti,      /// left/right anti join
+    Count
 };
 
 constexpr size_t NUM_CATEGORIES = static_cast<size_t>(Category::Count);
@@ -70,17 +61,7 @@ NormOp normalize(const ConflictOpMask & op)
 }
 
 /// The property matrices of the paper (Tables 1-3), transcribed directly. Rows and columns are
-/// indexed by `Category` in the order {Join, LeftOuter, FullOuter, Semi, Anti}. `1` == the paper's
-/// `+`, `0` == `-`. `comm` is indexed by a single category; `assoc`/`lAsscom`/`rAsscom` are indexed
-/// [row = op_a][col = op_b].
-///
-/// Several paper entries hold only when the relevant predicate rejects nulls (the footnoted ones).
-/// Since we do not analyse predicates yet, every such entry is transcribed as `0` (a conflict).
-/// That is safe: it only ever *widens* a TES, so CD-A stays correct -- just less complete for those
-/// outer/outer and full-outer reorderings. When predicate null-rejection is added, those specific
-/// cells become the place to flip to `1`.
-/// `1` == the paper's `+`, `0` == `-`. Stored as UInt8 (not bool) so the compact table transcription
-/// reads like the paper; the accessors below expose it as bool.
+/// indexed by `Category` in the order {Join, LeftOuter, FullOuter, Semi, Anti}. 
 using PropRow = UInt8[NUM_CATEGORIES];
 
 /// Table 1: comm(op). Commutative operators (inner/cross and full outer).
@@ -127,16 +108,12 @@ bool assoc(Category a, Category b) { return ASSOC[idx(a)][idx(b)] != 0; }
 bool lAsscom(Category a, Category b) { return L_ASSCOM[idx(a)][idx(b)] != 0; }
 bool rAsscom(Category a, Category b) { return R_ASSCOM[idx(a)][idx(b)] != 0; }
 
-/// An operator imposes no reordering constraint of its own -- it may be combined in either
-/// orientation and needs no TES gate beyond connectivity -- exactly when it commutes and associates
-/// with itself in both nesting directions. For our operator set this selects the inner joins, but
-/// deriving it from the matrices keeps it correct if new self-reorderable operators are added.
 bool isFreelyReorderable(Category c)
 {
     return comm(c) && assoc(c, c) && lAsscom(c, c) && rAsscom(c, c);
 }
 
-/// Footnote-aware variants of assoc / l-asscom / r-asscom. When the base matrix entry is a
+/// Aware variants of assoc / l-asscom / r-asscom. When the base matrix entry is a
 /// conflict, the null-rejection-dependent (footnoted) entries of Tables 2-3 may still upgrade it to
 /// "holds". Each footnote asks whether one or both operators' predicates reject nulls on a specific
 /// operand of the transformation (`nr(op) & operand != 0`). The caller passes the exact operand
@@ -145,7 +122,7 @@ bool isFreelyReorderable(Category c)
 
 /// assoc(row, col) with `shared` = A(E2), the operand shared by the two operators in Eqv. 1.
 /// Footnoted cells (Table 2): (LeftOuter|FullOuter, LeftOuter) needs col's predicate null-rejecting
-/// on `shared`; (FullOuter, FullOuter) needs both operators' predicates null-rejecting on `shared`.
+/// on `shared`. (FullOuter, FullOuter) needs both operators' predicates null-rejecting on `shared`.
 bool assocHolds(const NormOp & row, const NormOp & col, UInt32 shared)
 {
     if (assoc(row.category, col.category))

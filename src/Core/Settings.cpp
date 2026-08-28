@@ -8754,25 +8754,11 @@ Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,gree
 )", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_optimize_join_order_use_cd_a_conflict_detector, false, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
-reorderings are valid using the CD-A conflict detector
-(Moerkotte, Fender, Eich, "On the Correct and Complete Enumeration of the Core Search Space",
-SIGMOD 2013) instead of the default per-relation ON-clause restriction. CD-A is a table-driven
-detector: for every operator of the original join tree it computes a Total Eligibility Set (TES)
-of relations that must be present before the operator may be applied, widening it for every
-descendant operator it does not associate with. This lets DPsub reorder outer, semi, and anti
-joins. CD-A is correct (it never admits an invalid plan) but not complete (it may forbid some
-valid reorderings).
+reorderings are valid using the CD-A conflict detector).
 )", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_optimize_join_order_use_cd_c_conflict_detector, false, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
-are valid using the CD-C conflict detector
-(Moerkotte, Fender, Eich, "On the Correct and Complete Enumeration of the Core Search Space",
-SIGMOD 2013). Like CD-A it is table-driven, but instead of widening a Total Eligibility Set it keeps
-each operator's requirement at its SES and records reordering conflicts as conditioned `conflict
-rules`. CD-C is both correct and complete: it generates exactly the core search space, so it never
-admits an invalid plan and never forbids a valid one that the transformation rules allow. It thus
-finds strictly more reorderings than CD-A. Takes precedence over
-`query_plan_optimize_join_order_use_cd_a_conflict_detector` when both are enabled.
+are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_cd_a_conflict_detector` when both are enabled.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'

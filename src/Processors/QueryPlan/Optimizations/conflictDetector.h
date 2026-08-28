@@ -9,8 +9,8 @@ namespace DB
 {
 
 /** Table-driven conflict detectors for join reordering, from
-  * Moerkotte, Fender, Eich, "On the Correct and Complete Enumeration of the Core Search Space"
-  * (SIGMOD 2013), Sections 5.2-5.4.
+  * Moerkotte et al. "On the Correct and Complete Enumeration of the Core Search Space"
+  * (SIGMOD 2013)
   *
   * Two detectors share this module (select with `ConflictDetector`):
   *   - CD-A: *correct* but not *complete*. For each operator it computes one Total Eligibility Set
@@ -30,16 +30,12 @@ namespace DB
   * relations are pinned, and orientation is decided per operator rather than assumed symmetric.
   *
   * The properties are looked up in four static matrices encoding `comm`, `assoc`, `l-asscom`, and
-  * `r-asscom` (Tables 1-3 of the paper); the null-rejection-dependent (footnoted) entries are
-  * resolved from each operator's `nr_rels`.
-  *
-  * DPsub packs relation sets into native integer masks, so this module works on native masks
-  * throughout to match the DPsub hot path.
+  * `r-asscom`. The null-rejection-dependent entries are resolved from each operator's `nr_rels`.
   */
 enum class ConflictDetector : UInt8
 {
-    CDA, /// correct, incomplete (Section 5.2)
-    CDC, /// correct and complete (Section 5.4)
+    CDA, /// correct, incomplete
+    CDC, /// correct and complete
 };
 
 struct ConflictOpMask
@@ -49,8 +45,8 @@ struct ConflictOpMask
     UInt32 nel = 0;
     /// Relations on whose attributes this operator's ON predicate rejects nulls (Definition 1 of
     /// the paper): the predicate is false/unknown whenever all of that relation's columns are null.
-    /// Always a subset of `nel`. Resolves the null-rejection-dependent (footnoted) matrix entries;
-    /// an equi-join predicate rejects nulls on both of its sides.
+    /// Always a subset of `nel`. Resolves the null-rejection-dependent matrix entries.
+    /// An equi-join predicate rejects nulls on both of its sides.
     UInt32 nr_rels = 0;
     JoinKind kind = JoinKind::Inner;
     JoinStrictness strictness = JoinStrictness::All;

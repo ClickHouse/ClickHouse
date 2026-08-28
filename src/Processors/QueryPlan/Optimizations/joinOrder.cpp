@@ -631,8 +631,7 @@ double JoinOrderOptimizer::computeSelectivity(
 /// right), so they never expand and must NOT be floored at the preserved side's row count. A
 /// semijoin keeps the fraction of preserved rows that have >= 1 match; an antijoin keeps the rest.
 /// Estimating them like outer joins (row count >= preserved side) is what makes the optimizer
-/// refuse to push a selective semi/anti join down; crediting the filter here is what lets DPsub
-/// choose the cheaper reordered plan the EEL detector makes legal.
+/// refuse to push a selective semi/anti join down. 
 static std::optional<UInt64> estimateJoinCardinality(
     std::optional<UInt64> left_rows,
     std::optional<UInt64> right_rows,
@@ -1260,8 +1259,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         double cost{.0};
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
-        /// Set by the acceptor; carried into the physical plan. Non-All only when the EEL
-        /// conflict detector admits a semi/anti join into the reordered tree.
         JoinStrictness strictness{JoinStrictness::All};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
     };
