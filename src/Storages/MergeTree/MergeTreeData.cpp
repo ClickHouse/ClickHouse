@@ -5597,6 +5597,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
+            NameSet column_names_to_drop{command.column_name};
+            if (share_nested_offsets && old_metadata.columns.hasNested(command.column_name))
+            {
+                column_names_to_drop.clear();
+                for (const auto & nested_column : old_metadata.columns.getNested(command.column_name))
+                    column_names_to_drop.emplace(nested_column.name);
+            }
+
             if (!command.clear)
             {
                 /// Don't check columns in indices or projections here. If required columns of indices
@@ -5605,12 +5613,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 /// 02691_drop_column_with_projections_replicated.sql.
                 if (!name_deps)
                     name_deps = getDependentViewsByColumn(local_context);
-                const auto & deps_mv = name_deps.value()[command.column_name];
-                if (!deps_mv.empty())
+                for (const auto & column_name_to_drop : column_names_to_drop)
                 {
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                        backQuoteIfNeed(command.column_name), toString(deps_mv));
+                    const auto & deps_mv = name_deps.value()[column_name_to_drop];
+                    if (!deps_mv.empty())
+                    {
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                            backQuoteIfNeed(command.column_name), toString(deps_mv));
+                    }
                 }
             }
             else
@@ -11844,6 +11855,18 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     if (!command.isDropOrRename() || unfinished_mutations.empty())
         return;
 
+    NameSet affected_column_names{command.column_name};
+    if (command.type == AlterCommand::DROP_COLUMN && (*getSettings())[MergeTreeSetting::share_nested_offsets])
+    {
+        const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+        if (metadata_snapshot->columns.hasNested(command.column_name))
+        {
+            affected_column_names.clear();
+            for (const auto & nested_column : metadata_snapshot->columns.getNested(command.column_name))
+                affected_column_names.emplace(nested_column.name);
+        }
+    }
+
     auto throw_exception = [] (
         const std::string & mutation_name,
         const std::string & action_name,
@@ -11879,7 +11902,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
             {
                 const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
 
-                if (mutation_command.column_name == command.column_name)
+                if (affected_column_names.contains(mutation_command.column_name))
                     throw_exception(mutation_name, action, "column", command.column_name);
 
                 auto alter = mutation_command.ast();
@@ -11895,7 +11918,8 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     auto query_tree = buildQueryTree(predicate, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
-                    if (identifiers.contains(command.column_name))
+                    if (std::ranges::any_of(
+                            affected_column_names, [&](const auto & column_name) { return identifiers.contains(column_name); }))
                         throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
@@ -11904,7 +11928,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     for (const auto & child : alter->update_assignments->children)
                     {
                         const auto & assignment = child->as<ASTAssignment &>();
-                        if (assignment.column_name == command.column_name)
+                        if (affected_column_names.contains(assignment.column_name))
                             throw_exception(mutation_name, action, "column", command.column_name);
 
                         ASTPtr assignment_expression = assignment.expression();
@@ -11912,7 +11936,8 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
 
                         auto query_tree = buildQueryTree(assignment_expression, local_context);
                         auto identifiers = collectIdentifiersFullNames(query_tree);
-                        if (identifiers.contains(command.column_name))
+                        if (std::ranges::any_of(
+                                affected_column_names, [&](const auto & column_name) { return identifiers.contains(column_name); }))
                             throw_exception(mutation_name, action, "column", command.column_name);
                     }
                 }
