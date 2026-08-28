@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"uuid_type_version", 1, 1, "New setting that controls which concrete data type the type name `UUID` resolves to at `CREATE`/`ALTER` time (1 = the historical `UUID` type, 2 = the correctly-sorting `UUID2` type)."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -102,7 +103,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_creating_set_partitions_independently", false, true, "New setting to enable parallel per-partition pre-deduplication of the subquery result when building the set for `IN (subquery)`, when the partition expression is a deterministic function of the subquery output columns."},
             {"force_creating_set_partitions_independently", false, false, "New setting to force per-partition pre-deduplication for `IN (subquery)` set building even when the partition-skew check would skip it."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
-            {"uuid_type_version", 1, 1, "New setting that controls which concrete data type the type name `UUID` resolves to at `CREATE`/`ALTER` time (1 = the historical `UUID` type, 2 = the correctly-sorting `UUID2` type)."},
             {"explain_syntax_single_record", false, true, "From 26.8, `EXPLAIN SYNTAX` returns the reformatted query as a single record (with embedded newlines) instead of one record per line. Set this to `false` to restore the pre-26.8 one-record-per-line output."},
             {"query_plan_optimize_count_from_text_index", false, true, "New setting"},
             {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below `materialize_statistics_on_insert_max_table_size`, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
