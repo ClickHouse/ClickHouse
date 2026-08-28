@@ -208,6 +208,9 @@ QueryPlanStepPtr IntersectOrExceptStep::deserialize(Deserialization & ctx)
             "make_distributed_plan: deserializing an IntersectOrExceptStep requires query plan serialization "
             "version >= {}; all nodes must run the same version", MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP);
 
+    if (ctx.input_headers.size() != 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "IntersectOrExceptStep must have two input streams");
+
     UInt8 operator_value = 0;
     readIntBinary(operator_value, ctx.in);
     const auto current_operator = static_cast<Operator>(operator_value);
