@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.mdx';
 
 Вы можете использовать ClickPipes для ингестии данных из исходной базы данных Postgres в ClickHouse Cloud. Исходная база данных Postgres может размещаться в собственной инфраструктуре или в облаке, включая Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase и другие сервисы.
 
@@ -152,15 +153,13 @@ ClickPipes для Postgres можно развертывать и настраи
   Если вы задаёте ключ упорядочивания в ClickHouse иначе, чем на основе первичного ключа в Postgres, не забудьте ознакомиться со всеми [особенностями](/ru/integrations/clickpipes/postgres/ordering-keys), связанными с этим.
 </Warning>
 
-8. Кроме того, вы можете указать собственное выражение `PARTITION BY <expr>` для управления [партиционированием таблиц ClickHouse](/ru/concepts/core-concepts/partitions).
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
+8. <SettingPartitionBy />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### Проверьте разрешения и запустите ClickPipe
 </div>
 
-8. Выберите роль &quot;Full access&quot; в раскрывающемся списке разрешений и нажмите &quot;Complete Setup&quot;.
+9. Выберите роль &quot;Full access&quot; в раскрывающемся списке разрешений и нажмите &quot;Complete Setup&quot;.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Проверка разрешений" size="lg" border />
 

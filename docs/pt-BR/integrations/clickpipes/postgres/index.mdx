@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/pt-BR/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/pt-BR/clickpipes/_target_ch_partition_by.mdx';
 
 Você pode usar o ClickPipes para fazer a ingestão de dados do seu banco de dados Postgres de origem no ClickHouse Cloud. O banco de dados Postgres de origem pode ser hospedado no local ou na nuvem, incluindo Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase e outros.
 
@@ -152,15 +153,13 @@ Você pode configurar as Configurações avançadas, se necessário. Veja abaixo
   Se você estiver definindo no ClickHouse uma chave de ordenação diferente da chave primária do Postgres, não se esqueça de ler todas as [considerações](/pt-BR/integrations/clickpipes/postgres/ordering-keys) sobre isso
 </Warning>
 
-8. Além disso, você pode fornecer uma expressão personalizada `PARTITION BY <expr>` para controlar o [particionamento da tabela ClickHouse](/pt-BR/concepts/core-concepts/partitions) de destino.
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Particionar por" size="lg" border />
+8. <SettingPartitionBy />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### Revise as permissões e inicie o ClickPipe
 </div>
 
-8. Selecione a função &quot;Full access&quot; no menu suspenso de permissões e clique em &quot;Concluir configuração&quot;.
+9. Selecione a função &quot;Full access&quot; no menu suspenso de permissões e clique em &quot;Concluir configuração&quot;.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Revisar permissões" size="lg" border />
 

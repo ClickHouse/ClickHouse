@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.mdx';
 
 ClickPipes を使用すると、ソースの Postgres データベースから ClickHouse Cloud にデータを取り込めます。ソースの Postgres データベースは、オンプレミス環境のほか、Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase などのクラウド環境でもホストできます。
 
@@ -151,15 +152,13 @@ ClickHouse Cloud アカウントにログインしていることを確認して
   ClickHouse で、Postgres の主キーとは異なる ordering key を定義する場合は、関連する[注意事項](/ja/integrations/clickpipes/postgres/ordering-keys)を必ず確認してください
 </Warning>
 
-8. さらに、宛先の [ClickHouse テーブルのパーティション化](/ja/concepts/core-concepts/partitions)を制御するために、カスタムの `PARTITION BY <expr>` 式を指定できます。
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
+8. <SettingPartitionBy />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### 権限を確認して ClickPipe を開始する
 </div>
 
-8. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
+9. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="権限を確認" size="lg" border />
 

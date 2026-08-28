@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.mdx';
 
 <BetaBadge />
 
@@ -133,11 +134,13 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 6. Вы можете выбрать таблицы, которые хотите реплицировать из исходной базы данных MySQL. При выборе таблиц также можно переименовать их в целевой базе данных ClickHouse и исключить отдельные столбцы.
 
+7. <SettingPartitionBy />
+
 <div id="review-permissions-and-start-the-clickpipe">
   ### Проверьте разрешения и запустите ClickPipe
 </div>
 
-7. Выберите роль &quot;Full access&quot; в раскрывающемся списке разрешений и нажмите &quot;Complete Setup&quot;.
+8. Выберите роль &quot;Full access&quot; в раскрывающемся списке разрешений и нажмите &quot;Complete Setup&quot;.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Проверка разрешений" size="lg" border />
 
