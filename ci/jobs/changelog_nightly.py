@@ -332,17 +332,35 @@ def raw_strict_prs_and_reverts(text):
     return strict_prs, revert_prs
 
 
-def resolve_reverted_originals(revert_prs):
-    """Map revert PRs to the PRs they revert, via the `Reverts owner/repo#N`
-    line GitHub puts into revert PR bodies, and reduce revert-of-revert chains
-    to their net effect: a revert that is itself reverted by a later revert in
-    the same range grants no deletion credit for its target, because the
-    target ships in the release (`#109946` ← `#114911` ← `#114912`: the fix
-    `#109946` stays, only the entry for the cancelled revert `#114911` may
-    go). Returns (originals, unresolved): unresolved reverts (a manual revert
-    without the marker, or a failed lookup) grant no deletion credit — the
-    caller fails closed on any disappearance it cannot bind to a resolved,
-    uncancelled revert."""
+# The revert bookkeeping the job carries on its own branch. A release cycle is
+# edited in ~30 nightly increments and a revert chain routinely spans them: the
+# change lands on one day, the revert arrives on another, the revert of the
+# revert on a third. By then the deleted entry is gone from CHANGELOG.md and
+# the intervening revert is gone from the raw blocks, so neither the editing
+# agent nor the verification can reconstruct the chain from the current state
+# of the file. These trailers on the edit commits are that memory - like
+# `Changelog-generated-up-to:`, the branch carries its own state and the pull
+# request diff stays clean:
+#   `Changelog-revert: <revert> <reverted> <title of the revert>`
+#   `Changelog-deleted-entry: <pull request> <its bullet as it was deleted>`
+REVERT_TRAILER = "Changelog-revert:"
+DELETED_TRAILER = "Changelog-deleted-entry:"
+REVERT_TRAILER_RE = re.compile(rf"^{REVERT_TRAILER}\s+(\d+)\s+(\d+)\s*(.*)$")
+DELETED_TRAILER_RE = re.compile(rf"^{DELETED_TRAILER}\s+(\d+)\s+(.*)$")
+
+
+def resolve_revert_targets(revert_prs, known_titles=None):
+    """Bind every pull request of `revert_prs` to the pull request it reverts,
+    via the `Reverts owner/repo#N` line GitHub puts into revert pull request
+    bodies. `known_titles` supplies the titles of the reverts earlier runs of
+    the job already resolved, so a revert of a revert binds to its target even
+    when that target is not in the current raw block. Returns (targets, titles,
+    unresolved): `targets` maps a revert to the pull requests it reverts,
+    `titles` holds the titles looked up here, and `unresolved` lists the
+    reverts whose target stayed unknown (a manual revert without the marker, or
+    a failed lookup) — those grant no deletion credit, and the caller fails
+    closed on any disappearance it cannot bind to a resolved, uncancelled
+    revert."""
     targets = {}
     titles = {}
     for pr in revert_prs:
@@ -351,22 +369,27 @@ def resolve_reverted_originals(revert_prs):
             "--json title,body"
         )
         data = json.loads(out) if out else {}
-        titles[pr] = data.get("title", "")
+        titles[pr] = " ".join(data.get("title", "").split())
         found = re.findall(r"(?i)reverts\s+[\w.-]+/[\w.-]+#(\d+)", data.get("body", ""))
         if found:
             targets[pr] = set(found)
     # A revert of a revert made with the web UI carries no `Reverts ...#N`
     # marker in its body (the button restores the change, GitHub words the
     # body differently), but its title nests the reverted title: the target
-    # of `Revert "Revert "X""` is the earlier revert in the range titled
-    # `Revert "X"`.
+    # of `Revert "Revert "X""` is the revert titled `Revert "X"` — which this
+    # job may have processed days ago, hence `known_titles`.
+    candidates = {**(known_titles or {}), **titles}
     unresolved = []
     for pr in revert_prs:
         if pr in targets:
             continue
         nested = re.match(r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', titles[pr])
         matched = (
-            {p for p, t in titles.items() if t == nested.group(1) and int(p) < int(pr)}
+            {
+                p
+                for p, t in candidates.items()
+                if t == nested.group(1) and int(p) < int(pr)
+            }
             if nested
             else set()
         )
@@ -374,18 +397,142 @@ def resolve_reverted_originals(revert_prs):
             targets[pr] = matched
         else:
             unresolved.append(pr)
-    # A revert always has a higher PR number than what it reverts, so walking
-    # the resolved reverts in descending order settles every chain in one
-    # pass: an uncancelled revert cancels the reverts it targets, and a
-    # cancelled one has no effect of its own.
+    return targets, titles, unresolved
+
+
+def revert_net_effect(targets):
+    """Reduce revert chains to their net effect: a revert that is itself
+    reverted grants no deletion credit for its target, because the target
+    ships in the release (`#109946` <- `#114911` <- `#114912`: the fix
+    `#109946` stays, only the entry of the cancelled revert `#114911` may go).
+    A revert always has a higher pull request number than what it reverts, so
+    walking the reverts in descending order settles every chain in one pass, at
+    any depth. Returns (credits, cancelled): `credits` maps a pull request whose
+    entry may be deleted to the uncancelled revert that licenses it, `cancelled`
+    is the set of reverts a later revert took back."""
     cancelled = set()
-    originals = set()
+    credits = {}
     for pr in sorted(targets, key=int, reverse=True):
         if pr in cancelled:
             continue
-        cancelled.update(t for t in targets[pr] if t in targets)
-        originals.update(targets[pr])
-    return originals, unresolved
+        for target in targets[pr]:
+            if target in targets:
+                cancelled.add(target)
+            credits.setdefault(target, pr)
+    return credits, cancelled
+
+
+def read_revert_ledger():
+    """The revert relations and the revert-licensed deletions that previous
+    runs recorded in the trailers of their own edit commits on this branch.
+    Returns (targets, titles, deleted): `targets` maps a revert to what it
+    reverts, `titles` gives those reverts' titles (for nested-title matching
+    of a later revert of a revert), `deleted` maps a pull request whose entry
+    a revert licensed us to delete to the bullet it had at that moment.
+
+    All three are empty on a branch whose edit commits predate the trailers,
+    which degrades to the previous behaviour: chains are then only seen inside
+    a single raw block."""
+    log = Shell.get_output("git log origin/master..HEAD --format=%B", strict=True)
+    targets, titles, deleted = {}, {}, {}
+    for line in log.splitlines():
+        m = REVERT_TRAILER_RE.match(line)
+        if m:
+            targets.setdefault(m.group(1), set()).add(m.group(2))
+            if m.group(3):
+                titles[m.group(1)] = m.group(3)
+            continue
+        m = DELETED_TRAILER_RE.match(line)
+        if m:
+            deleted[m.group(1)] = m.group(2)
+    return targets, titles, deleted
+
+
+def entry_line(text, pr):
+    """The bullet of `text` that carries the changelog entry of `pr`,
+    preferring the bullet `pr` is attributed to over one that only mentions it
+    inline."""
+    link = rf"\[#{pr}\]\(https://github\.com/[^/)]+/[^/)]+/pull/{pr}\)"
+    attributed = re.compile(link + r" \(\[")
+    mentioned = re.compile(link)
+    fallback = ""
+    for line in text.splitlines():
+        if not line.startswith("* "):
+            continue
+        if attributed.search(line):
+            return line
+        if not fallback and mentioned.search(line):
+            fallback = line
+    return fallback
+
+
+def analyze_reverts(text):
+    """Everything the editing step needs to know about reverts, resolved
+    against the branch's ledger so that a chain spread over several nightly
+    runs is handled exactly like one arriving inside a single raw block.
+    Returns a dict:
+
+    `credits`    - pull request -> the uncancelled revert that licenses the
+                   deletion of its entry;
+    `restore`    - pull request -> the bullet an earlier run deleted whose
+                   revert has since been reverted, so the change ships after
+                   all and the entry has to be in the file;
+    `missing`    - the subset of `restore` that is not in `text` yet, i.e. the
+                   work the editing agent has to do;
+    `context`    - pull request -> (the reverts that removed it, the reverts
+                   that re-applied it), to explain `missing` in the prompt;
+    `unresolved` - the reverts of this raw block whose target stayed unknown;
+    `ledger`     - the trailer lines to record on the edit commit.
+    """
+    ledger_targets, ledger_titles, deleted = read_revert_ledger()
+    _, revert_prs = raw_strict_prs_and_reverts(text)
+    new_targets, titles, unresolved = resolve_revert_targets(revert_prs, ledger_titles)
+    targets = {pr: set(reverted) for pr, reverted in ledger_targets.items()}
+    for pr, reverted in new_targets.items():
+        targets.setdefault(pr, set()).update(reverted)
+    credits, cancelled = revert_net_effect(targets)
+    reverted_by = {}
+    for pr, reverted in targets.items():
+        for target in reverted:
+            reverted_by.setdefault(target, set()).add(pr)
+    # An entry deleted on an earlier run stays deleted only as long as the
+    # revert that licensed it stands. Once that revert is itself reverted, the
+    # pull request drops out of `credits` and its entry has to come back.
+    # Neither the current CHANGELOG.md (the entry is gone from it) nor the
+    # current raw blocks (they hold only the newest revert) could tell the
+    # agent that, which is why the ledger keeps the text.
+    restore = {pr: line for pr, line in deleted.items() if pr not in credits}
+    context = {
+        pr: (
+            sorted(reverted_by.get(pr, ()), key=int),
+            sorted(
+                {
+                    reapply
+                    for remover in reverted_by.get(pr, ())
+                    for reapply in reverted_by.get(remover, ())
+                    if reapply not in cancelled
+                },
+                key=int,
+            ),
+        )
+        for pr in restore
+    }
+    return {
+        "credits": credits,
+        "restore": restore,
+        "missing": {
+            pr: line
+            for pr, line in restore.items()
+            if f"/pull/{pr})" not in text
+        },
+        "context": context,
+        "unresolved": unresolved,
+        "ledger": [
+            f"{REVERT_TRAILER} {pr} {target} {titles[pr]}".rstrip()
+            for pr in sorted(new_targets, key=int)
+            for target in sorted(new_targets[pr], key=int)
+        ],
+    }
 
 
 def compose_on_master(master_text, version, toc_line, raw_blocks, section):
@@ -605,9 +752,27 @@ def generate_raw_entries(version, from_ref, to_sha):
     return f"Generated {entries} raw entries for {from_short}..{to_short}"
 
 
-def _edit_prompt(version, previous_error=None):
+def _pr_list(prs):
+    return ", ".join(f"`#{pr}`" for pr in prs) or "an earlier revert"
+
+
+def _edit_prompt(version, reverts, previous_error=None):
     anchor = _anchor_id(version)
     strict = "\n".join(f"   - {c}" for c in sorted(STRICT_RETENTION_CATEGORIES))
+    restore = ""
+    if reverts["missing"]:
+        entries = "\n".join(
+            f"   - `#{pr}`, deleted when {_pr_list(reverts['context'][pr][0])} "
+            f"reverted it, re-applied by {_pr_list(reverts['context'][pr][1])}. "
+            f"Its bullet when it was deleted:\n     {line}"
+            for pr, line in sorted(
+                reverts["missing"].items(), key=lambda kv: int(kv[0])
+            )
+        )
+        restore = f"""
+Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each of them back into the in-progress section, with the link of the pull request that re-applied it appended, and do not add a bullet for the reverts themselves. The bullet does not say which category it came from: use the `Changelog category` of its own pull request (`gh pr view <N> --json body`).
+{entries}
+"""
     retry = ""
     if previous_error:
         retry = f"""
@@ -632,18 +797,50 @@ Task:
 3. Never delete an entry that the generator put under one of these categories:
 {strict}
    Such an entry may be rewritten, merged into another bullet, or moved to a different category, but its `[#N](...)` pull request link has to be present in {CHANGELOG_FILE} when you are done. The entries you may delete are the ones under `NOT FOR CHANGELOG / INSIGNIFICANT` and `NO CL ENTRY` that carry no user-visible change (skill section 3), the `Build/Testing/Packaging Improvement` entries that are pure CI plumbing (skill section 4), and an entry that a revert in these raw blocks cancels out (skill section 2). Deleting anything else fails this job, and the entry is then lost for good: the generation point has already moved past it, so the next run will not offer it again.
-4. A revert of a revert re-applies the change (skill section 2.5): keep the original entry, append the link of the pull request that re-applied it, and delete only the intervening revert. Check for this case before concluding that a change landed and was reverted — all three pull requests can sit in the same range.
+4. A revert of a revert re-applies the change (skill section 2.5): keep the original entry, append the link of the pull request that re-applied it, and delete only the intervening revert. Check for this case before concluding that a change landed and was reverted — all three pull requests can sit in the same range, and when they do not, the entries to bring back are listed at the end of this task.
 5. Delete the marker blocks, including the marker lines themselves, after integrating them.
 6. Do not commit. Do not modify any file other than {CHANGELOG_FILE}. Do not touch the sections of already-released versions or anything below them. Keep the `FIXME` placeholders in the header and table of contents — the release manager fills in the date and links at release time.
 
 The `gh` CLI is authenticated; use `gh pr view <N> --json title,body` when the skill requires consulting a pull request (reverts, unclear entries).
-{retry}"""
+{restore}{retry}"""
 
 
-def verify_edit(version, base_sha, pre_untracked=frozenset()):
+def disappeared_entries(old_text, text, anchor):
+    """Pull requests whose changelog entry the edit lost: an entry the previous
+    runs had already accumulated in the in-progress section, or one of this
+    run's raw entries from a strict-retention category.
+
+    Membership is checked against the whole file rather than the section: an
+    entry may legitimately sit in an already-released section (a pull request
+    merged into the last release branch after the cycle start appears in the
+    range but was already published), and it may have been moved to another
+    category."""
+    old_section = extract_in_progress_section(old_text, anchor) or ""
+    section = extract_in_progress_section(text, anchor) or ""
+    removed = extract_pr_links(old_section) - extract_pr_links(section)
+    strict_prs, _ = raw_strict_prs_and_reverts(old_text)
+    return removed | {pr for pr in strict_prs if f"/pull/{pr})" not in text}
+
+
+def revert_licensed_deletions(base_sha, version):
+    """The entries the verified edit deleted, each with the bullet it had
+    before, for the ledger: when the revert that licensed the deletion is
+    itself reverted - possibly weeks later, when nothing in the file or in the
+    raw blocks remembers the entry - it has to be restorable."""
+    old_text = Shell.get_output(f"git show {base_sha}:{CHANGELOG_FILE}", strict=True)
+    deletions = {}
+    for pr in disappeared_entries(old_text, _read_changelog(), _anchor_id(version)):
+        line = entry_line(old_text, pr)
+        if line:
+            deletions[pr] = line
+    return deletions
+
+
+def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     """Fail-closed checks after the editing agent ran, all against the
     pre-edit generate commit `base_sha` rather than a mutable HEAD (the agent
     has git access, and an agent-made commit must not bypass the checks).
+    `reverts` is the `analyze_reverts` verdict for the raw blocks of this run.
     Returns an error string or None."""
     if _sha("HEAD") != base_sha:
         return "The editing agent created commits instead of leaving the edit uncommitted"
@@ -662,43 +859,43 @@ def verify_edit(version, base_sha, pre_untracked=frozenset()):
     if not extract_toc_line(text, version):
         return f"Table-of-contents line for {version} is missing after edit"
     old_text = Shell.get_output(f"git show {base_sha}:{CHANGELOG_FILE}", strict=True)
-    section = extract_in_progress_section(text, anchor)
-    old_section = extract_in_progress_section(old_text, anchor) or ""
-    if section is None:
+    if extract_in_progress_section(text, anchor) is None:
         return "In-progress section disappeared after edit"
     # Entries must survive the edit: previously accumulated entries (the
-    # skill only deletes one when a newly arrived revert cancels it, section
-    # 2; merges keep all PR links, section 7), and today's raw entries from
-    # the strict-retention categories (the skill prunes only the junk
-    # sections; real entries are edited, merged, or moved — their PR links
-    # stay, otherwise the entry is silently lost forever because the state
-    # trailer has already advanced past it). A revert usually names the
-    # original PR only in its title, so per-entry attribution is not
-    # checkable — instead each revert entry in the raw block justifies at
-    # most one loss, and a raw block without reverts justifies none.
-    removed = extract_pr_links(old_section) - extract_pr_links(section)
-    strict_prs, revert_prs = raw_strict_prs_and_reverts(old_text)
-    # Membership is checked against the whole file: an entry may
-    # legitimately already sit in a previously released section (a PR merged
-    # into the last release branch after the cycle start appears in the
-    # range but was already published).
-    lost_new = {pr for pr in strict_prs if f"/pull/{pr})" not in text}
-    disappeared = removed | lost_new
-    if disappeared:
-        originals, unresolved = resolve_reverted_originals(revert_prs)
-        unmatched = disappeared - originals
-        if unmatched:
-            return (
-                f"Entries disappeared in the edit without a matching revert "
-                f"({sorted(unmatched)}); the raw block's reverts resolve to "
-                f"{sorted(originals) or 'nothing'}"
-                + (
-                    f", and reverts {unresolved} could not be resolved "
-                    f"(no `Reverts owner/repo#N` marker or failed lookup)"
-                    if unresolved
-                    else ""
-                )
+    # skill only deletes one when a revert cancels it, section 2; merges keep
+    # all PR links, section 7), and today's raw entries from the
+    # strict-retention categories (the skill prunes only the junk sections;
+    # real entries are edited, merged, or moved — their PR links stay,
+    # otherwise the entry is silently lost forever because the state trailer
+    # has already advanced past it). A revert usually names the original PR
+    # only in its title, so the deletion it licenses is bound to a PR number
+    # through `analyze_reverts`, not through the entry text.
+    unmatched = disappeared_entries(old_text, text, anchor) - set(reverts["credits"])
+    if unmatched:
+        return (
+            f"Entries disappeared in the edit without a matching revert "
+            f"({sorted(unmatched)}); the reverts of this release resolve to "
+            f"{sorted(reverts['credits']) or 'nothing'}"
+            + (
+                f", and reverts {reverts['unresolved']} could not be resolved "
+                f"(no `Reverts owner/repo#N` marker or failed lookup)"
+                if reverts["unresolved"]
+                else ""
             )
+        )
+    # The mirror image of the check above, and the reason the ledger exists:
+    # an entry an earlier run deleted for a revert that has since been
+    # reverted itself has to be back in the file. Nothing here disappeared -
+    # the entry went away days ago - so only the ledger can tell.
+    not_restored = sorted(
+        pr for pr in reverts["restore"] if f"/pull/{pr})" not in text
+    )
+    if not_restored:
+        return (
+            f"Entries deleted by an earlier run for a revert that was itself "
+            f"reverted are still missing ({not_restored}); those changes ship "
+            f"in this release, so their entries have to be restored"
+        )
     _, old_tail = split_at_first_released_section(old_text, anchor)
     _, new_tail = split_at_first_released_section(text, anchor)
     if old_tail.rstrip() != new_tail.rstrip():
@@ -717,12 +914,16 @@ def edit_raw_entries(version):
     # cleanup is pinned to this SHA, not to HEAD, which the agent can move.
     base_sha = _sha("HEAD")
     pre_untracked = _untracked_files()
+    # Resolving the reverts talks to GitHub, and every attempt starts from the
+    # same raw blocks, so it is done once for all of them.
+    refresh_gh_token()
+    reverts = analyze_reverts(_read_changelog())
     last_error = None
     for attempt in range(1, MAX_EDIT_ATTEMPTS + 1):
         # `last_error` still holds the rejection of the previous attempt here:
         # tell the agent about it, otherwise a retry just reproduces the same
         # edit and the same rejection.
-        prompt = _edit_prompt(version, last_error)
+        prompt = _edit_prompt(version, reverts, last_error)
         # Full reset to the generate commit: a failed attempt may have left
         # changes beyond CHANGELOG.md, new files, or even commits (all are
         # verify_edit failure modes), and they must not leak into the next
@@ -760,7 +961,7 @@ def edit_raw_entries(version):
             # The attempt itself can outlive the token; the verification
             # resolves reverts through `gh pr view`.
             refresh_gh_token()
-            last_error = verify_edit(version, base_sha, pre_untracked)
+            last_error = verify_edit(version, base_sha, reverts, pre_untracked)
         if not last_error:
             break
         print(
@@ -776,9 +977,20 @@ def edit_raw_entries(version):
             f"The raw entries stay committed and will be edited by the next run."
         )
 
+    # Record the revert bookkeeping of this run on the edit commit, so that a
+    # revert of one of today's reverts, whenever it arrives, still finds the
+    # relation and the text of the entry it has to bring back.
+    trailers = reverts["ledger"] + [
+        f"{DELETED_TRAILER} {pr} {line}"
+        for pr, line in sorted(
+            revert_licensed_deletions(base_sha, version).items(),
+            key=lambda kv: int(kv[0]),
+        )
+    ]
     message = (
         f"Update changelog for {version}: edit new entries\n\n"
         f"Edited by the NightlyChangelog CI job following {EDIT_SKILL}.\n"
+        + ("\n" + "\n".join(trailers) + "\n" if trailers else "")
     )
     Shell.check(f"git add {CHANGELOG_FILE}", strict=True)
     Shell.check(f"git commit -m {shlex.quote(message)}", verbose=True, strict=True)

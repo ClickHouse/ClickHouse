@@ -58,9 +58,10 @@ another bullet (§7), move it to another category (§6) — but its
 places: the `NOT FOR CHANGELOG / INSIGNIFICANT` and `NO CL ENTRY` bullets
 that carry no user-visible change (§3), the `Build/Testing/Packaging
 Improvement` entries that are pure CI plumbing (§4), and an entry that a
-revert in the same range cancels out (§2). "This looks unimportant" is not a
-reason to drop a real entry — an entry lost here is lost for good, because
-the changelog is generated once per range.
+revert cancels out — and that no later revert of that revert brings back
+(§2). "This looks unimportant" is not a reason to drop a real entry — an
+entry lost here is lost for good, because the changelog is generated once
+per range.
 
 The `NightlyChangelog` CI job enforces exactly this: a run whose edit drops
 such a link fails with `Entries disappeared in the edit without a matching
@@ -106,7 +107,9 @@ section. For each:
    or by a body containing `Reverts owner/repo#<this PR>`. If it is, the
    change ships in this release: go to step 6 and leave the original entry
    in place. A three-PR chain (change, revert, revert of the revert) sits
-   entirely inside one range often enough to matter.
+   entirely inside one range often enough to matter, and when the release is
+   edited incrementally, the chain is spread over several of those
+   increments (step 6).
 4. **If the original PR is in the same release range** and stays reverted:
    delete that entry from its category. Do **not** keep the revert PR as a
    separate bullet — the user should see no trace of either.
@@ -125,6 +128,16 @@ section. For each:
    `#109946`'s entry with `#114912`'s link appended — and no trace of
    `#114911`. Deleting `#109946` "because it was reverted" drops a fix that
    ships in the release.
+
+   When a release is edited in daily increments, the three PRs arrive on
+   three different days: the entry was integrated on the first day, deleted
+   on the second, and the third brings only the revert of the revert. The
+   original entry is then not in the file to be kept — it has to be re-added
+   from the text it had when it was deleted, which the caller supplies (the
+   `NightlyChangelog` job lists such entries with their previous text under
+   "Entries to restore"). If nothing supplies it, reconstruct the entry from
+   the original PR with `gh pr view <N> --json title,body`; do not leave the
+   release without it.
 7. After processing, delete any leftover bullets and the section header
    itself.
 
