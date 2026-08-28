@@ -80,14 +80,11 @@ std::string serializeMap(const Map & map)
 }
 
 template <typename Map>
-Map roundTripMap(const Map & src)
+void readMap(Map & dst, const std::string & bytes)
 {
-    const auto bytes = serializeMap(src);
-    Map dst;
     DB::ReadBufferFromString rb(bytes);
     dst.read(rb);
     EXPECT_TRUE(rb.eof()) << "serialized more than serializedPartitionCount() partitions";
-    return dst;
 }
 }
 
@@ -426,8 +423,10 @@ TEST(PartitionedFixedHashMap, WriteReadsTheFlatTableOnce)
         }
     };
 
-    auto serial_copy = roundTripMap(serial);
-    auto parallel_copy = roundTripMap(parallel);
+    Serial serial_copy;
+    Parallel parallel_copy;
+    readMap(serial_copy, serial_bytes);
+    readMap(parallel_copy, parallel_bytes);
     check_copy(serial, serial_copy);
     check_copy(parallel, parallel_copy);
     check_copy(serial_copy, parallel_copy);
