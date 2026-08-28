@@ -27,11 +27,3 @@ SELECT (y -> 1) IN (materialize(1)) SETTINGS transform_null_in = 1; -- { serverE
 -- Row-dependent right-hand side.
 SELECT number FROM numbers(3) WHERE (y -> 1) IN (number % 2, number % 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT number FROM numbers(3) WHERE (y -> 1) IN [number % 2, number % 3]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SET enable_analyzer = 0;
-
-SELECT (y -> 1) IN [materialize(1), 2]; -- { serverError UNEXPECTED_EXPRESSION }
-SELECT (y -> 1) IN (materialize((1, 2))); -- { serverError UNEXPECTED_EXPRESSION }
-SELECT (y -> 1) IN (materialize(1)); -- { serverError UNEXPECTED_EXPRESSION }
-SELECT number FROM numbers(3) WHERE (y -> 1) IN (number % 2, number % 3); -- { serverError UNEXPECTED_EXPRESSION }
-SELECT number FROM numbers(3) WHERE (y -> 1) IN [number % 2, number % 3]; -- { serverError UNEXPECTED_EXPRESSION }

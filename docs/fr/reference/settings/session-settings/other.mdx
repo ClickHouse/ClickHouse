@@ -16,6 +16,16 @@ import { CloudOnlyBadge } from "/snippets/fr/components/CloudOnlyBadge/CloudOnly
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="adaptive_aggregator_freeze_threshold">
+  ## adaptive_aggregator_freeze_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16384" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "Nouveau paramètre définissant le nombre de clés à partir duquel l’agrégateur adaptatif (`enable_adaptive_aggregator`) fige la table de hachage locale d’un thread."}]}]} />
+
+Nombre de clés à partir duquel l’agrégateur adaptatif fige la table de hachage locale d’un thread (voir `enable_adaptive_aggregator`). Des valeurs plus faibles maintiennent les tables figées dans le cache, tandis que des valeurs plus élevées leur permettent d’absorber davantage de clés fréquentes. La valeur 0 fige les tables dès que possible, ce qui fait que l’algorithme se comporte de manière similaire à l’agrégateur partitionné (`enable_sharding_aggregator`) : chaque clé est routée selon son hash et agrégée par un seul propriétaire, mais l’opération est reportée à la phase de fusion au lieu d’être échangée entre les threads pendant le parcours.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -149,6 +159,16 @@ Valeur par défaut dans Cloud : `1`.
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Valide les sommes de contrôle lors de la lecture. Ce paramètre est activé par défaut et doit toujours l’être en production. N’attendez aucun bénéfice de la désactivation de ce paramètre. Il ne doit être utilisé que pour des expérimentations et des benchmarks. Ce paramètre s’applique uniquement aux tables de la famille MergeTree. Les sommes de contrôle sont toujours validées pour les autres moteurs de table et lors de la réception de données sur le réseau.
+
+<div id="compression">
+  ## compression
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant d’appliquer une compression générique au corps de la réponse."}]}]} />
+
+Applique une compression générique au corps de la réponse, par exemple `compression=gz`. Notez que ce paramètre est indépendant de `Content-Encoding` (compression HTTP) et de l’ancien paramètre `compress` (compression native de ClickHouse). Indiquer une extension de fichier compressé dans le chemin d’URL produit le même effet.
+
+Il s’agit d’un paramètre de l’interface HTTP qui définit la forme de la réponse : il est pris en compte avant l’exécution de la requête (les tampons de réponse sont configurés à l’avance). Il doit donc être fourni via le paramètre d’URL HTTP, l’extension de fichier du chemin d’URL ou un profil utilisateur, et non via une clause `SETTINGS` dans la requête (où il n’a aucun effet et est rejeté).
 
 <div id="connection_pool_max_wait_ms">
   ## connection_pool_max_wait_ms
@@ -568,6 +588,22 @@ Stratégie de partitionnement par défaut pour les moteurs de type fichier. S’
 
 Nombre maximal de prefetches. Zéro signifie qu&#39;il n&#39;y a pas de limite. Il est toutefois recommandé d&#39;utiliser le paramètre `filesystem_prefetches_max_memory_usage` si vous souhaitez limiter le nombre de prefetches.
 
+<div id="filter">
+  ## filter
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant d’ajouter une clause WHERE autour d’une requête."}]}]} />
+
+Ajoute une clause `WHERE` à la requête en l’enveloppant dans une sous-requête. Plusieurs filtres sont combinés avec AND. L’interface HTTP autorise plusieurs paramètres d’URL `filter`, combinés avec AND dans l’ordre, ainsi qu’avec la valeur de ce paramètre.
+
+Il s’agit d’un paramètre de construction de requête appliqué par le moteur à la requête analysée (en l’enveloppant dans une table dérivée). Il se combine donc avec la requête existante et fonctionne avec tous les protocoles : il peut être fourni via le paramètre d’URL HTTP, une clause `SETTINGS` dans la requête ou un profil utilisateur.
+
+Il s’applique aux requêtes `SELECT` / `UNION` qui produisent des résultats. Pour une requête d’écriture (`INSERT … SELECT`, `CREATE … AS SELECT`), il ne prend effet que si le `SELECT` source l’inclut dans sa propre clause `SETTINGS` ; une valeur héritée d’un profil ou d’une session, ou définie sur l’instruction `INSERT` / `CREATE` elle-même, ne se propage pas au `SELECT` source — comme pour tout autre paramètre.
+
+<Danger>
+  `filter` n’est **pas** un mécanisme de contrôle d’accès et ne doit pas être utilisé à la place des [politiques de sécurité au niveau des lignes](/fr/concepts/features/security/access-rights#row-policy-management) ou du paramètre `additional_table_filters`. Il ajoute uniquement une clause `WHERE` à la sous-requête enveloppante ; les données sous-jacentes sont donc toujours lues et traitées avant l’application du filtre — une requête peut observer les lignes exclues par le filtre pendant leur traitement (par exemple, avec `throwIf` afin de divulguer des informations par le biais du chemin d’erreur). Utilisez la sécurité au niveau des lignes ou `additional_table_filters` pour restreindre les lignes auxquelles un utilisateur peut accéder.
+</Danger>
+
 <div id="final">
   ## final
 </div>
@@ -692,6 +728,14 @@ ORDER BY tuple()
 SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+<div id="format">
+  ## format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant de surcharger le FORMAT de la requête, en entrée comme en sortie."}]}]} />
+
+Remplace le `FORMAT` de la requête, tant en entrée qu&#39;en sortie. Prévaut sur le format spécifié dans la requête et dans l’extension du fichier. Les paramètres plus spécifiques `input_format` et `output_format` prévalent sur ce paramètre générique `format` dans leur sens respectif.
 
 <div id="framing_output_format">
   ## framing_output_format
@@ -877,6 +921,14 @@ S&#39;applique uniquement à une profondeur de sous-requête = 0. Les sous-requ�
 Si la structure de premier niveau est UNION, &#39;ORDER BY rand()&#39; est injecté indépendamment dans chacune des branches.
 Utile uniquement pour les tests et le développement (l&#39;absence de ORDER BY est une source de résultats de requête non déterministes).
 
+<div id="input_format">
+  ## input_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant de surcharger le format d'entrée de la requête."}]}]} />
+
+Remplace le format d&#39;entrée de la requête. Prévaut sur le format spécifié dans la requête.
+
 <div id="interactive_delay">
   ## interactive_delay
 </div>
@@ -917,14 +969,20 @@ Répertorie tous les noms des éléments des grands littéraux tuple dans leurs 
   ## limit
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-Définit le nombre maximal de lignes à renvoyer dans le résultat de la requête. Ce paramètre ajuste la valeur définie par la clause [LIMIT](/fr/reference/statements/select/limit), de sorte que la limite spécifiée dans la requête ne puisse pas dépasser celle définie par ce paramètre.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Type étendu de UInt64 à Float pour prendre en charge les valeurs négatives et fractionnaires, avec transmission à la prise en charge native par ClickHouse des valeurs négatives\/fractionnaires pour `LIMIT`."}]}]} />
+
+Définit le nombre maximal de lignes à renvoyer dans le résultat de la requête. Ajuste la valeur définie par la clause [LIMIT](/fr/reference/statements/select/limit). La valeur est transmise à `LIMIT` et accepte tout ce que `LIMIT` accepte, y compris les valeurs négatives (comptées à partir de la fin du résultat) et les fractions dans `(0, 1)` (interprétées comme une proportion du résultat).
 
 Valeurs possibles :
 
 * 0 — Le nombre de lignes n’est pas limité.
-* Entier positif.
+* Entier positif — nombre exact de lignes.
+* Entier négatif — renvoie les N dernières lignes.
+* Nombre réel dans l’intervalle ouvert `(0, 1)` — renvoie cette fraction du résultat.
+
+Ce paramètre détermine la forme des requêtes `SELECT` / `UNION` produisant un résultat. Pour une requête d’écriture (`INSERT … SELECT`, `CREATE … AS SELECT`), il ne prend effet que si le `SELECT` source l’inclut dans sa propre clause `SETTINGS` ; une valeur héritée d’un profil ou d’une session, ou définie sur l’instruction `INSERT` / `CREATE` elle-même, ne se propage pas au `SELECT` source — comme pour tout autre paramètre.
 
 <div id="load_marks_asynchronously">
   ## load_marks_asynchronously
@@ -1026,14 +1084,18 @@ Ramener les noms de fonctions à leur forme canonique
   ## offset
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-Définit le nombre de lignes à ignorer avant de commencer à renvoyer les lignes de la requête. Il ajuste l’offset défini par la clause [OFFSET](/fr/reference/statements/select/offset), de sorte que ces deux valeurs soient additionnées.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Type étendu de UInt64 à Float afin de prendre en charge les valeurs négatives et fractionnaires, transmises directement à la prise en charge native par ClickHouse des `OFFSET` négatifs\/fractionnaires."}]}]} />
+
+Définit le nombre de lignes à ignorer avant de commencer à renvoyer les lignes de la requête. Ajuste le décalage défini par la clause [OFFSET](/fr/reference/statements/select/offset). La valeur est transmise à `OFFSET` et accepte tout ce que `OFFSET` accepte, y compris les valeurs négatives et les fractions dans `(0, 1)`.
 
 Valeurs possibles :
 
 * 0 — Aucune ligne n’est ignorée.
 * Entier positif.
+* Entier négatif.
+* Nombre réel dans la plage ouverte `(0, 1)` — ignore cette fraction du résultat.
 
 **Exemple**
 
@@ -1061,6 +1123,42 @@ Résultat :
 │ 109 │
 └─────┘
 ```
+
+Ce paramètre s’applique aux requêtes `SELECT` / `UNION` qui produisent des résultats. Pour une requête d’écriture (`INSERT … SELECT`, `CREATE … AS SELECT`), il ne prend effet que si le `SELECT` source l’inclut dans sa propre clause `SETTINGS` ; une valeur héritée d’un profil ou d’une session, ou définie sur l’instruction `INSERT` / `CREATE` elle-même, ne se propage pas au `SELECT` source — comme pour tout autre paramètre.
+
+<div id="order">
+  ## order
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant d’ajouter une clause ORDER BY autour d’une requête."}]}]} />
+
+Ajoute une clause `ORDER BY` à la requête en l’enveloppant dans une sous-requête. Accepte une liste arbitraire d’expressions.
+
+Il s’agit d’un paramètre de construction de requête appliqué par le moteur à la requête analysée (en l’enveloppant dans une table dérivée). Il se combine donc avec la requête existante et fonctionne avec tous les protocoles : il peut être fourni via le paramètre d’URL HTTP, une clause `SETTINGS` dans la requête ou un profil utilisateur.
+
+Il s’applique aux requêtes `SELECT` / `UNION` produisant des résultats. Pour une requête d’écriture (`INSERT … SELECT`, `CREATE … AS SELECT`), il ne prend effet que lorsque le `SELECT` source l’inclut dans sa propre clause `SETTINGS` ; une valeur héritée d’un profil ou d’une session, ou définie sur l’instruction `INSERT` / `CREATE` elle-même, ne se propage pas au `SELECT` source — conformément à la règle de non-propagation qui s’applique à tout autre paramètre.
+
+<div id="output_format">
+  ## output_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant de surcharger le format de sortie de la requête."}]}]} />
+
+Surcharge le format de sortie de la requête. Prend le pas sur le format spécifié dans la requête, dans l’extension de fichier ou via `default_format`.
+
+<div id="page">
+  ## page
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre pour les réponses HTTP paginées, équivalent à offset = limit * (page - 1). Float afin d’accepter des valeurs négatives ou fractionnaires (transmises à SQL `LIMIT`\/`OFFSET`)."}]}]} />
+
+Définit le numéro de page des résultats paginés. Équivalent à `offset = limit * (page - 1)`. Ne peut être spécifié que si `limit` est défini et que `offset` ne l’est pas. Les pages sont indexées à partir de 1. Prend en charge les mêmes valeurs négatives et fractionnaires que `limit` et `offset`.
+
+Il s’agit d’un paramètre de construction de requête appliqué par le moteur à la requête analysée (en l’enveloppant dans une table dérivée). Il se combine donc avec la requête existante et fonctionne avec tous les protocoles : il peut être fourni via le paramètre d’URL HTTP, une clause `SETTINGS` dans la requête ou un profil utilisateur.
+
+Il s’applique aux requêtes `SELECT` / `UNION` qui produisent des résultats. Pour une requête d’écriture (`INSERT … SELECT`, `CREATE … AS SELECT`), il ne prend effet que lorsque le `SELECT` source l’inclut dans sa propre clause `SETTINGS` ; une valeur héritée d’un profil ou d’une session, ou définie dans l’instruction `INSERT` / `CREATE` elle-même, ne se propage pas au `SELECT` source — conformément à la règle de non-propagation applicable à tout autre paramètre.
 
 <div id="paimon_target_snapshot_id">
   ## paimon_target_snapshot_id
@@ -1418,6 +1516,18 @@ Lorsqu’il est activé, ClickHouse fournit la valeur exacte de la statistique r
 
 Active l’algorithme de filtrage groupé pour les indices. Il devrait toujours offrir de meilleures performances, mais ce paramètre est conservé pour des raisons de compatibilité et de contrôle.
 
+<div id="select">
+  ## select
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant d’encapsuler une requête dans `SELECT <expr_list> FROM (<query>)`."}]}]} />
+
+Encapsule la requête dans une sous-requête avec une liste d’expressions `SELECT` explicite. Lorsqu’elle n’est pas vide, la requête qui produit des résultats est encapsulée dans `SELECT <expr_list> FROM (<query>)`.
+
+Il s’agit d’un paramètre de construction de requête appliqué par le moteur à la requête analysée (en l’encapsulant dans une table dérivée). Il se combine avec la requête existante et fonctionne avec tous les protocoles : il peut être fourni via un paramètre d’URL HTTP, une clause `SETTINGS` dans la requête ou un profil utilisateur.
+
+Il détermine la forme des requêtes `SELECT` / `UNION` produisant des résultats. Pour une requête d’écriture (`INSERT … SELECT`, `CREATE … AS SELECT`), il ne prend effet que lorsque le `SELECT` source l’inclut dans sa propre clause `SETTINGS` ; une valeur héritée d’un profil ou d’une session, ou définie dans l’instruction `INSERT` / `CREATE` elle-même, ne se propage pas au `SELECT` source — conformément à la règle de non-propagation applicable à tout autre paramètre.
+
 <div id="select_sequential_consistency">
   ## select_sequential_consistency
 </div>
@@ -1607,6 +1717,18 @@ Valeurs possibles :
 
 * `basic` — format de bloc Hadoop snappy. Compatible avec les fichiers lus et écrits par Hadoop. Prend en charge la lecture et l’écriture.
 * `framed` — format de tramage Snappy, le format de streaming standard défini par Google. Prend en charge la lecture et l’écriture.
+
+<div id="sort">
+  ## sort
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant d’ajouter une clause ORDER BY simple autour d’une requête."}]}]} />
+
+Ajoute une clause `ORDER BY` simple à la requête en l’enveloppant dans une sous-requête. Accepte une liste d’identifiants ou de références positionnelles à des colonnes (entiers positifs), séparées par des virgules, avec un préfixe facultatif `+` (ASC) ou `-` (DESC). Exemple : `sort=a,-b` trie selon `a` par ordre croissant et `b` par ordre décroissant ; `sort=1,-2` trie selon la première colonne par ordre croissant et la deuxième par ordre décroissant. Ne peut pas être combiné avec `order`.
+
+Il s’agit d’un paramètre de construction de requête appliqué par le moteur à la requête analysée (en l’encapsulant dans une table dérivée). Il se combine donc avec la requête existante et fonctionne avec tous les protocoles : il peut être fourni via le paramètre d’URL HTTP, une clause `SETTINGS` dans la requête ou un profil utilisateur.
+
+Il s’applique aux requêtes `SELECT` / `UNION` produisant des résultats. Pour une requête d’écriture (`INSERT … SELECT`, `CREATE … AS SELECT`), il ne prend effet que si le `SELECT` source l’inclut dans sa propre clause `SETTINGS` ; une valeur héritée d’un profil ou d’une session, ou définie sur l’instruction `INSERT` / `CREATE` elle-même, ne se propage pas au `SELECT` source — conformément à la règle de non-propagation qui s’applique à tout autre paramètre.
 
 <div id="sort_overflow_mode">
   ## sort_overflow_mode
