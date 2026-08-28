@@ -1,4 +1,5 @@
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
@@ -22,11 +23,17 @@
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <IO/SharedThreadPools.h>
+#include <base/sleep.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -41,6 +48,7 @@ namespace Setting
 extern const SettingsBool fsync_metadata;
 extern const SettingsUInt64 max_parser_backtracks;
 extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
 }
 namespace ErrorCodes
 {
@@ -51,8 +59,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int QUERY_IS_TOO_LARGE;
     extern const int THERE_IS_NO_QUERY;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int FAULT_INJECTED;
+}
+namespace FailPoints
+{
+    extern const char database_catalog_throw_on_table_shutdown[];
+    extern const char database_catalog_throw_on_table_prepare_shutdown[];
+    extern const char database_catalog_shutdown_sleep_per_table[];
 }
 namespace
 {
@@ -84,7 +100,8 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
-    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
+    DefaultExpressionsInfo default_expr_info;
+    default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
 
     for (const auto & ast : columns.columns->children)
     {
@@ -101,6 +118,9 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
             LOG_WARNING(getLogger("validateCreateQuery"), "Couldn't get column description for column {}", col_decl.name);
     }
 
+    /// Validates the whole resulting metadata (also for ordinary ALTERs), so do not enforce the
+    /// virtual-column rule here: a legacy table may already have such a default and an unrelated ALTER
+    /// must not fail on it. New/modified defaults are checked by AlterCommands::validate.
     if (default_expr_info.expr_list)
         validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
 
@@ -135,8 +155,32 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     if (storage.sample_by)
         KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, virtuals, context);
     if (storage.ttl_table && primary_key.has_value())
-        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
+        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, TTLValidationMode::Attach);
 }
+}
+
+void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context)
+{
+    /// Temporary tables have no on-disk metadata, so the max_query_size check does not apply.
+    if (table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        return;
+
+    size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
+    if (!max_query_size)
+        return;
+
+    auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, context);
+    applyMetadataChangesToCreateQuery(ast, metadata, context);
+    auto statement = getObjectDefinitionFromCreateQuery(ast);
+
+    if (statement.size() > max_query_size)
+        throw Exception(
+            ErrorCodes::QUERY_IS_TOO_LARGE,
+            "The resulting metadata of table {} ({} bytes) would exceed max_query_size ({}), "
+            "which would make the table unloadable. Reduce the number of columns or increase max_query_size.",
+            table_id.getNameForLogs(),
+            statement.size(),
+            max_query_size);
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, const bool validate_new_create_query)
@@ -564,25 +608,160 @@ void DatabaseWithOwnTablesBase::shutdown()
         tables_snapshot = tables;
     }
 
-    for (const auto & kv : tables_snapshot)
-    {
-        kv.second->flushAndPrepareForShutdown();
-    }
+    /// A failing table shutdown must still release the references the catalog holds (the UUID ->
+    /// storage mappings): otherwise the storage stays alive until DatabaseCatalog is destroyed at
+    /// process exit, after loggers and static pools are gone, which aborts. Record the first error
+    /// and rethrow it once all cleanup has run.
+    std::exception_ptr first_error;
 
+    /// Prepare phase runs sequentially. Some tables flush into other tables here (e.g. a Buffer
+    /// table flushes to its destination in flushAndPrepareForShutdown); doing this in parallel
+    /// could write into a table that has already entered shutdown-prepared read-only mode and
+    /// silently drop rows. This phase is cheap relative to the shutdown drain below.
     for (const auto & kv : tables_snapshot)
     {
         auto table_id = kv.second->getStorageID();
-        kv.second->flushAndShutdown();
-        if (table_id.hasUUID())
+        try
         {
-            chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+            fiu_do_on(FailPoints::database_catalog_throw_on_table_prepare_shutdown,
+            {
+                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while preparing to shut down table {}", table_id.getNameForLogs());
+            });
+            kv.second->flushAndPrepareForShutdown();
+        }
+        catch (...)
+        {
+            if (!first_error)
+                first_error = std::current_exception();
+            tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
         }
     }
 
-    std::lock_guard lock(mutex);
-    tables.clear();
-    snapshot_detached_tables.clear();
+    /// Shutdown phase runs in parallel. IStorage::shutdown is the expensive, table-independent work
+    /// (ZooKeeper sessions, interserver endpoints, background pools) and is documented safe to call
+    /// concurrently. Prepare already ran above, so call shutdown() directly rather than
+    /// flushAndShutdown() — that avoids re-running the prepare/flush and racing dependent tables.
+    if (!tables_snapshot.empty())
+    {
+        Stopwatch watch;
+        const auto db_name = getDatabaseName();
+        /// Tables carrying a UUID require the database to have one too (memory-backed databases
+        /// like system / information_schema have neither).
+        if (tables_snapshot.begin()->second->getStorageID().hasUUID())
+            chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+
+        /// Errors from the parallel tasks are collected here. Held in a shared_ptr so a task that
+        /// somehow outlives this frame cannot dangle a reference into it.
+        struct ErrorRecorder
+        {
+            std::mutex mutex;
+            std::exception_ptr error;
+            void record(std::exception_ptr e)
+            {
+                std::lock_guard lock(mutex);
+                if (!error)
+                    error = e;
+            }
+        };
+        auto recorder = std::make_shared<ErrorRecorder>();
+
+        /// Lazy-init for non-server binaries (client/keeper) that reach this via a Database destructor.
+        auto & shared_pool = getDatabaseCatalogShutdownTablesThreadPool();
+        shared_pool.initializeWithDefaultSettingsIfNotInitialized();
+        ThreadPoolCallbackRunnerLocal<void> runner(shared_pool.get(), ThreadName::SHUTDOWN_TABLES);
+        /// Reserve so enqueueAndKeepTrack can't fail while tracking an already-scheduled task,
+        /// which would make the inline fallback run a duplicate.
+        runner.reserve(tables_snapshot.size());
+
+        for (const auto & kv : tables_snapshot)
+        {
+            /// Capture only owned state (shared_ptr / logger), never `this` or the stack frame.
+            auto run_task = [log_ptr = log, table = kv.second, recorder]
+            {
+                std::optional<StorageID> table_id;
+                try
+                {
+                    table_id = table->getStorageID();
+                }
+                catch (...)
+                {
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, "Failed to read storage ID during shutdown");
+                    return;
+                }
+
+                try
+                {
+                    fiu_do_on(FailPoints::database_catalog_shutdown_sleep_per_table,
+                    {
+                        /// Skip predefined databases so a test enabling this failpoint only slows
+                        /// the user database under test.
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
+                            sleepForSeconds(1);
+                    });
+
+                    fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
+                    {
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id->getNameForLogs());
+                    });
+                    table->shutdown();
+                }
+                catch (...)
+                {
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, fmt::format("Failed to shut down table {}", table_id->getNameForLogs()));
+                }
+
+                /// Release the catalog's reference even if shutdown() threw.
+                if (table_id->hasUUID())
+                {
+                    try
+                    {
+                        DatabaseCatalog::instance().removeUUIDMapping(table_id->uuid);
+                    }
+                    catch (...)
+                    {
+                        recorder->record(std::current_exception());
+                        tryLogCurrentException(log_ptr, fmt::format("Failed to remove UUID mapping for table {}", table_id->getNameForLogs()));
+                    }
+                }
+            };
+
+            try
+            {
+                runner.enqueueAndKeepTrack(run_task);
+            }
+            catch (...)
+            {
+                /// Scheduling failed (fault injector, pool exhausted). Run inline so this table is
+                /// still shut down and its reference released. Reserve above guarantees this only
+                /// happens when the task was never scheduled, so there is no duplicate.
+                tryLogCurrentException(log, "Failed to schedule shutdown task, running inline");
+                run_task();
+            }
+        }
+        runner.waitForAllToFinish();
+
+        {
+            std::lock_guard lock(recorder->mutex);
+            if (!first_error)
+                first_error = recorder->error;
+        }
+
+        LOG_INFO(log, "Shut down {} tables in {} in {} ms",
+            tables_snapshot.size(), backQuoteIfNeed(db_name), watch.elapsedMilliseconds());
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        tables.clear();
+        snapshot_detached_tables.clear();
+    }
+
+    if (first_error)
+        std::rethrow_exception(first_error);
 }
 
 DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()

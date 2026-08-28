@@ -1,0 +1,34 @@
+---
+description: 'وثائق تصف مُعدِّل APPLY الذي يتيح لك استدعاء دالة معيّنة لكل صف تُرجعه عبارة جدول خارجية ضمن استعلام.'
+sidebarTitle: 'REPLACE'
+slug: /sql-reference/statements/select/replace-modifier
+title: 'مُعدِّل REPLACE'
+keywords: ['REPLACE', 'مُعدِّل']
+doc_type: 'reference'
+---
+
+> يتيح لك تحديد اسم مستعار واحد أو أكثر لـ [التعبيرات](/ar/reference/syntax#expression-aliases).
+
+يجب أن يطابق كل اسم مستعار اسمَ عمود من عبارة `SELECT *`. في قائمة الأعمدة الناتجة، يُستبدل العمود الذي يطابق
+الاسم المستعار بالتعبير الموجود في `REPLACE` ذلك.
+
+لا يغيّر هذا المُعدِّل أسماء الأعمدة أو ترتيبها. لكنه قد يغيّر القيمة ونوعها.
+
+**الصياغة:**
+
+```sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**مثال:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```

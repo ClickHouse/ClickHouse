@@ -267,7 +267,6 @@ class DictionaryStructure(object):
             or_default = ""
             field_name = ""
             date_expr = ""
-            def_for_get = ""
         else:
             what = "Get"
 

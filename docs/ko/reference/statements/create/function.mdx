@@ -1,0 +1,86 @@
+---
+description: 'FUNCTION 문서'
+sidebarTitle: 'FUNCTION'
+slug: /sql-reference/statements/create/function
+title: 'CREATE FUNCTION - 사용자 정의 함수(UDF)'
+doc_type: 'reference'
+---
+
+람다 표현식으로 사용자 정의 함수(UDF)를 생성합니다. 이 표현식은 함수 매개변수, 상수, 연산자 또는 다른 함수 호출로만 구성되어야 합니다.
+
+**구문**
+
+```sql
+CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
+```
+
+함수는 매개변수를 임의의 개수만큼 가질 수 있습니다.
+
+다음과 같은 몇 가지 제약이 있습니다.
+
+* 함수 이름은 사용자 정의 함수 및 시스템 함수 전체에서 고유해야 합니다.
+* 재귀 함수는 허용되지 않습니다.
+* 함수에서 사용하는 모든 변수는 해당 함수의 매개변수 목록에 지정되어 있어야 합니다.
+
+제약을 하나라도 위반하면 예외가 발생합니다.
+
+**예시**
+
+```sql title="Query"
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
+```
+
+```text title="Response"
+┌─number─┬─plus(multiply(2, number), 1)─┐
+│      0 │                            1 │
+│      1 │                            3 │
+│      2 │                            5 │
+└────────┴──────────────────────────────┘
+```
+
+다음 쿼리에서는 사용자 정의 함수 내에서 [조건 함수](/ko/reference/functions/regular-functions/conditional-functions)를 호출합니다:
+
+```sql title="Query"
+CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');
+SELECT number, parity_str(number) FROM numbers(3);
+```
+
+```text title="Response"
+┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
+│      0 │ even                                 │
+│      1 │ odd                                  │
+│      2 │ even                                 │
+└────────┴──────────────────────────────────────┘
+```
+
+기존 UDF 교체:
+
+```sql title="Query"
+CREATE FUNCTION exampleReplaceFunction AS frame -> frame;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+CREATE OR REPLACE FUNCTION exampleReplaceFunction AS frame -> frame + 1;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+```
+
+```text title="Response"
+┌─create_query─────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> frame │
+└──────────────────────────────────────────────────────────┘
+
+┌─create_query───────────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> (frame + 1) │
+└────────────────────────────────────────────────────────────────┘
+```
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+<div id="executable-udfs">
+  ### [실행형 UDF](/ko/reference/functions/regular-functions/udf).
+</div>
+
+<div id="user-defined-functions-in-clickhouse-cloud">
+  ### [ClickHouse Cloud의 사용자 정의 함수](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
+</div>

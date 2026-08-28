@@ -1,21 +1,23 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
-#include <Core/Settings.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/Context.h>
@@ -29,15 +31,21 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
 #include <fmt/ranges.h>
+
+#include <numeric>
 
 namespace ProfileEvents
 {
@@ -45,9 +53,10 @@ namespace ProfileEvents
     extern const Event TextIndexReadSparseIndexBlocks;
     extern const Event TextIndexReadGranulesMicroseconds;
     extern const Event TextIndexReadPostings;
-    extern const Event TextIndexUsedEmbeddedPostings;
     extern const Event TextIndexTokensCacheHits;
     extern const Event TextIndexTokensCacheMisses;
+    extern const Event TextIndexTokensCacheNegativeHits;
+    extern const Event TextIndexTokensCacheNegativeMisses;
     extern const Event TextIndexDiscardPatternScan;
 }
 
@@ -61,6 +70,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace MergeTreeSetting
@@ -69,65 +79,137 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
+    extern const MergeTreeSettingsMergeTreeTextIndexSerializationVersion text_index_serialization_version;
+    extern const MergeTreeSettingsBool allow_experimental_text_index_phrase_search;
 }
 
 namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsBool use_text_index_negative_tokens_cache;
 }
 
-static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
-static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
+/// The enum values are written verbatim into the text index header and must remain stable.
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
 
-static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
-static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
-
-bool DictionaryBlockBase::empty() const
-{
-    return !tokens || tokens->empty();
-}
-
-size_t DictionaryBlockBase::size() const
-{
-    return tokens ? tokens->size() : 0;
-}
-
-size_t DictionaryBlockBase::upperBound(std::string_view token) const
-{
-    auto range = collections::range(0, tokens->size());
-
-    auto it = std::upper_bound(range.begin(), range.end(), token, [this](std::string_view lhs_ref, size_t rhs_idx)
-    {
-        return lhs_ref < assert_cast<const ColumnString &>(*tokens).getDataAt(rhs_idx);
-    });
-
-    return it - range.begin();
-}
-
-DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_)
-    : DictionaryBlockBase(std::move(tokens_)), offsets_in_file(std::move(offsets_in_file_))
-{
-}
-
-UInt64 DictionarySparseIndex::getOffsetInFile(size_t idx) const
-{
-    return assert_cast<const ColumnUInt64 &>(*offsets_in_file).getData()[idx];
-}
-
-size_t DictionarySparseIndex::memoryUsageBytes() const
-{
-    return sizeof(*this) + tokens->allocatedBytes() + offsets_in_file->allocatedBytes();
-}
+/// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
+/// an index's positions value change after parts exist, mixing positional and non-positional parts
+/// within one index.
+static constexpr bool DEFAULT_POSITIONS = false;
 
 DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
-    : DictionaryBlockBase(std::move(tokens_))
+    : tokens(std::move(tokens_))
     , token_infos(std::move(token_infos_))
     , tokens_format(tokens_format_)
 {
 }
 
-PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeIndexVersion serialization_version_)
+bool DictionaryBlock::empty() const
+{
+    return !tokens || tokens->empty();
+}
+
+size_t DictionaryBlock::size() const
+{
+    return tokens ? tokens->size() : 0;
+}
+
+DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_)
+    : tokens(std::move(tokens_)), offsets_in_file(std::move(offsets_in_file_))
+{
+}
+
+size_t DictionarySparseIndex::size() const
+{
+    if (const auto * tokens_column = std::get_if<ColumnPtr>(&tokens))
+        return *tokens_column ? (*tokens_column)->size() : 0;
+
+    return std::get<BitPackedStringArray>(tokens).size();
+}
+
+size_t DictionarySparseIndex::upperBound(std::string_view token) const
+{
+    auto range = collections::range(0, size());
+
+    auto it = std::upper_bound(range.begin(), range.end(), token, [this](std::string_view lhs, size_t rhs_idx)
+    {
+        return lhs < getToken(rhs_idx);
+    });
+
+    return it - range.begin();
+}
+
+std::string_view DictionarySparseIndex::getToken(size_t idx) const
+{
+    if (const auto * tokens_column = std::get_if<ColumnPtr>(&tokens))
+        return assert_cast<const ColumnString &>(**tokens_column).getDataAt(idx);
+
+    return std::get<BitPackedStringArray>(tokens).get(idx);
+}
+
+UInt64 DictionarySparseIndex::getOffsetInFile(size_t idx) const
+{
+    if (const auto * offsets_column = std::get_if<ColumnPtr>(&offsets_in_file))
+        return assert_cast<const ColumnUInt64 &>(**offsets_column).getData()[idx];
+
+    return std::get<BitPackedUInt64Array>(offsets_in_file).get(idx);
+}
+
+ColumnPtr DictionarySparseIndex::getTokensColumn() const
+{
+    const auto * tokens_column = std::get_if<ColumnPtr>(&tokens);
+    if (!tokens_column || !*tokens_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokens in sparse index of text index must not be bit-packed here");
+
+    return *tokens_column;
+}
+
+ColumnPtr DictionarySparseIndex::getOffsetsColumn() const
+{
+    const auto * offsets_column = std::get_if<ColumnPtr>(&offsets_in_file);
+    if (!offsets_column || !*offsets_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets in sparse index of text index must not be bit-packed here");
+
+    return *offsets_column;
+}
+
+size_t DictionarySparseIndex::memoryUsageBytes() const
+{
+    size_t tokens_bytes = 0;
+    size_t offsets_bytes = 0;
+
+    if (const auto * tokens_column = std::get_if<ColumnPtr>(&tokens))
+        tokens_bytes = (*tokens_column) ? (*tokens_column)->allocatedBytes() : 0;
+    else
+        tokens_bytes = std::get<BitPackedStringArray>(tokens).allocatedBytes();
+
+    if (const auto * offsets_column = std::get_if<ColumnPtr>(&offsets_in_file))
+        offsets_bytes = (*offsets_column) ? (*offsets_column)->allocatedBytes() : 0;
+    else
+        offsets_bytes = std::get<BitPackedUInt64Array>(offsets_in_file).allocatedBytes();
+
+    return sizeof(*this) + tokens_bytes + offsets_bytes;
+}
+
+void DictionarySparseIndex::optimize()
+{
+    if (const auto * tokens_column = std::get_if<ColumnPtr>(&tokens); tokens_column && *tokens_column)
+    {
+        const auto & tokens_string = assert_cast<const ColumnString &>(**tokens_column);
+        tokens = BitPackedStringArray(tokens_string.getChars(), tokens_string.getOffsets());
+    }
+
+    if (const auto * offsets_column = std::get_if<ColumnPtr>(&offsets_in_file); offsets_column && *offsets_column)
+    {
+        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(**offsets_column).getData();
+        offsets_in_file = BitPackedUInt64Array(std::span(offsets_data.begin(), offsets_data.end()));
+    }
+}
+
+PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexSerializationVersion serialization_version_)
     : posting_list_codec(std::move(posting_list_codec_))
     , serialization_version(serialization_version_)
     , raw_postings_buffer(MAX_CARDINALITY_FOR_RAW_POSTINGS)
@@ -135,31 +217,17 @@ PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_co
     chassert(posting_list_codec);
 }
 
-void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr)
+void PostingsSerialization::serializeBitmap(const roaring::api::roaring_bitmap_t & postings, WriteBuffer & ostr)
 {
-    if (header & RawPostings)
-    {
-        roaring::api::roaring_uint32_iterator_t it;
-        roaring_iterator_init(&postings, &it);
+    size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&postings);
+    writeVarUInt(num_bytes, ostr);
 
-        while (it.has_value)
-        {
-            writeVarUInt(it.current_value, ostr);
-            roaring::api::roaring_uint32_iterator_advance(&it);
-        }
-    }
-    else
-    {
-        size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&postings);
-        writeVarUInt(num_bytes, ostr);
-
-        std::vector<char> memory(num_bytes);
-        roaring::api::roaring_bitmap_portable_serialize(&postings, memory.data());
-        ostr.write(memory.data(), num_bytes);
-    }
+    raw_data_buffer.resize(num_bytes);
+    roaring::api::roaring_bitmap_portable_serialize(&postings, raw_data_buffer.data());
+    ostr.write(raw_data_buffer.data(), num_bytes);
 }
 
-void PostingsSerialization::serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
+void PostingsSerialization::serializeCompressed(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
 {
     chassert(info.header & IsCompressed);
     chassert(posting_list_codec);
@@ -167,59 +235,70 @@ void PostingsSerialization::serialize(const PostingList & postings, TokenPosting
     posting_list_codec->encode(postings, posting_list_block_size, info, ostr);
 }
 
-void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
+void PostingsSerialization::serializeRaw(std::span<const UInt32> postings, WriteBuffer & ostr)
 {
-    if (info.header & IsCompressed)
-    {
-        serialize(postings.getLarge(), info, posting_list_block_size, ostr);
-    }
-    else if (postings.isLarge())
-    {
-        postings.getLarge().runOptimize();
-        serialize(postings.getLarge().roaring, info.header, ostr);
-    }
-    else
-    {
-        chassert(info.header & RawPostings);
-        size_t cardinality = postings.size();
-        const auto & array = postings.getSmall();
-
-        for (size_t i = 0; i < cardinality; ++i)
-            writeVarUInt(array[i], ostr);
-    }
+    for (UInt32 row_id : postings)
+        writeVarUInt(row_id, ostr);
 }
 
-PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
+std::span<const UInt32> PostingsSerialization::toRawPostings(const PostingListBuilder & postings)
 {
-    if (header & IsCompressed)
+    size_t cardinality = postings.size();
+
+    if (postings.isSmall())
+        return std::span<const UInt32>(postings.getSmall().data(), cardinality);
+
+    if (cardinality > raw_postings_buffer.size())
+        raw_postings_buffer.resize(cardinality);
+
+    postings.getLarge().toUint32Array(raw_postings_buffer.data());
+    return std::span<const UInt32>(raw_postings_buffer.data(), cardinality);
+}
+
+const IPostingListCodec & PostingsSerialization::resolveCodec(UInt64 header)
+{
+    if (!posting_list_codec)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "No posting list codec is configured");
+
+    /// An uncompressed posting list is always a plain serialized roaring bitmap.
+    if (!(header & IsCompressed))
     {
-        if (!posting_list_codec)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Posting list header marks compressed data but no codec is configured");
-        }
-
-        static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
-
-        if (serialization_version < required_version)
-        {
-            /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
-            /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
-            if (posting_list_codec->getType() == IPostingListCodec::Type::None)
-                posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
-        }
-
-        if (posting_list_codec->getType() == IPostingListCodec::Type::None)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Posting list header marks compressed data but configured codec is None");
-        }
-
-        auto postings = std::make_shared<PostingList>();
-        posting_list_codec->decode(istr, *postings);
-        return postings;
+        static const PostingListCodecNone codec_none;
+        return codec_none;
     }
-    else if (header & RawPostings)
+
+    if (serialization_version < MergeTreeTextIndexSerializationVersion::V1_WithCodec)
+    {
+        /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
+        /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
+        if (posting_list_codec->getType() == IPostingListCodec::Type::None)
+            posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+    }
+
+    if (posting_list_codec->getType() == IPostingListCodec::Type::None)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Posting list header marks compressed data but configured codec is None");
+    }
+
+    return *posting_list_codec;
+}
+
+/// Raw posting lists are never compressed, so the flags are mutually exclusive.
+static void checkPostingListFlags(UInt64 header)
+{
+    using Flags = PostingsSerialization::Flags;
+
+    if ((header & Flags::RawPostings) && (header & Flags::IsCompressed))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Posting list header marks the data as both raw and compressed");
+}
+
+PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
+{
+    checkPostingListFlags(header);
+
+    /// Small posting lists are stored as raw VarUInt-encoded row ids.
+    if (header & RawPostings)
     {
         if (cardinality > raw_postings_buffer.size())
             raw_postings_buffer.resize(cardinality);
@@ -231,23 +310,26 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
         postings->addMany(cardinality, raw_postings_buffer.data());
         return postings;
     }
-    else
+
+    auto postings = std::make_shared<PostingList>();
+    resolveCodec(header).decode(istr, *postings, raw_data_buffer);
+    return postings;
+}
+
+void PostingsSerialization::deserializeToArray(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids)
+{
+    checkPostingListFlags(header);
+
+    /// Small posting lists are stored as raw VarUInt-encoded row ids.
+    if (header & RawPostings)
     {
-        size_t num_bytes = 0;
-        readVarUInt(num_bytes, istr);
-
-        /// If the posting list is completely in the buffer, avoid copying.
-        if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
-        {
-            auto result = std::make_shared<PostingList>(PostingList::read(istr.position()));
-            istr.position() += num_bytes;
-            return result;
-        }
-
-        deserialization_buffer.resize(num_bytes);
-        istr.readStrict(deserialization_buffer.data(), num_bytes);
-        return std::make_shared<PostingList>(PostingList::read(deserialization_buffer.data()));
+        row_ids.resize(cardinality);
+        for (size_t i = 0; i < cardinality; ++i)
+            readVarUInt(row_ids[i], istr);
+        return;
     }
+
+    resolveCodec(header).decode(istr, row_ids, raw_data_buffer);
 }
 
 
@@ -285,7 +367,7 @@ size_t TokenPostingsInfo::bytesAllocated() const
     return sizeof(TokenPostingsInfo)
         + offsets.capacity() * sizeof(UInt64)
         + ranges.capacity() * sizeof(RowsRange)
-        + (embedded_postings ? embedded_postings->getSizeInBytes() : 0);
+        + (embedded_postings.capacity() > MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS ? embedded_postings.capacity() * sizeof(UInt32) : 0);
 }
 
 MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
@@ -312,7 +394,7 @@ ColumnPtr deserializeTokensRaw(ReadBuffer & istr, size_t num_tokens)
     tokens_column->reserve(num_tokens);
 
     auto serialization_string = SerializationString::create();
-    serialization_string->deserializeBinaryBulk(*tokens_column, istr, 0, num_tokens, 0.0);
+    serialization_string->deserializeBinaryBulk(*tokens_column, istr, num_tokens, 0.0);
 
     return tokens_column;
 }
@@ -337,6 +419,9 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
         {
             UInt64 first_token_size = 0;
             readVarUInt(first_token_size, istr);
+            /// Prevent a corrupt or malicious .dct file from allocating huge amounts of memory
+            if (first_token_size > SerializationString::MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: first token size ({}) exceeds the maximum ({})", first_token_size, SerializationString::MAX_STRING_SIZE);
             offset += first_token_size;
             if (offset > data.size())
                 data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
@@ -354,7 +439,26 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
             UInt64 data_size = 0;
             readVarUInt(data_size, istr);
 
-            offset += lcp + data_size;
+            /// Reject a corrupted or malicious `.dct`: an out-of-range `lcp` or an overflowing `lcp + data_size` would wrap `offset`, skip the resize, and cause an out-of-bounds write below.
+            const UInt64 previous_token_size = data_offset - previous_token_offset;
+            if (lcp > previous_token_size)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted text index dictionary: front-coding longest common prefix ({}) exceeds the previous token size ({})",
+                    lcp, previous_token_size);
+
+            UInt64 token_size = 0;
+            UInt64 next_offset = 0;
+            if (common::addOverflow(lcp, data_size, token_size) || common::addOverflow<UInt64>(offset, token_size, next_offset))
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted text index dictionary: front-coding token size overflows (lcp = {}, data_size = {})",
+                    lcp, data_size);
+
+            if (token_size > SerializationString::MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: front-coding token size ({}) exceeds the maximum ({})", token_size, SerializationString::MAX_STRING_SIZE);
+
+            offset = next_offset;
 
             if (offset > data.size())
                 data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
@@ -390,33 +494,52 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     if (index_id_for_caches.empty())
     {
-        const auto & part_storage = state.part.getDataPartStorage();
+        const auto & part_storage = *state.part_info.getDataPartStorage();
         index_id_for_caches = fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), state.index.getFileName());
     }
 
     is_empty = false;
     analyzer = std::make_unique<TextIndexAnalyzer>(condition_text);
 
+    /// Push the row ranges still readable after the analysis of the primary key and prior skip indexes into the analyzer.
+    if (state.readable_ranges)
+    {
+        const auto & index_granularity = state.part_info.getIndexGranularity();
+        std::vector<RowsRange> readable_row_ranges;
+        readable_row_ranges.reserve(state.readable_ranges->size());
+
+        for (const auto & range : *state.readable_ranges)
+        {
+            size_t row_begin = index_granularity.getMarkStartingRow(range.begin);
+            size_t row_end = index_granularity.getMarkStartingRow(range.end);
+
+            if (row_begin < row_end)
+                readable_row_ranges.emplace_back(row_begin, row_end - 1);
+        }
+
+        analyzer->setReadableRows(std::move(readable_row_ranges));
+    }
+
     auto text_index_header = loadHeader(*index_stream, state);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
 
-    analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
-    analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
-    analyzePostings(postings_serialization, *postings_stream, state);
+    analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
+    analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
+    if (!state.skip_postings_deserialization)
+        analyzePostings(postings_serialization, *postings_stream, state);
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
-    analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part.rows_count);
+    analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part_info.getRowCount());
 
-    /// Capture the codec after the analysis — for Pre-WithCodec parts the
+    /// Capture the codec after the analysis — for pre-WithCodec parts the
     /// codec may have been lazily installed while decoding an IsCompressed posting list.
     postings_codec_type = postings_serialization.getPostingListCodec()->getType();
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     const DictionarySparseIndex & sparse_index,
-    PostingsSerialization & postings_serialization,
     MergeTreeIndexReaderStream & dictionary_stream,
     MergeTreeIndexDeserializationState & state)
 {
@@ -429,14 +552,15 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
     if (tokens_to_read.empty() || analyzer->alwaysFalse())
     {
-        cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+        cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part_info.getRowCount());
         return;
     }
 
     auto tokens_cache = condition_text.tokensCache();
+    const bool use_negative_tokens_cache = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_negative_tokens_cache];
     cardinalities_cache->sortTokens(tokens_to_read);
 
-    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part.getDataPartStorage().getFullPath());
+    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part_info.getDataPartStorage()->getFullPath());
 
     /// Collect blocks ids in the same order as tokens are sorted by cardinality.
     std::vector<size_t> blocks_ids_to_read;
@@ -479,21 +603,22 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
         for (const auto & token : missing_tokens)
         {
+            if (use_negative_tokens_cache)
+            {
+                tokens_cache->setNotFound(TextIndexTokensCache::hash(index_id_for_caches, token));
+                ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheNegativeMisses);
+            }
             analyzer->addMissingToken(token);
         }
 
         if (analyzer->alwaysFalse())
         {
-            cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+            cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part_info.getRowCount());
             return;
         }
 
         /// Deserialize only the token infos for matched tokens.
-        auto infos = TextIndexSerialization::deserializeTokenInfos(
-            *data_buffer,
-            block_tokens.size(),
-            matched_indices,
-            postings_serialization);
+        auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, block_tokens.size(), matched_indices);
 
         for (size_t i = 0; i < matched_indices.size(); ++i)
         {
@@ -505,17 +630,16 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
         if (analyzer->alwaysFalse())
         {
-            cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+            cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part_info.getRowCount());
             return;
         }
     }
 
-    cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+    cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part_info.getRowCount());
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const DictionarySparseIndex & sparse_index,
-    PostingsSerialization & postings_serialization,
     MergeTreeIndexReaderStream & dictionary_stream,
     MergeTreeIndexDeserializationState & state)
 {
@@ -554,11 +678,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             continue;
 
         /// Deserialize only the token infos for matched tokens.
-        auto infos = TextIndexSerialization::deserializeTokenInfos(
-            *data_buffer,
-            num_tokens,
-            matched_indices,
-            postings_serialization);
+        auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
 
         for (size_t i = 0; i < matched_indices.size(); ++i)
         {
@@ -583,6 +703,8 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     const auto & all_search_tokens = condition_text.getAllSearchTokens();
     auto tokens_cache = condition_text.tokensCache();
+    const bool use_negative_tokens_cache
+        = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_negative_tokens_cache];
 
     std::vector<TextIndexTokensCache::Key> keys;
     keys.reserve(all_search_tokens.size());
@@ -597,14 +719,25 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     {
         if (cached_infos[i])
         {
-            analyzer->addTokenInfo(all_search_tokens[i], cached_infos[i]);
-            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
+            if (TextIndexTokensCache::isNotFound(cached_infos[i]))
+            {
+                if (use_negative_tokens_cache)
+                {
+                    analyzer->addMissingToken(all_search_tokens[i]);
+                    ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheNegativeHits);
+                    continue;
+                }
+            }
+            else
+            {
+                analyzer->addTokenInfo(all_search_tokens[i], cached_infos[i]);
+                ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
+                continue;
+            }
         }
-        else
-        {
-            tokens_to_read.emplace_back(all_search_tokens[i]);
-            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
-        }
+
+        tokens_to_read.emplace_back(all_search_tokens[i]);
+        ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
     }
 
     return tokens_to_read;
@@ -645,14 +778,21 @@ std::pair<std::vector<size_t>, NameSet> MergeTreeIndexGranuleText::matchTokens(c
 
 std::shared_ptr<TextIndexHeader> MergeTreeIndexGranuleText::loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
 {
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+
     const auto load_header = [&]
     {
         header_stream.seekToStart();
-        return std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
+        auto loaded_header = std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
+
+        /// Optimize the memory usage of the sparse index only if the header is put into the global cache.
+        if (condition_text.useGlobalHeaderCache())
+            loaded_header->sparse_index.optimize();
+
+        return loaded_header;
     };
 
     auto header_hash = TextIndexHeaderCache::hash(index_id_for_caches);
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     return condition_text.headerCache()->getOrSet(header_hash, load_header);
 }
 
@@ -671,7 +811,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     {
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         stream.seekToMark({token_info.offsets[block_idx], 0});
-        auto postings = postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality);
+        auto postings = postings_serialization.deserializeToBitmap(*data_buffer, token_info.header, token_info.cardinality);
         return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 
@@ -688,13 +828,29 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     using enum PostingsSerialization::Flags;
     const auto & token_infos = analyzer->getAllTokenInfos();
 
-    /// Process regular tokens.
+    std::vector<std::pair<std::string_view, TokenPostingsInfoPtr>> tokens_to_read;
+    tokens_to_read.reserve(token_infos.size());
+
     for (const auto & [token, token_info] : token_infos)
     {
         if (token_info->offsets.size() == 1 && analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token))
+            tokens_to_read.emplace_back(token, token_info);
+    }
+
+    /// Sort tokens by cardinality to read the most rare ones first.
+    std::ranges::sort(tokens_to_read, [](const auto & lhs, const auto & rhs)
+    {
+        return lhs.second->cardinality < rhs.second->cardinality;
+    });
+
+    for (const auto & [token, token_info] : tokens_to_read)
+    {
+        /// Check one more time, because query with this token may have been
+        /// discarded by the analyzer after reading postings for previous tokens.
+        if (analyzer->isTokenNeeded(token))
         {
             auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
-            analyzer->addPostings(token, std::move(block));
+            analyzer->addPostings(token, *block);
         }
 
         if (analyzer->alwaysFalse())
@@ -713,115 +869,21 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
     return result;
 }
 
-bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
-{
-    if (query.tokens.empty())
-        return false;
-
-    return hasAnyTokensImpl(query);
-}
-
-bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
-{
-    if (query.patterns.empty())
-        return false;
-
-    return hasAnyTokensImpl(query);
-}
-
-bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) const
-{
-    const auto & query_builder = analyzer->getQueryBuilder(query);
-
-    /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
-    if (query_builder.is_failed)
-        return false;
-
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.patterns.empty())
-        return true;
-
-    if (!current_range.has_value())
-        return true;
-
-    if (!query_builder.rows_range.has_value())
-        return false;
-
-    auto intersection = query_builder.rows_range->intersectWith(*current_range);
-    if (!intersection.has_value())
-        return false;
-
-    if (!query_builder.needReadPostings() && query_builder.postings)
-    {
-        PostingList range_posting;
-        range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
-
-        if (range_posting.and_cardinality(*query_builder.postings) == 0)
-            return false;
-    }
-
-    return true;
-}
-
-bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
-{
-    if (query.tokens.empty())
-        return false;
-
-    return hasAllQueryTokensOrEmpty(query);
-}
-
-bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
-{
-    if (query.tokens.empty())
-        return true;
-
-    const auto & query_builder = analyzer->getQueryBuilder(query);
-
-    /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
-    if (query_builder.is_failed)
-        return false;
-
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.patterns.empty())
-        return true;
-
-    if (!current_range.has_value())
-        return true;
-
-    if (!query_builder.rows_range.has_value())
-        return false;
-
-    auto intersection = query_builder.rows_range->intersectWith(*current_range);
-    if (!intersection.has_value())
-        return false;
-
-    if (query_builder.postings)
-    {
-        PostingList range_posting;
-        range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
-
-        if (range_posting.and_cardinality(*query_builder.postings) == 0)
-            return false;
-    }
-
-    return true;
-}
-
-
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
     IPostingListCodec::Type posting_list_codec_type_,
-    SortedTokensAndPostings && tokens_and_postings_,
     TokenToPostingsBuilderMap && tokens_map_,
     std::list<PostingList> && posting_lists_,
-    std::unique_ptr<Arena> && arena_)
+    std::unique_ptr<Arena> && arena_,
+    std::unique_ptr<TokenToPositionListMap> && position_map_,
+    SortedTokens && sorted_tokens_)
     : params(std::move(params_))
     , posting_list_codec_type(posting_list_codec_type_)
-    , tokens_and_postings(std::move(tokens_and_postings_))
     , tokens_map(std::move(tokens_map_))
     , posting_lists(std::move(posting_lists_))
     , arena(std::move(arena_))
+    , position_map(std::move(position_map_))
+    , sorted_tokens(std::move(sorted_tokens_))
     , logger(getLogger("TextIndexGranuleWriter"))
 {
 }
@@ -853,6 +915,7 @@ void serializeTokensRaw(
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = token_getter(i);
+        TextIndexSerialization::checkTokenSize(current_token.size());
         writeVarUInt(current_token.size(), ostr);
         ostr.write(current_token.data(), current_token.size());
     }
@@ -871,6 +934,7 @@ void serializeTokensFrontCoding(
     size_t block_end)
 {
     const auto & first_token = token_getter(block_begin);
+    TextIndexSerialization::checkTokenSize(first_token.size());
     writeVarUInt(first_token.size(), ostr);
     ostr.write(first_token.data(), first_token.size());
 
@@ -878,6 +942,7 @@ void serializeTokensFrontCoding(
     for (size_t i = block_begin + 1; i < block_end; ++i)
     {
         auto current_token = token_getter(i);
+        TextIndexSerialization::checkTokenSize(current_token.size());
         auto lcp = computeCommonPrefixLength(previous_token, current_token);
         writeVarUInt(lcp, ostr);
         writeVarUInt(current_token.size() - lcp, ostr);
@@ -958,18 +1023,81 @@ void serializeTokensImpl(
     }
 }
 
-}
-
-TokenPostingsInfo TextIndexSerialization::serializePostings(
-    PostingListBuilder & postings,
+/// Serializes a posting list that is too large to be stored as raw row ids:
+/// applies the posting list codec if it is enabled and splits the list into
+/// blocks of `posting_list_block_size` rows, filling the offsets and ranges in `info`.
+void serializeLargePostings(
+    PostingList & postings,
+    TokenPostingsInfo & info,
     MergeTreeIndexWriterStream & postings_stream,
     const MergeTreeIndexTextParams & params,
     PostingsSerialization & postings_serialization)
 {
     using enum PostingsSerialization::Flags;
+
+    /// The codec splits the posting list into blocks according to the posting_list_block_size setting.
+    if (info.header & IsCompressed)
+    {
+        postings_serialization.serializeCompressed(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
+        return;
+    }
+
+    postings.runOptimize();
+
+    if (info.header & SingleBlock)
+    {
+        info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        info.ranges.emplace_back(postings.minimum(), postings.maximum());
+        postings_serialization.serializeBitmap(postings.roaring, postings_stream.plain_hashing);
+        return;
+    }
+
+    auto split_blocks = splitPostings(postings, params.posting_list_block_size);
+
+    for (const auto & block : split_blocks)
+    {
+        if (roaring::api::roaring_bitmap_get_cardinality(&block) == 0)
+            continue;
+
+        info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        info.ranges.emplace_back(roaring::api::roaring_bitmap_minimum(&block), roaring::api::roaring_bitmap_maximum(&block));
+        postings_serialization.serializeBitmap(block, postings_stream.plain_hashing);
+    }
+}
+
+}
+
+template <PostingsContainer Postings>
+TokenPostingsInfo TextIndexSerialization::serializePostings(
+    const Postings & postings,
+    MergeTreeIndexWriterStream & postings_stream,
+    const MergeTreeIndexTextParams & params,
+    PostingsSerialization & postings_serialization)
+{
+    using enum PostingsSerialization::Flags;
+
     TokenPostingsInfo info;
-    info.header = 0;
     info.cardinality = static_cast<UInt32>(postings.size());
+
+    /// Embedded postings are serialized later into the dictionary block by the caller.
+    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    {
+        info.header = RawPostings | EmbeddedPostings;
+        return info;
+    }
+
+    if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    {
+        auto raw_postings = postings_serialization.toRawPostings(postings);
+
+        info.header = RawPostings | SingleBlock;
+        info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        info.ranges.emplace_back(raw_postings.front(), raw_postings.back());
+        PostingsSerialization::serializeRaw(raw_postings, postings_stream.plain_hashing);
+        return info;
+    }
+
+    /// Apply posting list compression only to non-embedded, non-raw posting lists (these are the big ones).
     const IPostingListCodec * posting_list_codec = postings_serialization.getPostingListCodec();
 
     if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
@@ -978,58 +1106,41 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.header |= HasBlockIndex;
     }
 
-    /// Apply posting list compression only to non-embedded,
-    /// non-raw posting lists (these are the big ones).
-    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
-    {
-        info.header |= RawPostings;
-        info.header |= EmbeddedPostings;
-        info.header &= ~IsCompressed;
-        info.header &= ~HasBlockIndex;
-        return info;
-    }
-    else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
-    {
-        info.header |= RawPostings;
-        info.header |= SingleBlock;
-        info.header &= ~IsCompressed;
-        info.header &= ~HasBlockIndex;
-    }
-    else if (info.cardinality <= params.posting_list_block_size)
+    if (info.cardinality <= params.posting_list_block_size)
     {
         info.header |= SingleBlock;
     }
 
-    /// When posting compression is enabled, the posting list codec is used to compress posting lists.
-    /// The codec splits the posting list into blocks according to the posting_list_block_size setting.
-    if (info.header & IsCompressed)
+    if constexpr (std::is_same_v<Postings, std::span<const UInt32>>)
     {
-        postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
-    }
-    else if (info.header & SingleBlock)
-    {
-        info.offsets.emplace_back(postings_stream.plain_hashing.count());
-        info.ranges.emplace_back(postings.minimum(), postings.maximum());
-        postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
+        PostingList posting_list(postings.size(), postings.data());
+        serializeLargePostings(posting_list, info, postings_stream, params, postings_serialization);
     }
     else
     {
         chassert(postings.isLarge());
-        postings.getLarge().runOptimize();
-        auto blocks = splitPostings(postings.getLarge(), params.posting_list_block_size);
-
-        for (const auto & block : blocks)
-        {
-            if (roaring::api::roaring_bitmap_get_cardinality(&block) == 0)
-                continue;
-
-            info.offsets.emplace_back(postings_stream.plain_hashing.count());
-            info.ranges.emplace_back(roaring::api::roaring_bitmap_minimum(&block), roaring::api::roaring_bitmap_maximum(&block));
-            postings_serialization.serialize(block, info.header, postings_stream.plain_hashing);
-        }
+        serializeLargePostings(postings.getLarge(), info, postings_stream, params, postings_serialization);
     }
 
     return info;
+}
+
+template TokenPostingsInfo TextIndexSerialization::serializePostings<PostingListBuilder>(
+    const PostingListBuilder & postings,
+    MergeTreeIndexWriterStream & postings_stream,
+    const MergeTreeIndexTextParams & params,
+    PostingsSerialization & postings_serialization);
+
+template TokenPostingsInfo TextIndexSerialization::serializePostings<std::span<const UInt32>>(
+    const std::span<const UInt32> & postings,
+    MergeTreeIndexWriterStream & postings_stream,
+    const MergeTreeIndexTextParams & params,
+    PostingsSerialization & postings_serialization);
+
+void TextIndexSerialization::checkTokenSize(size_t token_size)
+{
+    if (token_size > SerializationString::MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
 }
 
 void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
@@ -1050,6 +1161,13 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     writeVarUInt(token_info.header, ostr);
     writeVarUInt(token_info.cardinality, ostr);
 
+    /// Position metadata is right after (header, cardinality), before posting data.
+    if (token_info.header & HasPositions)
+    {
+        writeVarUInt(token_info.position_offset, ostr);
+        writeVarUInt(token_info.position_cardinality, ostr);
+    }
+
     /// Embedded postings will be serialized later into the dictionary block.
     if (token_info.header & EmbeddedPostings)
         return;
@@ -1065,21 +1183,36 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr)
+void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr)
 {
-    UInt64 version = static_cast<UInt64>(TextIndexHeader::Version::WithCodec);
-    UInt64 codec_type = static_cast<UInt64>(posting_list_codec_type);
+    /// `textIndexCreator` raises the version to one that can represent the codec
+    /// and positions, so a violation here is a logical error, not a user error.
+    if (posting_list_codec_type != IPostingListCodec::Type::None && version < MergeTreeTextIndexSerializationVersion::V1_WithCodec)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version 'v0_initial' does not support a posting list codec");
 
-    writeVarUInt(version, ostr);
-    writeVarUInt(codec_type, ostr);
+    if (has_positions && version < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version {} does not support positions", static_cast<UInt64>(version));
 
-    chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
+    writeVarUInt(static_cast<UInt64>(version), ostr);
+
+    if (version >= MergeTreeTextIndexSerializationVersion::V1_WithCodec)
+        writeVarUInt(static_cast<UInt64>(posting_list_codec_type), ostr);
+
+    if (version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
+        writeVarUInt(static_cast<UInt64>(has_positions), ostr);
+
+    /// Sparse indexes are created with raw columns and bit-packed only by optimize.
+    /// The write path never calls optimize, so expect the raw columns here.
+    auto tokens_column = sparse_index.getTokensColumn();
+    auto offsets_column = sparse_index.getOffsetsColumn();
+    chassert(tokens_column->size() == offsets_column->size());
+
     auto serialization_string = SerializationString::create();
     auto serialization_number = SerializationNumber<UInt64>::create();
 
-    writeVarUInt(sparse_index.tokens->size(), ostr);
-    serialization_string->serializeBinaryBulk(*sparse_index.tokens, ostr, 0, sparse_index.tokens->size());
-    serialization_number->serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
+    writeVarUInt(tokens_column->size(), ostr);
+    serialization_string->serializeBinaryBulk(*tokens_column, ostr, 0, tokens_column->size());
+    serialization_number->serializeBinaryBulk(*offsets_column, ostr, 0, offsets_column->size());
 }
 
 TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & istr)
@@ -1087,13 +1220,13 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithCodec))
+    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
-    header.version = static_cast<MergeTreeIndexVersion>(version);
+    header.version = static_cast<MergeTreeTextIndexSerializationVersion>(version);
 
-    if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithCodec))
+    if (header.version >= MergeTreeTextIndexSerializationVersion::V1_WithCodec)
     {
         UInt64 codec_type = 0;
         readVarUInt(codec_type, istr);
@@ -1102,6 +1235,13 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown posting list codec type in text index header: {}", codec_type);
 
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
+    }
+
+    if (header.version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
+    {
+        UInt64 has_positions = 0;
+        readVarUInt(has_positions, istr);
+        header.has_positions = has_positions != 0;
     }
 
     return header;
@@ -1120,38 +1260,47 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
     auto offsets = ColumnUInt64::create();
 
     auto serialization_number = SerializationNumber<UInt64>::create();
-    serialization_number->deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
+    serialization_number->deserializeBinaryBulk(*offsets, istr, num_sparse_index_tokens, 0.0);
     header.sparse_index = DictionarySparseIndex(std::move(tokens), std::move(offsets));
     return header;
 }
 
-TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization)
+TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr, bool skip_postings)
 {
     using enum PostingsSerialization::Flags;
     TokenPostingsInfo info;
 
     readVarUInt(info.header, istr);
     readVarUInt(info.cardinality, istr);
-    bool skip_postings = !postings_serialization;
+
+    /// Position metadata is always right after (header, cardinality),
+    /// before any posting data, to keep the layout consistent for all token types.
+    if (info.header & HasPositions)
+    {
+        readVarUInt(info.position_offset, istr);
+        UInt64 position_cardinality = 0;
+        readVarUInt(position_cardinality, istr);
+        info.position_cardinality = static_cast<UInt32>(position_cardinality);
+    }
 
     if (info.header & EmbeddedPostings)
     {
+        chassert(info.header & RawPostings);
+
         if (skip_postings)
         {
-            chassert(info.header & RawPostings);
             for (size_t i = 0; i < info.cardinality; ++i)
                 ignoreVarUInt(istr);
         }
-        else
+        else if (info.cardinality != 0)
         {
-            auto postings = postings_serialization->deserialize(istr, info.header, info.cardinality);
-            if (postings && postings->cardinality() > 0)
-            {
-                info.offsets.emplace_back(0);
-                info.ranges.emplace_back(postings->minimum(), postings->maximum());
-            }
-            info.embedded_postings = std::move(postings);
-            ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+            info.embedded_postings.resize(info.cardinality);
+
+            for (UInt32 & value : info.embedded_postings)
+                readVarUInt(value, istr);
+
+            info.offsets.emplace_back(0);
+            info.ranges.emplace_back(info.embedded_postings.front(), info.embedded_postings.back());
         }
     }
     else
@@ -1194,6 +1343,13 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     readVarUInt(header, istr);
     readVarUInt(cardinality, istr);
 
+    /// Position metadata is right after (header, cardinality), before posting data.
+    if (header & HasPositions)
+    {
+        ignoreVarUInt(istr);
+        ignoreVarUInt(istr);
+    }
+
     if (header & EmbeddedPostings)
     {
         chassert(header & RawPostings);
@@ -1235,11 +1391,7 @@ std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffe
     }
 }
 
-std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
-    ReadBuffer & istr,
-    size_t num_tokens,
-    const std::vector<size_t> & matched_indices,
-    PostingsSerialization & postings_serialization)
+std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(ReadBuffer & istr, size_t num_tokens, const std::vector<size_t> & matched_indices)
 {
     std::vector<TokenPostingsInfoPtr> result;
     result.reserve(matched_indices.size());
@@ -1258,7 +1410,7 @@ std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
             continue;
         }
 
-        auto info = deserializeTokenInfo(istr, &postings_serialization);
+        auto info = deserializeTokenInfo(istr);
         result.emplace_back(std::make_shared<TokenPostingsInfo>(std::move(info)));
         ++j;
     }
@@ -1266,7 +1418,7 @@ std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
     return result;
 }
 
-DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & istr, PostingsSerialization * postings_serialization)
+DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & istr, bool skip_postings)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
@@ -1277,20 +1429,21 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
     token_infos.reserve(num_tokens);
 
     for (size_t i = 0; i < num_tokens; ++i)
-        token_infos.emplace_back(deserializeTokenInfo(istr, postings_serialization));
+        token_infos.emplace_back(deserializeTokenInfo(istr, skip_postings));
 
     return DictionaryBlock{std::move(tokens_column), std::move(token_infos), std::move(tokens_format)};
 }
 
 template <typename Stream>
 DictionarySparseIndex serializeTokensAndPostings(
-    const SortedTokensAndPostings & tokens_and_postings,
+    const SortedTokens & sorted_tokens,
     Stream & dictionary_stream,
     Stream & postings_stream,
     const MergeTreeIndexTextParams & params,
-    PostingsSerialization & postings_serialization)
+    PostingsSerialization & postings_serialization,
+    MergeTreeIndexWriterStream * positions_stream = nullptr)
 {
-    size_t num_tokens = tokens_and_postings.size();
+    size_t num_tokens = sorted_tokens.size();
     size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
 
     auto sparse_index_tokens = ColumnString::create();
@@ -1317,12 +1470,13 @@ DictionarySparseIndex serializeTokensAndPostings(
         auto dictionary_mark = dictionary_stream.getCurrentMark();
         chassert(dictionary_mark.offset_in_decompressed_block == 0);
 
-        const auto & first_token = tokens_and_postings[block_begin].first;
+        const auto & first_token = sorted_tokens[block_begin].token;
+        TextIndexSerialization::checkTokenSize(first_token.size());
         sparse_index_offsets_data.emplace_back(dictionary_mark.offset_in_compressed_file);
         sparse_index_str.insertData(first_token.data(), first_token.size());
 
         serializeTokensImpl(
-            [&](size_t i) { return tokens_and_postings[i].first; },
+            [&](size_t i) { return sorted_tokens[i].token; },
             dictionary_stream.compressed_hashing,
             tokens_format,
             block_begin,
@@ -1330,12 +1484,31 @@ DictionarySparseIndex serializeTokensAndPostings(
 
         for (size_t i = block_begin; i < block_end; ++i)
         {
-            auto & postings = *tokens_and_postings[i].second;
+            const auto & entry = sorted_tokens[i];
+            auto & postings = *entry.postings;
             auto token_info = TextIndexSerialization::serializePostings(postings, postings_stream, params, postings_serialization);
+
+            /// Serialize position data if phrase query support is enabled.
+            if (positions_stream)
+            {
+                chassert(entry.positions);
+                entry.positions->finalizeOrdering();
+                const auto & position_entries = entry.positions->getEntries();
+
+                token_info.header |= PostingsSerialization::Flags::HasPositions;
+                token_info.position_offset = positions_stream->plain_hashing.count();
+                token_info.position_cardinality = static_cast<UInt32>(position_entries.size());
+
+                TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
+            }
+
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
 
             if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-                postings_serialization.serialize(postings, token_info, params.posting_list_block_size, dictionary_stream.compressed_hashing);
+            {
+                auto raw_postings = postings_serialization.toRawPostings(postings);
+                PostingsSerialization::serializeRaw(raw_postings, dictionary_stream.compressed_hashing);
+            }
         }
     }
 
@@ -1356,19 +1529,27 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
+    MergeTreeIndexWriterStream * positions_stream = nullptr;
+    if (params.positions)
+    {
+        auto it = streams.find(MergeTreeIndexSubstream::Type::TextIndexPositions);
+        if (it == streams.end() || !it->second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' and positions enabled must have a positions stream");
+        positions_stream = it->second;
+    }
+
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
-    PostingsSerialization postings_serialization(
-        std::move(postings_codec),
-        static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    PostingsSerialization postings_serialization(std::move(postings_codec), params.serialization_version);
 
     auto sparse_index_block = serializeTokensAndPostings(
-        tokens_and_postings,
+        sorted_tokens,
         *dictionary_stream,
         *postings_stream,
         params,
-        postings_serialization);
+        postings_serialization,
+        positions_stream);
 
-    TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(params.serialization_version, sparse_index_block, posting_list_codec_type, params.positions, index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1382,11 +1563,20 @@ size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
     for (const auto & plist : posting_lists)
         posting_lists_size += plist.getSizeInBytes();
 
+    size_t position_map_size = 0;
+    if (position_map)
+    {
+        position_map_size = position_map->getBufferSizeInBytes();
+        position_map_size += std::accumulate(sorted_tokens.begin(), sorted_tokens.end(), size_t{0},
+            [](size_t acc, const auto & token) { return acc + (token.positions ? token.positions->allocatedBytes() : size_t{0}); });
+    }
+
     return sizeof(*this)
         /// can ignore the sizeof(PostingListBuilder) here since it is just references to tokens_map
-        + tokens_and_postings.capacity() * sizeof(SortedTokensAndPostings::value_type)
+        + sorted_tokens.capacity() * sizeof(SortedToken)
         + tokens_map.getBufferSizeInBytes()
         + posting_lists_size
+        + position_map_size
         + arena->allocatedBytes();
 }
 
@@ -1398,6 +1588,7 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
     , tokenizer(tokenizer_)
     , posting_list_codec(posting_list_codec_)
     , arena(std::make_unique<Arena>())
+    , position_map(params.positions ? std::make_unique<TokenToPositionListMap>() : nullptr)
 {
 }
 
@@ -1440,23 +1631,94 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
+    UInt32 token_position = 0;
     forEachToken(
         *tokenizer,
         document.data(),
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            bool inserted = false;
-            TokenToPostingsBuilderMap::LookupResult it;
-
-            ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
-            tokens_map.emplace(key_holder, it, inserted);
-
-            auto & posting_list_builder = it->getMapped();
-            posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
-            ++num_processed_tokens;
+            addToken({token_start, token_length}, token_position);
+            ++token_position;
             return false;
         });
+}
+
+void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
+{
+    if (!postprocessor_drop_filter || postprocessor_drop_filter->drop_on_match)
+        return;
+
+    const auto & filter_tokens = postprocessor_drop_filter->tokens;
+
+    /// StringHashTable::dispatch reads whole 8-byte words around short keys.
+    static constexpr size_t pad_left = 8;
+    const size_t total_size = std::accumulate(
+        filter_tokens.begin(), filter_tokens.end(), pad_left,
+        [](size_t sum, const auto & filter_token) { return sum + filter_token.size(); });
+
+    char * data = arena->alloc(total_size) + pad_left;
+
+    bool inserted = false;
+    TokenToPostingsBuilderMap::LookupResult it;
+    for (const auto & filter_token : filter_tokens)
+    {
+        memcpy(data, filter_token.data(), filter_token.size());
+        std::string_view key(data, filter_token.size());
+        data += filter_token.size();
+
+        tokens_map.emplace(key, it, inserted);
+        chassert(inserted);
+        it->getMapped().markFiltered();
+    }
+}
+
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
+{
+    bool inserted = false;
+    TokenToPostingsBuilderMap::LookupResult it;
+
+    if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
+    {
+        it = tokens_map.find(token);
+        if (!it)
+            return;
+
+        if (it->getMapped().isFiltered())
+            it->getMapped().clearFiltered();
+    }
+    else
+    {
+        ArenaKeyHolder key_holder(token, *arena);
+        tokens_map.emplace(key_holder, it, inserted);
+
+        if (postprocessor_drop_filter)
+        {
+            if (inserted)
+            {
+                if (postprocessor_drop_filter->tokens.contains(token))
+                {
+                    it->getMapped().markFiltered();
+                    return;
+                }
+            }
+            else if (it->getMapped().isFiltered())
+                return;
+        }
+
+        if (position_map)
+        {
+            TokenToPositionListMap::LookupResult pos_it;
+            position_map->emplace(key_holder, pos_it, inserted);
+            auto & positions_builder = pos_it->getMapped();
+            positions_builder.add(static_cast<UInt32>(current_row), token_position);
+        }
+    }
+
+    PostingListBuilder & posting_list_builder = it->getMapped();
+    posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
+
+    ++num_processed_tokens;
 }
 
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
@@ -1467,23 +1729,53 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
-    SortedTokensAndPostings sorted_values;
-    sorted_values.reserve(tokens_map.size());
+    SortedTokens sorted_tokens;
+    sorted_tokens.reserve(tokens_map.size());
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_values.emplace_back(key, &mapped);
+        std::string_view token = key;
+        if (mapped.isFiltered())
+            return;
+        chassert(!mapped.isEmpty());
+        sorted_tokens.push_back(SortedToken{token, &mapped, nullptr});
     });
 
-    std::ranges::sort(sorted_values, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
+
+    /// Attach each token's position builder by binary search over the already-sorted sorted_tokens.
+    /// tokens_map and position_map are filled in lockstep in addDocument(), so the key sets are identical.
+    if (position_map)
+    {
+        size_t attached = 0;
+        position_map->forEachValue([&](const auto & key, auto & mapped)
+        {
+            const std::string_view token(key);
+            auto it = std::ranges::lower_bound(
+                sorted_tokens, token,
+                [](std::string_view lhs, std::string_view rhs) { return lhs < rhs; },
+                &SortedToken::token);
+            if (it == sorted_tokens.end() || it->token != token)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Text index: positions token '{}' has no postings slot", token);
+            it->positions = &mapped;
+            ++attached;
+        });
+
+        if (attached != sorted_tokens.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index: postings map has {} tokens but positions map attached {}",
+                sorted_tokens.size(), attached);
+    }
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
         posting_list_codec ? posting_list_codec->getType() : IPostingListCodec::Type::None,
-        std::move(sorted_values),
         std::move(tokens_map),
         std::move(posting_lists),
-        std::move(arena));
+        std::move(arena),
+        std::move(position_map),
+        std::move(sorted_tokens));
 }
 
 void MergeTreeIndexTextGranuleBuilder::reset()
@@ -1494,6 +1786,13 @@ void MergeTreeIndexTextGranuleBuilder::reset()
     tokens_map = {};
     posting_lists.clear();
     arena = std::make_unique<Arena>();
+
+    if (params.positions)
+        position_map = std::make_unique<TokenToPositionListMap>();
+    else
+        position_map.reset();
+
+    seedDropFilter();
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
@@ -1501,14 +1800,28 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     MergeTreeIndexTextParams params_,
     TokenizerPtr tokenizer_,
     const IPostingListCodec * posting_list_codec_,
-    MergeTreeIndexTextPreprocessorPtr preprocessor_)
+    MergeTreeIndexTextPreprocessorPtr preprocessor_,
+    MergeTreeIndexTextPostprocessorPtr postprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
-    , tokenizer(tokenizer_)
-    , posting_list_codec(posting_list_codec_)
-    , granule_builder(params, tokenizer_, posting_list_codec_)
+    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
+    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
+    , granule_builder(params, tokenizer, posting_list_codec_)
     , preprocessor(preprocessor_)
+    , postprocessor(postprocessor_)
 {
+    /// Fast path for IN/NOT IN filter-only postprocessors only: drops are decided per distinct token in
+    /// addToken so dropped tokens never build postings. Positions must be disabled (phrase search needs
+    /// dense position renumbering after drops). Any other postprocessor uses the general per-batch path.
+    if (postprocessor->hasActions() && !params.positions)
+    {
+        if (const auto * inline_filter = postprocessor->getInlineFilter())
+        {
+            granule_builder.postprocessor_drop_filter = inline_filter;
+            granule_builder.seedDropFilter();
+            use_postprocessor_drop_fast_path = true;
+        }
+    }
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
@@ -1527,11 +1840,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
             *pos, block.rows());
     }
 
-    if (*pos + limit > std::numeric_limits<UInt32>::max())
+    if (granule_builder.current_row + limit > std::numeric_limits<UInt32>::max())
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Cannot build text index in part with {} rows. Materialization of text index is not supported for parts with more than {} rows",
-            *pos + limit, std::numeric_limits<UInt32>::max());
+            granule_builder.current_row + limit, std::numeric_limits<UInt32>::max());
     }
 
     const size_t rows_read = std::min(limit, block.rows() - *pos);
@@ -1541,27 +1854,15 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (isArray(index_column.type))
+    if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
     {
-        const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
-
-        const IColumn & column_data = column_array.getData();
-        const auto & column_offsets = column_array.getOffsets();
-
-        const bool data_is_nullable = column_data.isNullable();
-
-        for (size_t i = offset; i < offset + rows_read; ++i)
-        {
-            for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
-            {
-                if (data_is_nullable && column_data.isNullAt(element_idx))
-                    continue;
-
-                const std::string_view ref = column_data.getDataAt(element_idx);
-                granule_builder.addDocument(ref);
-            }
-            granule_builder.incrementCurrentRow();
-        }
+        ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
+        ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
+        addDocumentsFromArray<false>(postprocessed, 0, rows_read);
+    }
+    else if (isArray(index_column.type))
+    {
+        addDocumentsFromArray<true>(preprocessed_column, offset, rows_read);
     }
     else
     {
@@ -1581,6 +1882,91 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     *pos += rows_read;
 }
 
+template <bool tokenize>
+void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read)
+{
+    const ColumnArray * column_array = assert_cast<const ColumnArray *>(column.get());
+    const IColumn & column_data = column_array->getData();
+    const IColumn::Offsets & column_offsets = column_array->getOffsets();
+    const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(column_data);
+
+    for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
+        /// reflect the surviving token sequence only.
+        UInt32 token_position = 0;
+        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        {
+            if (data_is_nullable && column_data.isNullAt(element_idx))
+                continue;
+
+            const std::string_view ref = column_data.getDataAt(element_idx);
+            if (ref.empty())
+                continue;
+
+            if constexpr (tokenize)
+                granule_builder.addDocument(ref);
+            else
+                granule_builder.addToken(ref, token_position++);
+        }
+        granule_builder.incrementCurrentRow();
+    }
+}
+
+namespace
+{
+
+/// Rewrites `x = ''` / `x != ''` to `empty(x)` / `notEmpty(x)`, like `optimize_empty_string_comparisons` does in queries.
+void normalizeColumnExpression(ASTPtr & ast)
+{
+    for (auto & child : ast->children)
+        normalizeColumnExpression(child);
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || (function->name != "equals" && function->name != "notEquals")
+        || !function->arguments || function->arguments->children.size() != 2)
+        return;
+
+    auto is_empty_string_literal = [](const ASTPtr & node)
+    {
+        const auto * literal = node->as<ASTLiteral>();
+        return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
+    };
+
+    const auto & arguments = function->arguments->children;
+    ASTPtr expression;
+
+    if (is_empty_string_literal(arguments[1]))
+        expression = arguments[0];
+    else if (is_empty_string_literal(arguments[0]))
+        expression = arguments[1];
+    else
+        return;
+
+    ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
+}
+
+/// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
+/// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
+/// expression after the same rewrite, or `std::nullopt` if it does not change.
+std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index)
+{
+    /// A text index is always defined on a single expression.
+    if (!index.expression_list_ast || index.expression_list_ast->children.size() != 1)
+        return {};
+
+    ASTPtr normalized = index.expression_list_ast->children.front()->clone();
+    normalizeColumnExpression(normalized);
+
+    String name = normalized->getColumnName();
+    if (index.sample_block.has(name))
+        return {};
+
+    return name;
+}
+
+}
+
 MergeTreeIndexText::MergeTreeIndexText(
     StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
@@ -1592,28 +1978,47 @@ MergeTreeIndexText::MergeTreeIndexText(
     , tokenizer(std::move(tokenizer_))
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
+    , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
+    , normalized_index_column_name(getNormalizedIndexColumnName(index_))
 {
 }
 
 MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 {
-    return
+    MergeTreeIndexSubstreams substreams =
     {
         {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
         {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
         {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
+
+    if (params.positions)
+        substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
+
+    return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & path_prefix,
-    const IDataPartStorage * storage) const
+MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx", storage))
-        return {1, getSubstreams()};
+    if (!indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
+        return {0, {}};
 
-    return {0, {}};
+    MergeTreeIndexSubstreams substreams =
+    {
+        {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
+    };
+
+    /// V2: positions file exists on disk.
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix + ".pos", ".idx", &storage))
+    {
+        substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
+        return {2, std::move(substreams)};
+    }
+
+    return {1, std::move(substreams)};
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
@@ -1623,12 +2028,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor);
+    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -1650,10 +2055,12 @@ DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_PREPROCESSOR = "preprocessor";
+static const String ARGUMENT_POSTPROCESSOR = "postprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
+static const String ARGUMENT_POSITIONS = "support_phrase_search";
 
 namespace
 {
@@ -1744,6 +2151,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
+    auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
     /// The parameters below can be set in the index definition or via the `text_index_*` table settings.
@@ -1757,15 +2165,37 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
+    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+
+    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
+        .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
+
+    auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
+    bool has_codec = posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None;
+
+    /// The setting is a preference to preserve compatibility, not a hard constraint.
+    /// If the setting contradicts the index features on the current version, the index features take precedence.
+    using enum MergeTreeTextIndexSerializationVersion;
+    MergeTreeTextIndexSerializationVersion min_version = V0_Initial;
+    MergeTreeTextIndexSerializationVersion max_version = V2_WithPositions;
+
+    if (has_codec)
+        min_version = V1_WithCodec;
+
+    if (positions)
+        min_version = V2_WithPositions;
+
+    const MergeTreeTextIndexSerializationVersion version_setting = settings[MergeTreeSetting::text_index_serialization_version];
+    MergeTreeTextIndexSerializationVersion serialization_version = std::clamp(version_setting, min_version, max_version);
+
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
-        std::move(preprocessor_ast)};
-
-    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
-        .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
-    auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
+        positions,
+        std::move(preprocessor_ast),
+        std::move(postprocessor_ast),
+        serialization_version};
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1779,6 +2209,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
 
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
+    auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
     TokenizerFactory::instance().get(tokenizer_ast);
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
@@ -1799,9 +2230,19 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
+    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    if (positions > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
+
+    if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_phrase_search])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
+            "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
+
+    /// The `text_index_serialization_version` setting is not validated against the index features:
+    /// it is a preference, and `textIndexCreator` raises it to a version that can represent them.
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
-
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
 
     if (!options.empty())
@@ -1827,6 +2268,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     /// However it will be parsed again for index construction, generally immediately after this call.
     /// This is a bit redundant but that doesn't impact performance anyhow because the expression is intended to be simple enough.
     MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index);
+
+    /// Create the postprocessor for validation.
+    /// This validates the token transformation expression (always String -> String).
+    MergeTreeIndexTextPostprocessor postprocessor(postprocessor_ast, index);
 }
 
 }

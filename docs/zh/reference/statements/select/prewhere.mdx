@@ -1,0 +1,148 @@
+---
+description: 'PREWHERE 子句文档'
+sidebarTitle: 'PREWHERE'
+slug: /sql-reference/statements/select/prewhere
+title: 'PREWHERE 子句'
+doc_type: 'reference'
+---
+
+`PREWHERE` 可通过减少读取的数据量提高筛选效率。默认情况下，即使查询未显式指定 `PREWHERE`，ClickHouse 也会将符合条件的条件从 [`WHERE`](/zh/reference/statements/select/where) 移至 `PREWHERE`，从而应用此优化。您可以显式指定 `PREWHERE`，以控制在此阶段应用哪些条件。
+
+使用 `PREWHERE` 时，ClickHouse 首先仅读取评估条件所需的列。随后，仅对包含至少一行匹配数据的块读取查询所需的其他列。当条件使用的列少于查询其余部分所需的列，且能筛除大量块时，可减少读取的数据量。
+
+<div id="controlling-prewhere-manually">
+  ## 手动控制 `PREWHERE`
+</div>
+
+当条件仅涉及少量列且能过滤掉大量行时，可手动指定 `PREWHERE`。这样可以减少读取其余列的数据量。
+
+一个查询可以同时包含 `PREWHERE` 和 `WHERE`。在这种情况下，会先计算 `PREWHERE`。
+
+将 [`optimize_move_to_prewhere`](/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 设置为 `0`，以防止 ClickHouse 自动将条件从 `WHERE` 移至 `PREWHERE`。
+
+对于带有 [`FINAL`](/zh/reference/statements/select/from#final-modifier) 修饰符的查询，只有在 [`optimize_move_to_prewhere`](/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 和 [`optimize_move_to_prewhere_if_final`](/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) 均已启用时，ClickHouse 才会将条件从 `WHERE` 移至 `PREWHERE`。
+
+<Note>
+  默认情况下，`PREWHERE` 会在 `FINAL` 之前计算。因此，当 `PREWHERE` 引用了表的 `ORDER BY` 键以外的列时，`FROM ... FINAL` 查询可能会产生意外结果。
+</Note>
+
+<div id="prewhere-with-join">
+  ## `PREWHERE` 与 `JOIN`
+</div>
+
+在包含 [`JOIN`](/zh/reference/statements/select/join) 的查询中，`PREWHERE` 条件最多只能直接引用一个表的列。ClickHouse 会在该表的行参与联接前对其应用该条件。
+
+相比之下，`WHERE` 条件在逻辑上会过滤联接后的结果；但只要不改变结果，优化器也可能在联接前应用该条件。因此，在 `PREWHERE` 和 `WHERE` 中使用相同条件可能会产生不同结果，尤其是在外联接时。
+
+以下示例创建两个表来说明这一差异：
+
+```sql
+CREATE TABLE table_1
+(
+    `id` UInt32,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE table_2
+(
+    `id` UInt32,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'b'), (3, 'c');
+INSERT INTO table_2 VALUES (1, 'x'), (2, 'y'), (3, 'z');
+```
+
+在第一个查询中，`PREWHERE` 会在 `LEFT JOIN` 之前对 `table_2` 进行过滤，因此 `table_1` 中 `id = 1` 的行仍无法匹配：
+
+```sql
+SELECT
+    table_1.id,
+    table_1.value,
+    table_2.value
+FROM table_1
+LEFT JOIN table_2 ON table_1.id = table_2.id
+PREWHERE table_2.id >= 2
+ORDER BY table_1.id;
+```
+
+```text
+   ┌─id─┬─value─┬─table_2.value─┐
+1. │  1 │ a     │               │
+2. │  2 │ b     │ y             │
+3. │  3 │ c     │ z             │
+   └────┴───────┴───────────────┘
+```
+
+在 `WHERE` 中使用相同条件会对 join 结果进行过滤，移除 `id = 1` 的行：
+
+```sql
+SELECT
+    table_1.id,
+    table_1.value,
+    table_2.value
+FROM table_1
+LEFT JOIN table_2 ON table_1.id = table_2.id
+WHERE table_2.id >= 2
+ORDER BY table_1.id;
+```
+
+```text
+   ┌─id─┬─value─┬─table_2.value─┐
+1. │  2 │ b     │ y             │
+2. │  3 │ c     │ z             │
+   └────┴───────┴───────────────┘
+```
+
+<div id="limitations">
+  ## 限制
+</div>
+
+`PREWHERE` 仅受 [*MergeTree](/zh/reference/engines/table-engines/mergetree-family/index) 家族的表支持。
+
+<div id="example">
+  ## 示例
+</div>
+
+```sql
+CREATE TABLE mydata
+(
+    `A` Int64,
+    `B` Int8,
+    `C` String
+)
+ENGINE = MergeTree
+ORDER BY A AS
+SELECT
+    number,
+    0,
+    if(number between 1000 and 2000, 'x', toString(number))
+FROM numbers(10000000);
+
+SELECT count()
+FROM mydata
+WHERE (B = 0) AND (C = 'x');
+
+1 row in set. Elapsed: 0.074 sec. Processed 10.00 million rows, 168.89 MB (134.98 million rows/s., 2.28 GB/s.)
+
+-- Enable tracing to see which predicates are moved to PREWHERE.
+set send_logs_level='debug';
+
+MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE  
+-- ClickHouse automatically moves B = 0 to PREWHERE, but this condition does not filter any rows because B is always 0.
+
+-- Move the more selective C = 'x' predicate to PREWHERE.
+
+SELECT count()
+FROM mydata
+PREWHERE C = 'x'
+WHERE B = 0;
+
+1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
+
+-- The query with manually specified PREWHERE processes slightly less data: 158.89 MB instead of 168.89 MB.
+```

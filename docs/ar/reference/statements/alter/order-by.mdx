@@ -1,0 +1,19 @@
+---
+description: 'توثيق التعامل مع تعبيرات المفتاح'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/alter/order-by
+title: 'التعامل مع تعبيرات المفتاح'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
+```
+
+يغيّر هذا الأمر [مفتاح الفرز](/ar/reference/engines/table-engines/mergetree-family/mergetree) للجدول إلى `new_expression` (تعبير أو tuple من التعبيرات). ويظل المفتاح الأساسي كما هو.
+
+ويُعد هذا الأمر خفيفًا لأنه يغيّر البيانات الوصفية فقط. وللحفاظ على خاصية ترتيب صفوف جزء البيانات وفقًا لتعبير مفتاح الفرز، لا يمكنك إضافة تعبيرات تتضمن أعمدة موجودة بالفعل إلى مفتاح الفرز (يُسمح فقط بالأعمدة التي أُضيفت بواسطة الأمر `ADD COLUMN` ضمن استعلام `ALTER` نفسه، ومن دون قيمة افتراضية للعمود).
+
+<Note>
+  لا يعمل هذا إلا مع الجداول من عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك الجداول [ذات النسخ المتماثل](/ar/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

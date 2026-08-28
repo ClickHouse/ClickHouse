@@ -4,6 +4,9 @@
             <s3_retry_attempts>5</s3_retry_attempts>
             <backup_restore_s3_retry_attempts>5</backup_restore_s3_retry_attempts>
             <use_statistics>0</use_statistics>
+            <!-- Several cases create s3 tables/functions that resolve server-managed credentials, which are
+                 blocked for user queries by default. Allow it for this test. -->
+            <s3_allow_server_credentials_in_user_queries>1</s3_allow_server_credentials_in_user_queries>
         </default>
     </profiles>
     <users>

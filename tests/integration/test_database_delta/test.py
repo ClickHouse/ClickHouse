@@ -1,23 +1,12 @@
 #!/usr/bin/env python3
 
-import glob
-import json
 import logging
 import os
 import re
-import random
 import time
 import uuid
-from datetime import datetime, timedelta
 from helpers.cluster import ClickHouseCluster
 import pytest
-import requests
-import urllib3
-import pyspark
-from pyspark.sql import Row
-from pyspark.sql.types import StructType, StructField, DateType, StringType
-from pyspark.sql.utils import AnalysisException
-from datetime import date
 
 from helpers.test_tools import TSV
 
@@ -29,7 +18,7 @@ def start_unity_catalog(node):
         [
             "bash",
             "-c",
-            f"""cp -r /unitycatalog /var/lib/clickhouse/user_files/ && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
+            """cp -r /unitycatalog /var/lib/clickhouse/user_files/ && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
         ]
     )
     # Wait for Unity Catalog to accept connections on port 8080 before returning.
@@ -450,7 +439,7 @@ def test_check_database_unity(started_cluster):
 
     try:
         node1.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
         
         assert "fault when checking database" in node1.query_and_get_error(
@@ -458,7 +447,7 @@ def test_check_database_unity(started_cluster):
         )
     finally:
         node1.query(
-            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
 def test_multiple_schemes_tables(started_cluster):
@@ -564,7 +553,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     assert complex_data[4] == "(34,'hello')"
 
     if use_delta_kernel == "1":
-        assert node1.contains_in_log(f"DeltaLakeMetadata: Initializing snapshot")
+        assert node1.contains_in_log("DeltaLakeMetadata: Initializing snapshot")
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
@@ -645,10 +634,10 @@ def test_no_permission_and_list_tables(started_cluster):
     node1 = started_cluster.instances["node1"]
     node1.query("drop database if exists schema_with_permissions")
 
-    schema_name = f"schema_with_permissions"
+    schema_name = "schema_with_permissions"
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
-    table_name_1 = f"table_granted"
-    table_name_2 = f"table_not_granted"
+    table_name_1 = "table_granted"
+    table_name_2 = "table_not_granted"
 
     create_query_1 = f"CREATE TABLE {schema_name}.{table_name_1} (id INT) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name_1}'"
     create_query_2 = f"CREATE TABLE {schema_name}.{table_name_2} (id INT) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name_2}'"
@@ -726,7 +715,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     assert len(ntz_tables) == 1
 
     def get_schemas():
-        return execute_spark_query(node1, f"SHOW SCHEMAS")
+        return execute_spark_query(node1, "SHOW SCHEMAS")
 
     assert schema_name in get_schemas()
 
@@ -772,8 +761,13 @@ def test_snapshot_version(started_cluster):
     db_name = f"db_{table_name}"
 
     def get_table_versions():
+        # DESCRIBE HISTORY is read-only, so retry_on_timeout is safe: a
+        # fresh-JVM retry after a transient Unity Catalog HTTP-client hang
+        # cannot corrupt state or duplicate data.
         history = execute_spark_query(
-            node1, f"DESCRIBE HISTORY {schema_name}.{table_name}"
+            node1,
+            f"DESCRIBE HISTORY {schema_name}.{table_name}",
+            retry_on_timeout=True,
         )
         lines = [line.strip() for line in history.splitlines() if line.strip()]
         if "version" in lines[0].lower():

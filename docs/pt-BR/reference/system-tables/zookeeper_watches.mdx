@@ -1,0 +1,53 @@
+---
+description: 'Tabela do sistema que mostra os watches do ZooKeeper atualmente ativos registrados neste servidor ClickHouse.'
+keywords: ['tabela do sistema', 'zookeeper_watches']
+slug: /operations/system-tables/zookeeper_watches
+title: 'system.zookeeper_watches'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+Mostra os [watches](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) ativos no momento, registrados por este servidor ClickHouse em nós do ZooKeeper (incluindo ZooKeepers auxiliares). Cada linha representa um watch.
+
+<div id="columns">
+  ## Colunas
+</div>
+
+* `zookeeper_name` ([String](/pt-BR/reference/data-types/string)) — Nome da conexão do ZooKeeper (`default` para a conexão principal ou o nome auxiliar).
+* `create_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — Momento em que o watch foi criado.
+* `create_time_microseconds` ([DateTime64](/pt-BR/reference/data-types/datetime64)) — Momento em que o watch foi criado, com precisão de microssegundos.
+* `path` ([String](/pt-BR/reference/data-types/string)) — Caminho do ZooKeeper que está sendo monitorado.
+* `session_id` ([Int64](/pt-BR/reference/data-types/int-uint)) — ID da sessão da conexão que registrou o watch.
+* `request_xid` ([Int64](/pt-BR/reference/data-types/int-uint)) — XID da requisição que criou o watch.
+* `op_num` ([Enum](/pt-BR/reference/data-types/enum)) — Tipo da requisição que criou o watch.
+* `watch_type` ([Enum8](/pt-BR/reference/data-types/enum)) — Tipo de watch. Valores possíveis:
+  * `Children` — monitora alterações na lista de nós filhos (definido por operações `List`).
+  * `Exists` — monitora a criação ou exclusão de nós.
+  * `Data` — monitora alterações nos dados do nó (definido por operações `Get`).
+
+Exemplo:
+
+```sql
+SELECT * FROM system.zookeeper_watches FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+zookeeper_name:           default
+create_time:              2026-03-16 12:00:00
+create_time_microseconds: 2026-03-16 12:00:00.123456
+path:                     /clickhouse/task_queue/ddl
+session_id:               106662742089334927
+request_xid:              10858
+op_num:                   List
+watch_type:               Children
+```
+
+**Veja também**
+
+* [ZooKeeper](/pt-BR/guides/oss/best-practices/tips#zookeeper)
+* [Guia do ZooKeeper](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)

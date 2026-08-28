@@ -7,8 +7,8 @@ endif()
 
 # CMake variables needed by libssh_version.h.cmake, update them when you update libssh
 set(libssh_VERSION_MAJOR 0)
-set(libssh_VERSION_MINOR 9)
-set(libssh_VERSION_PATCH 8)
+set(libssh_VERSION_MINOR 12)
+set(libssh_VERSION_PATCH 0)
 
 set(LIB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libssh")
 set(LIB_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/libssh")
@@ -37,6 +37,7 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/external/poly1305.c
     ${LIB_SOURCE_DIR}/src/external/sntrup761.c
     ${LIB_SOURCE_DIR}/src/getpass.c
+    ${LIB_SOURCE_DIR}/src/hybrid_mlkem.c
     ${LIB_SOURCE_DIR}/src/init.c
     ${LIB_SOURCE_DIR}/src/kdf.c
     ${LIB_SOURCE_DIR}/src/kex.c
@@ -47,6 +48,7 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/match.c
     ${LIB_SOURCE_DIR}/src/messages.c
     ${LIB_SOURCE_DIR}/src/misc.c
+    ${LIB_SOURCE_DIR}/src/mlkem.c
     ${LIB_SOURCE_DIR}/src/options.c
     ${LIB_SOURCE_DIR}/src/packet.c
     ${LIB_SOURCE_DIR}/src/packet_cb.c
@@ -79,6 +81,7 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/gzip.c
     ${LIB_SOURCE_DIR}/src/libcrypto.c
     ${LIB_SOURCE_DIR}/src/md_crypto.c
+    ${LIB_SOURCE_DIR}/src/mlkem_crypto.c
     ${LIB_SOURCE_DIR}/src/pki_crypto.c
     ${LIB_SOURCE_DIR}/src/pki_context.c
     ${LIB_SOURCE_DIR}/src/sntrup761.c

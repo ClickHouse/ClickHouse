@@ -2,6 +2,9 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
+SET explain_query_plan_default = 'legacy';
+SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
+
 -- { echo }
 
 SET optimize_use_projections = 1;

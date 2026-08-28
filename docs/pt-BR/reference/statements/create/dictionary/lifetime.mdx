@@ -1,0 +1,142 @@
+---
+description: 'Configuração LIFETIME de dicionário para atualização automática'
+sidebarTitle: 'LIFETIME'
+slug: /sql-reference/statements/create/dictionary/lifetime
+title: 'Atualização dos dados do dicionário usando LIFETIME'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/pt-BR/_snippet_dictionary_in_cloud.mdx';
+
+O ClickHouse atualiza periodicamente os dicionários com base na tag `LIFETIME` (definida em segundos).
+`LIFETIME` é o intervalo de atualização para dicionários totalmente carregados e o intervalo de invalidação para dicionários em cache.
+
+Durante as atualizações, a versão antiga de um dicionário ainda pode ser consultada.
+As atualizações de dicionários não bloqueiam consultas, exceto durante o carregamento inicial.
+Se ocorrer um erro durante uma atualização, o erro será registrado no log do servidor, e as consultas poderão continuar usando a versão antiga do dicionário.
+Se a atualização de um dicionário for bem-sucedida, a versão antiga do dicionário será substituída [atomicamente](/pt-BR/concepts/core-concepts/glossary#atomicity).
+
+Exemplo de configurações:
+
+<CloudDetails />
+
+```xml
+<dictionary>
+    ...
+    <lifetime>300</lifetime>
+    ...
+</dictionary>
+```
+
+ou
+
+```sql
+CREATE DICTIONARY (...)
+...
+LIFETIME(300)
+...
+```
+
+Definir `<lifetime>0</lifetime>` (`LIFETIME(0)`) impede a atualização dos dicionários.
+
+Você pode definir um intervalo de tempo para as atualizações, e o ClickHouse escolherá um instante aleatório com distribuição uniforme dentro desse intervalo. Isso é necessário para distribuir a carga na fonte do dicionário ao atualizar em um grande número de servidores.
+
+Exemplo de configurações:
+
+```xml
+<dictionary>
+    ...
+    <lifetime>
+        <min>300</min>
+        <max>360</max>
+    </lifetime>
+    ...
+</dictionary>
+```
+
+ou
+
+```sql
+LIFETIME(MIN 300 MAX 360)
+```
+
+Se `<min>0</min>` e `<max>0</max>`, o ClickHouse não recarrega o dicionário por tempo limite.
+Nesse caso, o ClickHouse pode recarregar o dicionário antes se o arquivo de configuração do dicionário tiver sido alterado ou se o comando `SYSTEM RELOAD DICTIONARY` tiver sido executado.
+
+Ao atualizar os dicionários, o ClickHouse server aplica uma lógica diferente dependendo do tipo de [fonte](/pt-BR/reference/statements/create/dictionary/sources/overview):
+
+* Para um arquivo de texto, ele verifica o horário de modificação. Se esse horário for diferente do registrado anteriormente, o dicionário será atualizado.
+* Por padrão, os dicionários de outras fontes são atualizados sempre.
+
+Para outras fontes (ODBC, PostgreSQL, ClickHouse etc.), você pode configurar uma consulta que atualizará os dicionários somente se eles realmente tiverem mudado, em vez de atualizá-los sempre. Para fazer isso, siga estas etapas:
+
+* A tabela do dicionário deve ter um campo que sempre mude quando os dados da fonte forem atualizados.
+* As configurações da fonte devem especificar uma consulta que recupere o campo variável. O ClickHouse server interpreta o resultado da consulta como uma linha e, se essa linha tiver mudado em relação ao estado anterior, o dicionário será atualizado. Especifique a consulta no campo `<invalidate_query>` nas configurações da [fonte](/pt-BR/reference/statements/create/dictionary/sources/overview).
+
+Exemplo de configurações:
+
+```xml
+<dictionary>
+    ...
+    <odbc>
+      ...
+      <invalidate_query>SELECT update_time FROM dictionary_source where id = 1</invalidate_query>
+    </odbc>
+    ...
+</dictionary>
+```
+
+ou
+
+```sql
+...
+SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
+...
+```
+
+Para os dicionários `Cache`, `ComplexKeyCache`, `SSDCache` e `SSDComplexKeyCache`, são compatíveis tanto atualizações síncronas quanto assíncronas.
+
+Também é possível que os dicionários `Flat`, `Hashed`, `HashedArray` e `ComplexKeyHashed` solicitem apenas os dados alterados desde a atualização anterior. Se `update_field` for especificado como parte da configuração da fonte do dicionário, o valor do horário da atualização anterior, em segundos, será adicionado à solicitação de dados. Dependendo do tipo de fonte (Executable, HTTP, MySQL, PostgreSQL, ClickHouse ou ODBC), uma lógica diferente será aplicada a `update_field` antes de solicitar dados de uma fonte externa.
+
+* Se a fonte for HTTP, `update_field` será adicionado como um parâmetro de consulta, com o horário da última atualização como valor do parâmetro.
+* Se a fonte for Executable, `update_field` será adicionado como um argumento do script executável, com o horário da última atualização como valor do argumento.
+* Se a fonte for ClickHouse, MySQL, PostgreSQL ou ODBC, haverá uma parte adicional da cláusula `WHERE`, na qual `update_field` será comparado como maior ou igual ao horário da última atualização.
+  * Por padrão, essa condição `WHERE` é verificada no nível mais alto da consulta SQL. Como alternativa, a condição pode ser verificada em qualquer outra cláusula `WHERE` dentro da consulta usando a palavra-chave `{condition}`. Exemplo:
+    ```sql
+    ...
+    SOURCE(CLICKHOUSE(...
+        update_field 'added_time'
+        QUERY '
+            SELECT my_arr.1 AS x, my_arr.2 AS y, creation_time
+            FROM (
+                SELECT arrayZip(x_arr, y_arr) AS my_arr, creation_time
+                FROM dictionary_source
+                WHERE {condition}
+            )'
+    ))
+    ...
+    ```
+
+Se a opção `update_field` estiver definida, a opção adicional `update_lag` também poderá ser definida. O valor da opção `update_lag` é subtraído do horário da atualização anterior antes de solicitar os dados atualizados.
+
+Exemplo de configurações:
+
+```xml
+<dictionary>
+    ...
+        <clickhouse>
+            ...
+            <update_field>added_time</update_field>
+            <update_lag>15</update_lag>
+        </clickhouse>
+    ...
+</dictionary>
+```
+
+ou
+
+```sql
+...
+SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
+...
+```

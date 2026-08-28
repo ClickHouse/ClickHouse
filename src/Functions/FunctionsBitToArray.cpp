@@ -72,10 +72,14 @@ public:
             || (res = executeType<UInt16>(arguments, input_rows_count))
             || (res = executeType<UInt32>(arguments, input_rows_count))
             || (res = executeType<UInt64>(arguments, input_rows_count))
+            || (res = executeType<UInt128>(arguments, input_rows_count))
+            || (res = executeType<UInt256>(arguments, input_rows_count))
             || (res = executeType<Int8>(arguments, input_rows_count))
             || (res = executeType<Int16>(arguments, input_rows_count))
             || (res = executeType<Int32>(arguments, input_rows_count))
-            || (res = executeType<Int64>(arguments, input_rows_count))))
+            || (res = executeType<Int64>(arguments, input_rows_count))
+            || (res = executeType<Int128>(arguments, input_rows_count))
+            || (res = executeType<Int256>(arguments, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                             arguments[0].column->getName(), getName());
 
@@ -205,10 +209,14 @@ public:
             tryExecute<UInt16>(in_column, out_column) ||
             tryExecute<UInt32>(in_column, out_column) ||
             tryExecute<UInt64>(in_column, out_column) ||
+            tryExecute<UInt128>(in_column, out_column) ||
+            tryExecute<UInt256>(in_column, out_column) ||
             tryExecute<Int8>(in_column, out_column) ||
             tryExecute<Int16>(in_column, out_column) ||
             tryExecute<Int32>(in_column, out_column) ||
-            tryExecute<Int64>(in_column, out_column))
+            tryExecute<Int64>(in_column, out_column) ||
+            tryExecute<Int128>(in_column, out_column) ||
+            tryExecute<Int256>(in_column, out_column))
             return out_column;
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
@@ -274,15 +282,14 @@ public:
 
             if constexpr (is_big_int_v<UnsignedType>)
             {
-                size_t position = 0;
-
-                while (x)
+                for (unsigned limb = 0; limb < UnsignedType::_impl::item_count; ++limb)
                 {
-                    if (x & 1)
-                        result_array_values_data.push_back(position);
-
-                    x >>= 1;
-                    ++position;
+                    UInt64 item = x.items[UnsignedType::_impl::little(limb)];
+                    while (item)
+                    {
+                        result_array_values_data.push_back(limb * 64 + std::countr_zero(item));
+                        item &= (item - 1);
+                    }
                 }
             }
             else
@@ -314,7 +321,6 @@ public:
 
         if (!((result_column = executeType<UInt8>(in_column, input_rows_count))
               || (result_column = executeType<UInt16>(in_column, input_rows_count))
-              || (result_column = executeType<UInt32>(in_column, input_rows_count))
               || (result_column = executeType<UInt32>(in_column, input_rows_count))
               || (result_column = executeType<UInt64>(in_column, input_rows_count))
               || (result_column = executeType<UInt128>(in_column, input_rows_count))
@@ -364,9 +370,9 @@ Signed input integers are first casted to an unsigned integer.
             "All bits set",
             "SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions",
             R"(
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
             )"
         }
     };
@@ -386,9 +392,9 @@ The powers of two are returned as an ascendingly ordered array.
             "Basic example",
             "SELECT bitmaskToArray(50) AS powers_of_two",
             R"(
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
             )"
         },
         {
@@ -417,9 +423,9 @@ Like bitmaskToArray but returns the powers of two as a comma-separated string.
         {
             "Basic example", "SELECT bitmaskToList(50) AS powers_list",
             R"(
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
            )"
         },
     };

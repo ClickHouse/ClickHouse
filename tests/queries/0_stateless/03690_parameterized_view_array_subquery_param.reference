@@ -1,0 +1,45 @@
+Array(Int32) param
+1
+2
+3
+1
+2
+3
+1
+2
+3
+1
+2
+3
+0
+Array(String) param
+1
+2
+Tuple param
+1
+LowCardinality(String) param
+2
+4
+Array(LowCardinality(String)) param
+1
+2
+CAST(subquery) param
+1
+2
+3
+subquery predicate references param name
+EXPLAIN SYNTAX subquery param
+1
+1
+1
+1
+direct literal param, legacy analyzer
+direct literal param, EXPLAIN SYNTAX
+1
+1
+analyzer-only header inference, value-dependent type (Array)
+FixedString(3)
+FixedString(3)
+analyzer-only header inference across type matrix (Tuple, LowCardinality)
+1
+2

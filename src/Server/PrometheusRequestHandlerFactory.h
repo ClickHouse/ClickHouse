@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <memory>
+#include <optional>
 
 
 namespace Poco::Util { class AbstractConfiguration; }
@@ -35,7 +36,7 @@ class AsynchronousMetrics;
 ///         <my_rule1>
 ///             <url>/metrics</url>
 ///             <handler>
-///                 <type>expose_metrics</type>
+///                 <type>metrics</type>
 ///                 <metrics>true</metrics>
 ///                 <asynchronous_metrics>true</asynchronous_metrics>
 ///                 <events>true</events>
@@ -53,11 +54,13 @@ class AsynchronousMetrics;
 ///         <type>prometheus</type>
 ///     </my_protocol_1>
 /// </protocols>
+/// @param default_session_user - overrides the `default_session_user` server setting for this listener
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics,
-    const String & name);
+    const String & name,
+    const std::optional<String> & default_session_user = {});
 
 /// Makes a HTTP handler factory to handle requests for prometheus metrics for a HTTP rule in the <http_handlers> section.
 /// Expects a configuration like this:
@@ -67,7 +70,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///     <my_rule_1>
 ///         <url>/metrics</url>
 ///         <handler>
-///             <type>prometheus</type>
+///             <type>prometheus_metrics</type>
 ///             <metrics>true</metrics>
 ///             <asynchronous_metrics>true</asynchronous_metrics>
 ///             <events>true</events>
@@ -75,26 +78,20 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///         </handler>
 ///     </my_rule_1>
 ///     <my_rule2>
-///         <url>/write</url>
+///         <url_prefix>/prometheus/api/v1</url_prefix>
 ///         <handler>
-///             <type>remote_write</type>
+///             <type>prometheus_api_v1</type>
 ///             <table>db.time_series_table_name</table>
 ///         </handler>
 ///     </my_rule2>
-///     <my_rule3>
-///         <url>/read</url>
-///         <handler>
-///             <type>remote_read</type>
-///             <table>db.time_series_table_name</table>
-///         </handler>
-///     </my_rule3>
 /// </http_handlers>
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix, /// path to "http_handlers.my_handler_1"
     const AsynchronousMetrics & asynchronous_metrics,
-    std::unordered_map<String, String> & common_headers);
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user = {});
 
 /// Makes a HTTP Handler factory to handle requests for prometheus metrics as a part of the default HTTP rule in the <http_handlers> section.
 /// Expects a configuration like this:
@@ -118,14 +115,17 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const AsynchronousMetrics & asynchronous_metrics);
+    const AsynchronousMetrics & asynchronous_metrics,
+    const std::optional<String> & default_session_user = {});
 
 /// Makes a handler factory to handle prometheus protocols.
-/// Supports the "expose_metrics" protocol only.
+/// Supports the "metrics" protocol only.
+/// @param default_session_user - overrides the `default_session_user` server setting for this listener
 HTTPRequestHandlerFactoryPtr createKeeperPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics,
-    const String & name);
+    const String & name,
+    const std::optional<String> & default_session_user = {});
 
 }

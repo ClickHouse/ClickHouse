@@ -3,9 +3,6 @@
 import functools
 import gzip
 import io
-import json
-import logging
-import os
 import random
 import re
 import threading
@@ -19,7 +16,7 @@ from azure.storage.blob import (
     generate_container_sas,
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_logs_contain_with_retry
 from helpers.utility import SafeThread
 
@@ -334,21 +331,21 @@ def test_create_new_files_on_insert(cluster):
     azure_query(node, "truncate table test_multiple_inserts")
     azure_query(
         node,
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(10) settings azure_truncate_on_insert=1",
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(10) settings azure_truncate_on_insert=1",
     )
     azure_query(
         node,
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings azure_create_new_file_on_insert=1",
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings azure_create_new_file_on_insert=1",
     )
     azure_query(
         node,
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings azure_create_new_file_on_insert=1",
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings azure_create_new_file_on_insert=1",
     )
 
-    result = azure_query(node, f"select count() from test_multiple_inserts")
+    result = azure_query(node, "select count() from test_multiple_inserts")
     assert int(result) == 60
 
-    azure_query(node, f"drop table test_multiple_inserts")
+    azure_query(node, "drop table test_multiple_inserts")
 
 
 def test_overwrite(cluster):
@@ -362,19 +359,19 @@ def test_overwrite(cluster):
 
     azure_query(
         node,
-        f"insert into test_overwrite select number, randomString(100) from numbers(50) settings azure_truncate_on_insert=1",
+        "insert into test_overwrite select number, randomString(100) from numbers(50) settings azure_truncate_on_insert=1",
     )
     node.query_and_get_error(
-        f"insert into test_overwrite select number, randomString(100) from numbers(100)"
+        "insert into test_overwrite select number, randomString(100) from numbers(100)"
     )
     azure_query(
         node,
-        f"insert into test_overwrite select number, randomString(100) from numbers(200) settings azure_truncate_on_insert=1",
+        "insert into test_overwrite select number, randomString(100) from numbers(200) settings azure_truncate_on_insert=1",
     )
 
-    result = azure_query(node, f"select count() from test_overwrite")
+    result = azure_query(node, "select count() from test_overwrite")
     assert int(result) == 200
-    azure_query(node, f"DROP TABLE test_overwrite")
+    azure_query(node, "DROP TABLE test_overwrite")
 
 
 def test_insert_with_path_with_globs(cluster):
@@ -385,9 +382,9 @@ def test_insert_with_path_with_globs(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  container='cont', blob_path='test_insert_with_globs*', format='Parquet')",
     )
     node.query_and_get_error(
-        f"insert into table function test_insert_globs SELECT number, randomString(100) FROM numbers(500)"
+        "insert into table function test_insert_globs SELECT number, randomString(100) FROM numbers(500)"
     )
-    azure_query(node, f"DROP TABLE test_insert_globs")
+    azure_query(node, "DROP TABLE test_insert_globs")
 
 
 def test_put_get_with_globs(cluster):
@@ -436,10 +433,14 @@ def test_azure_glob_scheherazade(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 1, 1)"
-    nights_per_job = 1001 // 30
+    # The glob pattern night_*/tale.csv is fully exercised across many distinct
+    # directories with far fewer than the original 1001 files; the absolute
+    # count only drives CPU cost (heavily amplified under coverage/sanitizers).
+    nights = 101
+    nights_per_job = max(1, nights // 30)
     jobs = []
     used_names = []
-    for night in range(0, 1001, nights_per_job):
+    for night in range(0, nights, nights_per_job):
 
         def add_tales(start, end):
             for i in range(start, end):
@@ -458,7 +459,7 @@ def test_azure_glob_scheherazade(cluster):
 
         jobs.append(
             threading.Thread(
-                target=add_tales, args=(night, min(night + nights_per_job, 1001))
+                target=add_tales, args=(night, min(night + nights_per_job, nights))
             )
         )
         jobs[-1].start()
@@ -472,7 +473,7 @@ def test_azure_glob_scheherazade(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', blob_path='night_*/tale.csv', format='CSV')",
     )
     query = "select count(), sum(column1), sum(column2), sum(column3) from test_glob_select_scheherazade"
-    assert azure_query(node, query).splitlines() == ["1001\t1001\t1001\t1001"]
+    assert azure_query(node, query).splitlines() == [f"{nights}\t{nights}\t{nights}\t{nights}"]
     azure_query(node, "DROP TABLE test_glob_select_scheherazade")
 
     drop_jobs = []
@@ -553,7 +554,7 @@ def test_schema_inference_no_globs(cluster):
         f"blob_path='test_schema_inference_no_globs.csv', format='CSVWithNames')",
     )
 
-    query = f"insert into test_schema_inference_src SELECT number, toString(number), number * number FROM numbers(1000)"
+    query = "insert into test_schema_inference_src SELECT number, toString(number), number * number FROM numbers(1000)"
     azure_query(node, query)
 
     azure_query(
@@ -568,8 +569,8 @@ def test_schema_inference_no_globs(cluster):
     assert azure_query(node, query).splitlines() == [
         "499500\t2890\t332833500\ttest_schema_inference_no_globs.csv\tcont/test_schema_inference_no_globs.csv"
     ]
-    azure_query(node, f"DROP TABLE test_schema_inference_src")
-    azure_query(node, f"DROP TABLE test_select_inference")
+    azure_query(node, "DROP TABLE test_schema_inference_src")
+    azure_query(node, "DROP TABLE test_select_inference")
 
 
 def test_schema_inference_from_globs(cluster):
@@ -670,7 +671,7 @@ def test_simple_write_named_collection_1_table_function(cluster):
 
 def test_named_collection_hive_partitioning_partition_columns_in_data_file(cluster):
     node = cluster.instances["node"]
-    port = cluster.env_variables["AZURITE_PORT"]
+    cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
         f"""INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2,
@@ -1120,6 +1121,12 @@ def test_union_schema_inference_mode(cluster):
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') order by tuple(*) settings schema_inference_mode='union' format TSV",
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
+    node.query("system drop schema cache for hdfs")
+    # The HDFS-scoped drop must not clear the Azure schema cache entries.
+    result = node.query(
+        "select count() from system.schema_inference_cache where storage = 'Azure' and source like '%test_union_schema_inference%'"
+    )
+    assert int(result) == 2
     result = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
@@ -1251,7 +1258,7 @@ def test_schema_inference_cache(cluster):
     run_describe_query(node, files, connection_string)
     check_cache_hits(node, files)
 
-    node.query(f"system drop schema cache for azure")
+    node.query("system drop schema cache for azure")
     check_cache(node, [])
 
     run_describe_query(node, files, connection_string)
@@ -1333,7 +1340,7 @@ def test_schema_inference_cache(cluster):
     assert int(res) == 300
     check_cache_hits(node, "test_cache{0,1}.csv", 2)
 
-    node.query(f"system drop schema cache for azure")
+    node.query("system drop schema cache for azure")
     check_cache(node, [])
 
     res = run_count_query(node, "test_cache{0,1}.csv", connection_string, True)
@@ -1387,7 +1394,7 @@ def test_filtering_by_file_or_path(cluster):
     node.query("SYSTEM FLUSH LOGS")
 
     result = node.query(
-        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query ilike '%select%azure%test_filter%' AND type='QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1"
+        "SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query ilike '%select%azure%test_filter%' AND type='QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1"
     )
 
     assert int(result) == 1
@@ -1477,6 +1484,13 @@ def test_format_detection(cluster):
 
     assert result == expected_result
 
+    node.query("system drop schema cache for hdfs")
+    # The HDFS-scoped drop must not clear the Azure schema cache entries.
+    result = node.query(
+        "select count() from system.schema_inference_cache where storage = 'Azure' and source like '%test_format_detection%'"
+    )
+    assert int(result) > 0
+
     result = azure_query(
         node,
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection{{0,1}}', '{account_name}', '{account_key}')",
@@ -1504,7 +1518,7 @@ def test_format_detection(cluster):
     )
     result = azure_query(
         node,
-        f"show create table test_format_detection",
+        "show create table test_format_detection",
     )
     assert (
         result
@@ -1517,7 +1531,7 @@ def test_format_detection(cluster):
     )
     result = azure_query(
         node,
-        f"show create table test_format_detection",
+        "show create table test_format_detection",
     )
     assert (
         result
@@ -1530,7 +1544,7 @@ def test_format_detection(cluster):
     )
     result = azure_query(
         node,
-        f"show create table test_format_detection",
+        "show create table test_format_detection",
     )
     assert (
         result
@@ -1543,7 +1557,7 @@ def test_format_detection(cluster):
     )
     result = azure_query(
         node,
-        f"show create table test_format_detection",
+        "show create table test_format_detection",
     )
     assert (
         result
@@ -1556,7 +1570,7 @@ def test_format_detection(cluster):
     )
     result = azure_query(
         node,
-        f"show create table test_format_detection",
+        "show create table test_format_detection",
     )
     assert (
         result
@@ -1569,7 +1583,7 @@ def test_format_detection(cluster):
     )
     result = azure_query(
         node,
-        f"show create table test_format_detection",
+        "show create table test_format_detection",
     )
     assert (
         result
@@ -1577,7 +1591,7 @@ def test_format_detection(cluster):
     )
     azure_query(
         node,
-        f"DROP TABLE test_format_detection",
+        "DROP TABLE test_format_detection",
     )
 
 
@@ -1706,7 +1720,7 @@ def test_hive_partitioning_with_one_parameter(cluster):
     # type: (ClickHouseCluster) -> None
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 String, column2 String"
-    values = f"('Elizabeth', 'Gordon')"
+    values = "('Elizabeth', 'Gordon')"
     path = "a/column1=Elizabeth/sample.csv"
 
     azure_query(
@@ -1746,8 +1760,8 @@ def test_hive_partitioning_with_all_parameters(cluster):
     # type: (ClickHouseCluster) -> None
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 String, column2 String"
-    values_1 = f"('Elizabeth', 'Gordon')"
-    values_2 = f"('Emilia', 'Gregor')"
+    values_1 = "('Elizabeth', 'Gordon')"
+    values_2 = "('Emilia', 'Gregor')"
     path = "a/column1=Elizabeth/column2=Gordon/sample.csv"
 
     azure_query(
@@ -1776,8 +1790,8 @@ def test_hive_partitioning_without_setting(cluster):
     # type: (ClickHouseCluster) -> None
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 String, column2 String"
-    values_1 = f"('Elizabeth', 'Gordon')"
-    values_2 = f"('Emilia', 'Gregor')"
+    values_1 = "('Elizabeth', 'Gordon')"
+    values_2 = "('Emilia', 'Gregor')"
     path = "a/column1=Elizabeth/column2=Gordon/column3=Gordon/sample.csv"
 
     azure_query(
@@ -1832,7 +1846,7 @@ def test_hive_partition_strategy(cluster):
         f"'Parquet', 'auto', 'hive') PARTITION BY (year, country)",
     )
 
-    azure_query(node, f"insert into table test_hive_partition_strategy values (2020, 'Brazil', 1), (2021, 'Russia', 2), (2021, 'Russia', 3);")
+    azure_query(node, "insert into table test_hive_partition_strategy values (2020, 'Brazil', 1), (2021, 'Russia', 2), (2021, 'Russia', 3);")
 
     res = azure_query(node, "select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, counter from test_hive_partition_strategy order by counter;")
 
@@ -1919,3 +1933,131 @@ def test_blob_storage_log_multipart(cluster):
     assert int(r[3]) >= 1, blob_storage_log  # At least one log entry
 
     azure_query(node, "DROP TABLE test_blob_storage_log_multipart")
+
+
+def test_reject_zero_max_blocks_in_multipart_upload(cluster):
+    node = cluster.instances["node"]
+
+    error = node.query_and_get_error(
+        "SELECT 1",
+        settings={"azure_max_blocks_in_multipart_upload": 0},
+    )
+    assert "BAD_ARGUMENTS" in error, error
+    assert "A setting's value has to be greater than 0" in error, error
+
+
+def test_reject_zero_min_upload_part_size(cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/81282:
+    # azure_min_upload_part_size = 0 used to reach BufferAllocationPolicy and trigger
+    # the internal `second_size > 0` assertion on write.
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"CREATE TABLE test_reject_zero_min_upload (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_reject_zero_min_upload.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    error = node.query_and_get_error(
+        "INSERT INTO test_reject_zero_min_upload VALUES (1, 'a')",
+        settings={
+            "azure_min_upload_part_size": 0,
+            "azure_max_upload_part_size": 100,
+            "azure_strict_upload_part_size": 100,
+        },
+    )
+    assert "INVALID_SETTING_VALUE" in error, error
+    assert "azure_min_upload_part_size" in error, error
+
+    azure_query(node, "DROP TABLE test_reject_zero_min_upload")
+
+
+def test_reject_strict_upload_part_size_above_max(cluster):
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"CREATE TABLE test_reject_strict_upload_part_size (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_reject_strict_upload_part_size.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    error = node.query_and_get_error(
+        "INSERT INTO test_reject_strict_upload_part_size VALUES (1, 'a')",
+        settings={
+            "azure_max_upload_part_size": 100,
+            "azure_strict_upload_part_size": 101,
+        },
+    )
+    assert "INVALID_SETTING_VALUE" in error, error
+    assert "azure_strict_upload_part_size" in error, error
+
+    azure_query(node, "DROP TABLE test_reject_strict_upload_part_size")
+
+
+def test_max_blocks_in_multipart_upload_is_enforced(cluster):
+    # azure_max_blocks_in_multipart_upload must be honored by the blob multipart writer:
+    # a write that needs more blocks than allowed fails instead of silently exceeding the limit.
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"CREATE TABLE test_max_blocks_enforced (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_max_blocks_enforced.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    error = node.query_and_get_error(
+        "INSERT INTO test_max_blocks_enforced SELECT number, repeat('a', 100) FROM numbers(100)",
+        settings={
+            "azure_max_blocks_in_multipart_upload": 2,
+            "azure_strict_upload_part_size": 100,
+            "azure_max_single_part_upload_size": 100,
+        },
+    )
+    assert "INVALID_CONFIG_PARAMETER" in error, error
+    assert "max_blocks_in_multipart_upload" in error, error
+
+    # The same write succeeds when the limit accommodates the number of blocks.
+    azure_query(
+        node,
+        "INSERT INTO test_max_blocks_enforced SELECT number, repeat('a', 100) FROM numbers(100)",
+        settings={
+            "azure_strict_upload_part_size": 100,
+            "azure_max_single_part_upload_size": 100,
+        },
+    )
+    assert (
+        azure_query(node, "SELECT count() FROM test_max_blocks_enforced").strip()
+        == "100"
+    )
+
+    azure_query(node, "DROP TABLE test_max_blocks_enforced")
+
+
+def test_invalid_upload_settings_do_not_affect_reads(cluster):
+    # The multipart upload settings are consumed by the blob multipart writer
+    # (`WriteBufferFromAzureBlobStorage`) only, so they must be validated there and not where
+    # the settings are resolved (`getRequestSettings`). The latter runs before the backend is
+    # chosen and is shared with the ADLS Gen2 / OneLake (`*.fabric.microsoft.com`) endpoints,
+    # whose writes route to `WriteBufferFromAzureDataLakeStorage` and never consult multipart
+    # sizing - and with read-only queries, which never upload anything at all.
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"CREATE TABLE test_reads_with_invalid_upload_settings (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_reads_with_invalid_upload_settings.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+    azure_query(
+        node, "INSERT INTO test_reads_with_invalid_upload_settings VALUES (1, 'a')"
+    )
+
+    invalid_upload_settings = {
+        "azure_min_upload_part_size": 0,
+        "azure_upload_part_size_multiply_factor": 0,
+    }
+    assert (
+        azure_query(
+            node,
+            "SELECT count() FROM test_reads_with_invalid_upload_settings",
+            settings=invalid_upload_settings,
+        ).strip()
+        == "1"
+    )
+
+    azure_query(node, "DROP TABLE test_reads_with_invalid_upload_settings")

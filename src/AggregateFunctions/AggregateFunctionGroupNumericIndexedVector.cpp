@@ -168,7 +168,7 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
 void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, {createAggregateFunctionNumericIndexedVector, {}});
+    factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, {createAggregateFunctionNumericIndexedVector, {.description = R"DOC(Aggregates (index, value) pairs into a numeric indexed vector (a sparse vector addressed by an integer index) and supports pointwise operations between such vectors.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 

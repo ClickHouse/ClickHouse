@@ -53,14 +53,22 @@ void ProtobufRowInputFormat::destroyReaderAndSerializer()
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 try
 {
+    bool serializer_recreated = false;
     if (!reader)
+    {
         createReaderAndSerializer();
+        serializer_recreated = true;
+    }
 
     if (reader->eof())
         return false;
 
+    /// Point the serializer at the current columns before reading. Besides the start
+    /// of a block (row_num == 0), this is also needed mid-block when error recovery
+    /// recreated the serializer with a valid row already buffered (row_num > 0) —
+    /// otherwise readRow dereferences its null column.
     size_t row_num = columns.empty() ? 0 : columns[0]->size();
-    if (!row_num)
+    if (!row_num || serializer_recreated)
         serializer->setColumns(columns.data(), columns.size());
 
     serializer->readRow(row_num);
@@ -205,9 +213,20 @@ message MessageType {
 
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
 
-Nested messages are suitable for input or output of a [nested data structures](/sql-reference/data-types/nested-data-structures/index.md).
+Nested messages are suitable for input or output of a [nested data structures](/reference/data-types/nested-data-structures).
 
-Default values defined in a protobuf schema like the one that follows are not applied, rather the [table defaults](/sql-reference/statements/create/table#default_values) are used instead of them:
+For **mapped** fields that are missing on the wire:
+
+- Ordinary **non-nullable** mapped columns use the protobuf schema field default (`proto2` `[default = …]`, otherwise the type default) during parsing — not the table `DEFAULT` expression.
+- Mapped `Nullable(...)` columns resolve to `NULL` when the field is absent (they do not take the protobuf field/type default).
+- With [`input_format_protobuf_flatten_google_wrappers`](/reference/settings/formats/input-format#input_format_protobuf_flatten_google_wrappers) enabled for `google.protobuf.*Value` wrappers:
+  - an **absent** wrapper on a `Nullable(...)` column is treated as a missing outer field and becomes `NULL`;
+  - a **present-but-empty** wrapper (`str {}`) keeps the nested scalar default (`''` / `0`);
+  - a non-nullable column mapped to an absent wrapper gets the nested scalar default rather than `NULL`.
+
+Table `DEFAULT` (and default expressions) apply to table columns that have **no** matching field in the message type when [`input_format_defaults_for_omitted_fields`](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) is enabled (the default). If that setting is `0`, unmapped columns keep the data type default inserted during parsing instead of the table `DEFAULT` expression.
+
+Example of a proto2 schema field default (used for a mapped field absent from the message):
 
 ```capnp
 syntax = "proto2";
@@ -249,9 +268,10 @@ SELECT * FROM string_or_string
 Name of the column that indicates presence must be the same as the name of oneof.
 Nested messages are supported (see  [basic-examples](#basic-examples)). Empty messages are supported as well.
 Allowed types are Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Enum, Enum8 or Enum16.
-Enum (as well as Enum8 or Enum16) must contain all oneof' possible tags plus 0 to indicate absence, string representations does not matter.
+Enum (as well as Enum8 or Enum16) must contain 0 to indicate absence and the tag of every oneof case that has a matching column in the target table, string representations does not matter.
+For oneof message members without matching table columns, missing Enum tags are allowed as well. If such a branch is present in the input, ClickHouse treats the oneof presence as omitted and writes 0 to the presence column.
 
-The setting [`input_format_protobuf_oneof_presence`](/operations/settings/settings-formats.md#input_format_protobuf_oneof_presence) is disabled by default
+The setting [`input_format_protobuf_oneof_presence`](/reference/settings/formats/input-format#input_format_protobuf_oneof_presence) is disabled by default
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 This means that before every message its length should be written as a [variable width integer (varint)](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -461,7 +481,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```sql
+```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -497,7 +517,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```sql
+```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -519,7 +539,7 @@ SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerat
 ```
 
 In this case, ClickHouse will autogenerate the Protobuf schema according to the table structure using function
-[`structureToProtobufSchema`](/sql-reference/functions/other-functions#structureToProtobufSchema). It will then use this schema to serialize data in the Protobuf format.
+[`structureToProtobufSchema`](/reference/functions/regular-functions/other-functions#structureToProtobufSchema). It will then use this schema to serialize data in the Protobuf format.
 
 You can also read a Protobuf file with the autogenerated schema. In this case it is necessary for the file to be created using the same schema:
 
@@ -527,9 +547,9 @@ You can also read a Protobuf file with the autogenerated schema. In this case it
 $ cat hits.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_protobuf_use_autogenerated_schema=1 FORMAT Protobuf"
 ```
 
-The setting [`format_protobuf_use_autogenerated_schema`](/operations/settings/settings-formats.md#format_protobuf_use_autogenerated_schema) is enabled by default and applies if [`format_schema`](/operations/settings/formats#format_schema) is not set.
+The setting [`format_protobuf_use_autogenerated_schema`](/reference/settings/formats/format#format_protobuf_use_autogenerated_schema) is enabled by default and applies if [`format_schema`](/reference/settings/formats/format-schema#format_schema) is not set.
 
-You can also save autogenerated schema in the file during input/output using setting [`output_format_schema`](/operations/settings/formats#output_format_schema). For example:
+You can also save autogenerated schema in the file during input/output using setting [`output_format_schema`](/reference/settings/formats/output-format#output_format_schema). For example:
 
 ```sql
 SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerated_schema=1, output_format_schema='path/to/schema/schema.proto'
@@ -539,7 +559,7 @@ In this case autogenerated Protobuf schema will be saved in file `path/to/schema
 
 ### Drop protobuf cache {#drop-protobuf-cache}
 
-To reload the Protobuf schema loaded from [`format_schema_path`](/operations/server-configuration-parameters/settings.md/#format_schema_path) use the [`SYSTEM DROP ... FORMAT CACHE`](/sql-reference/statements/system.md/#system-drop-schema-format) statement.
+To reload the Protobuf schema loaded from [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path) use the [`SYSTEM DROP ... FORMAT CACHE`](/reference/statements/system#system-drop-schema-format) statement.
 
 ```sql
 SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
@@ -548,9 +568,9 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
     factory.setDocumentation("ProtobufSingle", Documentation{
         .description = R"DOCS_MD(
-:::note
-This format is not supported in ClickHouse Cloud.
-:::
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge/>
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -558,7 +578,7 @@ This format is not supported in ClickHouse Cloud.
 
 ## Description {#description}
 
-The `ProtobufSingle` format is the same as the [`Protobuf`](./Protobuf.md) format but it is intended for storing/parsing single Protobuf messages without length delimiters.
+The `ProtobufSingle` format is the same as the [`Protobuf`](/reference/formats/Protobuf/Protobuf) format but it is intended for storing/parsing single Protobuf messages without length delimiters.
 
 ## Example usage {#example-usage}
 

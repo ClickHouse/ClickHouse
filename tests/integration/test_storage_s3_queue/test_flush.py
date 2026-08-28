@@ -169,7 +169,7 @@ def test_flush_blocks_until_commit_succeeds(started_cluster, mode):
     # The file was reinserted on every failed retry, so count may exceed row_num;
     # we only assert that at least one successful processing cycle occurred.
     count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
-    assert count > 0, f"Expected rows in destination table after flush, got 0"
+    assert count > 0, "Expected rows in destination table after flush, got 0"
 
 
 
@@ -317,7 +317,7 @@ def test_flush_ordered_with_buckets(started_cluster):
         raise flush_errors[0]
 
     count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
-    assert count > 0, f"Expected rows in destination table after flush, got 0 (buckets=4)"
+    assert count > 0, "Expected rows in destination table after flush, got 0 (buckets=4)"
 
 
 
@@ -382,7 +382,7 @@ def test_flush_ordered_with_hive_partitioning(started_cluster):
         raise flush_errors[0]
 
     count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
-    assert count > 0, f"Expected rows in destination table after flush, got 0"
+    assert count > 0, "Expected rows in destination table after flush, got 0"
 
 
 def test_flush_ordered_with_regex_partitioning(started_cluster):
@@ -450,4 +450,4 @@ def test_flush_ordered_with_regex_partitioning(started_cluster):
         raise flush_errors[0]
 
     count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
-    assert count > 0, f"Expected rows in destination table after flush, got 0"
+    assert count > 0, "Expected rows in destination table after flush, got 0"

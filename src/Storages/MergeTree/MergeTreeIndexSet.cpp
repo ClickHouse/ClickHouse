@@ -4,6 +4,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -49,7 +50,7 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const Block & index_sample_block_,
     size_t max_rows_,
     MutableColumns && mutable_columns_,
-    std::vector<Range> && set_hyperrectangle_)
+    Ranges && set_hyperrectangle_)
     : index_name(index_name_)
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
@@ -120,17 +121,22 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & elem = block.getByPosition(i);
-        elem.column = elem.column->cloneEmpty();
+        auto mutable_col = elem.column->cloneEmpty();
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
+        elem.column = std::move(mutable_col);
 
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
-            column_nullable->getExtremesNullLast(min_val, max_val, 0, elem.column->size());
+        /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
+        /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
+        /// (otherwise IS NULL can wrongly prune); getExtremes on LC materializes internally anyway.
+        const auto column = elem.column->lowCardinality() ? elem.column->convertToFullColumnIfLowCardinality() : elem.column;
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+            column_nullable->getExtremesNullLast(min_val, max_val, 0, column->size());
         else
-            elem.column->getExtremes(min_val, max_val, 0, elem.column->size());
+            column->getExtremes(min_val, max_val, 0, column->size());
 
         set_hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
@@ -182,25 +188,23 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        /// A reference into the scratch block (not a copy), so it stays uniquely owned: `mutate` below is a no-op
-        /// and the `popBack` reset is written back, leaving the scratch column empty for the next granule.
+        /// A reference into the scratch block (not a copy), so it stays uniquely owned and `mutate` is a no-op.
         auto & column = block_for_reading.getByPosition(i).column;
+        auto mutable_col = IColumn::mutate(std::move(column));
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
 
         {
             auto mutable_column = IColumn::mutate(std::move(block.getByPosition(i).column));
-            mutable_column->insertRangeFrom(*column, 0, rows_to_read);
+            mutable_column->insertRangeFrom(*mutable_col, 0, rows_to_read);
             block.getByPosition(i).column = std::move(mutable_column);
         }
 
-        {
-            auto mutable_column = IColumn::mutate(std::move(column));
-            mutable_column->popBack(rows_to_read);
-            column = std::move(mutable_column);
-        }
+        /// Reset the scratch column to empty for the next granule.
+        mutable_col->popBack(rows_to_read);
+        column = std::move(mutable_col);
     }
 
     /// The last column is designating the granule
@@ -284,10 +288,14 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
             auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
 
-            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(filtered_column.get()))
-                column_nullable->getExtremesNullLast(field_min, field_max, 0, filtered_column->size());
+            /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
+            /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
+            /// (otherwise IS NULL can wrongly prune); getExtremes on LC materializes internally anyway.
+            const auto extremes_column = filtered_column->lowCardinality() ? filtered_column->convertToFullColumnIfLowCardinality() : filtered_column;
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(extremes_column.get()))
+                column_nullable->getExtremesNullLast(field_min, field_max, 0, extremes_column->size());
             else
-                filtered_column->getExtremes(field_min, field_max, 0, filtered_column->size());
+                extremes_column->getExtremes(field_min, field_max, 0, extremes_column->size());
 
             if (set_hyperrectangle.size() <= i)
             {
@@ -315,7 +323,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     size_t limit,
     ClearableSetVariants & variants) const
 {
-    /// Like DistinctSortedTransform.
+    /// Like DistinctSortedStreamTransform.
     typename Method::State state(column_ptrs, key_sizes, nullptr);
 
     bool has_new_data = false;
@@ -375,9 +383,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
-    for (const auto & name : index_description.sample_block.getNames())
-        if (!key_columns.contains(name))
-            key_columns.insert(name);
+    for (const auto & column : index_description.sample_block)
+        key_columns.emplace(column.name, column.type);
 
     if (!filter_dag.predicate)
         return;
@@ -584,10 +591,28 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
             /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
             /// through the regular filter path.
-            if (WhichDataType(removeNullable(atom_node_ptr->result_type)).isInteger())
+            const auto & atom_result_type = atom_node_ptr->result_type;
+            const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
+                ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
+                : WhichDataType(removeNullable(atom_result_type)).isInteger();
+            if (is_integer_atom)
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+
+                /// A NULL atom value yields a NULL from `__bitWrapperFunc` rather than a BoolMask.
+                /// That NULL propagates through `__bitBoolMaskAnd`/`Or` and wrongly prunes a granule
+                /// the atom does not exclude. Map a NULL mask to `UNKNOWN_FIELD` (can be true or false).
+                if (isNullableOrLowCardinalityNullable(result_node->result_type))
+                {
+                    auto unknown_name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                    auto unknown_type = std::make_shared<DataTypeUInt8>();
+                    ColumnConstPtr unknown_column = unknown_type->createColumnConst(1, UNKNOWN_FIELD);
+                    const auto & unknown_node = result_dag.addColumn(std::move(unknown_column), std::move(unknown_type), std::move(unknown_name));
+
+                    auto if_null_function = FunctionFactory::instance().get("ifNull", context);
+                    result_node = &result_dag.addFunction(if_null_function, {result_node, &unknown_node}, {});
+                }
             }
             else
             {
@@ -618,25 +643,66 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         node_to_check = node_to_check->children[0];
 
     if (node_to_check->column)
+    {
+        /// A function folded to a constant still keeps its argument subtree, which may
+        /// reference columns absent from this index's granule block. Re-add it as a leaf
+        /// constant so cloneSubDAG does not pull those foreign inputs into `actions`. Reuse the
+        /// node's existing constant column (a COW pointer) instead of rebuilding one; addColumn
+        /// normalizes its row count.
+        if (node_to_check->type == ActionsDAG::ActionType::FUNCTION)
+            return &result_dag.addColumn(node_to_check->column, node_to_check->result_type, node_to_check->result_name);
         return &node;
+    }
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
     auto column_name = tree_node.getColumnName();
-    if (key_columns.contains(column_name))
+    if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
     {
+        /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
+        /// granule does not.
+        const auto & index_type = key_column_it->second;
+        const bool restore_nullable = !node.result_type->equals(*index_type);
+
+        /// INPUT cannot be re-typed: a second input under the same name would be
+        /// left unbound, because `ExpressionActions::execute` maps each name to one block column.
+        if (restore_nullable && node.type == ActionsDAG::ActionType::INPUT)
+            return nullptr;
+
+        /// Only a `Nullable` the query side added is reconcilable: dropping a `Nullable` the granule
+        /// holds would substitute values for its NULLs.
+        if (restore_nullable && !makeNullableOrLowCardinalityNullable(index_type)->equals(*node.result_type))
+            return nullptr;
+
+        const ActionsDAG::Node * result_node = nullptr;
+
         /// Check if we already created an INPUT for this key column
         auto it = key_column_inputs.find(column_name);
         if (it != key_column_inputs.end())
-            return it->second;
+        {
+            result_node = it->second;
+        }
+        else
+        {
+            result_node = node_to_check;
 
-        const auto * result_node = node_to_check;
+            /// Bind to the type the granule block holds, not the query-side type.
+            if (node.type != ActionsDAG::ActionType::INPUT)
+                result_node = &result_dag.addInput(column_name, index_type);
 
-        if (node.type != ActionsDAG::ActionType::INPUT)
-            result_node = &result_dag.addInput(column_name, node.result_type);
+            key_column_inputs[column_name] = result_node;
+        }
 
-        key_column_inputs[column_name] = result_node;
+        /// Restore the query-side type for the enclosing function. `toNullable` wraps the type
+        /// without introducing a NULL, so the mask the granule drives is unchanged.
+        if (restore_nullable)
+        {
+            auto to_nullable_function = FunctionFactory::instance().get("toNullable", context);
+            result_node = &result_dag.addFunction(to_nullable_function, {result_node}, {});
+        }
+
+        chassert(result_node->result_type->equals(*node.result_type));
         return result_node;
     }
 
@@ -656,6 +722,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return nullptr;
     }
 
+    /// Children carry their query-side types, so `node.function_base` still declares the right type.
     return &result_dag.addFunction(node.function_base, children, {});
 }
 
