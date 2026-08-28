@@ -301,6 +301,19 @@ public:
             return getBucketFromHash(bucketRoutingHash(ptr->getKey(), ptr->getHash(*this)));
     }
 
+private:
+    /// Direct-addressed cells store no key (`VoidKey`); the impl iterator's `getHash()` is the cell index / key.
+    template <typename ImplIt>
+    static size_t ALWAYS_INLINE routedBucketFromIteration(const ImplIt & current_it, size_t physical_bucket)
+    {
+        if constexpr (numBuckets() == 1)
+            return 0;
+        else if constexpr (isFixedRangeStorage())
+            return getBucketFromHash(bucketRoutingHash(static_cast<key_type>(current_it.getHash()), current_it.getHash()));
+        else
+            return physical_bucket;
+    }
+
 protected:
     typename Impl::iterator beginOfNextNonEmptyBucket(size_t & bucket)
     {
@@ -362,6 +375,8 @@ public:
         Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
         size_t getBucket() const { return bucket; }
+        /// Routing bucket for unmatched-row splits. `getBucket()` is the physical impls index.
+        size_t getRoutedBucket() const { return Self::routedBucketFromIteration(current_it, bucket); }
     };
 
 
@@ -403,6 +418,7 @@ public:
         const Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
         size_t getBucket() const { return bucket; }
+        size_t getRoutedBucket() const { return Self::routedBucketFromIteration(current_it, bucket); }
     };
 
 

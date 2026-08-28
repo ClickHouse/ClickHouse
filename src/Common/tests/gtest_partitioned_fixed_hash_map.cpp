@@ -510,3 +510,43 @@ TEST(PartitionedFixedHashMap, ConcurrentBuildWithContendedKeys)
         ASSERT_EQ(cell->getMapped(), key * 11) << "key " << key;
     }
 }
+
+
+TEST(PartitionedFixedHashMap, IteratorRoutedBucketSplitsAScanAcrossStreams)
+{
+    /// Flat storage: `getBucket()` is 0. Stream split must use `getRoutedBucket()`
+    /// or streams 1..N skip straight to `end()`.
+    using Map = Partitioned<UInt16, 16, 8>;
+    Map map;
+    constexpr UInt32 num_keys = 4000;
+    for (UInt32 key = 0; key < num_keys; ++key)
+        insertKeyValue(map, key, key);
+
+    for (auto it = map.begin(); it != map.end(); ++it)
+    {
+        ASSERT_EQ(it.getBucket(), 0u);
+        const auto key = static_cast<UInt16>(it.getHash());
+        ASSERT_EQ(it.getRoutedBucket(), routedBucket(map, key)) << "key " << key;
+    }
+
+    constexpr size_t num_streams = 4;
+    std::vector<size_t> counts(num_streams);
+    std::vector<char> seen(num_keys);
+    for (size_t stream = 0; stream < num_streams; ++stream)
+    {
+        for (auto it = map.begin(); it != map.end(); ++it)
+        {
+            if ((it.getRoutedBucket() % num_streams) != stream)
+                continue;
+            const auto key = static_cast<UInt16>(it.getHash());
+            ASSERT_LT(key, num_keys);
+            ASSERT_FALSE(seen[key]) << "key " << key << " on two streams";
+            seen[key] = 1;
+            ++counts[stream];
+        }
+    }
+    for (UInt32 key = 0; key < num_keys; ++key)
+        ASSERT_TRUE(seen[key]) << "key " << key << " missed";
+    for (size_t stream = 0; stream < num_streams; ++stream)
+        ASSERT_GT(counts[stream], 0u) << "stream " << stream << " got no keys";
+}

@@ -23,6 +23,11 @@ namespace DB
 /// because `MergeJoin::addBlockToJoin` is not concurrent. After a switch, probe is serialized
 /// for the same reason: `supportParallelJoin` is fixed at plan time.
 ///
+/// Unmatched RIGHT/FULL rows: `supportParallelNonJoinedBlocksProcessing` is captured from
+/// the inner `HashJoin` so the pipeline wires `NonJoinedBlocksTransform`. After a drain
+/// the 5-arg `getNonJoinedBlocks` still forwards; `MergeJoin` does not override it, so
+/// `IJoin`'s default puts every unmatched row on stream 0.
+///
 /// Every access to `join` after construction takes `switch_mutex`. Totals live on this wrapper:
 /// `FillingRightJoinSideTransform` calls `setTotals` on every filler at EOF, including while
 /// another filler is still inserting and may replace `join`.
@@ -101,6 +106,17 @@ public:
         return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block,
+        const Block & result_sample_block,
+        UInt64 max_block_size,
+        size_t stream_idx,
+        size_t num_streams) const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, stream_idx, num_streams);
+    }
+
     IBlocksStreamPtr getDelayedBlocks() override
     {
         std::shared_lock lock(switch_mutex);
@@ -120,6 +136,7 @@ public:
 
     bool supportParallelJoin() const override { return use_parallel_layout && max_threads > 1; }
     size_t getMaxBuildThreads() const override { return max_threads; }
+    bool supportParallelNonJoinedBlocksProcessing() const override { return supports_parallel_non_joined_blocks_processing; }
 
     void onBuildPhaseFinish() override
     {
@@ -160,6 +177,7 @@ private:
     const Block right_sample_block;
     const size_t max_threads;
     const bool use_parallel_layout;
+    bool supports_parallel_non_joined_blocks_processing = false;
 
     /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
     /// Throws an error if join-on-disk do not support JOIN kind or strictness.

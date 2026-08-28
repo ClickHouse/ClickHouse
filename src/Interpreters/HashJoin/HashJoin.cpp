@@ -2053,16 +2053,24 @@ private:
             const StoredBlock * const * stored_columns = parent.data->stored_columns_index->blocksData();
             const RowDataStore * const * block_row_stores = parent.data->stored_columns_index->rowStoresData();
 
-            /// From the iterator, not the key: for flat storage those buckets differ.
+            /// Ownership uses the routed bucket. `iteratorAt` / `offsetInternalAtBucket`
+            /// take the physical impls index (`getBucket()`, always 0 on flat storage).
             auto skipToNextOwnedBucket = [&]() -> bool
             {
-                while (it != end && !isBucketOwnedByStream(it.getBucket()))
+                while (it != end && !isBucketOwnedByStream(it.getRoutedBucket()))
                 {
-                    size_t cur = it.getBucket();
-                    size_t next = cur - (cur % num_streams) + stream_idx;
-                    if (next <= cur)
-                        next += num_streams;
-                    it = map.iteratorAt(next);
+                    if constexpr (Map::isFixedRangeStorage())
+                    {
+                        ++it;
+                    }
+                    else
+                    {
+                        size_t cur = it.getBucket();
+                        size_t next = cur - (cur % num_streams) + stream_idx;
+                        if (next <= cur)
+                            next += num_streams;
+                        it = map.iteratorAt(next);
+                    }
                 }
                 return it != end;
             };
@@ -2090,7 +2098,7 @@ private:
 
                 ++it;
 
-                if (it != end && !isBucketOwnedByStream(it.getBucket()) && !skipToNextOwnedBucket())
+                if (it != end && !isBucketOwnedByStream(it.getRoutedBucket()) && !skipToNextOwnedBucket())
                     break;
             }
         }

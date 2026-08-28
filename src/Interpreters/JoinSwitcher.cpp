@@ -57,6 +57,7 @@ JoinSwitcher::JoinSwitcher(
         stats_collecting_params_,
         max_threads,
         use_parallel_layout);
+    supports_parallel_non_joined_blocks_processing = join->supportParallelNonJoinedBlocksProcessing();
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();
