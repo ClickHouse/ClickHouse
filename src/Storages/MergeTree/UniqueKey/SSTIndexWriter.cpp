@@ -45,6 +45,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int SUPPORT_IS_DISABLED;
@@ -396,9 +397,18 @@ void SSTIndexWriter::addEncoded(const std::string_view & encoded_key, UInt32 row
         rocksdb::Slice(value_buf, sizeof(value_buf)));
 
     if (!status.ok())
+    {
+        /// Keys are fed in sorted order, so RocksDB's `InvalidArgument` after a successful
+        /// Put means two rows share a unique key, not a misuse of the writer.
+        if (status.IsInvalidArgument() && entries_added > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "UNIQUE KEY dense index: duplicate key encountered while building the index; "
+                "the unique-key columns must be distinct (enforced by the insert/upsert path)");
+
         throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
             "SSTIndexWriter::addEncoded failed (row_number={}): {}",
             row_number, status.ToString());
+    }
 
     impl->last_key.assign(encoded_key.data(), encoded_key.size());
     impl->last_row_number = row_number;

@@ -204,6 +204,85 @@ TEST(DeleteBitmapTest, AutoUpgradeOnAdd)
     EXPECT_EQ(bm.rangeCardinality(kAboveU32, kAboveU32 + 1), 1u);
 }
 
+/// `subtract` is `merge`'s counterpart, and its four width combinations are dispatched
+/// separately, so each is covered here. Width is not asserted directly -- `is64Bit` is private,
+/// and a widened bitmap is indistinguishable for every value it can hold -- so each case is
+/// pinned by WHICH rows survive, which is what a mis-dispatch would get wrong.
+TEST(DeleteBitmapTest, SubtractNarrowFromNarrow)
+{
+    DeleteBitmap a;
+    a.addMany({1, 2, 3, 10});
+    DeleteBitmap b;
+    b.addMany({2, 10, 99});   /// 99 is absent from `a`; removing it must be a no-op
+
+    a.subtract(b);
+    EXPECT_EQ(a.toVector(), (std::vector<UInt64>{1, 3}));
+}
+
+TEST(DeleteBitmapTest, SubtractWideFromWide)
+{
+    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
+
+    DeleteBitmap a;
+    a.addMany({1, kAboveU32, kAboveU32 + 1});
+    ASSERT_TRUE(a.contains(kAboveU32));   /// upgraded, per AutoUpgradeOnAddMany
+
+    DeleteBitmap b;
+    b.addMany({kAboveU32});
+    ASSERT_TRUE(b.contains(kAboveU32));
+
+    a.subtract(b);
+    EXPECT_EQ(a.toVector(), (std::vector<UInt64>{1, kAboveU32 + 1}));
+}
+
+TEST(DeleteBitmapTest, SubtractNarrowFromWide)
+{
+    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
+
+    DeleteBitmap a;
+    a.addMany({1, 2, kAboveU32});
+    ASSERT_TRUE(a.contains(kAboveU32));
+
+    DeleteBitmap b;   /// nothing above the ceiling, so it stays narrow
+    b.addMany({2});
+
+    a.subtract(b);
+    EXPECT_EQ(a.toVector(), (std::vector<UInt64>{1, kAboveU32}));
+}
+
+/// The combination `merge` deliberately does not have: it would widen `dst` first, while
+/// difference must not -- a value above the ceiling is not in `dst`, so it has nothing to remove.
+///
+/// `kAboveU32` truncates to 4 in 32 bits, and `a` holds 4. Casting the wide
+/// operand down instead of skipping it deletes row 4, which is in neither operand's intersection.
+TEST(DeleteBitmapTest, SubtractWideFromNarrowSkipsUnaddressableRows)
+{
+    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
+    static_assert(static_cast<UInt32>(kAboveU32) == 4, "the truncation this test detects");
+
+    DeleteBitmap a;   /// narrow
+    a.addMany({1, 2, 3, 4});
+
+    DeleteBitmap b;
+    b.addMany({2, kAboveU32});
+    ASSERT_TRUE(b.contains(kAboveU32));
+
+    a.subtract(b);
+    EXPECT_EQ(a.toVector(), (std::vector<UInt64>{1, 3, 4}));
+}
+
+TEST(DeleteBitmapTest, SubtractEverythingLeavesEmpty)
+{
+    DeleteBitmap a;
+    a.addMany({4, 5, 6});
+    DeleteBitmap b;
+    b.addMany({4, 5, 6});
+
+    a.subtract(b);
+    EXPECT_TRUE(a.empty());
+    EXPECT_EQ(a.cardinality(), 0u);
+}
+
 TEST(DeleteBitmapTest, AutoUpgradeOnAddMany)
 {
     DeleteBitmap bm;
@@ -465,7 +544,7 @@ TEST(DeleteBitmapTest, FileNameRoundtrip)
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_1.rbm.tmp"));
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile(""));
     /// Noncanonical numeric forms must be rejected so two filenames cannot
-    /// resolve to the same csn (would confuse `readBitmapFromStorage`).
+    /// resolve to the same csn (would confuse sidecar resolution).
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_+7.rbm"));
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_-7.rbm"));
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_007.rbm"));
@@ -493,7 +572,7 @@ TEST(DeleteBitmapCacheTest, GetOrSetLoadsOnceAndIsKeyDeterministic)
 
     size_t load_calls = 0;
     auto key = DeleteBitmapCache::makeKey("part-b", 7);
-    auto load = [&]() -> std::shared_ptr<DeleteBitmap>
+    auto load = [&]() -> DeleteBitmapPtr
     {
         ++load_calls;
         auto bm = std::make_shared<DeleteBitmap>();
@@ -574,4 +653,96 @@ TEST(DeleteBitmapInspectTest, FlippedBodyByteIsCorruptNotThrowing)
     EXPECT_TRUE(info.magic_ok);
     EXPECT_FALSE(info.crc_ok);
     EXPECT_NE(info.crc_stored, info.crc_computed);
+}
+
+/// ---------- buildKeepFilter / buildKeepFilterRange ----------
+
+TEST(DeleteBitmapTest, KeepFilterRangeOverEmptyBitmapKeepsEverything)
+{
+    DeleteBitmap bm;
+    std::vector<UInt8> keep(5, 0);
+    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/10, keep.size(), keep.data()), 5u);
+    EXPECT_EQ(keep, (std::vector<UInt8>{1, 1, 1, 1, 1}));
+
+    /// An empty range is a no-op, not a read of `out_keep`.
+    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, 0, nullptr), 0u);
+}
+
+TEST(DeleteBitmapTest, KeepFilterRangeIsOffsetByBegin)
+{
+    DeleteBitmap bm;
+    bm.addMany({11, 13});
+
+    /// Rows 10..14, so the deleted ones land at indices 1 and 3 of the mask.
+    std::vector<UInt8> keep(5, 0);
+    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/10, keep.size(), keep.data()), 3u);
+    EXPECT_EQ(keep, (std::vector<UInt8>{1, 0, 1, 0, 1}));
+
+    /// A range entirely past the set rows keeps all of them.
+    std::vector<UInt8> after(3, 0);
+    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/20, after.size(), after.data()), 3u);
+    EXPECT_EQ(after, (std::vector<UInt8>{1, 1, 1}));
+}
+
+TEST(DeleteBitmapTest, KeepFilterRangeOnWideRepresentation)
+{
+    /// Above `UInt32` the bitmap switches representation, and the range walk has its own overload
+    /// per width -- a mis-dispatch would answer for the truncated row number instead.
+    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
+    DeleteBitmap bm;
+    bm.addMany({kAboveU32, kAboveU32 + 2});
+
+    std::vector<UInt8> keep(4, 0);
+    EXPECT_EQ(bm.buildKeepFilterRange(kAboveU32, keep.size(), keep.data()), 2u);
+    EXPECT_EQ(keep, (std::vector<UInt8>{0, 1, 0, 1}));
+
+    /// The truncated row numbers are not deleted, so the narrow window is untouched.
+    std::vector<UInt8> narrow(6, 0);
+    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, narrow.size(), narrow.data()), 6u);
+}
+
+TEST(DeleteBitmapTest, KeepFilterTakesExplicitRows)
+{
+    DeleteBitmap bm;
+    bm.addMany({4, 9});
+
+    const std::vector<UInt64> rows{9, 1, 4, 7};
+    std::vector<UInt8> keep(rows.size(), 0);
+    EXPECT_EQ(bm.buildKeepFilter(rows.data(), rows.size(), keep.data()), 2u);
+    EXPECT_EQ(keep, (std::vector<UInt8>{0, 1, 0, 1}));
+}
+
+TEST(DeleteBitmapCacheTest, RemoveEntriesForPartTakesEveryVersionOfThatPartOnly)
+{
+    DeleteBitmapCache cache(
+        "LRU",
+        CurrentMetrics::DeleteBitmapCacheBytes,
+        CurrentMetrics::DeleteBitmapCacheEntries,
+        /*max_size_in_bytes=*/8 * 1024 * 1024,
+        /*size_ratio=*/0.5);
+
+    auto bitmap = [](UInt64 row)
+    {
+        return [row]() -> DeleteBitmapPtr
+        {
+            auto bm = std::make_shared<DeleteBitmap>();
+            bm->add(row);
+            return bm;
+        };
+    };
+
+    /// Two versions of the part being dropped, one of a part that stays.
+    cache.getOrSet(DeleteBitmapCache::makeKey("dropped", 7), bitmap(1));
+    cache.getOrSet(DeleteBitmapCache::makeKey("dropped", 12), bitmap(2));
+    cache.getOrSet(DeleteBitmapCache::makeKey("survivor", 7), bitmap(3));
+
+    cache.removeEntriesForPart("dropped");
+
+    EXPECT_EQ(cache.get(DeleteBitmapCache::makeKey("dropped", 7)), nullptr);
+    EXPECT_EQ(cache.get(DeleteBitmapCache::makeKey("dropped", 12)), nullptr);
+
+    /// Same version number, different part: the version is not what identifies an entry.
+    const auto survivor = cache.get(DeleteBitmapCache::makeKey("survivor", 7));
+    ASSERT_NE(survivor, nullptr);
+    EXPECT_TRUE(survivor->contains(3));
 }

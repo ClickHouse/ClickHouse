@@ -1,5 +1,8 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 
+#include <Columns/ColumnsCommon.h>
+#include <Common/StringUtils.h>
+
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -27,6 +30,8 @@ namespace ErrorCodes
 namespace
 {
     constexpr std::string_view FILE_PREFIX = "delete_bitmap_";
+    /// Longer than FILE_PREFIX and sharing it, so every name check must try this one first.
+    constexpr std::string_view STAGED_FILE_PREFIX = "delete_bitmap_for_";
     constexpr std::string_view FILE_SUFFIX = ".rbm";
 
     /// Keeps `memoryUsage()` non-zero for an empty bitmap so cache weighting works.
@@ -62,19 +67,32 @@ namespace
         return value;
     }
 
-    /// `{csn}` slice of `delete_bitmap_{csn}.rbm`, or empty view if `file_name`
-    /// doesn't match the prefix/suffix shape.
-    std::string_view extractCSNPart(std::string_view file_name)
+    /// The slice between `prefix` and the `.rbm` suffix, or an empty view if `file_name` does
+    /// not have that shape. Numeric for the settled form, a part name for the staged one.
+    std::string_view extractSlice(std::string_view file_name, std::string_view prefix)
     {
-        if (file_name.size() <= FILE_PREFIX.size() + FILE_SUFFIX.size())
+        if (file_name.size() <= prefix.size() + FILE_SUFFIX.size())
             return {};
-        if (!file_name.starts_with(FILE_PREFIX))
+        if (!file_name.starts_with(prefix))
             return {};
         if (!file_name.ends_with(FILE_SUFFIX))
             return {};
-        return file_name.substr(
-            FILE_PREFIX.size(),
-            file_name.size() - FILE_PREFIX.size() - FILE_SUFFIX.size());
+        return file_name.substr(prefix.size(), file_name.size() - prefix.size() - FILE_SUFFIX.size());
+    }
+
+    std::string_view extractCSNPart(std::string_view file_name)
+    {
+        /// A staged bitmap also starts with FILE_PREFIX, so screen it out first.
+        if (file_name.starts_with(STAGED_FILE_PREFIX))
+            return {};
+        return extractSlice(file_name, FILE_PREFIX);
+    }
+
+    bool isCanonicalDecimal(std::string_view digits)
+    {
+        /// `tryParse<UInt64>` accepts a leading `+` and ignores leading zeros, so a noncanonical
+        /// name would resolve to the same number as the canonical one and confuse the reader.
+        return !digits.empty() && std::ranges::all_of(digits, isNumericASCII);
     }
 
     /// Public `DeleteBitmap` methods dispatch into the right overload below via
@@ -126,6 +144,35 @@ namespace
             out_keep[i] = r.contains(rows[i]) ? 0 : 1;
     }
 
+    void containsBulkRangeAny(const roaring::Roaring & r, UInt64 begin, size_t n, uint8_t * out_keep)
+    {
+        if (r.isEmpty())
+        {
+            std::memset(out_keep, 1, n);
+            return;
+        }
+        constexpr UInt64 max_row = std::numeric_limits<UInt32>::max();
+        roaring::BulkContext ctx;
+        for (size_t i = 0; i < n; ++i)
+        {
+            const UInt64 v = begin + i;
+            if (v > max_row)
+                out_keep[i] = 1;
+            else
+                out_keep[i] = r.containsBulk(ctx, static_cast<UInt32>(v)) ? 0 : 1;
+        }
+    }
+    void containsBulkRangeAny(const roaring::Roaring64Map & r, UInt64 begin, size_t n, uint8_t * out_keep)
+    {
+        if (r.isEmpty())
+        {
+            std::memset(out_keep, 1, n);
+            return;
+        }
+        for (size_t i = 0; i < n; ++i)
+            out_keep[i] = r.contains(begin + i) ? 0 : 1;
+    }
+
     void addAny(roaring::Roaring & r, UInt64 row)
     {
         r.add(static_cast<UInt32>(row));
@@ -162,6 +209,27 @@ namespace
     /// `(narrow dst, wide src)` overload is intentionally absent — the caller
     /// must upgrade `dst` first; see `DeleteBitmap::merge`.
 
+    void subtractAny(roaring::Roaring & dst, const roaring::Roaring & src)
+    {
+        dst -= src;
+    }
+    void subtractAny(roaring::Roaring64Map & dst, const roaring::Roaring64Map & src)
+    {
+        dst -= src;
+    }
+    void subtractAny(roaring::Roaring64Map & dst, const roaring::Roaring & src)
+    {
+        dst -= roaring::Roaring64Map(src);
+    }
+    /// Unlike `mergeAny`, `(narrow dst, wide src)` IS meaningful here: values above 32 bits
+    /// cannot be present in `dst`, so they simply have nothing to remove.
+    void subtractAny(roaring::Roaring & dst, const roaring::Roaring64Map & src)
+    {
+        for (UInt64 row : src)
+            if (row <= std::numeric_limits<UInt32>::max())
+                dst.remove(static_cast<UInt32>(row));
+    }
+
     size_t rangeCardinalityAny(const roaring::Roaring & r, UInt64 begin, UInt64 end)
     {
         /// Range portion above the addressable ceiling contributes zero.
@@ -183,14 +251,16 @@ namespace
         return static_cast<size_t>(upper - lower);
     }
 
-    void toVectorAny(const roaring::Roaring & r, std::vector<UInt64> & out)
+    template <class Vector>
+    void toVectorAny(const roaring::Roaring & r, Vector & out)
     {
         std::vector<UInt32> narrow(out.size());
         r.toUint32Array(narrow.data());
         for (size_t i = 0; i < narrow.size(); ++i)
             out[i] = narrow[i];
     }
-    void toVectorAny(const roaring::Roaring64Map & r, std::vector<UInt64> & out)
+    template <class Vector>
+    void toVectorAny(const roaring::Roaring64Map & r, Vector & out)
     {
         r.toUint64Array(out.data());
     }
@@ -228,6 +298,21 @@ void DeleteBitmap::containsBulk(const UInt64 * rows, size_t n, uint8_t * out_kee
     if (n == 0)
         return;
     std::visit([&](const auto & p) { containsBulkAny(*p, rows, n, out_keep); }, bitmap);
+}
+
+size_t DeleteBitmap::buildKeepFilter(const UInt64 * rows, size_t n, UInt8 * out_keep) const
+{
+    containsBulk(rows, n, reinterpret_cast<uint8_t *>(out_keep));
+    return countBytesInFilter(out_keep, 0, n);
+}
+
+size_t DeleteBitmap::buildKeepFilterRange(UInt64 begin, size_t n, UInt8 * out_keep) const
+{
+    if (n == 0)
+        return 0;
+    auto * keep = reinterpret_cast<uint8_t *>(out_keep);
+    std::visit([&](const auto & p) { containsBulkRangeAny(*p, begin, n, keep); }, bitmap);
+    return countBytesInFilter(out_keep, 0, n);
 }
 
 void DeleteBitmap::add(UInt64 row)
@@ -273,6 +358,35 @@ void DeleteBitmap::merge(const DeleteBitmap & other)
     mergeAny(*std::get<R32Ptr>(bitmap), *std::get<R32Ptr>(other.bitmap));
 }
 
+ConstDeleteBitmapPtr DeleteBitmap::cumulateTwo(const ConstDeleteBitmapPtr & lhs, const ConstDeleteBitmapPtr & rhs)
+{
+    const bool has_lhs = !lhs->empty();
+    const bool has_rhs = rhs && !rhs->empty();
+
+    if (!has_lhs && !has_rhs)
+        return {};
+    if (!has_rhs)
+        return lhs;
+    if (!has_lhs)
+        return rhs;
+
+    auto merged = std::make_shared<DeleteBitmap>();
+    merged->merge(*lhs);
+    merged->merge(*rhs);
+    return merged;
+}
+
+void DeleteBitmap::subtract(const DeleteBitmap & other)
+{
+    /// No upgrade: see the declaration.
+    if (auto * dst = std::get_if<R64Ptr>(&bitmap))
+    {
+        std::visit([&](const auto & src) { subtractAny(**dst, *src); }, other.bitmap);
+        return;
+    }
+    std::visit([&](const auto & src) { subtractAny(*std::get<R32Ptr>(bitmap), *src); }, other.bitmap);
+}
+
 size_t DeleteBitmap::cardinality() const
 {
     return std::visit([](const auto & p) -> size_t { return p->cardinality(); }, bitmap);
@@ -294,6 +408,17 @@ size_t DeleteBitmap::rangeCardinality(UInt64 begin, UInt64 end) const
 std::vector<UInt64> DeleteBitmap::toVector() const
 {
     std::vector<UInt64> out;
+    const size_t card = cardinality();
+    if (card == 0)
+        return out;
+    out.resize(card);
+    std::visit([&](const auto & p) { toVectorAny(*p, out); }, bitmap);
+    return out;
+}
+
+IColumn::Permutation DeleteBitmap::toPermutation() const
+{
+    IColumn::Permutation out;
     const size_t card = cardinality();
     if (card == 0)
         return out;
@@ -517,19 +642,30 @@ std::string DeleteBitmap::fileNameForCSN(BitmapVersion csn)
 bool DeleteBitmap::isDeleteBitmapFile(std::string_view file_name)
 {
     auto csn_part = extractCSNPart(file_name);
-    if (csn_part.empty())
+    if (!isCanonicalDecimal(csn_part))
         return false;
-    /// `tryParse<UInt64>` accepts leading `+` and ignores leading zeros, so a
-    /// noncanonical name would resolve to the same csn as the canonical one
-    /// and confuse the later read. Require digit-only, then round-trip
-    /// against `fileNameForCSN` to accept only the canonical form.
-    for (char c : csn_part)
-        if (c < '0' || c > '9')
-            return false;
     UInt64 parsed = 0;
     if (!tryParse<UInt64>(parsed, csn_part))
         return false;
     return fileNameForCSN(parsed) == file_name;
+}
+
+std::string DeleteBitmap::fileNameForStagedTarget(std::string_view target_part_name)
+{
+    return fmt::format("{}{}{}", STAGED_FILE_PREFIX, target_part_name, FILE_SUFFIX);
+}
+
+bool DeleteBitmap::isStagedBitmapFile(std::string_view file_name)
+{
+    /// The target slice is a part name, not a number, so there is nothing to canonicalise --
+    /// the round-trip through the builder is the whole check.
+    auto target = extractSlice(file_name, STAGED_FILE_PREFIX);
+    return !target.empty() && fileNameForStagedTarget(target) == file_name;
+}
+
+std::string DeleteBitmap::parseStagedTargetFromFileName(std::string_view file_name)
+{
+    return std::string(extractSlice(file_name, STAGED_FILE_PREFIX));
 }
 
 BitmapVersion DeleteBitmap::parseCSNFromFileName(std::string_view file_name)

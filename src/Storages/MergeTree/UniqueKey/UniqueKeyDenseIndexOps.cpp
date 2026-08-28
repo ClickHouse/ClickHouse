@@ -51,6 +51,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 unique_key_max_encoded_size;
 }
 
 
@@ -139,15 +140,10 @@ void UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
     /// build the dense index fails closed rather than publishing a part with no
     /// `unique_key_index.sst`.
     ///
-    /// The SST must be a standalone file: every reader (load-time validation and
-    /// the probe) opens it by raw filesystem path via RocksDB. On packed part
-    /// storage `writeFile` would silently bury it inside the archive and every
-    /// subsequent load of the part would fail — fail the INSERT loudly instead.
-    /// (`MergeTreeDataWriter` forces Full storage for UNIQUE KEY parts.)
-    if (storage.getType() != MergeTreeDataPartStorageType::Full)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "UNIQUE KEY dense index requires full part storage, got part storage type {}",
-            storage.getType().toString());
+    /// Both readers (load-time validation and the probe) open the SST by raw
+    /// filesystem path via RocksDB, so it must stay a standalone file. Packed part
+    /// storage keeps it out of `data.packed` for that reason
+    /// (`DataPartStorageOnDiskPacked::files_written_separately`).
     SSTIndexWriter::write(
         storage,
         block,
@@ -160,6 +156,35 @@ void UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
 }
 
 
+void UniqueKeyDenseIndexOps::writeDenseIndexOnMerge(
+    MutableDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const Block & unique_key_columns) const
+{
+    if (!part || part->rows_count == 0)
+        return;
+
+    /// The merge feeds every output row through here, so a shortfall means the
+    /// retained columns and the written part disagree — the row numbers would no
+    /// longer address the same rows as the delete bitmap.
+    if (unique_key_columns.rows() != part->rows_count)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "writeDenseIndexOnMerge: merged part {} has rows_count={} but the merge retained {} unique-key rows",
+            part->name, part->rows_count, unique_key_columns.rows());
+
+    /// `SSTIndexWriter::write` fails closed without RocksDB (SUPPORT_IS_DISABLED),
+    /// so a UK merge that cannot build the dense index aborts rather than
+    /// publishing an indexless part.
+    SSTIndexWriter::write(
+        part->getDataPartStorage(),
+        unique_key_columns,
+        metadata_snapshot->getUniqueKeyColumns(),
+        metadata_snapshot->getSortingKeyColumns(),
+        metadata_snapshot->getSortingKeyReverseFlags(),
+        /*permutation=*/nullptr,
+        data.getContext()->getSettingsRef()[Setting::unique_key_max_encoded_size],
+        data.getContext());
+}
+
+
 /// ============================================================================
 /// Per-storage load lifecycle — orphan sweep + load-time rebuild over parts.
 /// ============================================================================
@@ -169,8 +194,7 @@ void UniqueKeyDenseIndexOps::sweepOrphans(const DataPartsLock & /*part_lock*/)
     /// SST-side sweep only. Delete-bitmap recovery + version GC live in
     /// the txn commit/recovery protocol, not here.
     auto & log = data.log;
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), /*bypass_metadata_cache=*/false);
-    const bool table_has_uk = metadata_snapshot && metadata_snapshot->hasUniqueKey();
+    const bool table_has_uk = data.hasUniqueKey();
 
     size_t removed_stray_ssts = 0;
     size_t removed_tmp_ssts = 0;
@@ -211,6 +235,8 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         return;
 
     auto & log = data.log;
+    /// The handle is kept rather than `data.hasUniqueKey()`: the body needs the column list and
+    /// the snapshot below, so asking the storage would be an extra fetch.
     auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), /*bypass_metadata_cache=*/false);
     if (!metadata_snapshot || !metadata_snapshot->hasUniqueKey())
         return;
@@ -295,7 +321,7 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
     {
 #if USE_ROCKSDB
         Stopwatch rebuild_watch;
-        Block accumulated = readUniqueKeyColumns(part, metadata_snapshot, uk_names);
+        Block accumulated = readUniqueKeyColumns(data, part, metadata_snapshot, uk_names);
         if (accumulated.rows() == 0)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "ensureValidDenseIndex: part {} has rows_count={} but sequential read yielded 0 rows; "
@@ -357,11 +383,11 @@ void UniqueKeyDenseIndexOps::onPartAttach(MutableDataPartPtr & part) const
 }
 
 
-#if USE_ROCKSDB
 Block UniqueKeyDenseIndexOps::readUniqueKeyColumns(
-    const MutableDataPartPtr & part,
+    const MergeTreeData & data,
+    const std::shared_ptr<const IMergeTreeDataPart> & part,
     const StorageMetadataPtr & metadata_snapshot,
-    const Names & uk_names) const
+    const Names & uk_names)
 {
     /// Read the part's UK columns through a single-part storage view — the same
     /// `StorageFromMergeTreeDataPart` path projection materialization and MutateTask
@@ -417,6 +443,5 @@ Block UniqueKeyDenseIndexOps::readUniqueKeyColumns(
         accumulated.getByPosition(c).column = std::move(accum_columns[c]);
     return accumulated;
 }
-#endif
 
 }

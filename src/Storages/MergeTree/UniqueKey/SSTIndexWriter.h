@@ -93,8 +93,6 @@ public:
     /// Put one already-encoded key.
     void addEncoded(const std::string_view & encoded_key, UInt32 row_number);
 
-    UInt64 entriesAdded() const { return entries_added; }
-
     /// Finalize the SST: close the RocksDB writer, then finalize the
     /// part-storage `WriteBuffer`. Empty input → no SST file produced;
     /// returns 0.
