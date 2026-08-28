@@ -1292,7 +1292,7 @@ TEST_F(ConnectionPoolTest, DeferredRefusalRewrapNamesThePeer)
     catch (const Poco::Net::ConnectionRefusedException & e)
     {
         const auto text = e.displayText();
-        ASSERT_NE(std::string::npos, text.find(endpoint)) << "Peer address missing: " << text;
+        ASSERT_TRUE(text.contains(endpoint)) << "Peer address missing: " << text;
     }
 }
 
@@ -1318,8 +1318,8 @@ TEST_F(ConnectionPoolTest, DeferredNetErrorRewrapNamesThePeer)
         catch (const Poco::Net::NetException & e)
         {
             const auto text = e.displayText();
-            EXPECT_NE(std::string::npos, text.find(bare_text)) << "Bare text missing: " << text;
-            EXPECT_NE(std::string::npos, text.find(endpoint)) << "Peer address missing: " << text;
+            EXPECT_TRUE(text.contains(bare_text)) << "Bare text missing: " << text;
+            EXPECT_TRUE(text.contains(endpoint)) << "Peer address missing: " << text;
             EXPECT_EQ(err, e.code()) << "Errno not preserved: " << text;
         }
     }
