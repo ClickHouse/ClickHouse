@@ -64,6 +64,11 @@ promql_client -q 'SET max_threads ~1' 2>&1 | grep -o "SYNTAX_ERROR" | head -1
 # would reject the `#` comment below, which is valid PromQL (PromQLLexer.g4: SL_COMMENT).
 echo "-- a malformed SET without a setting name is reported by the dialect grammar"
 promql_client -q 'SET ~' 2>&1 | grep -o "CANNOT_PARSE_PROMQL_QUERY"
+
+# The raw-text prescan advances token by token; only the terminal ErrorMaxQuerySizeExceeded stops
+# it once the lexer crosses max_query_size, so an oversized query must error rather than hang.
+echo "-- an oversized query hits the max_query_size guard"
+promql_client --max_query_size=10 -q 'metric{instance="host1"}' 2>&1 | grep -o "Max query size exceeded" | head -1
 promql_client -q 'SET ~1' 2>&1 | grep -o "CANNOT_PARSE_PROMQL_QUERY"
 
 echo "-- a '#' comment after a metric named 'set' still parses as PromQL"

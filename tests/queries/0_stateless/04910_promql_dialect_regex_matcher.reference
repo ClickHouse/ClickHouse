@@ -30,6 +30,8 @@ SYNTAX_ERROR
 -- a malformed SET without a setting name is reported by the dialect grammar
 CANNOT_PARSE_PROMQL_QUERY
 CANNOT_PARSE_PROMQL_QUERY
+-- an oversized query hits the max_query_size guard
+Max query size exceeded
 -- a '#' comment after a metric named 'set' still parses as PromQL
 [('__name__','set'),('instance','host1')]	3
 [('__name__','set'),('instance','host2')]	1
