@@ -741,13 +741,20 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         table_expression_source += " with name " + table_expression_data.table_expression_name;
 
-        const bool name_is_an_alias = !table_expression_data.table_name.empty()
-            && table_expression_data.table_expression_name != table_expression_data.table_name
+        /// A materialized CTE is a table node over a temporary table whose name is generated, so use the
+        /// name the user wrote instead of leaking `_materialized_cte_<name>_<rng>`.
+        String underlying_name = table_expression_data.table_name;
+        if (const auto * table_node = table_expression_node->as<TableNode>())
+            if (table_node->isMaterializedCTE())
+                underlying_name = table_node->getMaterializedCTE()->cte_name;
+
+        const bool name_is_an_alias = !underlying_name.empty()
+            && table_expression_data.table_expression_name != underlying_name
             && table_expression_data.table_expression_name
-                != table_expression_data.database_name + "." + table_expression_data.table_name;
+                != table_expression_data.database_name + "." + underlying_name;
 
         if (name_is_an_alias)
-            table_expression_source += " (an alias of " + table_expression_data.table_name + ")";
+            table_expression_source += " (an alias of " + underlying_name + ")";
     }
 
     if (!result_expression)
