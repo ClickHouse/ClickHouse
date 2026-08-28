@@ -302,6 +302,10 @@ struct FormatSettings
         bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
+        /// Set from `json_extract_named_tuples_as_objects` by the JSON functions only, not by
+        /// `getFormatSettings`: the setting governs the `JSONExtract` family, and the `JSON` data
+        /// type must keep filling named tuples from arrays positionally.
+        bool extract_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
         bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;

@@ -51,6 +51,7 @@ namespace Setting
 {
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool json_extract_named_tuples_as_objects;
 }
 
 namespace ErrorCodes
@@ -699,6 +700,10 @@ public:
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
         format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+
+        /// Not a format setting: it governs these functions, so it is applied here rather than in
+        /// `getFormatSettings`, which would also reach the `JSON` data type.
+        format_settings.json.extract_named_tuples_as_objects = context->getSettingsRef()[Setting::json_extract_named_tuples_as_objects];
     }
 
     bool isVariadic() const override { return true; }
