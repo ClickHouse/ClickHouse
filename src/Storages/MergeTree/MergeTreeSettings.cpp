@@ -2919,7 +2919,7 @@ VectorWithMemoryTracking<std::string_view> MergeTreeSettings::getAllRegisteredNa
     return setting_names;
 }
 
-std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames()
 {
     std::vector<std::string_view> alias_names;
     const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();

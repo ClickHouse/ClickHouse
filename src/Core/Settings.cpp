@@ -17,6 +17,7 @@
 #include <Core/SettingsTierType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
+#include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
@@ -9310,6 +9311,15 @@ If false (default), AI functions refuse to use a named-collection `endpoint` tha
 // clang-format on
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS, COMMON_SETTINGS_SUPPORTED_TYPES)
+
+/// A `merge_tree_`-prefixed name is a `MergeTreeSettings` setting kept here as a custom setting, and it can
+/// have two names. Store it under the canonical one, so that a value written under either name is the value
+/// read under either name, instead of the two names holding two values of one setting.
+template <>
+std::string_view resolveCustomSettingName<SettingsTraits>(std::string_view name)
+{
+    return canonicalSettingName(name);
+}
 
 /** Settings of query execution.
   * These settings go to users.xml.

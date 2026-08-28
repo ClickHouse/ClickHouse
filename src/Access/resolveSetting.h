@@ -114,6 +114,29 @@ inline std::string resolveSettingName(std::string_view full_name)
         [&]<typename T>(std::string_view short_name, SettingsType<T>) { return settingFullName<T>(T::resolveName(short_name)); });
 }
 
+/// The name a `merge_tree_`-prefixed setting is stored under: the canonical name of the setting, so that
+/// its two names, such as `merge_tree_allow_experimental_block_number_column` and
+/// `merge_tree_enable_block_number_column`, are one setting and not two. Any other name is unchanged.
+inline std::string_view canonicalSettingName(std::string_view full_name)
+{
+    if (!full_name.starts_with(MERGE_TREE_SETTINGS_PREFIX))
+        return full_name;
+
+    static const std::map<String, String, std::less<>> canonical_names = []
+    {
+        std::map<String, String, std::less<>> result;
+        for (const auto & alias : MergeTreeSettings::getAllAliasNames())
+        {
+            result[settingFullName<MergeTreeSettings>(alias)]
+                = settingFullName<MergeTreeSettings>(MergeTreeSettings::resolveName(alias));
+        }
+        return result;
+    }();
+
+    auto it = canonical_names.find(full_name);
+    return it == canonical_names.end() ? full_name : std::string_view(it->second);
+}
+
 /// The other names of the same `MergeTreeSettings` setting, prefixed, given any one of them.
 ///
 /// `merge_tree_enable_block_number_column` and `merge_tree_allow_experimental_block_number_column` are one
@@ -124,9 +147,8 @@ inline const Strings & settingEquivalentNames(std::string_view full_name)
     static const std::map<String, Strings, std::less<>> equivalent_names = []
     {
         /// Group the names by the setting they mean, then point each name at the others in its group.
-        static const MergeTreeSettings all_settings;
         std::map<String, Strings, std::less<>> groups;
-        for (const auto & alias : all_settings.getAllAliasNames())
+        for (const auto & alias : MergeTreeSettings::getAllAliasNames())
         {
             auto canonical = settingFullName<MergeTreeSettings>(MergeTreeSettings::resolveName(alias));
             groups[canonical].push_back(settingFullName<MergeTreeSettings>(alias));

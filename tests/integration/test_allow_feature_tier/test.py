@@ -862,6 +862,39 @@ def test_merge_tree_setting_is_the_same_setting_under_either_name(start_cluster)
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_aliased_setting")
 
 
+def test_both_names_of_a_merge_tree_setting_hold_one_value(start_cluster):
+    # A value is stored under the canonical name of the setting, so the two names of one setting cannot
+    # end up holding two values. A profile stating both is the same as stating the last one twice.
+    canonical = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING_CANONICAL
+    alias = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING
+
+    instance.query("DROP USER IF EXISTS user_with_both_names")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_both_names")
+    instance.query(
+        f"CREATE SETTINGS PROFILE profile_with_both_names SETTINGS {canonical} = 1, {alias} = 0"
+    )
+    instance.query(
+        "CREATE USER user_with_both_names IDENTIFIED WITH no_password "
+        "SETTINGS PROFILE 'profile_with_both_names'"
+    )
+
+    output = instance.query(
+        f"SELECT getSetting('{canonical}'), getSetting('{alias}')",
+        user="user_with_both_names",
+    )
+    assert output.split() == ["0", "0"], output
+
+    # The name a query writes does not matter either
+    output = instance.query(
+        f"SELECT getSetting('{canonical}'), getSetting('{alias}') SETTINGS {alias} = 1",
+        user="user_with_both_names",
+    )
+    assert output.split() == ["1", "1"], output
+
+    instance.query("DROP USER IF EXISTS user_with_both_names")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_both_names")
+
+
 def test_alter_replays_on_a_replica_that_would_not_have_allowed_it(start_cluster):
     # A `Replicated` database runs the ALTER again on every other replica. The replica that took the query
     # from the user is the one that decides whether it is allowed; the others must apply it even when their

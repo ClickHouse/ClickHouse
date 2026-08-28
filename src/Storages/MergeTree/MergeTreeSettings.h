@@ -93,7 +93,7 @@ struct MergeTreeSettings
     void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
-    std::vector<std::string_view> getAllAliasNames() const;
+    static std::vector<std::string_view> getAllAliasNames();
     std::string_view getDescription(std::string_view name) const;
     std::string_view getTypeName(std::string_view name) const;
     String getDefaultValueString(std::string_view name) const;
