@@ -1247,6 +1247,7 @@ void TextIndexSerialization::serializeHeader(
             const auto & configuration = *json_path_values_configuration;
             writeVarUInt(configuration.token_format_version, ostr);
             writeVarUInt(configuration.max_token_bytes, ostr);
+            writeStringBinary(configuration.source_type_name, ostr);
             serializeStrings(configuration.path_matcher->getIncludePaths(), ostr);
             serializeStrings(configuration.path_matcher->getIncludePathRegexps(), ostr);
             serializeStrings(configuration.path_matcher->getSkipPaths(), ostr);
@@ -1310,6 +1311,8 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
             UInt64 max_token_bytes = 0;
             readVarUInt(token_format_version, istr);
             readVarUInt(max_token_bytes, istr);
+            String source_type_name;
+            readStringBinary(source_type_name, istr);
             if (!JSONPathValues::isValidMaxTokenBytes(max_token_bytes))
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid `jsonPathValues` max token size in text index header: {}", max_token_bytes);
 
@@ -1320,6 +1323,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
             header.json_path_values_configuration = JSONPathValues::IndexConfiguration{
                 .token_format_version = token_format_version,
                 .max_token_bytes = max_token_bytes,
+                .source_type_name = std::move(source_type_name),
                 .path_matcher = std::make_shared<JSONPathValues::PathMatcher>(
                     std::move(include_paths),
                     std::move(include_path_regexps),
@@ -2352,6 +2356,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         index_params.json_path_values_configuration = JSONPathValues::IndexConfiguration{
             .token_format_version = JSONPathValues::TOKEN_FORMAT_VERSION,
             .max_token_bytes = json_tokenizer.getMaxTokenBytes(),
+            .source_type_name = index.data_types.front()->getName(),
             .path_matcher = json_tokenizer.getPathMatcher(),
         };
     }

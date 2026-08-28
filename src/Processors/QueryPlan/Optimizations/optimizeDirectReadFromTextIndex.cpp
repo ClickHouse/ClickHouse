@@ -340,8 +340,14 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             return make_intrusive<ASTIdentifier>(node.result_name);
 
         case ActionsDAG::ActionType::COLUMN:
-            if (!node.column || typeid_cast<const ColumnSet *>(&node.column->getDataColumn()))
+            if (!node.column)
                 return nullptr;
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(&node.column->getDataColumn()))
+            {
+                auto future_set = column_set->getData();
+                auto source_ast = future_set ? future_set->getSourceAST() : nullptr;
+                return source_ast ? source_ast->clone() : nullptr;
+            }
             return makeASTFunction(
                 "_CAST",
                 columnConstantToExactLiteralAST(node.column, 0, node.result_type),

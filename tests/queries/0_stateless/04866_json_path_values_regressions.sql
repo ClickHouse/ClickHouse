@@ -28,6 +28,14 @@ FROM json_path_values_in_fallback
 WHERE data.s IN ('alpha', 'gamma')
 SETTINGS force_data_skipping_indices = 'tokens';
 
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM json_path_values_in_fallback WHERE data.s IN ('alpha', 'gamma')
+)
+WHERE position(explain, '__text_index') > 0;
+
 DROP TABLE IF EXISTS json_path_values_long_in;
 CREATE TABLE json_path_values_long_in
 (
@@ -46,6 +54,14 @@ SELECT arraySort(groupArray(id))
 FROM json_path_values_long_in
 WHERE data.s IN (repeat('x', 200))
 SETTINGS force_data_skipping_indices = 'tokens';
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM json_path_values_long_in WHERE data.s IN (repeat('x', 200))
+)
+WHERE position(explain, '__text_index') > 0;
 
 DROP TABLE IF EXISTS json_path_values_map_keys;
 CREATE TABLE json_path_values_map_keys
