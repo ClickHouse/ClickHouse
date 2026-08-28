@@ -511,6 +511,11 @@ void DistinctTransform::transform(Chunk & chunk)
     /// value downstream: drop them before deduplication and before the abandon accounting. Plain
     /// `Nullable` keys are then hashed by their nested columns, the same way the set fill hashes them.
     ColumnPtr null_map_holder;
+    /// The source-row boundary where the `skip_null_keys` null-marking prepass stopped on a soft timeout
+    /// (the committed prefix). Distinct from `num_kept` (the count of surviving non-null rows), which can be
+    /// smaller when NULLs fall inside the prefix. Used to bound the later filter materialization so it does
+    /// not drop non-null rows that were already inside the committed prefix.
+    size_t committed_source_rows = num_rows;
     if (skip_null_keys)
     {
         ConstNullMapPtr null_map = nullptr;
@@ -536,6 +541,7 @@ void DistinctTransform::transform(Chunk & chunk)
                     {
                         /// Break-mode soft timeout: drop the unprocessed tail and stop building the
                         /// null map for this chunk; the rest of the transform handles the prefix.
+                        committed_source_rows = i;
                         std::fill(keep.begin() + i, keep.end(), 0);
                         break;
                     }
@@ -579,6 +585,7 @@ void DistinctTransform::transform(Chunk & chunk)
                         /// prefix survives; the rest of the transform preserves the committed prefix
                         /// (including through `buildLowCardinalityMask`, which is taught not to discard an
                         /// upstream-committed prefix when it sees a pre-latched soft timeout).
+                        committed_source_rows = begin;
                         std::fill(keep.begin() + begin, keep.end(), 0);
                         break;
                     }
@@ -626,11 +633,12 @@ void DistinctTransform::transform(Chunk & chunk)
             /// otherwise the already-committed prefix would be dropped.
             constexpr size_t filter_chunk_rows = 1u << 13; /// 8192
             /// When the soft timeout was already latched upstream (pre-latched), the null-marking prepass
-            /// committed a prefix of length `num_kept` (it zeroed the tail of `keep`); start the
-            /// materialization limit at that prefix so the monolithic `column->filter` is not asked to walk
-            /// the all-zero tail, which would break the break-mode latency contract by doing almost a full
-            /// chunk of work after the deadline.
-            size_t truncated_at = filter_pre_latched ? num_kept : num_rows;
+            /// committed a prefix ending at source row `committed_source_rows` (it zeroed the tail of `keep`);
+            /// start the materialization limit at that source-row boundary so the monolithic `column->filter`
+            /// is not asked to walk the all-zero tail, which would break the break-mode latency contract by
+            /// doing almost a full chunk of work after the deadline. Note: use the source-row boundary, not
+            /// `num_kept` (the surviving-row count), which can be smaller when NULLs fall inside the prefix.
+            size_t truncated_at = filter_pre_latched ? committed_source_rows : num_rows;
             for (auto & column : columns)
             {
                 FailPointInjection::pauseFailPoint("distinct_transform_filter_pause");
