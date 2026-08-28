@@ -59,13 +59,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
-        });
-        addSettingsChanges(settings_changes_history, "26.8",
-        {
             {"query_cache_on_disk_cache_name", "", "", "New setting to store entries of the query cache on disk in the named filesystem cache."},
             {"query_cache_on_disk_codec", "ZSTD(3)", "ZSTD(3)", "New setting to control the compression codec of query cache entries on disk."},
             {"enable_writes_to_query_cache_on_disk", true, true, "New setting to control whether query results are written to the query cache on disk."},
             {"enable_reads_from_query_cache_on_disk", true, true, "New setting to control whether query results are read from the query cache on disk."},
+        });
+        addSettingsChanges(settings_changes_history, "26.8",
+        {
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
             {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
