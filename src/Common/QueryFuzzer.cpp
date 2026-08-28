@@ -3558,10 +3558,25 @@ void QueryFuzzer::rememberViewParameters(const ASTCreateQuery & create)
 /// A value to bind to a `{name:Type}` placeholder. The call arguments are evaluated and serialized
 /// with their own type, then read back with the declared one, so a literal of an unrelated type
 /// fails the call before the view body runs, while `defaultValueOfTypeName` always reads back.
-/// `Identifier` is a placeholder pseudo-type with no default value, so it only takes a literal.
+/// `Identifier` is a placeholder pseudo-type with no default value: it is spliced straight into the
+/// AST as an identifier (ReplaceQueryParameterVisitor::visitIdentifier), so only a name that could
+/// plausibly be a database, table, column or dictionary reaches the view body at all - a scalar
+/// literal can never resolve.
 ASTPtr QueryFuzzer::makeViewParameterValue(const String & type)
 {
-    if (type.empty() || type == "Identifier" || fuzz_rand() % 5 == 0)
+    if (type == "Identifier")
+    {
+        /// The placeholder's role (which kind of name it needs) is not tracked, so draw from
+        /// whatever this run has already collected of either kind, falling back to a handful of
+        /// common database names before anything has been seen.
+        static const Strings common_database_names = {"default", "system", "information_schema"};
+        if (!table_like.empty() && (column_like.empty() || fuzz_rand() % 2 == 0))
+            return make_intrusive<ASTIdentifier>(table_like[fuzz_rand() % table_like.size()].first);
+        if (!column_like.empty())
+            return make_intrusive<ASTIdentifier>(column_like[fuzz_rand() % column_like.size()].first);
+        return make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, common_database_names));
+    }
+    if (type.empty() || fuzz_rand() % 5 == 0)
         return make_intrusive<ASTLiteral>(getRandomField(fuzz_rand() % 11));
     return makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(type));
 }
