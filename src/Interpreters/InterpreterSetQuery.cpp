@@ -302,11 +302,16 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                 ? BackupSettings::extractCoreSettingsFromQuery(*backup_query)
                 : RestoreSettings::extractCoreSettingsFromQuery(*backup_query);
 
+            /// Both carriers are checked before either is applied, as `executeForCurrentContext` does, so
+            /// that a violation leaves the whole statement without effect. The `changes` check is kept
+            /// behind the emptiness test it has always had: it also runs a sanity clamp over the whole
+            /// settings object, which must not start happening for a clause that overrides nothing.
             if (!core.changes.empty())
-            {
                 context_->checkSettingsConstraints(core.changes, SettingSource::QUERY);
+            context_->checkSettingsConstraintsForSettingsReset(core.default_names, SettingSource::QUERY);
+
+            if (!core.changes.empty())
                 context_->applySettingsChanges(core.changes);
-            }
 
             /// After the overrides, as `executeForCurrentContext` does: a name written in both carriers
             /// ends at its default, matching `SET x = 1, x = DEFAULT`.
