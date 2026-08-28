@@ -10,7 +10,7 @@ namespace DB
 
 /// Configurable variable specifying where to fetch the changelog from.
 /// Hosted as a static asset alongside the official ClickHouse documentation.
-static const String CHANGELOG_URL = "https://clickhouse.com/docs/resources/changelogs/changelog.csv";
+static const String CHANGELOG_URL = "https://clickhouse.com/docs/resources/changelogs/changelog.csv.zst";
 static const String CHANGELOG_FORMAT = "CSVWithNames";
 static const String CHANGELOG_COMPRESSION = "auto";
 

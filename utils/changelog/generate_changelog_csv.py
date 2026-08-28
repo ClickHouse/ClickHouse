@@ -98,14 +98,21 @@ def parse_changelogs():
 if __name__ == '__main__':
     recs = parse_changelogs()
     print(f"Total parsed records: {len(recs)}")
-    out_path = 'docs/resources/changelogs/changelog.csv'
+    out_dir = 'docs/resources/changelogs'
+    out_csv = os.path.join(out_dir, 'changelog.csv')
+    out_zst = os.path.join(out_dir, 'changelog.csv.zst')
     fieldnames = [
         'version', 'date', 'type', 'action', 'is_experimental', 'is_breaking',
         'is_security_fix', 'setting_name', 'default_enabled', 'pull_request', 'author', 'description'
     ]
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, 'w', encoding='utf-8', newline='') as f:
+    os.makedirs(out_dir, exist_ok=True)
+    with open(out_csv, 'w', encoding='utf-8', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(recs)
-    print(f"Successfully generated {out_path}")
+    
+    # Compress with zstd
+    import subprocess
+    subprocess.run(['zstd', '-19', '-f', out_csv, '-o', out_zst], check=True)
+    os.remove(out_csv)
+    print(f"Successfully generated {out_zst}")
