@@ -111,6 +111,16 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     remove_orphaned_nodes_on_startup = config.getBool("keeper_server.remove_orphaned_nodes_on_startup", false);
 
+    /// Orphaned-nodes cleanup is implemented only by the in-memory nodes storage
+    /// (`KeeperMemNodesStorage`). Refuse the combination instead of silently accepting a recovery
+    /// setting that would never run.
+    if (remove_orphaned_nodes_on_startup && getCoordinationSettings()[CoordinationSetting::use_lsmt_storage])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'keeper_server.remove_orphaned_nodes_on_startup' is not supported with 'use_lsmt_storage'. "
+            "Set 'keeper_server.coordination_settings.use_lsmt_storage' to false to run the orphaned-nodes recovery, "
+            "then re-enable it after a successful startup");
+
     initializeFeatureFlags(config);
     initializeDisks(config);
 
