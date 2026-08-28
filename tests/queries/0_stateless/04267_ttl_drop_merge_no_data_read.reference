@@ -28,6 +28,6 @@ RegularMerge	0	100
 0
 -- Case 10: STOP TTL MERGES suppresses the short-circuit
 200
--- Case 11: MODIFY TTL without materialization keeps the rows
-RegularMerge	200	200
-200
+-- Case 11: MODIFY TTL without materialization still reads the source parts
+RegularMerge	0	200
+0
