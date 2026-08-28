@@ -328,13 +328,6 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     /// interpreting a null increase as exhaustion of the suspension round.
                     suspended_growth_retry_pending = true;
 
-                    /// The leaf activation was queued before this call returned. Queue the external
-                    /// suction decision behind it; generation validation postpones the decision
-                    /// across every fitting admission or release it exposes.
-                    if (new_increase == suspended_growth
-                        && new_increase->allocation.memory_growth_suction_priority)
-                        scheduleSuction();
-
                     SCHED_DBG("{} -- suspending increase(allocated={}, increase_size={}, max={}, allocation={})",
                         getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id);
                 }
