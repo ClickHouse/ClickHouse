@@ -2467,8 +2467,8 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
 
     /// toDateTime64OrZero documentation
     FunctionDocumentation::Description description_toDateTime64OrZero = R"(
-Converts an input value to a value of type [DateTime64](/reference/data-types/datetime64) but returns the lower boundary of [DateTime64](/reference/data-types/datetime64) if an invalid argument is received.
-The same as [toDateTime64](#toDateTime64) but returns lower boundary of [DateTime64](/reference/data-types/datetime64) if an invalid argument is received.
+Converts an input value to a value of type [DateTime64](/reference/data-types/datetime64) but returns the zero [DateTime64](/reference/data-types/datetime64) value (the Unix epoch, `1970-01-01 00:00:00`) if an invalid argument is received.
+The same as [toDateTime64](#toDateTime64) but returns the zero [DateTime64](/reference/data-types/datetime64) value if an invalid argument is received.
 
 See also:
 - [toDateTime64](#toDateTime64).
@@ -2482,7 +2482,7 @@ See also:
         {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
         {"timezone", "Optional. Time zone of the returned value.", {"String"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the lower boundary of DateTime64 (`1970-01-01 00:00:00.000`).", {"DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the zero DateTime64 value (`1970-01-01 00:00:00`) at the requested precision.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_toDateTime64OrZero = {
     {
         "Usage example",

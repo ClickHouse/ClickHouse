@@ -10,3 +10,9 @@ Nullable(DateTime64(0, \'UTC\'))
 DateTime64(0, \'UTC\')
 1789-07-14 00:00:00
 0001-01-01 00:00:00
+DateTime64(0, \'UTC\')
+1789-07-14 00:00:00
+Nullable(DateTime64(0, \'UTC\'))
+1789-07-14 00:00:00
+DateTime64(0, \'UTC\')
+1789-07-14 00:00:00
