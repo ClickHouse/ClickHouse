@@ -467,12 +467,12 @@ void KQLParser::parseFunctionDefinition(const String & name)
                         const String column_type = Poco::toLower(String(expectIdentifierName()));
                         resolveScalarType(column_type_token, column_type);
 
-                        for (const String & declared : parameter.tabular_columns)
-                            if (declared == column)
+                        for (const TabularColumn & declared : parameter.tabular_columns)
+                            if (declared.name == column)
                                 failAt(
                                     column_token,
                                     fmt::format("column '{}' of parameter '{}' is declared twice", column, parameter.name));
-                        parameter.tabular_columns.push_back(std::move(column));
+                        parameter.tabular_columns.push_back(TabularColumn{std::move(column), column_type});
 
                         if (!consume(KQLTokenType::Comma))
                             break;
@@ -487,6 +487,7 @@ void KQLParser::parseFunctionDefinition(const String & name)
                 const KQLToken & type_token = current();
                 const String type = Poco::toLower(String(expectIdentifierName()));
                 resolveScalarType(type_token, type);
+                parameter.type = type;
                 seen_scalar = true;
 
                 /// A default must be a literal, and defaulted parameters come last.
@@ -887,20 +888,27 @@ KQLParser::Scope KQLParser::bindArguments(const String & name, const FunctionDef
         inner.functions.erase(parameter.name);
 
         if (parameter.is_tabular)
-            inner.tabulars[parameter.name] = restrictToDeclaredColumns(tabular_arguments[i], parameter);
+            inner.tabulars[parameter.name] = restrictToDeclaredColumns(tabular_arguments[i], parameter, name);
         else
-            inner.scalars[parameter.name] = scalar_arguments[i];
+            inner.scalars[parameter.name] = enforceParameterType(
+                scalar_arguments[i], parameter.type, fmt::format("Parameter '{}' of the KQL function '{}'", parameter.name, name));
     }
 
     return inner;
 }
 
+ASTPtr KQLParser::enforceParameterType(ASTPtr argument, const String & kql_type, String parameter_description)
+{
+    return makeASTFunction("kqlParameterCast", std::move(argument), makeLiteral(kql_type), makeLiteral(std::move(parameter_description)));
+}
+
 /// A tabular parameter declared `T: (a: long, ...)` names the columns its body may read, so
 /// the argument is projected onto them: an undeclared column of the concrete argument stays
 /// invisible inside the body, and a declared column the argument lacks is an error there.
+/// Each declared column also carries a type, which is enforced on the argument's column.
 /// `T: (*)` declares no columns and passes the argument through.
 KQLTabularExpressionPtr
-KQLParser::restrictToDeclaredColumns(const KQLTabularExpressionPtr & argument, const FunctionParameter & parameter)
+KQLParser::restrictToDeclaredColumns(const KQLTabularExpressionPtr & argument, const FunctionParameter & parameter, const String & function_name)
 {
     if (parameter.tabular_columns.empty())
         return argument;
@@ -908,8 +916,14 @@ KQLParser::restrictToDeclaredColumns(const KQLTabularExpressionPtr & argument, c
     auto op = std::make_shared<KQLOperator>();
     op->kind = KQLOperatorKind::Project;
     op->name = "project";
-    for (const String & column : parameter.tabular_columns)
-        op->expressions.push_back(KQLNamedExpression{{}, makeIdentifier(column)});
+    for (const TabularColumn & column : parameter.tabular_columns)
+        op->expressions.push_back(KQLNamedExpression{
+            column.name,
+            enforceParameterType(
+                makeIdentifier(column.name),
+                column.type,
+                fmt::format(
+                    "Column '{}' of parameter '{}' of the KQL function '{}'", column.name, parameter.name, function_name))});
 
     auto restricted = std::make_shared<KQLTabularExpression>(*argument);
     restricted->operators.push_back(std::move(op));

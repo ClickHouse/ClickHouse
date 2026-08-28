@@ -45,15 +45,25 @@ private:
       * where the parameter names are bound is exactly that, and it reuses the substitution
       * that plain scalar `let`s already go through.
       */
+    struct TabularColumn
+    {
+        String name;
+        /// The declared KQL type of the column, enforced on the argument's column.
+        String type;
+    };
+
     struct FunctionParameter
     {
         String name;
+        /// The declared KQL type of a scalar parameter, enforced on the argument. Empty for
+        /// a tabular parameter.
+        String type;
         /// A tabular parameter, declared `T: (col: type, ...)` or `T: (*)`, takes a table
         /// rather than a value. Kusto requires these to come first.
         bool is_tabular = false;
         /// The columns a tabular parameter declares. Empty for `T: (*)`, which accepts any
         /// schema; otherwise the body sees exactly these columns of the argument.
-        std::vector<String> tabular_columns;
+        std::vector<TabularColumn> tabular_columns;
         /// Null when the parameter is required.
         ASTPtr default_value;
     };
@@ -140,7 +150,11 @@ private:
     /// Reads the argument list and returns the scope the body should be parsed under.
     Scope bindArguments(const String & name, const FunctionDefinition & definition, const KQLToken & call_token);
     /// Projects a tabular argument onto the columns its parameter declares.
-    static KQLTabularExpressionPtr restrictToDeclaredColumns(const KQLTabularExpressionPtr & argument, const FunctionParameter & parameter);
+    static KQLTabularExpressionPtr
+    restrictToDeclaredColumns(const KQLTabularExpressionPtr & argument, const FunctionParameter & parameter, const String & function_name);
+    /// Wraps a scalar argument so that the declared parameter type is enforced when the
+    /// lowered query is analyzed.
+    static ASTPtr enforceParameterType(ASTPtr argument, const String & kql_type, String parameter_description);
 
     /// Tabular level.
     KQLTabularExpressionPtr parseTabularExpression();

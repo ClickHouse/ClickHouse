@@ -58,7 +58,11 @@ Functions take scalar parameters with optional literal defaults, and tabular par
 declared `T: (*)` or `T: (col: type, ...)` which must come first. A tabular parameter that
 names its columns shows the body only those columns of the argument, so a body reading an
 undeclared column is rejected even when the concrete argument happens to have it; `T: (*)`
-passes the argument through as it is. Arguments may be passed by
+passes the argument through as it is. The declared types are enforced at the call boundary:
+an argument (or a declared column of a tabular argument) whose type does not belong to the
+declared KQL type is rejected, a lossless conversion such as `long` to `real` is applied, and
+a value that does not fit the declared type — an `int` overflow, say — is an error rather
+than a silent truncation. Arguments may be passed by
 name in any order (`f(c = 7, a = 12)`). A body is any number of `let` statements followed by
 one expression, and it can see the bindings that enclose it. A function whose body is a
 pipeline is a table rather than a value, so it is rejected where an expression is expected -
