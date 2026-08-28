@@ -3035,6 +3035,8 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
             auto lock = lockParts();
             if (reset_level)
                 part->info.level = 0;
+            /// Mutation versions are numbered per table, so a carried-over one would name a version this table never reached.
+            part->info.mutation = 0;
             auto block_holder = fillNewPartName(part, lock);
             renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(lock);

@@ -1,8 +1,11 @@
 src_level_gt0	1
+src_data_version_gt0	1
 BACKUP_CREATED
 RESTORED
 replacing_level	0
 replacing_rows	6
 replacing_rows_final	3
+replacing_rows_after_own_delete	4
 RESTORED
 plain_level_gt0	1
+plain_rows_after_own_delete	4
