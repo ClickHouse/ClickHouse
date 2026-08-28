@@ -258,3 +258,69 @@ TEST(DistinctSortedFilter, MergeTieBreakKeepsFirstInputFirst)
 
     EXPECT_EQ(distinct_keys, (std::vector<UInt64>{7}));
 }
+
+TEST(DistinctSortedFilter, SortEqualZerosCollapseThroughMerge)
+{
+    /// The post-spill deduplication must collapse values that compare equal in the sort order but
+    /// differ in the binary representation (-0. and 0.) also when they come through a real merge of
+    /// a flagged run and a later run, not only within a hand-built chunk.
+    const Block header
+        = {ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k"),
+           ColumnWithTypeAndName(std::make_shared<DataTypeUInt8>(), "flag")};
+    const auto shared_header = std::make_shared<const Block>(header);
+
+    auto make_source = [&](const std::vector<Float64> & keys, UInt8 flag)
+    {
+        Chunks chunks;
+        chunks.push_back(makeFloatChunk(keys, std::vector<UInt8>(keys.size(), flag)));
+        return std::make_shared<SourceFromChunks>(shared_header, std::move(chunks));
+    };
+
+    /// The flagged run holds only fillers; the later run starts with the two zero representatives.
+    auto emitted_run = make_source({100., 101.}, 1);
+    auto later_run = make_source({-0., 0., 100., 102.}, 0);
+
+    SortDescription description;
+    description.emplace_back("k", 1, 1);
+
+    auto merge = std::make_shared<MergingSortedTransform>(
+        shared_header,
+        /*num_inputs=*/ 2,
+        description,
+        /*max_block_size_rows=*/ 3,
+        /*max_block_size_bytes=*/ 0,
+        /*max_dynamic_subcolumns=*/ std::nullopt,
+        SortingQueueStrategy::Batch);
+
+    connect(emitted_run->getPort(), merge->getInputs().front());
+    connect(later_run->getPort(), merge->getInputs().back());
+
+    auto * output_port = &merge->getOutputs().front();
+    auto processors = std::make_shared<Processors>();
+    processors->emplace_back(std::move(emitted_run));
+    processors->emplace_back(std::move(later_run));
+    processors->emplace_back(std::move(merge));
+
+    QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+    PullingPipelineExecutor executor(pipeline);
+
+    auto filter = makeFilter();
+    std::vector<Float64> distinct_keys;
+
+    Block block;
+    while (executor.pull(block))
+    {
+        if (block.rows() == 0)
+            continue;
+
+        auto filtered = filter.filter(Chunk(block.getColumns(), block.rows()), /*strip_flag=*/ false);
+        if (filtered.hasRows())
+        {
+            const auto & keys = assert_cast<const ColumnFloat64 &>(*filtered.getColumns()[0]).getData();
+            distinct_keys.insert(distinct_keys.end(), keys.begin(), keys.end());
+        }
+    }
+
+    /// Exactly one zero (the first-received -0.) and the new filler 102.
+    EXPECT_EQ(distinct_keys.size(), 2u);
+}
