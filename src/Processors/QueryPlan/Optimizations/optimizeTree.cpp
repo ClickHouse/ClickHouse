@@ -388,7 +388,14 @@ void optimizeTreeSecondPass(
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
     traverseQueryPlan(stack, root,
-        [&](auto &) {},
+        [&](auto & frame_node)
+        {
+            if (optimization_settings.read_in_order && !cascades_active)
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.distinct_in_order && !cascades_active)
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+        },
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
