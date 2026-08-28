@@ -292,7 +292,7 @@ std::string_view getLastFlushProfileForThread()
 
 }
 
-ScopedJemallocThreadArena::ScopedJemallocThreadArena(unsigned arena_idx)
+ScopedJemallocThreadArena::ScopedJemallocThreadArena(unsigned arena_idx, bool disable_tcache)
 {
     if (arena_idx == 0)
         return;
@@ -304,12 +304,29 @@ ScopedJemallocThreadArena::ScopedJemallocThreadArena(unsigned arena_idx)
     /// fall back to the previous behavior of allocating in the default arena. The cost is fragmentation,
     /// not correctness.
     active = (err == 0);
+
+    if (!active || !disable_tcache)
+        return;
+
+    /// Disabling also flushes the cache; the write returns the previous state via the read pointer.
+    /// Re-enable in the destructor only if it was enabled before (keeps nested scopes correct).
+    bool tcache_enabled = false;
+    bool previous_tcache_enabled = false;
+    size_t previous_tcache_size = sizeof(previous_tcache_enabled);
+    err = je_mallctl("thread.tcache.enabled", &previous_tcache_enabled, &previous_tcache_size, &tcache_enabled, sizeof(tcache_enabled));
+    tcache_switched = (err == 0) && previous_tcache_enabled;
 }
 
 ScopedJemallocThreadArena::~ScopedJemallocThreadArena()
 {
     if (!active)
         return;
+
+    if (tcache_switched)
+    {
+        bool tcache_enabled = true;
+        je_mallctl("thread.tcache.enabled", nullptr, nullptr, &tcache_enabled, sizeof(tcache_enabled));
+    }
 
     je_mallctl("thread.arena", nullptr, nullptr, &previous_arena, sizeof(previous_arena));
 }
