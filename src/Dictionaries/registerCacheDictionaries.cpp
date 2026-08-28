@@ -289,7 +289,74 @@ void registerDictionaryCache(DictionaryFactory & factory)
     };
 
     factory.registerLayout("cache", create_simple_cache_layout, false, true, Documentation{
-        .description = "Stores the dictionary in a fixed-size in-memory cache of cells. On a cache miss, the value is requested from the source and cached. Suitable for sources with a high cache hit rate.",
+        .description = R"DOCS_MD(
+# cache dictionary layout
+
+The `cached` dictionary layout type is stores the dictionary in a cache that has a fixed number of cells.
+These cells contain frequently used elements.
+
+The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
+
+When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
+
+If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
+
+For cache dictionaries, the expiration [lifetime](/reference/statements/create/dictionary/lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
+
+This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the [system.dictionaries](/reference/system-tables/dictionaries) table.
+
+If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary can support asynchronous updates. If a client requests keys and all of them are in cache, but some of them are expired, then dictionary will return expired keys for a client and request them asynchronously from the source.
+
+To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
+
+All types of sources are supported.
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<layout>
+    <cache>
+        <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
+        <size_in_cells>1000000000</size_in_cells>
+        <!-- Allows to read expired keys. -->
+        <allow_read_expired_keys>0</allow_read_expired_keys>
+        <!-- Max size of update queue. -->
+        <max_update_queue_size>100000</max_update_queue_size>
+        <!-- Max timeout in milliseconds for push update task into queue. -->
+        <update_queue_push_timeout_milliseconds>10</update_queue_push_timeout_milliseconds>
+        <!-- Max wait timeout in milliseconds for update task to complete. -->
+        <query_wait_timeout_milliseconds>60000</query_wait_timeout_milliseconds>
+        <!-- Max threads for cache dictionary update. -->
+        <max_threads_for_updates>4</max_threads_for_updates>
+    </cache>
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+Set a large enough cache size. You need to experiment to select the number of cells:
+
+1.  Set some value.
+2.  Run queries until the cache is completely full.
+3.  Assess memory consumption using the `system.dictionaries` table.
+4.  Increase or decrease the number of cells until the required memory consumption is reached.
+
+<Note>
+ClickHouse is not recommended as a source for this layout. Dictionary lookups require random point reads, which are not the access pattern ClickHouse is optimized for.
+</Note>
+)DOCS_MD",
         .syntax = "LAYOUT(CACHE(SIZE_IN_CELLS n))",
         .related = {"ssd_cache", "direct"}});
 
@@ -323,7 +390,51 @@ void registerDictionaryCache(DictionaryFactory & factory)
     };
 
     factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false, true, Documentation{
-        .description = "Like `cache`, but stores the cached cells on a local SSD/disk and keeps only the index in memory.",
+        .description = R"DOCS_MD(
+# ssd_cache dictionary layout types
+
+## ssd_cache {#ssd_cache}
+
+Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
+
+The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH '/var/lib/clickhouse/user_files/test_dict'))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<layout>
+    <ssd_cache>
+        <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
+        <block_size>4096</block_size>
+        <!-- Max cache file size in bytes. -->
+        <file_size>16777216</file_size>
+        <!-- Size of RAM buffer in bytes for reading elements from SSD. -->
+        <read_buffer_size>131072</read_buffer_size>
+        <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
+        <write_buffer_size>1048576</write_buffer_size>
+        <!-- Path where cache file will be stored. -->
+        <path>/var/lib/clickhouse/user_files/test_dict</path>
+    </ssd_cache>
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+## complex_key_ssd_cache {#complex_key_ssd_cache}
+
+This type of storage is for use with composite [keys](/reference/statements/create/dictionary/attributes#composite-key). Similar to `ssd_cache`.
+)DOCS_MD",
         .syntax = "LAYOUT(SSD_CACHE(PATH '/path/to/cache'))",
         .related = {"cache"}});
 

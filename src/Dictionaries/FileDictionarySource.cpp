@@ -133,7 +133,50 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
     };
 
     factory.registerSource("file", create_table_source, Documentation{
-        .description = "Reads dictionary data from a file on the local filesystem in one of the supported formats. When created from a DDL query, the file path must be inside the `user_files` directory.",
+        .description = R"DOCS_MD(
+# Local File dictionary source
+
+The local file source loads dictionary data from a file on the local filesystem. This is useful for small, static lookup tables that can be stored as flat files in formats such as TSV, CSV, or any other [supported format](/reference/formats/index).
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<source>
+  <file>
+    <path>/opt/dictionaries/os.tsv</path>
+    <format>TabSeparated</format>
+  </file>
+</source>
+```
+
+</Tab>
+</Tabs>
+
+<br/>
+
+Setting fields:
+
+| Setting | Description |
+|---------|-------------|
+| `path` | The absolute path to the file. |
+| `format` | The file format. All the formats described in [Formats](/reference/formats/index) are supported. |
+
+When a dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in the `user_files` directory to prevent DB users from accessing arbitrary files on the ClickHouse node.
+
+**See Also**
+
+- [Dictionary function](/reference/functions/table-functions/dictionary)
+)DOCS_MD",
         .syntax = "SOURCE(FILE(path '/path/to/file' format 'CSV'))",
         .related = {"executable", "http"}});
 }
