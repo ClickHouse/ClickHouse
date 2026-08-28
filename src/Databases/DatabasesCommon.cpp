@@ -614,18 +614,12 @@ void DatabaseWithOwnTablesBase::shutdown()
     /// and rethrow it once all cleanup has run.
     std::exception_ptr first_error;
 
-    /// Prepare phase runs sequentially. Some tables flush into other tables here (e.g. a Buffer
-    /// table flushes to its destination in flushAndPrepareForShutdown); doing this in parallel
-    /// could write into a table that has already entered shutdown-prepared read-only mode and
-    /// silently drop rows. This phase is cheap relative to the shutdown drain below.
-    ///
-    /// Two sequential passes: a source table can flush rows into a destination that was already
-    /// prepared earlier in the same pass (a Buffer -> Buffer chain, iterated in table-name order).
-    /// The destination Buffer holds those rows in memory and — having no shutdown() override and no
-    /// destructor flush — the parallel drain below would destroy them silently. A second prepare
-    /// pass re-flushes such destinations, restoring the pre-parallelization behavior where the drain
-    /// called flushAndShutdown(). The extra pass is cheap: non-Buffer tables and already-drained
-    /// buffers return immediately.
+    /// Prepare runs sequentially and twice. Sequentially, because tables flush into each other here
+    /// (a Buffer flushes to its destination in flushAndPrepareForShutdown) and doing it in parallel
+    /// could write into a table already in shutdown-prepared read-only mode and drop rows. Twice,
+    /// because a destination prepared before its source (Buffer -> Buffer, name order) keeps the rows
+    /// in memory, and StorageBuffer has no shutdown()/destructor flush — the second pass re-flushes
+    /// them, as the old flushAndShutdown() did, before the parallel drain drops them.
     for (size_t pass = 0; pass < 2; ++pass)
         for (const auto & kv : tables_snapshot)
         {
