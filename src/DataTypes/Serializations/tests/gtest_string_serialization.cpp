@@ -18,6 +18,7 @@ namespace DB
     {
         extern const int MEMORY_LIMIT_EXCEEDED;
         extern const int CANNOT_READ_ALL_DATA;
+        extern const int INCORRECT_DATA;
         extern const int TOO_LARGE_STRING_SIZE;
     }
 }
@@ -256,4 +257,60 @@ TEST(StringSerialization, WithSizeStreamHugeSizeIsRejected)
     MainThreadStatus::getInstance();
     expectSizesStreamRejected({10, std::numeric_limits<UInt64>::max(), 5}, 3);
     expectSizesStreamRejected({SerializationString::MAX_STRING_SIZE + 1}, 1);
+}
+
+namespace
+{
+
+/// A deserialization attempt over a hand-crafted (corrupted) stream of cumulative offsets, which is what
+/// the size stream carries over the network (`position_independent_encoding = false`) instead of the
+/// per-row sizes. The offsets come straight from the data as well.
+void expectOffsetsStreamRejected(const std::vector<UInt64> & offset_values, size_t limit, int expected_error_code)
+{
+    WriteBufferFromOwnString offsets_out;
+    for (UInt64 offset : offset_values)
+        writeBinaryLittleEndian(offset, offsets_out);
+
+    /// The corrupted offset must be rejected before any data is read, so the content of the data stream is irrelevant.
+    ReadBufferFromString offsets_in(offsets_out.str());
+    ReadBufferFromString data_in(std::string(64, 'x'));
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(offsets_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    auto result = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(*result, limit, settings, state, nullptr);
+        FAIL() << "deserialize accepted a corrupted stream of offsets";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), expected_error_code);
+    }
+}
+
+}
+
+/// The stream of cumulative offsets is the `Native` carrier of the string sizes, and a monotonically
+/// increasing stream of offsets can still describe a single string above `MAX_STRING_SIZE` while the total
+/// stays below the limit on the size of the whole column, so the differences between the consecutive
+/// offsets - the sizes of the strings - have to be checked there as well.
+TEST(StringSerialization, OffsetsStreamHugeSizeIsRejected)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr UInt64 huge = SerializationString::MAX_STRING_SIZE + 1;
+    expectOffsetsStreamRejected({huge}, 1, ErrorCodes::TOO_LARGE_STRING_SIZE);
+    expectOffsetsStreamRejected({10, 10 + huge, 20 + huge}, 3, ErrorCodes::TOO_LARGE_STRING_SIZE);
+
+    /// The same check reports the offsets that do not increase monotonically: their difference wraps around
+    /// and lands above the limit.
+    expectOffsetsStreamRejected({10, 5}, 2, ErrorCodes::INCORRECT_DATA);
+    expectOffsetsStreamRejected({std::numeric_limits<UInt64>::max()}, 1, ErrorCodes::TOO_LARGE_STRING_SIZE);
 }

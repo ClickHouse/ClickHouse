@@ -854,13 +854,45 @@ size_t SerializationString::deserializeStringOffsetsAndGetDataSize(
         const size_t prev_num_rows = offsets.size();
         SerializationNumber<ColumnString::Offset>::deserializeBinaryBulk(offsets, *offsets_stream, limit);
 
-        /// Offsets come from untrusted input and must be monotonically increasing.
-        if (auto * it = std::adjacent_find(offsets.begin() + prev_num_rows, offsets.end(), std::greater<>()); it != offsets.end())
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "String offsets stream is not monotonically increasing (at index {}, value {})",
-                std::distance(offsets.begin(), it),
-                *it);
+        /// The offsets come from untrusted input: they have to increase monotonically, and the difference
+        /// between two consecutive ones is the size of a string, so it is bounded by `MAX_STRING_SIZE` as
+        /// well. The difference of a non-monotonic pair wraps around and lands far above that limit, so a
+        /// single comparison covers both conditions. The differences are OR-folded to keep the loop free of
+        /// branches (the OR contains every bit of every difference, so it is not less than any of them) and
+        /// the exact check only runs when the fold is above the limit.
+        UInt64 or_of_sizes = 0;
+        UInt64 prev = prev_last_offset;
+        for (size_t i = prev_num_rows, end = offsets.size(); i < end; ++i)
+        {
+            const UInt64 current = offsets[i];
+            or_of_sizes |= current - prev;
+            prev = current;
+        }
+
+        if (unlikely(or_of_sizes > MAX_STRING_SIZE))
+        {
+            prev = prev_last_offset;
+            for (size_t i = prev_num_rows, end = offsets.size(); i < end; ++i)
+            {
+                const UInt64 current = offsets[i];
+
+                if (current < prev)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "String offsets stream is not monotonically increasing (at index {}, value {})",
+                        i,
+                        current);
+
+                if (current - prev > MAX_STRING_SIZE)
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "Too large string size: {}. The maximum is: {}.",
+                        current - prev,
+                        MAX_STRING_SIZE);
+
+                prev = current;
+            }
+        }
 
         return offsets.back() - prev_last_offset;
     }
