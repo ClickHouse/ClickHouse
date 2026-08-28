@@ -244,8 +244,18 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 namespace
 {
 
-/// Enumerate the node paths a request refers to, calling `f(std::string_view)` for each.
-/// Returns false for request types we do not recognise, so the caller can fail closed.
+/// How a request touches an enumerated path; decides which conflict predicate applies.
+enum class RequestPathKind
+{
+    /// The request resolves this path against the tree (reads it, creates it, removes it, ...).
+    Target,
+    /// The request mutates the stats of this node as the *parent* of its target: a create/remove
+    /// bumps the parent's `numChildren`, `cversion` and `pzxid`.
+    ParentStats,
+};
+
+/// Enumerate the node paths a request refers to, calling `f(std::string_view, RequestPathKind)` for
+/// each. Returns false for request types we do not recognise, so the caller can fail closed.
 ///
 /// Keep in sync with `callOnConcreteRequestType` in KeeperStorageImpl.cpp: a new op num that is not
 /// listed here is reported as a conflict rather than silently skipped.
@@ -298,17 +308,17 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         {
             const auto & set_watches = dynamic_cast<const Coordination::SetWatchesRequest &>(request);
             for (const auto & path : set_watches.data_watches)
-                f(path);
+                f(path, RequestPathKind::Target);
             for (const auto & path : set_watches.child_watches)
-                f(path);
+                f(path, RequestPathKind::Target);
             for (const auto & path : set_watches.exist_watches)
-                f(path);
+                f(path, RequestPathKind::Target);
             if (const auto * set_watches2 = dynamic_cast<const Coordination::SetWatches2Request *>(&request))
             {
                 for (const auto & path : set_watches2->persistent_watches)
-                    f(path);
+                    f(path, RequestPathKind::Target);
                 for (const auto & path : set_watches2->persistent_recursive_watches)
-                    f(path);
+                    f(path, RequestPathKind::Target);
             }
             return true;
         }
@@ -340,18 +350,38 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         case OpNum::RemoveWatch:
         {
             const auto path = request.getPath();
-            f(path);
+            f(path, RequestPathKind::Target);
 
             /// A sequential create does not touch the path it carries: the storage appends a zero-padded
             /// sequence number taken from the parent, so the node actually created is
             /// `<path><seq_num>` (`path_created` in KeeperStorageImpl.cpp). We cannot know the sequence
             /// number here, but the created node is always a direct child of the same parent, so any
             /// conflict involving it implies the parent lies on the same root-to-leaf chain as the
-            /// removed subtree. Checking the parent is therefore sound; it is deliberately a little
-            /// broader than strictly necessary, which is the safe direction for this guard.
+            /// removed subtree. Checking the parent as a target is therefore sound; it is deliberately a
+            /// little broader than strictly necessary, which is the safe direction for this guard.
             if (const auto * create = dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(&request);
                 create != nullptr && create->is_sequential)
-                f(Coordination::parentNodePath(path));
+                f(Coordination::parentNodePath(path), RequestPathKind::Target);
+
+            /// Creates and removes also mutate the stats of the target's parent (`numChildren`,
+            /// `cversion`, `pzxid` -- see the create/remove handlers in KeeperStorageImpl.cpp), so a
+            /// sibling operation under a parent whose children were pruned replays against repaired
+            /// stats and silently diverges from replicas that still hold the lost children.
+            switch (request.getOpNum())
+            {
+                case OpNum::Create:
+                case OpNum::Create2:
+                case OpNum::CreateContainer:
+                case OpNum::CreateIfNotExists:
+                case OpNum::CreateTTL:
+                case OpNum::Remove:
+                case OpNum::TryRemove:
+                case OpNum::RemoveRecursive:
+                    f(Coordination::parentNodePath(path), RequestPathKind::ParentStats);
+                    break;
+                default:
+                    break;
+            }
 
             return true;
         }
@@ -370,6 +400,22 @@ bool conflictsWithRemovedSubtree(std::string_view path, std::string_view subtree
 {
     return Coordination::matchPath(path, subtree_root) != Coordination::PathMatchResult::NOT_MATCH
         || Coordination::matchPath(subtree_root, path) == Coordination::PathMatchResult::IS_CHILD;
+}
+
+/// Whether replaying an operation that mutates the stats of `parent` (as the parent of a created or
+/// removed node) diverges after the subtree rooted at `subtree_root` was removed. That is the case
+/// when the parent lies inside the removed region, or when it is the direct parent of the removed
+/// subtree root: its `numChildren` was repaired to exclude the lost children, so a replayed sibling
+/// create/remove updates it from a different base than on replicas that still hold them.
+///
+/// Deliberately narrower than `conflictsWithRemovedSubtree`: an ancestor further up the chain keeps
+/// identical stats on every replica (its direct children did not change), so a create/remove under it
+/// replays identically and must not block recovery -- otherwise any tail entry creating a node under
+/// `"/"` would conflict with every removed subtree.
+bool parentStatsDivergeWithRemovedSubtree(std::string_view parent, std::string_view subtree_root)
+{
+    return Coordination::matchPath(parent, subtree_root) != Coordination::PathMatchResult::NOT_MATCH
+        || parent == Coordination::parentNodePath(subtree_root);
 }
 
 }
@@ -477,7 +523,7 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
             std::optional<OrphanLogTailConflict> conflict;
             const bool recognised = forEachRequestPath(
                 request,
-                [&](std::string_view path)
+                [&](std::string_view path, RequestPathKind kind)
                 {
                     if (conflict)
                         return;
@@ -498,14 +544,20 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
 
                     for (const auto & subtree_root : removed_orphan_subtree_roots)
                     {
-                        if (conflictsWithRemovedSubtree(path, subtree_root))
+                        const bool conflicts = kind == RequestPathKind::Target
+                            ? conflictsWithRemovedSubtree(path, subtree_root)
+                            : parentStatsDivergeWithRemovedSubtree(path, subtree_root);
+                        if (conflicts)
                         {
                             OrphanLogTailConflict found;
                             found.log_idx = log_idx;
                             found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
                             found.request_path = std::string{path};
                             found.subtree_root = subtree_root;
-                            found.reason = "the entry references a path that was removed from the snapshot, or a parent of one";
+                            found.reason = kind == RequestPathKind::Target
+                                ? "the entry references a path that was removed from the snapshot, or a parent of one"
+                                : "the entry creates or removes a node under a parent whose children were removed from the snapshot, "
+                                  "so the parent's stats would be updated from a repaired base";
                             conflict = std::move(found);
                             return;
                         }
