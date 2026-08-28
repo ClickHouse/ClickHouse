@@ -57,8 +57,12 @@ SELECT normalizedQueryHashUnorderedOrNull('SELECT a, b FROM t') = normalizedQuer
 SELECT normalizedQueryHashUnorderedOrNull('INSERT INTO t FORMAT CSV SETTINGS max_threads = 1') = normalizedQueryHashUnorderedOrNull('INSERT INTO t FORMAT CSV') SETTINGS allow_settings_after_format_in_insert = 0;
 SELECT normalizedQueryHashUnorderedOrNull('INSERT INTO t FORMAT CSV SETTINGS max_threads = 1') = normalizedQueryHashUnorderedOrNull('INSERT INTO t FORMAT CSV') SETTINGS allow_settings_after_format_in_insert = 1;
 
--- hitting a parser limit is unparseable too
+-- hitting either half of max_parser_depth is unparseable too, the parser recursion and the finished AST
 SELECT normalizedQueryHashUnorderedOrNull('SELECT ' || repeat('(', 60) || '1' || repeat(')', 60)) IS NULL SETTINGS max_parser_depth = 40;
+SELECT normalizedQueryHashUnorderedOrNull('SELECT ' || repeat('1+', 199) || '1') IS NULL SETTINGS max_parser_depth = 20;
+
+-- sub-expressions the parser keeps outside the AST children are left in the order they were written
+SELECT normalizedQueryHashUnordered('SELECT * APPLY (x -> plus(x, 1)) FROM t') = normalizedQueryHashUnordered('SELECT * APPLY (x -> plus(1, x)) FROM t');
 
 -- over a column, not just constants
 SELECT uniqExact(normalizedQueryHashUnorderedOrNull(q))
