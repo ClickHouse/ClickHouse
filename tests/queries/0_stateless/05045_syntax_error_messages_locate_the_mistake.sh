@@ -32,6 +32,9 @@ echo '=== a closing bracket that does not close anything names what it fails to 
 run "SELECT 1)"
 run "SELECT [1)"
 run "SELECT (1]"
+# When the bracket that is missing is the opening one, the closing bracket is as far from the mistake
+# as the column list is long, while the parser stops exactly where the `(` belongs.
+run "CREATE TABLE t a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a"
 
 echo
 echo '=== a mistyped keyword is named explicitly instead of being buried in the list of alternatives'

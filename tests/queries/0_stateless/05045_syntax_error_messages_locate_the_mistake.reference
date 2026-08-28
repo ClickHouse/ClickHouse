@@ -17,9 +17,11 @@ Syntax error: failed at position 43 (end of query): . Unmatched parentheses: '('
 --- SELECT 1)
 Syntax error: failed at position 9 ()): ). Unmatched parentheses: ')' at position 9 has no matching opening bracket. (SYNTAX_ERROR)
 --- SELECT [1)
-Syntax error: failed at position 8 ([): [1). Unmatched parentheses: ')' at position 10 does not match '[' at position 8. (SYNTAX_ERROR)
+Syntax error: failed at position 10 ()): ). Unmatched parentheses: ')' at position 10 does not match '[' at position 8. (SYNTAX_ERROR)
 --- SELECT (1]
-Syntax error: failed at position 8 ((): (1]. Unmatched parentheses: ']' at position 10 does not match '(' at position 8. (SYNTAX_ERROR)
+Syntax error: failed at position 10 (]): ]. Unmatched parentheses: ']' at position 10 does not match '(' at position 8. (SYNTAX_ERROR)
+--- CREATE TABLE t a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a
+Syntax error: failed at position 16 (a): a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a. Unmatched parentheses: ')' at position 34 has no matching opening bracket. (SYNTAX_ERROR)
 
 === a mistyped keyword is named explicitly instead of being buried in the list of alternatives
 --- SELEgT 1

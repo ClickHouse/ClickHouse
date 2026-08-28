@@ -309,11 +309,22 @@ std::string getUnmatchedParenthesesErrorMessage(
         = unmatched_parens.back().type == TokenType::ClosingRoundBracket
         || unmatched_parens.back().type == TokenType::ClosingSquareBracket;
 
-    /// An unmatched closing bracket is itself the place of the mistake, so keep pointing at it.
-    const bool point_at_parser_position
-        = !closing_bracket_is_unmatched && last_token.begin > unmatched_parens.front().begin;
+    /** The bracket to fall back to when the parser position is of no use: the closing bracket that closes
+      * nothing, or the outermost bracket that is never closed.
+      *
+      * A closing bracket that closes nothing has the mirror image of the problem described above. It can be
+      * excessive, and then it is itself the mistake, but it can just as well be the *opening* bracket that
+      * is missing - `CREATE TABLE t a UInt32, b UInt32)` - and then the closing bracket is as far from the
+      * mistake as the whole column list is long. The parser stops right where the opening bracket belongs,
+      * so prefer its position whenever it is before the bracket.
+      */
+    const Token & fallback_bracket = closing_bracket_is_unmatched ? unmatched_parens.back() : unmatched_parens.front();
 
-    const Token error_token = point_at_parser_position ? last_token : unmatched_parens.front();
+    const bool point_at_parser_position = closing_bracket_is_unmatched
+        ? last_token.begin < fallback_bracket.begin
+        : last_token.begin > fallback_bracket.begin;
+
+    const Token error_token = point_at_parser_position ? last_token : fallback_bracket;
 
     WriteBufferFromOwnString out;
     writeCommonErrorMessage(out, begin, end, error_token, query_description);
