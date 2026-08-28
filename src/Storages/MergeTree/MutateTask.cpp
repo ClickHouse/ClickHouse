@@ -405,55 +405,12 @@ static void splitAndModifyMutationCommands(
             {
                 for_file_renames.push_back(command);
             }
-            else if (command.type == MutationCommand::Type::DROP_COLUMN)
-            {
-                const auto name_in_part = nameInPart(command.column_name);
-                bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
-                bool has_column = part_columns.has(name_in_part);
-                bool has_nested_column = share_nested && part_columns.hasNested(name_in_part);
-
-                if (has_column || has_nested_column)
-                {
-                    if (has_nested_column)
-                    {
-                        const auto & nested = part_columns.getNested(name_in_part);
-                        chassert(!nested.empty());
-                        for (const auto & nested_column : nested)
-                            mutated_columns.emplace(nested_column.name);
-                    }
-                    else
-                        mutated_columns.emplace(command.column_name);
-
-                    /// We need to keep the clear command so we also clear dependent indices.
-                    if (command.clear)
-                    {
-                        for_interpreter.push_back(command);
-                        auto command_in_part = command;
-                        command_in_part.column_name = name_in_part;
-                        for_file_renames.push_back(std::move(command_in_part)); /// For packed parts
-                    }
-                    else
-                        dropped_columns.emplace(name_in_part);
-                }
-                else if (part->getSerializationInfos().isMissingColumn(name_in_part))
-                {
-                    /// Marker-only DROP/CLEAR must still update metadata and dependencies.
-                    if (command.clear)
-                    {
-                        for_interpreter.push_back(command);
-                        mutated_columns.emplace(command.column_name);
-                    }
-                    auto command_in_part = command;
-                    command_in_part.column_name = name_in_part;
-                    for_file_renames.push_back(std::move(command_in_part));
-                }
-            }
             else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
                           has_column = part_columns.has(command.column_name),
                           has_nested_column = share_nested && part_columns.hasNested(command.column_name);
                      has_column || has_nested_column)
             {
-                if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
                     if (has_nested_column)
                     {
@@ -464,6 +421,32 @@ static void splitAndModifyMutationCommands(
                     }
                     else
                         mutated_columns.emplace(command.column_name);
+
+                    if (command.type == MutationCommand::Type::DROP_COLUMN)
+                    {
+                        /// We need to keep the clear command so we also clear dependent indices
+                        if (command.clear)
+                        {
+                            for_interpreter.push_back(command);
+                            for_file_renames.push_back(command); /// For packed parts
+                        }
+                        else
+                            dropped_columns.emplace(command.column_name);
+                    }
+                }
+            }
+            else if (command.type == MutationCommand::Type::DROP_COLUMN)
+            {
+                /// Marker-only DROP/CLEAR must still update metadata and dependencies.
+                String marker_name = nameInPart(command.column_name);
+                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                {
+                    if (command.clear)
+                    {
+                        for_interpreter.push_back(command);
+                        mutated_columns.emplace(command.column_name);
+                    }
+                    for_file_renames.push_back(command);
                 }
             }
         }
