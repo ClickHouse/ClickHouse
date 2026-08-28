@@ -1016,6 +1016,14 @@ public:
 
     size_t clearEmptyParts();
 
+    /// False while outdated parts are still being loaded asynchronously, so a part that is simply
+    /// not loaded yet is indistinguishable from one that never existed. Any decision to DESTROY
+    /// state on the strength of "this part does not resolve" has to wait for this.
+    bool outdatedPartsLoadingFinished() const
+    {
+        return outdated_data_parts_loading_finished.load(std::memory_order_relaxed);
+    }
+
     /// Moves to outdated state patch parts that do not need to be applied to regular parts.
     virtual size_t clearUnusedPatchParts();
 

@@ -42,6 +42,8 @@ static struct InitFiu
     REGULAR(merge_tree_sink_on_start_random_sleep) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    REGULAR(unique_key_defer_bitmap_settle) \
+    REGULAR(unique_key_settle_staged_bitmap_fail) \
     PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
     PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
     ONCE(connection_stale_on_establish) \
