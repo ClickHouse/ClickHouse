@@ -44,6 +44,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLDeleteFilterTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
@@ -648,16 +649,23 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->need_remove_expired_values = false;
     }
 
-    /// A pending patch can change rows/column TTL inputs, so the pre-patch maxima must not feed
-    /// TTLTransform's drop-all/drop-column fast paths; everything is re-evaluated row-level instead.
-    /// Only the maxima are reset: recompression/move infos stay advisory, and a TTL-blocked merge
-    /// (no TTLStep at all) keeps the aggregated infos rather than committing empty ones.
-    if (ctx->need_remove_expired_values && !global_ctx->future_part->patch_parts.empty())
+    /// A pending patch can change rows/column TTL inputs in both directions, so the pre-patch
+    /// aggregated infos can neither feed TTLTransform's drop-all/drop-column fast paths nor stay
+    /// on the merged part. The maxima are reset (recompression/move infos stay advisory), and the
+    /// TTL step is forced even for a part that did not look due before the patch; when the TTL
+    /// blocker is active the rows must survive, so the pipeline recalculates the infos instead.
+    ctx->recalculate_ttl_for_patches
+        = global_ctx->metadata_snapshot->hasAnyTTL() && !global_ctx->future_part->patch_parts.empty();
+    if (ctx->recalculate_ttl_for_patches)
     {
         global_ctx->new_data_part->ttl_infos.table_ttl.max = 0;
         for (auto & [column_name, column_info] : global_ctx->new_data_part->ttl_infos.columns_ttl)
             column_info.max = 0;
-        ctx->force_ttl = true;
+        if (ctx->need_remove_expired_values || !global_ctx->ttl_merges_blocker->isCancelled())
+        {
+            ctx->need_remove_expired_values = true;
+            ctx->force_ttl = true;
+        }
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
@@ -3007,6 +3015,59 @@ private:
     std::shared_ptr<TTLTransform> transform;
 };
 
+class TTLCalcStep : public ITransformingStep
+{
+public:
+    TTLCalcStep(
+        const SharedHeader & input_header_,
+        const ContextPtr & context_,
+        const MergeTreeData & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const MergeTreeData::MutableDataPartPtr & data_part_,
+        time_t current_time,
+        bool force_)
+        : ITransformingStep(input_header_, input_header_, getTraits())
+    {
+        transform = std::make_shared<TTLCalcTransform>(
+            context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_);
+
+        /// Same reasoning as TTLStep: build sets eagerly so subquery progress does not distort
+        /// the merge's own rows_read accounting.
+        for (auto & subquery : transform->getSubqueries())
+            subquery->buildSetInplace(context_);
+    }
+
+    String getName() const override { return "TTL_CALC"; }
+
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        pipeline.addTransform(transform);
+    }
+
+    void updateOutputHeader() override
+    {
+        output_header = input_headers.front();
+    }
+
+private:
+    static Traits getTraits()
+    {
+        return ITransformingStep::Traits
+        {
+            {
+                .returns_single_stream = true,
+                .preserves_number_of_streams = true,
+                .preserves_sorting = true,
+            },
+            {
+                .preserves_number_of_rows = true,
+            }
+        };
+    }
+
+    std::shared_ptr<TTLCalcTransform> transform;
+};
+
 class BuildTextIndexStep : public ITransformingStep, private WithContext
 {
 public:
@@ -3475,6 +3536,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
+    }
+    else if (ctx->recalculate_ttl_for_patches)
+    {
+        /// TTL removal is blocked but the merge carries patches: the merged part still must not
+        /// keep pre-patch infos, or a later TTLDrop can drop rows a patch un-expired.
+        auto ttl_calc_step = std::make_unique<TTLCalcStep>(
+            merge_parts_query_plan.getCurrentHeader(),
+            global_ctx->context,
+            *global_ctx->data,
+            global_ctx->metadata_snapshot,
+            global_ctx->new_data_part,
+            global_ctx->time_of_merge,
+            /*force_=*/ true);
+
+        ttl_calc_step->setStepDescription("TTL info recalculation step");
+        merge_parts_query_plan.addStep(std::move(ttl_calc_step));
     }
 
     /// Secondary indices expressions

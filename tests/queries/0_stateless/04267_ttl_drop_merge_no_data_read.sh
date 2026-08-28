@@ -639,3 +639,103 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_modify_relaxed;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_modify_relaxed;"
+
+# -------------------------------------------------------------------
+# Case 12: a patch that newly expires rows forces the TTL step
+#
+# The source part's own ttl_infos say nothing is due (every event_time is in
+# the future), so pre-patch metadata alone would skip TTL work entirely. The
+# patch moves 10 rows into the past; the merge must re-evaluate TTL against
+# the patched values and drop exactly those rows.
+# -------------------------------------------------------------------
+echo "-- Case 12: patch that newly expires rows forces the TTL step"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_expire
+    (
+        id UInt64,
+        event_time DateTime
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY
+    SETTINGS
+        ttl_only_drop_parts = 1,
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_expire;
+
+    -- Nothing is expired when the part is written.
+    INSERT INTO t_ttl_patch_expire SELECT number, now() + INTERVAL 2 DAY FROM numbers(100);
+
+    -- A lightweight update expires 10 rows; only the patch part knows.
+    UPDATE t_ttl_patch_expire SET event_time = now() - INTERVAL 2 DAY WHERE id < 10
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM START MERGES t_ttl_patch_expire;
+
+    OPTIMIZE TABLE t_ttl_patch_expire FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_expire;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_expire;"
+
+# -------------------------------------------------------------------
+# Case 13: a blocked TTL merge still recalculates patched infos
+#
+# TTL removal is stopped, so all 100 rows survive the merge; but the merged
+# part must carry post-patch ttl_infos - with the stale pre-patch metadata a
+# later TTLDrop merge could treat the part as fully expired and drop the 10
+# rows the patch moved back into the future.
+# -------------------------------------------------------------------
+echo "-- Case 13: blocked TTL merge still recalculates patched infos"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_blocked
+    (
+        id UInt64,
+        event_time DateTime
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY
+    SETTINGS
+        ttl_only_drop_parts = 1,
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_blocked;
+
+    -- Every row is expired when the part is written.
+    INSERT INTO t_ttl_patch_blocked SELECT number, now() - INTERVAL 2 DAY FROM numbers(100);
+
+    -- A lightweight update un-expires 10 of them.
+    UPDATE t_ttl_patch_blocked SET event_time = now() + INTERVAL 2 DAY WHERE id < 10
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM STOP TTL MERGES t_ttl_patch_blocked;
+    SYSTEM START MERGES t_ttl_patch_blocked;
+
+    OPTIMIZE TABLE t_ttl_patch_blocked FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_blocked;"
+
+# The recalculated maximum covers the patched future rows, so the part cannot read as fully expired.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT max(delete_ttl_info_max) > now() + INTERVAL 1 DAY
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_blocked' AND active AND rows = 100;
+"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_blocked;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_blocked;"

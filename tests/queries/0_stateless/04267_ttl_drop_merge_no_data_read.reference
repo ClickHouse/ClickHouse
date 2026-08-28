@@ -31,3 +31,8 @@ RegularMerge	10	1
 -- Case 11: MODIFY TTL without materialization still reads the source parts
 RegularMerge	0	200
 0
+-- Case 12: patch that newly expires rows forces the TTL step
+90
+-- Case 13: blocked TTL merge still recalculates patched infos
+100
+1
