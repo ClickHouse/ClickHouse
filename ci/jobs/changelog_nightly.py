@@ -357,10 +357,10 @@ def resolve_revert_targets(revert_prs, known_titles=None):
     when that target is not in the current raw block. Returns (targets, titles,
     unresolved): `targets` maps a revert to the pull requests it reverts,
     `titles` holds the titles looked up here, and `unresolved` lists the
-    reverts whose target stayed unknown (a manual revert without the marker, or
-    a failed lookup) — those grant no deletion credit, and the caller fails
-    closed on any disappearance it cannot bind to a resolved, uncancelled
-    revert."""
+    reverts whose target stayed unknown (a manual revert without the marker, a
+    failed lookup, or a nested title that fits several earlier reverts equally
+    well) — those grant no deletion credit, and the caller fails closed on any
+    disappearance it cannot bind to a resolved, uncancelled revert."""
     targets = {}
     titles = {}
     for pr in revert_prs:
@@ -393,7 +393,12 @@ def resolve_revert_targets(revert_prs, known_titles=None):
             if nested
             else set()
         )
-        if matched:
+        # Revert titles are not unique — the same change can be reverted more
+        # than once in a cycle, and every one of those reverts is titled
+        # `Revert "X"` — so a title matching several earlier reverts
+        # identifies none of them. Bind only an unambiguous match; anything
+        # else stays unresolved, which grants no credit at all.
+        if len(matched) == 1:
             targets[pr] = matched
         else:
             unresolved.append(pr)
@@ -433,18 +438,24 @@ def read_revert_ledger():
     All three are empty on a branch whose edit commits predate the trailers,
     which degrades to the previous behaviour: chains are then only seen inside
     a single raw block."""
-    log = Shell.get_output("git log origin/master..HEAD --format=%B", strict=True)
+    log = Shell.get_output(
+        "git log origin/master..HEAD --format=%B", strict=True
+    )
     targets, titles, deleted = {}, {}, {}
     for line in log.splitlines():
         m = REVERT_TRAILER_RE.match(line)
         if m:
             targets.setdefault(m.group(1), set()).add(m.group(2))
             if m.group(3):
-                titles[m.group(1)] = m.group(3)
+                titles.setdefault(m.group(1), m.group(3))
             continue
         m = DELETED_TRAILER_RE.match(line)
         if m:
-            deleted[m.group(1)] = m.group(2)
+            # `setdefault`, because `git log` walks newest first and one entry
+            # can be deleted, restored and deleted again, gaining a re-apply
+            # link each time it comes back: the newest record holds the text
+            # to restore, the older ones are superseded.
+            deleted.setdefault(m.group(1), m.group(2))
     return targets, titles, deleted
 
 

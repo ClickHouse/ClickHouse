@@ -96,7 +96,8 @@ def changelog(entries, raw_bullets=None):
 
 
 def analyze(monkeypatch, text, ledger=()):
-    """`analyze_reverts` with `gh pr view` and the branch log stubbed out."""
+    """`analyze_reverts` with `gh pr view` and the branch log stubbed out.
+    `ledger` is newest first, the order `git log` walks the branch in."""
 
     def fake_get_output(command, strict=False, verbose=False, retries=1, delay=2):
         if command.startswith("gh pr view"):
@@ -246,3 +247,64 @@ def test_unresolvable_revert_grants_no_credit(monkeypatch):
     assert reverts["credits"] == {}
     assert reverts["ledger"] == []
     assert uncredited(reverts, before, changelog([])) == ["109946"]
+
+
+def test_ambiguous_nested_title_binds_to_nothing(monkeypatch):
+    """The same change can be reverted twice in a cycle, and both reverts are
+    then titled `Revert "X"`. A `Revert "Revert "X""` fits both equally well,
+    so it binds to neither: guessing would hand out deletion credit for, or
+    demand the restoration of, an entry nobody reverted."""
+    PULL_REQUESTS["114800"] = {
+        "title": f'Revert "{FIX_TITLE}"',
+        "body": "Reverts ClickHouse/ClickHouse#109000",
+    }
+    reverts = analyze(
+        monkeypatch,
+        changelog([], [REVERT_OF_REVERT]),
+        [
+            LEDGER_REVERT,
+            LEDGER_DELETED,
+            f'Changelog-revert: 114800 109000 Revert "{FIX_TITLE}"',
+        ],
+    )
+    assert reverts["unresolved"] == ["114912"]
+    assert reverts["ledger"] == []
+    # Both earlier reverts still stand, so both deletions stay licensed and
+    # nothing is demanded back.
+    assert reverts["credits"] == {"109946": "114911", "109000": "114800"}
+    assert reverts["restore"] == {}
+
+
+def test_restoring_uses_the_newest_recorded_bullet(monkeypatch):
+    """After delete, restore, delete again, the entry carries the link of the
+    pull request that re-applied it the first time. The restoration has to use
+    that text, not the one recorded before the first restoration."""
+    reapplied = (
+        FIX + " [#114912](https://github.com/ClickHouse/ClickHouse/pull/114912) "
+        "([Someone](https://github.com/someone))."
+    )
+    PULL_REQUESTS["116000"] = {
+        "title": f'Revert "Revert "Revert "Revert "{FIX_TITLE}""""',
+        "body": "Reverts ClickHouse/ClickHouse#115500",
+    }
+    reverts = analyze(
+        monkeypatch,
+        changelog(
+            [],
+            [
+                "* NO CL ENTRY: 'Revert \"Revert \"Revert \"Revert \"%s\"\"\"\"'. "
+                "[#116000](https://github.com/ClickHouse/ClickHouse/pull/116000) "
+                "([Someone](https://github.com/someone))." % FIX_TITLE
+            ],
+        ),
+        [
+            f"Changelog-deleted-entry: 109946 {reapplied}",
+            f'Changelog-revert: 115500 114912 Revert "Revert "Revert "{FIX_TITLE}"""',
+            LEDGER_REVERT_OF_REVERT,
+            LEDGER_DELETED,
+            LEDGER_REVERT,
+        ],
+    )
+    assert reverts["restore"] == {"109946": reapplied}
+    assert reverts["missing"] == {"109946": reapplied}
+    assert reapplied in cl._edit_prompt(VERSION, reverts)
