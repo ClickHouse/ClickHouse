@@ -581,6 +581,11 @@ void DistinctTransform::transform(Chunk & chunk)
                 /// `keep` must already be sized to `num_rows` so the per-range call only flips null rows.
                 if (keep.empty())
                     keep.assign(num_rows, static_cast<UInt8>(1));
+                /// Capture whether the timeout was already latched *before* this null-marking loop. `isSoftTimeout`
+                /// latches `time_limit_exceeded` itself on return, so checking `time_limit_exceeded` inside the
+                /// `if (isSoftTimeout())` block would always be true and the per-loop truncation branch below would
+                /// be dead; using `pre_latched` keeps the two cases distinct (own first timeout vs. upstream latch).
+                const bool pre_latched = time_limit_exceeded;
                 for (size_t begin = 0; begin < num_rows; begin += 0x1000)
                 {
                     if (isCancelled() && !isCancelledBySoftTimeout())
@@ -593,7 +598,7 @@ void DistinctTransform::transform(Chunk & chunk)
                     }
                     if (isSoftTimeout())
                     {
-                        if (time_limit_exceeded)
+                        if (pre_latched)
                         {
                             /// Pre-latched by an earlier nullable-key prepass (the plain-nullable null-map
                             /// pass, or a preceding `LowCardinality(Nullable(...))` column): the committed
@@ -693,7 +698,10 @@ void DistinctTransform::transform(Chunk & chunk)
                         stopReading();
                         return;
                     }
-                    if (isSoftTimeout())
+                    /// Only a soft timeout that fires *during* this materialization pass may shorten the
+                    /// emitted prefix; if it was already latched upstream the whole committed prefix must
+                    /// survive (truncating here would drop it to zero rows at `offset == 0`).
+                    if (!filter_pre_latched && isSoftTimeout())
                     {
                         truncated_at = offset; /// break-mode: stop materializing, emit the processed prefix
                         break;
