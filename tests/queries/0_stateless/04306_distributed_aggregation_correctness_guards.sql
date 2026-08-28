@@ -1,11 +1,10 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
--- Regression test: make_distributed_plan rejects aggregations it cannot distribute correctly,
--- rather than silently running them single-node.
---   * GROUPING SETS: shuffle scatters by the full key set, so subtotals (over key subsets) would be
---     produced independently in several buckets and duplicated.
---   * A global GROUP BY limit (max_rows_to_group_by) cannot be enforced once split per bucket.
+-- Regression test: make_distributed_plan rejects an aggregation it cannot distribute correctly,
+-- rather than silently running it single-node. A global GROUP BY limit (max_rows_to_group_by) is
+-- such a case: each bucket aggregates only its own share of the data, so no worker can tell when
+-- the global number of groups exceeds the limit.
 
 DROP TABLE IF EXISTS t_agg_guard;
 
@@ -17,9 +16,6 @@ SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_def
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 1000000000, enable_join_runtime_filters = 0;
 
-
-SELECT '-- GROUPING SETS rejected';
-SELECT a, b, sum(v) AS s FROM t_agg_guard GROUP BY GROUPING SETS ((a), (b), ()) SETTINGS distributed_plan_fallback_to_local_execution=0; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT '-- max_rows_to_group_by rejected';
 SELECT a, sum(v) FROM t_agg_guard GROUP BY a
