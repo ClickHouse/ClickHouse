@@ -150,6 +150,9 @@ extern const int TOO_DEEP_RECURSION;
 namespace
 {
 
+/// How many entries each of the fuzzer's collected-parts maps may hold before a random one is evicted.
+constexpr size_t AST_FUZZER_PART_TYPE_CAP = 1000;
+
 /// Named clusters defined in the standard stateless-test server config. Used to fuzz the
 /// connection argument of cluster()/clusterAllReplicas(), the Distributed engine, and
 /// self-referential remote/cluster wrapping. Includes multi-shard, replica and deliberately
@@ -3540,6 +3543,11 @@ void QueryFuzzer::rememberViewParameters(const ASTCreateQuery & create)
         view_parameters.erase(create.getTable());
         return;
     }
+
+    /// The server shares one fuzzer across every session for its whole lifetime, and only a DROP the
+    /// client loop sees removes an entry. Bound it like the other collected-parts maps.
+    if (view_parameters.size() > AST_FUZZER_PART_TYPE_CAP)
+        view_parameters.erase(std::next(view_parameters.begin(), fuzz_rand() % view_parameters.size()));
 
     /// Sorted, so the values the call binds do not depend on the hash order of the names.
     ViewParameters sorted_parameters(parameters.begin(), parameters.end());
@@ -8695,8 +8703,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
     }
 }
-
-#define AST_FUZZER_PART_TYPE_CAP 1000
 
 /// Generate a fuzzed string-serialized value for a query parameter.
 /// We don't try to match the declared type — passing a mismatched value just causes a query
