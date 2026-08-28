@@ -16,22 +16,11 @@ public:
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
 
-        /// Data types of the columns read from table function timeSeriesSelector().
+        /// Data types of the corresponding columns in the TimeSeries table.
+        /// We use these data types for the columns we read from table function timeSeriesSelector().
         DataTypePtr id_data_type;
         DataTypePtr timestamp_data_type;
         DataTypePtr scalar_data_type;
-
-        /// The type of the `id` column of the TimeSeries table itself.
-        /// It differs from `id_data_type` only when the id is narrowed (see below).
-        DataTypePtr table_id_data_type;
-
-        /// Whether the selector reads and returns only the second component of a two-component
-        /// id `Tuple(F, LowCardinality(S))` (`id_data_type` is that component's type then).
-        /// With the canonical id generator the second component (a hash of all the tags) alone
-        /// identifies a time series, and returning only it keeps the identifiers
-        /// dictionary-encoded end-to-end: the `IN <ids>` filter over the samples table and
-        /// `timeSeriesIdToGroup` are then executed per dictionary key instead of per row.
-        bool narrow_id_to_second_component = false;
 
         PrometheusQueryTree selector;
 

@@ -5,10 +5,8 @@
 
 -- A `TimeSeries` id of type `Tuple(UInt64, LowCardinality(UUID))` keeps the identifiers
 -- dictionary-encoded: the default id generator wraps the tags hash in `toLowCardinality`,
--- the whole-metric primary-key range conditions are still emitted, and `timeSeriesSelector`
--- reads and returns only the second id component (which alone identifies a time series under
--- the canonical generator), so the `IN <ids>` filter and `timeSeriesIdToGroup` work on
--- dictionaries instead of rows.
+-- and the whole-metric primary-key range conditions are still emitted. Queries behave
+-- exactly as with a plain `Tuple(UInt64, UUID)` id.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -30,7 +28,7 @@ INSERT INTO ts_lc (metric_name, tags, time_series) VALUES
     ('foo', map(), [(toDateTime64(100, 3), 5.)]),
     ('bar', map('env', 'dev'), [(toDateTime64(100, 3), 100.), (toDateTime64(300, 3), 300.)]);
 
-SELECT '-- the selector returns only the second id component, dictionary-encoded';
+SELECT '-- the selector returns the id with the declared type';
 
 SELECT toTypeName(id) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) LIMIT 1;
 
@@ -38,12 +36,10 @@ SELECT '-- whole-metric selector: results and the emitted id range';
 
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) ORDER BY value, timestamp;
 
--- The range conditions are index-analysis-only (`indexHint`) here: the narrowed id set filters
--- the rows exactly, so at runtime only the second-component subcolumn of the id is read.
-SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%id.2 IN subquery%' AS filters_by_narrowed_id
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
+SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
 
-SELECT '-- partial selector (the id set is full-shaped for index analysis): results, no id range';
+SELECT '-- partial selector: results, no id range';
 
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000) ORDER BY value, timestamp;
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000) ORDER BY value, timestamp;
@@ -51,7 +47,7 @@ SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000) 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)));
 
-SELECT '-- prometheus query evaluation over the narrowed ids';
+SELECT '-- prometheus query evaluation over the dictionary-encoded ids';
 
 SELECT arraySort(tags), round(value, 6) FROM prometheusQuery(ts_lc, 'foo', 250) ORDER BY ALL;
 SELECT arraySort(tags), round(value, 6) FROM prometheusQuery(ts_lc, 'sum by (env) (rate(foo[5m]))', 400) ORDER BY ALL;
@@ -69,7 +65,7 @@ INSERT INTO ts_plain (metric_name, tags, time_series) VALUES
 SELECT arraySort(tags), round(value, 6) FROM prometheusQuery(ts_plain, 'foo', 250) ORDER BY ALL;
 SELECT arraySort(tags), round(value, 6) FROM prometheusQuery(ts_plain, 'sum by (env) (rate(foo[5m]))', 400) ORDER BY ALL;
 
-SELECT '-- a non-canonical generator: no narrowing, the full id is returned';
+SELECT '-- a custom generator with a LowCardinality id also works';
 
 CREATE TABLE ts_custom_gen ENGINE = TimeSeries
 TAGS INNER COLUMNS (id Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(tags), toLowCardinality(reinterpretAsUUID(sipHash128(metric_name, tags)))));
