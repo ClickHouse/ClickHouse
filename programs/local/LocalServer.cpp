@@ -821,28 +821,35 @@ void LocalServer::startServers(const ServerType & server_type)
             if (server_type.shouldStart(ServerType::Type::HTTP))
             {
                 const char * port_name = "http_port";
-                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                /// Anything the callback throws is reported as a listener bind failure, and only logged
+                /// when `listen_try` is set, so the handler configuration is parsed before it. The port
+                /// check matches the early return in `createServer`.
+                if (!config.getString(port_name, "").empty())
                 {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
-                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    auto handler_factory = createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory");
+                    if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                    {
+                        Poco::Net::ServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
 
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::make_shared<HTTPContext>(global_context),
-                            createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory"),
-                            *server_pool,
-                            socket,
-                            http_params,
-                            /* connection_filter= */ nullptr,
-                            ProfileEvents::InterfaceHTTPReceiveBytes,
-                            ProfileEvents::InterfaceHTTPSendBytes));
-                }, &logger()))
-                    ports_to_register.emplace_back(port_name, servers.back().portNumber());
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            "http://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                std::make_shared<HTTPContext>(global_context),
+                                handler_factory,
+                                *server_pool,
+                                socket,
+                                http_params,
+                                /* connection_filter= */ nullptr,
+                                ProfileEvents::InterfaceHTTPReceiveBytes,
+                                ProfileEvents::InterfaceHTTPSendBytes));
+                    }, &logger()))
+                        ports_to_register.emplace_back(port_name, servers.back().portNumber());
+                }
             }
         }
 
