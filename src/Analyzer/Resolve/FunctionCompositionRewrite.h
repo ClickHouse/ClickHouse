@@ -80,8 +80,8 @@ using ResolveIdentifierOperand = std::function<QueryTreeNodePtr(const Identifier
   * recursively, and identifiers are resolved through `resolve_identifier_operand` (lambda
   * aliases and registered function names).
   *
-  * The lambda arguments of `f` are renamed to fresh reserved names, so a column referenced
-  * from the body of `g` can never be captured by an argument of `f` accidentally.
+  * The lambda arguments of `f` are renamed to names that occur in neither operand, so a column
+  * referenced from the body of `g` can never be captured by an argument of `f` accidentally.
   */
 QueryTreeNodePtr fuseCompositionToLambda(const FunctionNode & compose_node, const ResolveIdentifierOperand & resolve_identifier_operand);
 

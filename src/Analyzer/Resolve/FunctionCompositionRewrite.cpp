@@ -31,9 +31,10 @@ namespace
 /// A lambda with more arguments makes no sense: a placeholder number this large is a typo.
 constexpr size_t max_placeholder_number = 128;
 
-/// The names of the arguments of a fused lambda. Reserved-looking on purpose: the body of the
-/// right operand is resolved with these names in scope, so they must not collide with a column
-/// a user could reasonably reference from there.
+/// The preferred name of an argument of a fused lambda. Reserved-looking on purpose: the body
+/// of the right operand is resolved with these names in scope, so they should not collide with
+/// a column a user could reasonably reference from there. A collision is still possible, and
+/// `fuseCompositionToLambda` disambiguates the name in that case.
 String composedArgumentName(size_t argument_number)
 {
     return "__composed_arg_" + std::to_string(argument_number);
@@ -150,10 +151,33 @@ struct PlaceholderCollector
     }
 };
 
-/// Collect every name bound lexically inside a subquery: aliases (`SELECT 1 AS x`), CTE names,
-/// and lambda arguments. An identifier with such a name inside the subquery denotes that
-/// binding, not a value the composition would have to substitute in from the outside.
-void collectNamesBoundInsideSubquery(const QueryTreeNodePtr & node, NameSet & bound_names)
+/// The names of the columns a subquery in a join tree exposes to the query that selects from
+/// it. They are bound names at that query level, even though the expressions behind them live
+/// in another scope. Only names that are evident lexically are collected: an explicit alias, or
+/// the column name of a bare identifier projection.
+void collectProjectionNames(const QueryTreeNodePtr & node, NameSet & bound_names)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+    {
+        for (const auto & projection_node : query_node->getProjection().getNodes())
+        {
+            if (projection_node->hasAlias())
+                bound_names.insert(projection_node->getAlias());
+            else if (const auto * identifier_node = projection_node->as<IdentifierNode>())
+                bound_names.insert(identifier_node->getIdentifier().getParts().back());
+        }
+    }
+    else if (const auto * union_node = node->as<UnionNode>())
+    {
+        for (const auto & union_query_node : union_node->getQueries().getNodes())
+            collectProjectionNames(union_query_node, bound_names);
+    }
+}
+
+/// The names a join tree binds: the aliases of its table expressions and the columns exposed by
+/// the subqueries it selects from. The columns of a real table cannot be known here — that
+/// needs the catalog — which is the conservative case documented at `subqueryReferencesIdentifier`.
+void collectNamesBoundInJoinTree(const QueryTreeNodePtr & node, NameSet & bound_names)
 {
     if (!node)
         return;
@@ -161,59 +185,129 @@ void collectNamesBoundInsideSubquery(const QueryTreeNodePtr & node, NameSet & bo
     if (node->hasAlias())
         bound_names.insert(node->getAlias());
 
-    if (const auto * query_node = node->as<QueryNode>())
+    const auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
-        if (query_node->isCTE())
-            bound_names.insert(query_node->getCTEName());
-    }
-    else if (const auto * union_node = node->as<UnionNode>())
-    {
-        if (union_node->isCTE())
-            bound_names.insert(union_node->getCTEName());
-    }
-    else if (const auto * lambda_node = node->as<LambdaNode>())
-    {
-        for (const auto & argument_name : lambda_node->getArguments().getNames())
-            bound_names.insert(argument_name);
+        collectProjectionNames(node, bound_names);
+        return;
     }
 
     for (const auto & child : node->getChildren())
-        collectNamesBoundInsideSubquery(child, bound_names);
+        collectNamesBoundInJoinTree(child, bound_names);
 }
 
-/// Whether an identifier with the given first part occurs anywhere in the subtree.
-bool containsIdentifier(const QueryTreeNodePtr & node, const String & name)
+/// Collect every name bound at the level of one query: aliases (`SELECT 1 AS x`), the names of
+/// the CTEs it defines, and the aliases of its table expressions. Such a name is visible in the
+/// whole query, so the walk descends through it, but it stops at a nested query (which has its
+/// own level) and at a lambda (whose arguments are visible only inside its own body).
+void collectNamesBoundAtQueryLevel(const QueryTreeNodePtr & node, NameSet & bound_names, bool is_root)
 {
     if (!node)
-        return false;
+        return;
 
-    if (const auto * identifier_node = node->as<IdentifierNode>())
-        return identifier_node->getIdentifier().at(0) == name;
+    if (node->hasAlias())
+        bound_names.insert(node->getAlias());
+
+    if (is_root)
+    {
+        if (const auto * root_query_node = node->as<QueryNode>())
+            collectNamesBoundInJoinTree(root_query_node->getJoinTreeNode(), bound_names);
+    }
+    else
+    {
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            if (query_node->isCTE())
+                bound_names.insert(query_node->getCTEName());
+            return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            if (union_node->isCTE())
+                bound_names.insert(union_node->getCTEName());
+            return;
+        }
+
+        if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
+            return;
+    }
 
     for (const auto & child : node->getChildren())
-        if (containsIdentifier(child, name))
-            return true;
-
-    return false;
+        collectNamesBoundAtQueryLevel(child, bound_names, false /*is_root*/);
 }
 
 /// Whether a subquery references the name from the outside, so that a substitution would have
-/// to descend into it. The name is bound inside the subquery when it is an alias, a CTE name,
-/// or a lambda argument there — the common case of a subquery that merely reuses the name
-/// locally, e.g. `(SELECT max(x) FROM (SELECT 1 AS x))` for the name `x`.
+/// to descend into it. The walk is scope sensitive: a binding suppresses the name only inside
+/// the scope that introduces it — a lambda argument only inside the body of that lambda, an
+/// alias or a CTE name only inside the query that defines it. A nested binder therefore does
+/// not hide a free occurrence of the same name elsewhere in the subquery.
 ///
 /// Whether a bare identifier resolves to a column of a table inside the subquery cannot be
 /// decided lexically: it needs the catalog, which is not available in this rewrite. So a name
 /// that is not bound by any of the constructs above is conservatively treated as referenced,
 /// and the composition fails cleanly instead of substituting into the subquery.
-bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name)
+bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name, NameSet bound_names)
 {
-    NameSet bound_names;
-    collectNamesBoundInsideSubquery(node, bound_names);
-    if (bound_names.contains(name))
+    if (!node)
         return false;
 
-    return containsIdentifier(node, name);
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::IDENTIFIER:
+            return !bound_names.contains(name) && node->as<IdentifierNode &>().getIdentifier().at(0) == name;
+        case QueryTreeNodeType::LAMBDA:
+        {
+            const auto & lambda_node = node->as<LambdaNode &>();
+            const auto & argument_names = lambda_node.getArguments().getNames();
+            if (std::find(argument_names.begin(), argument_names.end(), name) != argument_names.end())
+                return false;
+
+            return subqueryReferencesIdentifier(lambda_node.getExpression(), name, bound_names);
+        }
+        case QueryTreeNodeType::QUERY:
+        case QueryTreeNodeType::UNION:
+        {
+            collectNamesBoundAtQueryLevel(node, bound_names, true /*is_root*/);
+            if (bound_names.contains(name))
+                return false;
+            break;
+        }
+        default:
+            break;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (subqueryReferencesIdentifier(child, name, bound_names))
+            return true;
+
+    return false;
+}
+
+bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name)
+{
+    return subqueryReferencesIdentifier(node, name, NameSet{});
+}
+
+/// Every name that occurs as an identifier, a lambda argument, or an alias anywhere in the
+/// subtree. A name outside of this set cannot capture anything in it and cannot be captured
+/// by it, so it is safe to use as the argument name of a synthesized lambda.
+void collectUsedNames(const QueryTreeNodePtr & node, NameSet & used_names)
+{
+    if (!node)
+        return;
+
+    if (node->hasAlias())
+        used_names.insert(node->getAlias());
+
+    if (const auto * identifier_node = node->as<IdentifierNode>())
+        used_names.insert(identifier_node->getIdentifier().at(0));
+    else if (const auto * lambda_node = node->as<LambdaNode>())
+        for (const auto & argument_name : lambda_node->getArguments().getNames())
+            used_names.insert(argument_name);
+
+    for (const auto & child : node->getChildren())
+        collectUsedNames(child, used_names);
 }
 
 /// Replace free occurrences of the identifier `name` in the expression with (a clone of) the
@@ -455,9 +549,19 @@ QueryTreeNodePtr fuseCompositionToLambda(const FunctionNode & compose_node, cons
             "got {} arguments: {}",
             right_argument_names.size(), operands[1]->formatASTForErrorMessage());
 
-    /// Rename the arguments of the left lambda to fresh reserved names. Without the renaming a
-    /// column referenced from the body of the right lambda could be captured by an argument of
-    /// the left lambda with the same name, silently changing its meaning.
+    /// Rename the arguments of the left lambda to fresh names. Without the renaming a column
+    /// referenced from the body of the right lambda could be captured by an argument of the
+    /// left lambda with the same name, silently changing its meaning.
+    ///
+    /// The names have to be fresh for both operands: a name that already occurs in either body
+    /// would introduce the very capture the renaming avoids — an outer column named
+    /// `__composed_arg_1` and referenced from the right operand would bind to the argument of
+    /// the fused lambda instead. So the preferred name is disambiguated with a counter until it
+    /// occurs in neither operand.
+    NameSet used_names;
+    collectUsedNames(left, used_names);
+    collectUsedNames(right, used_names);
+
     const auto left_argument_names = left_lambda.getArguments().getNames();
     Names fused_argument_names;
     fused_argument_names.reserve(left_argument_names.size());
@@ -465,8 +569,13 @@ QueryTreeNodePtr fuseCompositionToLambda(const FunctionNode & compose_node, cons
     auto left_body = left_lambda.getExpression();
     for (size_t i = 0; i < left_argument_names.size(); ++i)
     {
-        fused_argument_names.push_back(composedArgumentName(i + 1));
-        auto fresh_argument = std::make_shared<IdentifierNode>(Identifier(fused_argument_names.back()));
+        String fresh_name = composedArgumentName(i + 1);
+        for (size_t attempt = 1; used_names.contains(fresh_name); ++attempt)
+            fresh_name = composedArgumentName(i + 1) + "_" + std::to_string(attempt);
+        used_names.insert(fresh_name);
+
+        fused_argument_names.push_back(fresh_name);
+        auto fresh_argument = std::make_shared<IdentifierNode>(Identifier(std::move(fresh_name)));
         substituteIdentifier(left_body, left_argument_names[i], fresh_argument);
     }
 
