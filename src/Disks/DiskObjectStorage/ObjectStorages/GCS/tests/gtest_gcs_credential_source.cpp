@@ -8,8 +8,8 @@
 using namespace DB;
 
 /// The authentication modes of a native GCS backend are mutually exclusive, and their priority order
-/// decides both which credentials the client is built with and whether the `google_adc_*`
-/// refresh-token triple has to be exchanged for an access token at all.
+/// decides which credentials the client is built with -- and, for the `google_adc_*` refresh-token
+/// triple, whether the transport is handed the triple to renew tokens from.
 
 TEST(GCSCredentialSource, EmptySettingsUseApplicationDefault)
 {
@@ -44,27 +44,70 @@ TEST(GCSCredentialSource, KeyFileBeatsToken)
     EXPECT_EQ(chooseGCSCredentialSource(settings), GCSCredentialSource::ServiceAccountKeyFile);
 }
 
-TEST(GCSCredentialSource, TokenIsTheLastExplicitMode)
+TEST(GCSCredentialSource, TokenBeatsRefreshTokenTriple)
 {
     GCSObjectStorageSettings settings;
     settings.access_token = "token";
+    settings.google_adc_client_id = "id";
+    settings.google_adc_client_secret = "secret";
+    settings.google_adc_refresh_token = "refresh";
     EXPECT_EQ(chooseGCSCredentialSource(settings), GCSCredentialSource::AccessToken);
 }
 
-/// The refresh-token triple is not an authentication mode of its own: it only feeds `access_token`.
-/// A configuration that carries it next to a higher-priority mode must not even try to exchange it,
-/// so a stale triple cannot break an otherwise valid configuration. `resolveGCSCredentialsToken`
-/// tests that by asking this function, so the two can never disagree.
-TEST(GCSCredentialSource, RefreshTokenTripleAloneIsNotAMode)
+/// The refresh-token triple is an authentication mode of its own -- the transport builds refreshable
+/// credentials from it -- and the last explicit one, so anything more specific next to it still wins and
+/// a stale triple cannot take over an otherwise valid configuration.
+TEST(GCSCredentialSource, RefreshTokenTripleIsTheLastExplicitMode)
 {
     GCSObjectStorageSettings settings;
     settings.google_adc_client_id = "id";
     settings.google_adc_client_secret = "secret";
     settings.google_adc_refresh_token = "refresh";
-    EXPECT_EQ(chooseGCSCredentialSource(settings), GCSCredentialSource::ApplicationDefault);
+    EXPECT_EQ(chooseGCSCredentialSource(settings), GCSCredentialSource::RefreshToken);
 
     settings.no_sign_request = true;
     EXPECT_EQ(chooseGCSCredentialSource(settings), GCSCredentialSource::Anonymous);
+}
+
+/// Unlike Application Default Credentials, the triple *is* the identity: the access tokens minted from it
+/// change over time but always belong to the same authorized user, so two storages carrying the same
+/// triple can share one client (and therefore a server-side `RewriteObject` copy). A different token
+/// endpoint is a different destination for that exchange, so it breaks the equivalence.
+TEST(GCSCredentialSource, RefreshTokenTripleIsAStableClientIdentity)
+{
+    GCSObjectStorageSettings lhs;
+    lhs.google_adc_client_id = "id";
+    lhs.google_adc_client_secret = "secret";
+    lhs.google_adc_refresh_token = "refresh";
+
+    GCSObjectStorageSettings rhs = lhs;
+    EXPECT_TRUE(lhs.describesSameClientAs(rhs));
+
+    rhs.google_adc_refresh_token = "other-refresh";
+    EXPECT_FALSE(lhs.describesSameClientAs(rhs));
+
+    rhs = lhs;
+    rhs.google_adc_token_uri = "https://token.example/token";
+    EXPECT_FALSE(lhs.describesSameClientAs(rhs));
+}
+
+/// `google_adc_token_uri` selects nothing on its own: without a refresh token there is nothing to
+/// exchange there, so accepting it silently would do nothing at all.
+TEST(GCSCredentialSource, RefreshTokenTripleMustBeComplete)
+{
+    GCSObjectStorageSettings settings;
+    settings.google_adc_client_id = "id";
+    EXPECT_ANY_THROW(validateGCSRefreshTokenTriple(settings));
+
+    settings.google_adc_client_secret = "secret";
+    EXPECT_ANY_THROW(validateGCSRefreshTokenTriple(settings));
+
+    settings.google_adc_refresh_token = "refresh";
+    EXPECT_NO_THROW(validateGCSRefreshTokenTriple(settings));
+
+    GCSObjectStorageSettings token_uri_only;
+    token_uri_only.google_adc_token_uri = "https://token.example/token";
+    EXPECT_ANY_THROW(validateGCSRefreshTokenTriple(token_uri_only));
 }
 
 /// The transport knobs are part of the client identity, so a cross-storage server-side copy does not

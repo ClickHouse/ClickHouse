@@ -55,15 +55,24 @@ struct GCSObjectStorageSettings
     String service_account_key;
     /// Path to a service-account JSON key file.
     String service_account_key_file;
-    /// A static OAuth2 access token (bearer). This is only supported by ephemeral SQL clients;
-    /// `loadFromConfig` rejects it for long-lived disks.
+    /// A static OAuth2 access token (bearer). No surface sets it: a bearer token cannot be renewed, so
+    /// `loadFromConfig` rejects it rather than letting a disk stop working when it expires, and the
+    /// shared `s3` argument grammar has no key for it. It is still parsed (and rejected) so that an
+    /// `<access_token>` in a disk section is reported instead of silently ignored.
     String access_token;
     Int64 access_token_expires_in_seconds = 3600;
     /// "Authorized user" refresh-token triple (the same one the S3-compat `gcp_oauth` client uses).
-    /// When set, it is exchanged for an access token via IO/GCPOAuth at load time.
+    /// The triple itself is the credential: the transport exchanges it for an access token and
+    /// renews that token whenever it nears expiry (see `ClickHouse::PocoRestAuthorizedUserOption`),
+    /// so it is usable by a long-lived disk as well as by a query.
     String google_adc_client_id;
     String google_adc_client_secret;
     String google_adc_refresh_token;
+    /// Where the refresh token is exchanged. Empty means Google's own OAuth 2.0 endpoint
+    /// (`https://oauth2.googleapis.com/token`), which is what a real deployment uses; an override is
+    /// for a private token endpoint, and it is validated against `remote_url_allow_hosts` like the
+    /// storage endpoint is. Disk-only: the shared `s3` argument grammar has no key for it.
+    String google_adc_token_uri;
 
     /// --- HTTP transport ---
 
@@ -135,15 +144,17 @@ enum class GCSCredentialSource
     ServiceAccountKey,
     /// Service-account JSON key read from a file.
     ServiceAccountKeyFile,
-    /// A bearer access token (supplied directly, or minted from the refresh-token triple).
+    /// A bearer access token supplied directly. Cannot be renewed.
     AccessToken,
+    /// The `google_adc_*` "authorized user" refresh-token triple, exchanged for an access token by the
+    /// transport, which renews it as it nears expiry.
+    RefreshToken,
     /// Nothing was configured: Application Default Credentials.
     ApplicationDefault,
 };
 
-/// The single definition of the authentication priority order: both `getGCSClient` (which builds the
-/// credentials) and `resolveGCSCredentialsToken` (which mints an access token only when the token is
-/// the mode that wins) go through it, so the two cannot disagree.
+/// The single definition of the authentication priority order, so every consumer that has to know which
+/// of the mutually exclusive modes a configuration selects agrees with `getGCSClient`.
 GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & settings);
 
 /// Reject server-managed Application Default Credentials for a native GCS client reached from a
@@ -151,10 +162,10 @@ GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & s
 /// credential sources can resolve the identity of the server process rather than one supplied by SQL.
 void checkGCSCredentialsAllowedInUserQuery(const GCSObjectStorageSettings & settings, const ContextPtr & context);
 
-/// If a `google_adc_*` refresh-token triple is set, and an access token is what the configuration
-/// actually authenticates with, exchange the triple for an access token via IO/GCPOAuth. No-op
-/// otherwise. Shared by the disk and table-function paths.
-void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context);
+/// Reject a `google_adc_*` refresh-token triple that is only partially specified. The three settings are
+/// one credential, so two of them are always a configuration mistake rather than a mode selection.
+/// Shared by the disk and table-function paths.
+void validateGCSRefreshTokenTriple(const GCSObjectStorageSettings & settings);
 
 /// Wrap a proxy resolver into the callback the Poco-based REST transport of google-cloud-cpp asks
 /// for (`ClickHouse::PocoRestProxyConfigProviderOption`): every request resolves the proxy again, so

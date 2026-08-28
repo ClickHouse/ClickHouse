@@ -174,7 +174,7 @@ Possible values:
 
 Experimental. Use the native Google Cloud Storage client (google-cloud-cpp, the GCS JSON API) for the `gcs` table function and dynamic disks with `object_storage_type = gcs`, instead of the default S3-compatibility path (the GCS XML API via the AWS SDK). The `GCS` table engine always uses the S3-compatibility path.
 
-For the `gcs` table function, the native client authenticates with Application Default Credentials or `NOSIGN` rather than S3 HMAC access-key/secret pairs. Service-account keys are available for server-configured GCS disks. Enable it to talk to GCS natively; leave it disabled (the default) to keep the existing S3-compatible behavior, including positional HMAC credentials.
+For the `gcs` table function, the native client authenticates with Application Default Credentials, `google_adc_*` refresh-token credentials, `NOSIGN` or `use_environment_credentials = 0` rather than S3 HMAC access-key/secret pairs. Service-account keys are available for server-configured GCS disks. Enable it to talk to GCS natively; leave it disabled (the default) to keep the existing S3-compatible behavior, including positional HMAC credentials.
 
 ## use_parquet_metadata_cache {#use_parquet_metadata_cache}
 

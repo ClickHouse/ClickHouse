@@ -12,7 +12,9 @@
 #include <poco_rest_options.h>
 
 #include <algorithm>
+#include <array>
 #include <string_view>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -24,8 +26,6 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <Core/ServerSettings.h>
-#include <IO/ConnectionTimeouts.h>
-#include <IO/GCPOAuth.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -219,21 +219,61 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.google_adc_client_id = config.getString(config_prefix + ".google_adc_client_id", "");
     result.google_adc_client_secret = config.getString(config_prefix + ".google_adc_client_secret", "");
     result.google_adc_refresh_token = config.getString(config_prefix + ".google_adc_refresh_token", "");
+    result.google_adc_token_uri = config.getString(config_prefix + ".google_adc_token_uri", "");
 
     if (!result.access_token.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The native GCS disk does not support `access_token` because the access token cannot be refreshed for its long-lived client. "
-            "Use Application Default Credentials or a service-account key instead");
-
-    if (!result.google_adc_refresh_token.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The native GCS disk does not support `google_adc_*` refresh-token credentials because the access token cannot be refreshed "
-            "for its long-lived client. Use Application Default Credentials or a service-account key instead");
+            "The native GCS disk does not support `access_token` because a bearer token cannot be renewed for its long-lived client. "
+            "Use `google_adc_*` refresh-token credentials, Application Default Credentials, or a service-account key instead");
 
     if (hasGCSAccessHeaders(config, config_prefix))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The native GCS disk does not support `access_header` because its credentials must be managed by the GCS client. "
             "Use Application Default Credentials or a service-account key instead");
+
+    /// A disk section shares its key namespace with the `s3` disk type -- a dynamic
+    /// `disk(object_storage_type = gcs, ...)` inherits the whole `s3` argument grammar -- so it can carry
+    /// authentication that only the S3-compatibility path understands. The native client cannot use any of
+    /// it, and accepting it silently would leave the disk authenticating as something the operator did not
+    /// ask for (or writing unencrypted where they asked for SSE): the same trap as dropping
+    /// `use_environment_credentials = 0` below. Name every such key and fail closed, as the SQL surface
+    /// does in `StorageGCSConfiguration::createObjectStorage`.
+    static constexpr std::array s3_only_auth_keys = {
+        "access_key_id",
+        "secret_access_key",
+        "session_token",
+        "role_arn",
+        "role_session_name",
+        "external_id",
+        "http_client",
+        "service_account",
+        "metadata_service",
+        "request_token_path",
+        "server_side_encryption_customer_key_base64",
+        "server_side_encryption_kms_key_id",
+        "server_side_encryption_kms_encryption_context",
+    };
+    /// An empty value means "unset", as it does on the SQL surface -- and `forceAnonymousS3DiskConfig`
+    /// writes an empty `http_client` into the resolved configuration of a disk it forces anonymous, which
+    /// an `include` can leave pointing at a `gcs` backend. Only a value the operator actually set counts.
+    for (const auto * s3_only_key : s3_only_auth_keys)
+        if (!config.getString(config_prefix + "." + s3_only_key, "").empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The native GCS disk does not support `{}`, which only the S3-compatibility path understands. "
+                "Use `service_account_key`, `google_adc_*` refresh-token credentials, Application Default Credentials "
+                "or `no_sign_request` instead, or configure an `s3` disk to reach the bucket through the "
+                "S3-compatibility API", s3_only_key);
+
+    /// `use_environment_credentials = 0` is part of the shared argument grammar a dynamic
+    /// `disk(object_storage_type = gcs, ...)` inherits, and an operator may equally write it in a
+    /// server-configured section. It means "do not resolve an ambient, server-managed identity",
+    /// which on the native path is Application Default Credentials. Honour it as anonymous access
+    /// rather than dropping it, so it cannot silently turn into "authenticate as the server".
+    /// As on the S3 path, it only decides what happens in the *absence* of an explicit credential.
+    if (config.has(config_prefix + ".use_environment_credentials")
+        && !config.getBool(config_prefix + ".use_environment_credentials", true)
+        && chooseGCSCredentialSource(result) == GCSCredentialSource::ApplicationDefault)
+        result.no_sign_request = true;
 
     result.headers = parseGCSHeaders(config, config_prefix);
     result.connect_timeout_ms = config.getUInt64(config_prefix + ".connect_timeout_ms", DEFAULT_GCS_CONNECT_TIMEOUT_MS);
@@ -250,7 +290,7 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.read_only = config.getBool(config_prefix + ".readonly", false);
     result.list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", 1000);
 
-    resolveGCSCredentialsToken(result, context);
+    validateGCSRefreshTokenTriple(result);
 
     return result;
 }
@@ -270,6 +310,12 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
     /// identities after that state changes. Keep cross-storage copies on the read + write path.
     if (chooseGCSCredentialSource(*this) == GCSCredentialSource::ApplicationDefault
         || chooseGCSCredentialSource(other) == GCSCredentialSource::ApplicationDefault)
+        return false;
+
+    /// The refresh-token triple, by contrast, *is* the identity: the access token minted from it varies
+    /// over time but always belongs to the same authorized user, so two storages carrying the same
+    /// triple (and the same token endpoint) genuinely share a client.
+    if (google_adc_token_uri != other.google_adc_token_uri)
         return false;
 
     /// Exactly the fields consumed by `getGCSClient` to build the client: the endpoint, the
@@ -305,26 +351,29 @@ GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & s
         return GCSCredentialSource::ServiceAccountKeyFile;
     if (!settings.access_token.empty())
         return GCSCredentialSource::AccessToken;
+    if (!settings.google_adc_refresh_token.empty())
+        return GCSCredentialSource::RefreshToken;
     return GCSCredentialSource::ApplicationDefault;
 }
 
 void checkGCSCredentialsAllowedInUserQuery(const GCSObjectStorageSettings & settings, const ContextPtr & context)
 {
-    /// Only the SQL surface (`gcs(...)` and the object storage table engine) reaches this check, and its only
-    /// credential carrier is `NOSIGN`: `StorageGCSConfiguration::createObjectStorage` rejects HMAC keys,
-    /// `role_arn`, the metadata-service OAuth settings and the `google_adc_*` triple before it gets here, and a
-    /// service-account key is a disk-only setting. Name only the fixes that surface actually has.
+    /// Only the SQL surface (`gcs(...)` and the object storage table engine) reaches this check, and its
+    /// credential carriers there are `NOSIGN` and the `google_adc_*` refresh-token triple:
+    /// `StorageGCSConfiguration::createObjectStorage` rejects HMAC keys, `role_arn` and the metadata-service
+    /// OAuth settings before it gets here, and a service-account key is a disk-only setting. Name only the
+    /// fixes that surface actually has.
     if (chooseGCSCredentialSource(settings) == GCSCredentialSource::ApplicationDefault
         && context->shouldRestrictUserQueryS3Credentials())
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Native GCS access from a user query may not use Application Default Credentials because they can "
-            "resolve the server's identity. Use `NOSIGN` for a public bucket, disable `use_native_gcs` to reach "
-            "the bucket through the S3-compatibility API with your own HMAC keys, or enable "
-            "`s3_allow_server_credentials_in_user_queries`");
+            "resolve the server's identity. Use `NOSIGN` for a public bucket, supply your own `google_adc_*` "
+            "refresh-token credentials, disable `use_native_gcs` to reach the bucket through the "
+            "S3-compatibility API with your own HMAC keys, or enable `s3_allow_server_credentials_in_user_queries`");
 }
 
-void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context)
+void validateGCSRefreshTokenTriple(const GCSObjectStorageSettings & settings)
 {
     const size_t configured_adc_fields = !settings.google_adc_client_id.empty()
         + !settings.google_adc_client_secret.empty()
@@ -333,24 +382,11 @@ void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const Conte
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The native GCS `google_adc_client_id`, `google_adc_client_secret`, and `google_adc_refresh_token` settings must be specified together");
 
-    if (settings.google_adc_refresh_token.empty())
-        return;
-
-    /// The refresh-token triple is the lowest-priority authentication mode, so a configuration that
-    /// also carries a higher-priority one (anonymous access, a service-account key, an access token
-    /// supplied directly) never authenticates with the minted token. Minting it anyway would make
-    /// such a configuration fail for a reason that does not apply to it — e.g. a bucket accessed with
-    /// `no_sign_request` would stop working because of a stale `google_adc_*` triple next to it.
-    if (chooseGCSCredentialSource(settings) != GCSCredentialSource::ApplicationDefault)
-        return;
-
-    /// Exchange the refresh-token triple for an access token eagerly, reusing the existing S3-compat helper.
-
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-    auto token = fetchGCPOAuthToken(
-        settings.google_adc_client_id, settings.google_adc_client_secret, settings.google_adc_refresh_token, timeouts);
-    settings.access_token = std::move(token.access_token);
-    settings.access_token_expires_in_seconds = token.expires_in;
+    /// A token endpoint on its own selects nothing: without the triple there is no refresh token to
+    /// exchange there, so accepting it would silently do nothing.
+    if (!settings.google_adc_token_uri.empty() && settings.google_adc_refresh_token.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The native GCS `google_adc_token_uri` setting only applies together with the `google_adc_*` refresh-token credentials");
 }
 
 static String readFileToString(const String & path)
@@ -377,6 +413,14 @@ std::shared_ptr<gc::Credentials> makeGCSCredentials(const GCSObjectStorageSettin
                 + std::chrono::seconds(std::max<Int64>(settings.access_token_expires_in_seconds, 1));
             return gc::MakeAccessTokenCredentials(settings.access_token, expiry);
         }
+        case GCSCredentialSource::RefreshToken:
+            /// The refresh-token triple has no counterpart in the SDK's public credential factories, so
+            /// it is carried to the transport as `ClickHouse::PocoRestAuthorizedUserOption` (see
+            /// `getGCSClient`), which supersedes whatever is returned here. Return the anonymous
+            /// credentials rather than the Application Default ones so that if the option were ever
+            /// dropped, the requests would go out unsigned and be refused — rather than silently
+            /// authenticating as the server's ambient Google identity.
+            return gc::MakeInsecureCredentials();
         case GCSCredentialSource::ApplicationDefault:
             /// Application Default Credentials: GOOGLE_APPLICATION_CREDENTIALS, the GCE/GKE metadata
             /// server, or the gcloud SDK configuration.
@@ -398,6 +442,25 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     gc::Options options;
 
     options.set<gc::UnifiedCredentialsOption>(makeGCSCredentials(settings));
+
+    if (chooseGCSCredentialSource(settings) == GCSCredentialSource::RefreshToken)
+    {
+        /// Hand the triple itself to the transport, which builds the SDK's `AuthorizedUserCredentials`
+        /// from it. That is what renews the access token, so a long-lived disk keeps working past the
+        /// first token's expiry instead of minting one token for good.
+        ::ClickHouse::PocoRestAuthorizedUserOption::Type authorized_user;
+        authorized_user.client_id = settings.google_adc_client_id;
+        authorized_user.client_secret = settings.google_adc_client_secret;
+        authorized_user.refresh_token = settings.google_adc_refresh_token;
+        authorized_user.token_uri = settings.google_adc_token_uri;
+        /// The refresh token is POSTed to this endpoint, so an overridden one is a second network
+        /// destination the configuration picks and it goes through the same filter as the storage
+        /// endpoint above. Google's own endpoint is not filtered: it is the built-in default rather
+        /// than a destination the configuration chose.
+        if (!authorized_user.token_uri.empty())
+            context->getRemoteHostFilter().checkURL(Poco::URI(authorized_user.token_uri));
+        options.set<::ClickHouse::PocoRestAuthorizedUserOption>(std::move(authorized_user));
+    }
 
     if (!settings.endpoint_override.empty())
         options.set<gcs::RestEndpointOption>(settings.endpoint_override);

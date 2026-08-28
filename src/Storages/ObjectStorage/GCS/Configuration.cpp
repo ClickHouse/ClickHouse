@@ -17,6 +17,7 @@ namespace ErrorCodes
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
@@ -79,7 +80,7 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
         || !auth[S3AuthSetting::session_token].value.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "HMAC key credentials are not supported by the native GCS backend. "
-            "Use Application Default Credentials or `NOSIGN`, "
+            "Use `google_adc_*` refresh-token credentials, Application Default Credentials or `NOSIGN`, "
             "or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
     if (!auth[S3AuthSetting::role_arn].value.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -95,29 +96,47 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     /// *named* service account from a configurable metadata endpoint. Application Default Credentials
     /// only ever use the VM's default service account on the standard metadata server, so falling
     /// through to ADC would silently change the requested identity. Fail close like the checks above.
+    ///
+    /// `http_client` is rejected together with them, including next to a complete `google_adc_*` triple
+    /// where it would select the same authorized-user flow the native client implements: without the
+    /// triple it means "mint a token from the server's GCP metadata service", and honouring only one of
+    /// the two shapes of one setting is a worse contract than refusing the setting outright. The triple
+    /// on its own is the native form, and the message says so.
     if (!auth[S3AuthSetting::http_client].value.empty()
         || !auth[S3AuthSetting::service_account].value.empty()
         || !auth[S3AuthSetting::metadata_service].value.empty()
         || !auth[S3AuthSetting::request_token_path].value.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Metadata-service OAuth settings (`http_client`, `service_account`, `metadata_service`, `request_token_path`) "
-            "are not supported by the native GCS backend; it can use Application Default Credentials "
+            "are not supported by the native GCS backend; it can use a `google_adc_*` refresh-token triple on its own "
+            "(remove `http_client`, the triple next to it is used directly), Application Default Credentials "
             "(which cover the default service account of the metadata server) or `NOSIGN`. "
             "Remove them or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
 
-    /// The refresh-token credentials are exchanged eagerly by `resolveGCSCredentialsToken`, but a
-    /// native SQL storage keeps the resulting client for the lifetime of the query. The resulting
-    /// access token cannot refresh, so allowing this mode can make a long-running query fail after
-    /// its token expires. Match the persistent disk behavior and reject it until the native client
-    /// has refreshable credentials.
-    if (!auth[S3AuthSetting::google_adc_client_id].value.empty()
-        || !auth[S3AuthSetting::google_adc_client_secret].value.empty()
-        || !auth[S3AuthSetting::google_adc_refresh_token].value.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The native GCS backend does not support `google_adc_*` refresh-token credentials because the access token cannot be refreshed. "
-            "Use Application Default Credentials or `NOSIGN`, or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
-
     gcs_settings.no_sign_request = auth[S3AuthSetting::no_sign_request];
+
+    /// The `google_adc_*` "authorized user" triple is the one explicit credential the shared argument
+    /// grammar carries that the native client can use as is: the transport exchanges the refresh token
+    /// for an access token and renews it as it nears expiry, so it survives a query that outlives the
+    /// first token (see `ClickHouse::PocoRestAuthorizedUserOption`). `validateGCSRefreshTokenTriple`
+    /// below rejects a partially specified triple.
+    gcs_settings.google_adc_client_id = auth[S3AuthSetting::google_adc_client_id];
+    gcs_settings.google_adc_client_secret = auth[S3AuthSetting::google_adc_client_secret];
+    gcs_settings.google_adc_refresh_token = auth[S3AuthSetting::google_adc_refresh_token];
+
+    /// `use_environment_credentials = 0` means "do not resolve an ambient, server-managed identity".
+    /// On the S3-compatibility path a request with no explicit key pair and that flag off goes
+    /// unsigned; on the native path the ambient identity is Application Default Credentials, so the
+    /// same flag has to suppress those the same way. Silently dropping it would turn an explicit
+    /// credential opt-out into "authenticate as the server", which matters most for the shape that
+    /// carries it by default: `StorageS3Configuration::fromNamedCollection` sets
+    /// `use_environment_credentials = 0` for a collection that only specifies a URL, precisely so it
+    /// reads anonymously. The check is on the resolved credential source rather than on the flag
+    /// alone, so an explicitly supplied credential still wins -- exactly as it does for S3, where the
+    /// flag only decides what happens in the *absence* of one.
+    if (!auth[S3AuthSetting::use_environment_credentials]
+        && chooseGCSCredentialSource(gcs_settings) == GCSCredentialSource::ApplicationDefault)
+        gcs_settings.no_sign_request = true;
 
     /// The transport knobs of the shared argument grammar are honoured by the native client too:
     /// `headers(...)` plus the `<header>` / `<access_header>` entries of the endpoint configuration
@@ -131,7 +150,7 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     gcs_settings.request_timeout_ms = auth[S3AuthSetting::request_timeout_ms];
     gcs_settings.max_connections = auth[S3AuthSetting::max_connections];
 
-    resolveGCSCredentialsToken(gcs_settings, context);
+    validateGCSRefreshTokenTriple(gcs_settings);
     checkGCSCredentialsAllowedInUserQuery(gcs_settings, context);
 
     auto client = getGCSClient(gcs_settings, context);
