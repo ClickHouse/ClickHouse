@@ -1,5 +1,5 @@
 -- A normal projection must not be preferred over a base-table read that already satisfies the
--- whole ORDER BY of an ORDER BY ... LIMIT query, even when the projection reads fewer marks.
+-- whole `ORDER BY` of an `ORDER BY ... LIMIT` query, even when the projection reads fewer marks.
 
 SET optimize_read_in_order = 1;
 SET optimize_use_projections = 1;
@@ -16,8 +16,8 @@ SET parallel_replicas_for_non_replicated_merge_tree = 0;
 
 DROP TABLE IF EXISTS t_bp;
 
--- index_granularity_bytes is pinned small so the wide base rows land ~10 rows per granule while the
--- projection's narrow rows land ~670, which is what makes the projection read fewer marks.
+-- `index_granularity_bytes` is pinned small so the wide base rows land ~10 rows per granule while
+-- the projection's narrow rows land ~670, which is what makes the projection read fewer marks.
 CREATE TABLE t_bp
 (
     k1 String, k2 UInt32, k3 Bool, k4 UInt32, narrow UInt32,
@@ -58,17 +58,24 @@ SELECT 'A8', count(), cityHash64(groupArray((k1, k2, k3, k4, narrow))) FROM
     (SELECT k1, k2, k3, k4, narrow FROM t_bp WHERE k4 < 3500 ORDER BY k1, k2, k3, k4 LIMIT 10
      SETTINGS optimize_use_projections = 0);
 
--- The LIMIT cannot be reached: the projection covers every selected part and its whole selected
--- range holds fewer rows than the LIMIT, so neither plan stops early and it stays eligible.
+-- The `LIMIT` cannot be reached: the projection covers every selected part and its whole selected
+-- range holds fewer rows than the `LIMIT`, so neither plan stops early and it stays eligible.
 SELECT 'A11', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FROM t_bp
     WHERE k2 = 0 ORDER BY k1, k2, k3, k4 LIMIT 5000)
     WHERE explain LIKE '%ReadFromMergeTree (p_narrow)%';
 
--- The exemption covers the boundary too: at a LIMIT equal to the rows the projection's selected range
--- holds, no plan stops early either. 800 is that row count for the granularity pinned above.
+-- The exemption covers the boundary too: at a `LIMIT` equal to the rows the projection's selected
+-- range holds, no plan stops early either. 800 is that row count for the granularity pinned above.
 SELECT 'A15', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FROM t_bp
     WHERE k2 = 0 ORDER BY k1, k2, k3, k4 LIMIT 800)
     WHERE explain LIKE '%ReadFromMergeTree (p_narrow)%';
+
+-- Just below that boundary the exemption does not apply and the candidate is declined. This arm is
+-- also what keeps A15 honest: if the selected range ever holds fewer than 800 rows, this goes red
+-- instead of A15 passing for the wrong reason.
+SELECT 'A16', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FROM t_bp
+    WHERE k2 = 0 ORDER BY k1, k2, k3, k4 LIMIT 799)
+    WHERE explain LIKE '%ReadFromMergeTree (%.t_bp)%';
 
 DROP TABLE t_bp;
 
@@ -116,7 +123,7 @@ DROP TABLE t_bp_fixed;
 DROP TABLE IF EXISTS t_bp_prune;
 
 -- A projection whose leading key column is the filter's equality column prunes hard, yet its sorted
--- prefix for ORDER BY (a, b, d) is only (a, b): it is declined too, which is a deliberate cost.
+-- prefix for `ORDER BY (a, b, d)` is only `(a, b)`: it is declined too, which is a deliberate cost.
 CREATE TABLE t_bp_prune
 (
     a UInt32, b UInt32, c UInt32, d UInt32, narrow UInt32,
@@ -142,8 +149,8 @@ DROP TABLE t_bp_prune;
 
 DROP TABLE IF EXISTS t_bp_partial;
 
--- The base key supplies only 3 of the 4 ORDER BY columns, so it does not eliminate the sort either
--- and the projection stays eligible however much shorter its own prefix is.
+-- The base key supplies only 3 of the 4 `ORDER BY` columns, so it does not eliminate the sort
+-- either and the projection stays eligible however much shorter its own prefix is.
 CREATE TABLE t_bp_partial
 (
     a UInt32, b UInt32, c UInt32, e UInt32, narrow UInt32,
@@ -183,8 +190,8 @@ DROP TABLE t_bp_eq;
 
 DROP TABLE IF EXISTS t_bp_forced;
 
--- force_optimize_projection_name is a separate setting from force_optimize_projection and has its own
--- INCORRECT_DATA check, so a candidate it names must not be declined.
+-- `force_optimize_projection_name` is a separate setting from `force_optimize_projection` and has
+-- its own `INCORRECT_DATA` check, so a candidate it names must not be declined.
 CREATE TABLE t_bp_forced
 (
     k1 String, k2 UInt32, k3 Bool, k4 UInt32, narrow UInt32,

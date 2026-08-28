@@ -530,9 +530,9 @@ std::optional<String> optimizeUseNormalProjections(
         return readInOrderSortedPrefixLength(*outer_sorting_step, sorting_key, *iter->node->children[iter->next_child - 1]);
     };
 
-    /// The two conditions `optimizeReadInOrder` checks that `wouldReadInOrderBeUseful` does not: a
-    /// STREAM read returns parts in commit order rather than sorting-key order, and a window partition
-    /// description blocks the pass unless `reuse_storage_ordering_for_window_functions` allows it.
+    /// The conditions `optimizeReadInOrder` checks that are not already excluded above: a STREAM read
+    /// returns parts in commit order rather than sorting-key order, and a window partition description
+    /// blocks the pass unless `reuse_storage_ordering_for_window_functions` allows it.
     bool base_read_in_order_applicable = outer_sorting_step && optimization_settings.read_in_order
         && !reading->getQueryInfo().isStream()
         && !(outer_sorting_step->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions);
