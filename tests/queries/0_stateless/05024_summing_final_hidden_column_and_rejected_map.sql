@@ -81,3 +81,23 @@ OPTIMIZE TABLE summing_final_tuple FINAL;
 SELECT k, s, tup FROM summing_final_tuple ORDER BY k;
 
 DROP TABLE summing_final_tuple;
+
+-- The same holds for an intermediate tuple subcolumn: reading `tup.inner` already covers the
+-- leaves below it, so `FINAL` must not request `tup.inner.c` and `tup.inner.d` on top of it.
+DROP TABLE IF EXISTS summing_final_nested_tuple;
+CREATE TABLE summing_final_nested_tuple (k UInt64, s Int64, tup Tuple(a Int64, inner Tuple(c Int64, d Int64)))
+ENGINE = SummingMergeTree ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+SYSTEM STOP MERGES summing_final_nested_tuple;
+
+-- For key 1 the inner tuple sums to zero but `tup.a` does not, so the row stays; for key 2 all sum to zero.
+INSERT INTO summing_final_nested_tuple VALUES (1, 0, (7, (3, 4))), (2, 0, (7, (3, 4)));
+INSERT INTO summing_final_nested_tuple VALUES (1, 0, (7, (-3, -4))), (2, 0, (-7, (-3, -4)));
+
+SELECT count() FROM (EXPLAIN PIPELINE header = 1 SELECT tup.inner FROM summing_final_nested_tuple FINAL) WHERE explain LIKE '%tup.inner.%';
+SELECT k, s, tup FROM summing_final_nested_tuple FINAL ORDER BY k;
+
+SYSTEM START MERGES summing_final_nested_tuple;
+OPTIMIZE TABLE summing_final_nested_tuple FINAL;
+SELECT k, s, tup FROM summing_final_nested_tuple ORDER BY k;
+
+DROP TABLE summing_final_nested_tuple;

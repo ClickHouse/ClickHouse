@@ -4261,29 +4261,26 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             /// Preserve merge-header order. It matters for `Nested ...Map`: `sumMap` receives
             /// its key and value arrays as a group, and tuple leaves are in flattening order.
             auto header = storage_snapshot->metadata->getSampleBlock();
-            /// Columns that the query already reads as a whole and that flattening splits into
-            /// leaves. Their leaves are covered by the column itself, and the merge flattens it
-            /// again on its own, so requesting the leaves in addition would read them twice.
-            Names flattened_columns_already_read;
+            /// The tuple paths every flattened leaf descends from: the root column and every
+            /// intermediate tuple. A leaf whose ancestor the query already reads is covered by
+            /// that ancestor, and the merge flattens the ancestor again on its own, so requesting
+            /// the leaf in addition would read the same data twice.
+            std::vector<Strings> flattened_ancestors;
             if (data.merging_params.allow_tuple_element_aggregation)
+                header = Nested::flattenTupleRecursive(header, &flattened_ancestors);
+            auto is_leaf_of_a_column_already_read = [&](size_t position)
             {
-                header = Nested::flattenTupleRecursive(header);
-                for (const auto & column : storage_snapshot->metadata->getSampleBlock())
-                {
-                    if (names.contains(column.name) && !header.has(column.name))
-                        flattened_columns_already_read.push_back(column.name + ".");
-                }
-            }
-            auto is_leaf_of_a_column_already_read = [&](const String & leaf_name)
-            {
+                if (position >= flattened_ancestors.size())
+                    return false;
                 return std::ranges::any_of(
-                    flattened_columns_already_read, [&](const String & prefix) { return leaf_name.starts_with(prefix); });
+                    flattened_ancestors[position], [&](const String & ancestor) { return names.contains(ancestor); });
             };
-            for (const auto & column : header)
+            for (size_t position = 0; const auto & column : header)
             {
-                if (aggregated_columns.contains(column.name) && !is_leaf_of_a_column_already_read(column.name)
+                if (aggregated_columns.contains(column.name) && !is_leaf_of_a_column_already_read(position)
                     && names.emplace(column.name).second)
                     column_names_to_read.push_back(column.name);
+                ++position;
             }
         }
 
