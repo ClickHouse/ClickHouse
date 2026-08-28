@@ -238,8 +238,12 @@ Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emi
     const size_t num_rows = chunk.getNumRows();
 
     /// The chunk columns follow the input header; sortBlock needs a Block to resolve the sort description.
+    /// The sort must be stable: the deduplication of the merged runs keeps the first row of each range of
+    /// equal keys, and the first row must stay the first-received one - both for the non-key columns of a
+    /// row (when the DISTINCT key is a subset of the columns) and for the choice among values that compare
+    /// equal but differ in the binary representation (0. and -0., NaN payloads).
     Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
-    sortBlock(block, description);
+    sortBlock(block, description, /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
 
     auto columns = block.getColumns();
     columns.emplace_back(ColumnUInt8::create(num_rows, static_cast<UInt8>(already_emitted)));
