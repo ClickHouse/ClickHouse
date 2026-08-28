@@ -950,6 +950,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (std::ranges::none_of(filter_dag_inputs, is_used))
                 continue;
 
+            /// The cast is built without a context, and that is not a shortcut. There is no cast of
+            /// this key to reuse: the JOIN's actions only keep the cast behind its output column,
+            /// which converts the opposite side, and the key matching casts are added later, by the
+            /// conversion to the physical join - also without a context. So the pushed-down predicate
+            /// is built the same way as the values the key matching compares. Nor can a context make
+            /// the conversion differ: for the type pairs that have a least supertype, none of the
+            /// context-dependent conversion settings apply - they concern parsing from `String` and
+            /// serialization to `String`, which never appear as a supertype cast - and the date-time
+            /// overflow behavior is pinned by `createInternalCast` whether or not a context is given.
             required_actions.push_back(JoinActionRef::transform({replacement.source},
                 [&](ActionsDAG & dag, auto && args) { return &dag.addCast(*args.at(0), replacement.target_type, replacement.name, nullptr); }));
         }
