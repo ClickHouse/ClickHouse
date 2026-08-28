@@ -279,6 +279,7 @@ def test_branch_without_a_ledger_keeps_the_previous_behaviour(monkeypatch):
         "reapply": {},
         "reapply_allowance": {},
         "own_entry_required": [],
+        "case_five": [],
         "amend": [],
         "unresolved": [],
         "ledger": [],
@@ -1776,3 +1777,111 @@ def test_a_reapply_link_is_not_a_lingering_revert_entry(monkeypatch, tmp_path):
         )
         is not None
     )
+
+
+def test_a_reapply_annotation_is_not_a_merged_sibling(monkeypatch, tmp_path):
+    """`#114912` re-applied two entries, so its link sits on both of them. The
+    bullet recorded for one of them already carried that link from the earlier
+    restoration; counting it as a pull request that shared the bullet would
+    demand it be on this entry's bullet only, which depends on which bullet the
+    file happens to list first."""
+    other = _entry("109000", "Speed up the analyzer")
+    recorded = with_reapply(FIX, "114912")
+    old_text = changelog(
+        # `#109000` already restored, carrying the same re-apply link.
+        [with_reapply(other, "114912")],
+        raw_sections=[("NO CL ENTRY", [REVERT_OF_REVERT])],
+    )
+    reverts = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 109946 [{BUG_FIX}] {recorded}",
+            f"Changelog-deleted-entry: 109000 [{BUG_FIX}] {other}",
+            # `#114911` reverted both entries; `#114912` took that back, so its
+            # link belongs on both of them.
+            'Changelog-revert: 114911 109946 Revert "%s"' % FIX_TITLE,
+            'Changelog-revert: 114911 109000 Revert "%s"' % FIX_TITLE,
+        ],
+    )
+    assert reverts["reapply"] == {
+        "109000": ["114912"],
+        "109946": ["114912"],
+    }
+    assert reverts["reapply_allowance"] == {"114912": 2}
+    # Only `#109946` is still missing, and the annotation on its recorded line
+    # is not a pull request that shared the bullet.
+    assert [group["prs"] for group in reverts["missing"]] == [["109946"]]
+    assert [group["siblings"] for group in reverts["missing"]] == [[]]
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(other, "114912"), recorded]),
+            reverts,
+        )
+        is None
+    )
+
+
+def test_a_revert_of_a_published_change_keeps_its_entry(monkeypatch, tmp_path):
+    """`#116700` was merged into the last release branch after this cycle
+    started, so it is in the range but its entry is in a released section. A
+    revert of it reverses behaviour users already have: a change of its own, not
+    a cancelling out."""
+    published = _entry("116700", "The setting is enabled by default")
+    PULL_REQUESTS["116750"] = {
+        "title": 'Revert "The setting is enabled by default"',
+        "body": "Reverts ClickHouse/ClickHouse#116700",
+    }
+    revert = _entry("116750", "The setting is no longer enabled by default")
+    old_text = changelog(
+        [], raw_sections=[(STRICT, [revert])], released=[published]
+    )
+    reverts = analyze(
+        monkeypatch, old_text, [], range_prs={"116700", "116750"}
+    )
+    # In the range, but already published, so not something this release cancels.
+    assert reverts["cancelling"] == []
+    dropped = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([], released=[published]), reverts
+    )
+    assert dropped is not None
+    assert "Entries disappeared in the edit without a matching revert" in dropped
+    assert "['116750']" in dropped
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([revert], released=[published]),
+            reverts,
+        )
+        is None
+    )
+
+
+def test_an_uncategorised_revert_of_an_earlier_release_is_put_to_the_agent(
+    monkeypatch,
+):
+    """The generator files a revert with no `Changelog entry` under `NO CL
+    ENTRY`, so nothing marks it as user-visible. Whether the reversal deserves
+    an entry is the judgement of skill section 2, case 5, so the prompt asks for
+    it rather than the verifier imposing one."""
+    PULL_REQUESTS["116800"] = {
+        "title": 'Revert "Something from 26.3"',
+        "body": "Reverts ClickHouse/ClickHouse#90000",
+    }
+    old_text = changelog(
+        [],
+        raw_sections=[
+            ("NO CL ENTRY", [_entry("116800", "NO CL ENTRY: 'Revert ...'")])
+        ],
+    )
+    reverts = analyze(monkeypatch, old_text, [], range_prs={"116800"})
+    assert reverts["cancelling"] == []
+    assert reverts["case_five"] == [{"pr": "116800", "older": ["90000"]}]
+    prompt = cl._edit_prompt(VERSION, reverts)
+    assert "Reverts of earlier releases" in prompt
+    assert "`#116800` reverts `#90000`" in prompt

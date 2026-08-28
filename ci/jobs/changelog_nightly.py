@@ -656,7 +656,7 @@ def entry_placement(text, pr):
     return "", ""
 
 
-def group_restorations(restore, section, withheld=()):
+def group_restorations(restore, section, withheld=(), reverts=()):
     """Group the entries to restore by the bullet they were recorded from.
 
     A merge (skill section 7) puts several pull requests on one bullet, so one
@@ -671,6 +671,12 @@ def group_restorations(restore, section, withheld=()):
     (published in the last release, or backported), and a sibling that
     survives only there is no bullet to merge into.
 
+    `reverts` are the pull requests known to be reverts. A recorded line can
+    already carry the link of one from an earlier restoration, and that link is
+    an annotation, not an entry that shared the bullet: counting it as a sibling
+    would demand it be on the same bullet as this entry, which is order- and
+    shape-dependent once the same re-applier annotates more than one entry.
+
     `withheld` are the pull requests whose deletion a revert still licenses.
     A recorded merged bullet can attribute one of those - the bullet covered
     several pull requests, they were all deleted, and only some have been
@@ -683,11 +689,12 @@ def group_restorations(restore, section, withheld=()):
     out = []
     for (category, line), prs in groups.items():
         others = set(PR_ATTRIBUTION_RE.findall(line)) - set(prs)
+        entries = others - set(reverts)
         out.append(
             {
                 "prs": sorted(prs, key=int),
                 "siblings": sorted(
-                    (p for p in others if is_attributed(section, p)), key=int
+                    (p for p in entries if is_attributed(section, p)), key=int
                 ),
                 "withheld": sorted((p for p in others if p in withheld), key=int),
                 "category": category,
@@ -741,6 +748,9 @@ def analyze_reverts(text, anchor, range_prs=()):
     `own_entry_required`
                  - re-appliers that also carry an entry of their own, which the
                    link they contribute to another entry cannot replace;
+    `case_five`  - reverts of something outside this cycle that the generator
+                   filed without a category: an entry for them is a judgement
+                   the prompt asks for rather than one the verifier imposes;
     `unresolved` - the reverts of this raw block whose target stayed unknown;
     `ledger`     - the trailer lines to record on the edit commit.
     """
@@ -838,13 +848,19 @@ def analyze_reverts(text, anchor, range_prs=()):
     # run's raw entries, the recorded deletions and the revert graph are kept
     # alongside it so that a branch whose caller passes no range still behaves
     # as it did.
+    # Minus what has already been published: a pull request merged into the
+    # last release branch after the cycle start is in this range but its entry
+    # is in a released section, so reverting it reverses behaviour users
+    # already have - a change of its own (skill section 2, case 5), not a
+    # cancelling out.
+    _, released = split_at_first_released_section(text, anchor)
     cycle_entries = (
         set(PR_ATTRIBUTION_RE.findall(section))
         | all_prs
         | set(deleted)
         | set(targets)
         | set(range_prs)
-    )
+    ) - set(PR_ATTRIBUTION_RE.findall(released))
     # Every target, not any: a revert that undoes something of this release
     # *and* something from an earlier one is still a user-visible change for
     # the second half, so its own entry has to survive.
@@ -893,6 +909,22 @@ def analyze_reverts(text, anchor, range_prs=()):
         ),
         key=int,
     )
+    # The same situation where the generator gave the revert no category, which
+    # is what it does for a revert pull request with no `Changelog entry`. The
+    # revert still undoes something users have, but whether that reversal is
+    # worth an entry is the judgement skill section 2 case 5 asks for ("meant
+    # to be visible to users"), and the verifier has no business making it. So
+    # these are put to the agent instead of required.
+    case_five = [
+        {
+            "pr": pr,
+            "older": sorted(set(new_targets[pr]) - cycle_entries, key=int),
+        }
+        for pr in sorted(new_targets, key=int)
+        if pr not in cancelling
+        and pr not in strict_prs
+        and set(new_targets[pr]) - cycle_entries
+    ]
     amend = [
         {
             "pr": pr,
@@ -914,6 +946,7 @@ def analyze_reverts(text, anchor, range_prs=()):
         },
         section,
         withheld,
+        set(targets),
     )
     for group in missing:
         group["removed_by"] = removed_by(group["prs"])
@@ -929,6 +962,7 @@ def analyze_reverts(text, anchor, range_prs=()):
         "reapply": reapply,
         "reapply_allowance": allowance,
         "own_entry_required": own_entry_required,
+        "case_five": case_five,
         "amend": amend,
         "unresolved": unresolved,
         "ledger": [
@@ -1225,6 +1259,16 @@ Entries to restore. Point 4 above, spread over several days: an earlier run of t
 Entries to amend. These entries are already in the in-progress section and stay, because the reverts of their changes were themselves reverted. Append to each of them the link of every pull request listed as having re-applied it, if it is not there yet, and delete the raw revert bullets — a revert that was taken back leaves no trace of its own, so that link is the only record of the pull request that put the change back:
 {entries}
 """
+    outside = ""
+    if reverts["case_five"]:
+        items = "\n".join(
+            f"   - `#{item['pr']}` reverts {_pr_list(item['older'])}"
+            for item in reverts["case_five"]
+        )
+        outside = f"""
+Reverts of earlier releases. These raw entries revert pull requests that are not part of {version}, so they undo behaviour users already have and nothing in this release cancels them out. The generator gave them no category. Decide per skill section 2, case 5: if the reversal is visible to users, rewrite the revert into a normal entry describing that effect; if it is not, prune it as usual. Do not treat them as reverts that leave no trace - that rule is for reverts of changes of this release.
+{items}
+"""
     retry = ""
     if previous_error:
         retry = f"""
@@ -1254,7 +1298,7 @@ Task:
 6. Do not commit. Do not modify any file other than {CHANGELOG_FILE}. Do not touch the sections of already-released versions or anything below them. Keep the `FIXME` placeholders in the header and table of contents — the release manager fills in the date and links at release time.
 
 The `gh` CLI is authenticated; use `gh pr view <N> --json title,body` when the skill requires consulting a pull request (reverts, unclear entries).
-{restore}{amend}{retry}"""
+{restore}{amend}{outside}{retry}"""
 
 
 def disappeared_entries(old_text, text, anchor, exempt=()):

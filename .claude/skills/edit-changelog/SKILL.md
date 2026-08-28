@@ -113,7 +113,9 @@ is an annotation on that entry, not a substitute for its own.
 
 "Something of this release" includes a PR whose entry was pruned earlier under
 §3 or §4: the change was still made and undone inside the range, so the revert
-has no user-visible effect either.
+has no user-visible effect either. It does *not* include a PR whose entry is
+already in a released section — merged into the last release branch after this
+cycle started, so users have the behaviour — and reverting that is case 5.
 
 Deleting the entry is only half of it — the revert must not be left behind as
 an entry of its own either, whatever category the autogenerator gave it. The
