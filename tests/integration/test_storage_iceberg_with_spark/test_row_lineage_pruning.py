@@ -76,11 +76,11 @@ def _read_rows(instance, select_expression, settings=None):
     )
 
 
-def _create_table_with_five_appends(spark, table_name):
+def _create_table_with_five_appends(spark, table_name, file_format="parquet"):
     """Five appends of ten rows: file k holds row ids [10k, 10k + 10) and sequence number k + 1."""
     spark.sql(
         f"CREATE TABLE {table_name} (id bigint, data string) USING iceberg "
-        f"TBLPROPERTIES ('format-version' = '3')"
+        f"TBLPROPERTIES ('format-version' = '3', 'write.format.default' = '{file_format}')"
     )
     for lo in range(0, 50, 10):
         spark.sql(
@@ -196,6 +196,109 @@ def test_incremental_read_by_sequence_number_prunes_files(
             PRUNING_ENABLED,
         )
         == 20
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_pruning_without_column_statistics(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_row_lineage_pruning_no_stats_" + storage_type + "_" + get_uuid_str()
+
+    # Avro data files carry no per-column statistics, so the manifest cannot tell whether a file
+    # materializes row lineage - and materialized values are always carried over from an earlier
+    # write, so only the upper bound of the inherited range is known to hold.
+    _create_table_with_five_appends(spark, TABLE_NAME, file_format="avro")
+    _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
+    table_expression = _table_function(
+        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
+    )
+
+    # An incremental read still skips everything written before the consumed sequence number.
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
+        )
+        == 3
+    )
+
+    # A point lookup keeps every file that could hold an older materialized value, so only the one
+    # file whose whole range is below the requested value is skipped.
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number = 2 ORDER BY ALL",
+        )
+        == 1
+    )
+
+    # The same for row ids: everything above the inherited block is still skipped ...
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _row_id >= 35 ORDER BY ALL",
+        )
+        == 3
+    )
+
+    # ... while nothing below it is, because an older materialized id could be there.
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _row_id < 10 ORDER BY ALL",
+        )
+        == 0
+    )
+
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _row_id = 25 ORDER BY ALL",
+        )
+        == 2
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_row_id_pruning_is_skipped_for_orc(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_row_lineage_pruning_orc_" + storage_type + "_" + get_uuid_str()
+
+    _create_table_with_five_appends(spark, TABLE_NAME, file_format="orc")
+    _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
+    table_expression = _table_function(
+        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
+    )
+
+    # The ORC reader reports no physical row numbers, so `_row_id` is NULL for every row and the
+    # inherited range describes nothing: pruning by it would drop the rows this query asks for.
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expression} WHERE _row_id IS NULL",
+            settings=PRUNING_ENABLED,
+        ).strip()
+        == "50"
+    )
+
+    # The sequence number does not depend on row numbers, so it prunes as usual.
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
+        )
+        == 3
     )
 
 

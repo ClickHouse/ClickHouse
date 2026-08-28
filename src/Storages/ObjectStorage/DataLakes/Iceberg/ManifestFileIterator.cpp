@@ -159,31 +159,48 @@ namespace
         return DB::Range(*left, true, *right, true);
     }
 
+    bool isColumnPresenceKnown(const ParsedManifestFileEntry & parsed_entry)
+    {
+        for (const auto & [field_id, column_info] : parsed_entry.columns_infos)
+            if (column_info.bytes_size.has_value())
+                return true;
+        return false;
+    }
+
     void addRowLineageHyperrectangles(std::unordered_map<Int32, DB::Range> & hyperrectangles, const ProcessedManifestFileEntry & entry)
     {
         const auto & parsed_entry = *entry.parsed_entry;
-        if (parsed_entry.columns_infos.empty() || parsed_entry.record_count <= 0)
+        if (!entry.first_row_id.has_value() || parsed_entry.record_count <= 0 || entry.sequence_number < 0)
             return;
 
-        const bool has_materialized_row_lineage
-            = parsed_entry.columns_infos.contains(row_id_field_id) || parsed_entry.columns_infos.contains(last_updated_sequence_number_field_id);
+        const UInt64 inherited_sequence_number = static_cast<UInt64>(entry.sequence_number);
+        const UInt64 last_inherited_row_id = *entry.first_row_id + static_cast<UInt64>(parsed_entry.record_count) - 1;
+        const bool column_presence_is_known = isColumnPresenceKnown(parsed_entry);
+        const bool row_ids_are_readable = Poco::toUpper(parsed_entry.file_format) != "ORC";
 
-        if (has_materialized_row_lineage)
+        for (const auto field_id : {row_id_field_id, last_updated_sequence_number_field_id})
         {
-            for (const auto field_id : {row_id_field_id, last_updated_sequence_number_field_id})
+            const bool is_row_id = field_id == row_id_field_id;
+            if (is_row_id && !row_ids_are_readable)
+                continue;
+            const UInt64 inherited_lower_bound = is_row_id ? *entry.first_row_id : inherited_sequence_number;
+            const UInt64 inherited_upper_bound = is_row_id ? last_inherited_row_id : inherited_sequence_number;
+
+            if (!parsed_entry.columns_infos.contains(field_id))
             {
-                if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id))
-                    hyperrectangles.emplace(field_id, *range);
+                if (column_presence_is_known)
+                {
+                    hyperrectangles.emplace(field_id, DB::Range(inherited_lower_bound, true, inherited_upper_bound, true));
+                    continue;
+                }
             }
-            return;
-        }
+            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id))
+            {
+                hyperrectangles.emplace(field_id, *range);
+                continue;
+            }
 
-        if (entry.first_row_id.has_value())
-        {
-            hyperrectangles.emplace(
-                row_id_field_id,
-                DB::Range(*entry.first_row_id, true, *entry.first_row_id + static_cast<UInt64>(parsed_entry.record_count) - 1, true));
-            hyperrectangles.emplace(last_updated_sequence_number_field_id, DB::Range(static_cast<UInt64>(entry.sequence_number)));
+            hyperrectangles.emplace(field_id, DB::Range(UInt64(0), true, inherited_upper_bound, true));
         }
     }
 }
@@ -438,7 +455,6 @@ ManifestFileIterator::ManifestFileIterator(
     , path_resolver(path_resolver_)
     , inherited_sequence_number(inherited_sequence_number_)
     , inherited_snapshot_id(inherited_snapshot_id_)
-    , inherited_first_row_id(inherited_first_row_id_)
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
     , common_partition_specification(std::move(common_partition_specification_))
@@ -451,11 +467,11 @@ ManifestFileIterator::ManifestFileIterator(
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
 {
-    if (!inherited_first_row_id.has_value())
+    if (!inherited_first_row_id_.has_value())
         return;
 
-    inherited_first_row_ids.resize(total_rows);
-    UInt64 next_row_id = *inherited_first_row_id;
+    entry_first_row_ids.resize(total_rows);
+    UInt64 next_row_id = *inherited_first_row_id_;
     for (size_t row_index = 0; row_index < total_rows; ++row_index)
     {
         const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
@@ -463,7 +479,7 @@ ManifestFileIterator::ManifestFileIterator(
             || parsed_entry->parsed_first_row_id.has_value())
             continue;
 
-        inherited_first_row_ids[row_index] = next_row_id;
+        entry_first_row_ids[row_index] = next_row_id;
         next_row_id += static_cast<UInt64>(parsed_entry->record_count);
     }
 }
@@ -554,8 +570,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
     if (parsed_entry->parsed_first_row_id.has_value())
         entry->first_row_id = parsed_entry->parsed_first_row_id;
-    else if (!inherited_first_row_ids.empty())
-        entry->first_row_id = inherited_first_row_ids[row_index];
+    else if (!entry_first_row_ids.empty())
+        entry->first_row_id = entry_first_row_ids[row_index];
 
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;

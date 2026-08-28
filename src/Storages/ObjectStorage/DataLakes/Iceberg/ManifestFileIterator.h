@@ -145,8 +145,7 @@ private:
     // always zero in case of format version 1
     const Int64 inherited_sequence_number;
     const Int64 inherited_snapshot_id;
-    const std::optional<UInt64> inherited_first_row_id;
-    std::vector<std::optional<UInt64>> inherited_first_row_ids;
+    std::vector<std::optional<UInt64>> entry_first_row_ids;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;

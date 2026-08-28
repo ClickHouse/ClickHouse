@@ -1,7 +1,9 @@
 import pytest
 
 from helpers.iceberg_utils import (
+    create_iceberg_table,
     default_upload_directory,
+    drop_iceberg_table,
     get_creation_expression,
     get_uuid_str,
 )
@@ -239,3 +241,38 @@ def test_row_lineage_is_null_for_v2_table(
     assert _clickhouse_lineage(instance, table_expression) == {
         row_key: (None, None) for row_key in range(4)
     }
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_first_row_id_in_system_iceberg_files(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_first_row_id_system_table_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg "
+        f"TBLPROPERTIES ('format-version' = '3')"
+    )
+    for lo in range(0, 40, 10):
+        spark.sql(f"INSERT INTO {TABLE_NAME} select id, 'a' from range({lo}, {lo + 10})")
+
+    _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3,
+    )
+
+    # Spark writes the entries without an explicit first_row_id and it is assigned from the manifest
+    # list at read time, so the system table is where the resolved value can be observed.
+    assert instance.query(
+        f"SELECT first_row_id FROM system.iceberg_files "
+        f"WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'DATA' "
+        f"ORDER BY first_row_id FORMAT TSV"
+    ).split() == ["0", "10", "20", "30"]
+
+    drop_iceberg_table(instance, TABLE_NAME)
