@@ -89,7 +89,7 @@ Keep `wait_for_async_insert = 1` so that ClickHouse acknowledges an insert only 
 
 ### Review the partitioning key {#review-the-partitioning-key}
 
-Use a low-cardinality partitioning key and avoid partitioning by values such as user or request identifiers. ClickHouse merges parts only within the same partition, so a large number of partitions prevents effective merging. For guidance, see [Choosing a partitioning key](/best-practices/choosing-a-partitioning-key).
+Use a low-cardinality partitioning key and avoid partitioning by values such as user or request identifiers. ClickHouse merges parts only within the same partition, so a large number of partitions prevents effective merging. For guidance, see [Choosing a partitioning key](/concepts/best-practices/partitioning-keys).
 
 ### Investigate merge bottlenecks {#investigate-merge-bottlenecks}
 

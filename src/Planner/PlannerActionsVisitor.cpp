@@ -94,6 +94,22 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
     return buffer.str();
 }
 
+bool containsQueryOrUnionInSourceExpression(const QueryTreeNodePtr & node)
+{
+    if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return true;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression()
+        && containsQueryOrUnionInSourceExpression(constant->getSourceExpression()))
+        return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && containsQueryOrUnionInSourceExpression(child))
+            return true;
+
+    return false;
+}
+
 class ActionNodeNameHelper
 {
 public:
@@ -179,8 +195,7 @@ public:
                 {
                     // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
                     if (constant_node.hasSourceExpression()
-                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
-                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
+                        && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
                     {
                         if (constant_node.receivedFromInitiatorServer())
                             result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -981,8 +996,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
         // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
         if (constant_node.hasSourceExpression()
-            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
-            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
+            && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
         {
             if (constant_node.receivedFromInitiatorServer())
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);

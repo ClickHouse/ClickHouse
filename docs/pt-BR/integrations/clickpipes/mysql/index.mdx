@@ -21,7 +21,7 @@ import ChangingTLSSettings from '/snippets/pt-BR/clickpipes/_changing_tls_settin
   A ingestão de dados do MySQL para o ClickHouse Cloud via ClickPipes está em beta pública.
 </Info>
 
-O ClickPipe do MySQL oferece uma maneira totalmente gerenciada e resiliente de fazer a ingestão de dados de bancos de dados MySQL e MariaDB para o ClickHouse Cloud. Ele oferece suporte tanto a **cargas em massa** para ingestão única quanto a **Change Data Capture (CDC)** para ingestão contínua.
+O ClickPipe do MySQL oferece uma maneira totalmente gerenciada e resiliente de fazer a ingestão de dados de bancos de dados MySQL e MariaDB para o ClickHouse Cloud. Ele oferece suporte tanto a **carga em massa** para ingestão única quanto a **Change Data Capture (CDC)** para ingestão contínua.
 
 Os ClickPipes do MySQL podem ser implantados e gerenciados manualmente usando a UI do ClickPipes, bem como de forma programática usando [OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) e [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform).
 
@@ -76,7 +76,7 @@ Certifique-se de estar conectado à sua conta do ClickHouse Cloud. Se você aind
 4. Preencha os detalhes da conexão com o banco de dados MySQL de origem que você configurou na etapa de pré-requisitos.
 
 <Info>
-  Antes de começar a adicionar os detalhes da conexão, certifique-se de ter adicionado os endereços IP do ClickPipes à lista de permissões das regras do seu firewall. Na página a seguir, você pode encontrar uma [lista de endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips).
+  Antes de começar a adicionar os detalhes da conexão, certifique-se de ter adicionado os endereços IP do ClickPipes à lista de permissões das regras do seu firewall. Na página a seguir, você pode encontrar uma [lista de endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips).
   Para mais informações, consulte os guias de configuração do MySQL de origem com link [no topo desta página](#prerequisites).
 </Info>
 
@@ -96,7 +96,7 @@ Você pode especificar os detalhes do túnel SSH se o seu banco de dados MySQL d
 
 1. Ative a opção &quot;Usar túnel SSH&quot;.
 
-2. Preencha os dados da conexão SSH.
+2. Preencha os detalhes da conexão SSH.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="Túnel SSH" size="lg" border />
 
@@ -105,10 +105,10 @@ Você pode especificar os detalhes do túnel SSH se o seu banco de dados MySQL d
 4. Clique em &quot;Verificar conexão&quot; para verificar a conexão.
 
 <Note>
-  Certifique-se de adicionar os [endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips) à lista de permissões nas regras do firewall do host bastion SSH, para que o ClickPipes possa estabelecer o túnel SSH.
+  Certifique-se de adicionar os [endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips) à lista de permissões nas regras do firewall do host bastion SSH, para que o ClickPipes possa estabelecer o túnel SSH.
 </Note>
 
-Depois de preencher os dados da conexão, clique em `Próximo`.
+Depois de preencher os detalhes da conexão, clique em `Próximo`.
 
 <div id="advanced-settings">
   #### Configurar configurações avançadas

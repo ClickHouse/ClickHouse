@@ -19,7 +19,7 @@ Datadog에서 ClickHouse 배포를 모니터링하기 위해, ClickHouse는 다�
 | 통합                                                                                  | 문서                                                                                             | 배포          | 시그널              |
 | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | ---------------- |
 | [ClickHouse Cloud Datadog API 통합](#clickhouse-cloud-datadog-api-integration) *(권장)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | 메트릭              |
-| [ClickHouse Cloud Prometheus 통합](#clickhouse-cloud-prometheus-integration)          | [clickhouse.com/docs](/ko/integrations/prometheus)                                                | Cloud       | 메트릭              |
+| [ClickHouse Cloud Prometheus 통합](#clickhouse-cloud-prometheus-integration)          | [clickhouse.com/docs](/ko/products/cloud/features/monitoring/prometheus)                          | Cloud       | 메트릭              |
 | [ClickHouse Datadog Agent 통합](#clickhouse-datadog-agent-integration)                | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | 로그, 메트릭          |
 | [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                   | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | 로그, 메트릭, 쿼리 인사이트 |
 
@@ -46,7 +46,7 @@ OAuth 핸드셰이크를 통해 Datadog 계정을 ClickHouse Cloud에 연결합�
 
 ClickHouse Cloud에서 서비스 수준 및 org 수준 텔레메트리를 수집하는 가장 일반적이고 범용적인 방법입니다.
 
-Datadog Agent에서 [OpenMetrics 통합](https://docs.datadoghq.com/integrations/openmetrics/)을 구성하여 ClickHouse Cloud API를 주기적으로 폴링하고 메트릭을 수집합니다. 구성 세부 사항은 [Prometheus 통합 페이지](/ko/integrations/prometheus#integrating-with-datadog)를 참조하세요.
+Datadog Agent에서 [OpenMetrics 통합](https://docs.datadoghq.com/integrations/openmetrics/)을 구성하여 ClickHouse Cloud API를 주기적으로 폴링하고 메트릭을 수집합니다. 구성 세부 사항은 [Prometheus 통합 페이지](/ko/products/cloud/features/monitoring/prometheus#integrating-with-datadog)를 참조하세요.
 
 * **Cloud 전용** — OSS ClickHouse에는 적합하지 않습니다
 * Datadog는 메트릭을 **사용자 지정 메트릭**으로 간주합니다

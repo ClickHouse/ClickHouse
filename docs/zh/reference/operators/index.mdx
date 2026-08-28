@@ -1,6 +1,6 @@
 ---
 description: '运算符文档'
-sidebarTitle: '运算符'
+sidebarTitle: '概览'
 slug: /sql-reference/operators/
 title: '运算符'
 doc_type: 'reference'
@@ -12,9 +12,13 @@ ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和
   ## 访问运算符
 </div>
 
-`a[N]` – 访问数组元素。`arrayElement(a, N)` 函数。
+`a[N]` – 访问数组中的元素。对应 `arrayElement(a, N)` 函数。
+`N` 也可以是整数数组，此时会将这些位置上的所有元素作为数组返回，
+与 `arrayMap(i -> a[i], N)` 的行为相同。这些位置可以为 Nullable。当元素类型
+可封装在 `Nullable` 中时，`NULL` 位置会返回 `NULL`；对于不能包含在 `Nullable` 中的元素类型 (如 `Array`、`Map`) ，则会返回
+该元素类型的默认值，与标量 `NULL` 索引时的行为相同。
 
-`a.N` – 访问Tuple元素。`tupleElement(a, N)` 函数。
+`a.N` – 访问 Tuple 元素。对应 `tupleElement(a, N)` 函数。
 
 <div id="numeric-negation-operator">
   ## 数值取负运算符
@@ -493,7 +497,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 | `Date32`     | `Time64(s)`   | `DateTime64(s)` |
 
 <Note>
-  结果使用[会话时区](/zh/reference/settings/session-settings#session_timezone) (如果未设置会话时区，则使用服务器默认时区) 。[`date_time_overflow_behavior`](/zh/reference/settings/formats#date_time_overflow_behavior)设置控制结果超出可表示范围时的行为。
+  结果使用[会话时区](/zh/reference/settings/session-settings/other#session_timezone) (如果未设置会话时区，则使用服务器默认时区) 。[`date_time_overflow_behavior`](/zh/reference/settings/formats/date-time#date_time_overflow_behavior)设置控制结果超出可表示范围时的行为。
 </Note>
 
 示例：
@@ -540,9 +544,9 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 | `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
 | `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
 
-`zone` 可以是任何求值结果为有效时区名称的常量字符串表达式 (例如 `'America/Denver'`、`'UTC'` 或 `concat('America', '/', 'Denver')`) 。由于 `AT TIME ZONE` 会被展开为 `toTimeZone`，因此同样适用相同的时区参数规则：像列引用这样的非常量表达式，需要设置 [`allow_nonconst_timezone_arguments = 1`](/zh/reference/settings/session-settings#allow_nonconst_timezone_arguments)。
+`zone` 可以是任何求值结果为有效时区名称的常量字符串表达式 (例如 `'America/Denver'`、`'UTC'` 或 `concat('America', '/', 'Denver')`) 。由于 `AT TIME ZONE` 会被展开为 `toTimeZone`，因此同样适用相同的时区参数规则：像列引用这样的非常量表达式，需要设置 [`allow_nonconst_timezone_arguments = 1`](/zh/reference/settings/session-settings/allow#allow_nonconst_timezone_arguments)。
 
-`AT LOCAL` 使用当前的[会话时区](/zh/reference/settings/session-settings#session_timezone) (如果未设置会话时区，则使用服务器默认时区) 。在 `Distributed` 表上，必须显式设置 `session_timezone`；当其为空时，`timeZone()` 是分片本地的，不能作为常量 `toTimeZone` 参数使用，因此会导致 `ILLEGAL_COLUMN` 异常。
+`AT LOCAL` 使用当前的[会话时区](/zh/reference/settings/session-settings/other#session_timezone) (如果未设置会话时区，则使用服务器默认时区) 。在 `Distributed` 表上，必须显式设置 `session_timezone`；当其为空时，`timeZone()` 是分片本地的，不能作为常量 `toTimeZone` 参数使用，因此会导致 `ILLEGAL_COLUMN` 异常。
 
 <Note>
   与 PostgreSQL 不同，在 PostgreSQL 中，`timestamp without time zone AT TIME ZONE zone` 会先将该时间值按给定时区重新解释，再进行转换；而 ClickHouse 始终保持同一个绝对时间点不变，只会更改用于显示的时区标签。两种形式都等价于 `toTimeZone`，不会修改底层 timestamp。
@@ -682,7 +686,7 @@ ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 运算符。
   * 否则返回 `0`。
 * 对于其他值，`IS NULL` 运算符始终返回 `0`。
 
-可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 设置来优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NULL FROM table` 会被转换为 `SELECT n.null FROM TABLE`。
+可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置来优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NULL FROM table` 会被转换为 `SELECT n.null FROM TABLE`。
 
 {/* */}
 
@@ -717,7 +721,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 设置进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数仅读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NOT NULL FROM table` 会被转换为 `SELECT NOT n.null FROM TABLE`。
+可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数仅读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NOT NULL FROM table` 会被转换为 `SELECT NOT n.null FROM TABLE`。
 
 <div id="checking-boolean-values">
   ## 检查布尔值
