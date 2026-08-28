@@ -32,7 +32,7 @@ namespace
 {
 
 /// If 'is_utf8' - measure offset and length in code points instead of bytes.
-class FunctionSubstring final : public IFunction
+class FunctionSubstring : public IFunction
 {
 public:
     FunctionSubstring(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}
@@ -230,8 +230,6 @@ Byte counting starts from 1 with the following logic:
 - If `offset` is negative, the substring starts `offset` characters from the end of the string, rather than from the beginning.
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
-
-See also the [`digits`](/reference/functions/regular-functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
 )";
     FunctionDocumentation::Syntax syntax = "substring(s, offset[, length])";
     FunctionDocumentation::Arguments arguments = {

@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
 /// returns a group assigned to the specified set of tags.
-class FunctionTimeSeriesTagsToGroup final : public IFunction
+class FunctionTimeSeriesTagsToGroup : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesTagsToGroup";
@@ -30,18 +30,12 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Function timeSeriesTagsToGroup uses information stored in the query context, it's deterministic in the scope of the current query.
+    /// Function timeSeriesRemoveTag uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
     /// This function allows NULLs as a way to specify that some tags don't have values.
     bool useDefaultImplementationForNulls() const override { return false; }
-
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -83,7 +77,7 @@ REGISTER_FUNCTION(TimeSeriesTagsToGroup)
 Returns a group of tags associated with specified tags.
 If the same group of tags is found multiple times during the query execution, the function returns the same group.
 For an empty set of tags the function always returns 0.
-See also function [timeSeriesGroupToTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+See also function [timeSeriesGroupToTags()](/sql-reference/functions/time-series-functions#timeSeriesGroupToTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesTagsToGroup(tags_array, tag_name_1, tag_value_1, tag_name2, tag_value2, ...)";
     FunctionDocumentation::Arguments arguments = {

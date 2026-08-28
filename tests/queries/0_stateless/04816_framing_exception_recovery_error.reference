@@ -1,4 +1,0 @@
---- a failure while delivering the framed exception truncates the response
-the client observes an aborted connection: OK
-the partial success stream was received: OK
-nothing appended after the failure: OK

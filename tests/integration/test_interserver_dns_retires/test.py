@@ -26,14 +26,14 @@ def bootstrap(cluster: ClickHouseCluster):
             user="root",
         )
 
-        node.query("DROP DATABASE IF EXISTS r0")
-        node.query("CREATE DATABASE r0")
-        node.query("CREATE TABLE r0.test_data(v UInt64) ENGINE = Memory()")
+        node.query(f"DROP DATABASE IF EXISTS r0")
+        node.query(f"CREATE DATABASE r0")
+        node.query(f"CREATE TABLE r0.test_data(v UInt64) ENGINE = Memory()")
         node.query(
             f"INSERT INTO r0.test_data SELECT number + {node_number} * 10 FROM numbers(10)"
         )
         node.query(
-            """CREATE TABLE default.test AS r0.test_data ENGINE = Distributed(cluster_missing_replica, 'r0', test_data, rand())"""
+            f"""CREATE TABLE default.test AS r0.test_data ENGINE = Distributed(cluster_missing_replica, 'r0', test_data, rand())"""
         )
 
 

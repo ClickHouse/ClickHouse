@@ -1,12 +1,11 @@
 #include <QueryPipeline/Pipe.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/Transforms/DroppingTransform.h>
-#include <Processors/Transforms/ExtremesOnlyTransform.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
@@ -51,22 +50,25 @@ static OutputPort * uniteExtremes(const OutputPortRawPtrs & ports, SharedHeader 
     /// Here we calculate extremes for extremes in case we unite several pipelines.
     /// Example: select number from numbers(2) union all select number from numbers(3)
 
-    /// ->> Resize -> ExtremesOnly --(extremes port)--> ...
+    /// ->> Resize -> Extremes --(output port)----> Empty
+    ///                        --(extremes port)--> ...
 
-    /// This consumer must not be childless; see `DroppingTransform`.
     auto resize = std::make_shared<ResizeProcessor>(header, ports.size(), 1);
-    auto extremes = std::make_shared<ExtremesOnlyTransform>(header);
+    auto extremes = std::make_shared<ExtremesTransform>(header);
+    auto sink = std::make_shared<EmptySink>(header);
 
-    auto * extremes_port = &extremes->getOutputPort();
+    auto * extremes_port = &extremes->getExtremesPort();
 
     auto in = resize->getInputs().begin();
     for (const auto & port : ports)
         connect(*port, *(in++));
 
     connect(resize->getOutputs().front(), extremes->getInputPort());
+    connect(extremes->getOutputPort(), sink->getPort());
 
     processors.emplace_back(std::move(resize));
     processors.emplace_back(std::move(extremes));
+    processors.emplace_back(std::move(sink));
 
     return extremes_port;
 }
@@ -175,7 +177,7 @@ Pipe::Pipe(ProcessorPtr source)
 Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(processors_))
 {
     /// Create hash table with processors.
-    UnorderedSetWithMemoryTracking<const IProcessor *> set;
+    std::unordered_set<const IProcessor *> set;
     for (const auto & processor : *processors)
         set.emplace(processor.get());
 
@@ -324,18 +326,15 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
             extremes.emplace_back(pipe.extremes_port);
     }
 
-    Processors totals_processors;
-    res.totals_port = uniteTotals(totals, res.header, totals_processors);
-    res.processors->append_range(totals_processors);
+    size_t num_processors = res.processors->size();
 
-    Processors extremes_processors;
-    res.extremes_port = uniteExtremes(extremes, res.header, extremes_processors);
-    res.processors->append_range(extremes_processors);
+    res.totals_port = uniteTotals(totals, res.header, *res.processors);
+    res.extremes_port = uniteExtremes(extremes, res.header, *res.processors);
 
     if (res.collected_processors)
     {
-        res.collected_processors->append_range(std::move(totals_processors));
-        res.collected_processors->append_range(std::move(extremes_processors));
+        for (; num_processors < res.processors->size(); ++num_processors)
+            res.collected_processors->emplace_back(res.processors->at(num_processors));
     }
 
     return res;
@@ -400,35 +399,29 @@ void Pipe::addExtremesSource(ProcessorPtr source)
     processors->emplace_back(std::move(source));
 }
 
+static void dropPort(OutputPort *& port, Processors & processors, Processors * collected_processors)
+{
+    if (port == nullptr)
+        return;
+
+    auto null_sink = std::make_shared<NullSink>(port->getSharedHeader());
+    connect(*port, null_sink->getPort());
+
+    if (collected_processors)
+        collected_processors->emplace_back(null_sink);
+
+    processors.emplace_back(std::move(null_sink));
+    port = nullptr;
+}
+
 void Pipe::dropTotals()
 {
-    dropStreams(totals_port != nullptr, false);
+    dropPort(totals_port, *processors, collected_processors);
 }
 
 void Pipe::dropExtremes()
 {
-    dropStreams(false, extremes_port != nullptr);
-}
-
-void Pipe::dropTotalsAndExtremes()
-{
-    dropStreams(totals_port != nullptr, extremes_port != nullptr);
-}
-
-void Pipe::dropStreams(bool drop_totals, bool drop_extremes)
-{
-    if (!drop_totals && !drop_extremes)
-        return;
-
-    /// Must not discard with a childless node here; see `DroppingTransform`.
-    auto dropping = std::make_shared<DroppingTransform>(
-        header,
-        output_ports.size(),
-        drop_totals ? totals_port->getSharedHeader() : nullptr,
-        drop_extremes ? extremes_port->getSharedHeader() : nullptr);
-    auto * totals_in = drop_totals ? dropping->getTotalsPort() : nullptr;
-    auto * extremes_in = drop_extremes ? dropping->getExtremesPort() : nullptr;
-    addTransform(std::move(dropping), totals_in, extremes_in);
+    dropPort(extremes_port, *processors, collected_processors);
 }
 
 void Pipe::addTransform(ProcessorPtr transform)
@@ -645,7 +638,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeader & getter)
     addSimpleTransform([&](const SharedHeader & stream_header_ptr, StreamType) { return getter(stream_header_ptr); });
 }
 
-void Pipe::addChains(VectorWithMemoryTracking<Chain> chains)
+void Pipe::addChains(std::vector<Chain> chains)
 {
     if (output_ports.size() != chains.size())
         throw Exception(
@@ -654,7 +647,8 @@ void Pipe::addChains(VectorWithMemoryTracking<Chain> chains)
             output_ports.size(),
             chains.size());
 
-    dropTotalsAndExtremes();
+    dropTotals();
+    dropExtremes();
 
     size_t max_parallel_streams_for_chains = 0;
 
@@ -847,7 +841,7 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
     auto new_processors = transformer(output_ports);
 
     /// Create hash table with new processors.
-    UnorderedSetWithMemoryTracking<const IProcessor *> set;
+    std::unordered_set<const IProcessor *> set;
     for (const auto & processor : new_processors)
         set.emplace(processor.get());
 

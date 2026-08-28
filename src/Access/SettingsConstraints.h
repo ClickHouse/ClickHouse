@@ -71,9 +71,9 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void set(const String & full_name, const Field & min_value, const Field & max_value, const std::vector<Field> & disallowed_values, SettingConstraintWritability writability);
-    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
-    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
+    void set(const String & full_name, const Field & min_value, const Field & max_value, const std::vector<Field> & allowed_values, SettingConstraintWritability writability);
+    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & allowed_values, SettingConstraintWritability & writability) const;
+    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & allowed_values, SettingConstraintWritability & writability) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -83,6 +83,9 @@ public:
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
+
+    /// Checks whether resetting the specified settings to their defaults violates these constraints.
+    void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
@@ -156,17 +159,10 @@ private:
         }
     };
 
-    /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
-    /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
-    void
-    checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
-
-    bool checkImpl(
-        const Settings & current_settings,
-        SettingChange & change,
-        ReactionOnViolation reaction,
-        SettingSource source,
-        bool ignore_unchanged_settings = false) const;
+    bool checkImpl(const Settings & current_settings,
+                  SettingChange & change,
+                  ReactionOnViolation reaction,
+                  SettingSource source) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
