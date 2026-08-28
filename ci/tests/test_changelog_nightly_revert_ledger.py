@@ -259,6 +259,7 @@ def test_branch_without_a_ledger_keeps_the_previous_behaviour(monkeypatch):
         "missing": [],
         "withheld": {},
         "reapply": {},
+        "reapply_allowance": {},
         "amend": [],
         "unresolved": [],
         "ledger": [],
@@ -1201,6 +1202,123 @@ def test_a_surviving_entry_must_pick_up_the_reapply(monkeypatch, tmp_path):
             tmp_path,
             old_text,
             changelog([with_reapply(FIX, "114912")]),
+            reverts,
+        )
+        is None
+    )
+
+
+def _entry(pr, what):
+    return (
+        f"* {what}. [#{pr}](https://github.com/ClickHouse/ClickHouse/pull/{pr}) "
+        "([Someone](https://github.com/someone))."
+    )
+
+
+def test_one_reapply_may_be_attributed_on_every_entry_it_brings_back(
+    monkeypatch, tmp_path
+):
+    """`#115200` reverted two pull requests at once and was itself reverted by
+    `#115300`, so both entries come back and both record `#115300`. That is one
+    re-applying link on two entries, not an entry written twice - the duplicate
+    guard must not reject the only correct output."""
+    PULL_REQUESTS["115200"] = {
+        "title": "Revert the two parser changes",
+        "body": (
+            "Reverts ClickHouse/ClickHouse#110100\n"
+            "Reverts ClickHouse/ClickHouse#110101"
+        ),
+    }
+    PULL_REQUESTS["115300"] = {"title": "Revert #115200", "body": "No marker."}
+    first = _entry("110100", "Speed up the parser")
+    second = _entry("110101", "Speed up the analyzer")
+    old_text = changelog(
+        [],
+        raw_sections=[("NO CL ENTRY", [_entry("115300", "Revert #115200")])],
+    )
+    reverts = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 110100 [{BUG_FIX}] {first}",
+            f"Changelog-deleted-entry: 110101 [{BUG_FIX}] {second}",
+            "Changelog-revert: 115200 110100 Revert the two parser changes",
+            "Changelog-revert: 115200 110101 Revert the two parser changes",
+        ],
+    )
+    assert sorted(reverts["restore"]) == ["110100", "110101"]
+    assert reverts["reapply"] == {
+        "110100": ["115300"],
+        "110101": ["115300"],
+    }
+    assert reverts["reapply_allowance"] == {"115300": 2}
+
+    restored = changelog(
+        [with_reapply(first, "115300"), with_reapply(second, "115300")]
+    )
+    # `#115300` is attributed twice, once per entry it brought back.
+    assert cl.attribution_counts(restored)["115300"] == 2
+    assert run_verify_edit(monkeypatch, tmp_path, old_text, restored, reverts) is None
+
+    # A third copy is still a duplicate.
+    over = changelog(
+        [
+            with_reapply(first, "115300"),
+            with_reapply(second, "115300"),
+            with_reapply(_entry("110102", "Speed up something else"), "115300"),
+        ]
+    )
+    rejected = run_verify_edit(monkeypatch, tmp_path, old_text, over, reverts)
+    assert rejected is not None
+    assert "#115300 3 times" in rejected
+
+
+def test_a_restored_visible_revert_records_its_reapply(monkeypatch, tmp_path):
+    """A revert of an older release is rewritten into a normal entry (skill
+    section 2, case 5), so a pull request can be both a revert and the owner of
+    an entry. When that entry is deleted and restored, it needs the
+    re-applying link like any other."""
+    PULL_REQUESTS["115400"] = {
+        "title": 'Revert "Make the setting default"',
+        "body": "Reverts ClickHouse/ClickHouse#100050",
+    }
+    PULL_REQUESTS["115500"] = {
+        "title": 'Revert "Revert "Make the setting default""',
+        "body": "Reverts ClickHouse/ClickHouse#115400",
+    }
+    PULL_REQUESTS["115600"] = {"title": "Revert #115500", "body": "No marker."}
+    visible = _entry("115400", "The setting is no longer enabled by default")
+    old_text = changelog(
+        [],
+        raw_sections=[("NO CL ENTRY", [_entry("115600", "Revert #115500")])],
+    )
+    reverts = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 115400 [{BUG_FIX}] {visible}",
+            'Changelog-revert: 115500 115400 Revert "Revert "Make the setting '
+            'default""',
+            'Changelog-revert: 115400 100050 Revert "Make the setting default"',
+        ],
+    )
+    # #115400 is a revert *and* the entry to restore.
+    assert reverts["restore"] == {"115400": (BUG_FIX, visible)}
+    assert reverts["reapply"]["115400"] == ["115600"]
+
+    bare = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([visible]), reverts
+    )
+    assert bare is not None
+    assert "do not record the pull request that re-applied the change" in bare
+    assert "#115600 on the entry of #115400" in bare
+
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(visible, "115600")]),
             reverts,
         )
         is None

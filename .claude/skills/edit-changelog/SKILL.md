@@ -153,6 +153,13 @@ section. For each:
    then *every* PR that put it back belongs on the entry, not just the first.
    The ones that took it out leave no trace.
 
+   One revert can revert several PRs at once. When such a revert is itself
+   reverted, every entry it brings back records that revert-of-revert, so the
+   same link appears on each of them — that is not the same as one entry
+   written twice. And a revert rewritten into a visible entry (case 5 above)
+   is an entry like any other: if it is deleted and later restored, it takes
+   the link of the PR that restored it too.
+
    Restore it under the category it was in, which is not necessarily the one
    its PR declares: the entry may have been promoted out of `NOT FOR
    CHANGELOG` (§3) or moved (§6) by the edit that first added it, and

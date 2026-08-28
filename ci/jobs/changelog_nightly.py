@@ -686,12 +686,23 @@ def analyze_reverts(text, anchor):
     # entry that ships and was ever reverted, not only of the restorations:
     # when the whole chain arrives in one raw block the entry never left the
     # section, so there is nothing to restore and the link would go unchecked.
+    # Not filtered to non-reverts: a revert of an older release is rewritten
+    # into a normal entry (skill section 2, case 5), so a pull request can be
+    # both a revert and the owner of an entry that has to record its own
+    # re-applies. Entries that are not in the section are skipped by the
+    # caller, which is what keeps the reverts without a bullet out of it.
     reapply = {
-        pr: reapplied_by([pr])
-        for pr in reverted_by
-        if pr not in credits and pr not in targets
+        pr: reapplied_by([pr]) for pr in reverted_by if pr not in credits
     }
     reapply = {pr: links for pr, links in reapply.items() if links}
+    # How many entries each re-applying pull request legitimately belongs to.
+    # One revert can revert several pull requests at once, and when it is
+    # itself reverted, the link of that revert-of-revert goes on every entry
+    # it brings back - which is not the same thing as an entry written twice.
+    allowance = {}
+    for links in reapply.values():
+        for link in links:
+            allowance[link] = allowance.get(link, 0) + 1
     amend = [
         {
             "pr": pr,
@@ -723,6 +734,7 @@ def analyze_reverts(text, anchor):
         "missing": missing,
         "withheld": withheld,
         "reapply": reapply,
+        "reapply_allowance": allowance,
         "amend": amend,
         "unresolved": unresolved,
         "ledger": [
@@ -1228,10 +1240,11 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     # above cannot see it - the link it looks for is present either way.
     # Duplicates that predate the edit are none of this run's business.
     before = attribution_counts(extract_in_progress_section(old_text, anchor) or "")
+    allowance = reverts["reapply_allowance"]
     duplicated = sorted(
         f"#{pr} {count} times"
         for pr, count in attribution_counts(section).items()
-        if count > max(1, before.get(pr, 0))
+        if count > max(1, before.get(pr, 0), allowance.get(pr, 0))
     )
     if duplicated:
         return (
