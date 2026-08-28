@@ -1,0 +1,21 @@
+Address review: store the first-parent master chain in `master_track_commits_sha`
+
+The `store_data` hook seeded `master_track_commits_sha` from one raw
+`repos/ClickHouse/ClickHouse/commits?sha=master&per_page=50` page. That
+listing is not the first-parent chain: it interleaves merged PRs'
+side-branch commits, so a single merge of a long branch can fill the
+whole window and leave the job without any older master commit. The perf
+`release_base` delta gate walks that list to find the previous master
+run, so in that case it silently fell back to the absolute
+`> 10 slower` threshold - the permanently-red behavior this PR removes.
+
+Reconstruct the chain client-side instead by following `parents[0]` and
+re-anchoring each fetch at the first sha not fetched yet (a listing
+always starts with its own anchor, so every fetch advances the walk),
+with a bounded page budget. A listing that does not contain its own
+anchor - a failed or unusable fetch - stops the walk and returns the
+chain built so far, so no consumer ever sees a chain with a hole in it.
+
+New `ci/tests/test_master_track_first_parent_commits.py` covers the
+side-branch filtering, the multi-page merge case, the root commit, the
+page budget, the fail-closed stop, and the listing parsing.
