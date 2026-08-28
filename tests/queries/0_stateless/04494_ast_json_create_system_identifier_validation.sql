@@ -26,7 +26,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 FROM {tbl:Identifier}'));
 -- ---------------------------------------------------------------------------
 
 -- `attach_short_syntax` is only valid for ATTACH queries.
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'), '"attach_short_syntax":false', '"attach_short_syntax":true')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'), '"replace_table":false', '"attach_short_syntax":true,"replace_table":false')); -- { serverError BAD_ARGUMENTS }
 -- `has_attach_from_path` without an ATTACH (and without a path) is parser-impossible.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'), '"has_attach_from_path":false', '"has_attach_from_path":true')); -- { serverError BAD_ARGUMENTS }
 -- `attach_as_replicated` is only valid for ATTACH queries (inject it into a CREATE).

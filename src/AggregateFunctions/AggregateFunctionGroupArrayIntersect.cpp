@@ -473,9 +473,9 @@ INSERT INTO numbers VALUES
 SELECT groupArrayIntersect(a) AS intersection FROM numbers;
             )",
             R"(
-┌─intersection──────┐
-│ [1, 2]            │
-└───────────────────┘
+┌─intersection─┐
+│ [1,2]        │
+└──────────────┘
             )"
         }
     };
