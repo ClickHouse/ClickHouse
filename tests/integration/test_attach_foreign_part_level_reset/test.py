@@ -69,6 +69,25 @@ def active_part(table, column="name"):
     )
 
 
+def create_dst(engine, extra_columns):
+    node.query("DROP TABLE IF EXISTS dst SYNC")
+    node.query(
+        f"CREATE TABLE dst (a UInt32{extra_columns}) ENGINE = {engine} ORDER BY a"
+    )
+    # A background merge would collapse the lone attached part on its own, and the FINAL
+    # assertion below would then hold whatever level the part was attached with.
+    node.query("SYSTEM STOP MERGES dst")
+    return table_data_path("dst")
+
+
+def stage_detached(dst_path, name):
+    # Hard links, so the staged copy shares the source part's inodes instead of its bytes.
+    exec_in_container(
+        f"mkdir -p {dst_path}detached"
+        f" && cp -rl {active_part('src', 'path').rstrip('/')} {dst_path}detached/{name}"
+    )
+
+
 @pytest.mark.parametrize(
     "engine, extra_columns, inserts",
     [
@@ -87,7 +106,6 @@ def test_attach_foreign_part_resets_level(
     started_cluster, engine, extra_columns, inserts
 ):
     node.query("DROP TABLE IF EXISTS src SYNC")
-    node.query("DROP TABLE IF EXISTS dst SYNC")
 
     node.query(
         f"CREATE TABLE src (a UInt32{extra_columns}) ENGINE = MergeTree ORDER BY a"
@@ -100,20 +118,8 @@ def test_attach_foreign_part_resets_level(
     assert int(active_part("src", "level")) > 0, f"{part} is not a merged part"
     assert one_row("SELECT count() FROM src") == str(SOURCE_ROWS)
 
-    node.query(
-        f"CREATE TABLE dst (a UInt32{extra_columns}) ENGINE = {engine} ORDER BY a"
-    )
-    # A background merge would collapse the lone attached part on its own, and the FINAL
-    # assertion below would then hold whatever level the part was attached with.
-    node.query("SYSTEM STOP MERGES dst")
-
-    dst_path = table_data_path("dst")
-    # Hard links, so the staged copy shares the source part's inodes instead of its bytes.
-    exec_in_container(
-        f"mkdir -p {dst_path}detached"
-        f" && cp -rl {active_part('src', 'path').rstrip('/')} {dst_path}detached/{part}"
-    )
-
+    dst_path = create_dst(engine, extra_columns)
+    stage_detached(dst_path, part)
     node.query(f"ALTER TABLE dst ATTACH PART '{part}'")
 
     assert active_part("dst", "level") == "0"
@@ -126,28 +132,28 @@ def test_attach_foreign_part_resets_level(
         one_row("CHECK TABLE src SETTINGS check_query_single_value_result = 1") == "1"
     )
 
+    # optimize_skip_merged_partitions leaves a lone part of level > 0 unmerged, so with exactly one
+    # part in the partition and no TTL the outcome here is a pure function of the adopted level.
+    node.query("SYSTEM START MERGES dst")
+    node.query("OPTIMIZE TABLE dst FINAL SETTINGS optimize_skip_merged_partitions = 1")
+    assert one_row("SELECT count() FROM dst") == str(DISTINCT_KEYS)
+
     # A level field of 4294967295 is the legacy spelling of MAX_LEVEL: it parses to MAX_LEVEL and the
     # spelling is remembered so that the name round-trips. Forcing the level therefore has to clear
     # that too, or the name is written back with the legacy value and parses as collapsed again.
+    # This needs an empty table: a second copy of the same part carries the same checksums, and the
+    # replicated engine deduplicates an ATTACH by checksum, which would never activate it.
     prefix, level_field = part.rsplit("_", 1)
     assert part.count("_") == 3 and level_field.isdigit(), part
     legacy_part = f"{prefix}_4294967295"
-    exec_in_container(
-        f"cp -rl {active_part('src', 'path').rstrip('/')} {dst_path}detached/{legacy_part}"
-    )
-    node.query(f"ALTER TABLE dst ATTACH PART '{legacy_part}'")
-    assert (
-        one_row(
-            "SELECT count() FROM system.parts WHERE database = 'default' AND table = 'dst'"
-            " AND active AND (level != 0 OR name LIKE '%4294967295')"
-        )
-        == "0"
-    )
-    assert one_row("SELECT count() FROM dst FINAL") == str(DISTINCT_KEYS)
 
-    node.query("SYSTEM START MERGES dst")
-    node.query("OPTIMIZE TABLE dst FINAL")
-    assert one_row("SELECT count() FROM dst") == str(DISTINCT_KEYS)
+    dst_path = create_dst(engine, extra_columns)
+    stage_detached(dst_path, legacy_part)
+    node.query(f"ALTER TABLE dst ATTACH PART '{legacy_part}'")
+
+    assert active_part("dst", "level") == "0"
+    assert "4294967295" not in active_part("dst")
+    assert one_row("SELECT count() FROM dst FINAL") == str(DISTINCT_KEYS)
 
     node.query("DROP TABLE src SYNC")
     node.query("DROP TABLE dst SYNC")
