@@ -26,11 +26,20 @@ Parameters set in a named collection can be overridden in SQL, this is shown in 
 below. This ability can be limited using `[NOT] OVERRIDABLE` keywords and XML attributes
 and/or the configuration option `allow_named_collection_override_by_default`.
 
+A collection that stores credentials (`password`, `access_key_id`, `secret_access_key`,
+`account_key`, and similar) alongside the destination they are sent to (`url`, `host`,
+`endpoint`, `addresses_expr`, and similar) is an exception: a query may repoint such a
+destination key to another path of the same host, but not to a different host or port.
+Otherwise the `NAMED_COLLECTION` privilege alone would be enough to have the server send
+the stored credentials to a host of the user's choosing. Overriding a destination key is
+still allowed when the collection stores no credentials, when it stores no destination for
+the query to redirect, or when the key is explicitly declared `OVERRIDABLE`.
+
 <Warning>
-If override is allowed, it may be possible for users without administrative access to
-figure out the credentials that you are trying to hide.
-If you are using named collections with that purpose, you should disable
-`allow_named_collection_override_by_default` (which is enabled by default).
+Keys that are not part of the destination are still overridable by default, so if a
+collection exists purely to hide credentials, disable
+`allow_named_collection_override_by_default` (which is enabled by default) or declare its
+keys `NOT OVERRIDABLE`.
 </Warning>
 
 ## Storing named collections in the system database {#storing-named-collections-in-the-system-database}
@@ -48,7 +57,7 @@ In the above example:
 
 * `key_1` can always be overridden.
 * `key_2` can never be overridden.
-* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`. Had this collection also stored a credential, `url` could only have been repointed to another path of the same host.
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
@@ -125,7 +134,7 @@ In the above example:
 
 * `key_1` can always be overridden.
 * `key_2` can never be overridden.
-* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`. Had this collection also stored a credential, `url` could only have been repointed to another path of the same host.
 
 ## Modifying named collections {#modifying-named-collections}
 

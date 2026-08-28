@@ -138,8 +138,8 @@ CREATE TABLE t_invalid_expression (year UInt16, country String, counter Float64)
                                   PARTITION BY counter; -- {serverError BAD_ARGUMENTS}
 
 -- Data lake like engines do not support the `partition_strategy` argument
-CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://minio1:9001/bucket/', partition_strategy='WILDCARD'); -- {serverError BAD_ARGUMENTS}
-CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://minio1:9001/bucket/', partition_strategy='HIVE'); -- {serverError BAD_ARGUMENTS}
+CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://localhost:11111/test/bucket/', partition_strategy='WILDCARD'); -- {serverError BAD_ARGUMENTS}
+CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://localhost:11111/test/bucket/', partition_strategy='HIVE'); -- {serverError BAD_ARGUMENTS}
 
 -- Should throw because format is not present and it is mandatory for hive strategy and it should not be a LOGICAL_ERROR
 CREATE TABLE t_03363_hive_requires_format (c0 Int) ENGINE = S3(s3_conn, partition_strategy = 'hive') PARTITION BY (c0); -- {serverError BAD_ARGUMENTS}
