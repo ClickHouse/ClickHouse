@@ -318,8 +318,10 @@ void optimizeTreeSecondPass(
         });
 
     /// A runtime filter or a lifted predicate is a new filter node, so re-run push down to move it
-    /// as deep in the tree as possible. Each rewrite keeps its own setting: a new filter is no
-    /// reason to run a pass the user turned off
+    /// as deep in the tree as possible. A runtime filter is re-merged unconditionally, as it was
+    /// before this pass existed; a lift-only rerun keeps each rewrite behind its own setting,
+    /// because a copied predicate is no reason to run a pass the user turned off
+    const bool rewrite_regardless_of_settings = join_runtime_filters_were_added;
     if (join_runtime_filters_were_added || predicates_were_lifted)
     {
         traverseQueryPlan(stack, root,
@@ -329,11 +331,11 @@ void optimizeTreeSecondPass(
                 while (true)
                 {
                     size_t changed_nodes = 0;
-                    if (optimization_settings.merge_expressions)
+                    if (rewrite_regardless_of_settings || optimization_settings.merge_expressions)
                         changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
-                    if (optimization_settings.merge_filters)
+                    if (rewrite_regardless_of_settings || optimization_settings.merge_filters)
                         changed_nodes += tryMergeFilters(&frame_node, nodes, {});
-                    if (optimization_settings.filter_push_down)
+                    if (rewrite_regardless_of_settings || optimization_settings.filter_push_down)
                         changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
 
                     if (!changed_nodes)
