@@ -1,0 +1,18 @@
+<test>
+    <!--
+        GROUP BY over a Dynamic key selects AggregationMethodSerialized, and
+        ColumnDynamic::serializeValueIntoArena calls getDefaultSerialization for every row,
+        so each row performs a SerializationObjectPool lookup from every aggregation thread.
+        This measures the pool's hit path under contention.
+    -->
+    <settings>
+        <max_threads>16</max_threads>
+        <allow_suspicious_types_in_group_by>1</allow_suspicious_types_in_group_by>
+    </settings>
+
+    <!-- A single type: every lookup uses the same pool key. -->
+    <query>SELECT (number % 100000)::Dynamic AS d FROM numbers_mt(5000000) GROUP BY d FORMAT Null</query>
+
+    <!-- Mixed types: lookups are spread over several pool keys. -->
+    <query>SELECT if(number % 2 = 0, (number % 100000)::Dynamic, toString(number % 100000)::Dynamic) AS d FROM numbers_mt(5000000) GROUP BY d FORMAT Null</query>
+</test>
