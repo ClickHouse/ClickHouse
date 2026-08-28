@@ -258,7 +258,7 @@ endif()
 # LogElement::appendToBlock functions walk hundreds of values and do tight column inserts in
 # a loop, so the per-call __msan_set_alloca_origin / __msan_chain_origin cost adds up to
 # seconds per `SYSTEM FLUSH LOGS query_log`. With x86-64-v3 AVX2 codegen these flushes push
-# the MSan WasmEdge stateless check over the 600s/180s timeouts.
+# the MSan stateless check over the 600s/180s timeouts.
 #
 # Origin tracking is still on globally; these files are leaf helpers where MSan checks
 # don't carry uninit values into user code, so dropping origin tracking here is safe.
@@ -928,10 +928,6 @@ endif()
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
-endif()
-
-if (TARGET ch_contrib::wasmedge)
-    target_link_libraries(dbms PRIVATE ch_contrib::wasmedge)
 endif()
 
 if (TARGET ch_rust::wasmtime)
