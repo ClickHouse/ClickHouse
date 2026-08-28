@@ -195,6 +195,10 @@ async function main() {
   try {
     const snapshotFixtureDirectory = path.join(temporaryDirectory, 'snapshots');
     const snapshotVersionDirectory = path.join(snapshotFixtureDirectory, '26.8');
+    const snapshotHomepagePath = path.join(
+      snapshotVersionDirectory,
+      'docs/reference/versions/26.8/index.html',
+    );
     const snapshotPagePath = path.join(
       snapshotVersionDirectory,
       'docs/reference/versions/26.8/formats/Parquet/Parquet/index.html',
@@ -209,18 +213,21 @@ async function main() {
     );
     const snapshotAssetPath = path.join(snapshotVersionDirectory, '_astro/frozen.js');
     await Promise.all([
+      mkdir(path.dirname(snapshotHomepagePath), { recursive: true }),
       mkdir(path.dirname(snapshotPagePath), { recursive: true }),
       mkdir(path.dirname(snapshotSearchPath), { recursive: true }),
       mkdir(path.dirname(snapshotSitemapPath), { recursive: true }),
       mkdir(path.dirname(snapshotAssetPath), { recursive: true }),
     ]);
     await Promise.all([
+      writeFile(snapshotHomepagePath, '<h1>Frozen 26.8 reference</h1>'),
       writeFile(snapshotPagePath, '<h1>Frozen Parquet</h1>'),
       writeFile(snapshotSearchPath, '{"records":[]}'),
       writeFile(snapshotSitemapPath, '<urlset></urlset>'),
       writeFile(snapshotAssetPath, 'export const frozen = true;'),
     ]);
     for (const [requestUrl, expectedPath] of [
+      ['/docs/reference/versions/26.8', snapshotHomepagePath],
       ['/docs/reference/versions/26.8/formats/Parquet/Parquet', snapshotPagePath],
       ['/docs/reference/_search/26.8.json', snapshotSearchPath],
       ['/docs/reference/versions/26.8/sitemap.xml', snapshotSitemapPath],
@@ -344,6 +351,14 @@ async function main() {
       path.join(projectDirectory, 'src/components/InkeepTools.astro'),
       'utf8',
     );
+    const header = await readFile(
+      path.join(projectDirectory, 'src/components/Header.astro'),
+      'utf8',
+    );
+    const sidebar = await readFile(
+      path.join(projectDirectory, 'src/components/Sidebar.astro'),
+      'utf8',
+    );
     const referenceIndex = await readFile(
       path.join(projectDirectory, 'src/components/ReferenceIndex.astro'),
       'utf8',
@@ -403,6 +418,13 @@ async function main() {
           'data-search-index={`/docs/reference/_search/${manifest.channel}.json`}',
         ),
       'The reference homepage does not use the selected artifact search index',
+    );
+    requireValue(
+      header.includes('href={referenceBaseRoute}')
+        && sidebar.includes('class="sidebar-home"')
+        && sidebar.includes('href={referenceBaseRoute}')
+        && sidebar.includes("currentRoute === referenceBaseRoute ? 'page' : undefined"),
+      'The shell does not link to the homepage for the selected reference version',
     );
 
     requireValue(

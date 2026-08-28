@@ -1,4 +1,5 @@
 ---
+import manifest from '@generated/data/manifest.json';
 import headerNavigation from '@generated/data/header-navigation.json';
 
 interface Props {
@@ -23,6 +24,9 @@ interface HeaderNavigationTab {
 
 const { section = 'Reference', title } = Astro.props;
 const navigationTabs = headerNavigation.tabs as HeaderNavigationTab[];
+const referenceBaseRoute = manifest.channel === 'latest'
+  ? '/docs/reference'
+  : `/docs/reference/versions/${manifest.channel}`;
 const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationItem) => (
   tab.active && item.kind === 'link' && item.label === 'Reference'
 );
@@ -30,7 +34,7 @@ const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationIt
 
 <header id="navbar-transition-maple" class="site-header">
   <div class="mobile-header-primary">
-    <a href="/docs/reference" aria-label="ClickHouse Documentation home page">
+    <a href={referenceBaseRoute} aria-label="ClickHouse Documentation home page">
       <img class="logo-light" src="/_site/logo/light.svg" alt="ClickHouse Docs" />
       <img class="logo-dark" src="/_site/logo/dark.svg" alt="ClickHouse Docs" />
     </a>

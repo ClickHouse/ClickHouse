@@ -674,6 +674,27 @@ pre {
   list-style: none;
 }
 
+.sidebar-home {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  margin: 0 0 24px;
+  padding: 6px 11px 6px 0;
+  border-radius: 4px;
+  color: var(--heading);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.sidebar-home:hover {
+  color: var(--heading);
+}
+
+.sidebar-home[aria-current='page'] {
+  color: var(--active-navigation);
+}
+
 .sidebar-depth-0 {
   margin: 0 0 24px;
 }

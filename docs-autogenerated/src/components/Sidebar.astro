@@ -1,4 +1,5 @@
 ---
+import manifest from '@generated/data/manifest.json';
 import type { NavEntry } from '@mintlify/astro/helpers';
 import InkeepTools from './InkeepTools.astro';
 import SidebarNode from './SidebarNode.astro';
@@ -12,11 +13,14 @@ interface Props {
 }
 
 const { entries, currentRoute, stableId, featureStateByRoute = {} } = Astro.props;
+const referenceBaseRoute = manifest.channel === 'latest'
+  ? '/docs/reference'
+  : `/docs/reference/versions/${manifest.channel}`;
 ---
 
 <aside id="sidebar" class="sidebar" aria-label="Pages">
   <div class="sidebar-brand-row">
-    <a class="sidebar-brand" href="/docs/reference" aria-label="ClickHouse Documentation home page">
+    <a class="sidebar-brand" href={referenceBaseRoute} aria-label="ClickHouse Documentation home page">
       <img class="logo-light" src="/_site/logo/light.svg" alt="ClickHouse Docs" />
       <img class="logo-dark" src="/_site/logo/dark.svg" alt="ClickHouse Docs" />
     </a>
@@ -73,6 +77,13 @@ const { entries, currentRoute, stableId, featureStateByRoute = {} } = Astro.prop
   </div>
 
   <div class="sidebar-scroll">
+    <a
+      class="sidebar-home"
+      href={referenceBaseRoute}
+      aria-current={currentRoute === referenceBaseRoute ? 'page' : undefined}
+    >
+      Home
+    </a>
     <ul class="sidebar-tree">
       {entries.map((entry) => (
         <SidebarNode

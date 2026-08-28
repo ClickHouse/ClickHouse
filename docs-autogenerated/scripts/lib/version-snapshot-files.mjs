@@ -44,7 +44,7 @@ export function candidatesWithin(root, relativePath) {
   const resolvedRoot = path.resolve(root);
   const resolved = path.resolve(resolvedRoot, relativePath);
   if (!resolved.startsWith(`${resolvedRoot}${path.sep}`)) return [];
-  if (path.extname(relativePath)) return [resolved];
+  if (contentTypes.has(path.extname(relativePath))) return [resolved];
   return [path.join(resolved, 'index.html'), resolved];
 }
 

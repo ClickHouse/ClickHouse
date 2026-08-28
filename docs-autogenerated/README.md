@@ -180,7 +180,7 @@ that publisher.
   at the current desktop and mobile breakpoints.
 - The sidebar reuses the docs-wide Inkeep search and Kapa Ask AI integrations.
   The homepage provides a dedicated, version-aware search over the selected
-  reference artifact.
+  reference artifact, and the Home entry and logo remain within that version.
 - A generated `versions.json` manifest powers the sidebar selector. It lists
   only existing bundles, and every entry resolves pages by stable document ID.
 
