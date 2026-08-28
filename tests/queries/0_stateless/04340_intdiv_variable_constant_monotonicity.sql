@@ -146,8 +146,8 @@ SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toDecimal32(1000000, 0
 
 DROP TABLE t_intdiv_mono;
 
--- A Decimal dividend with an integer divisor still prunes when the divisor survives the cast into the
--- dividend's native width (Int64 here), so this monotonic case keeps its pruning.
+-- A `Decimal` dividend with an integer divisor still prunes when the divisor survives the cast into the
+-- dividend's native width (`Int64` here), so this monotonic case keeps its pruning.
 CREATE TABLE t_intdiv_mono (a Decimal64(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_intdiv_mono VALUES (10), (20), (30), (40), (50);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toInt64(10)) IN (2))
@@ -188,8 +188,8 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_intdiv_mono WHERE
 
 DROP TABLE t_intdiv_mono;
 
--- Decimal dividend with an integer divisor that survives the cast into the dividend's native width
--- (Int64 here) stays monotonic: pruning preserved, and the EXPLAIN assertion confirms the index is used.
+-- `Decimal` dividend with an integer divisor that survives the cast into the dividend's native width
+-- (`Int64` here) stays monotonic: pruning preserved, and the `EXPLAIN` assertion confirms the index is used.
 CREATE TABLE t_intdiv_mono (a Decimal64(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_intdiv_mono SELECT number FROM numbers(100);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE divide(a, toInt64(10)) IN (5))
@@ -199,19 +199,20 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_intdiv_mono WHERE
 
 DROP TABLE t_intdiv_mono;
 
--- Decimal dividend with an integer constant divisor: the division computes in the DECIMAL's own native
--- signed width (Int32 for every Decimal32, whatever the divisor's own type is) and the divisor is cast
--- into that width, so intDiv(Decimal32, -9223372036854775807) divides by +1 and INCREASES while the raw
--- literal says it decreases. Key analysis then inverts the range and either aborts with Invalid binary
--- search result in MergeTreeSetIndex (set atom, debug only) or silently drops every matching granule
--- (range atom, every build). Both truncation directions are covered: -9223372036854775807 casts to +1
--- and 9223372036854775807 casts to -1, so the defect does not depend on the literal's own sign.
+-- `Decimal` dividend with an integer constant divisor: the division computes in the DECIMAL's own native
+-- signed width (`Int32` for every `Decimal32`, whatever the divisor's own type is) and the divisor is cast
+-- into that width, so `intDiv(Decimal32, -9223372036854775807)` divides by +1 and INCREASES while the raw
+-- literal says it decreases. Key analysis then inverts the range and either aborts with
+-- `Invalid binary search result in MergeTreeSetIndex` (set atom, debug only) or silently drops every
+-- matching granule (range atom, every build). Both truncation directions are covered:
+-- -9223372036854775807 casts to +1 and 9223372036854775807 casts to -1, so the defect does not depend
+-- on the literal's own sign.
 CREATE TABLE t_intdiv_mono (a Decimal(5, 4)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2;
 INSERT INTO t_intdiv_mono SELECT toDecimal32(number, 4) FROM numbers(10);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, -9223372036854775807) NOT IN (3))
      = (SELECT countIf(intDiv(a, -9223372036854775807) NOT IN (3)) FROM t_intdiv_mono)
 SETTINGS use_lightweight_primary_key_index_analysis = 0;
--- The sparse overload of MergeTreeSetIndex::checkInRange consumes the same chain result. This arm and
+-- The sparse overload of `MergeTreeSetIndex::checkInRange` consumes the same chain result. This arm and
 -- the range atom below also reach the separate variable / constant branch that handles an infinite
 -- endpoint, so they are the arms that keep both copies of the guard in step.
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, -9223372036854775807) IN (3))
@@ -222,7 +223,7 @@ SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, -9223372036854775807) 
      = (SELECT countIf(intDiv(a, -9223372036854775807) > 4) FROM t_intdiv_mono);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, 9223372036854775807) NOT IN (-3))
      = (SELECT countIf(intDiv(a, 9223372036854775807) NOT IN (-3)) FROM t_intdiv_mono);
--- divide takes the same integral decimal path as intDiv.
+-- `divide` takes the same integral decimal path as `intDiv`.
 SELECT (SELECT count() FROM t_intdiv_mono WHERE divide(a, -9223372036854775807) NOT IN (3))
      = (SELECT countIf(divide(a, -9223372036854775807) NOT IN (3)) FROM t_intdiv_mono);
 -- A constant that survives the cast keeps its pruning: the index reads 2 of 5 granules, not all 5.
@@ -230,7 +231,7 @@ SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, 3) IN (1))
      = (SELECT countIf(intDiv(a, 3) IN (1)) FROM t_intdiv_mono);
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT sum(a) FROM t_intdiv_mono WHERE intDiv(a, 3) IN (1))
        WHERE explain LIKE '%Granules: 2/5%';
--- A Float divisor converts both operands to Float64 instead, so it never truncates and must keep pruning.
+-- A `Float` divisor converts both operands to `Float64` instead, so it never truncates and must keep pruning.
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, 3.0) IN (1))
      = (SELECT countIf(intDiv(a, 3.0) IN (1)) FROM t_intdiv_mono);
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT sum(a) FROM t_intdiv_mono WHERE intDiv(a, 3.0) IN (1))
@@ -238,7 +239,7 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT sum(a) FROM t_intdiv_mono WHERE 
 
 DROP TABLE t_intdiv_mono;
 
--- Reversed key: the direction claim and KeyOrder both feed Range::invert(), so cover DESC as well.
+-- Reversed key: the direction claim and `KeyOrder` both feed `Range::invert`, so cover `DESC` as well.
 CREATE TABLE t_intdiv_mono (a Decimal(5, 4)) ENGINE = MergeTree ORDER BY a DESC SETTINGS index_granularity = 2;
 INSERT INTO t_intdiv_mono SELECT toDecimal32(number, 4) FROM numbers(10);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, -9223372036854775807) NOT IN (3))
@@ -246,8 +247,8 @@ SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, -9223372036854775807) 
 
 DROP TABLE t_intdiv_mono;
 
--- A wider Decimal has a wider native width, so the same constant survives the cast there and the
--- direction claim stays correct: Decimal64 computes in Int64 and keeps both its answer and its pruning.
+-- A wider `Decimal` has a wider native width, so the same constant survives the cast there and the
+-- direction claim stays correct: `Decimal64` computes in `Int64` and keeps both its answer and its pruning.
 CREATE TABLE t_intdiv_mono (a Decimal(18, 4)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2;
 INSERT INTO t_intdiv_mono SELECT toDecimal64(number, 4) FROM numbers(10);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, -9223372036854775807) NOT IN (3))
@@ -259,9 +260,9 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT sum(a) FROM t_intdiv_mono WHERE 
 
 DROP TABLE t_intdiv_mono;
 
--- Decimal128 and Decimal256 dividends truncate through the wider arms of the same width switch: an
--- all-ones unsigned constant casts to -1, so the direction reverses as it does for Decimal32 above.
--- The constant must arrive as a string, because a literal this wide parses as Float64.
+-- `Decimal128` and `Decimal256` dividends truncate through the wider arms of the same width switch: an
+-- all-ones unsigned constant casts to -1, so the direction reverses as it does for `Decimal32` above.
+-- The constant must arrive as a string, because a literal this wide parses as `Float64`.
 CREATE TABLE t_intdiv_mono (a Decimal(38, 4)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2;
 INSERT INTO t_intdiv_mono SELECT toDecimal128(number, 4) FROM numbers(10);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt128('340282366920938463463374607431768211455')) < -4)
