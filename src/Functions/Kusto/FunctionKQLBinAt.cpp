@@ -371,22 +371,24 @@ Language's `bin_at()` does. The bins may align before or after the fixed point.
 
 The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
 is an `Interval`) is rounded by a timespan from a timespan, and a datetime is rounded by a
-timespan counted from a datetime fixed point.
+timespan counted from a datetime fixed point. A KQL datetime is a `DateTime64`; the narrower
+`DateTime` and `Date` carriers are rejected, because they cannot represent every bin a KQL
+datetime can produce.
 
 This function backs `bin_at()` when `dialect = 'kusto'`. It is not meant to be called directly
 from SQL.
 )",
         .syntax = "kqlBinAt(value, binSize, fixedPoint)",
         .arguments
-        = {{"value", "A number, a timespan, or a datetime."},
+        = {{"value", "A number, a timespan, or a datetime (a `DateTime64`)."},
            {"binSize", "The bin size."},
            {"fixedPoint", "The point the bins are counted from."}},
         .returned_value = {"`value` rounded down to the nearest multiple of `binSize` counted from `fixedPoint`."},
         .examples
         = {{"number", "SELECT kqlBinAt(6.5, 2.5, -0.5)", "4.5"},
            {"datetime",
-            "SELECT kqlBinAt(toDateTime('2026-08-01 12:34:56'), toIntervalHour(1), toDateTime('2026-08-01 00:30:00'))",
-            "2026-08-01 12:30:00"}},
+            "SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1), toDateTime64('2026-08-01 00:30:00', 7, 'UTC'))",
+            "2026-08-01 12:30:00.0000000"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Arithmetic,
     };

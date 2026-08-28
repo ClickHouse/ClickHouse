@@ -256,18 +256,20 @@ REGISTER_FUNCTION(KQLBin)
 Rounds a value down to a multiple of `roundTo`, as the Kusto Query Language's `bin()` does.
 
 The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
-is an `Interval`) is rounded by a timespan, and a datetime is rounded by a timespan.
+is an `Interval`) is rounded by a timespan, and a datetime is rounded by a timespan. A KQL
+datetime is a `DateTime64`; the narrower `DateTime` and `Date` carriers are rejected, because
+they cannot represent every bin a KQL datetime can produce.
 
 This function backs `bin()` when `dialect = 'kusto'`. It is not meant to be called directly
 from SQL.
 )",
         .syntax = "kqlBin(value, roundTo)",
-        .arguments = {{"value", "A number, a timespan, or a datetime."}, {"roundTo", "The bin size."}},
+        .arguments = {{"value", "A number, a timespan, or a datetime (a `DateTime64`)."}, {"roundTo", "The bin size."}},
         .returned_value = {"`value` rounded down to the nearest multiple of `roundTo`."},
         .examples
         = {{"number", "SELECT kqlBin(4.5, 1)", "4"},
-           {"timespan", "SELECT kqlBin(toIntervalNanosecond(16 * 86400000000000), toIntervalNanosecond(7 * 86400000000000))", "14 days in nanoseconds"},
-           {"datetime", "SELECT kqlBin(toDateTime('2026-08-01 12:34:56'), toIntervalHour(1))", "2026-08-01 12:00:00"}},
+           {"timespan", "SELECT kqlBin(toIntervalNanosecond(16 * 86400000000000), toIntervalNanosecond(7 * 86400000000000))", "1209600000000000"},
+           {"datetime", "SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1))", "2026-08-01 12:00:00.0000000"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Arithmetic,
     };
