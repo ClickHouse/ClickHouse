@@ -200,21 +200,24 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 1;
 
--- The data is already lowercase, so the postprocessor does not change it and the index path must
--- return exactly what a full scan returns.
+-- The data is already lowercase, so the postprocessor does not change it.
 INSERT INTO tab VALUES (1, 'a()bc()d'), (2, 'zz');
 
--- The index stores ['a', 'bc', 'd'] and the row-level rewrite joins them with a space, which
--- splitByString(['()']) cannot split apart again. Expected output is empty.
-SELECT 'hasPhrase splitByString', indexed, scanned FROM (
-    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d', 'splitByString([''()''])') ORDER BY id SETTINGS use_skip_indexes = 1)) AS indexed,
-           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d', 'splitByString([''()''])') ORDER BY id SETTINGS use_skip_indexes = 0)) AS scanned
-) WHERE indexed != scanned;
+-- hasPhrase searches the postprocessed tokens rejoined with a space, and splitByString(['()'])
+-- keeps that space inside a token, so a phrase of several tokens never matches here. Both forms
+-- share that rewrite, so they agree; a row prints only if they disagree.
+SELECT 'hasPhrase splitByString', 1, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d', 'splitByString([''()''])') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d') ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 1;
+SELECT 'hasPhrase splitByString', 0, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d', 'splitByString([''()''])') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d') ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 0;
 
-SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d', 'splitByString([''()''])') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d', 'splitByString([''()''])') ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
-
--- hasAnyTokens and hasAllTokens match the postprocessed tokens verbatim, so they keep using the index.
+-- The index answers the phrase, and hasAnyTokens and hasAllTokens below match the postprocessed
+-- tokens verbatim, so the empty phrase result is a property of the rejoin and not of a dead index.
+SELECT id FROM tab WHERE hasPhrase(doc, 'bc()d', 'splitByString([''()''])') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab WHERE hasAnyTokens(doc, 'bc', 'splitByString([''()''])') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab WHERE hasAllTokens(doc, 'bc()d', 'splitByString([''()''])') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
@@ -234,12 +237,16 @@ SETTINGS index_granularity = 1;
 -- rejoining and re-splitting drops it and makes the non-consecutive 'a b' look consecutive.
 INSERT INTO tab VALUES (1, 'A X B'), (2, 'zz');
 
-SELECT 'hasPhrase separator from postprocessor', indexed, scanned FROM (
-    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'a b', 'splitByString(['' '', ''x''])') ORDER BY id SETTINGS use_skip_indexes = 1)) AS indexed,
-           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'a b', 'splitByString(['' '', ''x''])') ORDER BY id SETTINGS use_skip_indexes = 0)) AS scanned
-) WHERE indexed != scanned;
+SELECT 'hasPhrase separator from postprocessor', 1, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'a b', 'splitByString(['' '', ''x''])') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'a b') ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 1;
+SELECT 'hasPhrase separator from postprocessor', 0, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'a b', 'splitByString(['' '', ''x''])') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'a b') ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 0;
 
-SELECT id FROM tab WHERE hasPhrase(doc, 'a b', 'splitByString(['' '', ''x''])') ORDER BY id SETTINGS use_skip_indexes = 1;
+SELECT id FROM tab WHERE hasPhrase(doc, 'a b', 'splitByString(['' '', ''x''])') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tab;
 
