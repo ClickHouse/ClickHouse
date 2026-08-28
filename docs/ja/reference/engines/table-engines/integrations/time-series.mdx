@@ -104,7 +104,7 @@ INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit,
   ### 外部カラムの指定
 </div>
 
-外部 `time_series` カラムは、デフォルトの `Array(Tuple(DateTime64(3), Float64))` 型をオーバーライドするために、`CREATE TABLE` ステートメントで明示的に指定できます。ClickHouse はその Tuple から timestamp 型と scalar 型を抽出し、それらを内部の Samples テーブルに反映します：
+外部 `time_series` カラムは、デフォルトの `Array(タプル(DateTime64(3), Float64))` 型をオーバーライドするために、`CREATE TABLE` ステートメントで明示的に指定できます。ClickHouse はその タプル から timestamp 型と scalar 型を抽出し、それらを内部の Samples テーブルに反映します：
 
 ```sql
 CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
@@ -114,7 +114,7 @@ CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSer
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 両方の形式を同じ `CREATE TABLE` ステートメント内で使用する場合、宣言する型は一致していなければなりません。
@@ -143,14 +143,14 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 
 *samples* テーブルには、次のカラムが必要です。
 
-| Name        | Mandatory? | Default type          | Possible types         | Description           |
+| Name        | 必須? | デフォルト型          | 使用可能な型         | Description           |
 | ----------- | ---------- | --------------------- | ---------------------- | --------------------- |
 | `id`        | [x]        | `Tuple(UInt64, UUID)` | any                    | メトリクス名とタグの組み合わせを識別します |
 | `timestamp` | [x]        | `DateTime64(3)`       | `DateTime64(X)`        | 時点                    |
 | `value`     | [x]        | `Float64`             | `Float32` or `Float64` | `timestamp` に対応する値    |
 
 エンジンが自動作成するカラムには、時系列圧縮コーデックが設定されます。
-`timestamp CODEC(DoubleDelta, ZSTD(1))` および `value CODEC(Gorilla, ZSTD(1))`。ほぼ単調なタイムスタンプは汎用コーデックではほとんど
+`timestamp CODEC(DoubleDelta, ZSTD(1))` および `value CODEC(ZSTD(3))`。ほぼ単調なタイムスタンプは汎用コーデックではほとんど
 圧縮されず、samples テーブルのディスク上のサイズの大部分を占める可能性があります。
 [カラムの型の調整](#adjusting-column-types)も参照してください。
 
@@ -215,7 +215,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla, ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
@@ -249,7 +249,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -305,7 +305,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 内部カラムをコーデックなしで指定すると、デフォルトのコーデックが使用されます。
