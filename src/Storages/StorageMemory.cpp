@@ -53,7 +53,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const SettingsUInt64 max_compress_block_size;
 }
 
 namespace MemorySetting
@@ -217,13 +217,6 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
-}
-
-size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
-{
-    /// `ReadFromMemoryStorageStep::makePipe` clamps the stream count by the number of blocks
-    /// and produces a single source for an empty table or a delayed global-subquery read.
-    return std::min(num_streams, std::max(1uz, data.get()->size()));
 }
 
 void StorageMemory::readImpl(
@@ -615,7 +608,8 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
     }
 
     TemporaryDataOnDiskSettings tmp_data_settings;
-    tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
+    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
     auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
     const auto & read_settings = backup_entries_collector.getReadSettings();
 

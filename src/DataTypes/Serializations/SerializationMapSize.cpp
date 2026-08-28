@@ -52,6 +52,17 @@ struct DeserializeBinaryBulkStateMapSizeWithBuckets : public ISerialization::Des
             new_state->bucket_size_states[bucket] = bucket_size_states[bucket] ? bucket_size_states[bucket]->clone() : nullptr;
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (buckets_info_state)
+            callback(buckets_info_state);
+        for (const auto & bucket_size_state : bucket_size_states)
+        {
+            if (bucket_size_state)
+                callback(bucket_size_state);
+        }
+    }
 };
 
 
@@ -148,8 +159,9 @@ namespace
 {
 
 /// Computes total map size per row by summing per-bucket sizes.
-/// Each bucket stores per-row array sizes; this function sums them element-wise
-/// to produce the final UInt64 size column.
+/// Each bucket stores array offsets that were converted to sizes by the nested
+/// `SerializationArrayOffsets`. This function sums them element-wise to produce
+/// the final UInt64 size column.
 void collectMapSizeFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & size_buckets, IColumn & size_column)
 {
     if (size_buckets.empty())
@@ -174,7 +186,8 @@ void collectMapSizeFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & size_
 }
 
 void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
-    IColumn & column,
+    ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -183,7 +196,7 @@ void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
     /// BASIC format has no bucketing, delegate directly.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
-        size_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+        size_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
         return;
     }
 
@@ -195,7 +208,7 @@ void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::Bucket);
         settings.path.back().bucket = 0;
-        size_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, map_size_with_buckets_state->bucket_size_states[0], cache);
+        size_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, map_size_with_buckets_state->bucket_size_states[0], cache);
         settings.path.pop_back();
     }
     /// Multiple buckets. Deserialize sizes from each bucket, then sum them per row.
@@ -206,13 +219,12 @@ void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            auto mutable_bucket = column.cloneEmpty();
-            size_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket, limit, settings, map_size_with_buckets_state->bucket_size_states[bucket], cache);
-            size_buckets[bucket] = std::move(mutable_bucket);
+            size_buckets[bucket] = column->cloneEmpty();
+            size_serialization->deserializeBinaryBulkWithMultipleStreams(size_buckets[bucket], rows_offset, limit, settings, map_size_with_buckets_state->bucket_size_states[bucket], cache);
             settings.path.pop_back();
         }
 
-        collectMapSizeFromBuckets(size_buckets, column);
+        collectMapSizeFromBuckets(size_buckets, *column->assumeMutable());
     }
 }
 

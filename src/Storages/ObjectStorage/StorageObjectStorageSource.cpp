@@ -121,6 +121,28 @@ namespace
         return result;
     }
 
+    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
+    /// object cannot be safely cached and caching must be skipped (fail-close).
+    ///
+    /// The object identifier already uses the full path, so files that share a base name in
+    /// different directories do not collide. For general (non-data-lake) remote objects the path
+    /// alone is not a stable identity - an object can be overwritten in place under the same path -
+    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
+    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
+    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
+    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
+    /// lakes whose object metadata does not carry an ETag).
+    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+    {
+        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+        if (is_data_lake)
+            return identifier;
+        const auto & metadata = object_info.getObjectMetadata();
+        if (!metadata || metadata->etag.empty())
+            return std::nullopt;
+        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
+    }
+
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
     {
         const auto * metadata_provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buffer);
@@ -334,9 +356,13 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    std::string result = joinPathUnderPrefix(
-        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
-        object_info.getPath());
+    auto path = object_info.getPath();
+    if (path.starts_with("/"))
+        path = path.substr(1);
+
+    std::string result = include_connection_info
+        ? fs::path(configuration.getDataSourceDescription()) / path
+        : fs::path(configuration.getNamespace()) / path;
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -351,28 +377,6 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
 
     return result;
-}
-
-/// The object identifier already uses the full path, so files that share a base name in
-/// different directories do not collide. For general (non-data-lake) remote objects the path
-/// alone is not a stable identity - an object can be overwritten in place under the same path -
-/// so the ETag is folded in as a content-version token; a query after an overwrite then misses
-/// rather than reusing stale row-group information. This only holds when the ETag is a strong
-/// content identifier: a weak token (e.g. HDFS's second-precision `(mtime, size)`) can stay the
-/// same across a same-second, same-size overwrite and would let the cache serve stale row-group
-/// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
-/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
-/// are immutable, so the path is a stable identity on its own and no ETag is required (this also
-/// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
-std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
-{
-    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
-    if (is_data_lake)
-        return identifier;
-    const auto & metadata = object_info.getObjectMetadata();
-    if (!metadata || !metadata->isEtagUsableAsCacheKey())
-        return std::nullopt;
-    return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -467,9 +471,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             {
                 for (const auto & path : paths.value())
                 {
-                    /// `path` is a `_path` column value, so it needs that column's formatter
-                    /// inverted rather than a plain relative().
-                    const auto relative_path = relativizePathUnderPrefix(configuration->getNamespace(), path);
+                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
                     const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
                     if (RE2::FullMatch(path_for_matching, matcher))
                         validated_paths.push_back(relative_path);
@@ -548,7 +550,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), key));
+                paths.push_back(fs::path(configuration->getNamespace()) / key);
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));

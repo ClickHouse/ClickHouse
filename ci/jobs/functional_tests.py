@@ -611,10 +611,7 @@ def main():
     elif is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --llvm-coverage"
-        # %c enables continuous mode: counters are memory-mapped into the file,
-        # so the profile is valid at every instant instead of being written only
-        # by an interruptible exit-time dump (see integration_test_job.py).
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%c%2m.profraw"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
         if is_per_test_coverage:
             runner_options += " --collect-per-test-coverage"
         else:
@@ -1557,53 +1554,6 @@ def main():
         )
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
 
-        # Name the profile after this job's own coverage artifact, so the
-        # aggregation can tell which shards arrived from the filenames alone.
-        # JOB_CONFIG has been through dump()/get() by the time a job body runs,
-        # so it is a plain dict here.
-        _provides = (info.job_config or {}).get("provides")
-        assert (
-            isinstance(_provides, list)
-            and len(_provides) == 1
-            and isinstance(_provides[0], str)
-            and _provides[0]
-        ), f"expected exactly one provided artifact name, got {_provides!r}"
-        merged_file = f"./{_provides[0]}.profdata"
-
-        # llvm-profdata truncates its -o target in place instead of replacing it,
-        # so a stale profile at the target name must be removed before deciding
-        # whether to merge at all - otherwise a skipped or failed merge would let
-        # the uploader publish the stale file as this shard's contribution.
-        if os.path.exists(merged_file):
-            print(f"Removing pre-existing {merged_file}")
-            os.unlink(merged_file)
-
-        # A missing test_result means the test stage never ran, and a runner-level
-        # ERROR means it terminated unexpectedly; either way the .profraw files
-        # understate coverage. FAIL is a completed run and still publishes.
-        if test_result is None or test_result.is_error():
-            _gate_reason = (
-                "the test stage did not run"
-                if test_result is None
-                else "the test runner terminated unexpectedly (runner-level ERROR)"
-            )
-            print(
-                f"ERROR: {_gate_reason}, so this shard's coverage is incomplete; "
-                f"publishing no profile"
-            )
-            profraw_files = []
-
-        # A zero-length .profraw is silently accepted by llvm-profdata at every
-        # --failure-mode, so it would drop one process's coverage with no signal.
-        # Treat it as an incomplete shard and publish no profile.
-        _empty_files = [f for f in profraw_files if os.path.getsize(f) == 0]
-        if _empty_files:
-            print(
-                f"ERROR: {len(_empty_files)} .profraw files are empty, so this shard's "
-                f"coverage is incomplete; publishing no profile: {', '.join(_empty_files)}"
-            )
-            profraw_files = []
-
         if profraw_files:
             print(f"Found {len(profraw_files)} .profraw files:")
             for f in profraw_files:
@@ -1626,22 +1576,34 @@ def main():
             else:
                 print(f"Using {llvm_profdata} to merge coverage files")
 
-                # --failure-mode=any makes the merge all-or-nothing: on any invalid
-                # input it exits non-zero and writes no file, so the shard is simply
-                # absent (and the aggregate job reports SKIPPED with the shard name)
-                # instead of contributing a silently short profile.
-                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=any {' '.join(profraw_files)} -o {merged_file} 2>&1"
+                # Merge all profraw files to current directory
+                joined_test_options = "_".join(test_options) if test_options else "all"
+                joined_test_options = joined_test_options.replace(" ", "_").replace("/", "_")
+                merged_file = f"./ft-{joined_test_options}.profdata"
+                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
                 merge_output = Shell.get_output(merge_cmd, verbose=True)
+
+                # Check for corrupted files in the output
+                corrupted_files = [
+                    line
+                    for line in merge_output.split("\n")
+                    if "invalid instrumentation profile" in line
+                    or "file header is corrupt" in line
+                ]
+                if corrupted_files:
+                    print(
+                        f"WARNING: Found {len(corrupted_files)} corrupted profraw files:"
+                    )
+                    for corrupted in corrupted_files:
+                        print(f"  {corrupted}")
 
                 # Attach profdata file to the result report so it is uploaded
                 # unconditionally (even when tests fail) and visible in the CI report.
                 if os.path.exists(merged_file):
                     R.files.append(merged_file)
-                else:
-                    print(f"ERROR: coverage merge produced no profile:\n{merge_output}")
 
         else:
-            print("No usable .profraw files found for coverage")
+            print("No .profraw files found for coverage")
 
     if reset_success:
         # coverage job ignores test failures

@@ -6,7 +6,6 @@
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
-#include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
@@ -110,8 +109,6 @@ void TextSearchQuery::initializeHash()
                 hash_state.update(required_substring);
                 hash_state.update(is_trivial);
                 hash_state.update(required_substring_is_prefix);
-                /// Without it `^lit` and `^lit$` would hash the same, as neither compiles a re2 pattern.
-                hash_state.update(pattern.getMatchKind());
             }
         }
     }
@@ -767,15 +764,15 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
 {
     VectorWithMemoryTracking<String> tokens;
     const String & raw = field.safeGet<String>();
-    const String processed = has_preprocessor ? preprocessor->processConstant(raw) : String{};
-    const String & pattern = has_preprocessor ? processed : raw;
-
-    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
-    /// granule holding matching rows. No tokens means "cannot prune", as for a pattern like `LIKE '%a%'`.
-    if (likePatternHasUnknownBackslashEscape(pattern))
-        return tokens;
-
-    tokenizer->stringLikeToTokens(pattern.data(), pattern.size(), tokens);
+    if (has_preprocessor)
+    {
+        const String processed = preprocessor->processConstant(raw);
+        tokenizer->stringLikeToTokens(processed.data(), processed.size(), tokens);
+    }
+    else
+    {
+        tokenizer->stringLikeToTokens(raw.data(), raw.size(), tokens);
+    }
     if (!has_postprocessor)
         return tokenizer->compactTokens(tokens);
 

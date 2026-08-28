@@ -292,20 +292,14 @@ struct RuntimeHashStatisticsContext
     /// needed). We start from `raw_hashes[child]` rather than the previously-xored value in
     /// `cache_keys[child]`, because under reorder the new parent's contribution can differ
     /// from the original tree's parent contribution that was stamped into `cache_keys`.
-    struct DerivedJoinCacheKeys
-    {
-        UInt64 right_key = 0;
-        UInt64 output_key = 0;
-    };
-
-    DerivedJoinCacheKeys deriveCacheKeysForNewJoin(
+    UInt64 deriveCacheKeysForNewJoin(
         const QueryPlan::Node * left_child_node,
         const QueryPlan::Node * right_child_node,
         const QueryPlan::Node & new_node,
         const JoinStepLogical & join_step)
     {
         if (cache_keys.empty())
-            return {};
+            return 0;
 
         UInt64 raw_left = getRawHash(left_child_node);
         UInt64 raw_right = getRawHash(right_child_node);
@@ -327,22 +321,7 @@ struct RuntimeHashStatisticsContext
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
-        /// Derive a key for the join output stats that takes the kind, strictness
-        /// and non-equi conditions into account, in addition to the equi conditions
-        /// covered by `calculateJoinStepCacheKeyContribution`.
-        SipHash output_hash;
-        output_hash.update(raw_new);
-        const auto & join_operator = join_step.getJoinOperator();
-        output_hash.update(join_operator.kind);
-        output_hash.update(join_operator.strictness);
-        for (const auto & condition : join_operator.expression)
-        {
-            if (condition.isFunction(JoinConditionOperator::Equals) || condition.isFunction(JoinConditionOperator::NullSafeEquals))
-                continue;
-            condition.getNode()->updateHash(output_hash);
-        }
-
-        return {right_key, output_hash.get64()};
+        return right_key;
     }
 };
 
@@ -790,32 +769,6 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
-/// `mergeInplace` binds a merged expression's inputs to the graph's outputs by `result_name`, and it
-/// installs only the expression's outputs. An output named like one of its own inputs therefore
-/// leaves a computed node over an input of that name, and resolving the name again applies the
-/// expression a second time, so such an expression must not be merged into a join graph.
-static bool hasOutputShadowingInputName(const ActionsDAG & dag)
-{
-    std::unordered_set<std::string_view> input_names;
-    for (const auto * input : dag.getInputs())
-        input_names.insert(input->result_name);
-
-    for (const auto * output : dag.getOutputs())
-    {
-        if (output->type != ActionsDAG::ActionType::INPUT && input_names.contains(output->result_name))
-            return true;
-    }
-
-    return false;
-}
-
-/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
-/// allows it and the expression cannot be applied twice by the name-based merge.
-static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
-{
-    return merge_expression_into_join && !hasOutputShadowingInputName(dag);
-}
-
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     auto * join_node = node;
@@ -829,8 +782,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             join_node = node->children[0];
             node = node->children[0];
         }
-        else if (canMergeExpressionIntoJoinGraph(
-                     expression_step->getExpression(), graph.context->optimization_settings.merge_expression_into_join))
+        else if (graph.context->optimization_settings.merge_expression_into_join)
         {
             join_node = node->children[0];
         }
@@ -941,8 +893,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
                 if (expr && !expr->getExpression().hasArrayJoin()
-                    && (isPassthroughActions(expr->getExpression())
-                        || canMergeExpressionIntoJoinGraph(expr->getExpression(), merge_expression_into_join)))
+                    && (isPassthroughActions(expr->getExpression()) || merge_expression_into_join))
                 {
                     check = check->children[0];
                 }
@@ -1512,12 +1463,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             auto & new_node = nodes.emplace_back();
 
-            auto join_cache_keys = query_graph_builder.context->statistics_context
+            UInt64 right_table_key = query_graph_builder.context->statistics_context
                 .deriveCacheKeysForNewJoin(left_child_node, right_child_node, new_node, *join_step);
-            if (join_cache_keys.right_key)
-                join_step->setRightHashTableCacheKey(join_cache_keys.right_key);
-            if (join_cache_keys.output_key)
-                join_step->setJoinOutputCacheKey(join_cache_keys.output_key);
+            if (right_table_key)
+                join_step->setRightHashTableCacheKey(right_table_key);
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
@@ -1589,8 +1538,7 @@ static void collectJoinGraphRelationHeaders(
     const auto * effective = node;
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
         expression_step && effective->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
-        && (isPassthroughActions(expression_step->getExpression())
-            || canMergeExpressionIntoJoinGraph(expression_step->getExpression(), merge_expression_into_join)))
+        && (isPassthroughActions(expression_step->getExpression()) || merge_expression_into_join))
     {
         effective = effective->children[0];
     }

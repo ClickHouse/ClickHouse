@@ -182,9 +182,8 @@ private:
 class ThreadStatus : public boost::noncopyable
 {
 public:
-    static constexpr UInt64 NO_OS_THREAD = 0;
-
-    const UInt64 thread_id = NO_OS_THREAD;
+    /// Linux's PID (or TGID) (the same id is shown by ps util)
+    const UInt64 thread_id = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -268,17 +267,8 @@ protected:
 
     LoggerPtr log = nullptr;
 
-private:
-    explicit ThreadStatus(UInt64 thread_id_);
-
-    /// Whether this ThreadStatus owns a dedicated OS thread (as opposed to a fiber).
-    bool boundToOSThread() const { return thread_id != NO_OS_THREAD; }
-
 public:
-    struct NoOSThreadTag {};
-
-    ThreadStatus();
-    explicit ThreadStatus(NoOSThreadTag);
+    explicit ThreadStatus();
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
@@ -332,7 +322,6 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
-    void publishUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 

@@ -73,15 +73,16 @@ public:
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
     static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings);
-    static bool deserializeOffsetsBinaryBulk(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
-    static size_t deserializeOffsetsBinaryBulkAndGetNestedLimit(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
+    static bool deserializeOffsetsBinaryBulk(ColumnPtr & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
+    static std::pair<size_t, size_t> deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(ColumnPtr & offsets_column, size_t offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
 
     static void readArraySafe(IColumn & column, std::function<void()> && read_func);
 
