@@ -3401,11 +3401,15 @@ try
         /// In either case, we need to return an error.
         if (is_cancelled || !global_context->isServerCompletelyStarted())
             throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
+        /// The config may have been reloaded since startup, so recompute the listener
+        /// configuration from the current config instead of the startup snapshot.
+        ServerSettings current_server_settings;
+        current_server_settings.loadSettingsFromConfig(config());
         createServers(
             config(),
-            server_settings,
-            listen_hosts,
-            listen_try,
+            current_server_settings,
+            getListenHosts(config()),
+            getListenTry(config(), current_server_settings),
             server_pool,
             *async_metrics,
             servers,

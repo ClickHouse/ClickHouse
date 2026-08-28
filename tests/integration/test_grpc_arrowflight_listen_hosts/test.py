@@ -212,6 +212,46 @@ EOF""",
         client.close()
 
 
+def test_start_listen_uses_the_reloaded_listen_hosts():
+    """`SYSTEM START LISTEN` must recreate the listener from the current config rather than from
+    the startup snapshot: after a reload has replaced the specific `listen_host` with a wildcard,
+    a stop/start cycle must come back with the wildcard listener, not the original specific
+    address."""
+    # The same config as the reload test writes, so this test does not depend on it having run.
+    reload_node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/reload_hosts.xml <<'EOF'
+<clickhouse>
+    <listen_host>reload_node</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+
+    <listen_try>1</listen_try>
+
+    <grpc_port>9200</grpc_port>
+    <arrowflight_port>8889</arrowflight_port>
+</clickhouse>
+EOF""",
+        ]
+    )
+    reload_node.query("SYSTEM RELOAD CONFIG")
+    wait_for_listeners(
+        reload_node, 9200, is_single_wildcard, "a single wildcard listener"
+    )
+
+    # Stopping destroys the listener - `stopServers` erases the fully stopped server - so starting
+    # recreates it from scratch and must pick up the wildcard `listen_host` of the reloaded config
+    # instead of the specific address of the startup snapshot.
+    reload_node.query("SYSTEM STOP LISTEN GRPC")
+    wait_for_listeners(reload_node, 9200, is_closed, "closed")
+
+    reload_node.query("SYSTEM START LISTEN GRPC")
+    wait_for_listeners(
+        reload_node, 9200, is_single_wildcard, "a single wildcard listener"
+    )
+
+
 def test_all_unavailable_listen_hosts_prevent_startup():
     """With no listener left after `listen_try` drops every gRPC listener, the server must not
     report readiness."""
