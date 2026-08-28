@@ -63,6 +63,8 @@ SELECT normalizedQueryHashUnorderedOrNull('SELECT ' || repeat('1+', 199) || '1')
 
 -- sub-expressions the parser keeps outside the AST children are left in the order they were written
 SELECT normalizedQueryHashUnordered('SELECT * APPLY (x -> plus(x, 1)) FROM t') = normalizedQueryHashUnordered('SELECT * APPLY (x -> plus(1, x)) FROM t');
+-- APPLY parameters are literals, so they collapse through the erasure rather than through the sort
+SELECT normalizedQueryHashUnordered('SELECT * APPLY (quantile(0.9, 0.95)) FROM t') = normalizedQueryHashUnordered('SELECT * APPLY (quantile(0.95, 0.9)) FROM t');
 
 -- over a column, not just constants
 SELECT uniqExact(normalizedQueryHashUnorderedOrNull(q))
