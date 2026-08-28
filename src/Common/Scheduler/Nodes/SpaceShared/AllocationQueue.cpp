@@ -131,6 +131,15 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
     allocation.memory_growth_suspension_attempted = true;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
+        /// Once admitted work blocks on its own growth it is no longer a productive beneficiary.
+        /// Notify every stacked limit before recording the ending epoch here, mirroring the way
+        /// approval epochs are recorded only after all limits observe a new approval.
+        if (allocation.last_increase_approval_epoch > allocation.last_productivity_end_epoch)
+        {
+            endProductiveMembership(allocation);
+            allocation.last_productivity_end_epoch = allocation.last_increase_approval_epoch;
+        }
+
         /// Protection is externally injected suction priority, not permission to bypass fitting
         /// work. Remember it, then hide the blocked growth for one complete policy-scoped search.
         /// AllocationLimit consumes the decision only after every currently visible alternative
@@ -353,6 +362,8 @@ void AllocationQueue::approveDecrease()
     apply(*decrease);
     allocation.allocated -= decrease->size;
     allocation.fair_key -= decrease->size;
+    if (allocation.allocated == 0)
+        allocation.last_productivity_end_epoch = allocation.last_increase_approval_epoch;
 
     // Reinsert into the appropriate data structures unless this is a removal
     if (!decrease->removing_allocation)

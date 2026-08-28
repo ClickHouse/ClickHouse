@@ -95,6 +95,14 @@ public:
     /// Composite nodes forward this to their children; queues perform the reset on activation.
     virtual void retrySuspendedIncreases() = 0;
 
+    /// Ends productive-beneficiary membership when an admitted allocation itself becomes blocked.
+    /// The notification walks every stacked constraint before the leaf records the ending epoch.
+    virtual void endProductiveMembership(ResourceAllocation & allocation)
+    {
+        if (parent)
+            static_cast<ISpaceSharedNode *>(parent)->endProductiveMembership(allocation);
+    }
+
     /// Reports whether this subtree contains a parked increase. Precedence policies use this as a
     /// barrier: hiding a high-precedence request for reclaim must not expose lower-precedence work.
     virtual bool hasSuspendedIncrease() const { return false; }

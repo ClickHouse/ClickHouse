@@ -27,6 +27,7 @@ public:
     void approveIncrease() override;
     void approveDecrease() override;
     void retrySuspendedIncreases() override;
+    void endProductiveMembership(ResourceAllocation & allocation) override;
     bool hasSuspendedIncrease() const override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
     void updateMinMaxAllocated(ResourceCost new_value) override;

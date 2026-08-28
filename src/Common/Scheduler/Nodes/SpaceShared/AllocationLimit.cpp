@@ -93,7 +93,8 @@ void AllocationLimit::approveIncrease()
     if (increase == suspended_growth)
         clearMemoryGrowthSuspension();
     else if (suspended_growth
-        && increase->allocation.last_increase_approval_epoch <= memory_growth_suspension_start_epoch)
+        && (increase->allocation.last_increase_approval_epoch <= memory_growth_suspension_start_epoch
+            || increase->allocation.last_increase_approval_epoch <= increase->allocation.last_productivity_end_epoch))
     {
         /// This allocation made its first approved progress during the current suspension.
         /// The approval epoch is written to the allocation only at the leaf, after every stacked
@@ -123,7 +124,8 @@ void AllocationLimit::approveDecrease()
         && &decreased_allocation != &suspended_growth->allocation
         && decrease->size > 0
         && decrease->size == decreased_allocation.allocated
-        && decreased_allocation.last_increase_approval_epoch > memory_growth_suspension_start_epoch;
+        && decreased_allocation.last_increase_approval_epoch > memory_growth_suspension_start_epoch
+        && decreased_allocation.last_increase_approval_epoch > decreased_allocation.last_productivity_end_epoch;
 
     // Check if allocation being killed released all its resources
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
@@ -343,6 +345,21 @@ void AllocationLimit::retrySuspendedIncreases()
 {
     if (child)
         child->retrySuspendedIncreases();
+}
+
+void AllocationLimit::endProductiveMembership(ResourceAllocation & allocation)
+{
+    if (suspended_growth && &allocation != &suspended_growth->allocation
+        && allocation.last_increase_approval_epoch > memory_growth_suspension_start_epoch
+        && allocation.last_increase_approval_epoch > allocation.last_productivity_end_epoch)
+    {
+        chassert(memory_growth_suspension_beneficiaries > 0);
+        --memory_growth_suspension_beneficiaries;
+    }
+
+    /// A beneficiary may be shared by stacked limits. Forward before the queue records the ending
+    /// epoch so every active constraint independently observes the same transition.
+    ISpaceSharedNode::endProductiveMembership(allocation);
 }
 
 bool AllocationLimit::hasSuspendedIncrease() const

@@ -80,6 +80,7 @@ private:
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
     UInt64 last_increase_approval_epoch = 0; /// Last approved progress event; scheduler-thread only.
+    UInt64 last_productivity_end_epoch = 0; /// Last approval whose productive membership has ended.
     /// A hard-limit constraint may temporarily park a running allocation's pending growth so another
     /// request can be considered. The allocation can still decrease or be removed while growth is parked.
     bool memory_growth_suspended = false; /// Scheduler-thread only.
