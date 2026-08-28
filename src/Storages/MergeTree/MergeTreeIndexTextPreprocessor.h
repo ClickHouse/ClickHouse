@@ -32,7 +32,7 @@ public:
     bool isLowerOrUpper() const { return is_lower_or_upper; }
 
     /// The preprocessor can turn a non-NULL source value into NULL, e.g. `nullIf(str, '')`.
-    bool canIntroduceNull() const { return introduces_null; }
+    bool producesNull() const { return produces_null; }
 
     /// The preprocessor strips the source nullability, e.g. `ifNull(str, '')`.
     bool removesNull() const { return removes_null; }
@@ -41,8 +41,7 @@ private:
     /// True only when the preprocessor is exactly lower/lowerUTF8/upper/upperUTF8 applied
     /// directly to the index column (no nested transformations).
     bool is_lower_or_upper = false;
-    /// See canIntroduceNull and removesNull.
-    bool introduces_null = false;
+    bool produces_null = false;
     bool removes_null = false;
     /// The name of the column on which the index is defined.
     String index_column_name;

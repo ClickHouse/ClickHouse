@@ -124,8 +124,7 @@ ActionsDAG createActionsDAGForPreprocessor(
     return actions_dag;
 }
 
-/// `CAST` and `toNullable` widen a value to Nullable but never make a non-NULL value NULL, so the
-/// effective nullability of an expression is the one underneath them.
+/// `CAST` and `toNullable` widen to Nullable but never nullify a value, so look underneath them.
 bool isWideningWrapper(const ActionsDAG::Node & node)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS)
@@ -138,9 +137,8 @@ bool isWideningWrapper(const ActionsDAG::Node & node)
     return name == "CAST" || name == "_CAST" || name == "toNullable";
 }
 
-/// A function relying on the default Nullable handling is NULL exactly where an argument is NULL, so it
-/// only propagates nullability (`lower`, `concat`, ...). Functions that opt out (`nullIf`, `ifNull`, ...)
-/// manage NULLs themselves and may synthesize or remove them.
+/// With the default Nullable handling a function is NULL exactly where an argument is; the ones that opt
+/// out (`nullIf`, `ifNull`, ...) manage NULLs themselves and may synthesize or remove them.
 bool isNullPropagating(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
@@ -171,9 +169,7 @@ bool expressionCanSynthesizeNull(const ActionsDAG::Node & node)
 }
 
 /// True when the expression maps every source-NULL row to a non-NULL value, e.g. `ifNull(str, '')`.
-/// Mirror of expressionCanSynthesizeNull with the aggregation inverted: a null-propagating function
-/// removes the NULL only if all of its arguments do, so `lower(ifNull(str, ''))` does but
-/// `lower(toNullable(str))` does not.
+/// A null-propagating function removes the NULL only if all of its arguments do.
 bool expressionRemovesSourceNull(const ActionsDAG::Node & node)
 {
     const auto & effective = peelWideningWrappers(node);
@@ -226,9 +222,8 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
             }
         }
 
-        /// A validated preprocessor has exactly one output. actions_for_constant runs on a plain
-        /// non-nullable String, so a NULL there can only come from the expression itself.
-        introduces_null = expressionCanSynthesizeNull(*actions_for_constant.getActionsDAG().getOutputs().front());
+        /// actions_for_constant runs on a plain non-nullable String, so a NULL can only come from the expression.
+        produces_null = expressionCanSynthesizeNull(*actions_for_constant.getActionsDAG().getOutputs().front());
 
         /// original_actions runs on the real source column, so its output is the effective haystack.
         if (isNullableOrLowCardinalityNullable(index_column_type))
