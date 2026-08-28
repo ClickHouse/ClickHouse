@@ -1072,7 +1072,7 @@ Example index definition:
 ```sql title="Query"
 CREATE TABLE events
 (
-    data JSON,
+    data JSON(level String),
     INDEX idx JSONAllPaths(data) TYPE text(tokenizer = array)
 )
 ENGINE = MergeTree

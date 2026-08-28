@@ -81,4 +81,9 @@ SELECT arraySort(groupArray(id)) FROM json_path_values_per_part_config WHERE dat
 SETTINGS force_data_skipping_indices = 'idx', query_plan_direct_read_from_text_index = 1;
 
 SYSTEM START MERGES json_path_values_per_part_config;
+OPTIMIZE TABLE json_path_values_per_part_config FINAL;
+
+SELECT arraySort(groupArray(id)) FROM json_path_values_per_part_config WHERE data.value = true
+SETTINGS force_data_skipping_indices = 'idx', query_plan_direct_read_from_text_index = 1;
+
 DROP TABLE json_path_values_per_part_config;
