@@ -372,7 +372,7 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
 
     if (!conflict_rows.empty())
     {
-        const auto conflict_action = (*storage().getSettings())[MergeTreeSetting::unique_key_conflict_action];
+        const auto conflict_action = (*storage().getSettings())[MergeTreeSetting::unique_key_conflict_action].value;
         switch (conflict_action)
         {
         case UniqueKeyConflictAction::Abort:
