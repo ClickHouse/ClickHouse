@@ -3023,6 +3023,9 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 
 void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &)
 {
+    /// A restored part may come from a table with other merge semantics, so FINAL must not see it as collapsed.
+    const bool reset_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+
     for (auto part : parts)
     {
         /// It's important to create it outside of lock scope because
@@ -3030,6 +3033,8 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         {
             auto lock = lockParts();
+            if (reset_level)
+                part->info.level = 0;
             auto block_holder = fillNewPartName(part, lock);
             renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(lock);
