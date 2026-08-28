@@ -155,7 +155,7 @@ The default database doesn't persist data on disk, so we need to create another 
 ```
 
 And now we're going to create a table called `trips` whose schema will be derived from the structure of the data in the TSV files.
-We'll use the `REPLACE` clause to cast the money-related columns to `Float64`, and the [`transform`](/sql-reference/functions/other-functions#transform) function to turn the numeric `pickup_borocode` column into a human-readable borough name:
+We'll use the `REPLACE` clause to cast the money-related columns to `Float64`, and the [`transform`](/reference/functions/regular-functions/other-functions#transform) function to turn the numeric `pickup_borocode` column into a human-readable borough name:
 
 ```python
 %%sql

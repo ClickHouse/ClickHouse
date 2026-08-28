@@ -32,7 +32,7 @@ BYOC 배포에서는 **Network Load Balancers (NLBs)**를 사용해 ClickHouse �
 * 일반적으로 고객 관리형 VPC를 사용하는 경우 기본적으로 활성화됩니다.
 * ClickHouse 관리형 전용 VPC를 사용하는 경우 기본적으로 비활성화됩니다.
 
-요구 사항에 따라 어떤 엔드포인트를 활성화할지 조정하려면 **ClickHouse Cloud Support**와 협의할 수 있습니다.
+ClickHouse Cloud 콘솔에서 BYOC 인프라용 프라이빗 로드 밸런서를 직접 활성화할 수 있습니다. 다른 엔드포인트 조정(예: 공용 로드 밸런서 제거)은 **ClickHouse Cloud Support**와 협의하십시오.
 
 <div id="private-load-balancer-security-group">
   ### AWS용 프라이빗 로드 밸런서 보안 그룹
@@ -53,10 +53,10 @@ BYOC 배포에서 프라이빗 로드 밸런서를 사용하는 경우, 의도�
 </Note>
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink 또는 Private Service Connect
+  ## PrivateLink, Private Service Connect 또는 Private Link
 </div>
 
-최대한의 네트워크 격리와 보안을 위해 BYOC 배포에서는 **AWS PrivateLink** 또는 **GCP Private Service Connect**를 사용할 수 있습니다. 이러한 옵션을 사용하면 VPC peering 없이, 엔드포인트를 퍼블릭 인터넷에 노출하지 않고도 애플리케이션을 ClickHouse Cloud 서비스에 비공개로 연결할 수 있습니다.
+최대한의 네트워크 격리와 보안을 위해 BYOC 배포에서는 **AWS PrivateLink**, **GCP Private Service Connect** 또는 **Azure Private Link**를 사용할 수 있습니다. 이러한 옵션을 사용하면 VPC/VNet peering 없이, 엔드포인트를 공용 인터넷에 노출하지 않고도 애플리케이션을 ClickHouse Cloud 서비스에 비공개로 연결할 수 있습니다.
 
 단계별 설정 방법은 [Private Networking 설정 가이드](/ko/products/bring-your-own-cloud/onboarding/network)를 참조하십시오.
 
