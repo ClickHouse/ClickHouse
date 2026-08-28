@@ -246,6 +246,8 @@ public:
     void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
@@ -301,6 +303,8 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
