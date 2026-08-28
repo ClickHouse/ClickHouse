@@ -214,7 +214,7 @@ Resource ID частной конечной точки доступен в Azure
 
 <Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Просмотр частной конечной точки" border />
 
-В разделе properties найдите поле `id` и скопируйте его значение:
+Скопируйте поле `id` верхнего уровня (Resource ID частной конечной точки в формате `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — не используйте вложенные поля `id` внутри объекта `properties`:
 
 **Предпочтительный способ: использование Resource ID**
 
