@@ -19,13 +19,16 @@ LOGICAL_ADMONITION_RE = re.compile(
 BLOCK_COMMENT_PATTERN = r"/\*[\s\S]*?\*/"
 CPP_LINE_COMMENT_PATTERN = r"//(?:\\\r?\n|[^\r\n])*(?:\r?\n|$)"
 SQL_LINE_COMMENT_PATTERN = r"--[^\r\n]*(?:\r?\n|$)"
+SQL_TRIVIA_PATTERN = rf"(?:\s|{BLOCK_COMMENT_PATTERN}|{SQL_LINE_COMMENT_PATTERN})*"
 CPP_TOKEN_SEPARATOR_RE = re.compile(
     rf"(?:\s|{BLOCK_COMMENT_PATTERN}|{CPP_LINE_COMMENT_PATTERN})*"
 )
 SQL_LITERAL_SEPARATOR_RE = re.compile(
-    rf"(?:\s|{BLOCK_COMMENT_PATTERN}|{SQL_LINE_COMMENT_PATTERN})*"
+    rf"{SQL_TRIVIA_PATTERN}"
+    rf"(?:\){SQL_TRIVIA_PATTERN})*"
     r"\|\|"
-    rf"(?:\s|{BLOCK_COMMENT_PATTERN}|{SQL_LINE_COMMENT_PATTERN})*"
+    rf"{SQL_TRIVIA_PATTERN}"
+    rf"(?:\({SQL_TRIVIA_PATTERN})*"
 )
 CPP_TOKEN_RE = re.compile(
     rf"(?P<line_comment>{CPP_LINE_COMMENT_PATTERN})"

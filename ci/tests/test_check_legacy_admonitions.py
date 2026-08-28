@@ -59,6 +59,15 @@ class TestLegacyAdmonitionGuard(unittest.TestCase):
                 Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
                 "SELECT 'Introduction\\n' || ':::note\\nBody\\n:::';\n",
             ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT (':::note') || ('\\nBody\\n:::');\n",
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT (( ':::note' /* inner */ )) /* outer */ "
+                "|| /* outer */ (( /* inner */ '\\nBody\\n:::' ));\n",
+            ),
         ]
         for relative_path, content in fixtures:
             with self.subTest(relative_path=relative_path), self.temporary_repo() as root:
@@ -95,6 +104,14 @@ class TestLegacyAdmonitionGuard(unittest.TestCase):
             (
                 Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
                 "SELECT 'Use :::note\\nBody\\n::: as legacy syntax.';\n",
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT (':::note') || ('suffix');\n",
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT ('Use :::note\\nBody\\n::: as legacy syntax.');\n",
             ),
         ]
         for relative_path, content in fixtures:
