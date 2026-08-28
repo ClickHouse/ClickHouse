@@ -28,7 +28,6 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
-#include <algorithm>
 #include <mutex>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
@@ -2866,17 +2865,16 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     UInt8 max_def = column_info.levels.back().def;
     UInt8 max_rep = column_info.levels.back().rep;
 
-    decodeRepOrDefLevels(rep_encoding, max_rep, page.num_values, std::span(encoded_rep, encoded_rep_size), page.rep);
-
     /// A repeated column's V1 data page header has no row count, so the check above had nothing to
     /// compare. When an offset index is present, pages begin on row boundaries, so the page's row
     /// count is its number of zero repetition levels.
-    if (max_rep > 0 && !num_rows_in_page.has_value() && end_row_idx.has_value())
-    {
-        size_t rows_in_page = size_t(std::count(page.rep.begin(), page.rep.end(), 0));
-        if (rows_in_page != *end_row_idx - next_row_idx)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Number of rows in page doesn't match offset index: {} != {}", rows_in_page, *end_row_idx - next_row_idx);
-    }
+    const bool check_row_count = max_rep > 0 && !num_rows_in_page.has_value() && end_row_idx.has_value();
+    size_t rows_in_page = 0;
+
+    decodeRepOrDefLevels(rep_encoding, max_rep, page.num_values, std::span(encoded_rep, encoded_rep_size), page.rep, check_row_count ? &rows_in_page : nullptr);
+
+    if (check_row_count && rows_in_page != *end_row_idx - next_row_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Number of rows in page doesn't match offset index: {} != {}", rows_in_page, *end_row_idx - next_row_idx);
 
     /// Don't decode def levels in the common case of non-array column that's declared nullable but
     /// contains no nulls.

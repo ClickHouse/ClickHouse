@@ -86,6 +86,13 @@ struct BitPackedRLEDecoder : public PageDecoder
         out.resize(start + num_values);
         skipOrDecode<false>(num_values, &out[start]);
     }
+    /// Same, but adds the number of zero values to num_zeros.
+    void decodeArrayCountingZeros(size_t num_values, PaddedPODArray<T> & out, size_t & num_zeros)
+    {
+        size_t start = out.size();
+        out.resize(start + num_values);
+        skipOrDecode<false, /*count_zeros=*/ true>(num_values, &out[start], &num_zeros);
+    }
 
     void startRun()
     {
@@ -120,16 +127,21 @@ struct BitPackedRLEDecoder : public PageDecoder
         }
     }
 
-    template <bool skip>
-    void skipOrDecode(size_t num_values, T * out)
+    template <bool skip, bool count_zeros = false>
+    void skipOrDecode(size_t num_values, T * out, size_t * num_zeros = nullptr)
     {
         if (bit_width == 0)
         {
             /// bit_width == 0 means all values are 0.
             if constexpr (!skip)
                 memset(out, 0, num_values * sizeof(T));
+            if constexpr (count_zeros)
+                *num_zeros += num_values;
             return;
         }
+        /// Accumulate in a local: a store through num_zeros may alias `out`, which would cost a
+        /// load and a store per value in the bit-packed loop below.
+        [[maybe_unused]] size_t zeros_acc = 0;
 
         const T value_mask = T((1ul << bit_width) - 1);
         /// TODO [parquet]: May make sense to have specialized version of this loop for bit_width=1,
@@ -155,6 +167,11 @@ struct BitPackedRLEDecoder : public PageDecoder
                     std::fill(out, out + n, v);
                     out += n;
                 }
+                if constexpr (count_zeros)
+                {
+                    if (val == 0)
+                        zeros_acc += n;
+                }
             }
             else
             {
@@ -171,6 +188,8 @@ struct BitPackedRLEDecoder : public PageDecoder
                         *out = static_cast<T>(x);
                         ++out;
                         bit_idx += bit_width;
+                        if constexpr (count_zeros)
+                            zeros_acc += x == 0;
                     }
                 }
                 else
@@ -182,6 +201,8 @@ struct BitPackedRLEDecoder : public PageDecoder
                     data += run_bytes;
             }
         }
+        if constexpr (count_zeros)
+            *num_zeros += zeros_acc;
     }
 };
 
@@ -1133,15 +1154,26 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding {} for type {}", thriftToString(encoding), thriftToString(physical_type));
 }
 
-void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out)
+void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out, size_t * out_num_zeros)
 {
     if (max == 0)
+    {
+        /// All levels are implicitly 0, and `out` is left empty.
+        if (out_num_zeros)
+            *out_num_zeros += num_values;
         return;
+    }
     switch (encoding)
     {
         case parq::Encoding::RLE:
-            BitPackedRLEDecoder<UInt8>(data, size_t(max) + 1, /*has_header_byte=*/ false).decodeArray(num_values, out);
+        {
+            BitPackedRLEDecoder<UInt8> decoder(data, size_t(max) + 1, /*has_header_byte=*/ false);
+            if (out_num_zeros)
+                decoder.decodeArrayCountingZeros(num_values, out, *out_num_zeros);
+            else
+                decoder.decodeArray(num_values, out);
             break;
+        }
         case parq::Encoding::BIT_PACKED:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BIT_PACKED levels not implemented");
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected repetition/definition levels encoding: {}", thriftToString(encoding));
