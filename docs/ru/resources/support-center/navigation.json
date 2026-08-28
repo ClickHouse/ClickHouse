@@ -1,11 +1,11 @@
 {
   "groups": [
     {
-      "group": "Knowledgebase",
+      "group": "База знаний",
       "pages": [
         "ru/resources/support-center/home",
         {
-          "group": "Performance & optimization",
+          "group": "Производительность & оптимизация",
           "pages": [
             "ru/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "ru/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -40,7 +40,7 @@
           ]
         },
         {
-          "group": "Data import & export",
+          "group": "Импорт & экспорт данных",
           "pages": [
             "ru/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "ru/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -60,7 +60,7 @@
           ]
         },
         {
-          "group": "Configuration & settings",
+          "group": "Конфигурация & настройки",
           "pages": [
             "ru/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "ru/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
@@ -71,7 +71,7 @@
           ]
         },
         {
-          "group": "Integrations & client libraries",
+          "group": "Интеграции & клиентские библиотеки",
           "pages": [
             "ru/resources/support-center/knowledge-base/integrations/node-js-example",
             "ru/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "group": "Troubleshooting & errors",
+          "group": "Устранение неполадок & ошибки",
           "pages": [
             "ru/resources/support-center/troubleshooting/index",
             "ru/resources/support-center/troubleshooting/troubleshooting",
@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "Tables & schema",
+          "group": "Таблицы & схема",
           "pages": [
             "ru/resources/support-center/knowledge-base/tables-schema/add-column",
             "ru/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "Queries & SQL",
+          "group": "Запросы & SQL",
           "pages": [
             "ru/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "ru/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -126,7 +126,7 @@
           ]
         },
         {
-          "group": "Materialized views & projections",
+          "group": "Materialized views & проекции",
           "pages": [
             "ru/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ru/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "group": "Monitoring & debugging",
+          "group": "Мониторинг & отладка",
           "pages": [
             "ru/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "ru/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -150,7 +150,7 @@
           ]
         },
         {
-          "group": "Security & access control",
+          "group": "Безопасность & управление доступом",
           "pages": [
             "ru/resources/support-center/knowledge-base/security/check-users-roles",
             "ru/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -161,7 +161,7 @@
           ]
         },
         {
-          "group": "Data management",
+          "group": "Управление данными",
           "pages": [
             "ru/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
             "ru/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
@@ -173,22 +173,23 @@
           ]
         },
         {
-          "group": "Setup & installation",
+          "group": "Настройка & установка",
           "pages": [
             "ru/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "ru/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
             "ru/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "ru/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "ru/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "ru/resources/support-center/knowledge-base/setup-installation/production"
+            "ru/resources/support-center/knowledge-base/setup-installation/production",
+            "ru/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
           ]
         },
         {
-          "group": "General & FAQs",
+          "group": "Общее & FAQ",
           "pages": [
             "ru/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "General",
+              "group": "Общее",
               "pages": [
                 "ru/resources/support-center/knowledge-base/general-faqs/index",
                 "ru/resources/support-center/knowledge-base/general-faqs/columnar-database",
@@ -210,7 +211,7 @@
               ]
             },
             {
-              "group": "Use cases",
+              "group": "Сценарии использования",
               "pages": [
                 "ru/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "ru/resources/support-center/knowledge-base/general-faqs/key-value",
@@ -220,7 +221,7 @@
               ]
             },
             {
-              "group": "Integration",
+              "group": "Интеграция",
               "pages": [
                 "ru/resources/support-center/knowledge-base/integrations/index",
                 "ru/resources/support-center/knowledge-base/data-import-export/json-import",
@@ -240,7 +241,7 @@
           ]
         },
         {
-          "group": "Tips & tricks",
+          "group": "Советы & рекомендации",
           "pages": [
             "ru/resources/support-center/tips-and-tricks/community-wisdom",
             "ru/resources/support-center/tips-and-tricks/cost-optimization",
@@ -255,5 +256,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "Support center"
+  "item": "Центр поддержки"
 }

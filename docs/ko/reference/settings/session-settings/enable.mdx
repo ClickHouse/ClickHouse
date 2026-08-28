@@ -14,6 +14,18 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
+<div id="enable_adaptive_aggregator">
+  ## enable_adaptive_aggregator
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`adaptive_aggregator_freeze_threshold`개의 키에 도달하면 각 스레드의 로컬 해시 테이블을 고정하는 적응형 `GROUP BY` 집계를 활성화하는 새로운 설정입니다. 이에 따라 빈번한 키는 작은 로컬 테이블에서 계속 집계되고, 드문 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 따라서 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다."}]}]} />
+
+적응형 `GROUP BY` 알고리즘을 활성화합니다. 각 스레드는 `adaptive_aggregator_freeze_threshold`개의 키에 도달할 때까지 로컬 해시 테이블에서 집계한 후 테이블을 고정합니다. 그러면 이미 확인된(빈번한) 키의 행은 해당 테이블에서 계속 갱신되고, 새로운(드문) 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 빈번한 키는 캐시에 상주하는 작은 테이블에 유지되며, 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다.
+
+외부 집계 설정(`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`)도 적용됩니다. 임계값을 초과하면 백로그를 공유 테이블로 조기에 비우며, 그래도 임계값 아래로 내려가지 않으면 일반 외부 집계를 통해 공유 테이블을 디스크에 스필합니다.
+
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
 </div>
@@ -47,6 +59,19 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 설정된 경우, 파티션 키 표현식이 deterministic이고 파티션 키 표현식에 사용된 모든 컬럼이 프라이머리 키에 포함되면 ClickHouse가 이 최적화를 자동으로 활성화합니다.
 이 자동 판별을 통해 동일한 기본 키 값을 가진 행은 항상 동일한 파티션에 속하게 되므로, 파티션 간 머지를 피해도 안전합니다.
+
+<div id="enable_cascades_optimizer">
+  ## enable_cascades_optimizer
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "새로운 실험적 설정입니다."}]}]} />
+
+분산 쿼리 계획에 Cascades 비용 기반 최적화기를 활성화합니다.
+`make_distributed_plan = 1`과 함께 설정한 경우에만 적용됩니다. 이 설정만으로는 단일 노드 쿼리 계획이 변경되지 않습니다.
 
 <div id="enable_early_constant_folding">
   ## enable_early_constant_folding
