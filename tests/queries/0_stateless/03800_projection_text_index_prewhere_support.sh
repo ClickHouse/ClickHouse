@@ -36,7 +36,7 @@ $MY_CLICKHOUSE_CLIENT --query "
     (7, 70, 'abc', 'xyz'),
     (8, 80, '', ''),
     (9, 90, 'id123 token456', 'v100 gpu t4'),
-    (10, 100, 'click-house,fast/io;merge.tree', 'index+optimize-query'),
+    (10, 100, 'click-mouse,fast/io;merge.tree', 'index+optimize-query'),
     (11, 110, 'clickhouse clickhouse clickhouse', 'fastio fastio'),
     (12, 120, 'none here', 'login logout user'),
     (13, 130, 'user login event', 'user logout event'),
