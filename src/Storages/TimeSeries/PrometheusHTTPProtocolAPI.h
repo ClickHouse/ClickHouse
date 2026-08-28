@@ -69,12 +69,15 @@ public:
         Int64 limit_per_metric,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get all label names (/api/v1/labels)
+    /// Get label names (/api/v1/labels): the sorted unique label names of the series matched by the `match[]`
+    /// selectors (or of all series if no selectors are given), capped by `limit` (0 means no limit).
     void getLabels(
         WriteBuffer & response,
-        const String & match_param,
+        const Strings & match_params,
         const String & start_param,
-        const String & end_param);
+        const String & end_param,
+        UInt64 limit,
+        QueryFinishCallback query_finish_callback = {});
 
     /// Get values for a specific label (/api/v1/label/<name>/values)
     void getLabelValues(
@@ -85,6 +88,11 @@ public:
         const String & end_param);
 
 private:
+    /// Parses the `match[]` instant selectors and the optional `start` and `end` bounds of the metadata endpoints
+    /// and makes a UNION ALL query selecting the ids (`series_id`) of the series matched by any of the selectors,
+    /// with their tags registered for timeSeriesIdToTags.
+    ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
+
     /// Writes the result of a prometheus query as a JSON.
     void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
 
@@ -99,12 +107,6 @@ private:
     void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
-
-    /// Write JSON response for labels
-    void writeLabelsResponse(WriteBuffer & response, const Block & result_block);
-
-    /// Write JSON response for label values
-    void writeLabelValuesResponse(WriteBuffer & response, const Block & result_block);
 
     std::shared_ptr<const StorageTimeSeries> time_series_storage;
     FormatSettings format_settings;

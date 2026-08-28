@@ -223,7 +223,7 @@ datasources:
 Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
 
 <Note>
-Only the query endpoints `/api/v1/query` and `/api/v1/query_range` and the metadata endpoints `/api/v1/series` and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. The label metadata endpoints a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete (`/api/v1/labels`, `/api/v1/label/<name>/values`) are not implemented and return an error. Write PromQL expressions in code mode instead of the query builder.
+Only the query endpoints `/api/v1/query` and `/api/v1/query_range` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). The label values endpoint (`/api/v1/label/<name>/values`), which a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete, is not implemented and returns an error. Write PromQL expressions in code mode instead of the query builder.
 </Note>
 
 #### SQL entry points {#sql-entry-points}
