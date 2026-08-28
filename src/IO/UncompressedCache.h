@@ -19,6 +19,34 @@ namespace DB
 {
 
 
+/// Allocates the cache entry itself the way its data is allocated. The cache owns the entry, so creating it must
+/// not be charged to whichever query filled it, and dropping the last reference must not credit whichever query
+/// happened to hold it last. Covers the control block too, which `std::allocate_shared` puts in the same block.
+template <typename T>
+struct ServerOwnedCacheEntryAllocator
+{
+    using value_type = T;
+
+    ServerOwnedCacheEntryAllocator() = default;
+    template <typename U>
+    explicit ServerOwnedCacheEntryAllocator(const ServerOwnedCacheEntryAllocator<U> &) {}
+
+    T * allocate(size_t n)
+    {
+        MemoryTrackerBlockerInThread cache_entry_not_charged_to_the_query;
+        return static_cast<T *>(::operator new(n * sizeof(T)));
+    }
+
+    void deallocate(T * p, size_t n) noexcept
+    {
+        MemoryTrackerBlockerInThread cache_entry_not_charged_to_the_query;
+        ::operator delete(p, n * sizeof(T));
+    }
+
+    template <typename U>
+    bool operator==(const ServerOwnedCacheEntryAllocator<U> &) const { return true; }
+};
+
 struct UncompressedCacheCell
 {
     Memory<JemallocCacheAllocator> data;

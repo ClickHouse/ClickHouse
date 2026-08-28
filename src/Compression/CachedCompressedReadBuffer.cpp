@@ -46,7 +46,8 @@ bool CachedCompressedReadBuffer::nextImpl()
         initInput();
         file_in->seek(file_pos, SEEK_SET);
 
-        auto cell = std::make_shared<UncompressedCacheCell>();
+        /// Owned by the cache, not by this query; see `ServerOwnedCacheEntryAllocator`.
+        auto cell = std::allocate_shared<UncompressedCacheCell>(ServerOwnedCacheEntryAllocator<UncompressedCacheCell>());
 
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
