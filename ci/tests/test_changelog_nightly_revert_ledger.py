@@ -1052,3 +1052,69 @@ def test_a_recorded_bullet_may_not_be_restored_as_two(monkeypatch, tmp_path):
         )
         is None
     )
+
+
+def test_a_longer_chain_records_every_reapply(monkeypatch, tmp_path):
+    """`#109946` was taken out by `#114911`, put back by `#114912`, taken out
+    again by `#115500`, and is now put back by `#116000`. Both `#114912` and
+    `#116000` ship and neither has a bullet of its own, so both belong on the
+    entry - the recorded line already carries `#114912` from the first
+    restoration, and `#116000` has to be appended now."""
+    PULL_REQUESTS["115500"] = {
+        "title": f'Revert "Revert "Revert "{FIX_TITLE}"""',
+        "body": "Reverts ClickHouse/ClickHouse#114912",
+    }
+    PULL_REQUESTS["116000"] = {
+        "title": f'Revert "Revert "Revert "Revert "{FIX_TITLE}""""',
+        "body": "Reverts ClickHouse/ClickHouse#115500",
+    }
+    once_restored = with_reapply(FIX, "114912")
+    old_text = changelog(
+        [],
+        [
+            "* NO CL ENTRY: 'Revert \"Revert \"Revert \"Revert \"%s\"\"\"\"'. "
+            "[#116000](https://github.com/ClickHouse/ClickHouse/pull/116000) "
+            "([Someone](https://github.com/someone))." % FIX_TITLE
+        ],
+    )
+    reverts = analyze(
+        monkeypatch,
+        old_text,
+        [
+            f"Changelog-deleted-entry: 109946 [{BUG_FIX}] {once_restored}",
+            f'Changelog-revert: 115500 114912 Revert "Revert "Revert "{FIX_TITLE}"""',
+            LEDGER_REVERT_OF_REVERT,
+            f"Changelog-deleted-entry: 109946 [{BUG_FIX}] {FIX}",
+            LEDGER_REVERT,
+        ],
+    )
+    assert reverts["restore"] == {"109946": (BUG_FIX, once_restored)}
+    # Both removals and both re-applies, not just the first pair.
+    assert [group["removed_by"] for group in reverts["missing"]] == [
+        ["114911", "115500"]
+    ]
+    assert [group["reapplied_by"] for group in reverts["missing"]] == [
+        ["114912", "116000"]
+    ]
+    prompt = cl._edit_prompt(VERSION, reverts)
+    assert "re-applied by `#114912`, `#116000`" in prompt
+
+    # Replaying the recorded line keeps #114912 but loses #116000 entirely:
+    # its own `NO CL ENTRY` bullet is deleted, so nothing else records it.
+    stale = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([once_restored]), reverts
+    )
+    assert stale is not None
+    assert "do not record the pull request that re-applied the change" in stale
+    assert "#116000 on the entry of #109946" in stale
+
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(once_restored, "116000")]),
+            reverts,
+        )
+        is None
+    )

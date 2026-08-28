@@ -147,7 +147,11 @@ section. For each:
 
    The link of the PR that re-applied the change goes on the restored entry,
    as in the main rule above: its own revert bullet is deleted, so that link
-   is the only trace of the re-apply left in the release.
+   is the only trace of the re-apply left in the release. A change can be
+   taken out and put back more than once in a cycle — `#109946` out by
+   `#114911`, back by `#114912`, out by `#115500`, back by `#116000` — and
+   then *every* PR that put it back belongs on the entry, not just the first.
+   The ones that took it out leave no trace.
 
    Restore it under the category it was in, which is not necessarily the one
    its PR declares: the entry may have been promoted out of `NOT FOR

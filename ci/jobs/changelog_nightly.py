@@ -631,17 +631,38 @@ def analyze_reverts(text, anchor):
         pr: record for pr, record in deleted.items() if pr not in credits
     }
 
+    def revert_chain(prs):
+        """Every revert above `prs`: what reverted them, what reverted that,
+        and so on. A chain is walked whole because a change can be taken out
+        and put back several times in one cycle, and only the whole chain says
+        which of those pull requests ship."""
+        chain, frontier = set(), set(prs)
+        while frontier:
+            frontier = {
+                r
+                for pr in frontier
+                for r in reverted_by.get(pr, ())
+                if r not in chain
+            }
+            chain |= frontier
+        return chain
+
     def removed_by(prs):
-        return sorted({r for pr in prs for r in reverted_by.get(pr, ())}, key=int)
+        """The reverts of the chain that took the change out. All of them are
+        cancelled here - this is only called for entries that do come back."""
+        return sorted((r for r in revert_chain(prs) if r in cancelled), key=int)
 
     def reapplied_by(prs):
+        """The reverts of the chain that stand, and so put the change back.
+        Every one of them ships and has no bullet of its own, so every one of
+        them belongs on the restored entry - not just the revert of the first
+        remover, which loses the newest re-apply of a longer chain."""
         return sorted(
-            {
-                reapply
-                for remover in removed_by(prs)
-                for reapply in reverted_by.get(remover, ())
-                if reapply not in cancelled
-            },
+            (
+                r
+                for r in revert_chain(prs)
+                if r not in cancelled and not targets.get(r, set()) & set(prs)
+            ),
             key=int,
         )
 
@@ -921,7 +942,7 @@ def _edit_prompt(version, reverts, previous_error=None):
         entries = "\n".join(
             f"   - {_pr_list(group['prs'])}, deleted when "
             f"{_pr_list(group['removed_by'])} reverted "
-            f"{'them' if len(group['prs']) > 1 else 'it'}, re-applied by "
+            f"{_them(group['prs'])}, re-applied by "
             f"{_pr_list(group['reapplied_by'])}. The bullet when it was "
             f"deleted, which sat under `#### {group['category']}`:"
             f"\n     {group['line']}"
@@ -947,7 +968,7 @@ def _edit_prompt(version, reverts, previous_error=None):
             for group in reverts["missing"]
         )
         restore = f"""
-Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section as a single bullet — one bullet carrying all of the pull requests listed with it, never one bullet each — under the `#### <Category>` header named with it, with the link of the pull request that re-applied it appended, and do not add a bullet for the reverts themselves. Use that category as given: it is where the entry was when it was deleted, which is a decision of the earlier edit (an entry promoted out of `NOT FOR CHANGELOG` or moved between categories does not go back to the category of its pull request). No pull request may end up attributed twice in the section.
+Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section as a single bullet — one bullet carrying all of the pull requests listed with it, never one bullet each — under the `#### <Category>` header named with it, carrying the links of every pull request listed as having re-applied it — some may already be on the recorded line from an earlier restoration, append the ones that are not — and do not add a bullet for the reverts themselves. Use that category as given: it is where the entry was when it was deleted, which is a decision of the earlier edit (an entry promoted out of `NOT FOR CHANGELOG` or moved between categories does not go back to the category of its pull request). No pull request may end up attributed twice in the section.
 {entries}
 """
     retry = ""
