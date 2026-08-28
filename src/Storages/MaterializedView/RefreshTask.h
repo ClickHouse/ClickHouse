@@ -253,13 +253,6 @@ private:
         /// but we still use the same in-memory structs (CoordinationZnode etc), as if it's coordinated (with one replica).
         bool coordinated = false;
 
-        /// Permanent, non-resumable "coordination unavailable" state. Set when a coordinated view is
-        /// attached/restored on a Keeper missing feature flags required for coordination (MULTI_READ,
-        /// CREATE_IF_NOT_EXISTS). The view stays Disabled and refuses to resume; `coordinated` is left
-        /// true so it never silently degrades into an uncoordinated local refresh (which would corrupt
-        /// the replicated target table of a non-APPEND view in a Replicated database).
-        bool unavailable = false;
-
         bool read_only = false;
         String path;
         String replica_name;
@@ -429,11 +422,6 @@ private:
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
-
-    /// Enter the permanent, non-resumable "coordination unavailable" state (sets
-    /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
-    /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
-    void markCoordinationUnavailable();
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);

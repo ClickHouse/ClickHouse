@@ -47,7 +47,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
             {"categories", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArrayOfStrings), &isColumnConst, "const Array(String)"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -184,6 +184,10 @@ REGISTER_FUNCTION(AiClassify)
         .description = R"(
 Classifies the given text into one of the provided categories using an LLM provider.
 
+The function sends the text together with a fixed classification prompt and a JSON-schema response format
+constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
+object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
+
 Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
@@ -192,12 +196,12 @@ are taken from the `credentials` key of the optional parameter map, or from the
         .arguments = {
             {"text", "Text to classify.", {"String"}},
             {"categories", "Constant list of candidate category labels.", {"Array(String)"}},
-            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"One of the provided category labels, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Classify sentiment", "SET allow_experimental_ai_functions = 1;\nSELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])", "positive"},
-            {"Classify a column with explicit credentials", "SET allow_experimental_ai_functions = 1;\nCREATE TABLE issues (body String) ENGINE = Memory;\nINSERT INTO issues VALUES ('The application exits unexpectedly after login.');\nSELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5", ""},
+            {"Classify sentiment", "SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])", "positive"},
+            {"Classify a column with explicit credentials", "SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});

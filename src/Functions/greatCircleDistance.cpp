@@ -383,9 +383,9 @@ This function returns the angle in degrees between two points on a sphere.
                 "Basic usage",
                 "SELECT greatCircleAngle(0, 0, 45, 0) AS angle",
                 R"(
-┌────angle─┐
-│ 44.99998 │
-└──────────┘
+┌─angle─┐
+│    45 │
+└───────┘
                 )"
             }
         };
@@ -412,7 +412,7 @@ Calculates the distance between two points on the Earth's surface using [the gre
                 "SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance",
                 R"(
 ┌─greatCircleDistance─┐
-│  14128352.575065022 │
+│            14128352 │
 └─────────────────────┘
                 )"
             }
@@ -442,9 +442,9 @@ Technical note: for close enough points it calculates the distance using planar 
                 "Basic usage",
                 "SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance",
                 R"(
-┌────────geoDistance─┐
-│ 212458.82819586992 │
-└────────────────────┘
+┌─geoDistance─┐
+│   212458.73 │
+└─────────────┘
                 )"
             }
         };

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
@@ -184,33 +183,6 @@ public:
         return data->serializeValueIntoMemory(0, memory, settings);
     }
 
-    void serializeAsComparable(size_t, String & out) const override
-    {
-        data->serializeAsComparable(0, out);
-    }
-
-    /// All rows are identical: encode row 0 once and append to every output row.
-    /// Permutation is irrelevant for a constant column. Rows masked by `null_map`
-    /// (set by a Nullable wrapper) are skipped, matching the other columns.
-    void batchSerializeAsComparable(
-        size_t num_rows,
-        VectorWithMemoryTracking<String> & out,
-        const IColumn::Permutation * permutation,
-        const UInt8 * null_map) const override
-    {
-        /// Match the base class no-op for empty batches: avoid touching the payload
-        /// (and a possible NOT_IMPLEMENTED from an unsupported nested type).
-        if (num_rows == 0)
-            return;
-
-        String encoded;
-        data->serializeAsComparable(0, encoded);
-        /// All rows share `encoded`; `src` only matters for the null-map check.
-        batchSerializeAsComparableImpl(
-            num_rows, out, permutation, null_map,
-            [&encoded](size_t /*src*/, String & dst) { dst.append(encoded); });
-    }
-
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
     {
         data->deserializeAndInsertFromArena(in, settings);
@@ -356,10 +328,6 @@ public:
     IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
-
-    /// Replace the single broadcast value (the number of rows is unchanged). `value` must have exactly one row.
-    /// Only valid while building the column (uniquely owned), e.g. when a serialization fills the value it read.
-    void setValue(const ColumnPtr & value);
 
     Field getField() const { return getDataColumn()[0]; }
 
