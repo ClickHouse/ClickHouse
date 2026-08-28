@@ -1369,16 +1369,18 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 doDebugAsserts();
             }
 
-            if (!check_limits)
-                return true;
-
-            total_rows = getTotalRowCount();
-            total_bytes = getTotalByteCountUnchecked();
-            /// total_bytes here is the pre-shrink size (shrink happens below), so this captures the
-            /// build high-water mark for free on the path where a shrink can lower it.
-            updatePeakBuildBytes(total_bytes);
+            if (check_limits)
+            {
+                total_rows = getTotalRowCount();
+                total_bytes = getTotalByteCountUnchecked();
+                /// total_bytes here is the pre-shrink size (shrink happens below), so this captures the
+                /// build high-water mark for free on the path where a shrink can lower it.
+                updatePeakBuildBytes(total_bytes);
+            }
         }
     }
+    if (!check_limits)
+        return true;
     shrinkStoredBlocksToFit(total_bytes, worker_id);
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
@@ -2332,7 +2334,8 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     }
 
     used_flags->setUnsetOffsetCount(data->keys_to_join.load(std::memory_order_relaxed));
-    freezeMapsForProbing();
+    /// Serial 1-bucket StorageJoin maps need no prefix sums. Freezing here would rewrite
+    /// shared map state under StorageJoin's read lock.
     if (matched_rows_stats)
         matched_rows_stats->prepareRightFlagsIfNeeded(data->workers);
 }
