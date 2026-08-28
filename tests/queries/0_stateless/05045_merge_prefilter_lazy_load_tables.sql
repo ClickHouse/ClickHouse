@@ -21,7 +21,12 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- Prove the child is still an unloaded proxy at the time of the query below.
-SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't05045_dist';
+-- The `system.tables` filter is spelled with `currentDatabase()` rather than the equivalent
+-- `{CLICKHOUSE_DATABASE_1:String}` because the style check only recognizes the former; `USE`
+-- does not load the lazy tables, so the engine reported below is still the proxy.
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't05045_dist';
+USE {CLICKHOUSE_DATABASE:Identifier};
 
 -- The rows of the `Distributed` child carry the leaf's name; the proxy must not be pruned.
 SELECT count() FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t05045_dist$') WHERE _table = 't05045_leaf';
