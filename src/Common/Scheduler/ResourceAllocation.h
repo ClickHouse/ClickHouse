@@ -85,7 +85,9 @@ private:
     /// request can be considered. The allocation can still decrease or be removed while growth is parked.
     bool memory_growth_suspended = false; /// Scheduler-thread only.
     bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
+    bool memory_growth_recovery_pending = false; /// Queue-mutex protected durable query-to-scheduler hand-off.
     bool memory_growth_suction_priority = false; /// External controller has authorized the last-resort path.
+    UInt64 memory_growth_candidate_protection_epoch = 0; /// Temporary scheduler-thread victim-search context.
     bool kill_requested = false; /// Scheduler-thread marker preventing duplicate victim selection across stacked limits.
     IncreaseRequest increase;
     DecreaseRequest decrease;

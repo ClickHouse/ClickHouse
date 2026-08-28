@@ -36,8 +36,7 @@ private:
     bool setIncrease(IncreaseRequest * new_increase, bool reapply_constraint);
     bool setDecrease(DecreaseRequest * new_decrease);
     void selectAndKill(IncreaseRequest & killer);
-    void scheduleSuction();
-    void processSuction(UInt64 event_id, UInt64 observed_generation, IncreaseRequest * expected_growth);
+    void processSuction();
     void clearMemoryGrowthSuspension();
 
     ResourceCost max_allocated = default_max_allocated;
@@ -51,13 +50,6 @@ private:
     UInt64 last_seen_approval_epoch = 0;
     UInt64 memory_growth_suspension_start_epoch = 0;
     size_t memory_growth_suspension_beneficiaries = 0;
-
-    /// Eviction is an externally authorized decision event, separate from a temporarily empty
-    /// scheduling round. Scheduler-thread generations invalidate stale decisions when useful work
-    /// or resource/topology state changes before the event is consumed.
-    UInt64 activity_generation = 0;
-    UInt64 next_suction_event_id = 0;
-    UInt64 active_suction_event_id = 0;
 
     SpaceSharedNodePtr child;
 };

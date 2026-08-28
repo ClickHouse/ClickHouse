@@ -78,25 +78,33 @@ ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseReques
     //      In either case it must never evict a strictly higher-precedence child.
     // 3. Killer is part of the victim child:
     //    - we are above the least common ancestor; propagate down, the decision is taken lower.
-    if (running_children.empty())
-        return nullptr;
-    ISpaceSharedNode & victim_child = *running_children.rbegin();
-
-    // Case 2: `&killer == increase` means the killer increase propagated through this node, so
-    // `increase_child` is the killer's branch (the scheduler processes only the top of the
-    // increasing set, hence the killer always equals our current `increase`). When the victim
-    // branch differs, this node is the least common ancestor and precedence must be respected.
-    // NOTE: a lower `info.precedence` value means higher precedence.
-    if (&killer == increase && increase_child && increase_child != &victim_child)
+    ISpaceSharedNode * killer_child = nullptr;
+    for (ISchedulerNode * node = &killer.allocation.queue; node && node->parent; node = node->parent)
     {
-        const bool victim_higher = victim_child.info.precedence < increase_child->info.precedence;
-        const bool victim_equal = victim_child.info.precedence == increase_child->info.precedence;
-        const bool killer_pending = killer.kind == IncreaseRequest::Kind::Pending;
-        if (victim_higher || (victim_equal && killer_pending))
-            return nullptr;
+        if (node->parent == this)
+        {
+            killer_child = static_cast<ISpaceSharedNode *>(node);
+            break;
+        }
     }
 
-    return victim_child.selectAllocationToKill(killer, limit, details);
+    /// Search all policy-eligible children from lowest to highest precedence. The killer branch is
+    /// derived from the hierarchy rather than the currently visible increase, because suction runs
+    /// while that increase is intentionally parked.
+    for (auto it = running_children.rbegin(); it != running_children.rend(); ++it)
+    {
+        ISpaceSharedNode & victim_child = *it;
+        if (killer_child && killer_child != &victim_child)
+        {
+            const bool victim_higher = victim_child.info.precedence < killer_child->info.precedence;
+            const bool victim_equal = victim_child.info.precedence == killer_child->info.precedence;
+            if (victim_higher || (victim_equal && killer.kind == IncreaseRequest::Kind::Pending))
+                continue;
+        }
+        if (ResourceAllocation * victim = victim_child.selectAllocationToKill(killer, limit, details))
+            return victim;
+    }
+    return nullptr;
 }
 
 void PrecedenceAllocation::approveIncrease()
@@ -197,7 +205,8 @@ bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRe
     /// A parked branch therefore remains a barrier to strictly lower-precedence children.
     for (const auto & [_, child] : children)
     {
-        if (child->hasSuspendedIncrease()
+        if (!(detach_child && child.get() == &from_child)
+            && child->hasSuspendedIncrease()
             && (!increase_child || child->info.precedence < increase_child->info.precedence))
         {
             increase_child = nullptr;

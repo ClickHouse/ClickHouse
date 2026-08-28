@@ -161,14 +161,12 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
 void AllocationQueue::notifyRecoveryProgress(ResourceAllocation & allocation)
 {
     std::lock_guard lock(mutex);
-    if (is_not_usable || suspended_growth != &allocation)
+    if (is_not_usable)
         return;
 
-    /// This is the query's explicit recovery checkpoint after it ran spill/release work. Re-open
-    /// the constrained subtree so the external controller can either request another reclaim or
-    /// inject suction priority. No parent traversal happens on the query thread.
-    memory_growth_suspension_retry_requested = true;
-    memory_growth_suspension_changed = true;
+    /// Publish against the allocation, not the queue's owner pointer. Completion may arrive before
+    /// the scheduler finishes parking the owner; the next activation consumes this durable bit.
+    allocation.memory_growth_recovery_pending = true;
     scheduleActivation();
 }
 
@@ -423,26 +421,52 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Do not fall through to a smaller allocation while the largest victim in this queue already
-    // has an in-flight kill. That would turn one pressure decision into multiple kills in the same
-    // workload. Returning null still lets a parent policy search a different sibling queue, which
-    // is required for stacked limits to choose distinct victims in distinct constrained branches.
-    ResourceAllocation & victim = *running_allocations.rbegin();
-    if (victim.kill_requested)
+    ResourceAllocation * victim = nullptr;
+    ResourceAllocation * self_fallback = nullptr;
+    bool productive_work_is_protected = false;
+    const UInt64 protection_epoch = killer.allocation.memory_growth_candidate_protection_epoch;
+
+    /// Search the whole queue. The parked owner is a last fallback, and work approved after the
+    /// suspension remains protected while productive. Already-killed candidates cannot pin a
+    /// later pressure decision forever.
+    for (auto it = running_allocations.rbegin(); it != running_allocations.rend(); ++it)
+    {
+        ResourceAllocation & candidate = *it;
+        if (candidate.kill_requested)
+            continue;
+        if (&candidate == &killer.allocation)
+        {
+            self_fallback = &candidate;
+            continue;
+        }
+        if (protection_epoch != 0
+            && candidate.last_increase_approval_epoch > protection_epoch
+            && candidate.last_increase_approval_epoch > candidate.last_productivity_end_epoch)
+        {
+            productive_work_is_protected = true;
+            continue;
+        }
+        victim = &candidate;
+        break;
+    }
+
+    if (!victim && !productive_work_is_protected)
+        victim = self_fallback;
+    if (!victim)
         return nullptr;
 
     // If this is the least common ancestor of killer and victim - add details
     if (&killer.allocation.queue == this)
     {
-        if (&killer.allocation == &victim)
+        if (&killer.allocation == victim)
             details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy its own increase for {}.",
-                formatReadableCost(victim.allocated), getWorkloadName(), formatReadableCost(killer.size));
+                formatReadableCost(victim->allocated), getWorkloadName(), formatReadableCost(killer.size));
         else
             details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy increase of a smaller allocation.",
-                formatReadableCost(victim.allocated), getWorkloadName());
+                formatReadableCost(victim->allocated), getWorkloadName());
     }
 
-    return &victim;
+    return victim;
 }
 
 void AllocationQueue::processActivation()
@@ -452,6 +476,13 @@ void AllocationQueue::processActivation()
     Update update;
     {
         std::lock_guard lock(mutex);
+
+        if (suspended_growth && suspended_growth->memory_growth_recovery_pending)
+        {
+            suspended_growth->memory_growth_recovery_pending = false;
+            memory_growth_suspension_retry_requested = true;
+            memory_growth_suspension_changed = true;
+        }
 
         if (memory_growth_suspension_retry_requested)
         {
@@ -616,19 +647,27 @@ bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
     {
         return !allocation.memory_growth_suspended;
     });
-    if (eligible != increasing_allocations.end())
-        increase = &eligible->increase;
-    else
+    auto pending = std::find_if(pending_allocations.begin(), pending_allocations.end(), [](const ResourceAllocation & allocation)
     {
-        auto pending = std::find_if(pending_allocations.begin(), pending_allocations.end(), [](const ResourceAllocation & allocation)
-        {
-            return !allocation.memory_growth_suspended;
-        });
-        if (pending != pending_allocations.end())
-            increase = &pending->increase;
-        else
-            increase = nullptr;
-    }
+        return !allocation.memory_growth_suspended;
+    });
+
+    /// Do not let request quantization decide who runs. If a fitting admission is already queued
+    /// and regular growth would consume the capacity it needs, admit the smaller work first.
+    const ResourceCost available = allocated < min_max_allocated ? min_max_allocated - allocated : 0;
+    const bool pending_precedes_growth = eligible != increasing_allocations.end()
+        && pending != pending_allocations.end()
+        && pending->increase.size <= available
+        && eligible->increase.size + pending->increase.size > available;
+
+    if (pending_precedes_growth)
+        increase = &pending->increase;
+    else if (eligible != increasing_allocations.end())
+        increase = &eligible->increase;
+    else if (pending != pending_allocations.end())
+        increase = &pending->increase;
+    else
+        increase = nullptr;
 
     return increase != old_increase;
 }
@@ -639,6 +678,7 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     {
         suspended_growth->onGrowthPressureResolved();
         suspended_growth->memory_growth_suspended = false;
+        suspended_growth->memory_growth_recovery_pending = false;
         suspended_growth->memory_growth_suction_priority = false;
     }
     suspended_growth = nullptr;
@@ -650,11 +690,13 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     {
         allocation.memory_growth_suspended = false;
         allocation.memory_growth_suspension_attempted = false;
+        allocation.memory_growth_recovery_pending = false;
     }
     for (ResourceAllocation & allocation : pending_allocations)
     {
         allocation.memory_growth_suspended = false;
         allocation.memory_growth_suspension_attempted = false;
+        allocation.memory_growth_recovery_pending = false;
     }
 }
 

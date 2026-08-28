@@ -49,11 +49,18 @@ public:
     void finishMemoryPressure();
 
 private:
+    struct ProcessorState
+    {
+        ProcessorMemoryStats stats;
+        UInt64 observed_forced_epoch = 0;
+    };
+
     bool enable = true;
     std::mutex mutex;
     // Only trace the spillable processors, this map is not expected to be too large.
-    std::unordered_map<IProcessor *, ProcessorMemoryStats> processor_stats;
+    std::unordered_map<IProcessor *, ProcessorState> processor_states;
     IProcessor * top_processor = nullptr;
+    IProcessor * forced_spill_claimant = nullptr;
     Int64 max_reserved_memory_bytes = 0;
     std::atomic<Int64> hard_limit = -1;
 
