@@ -228,6 +228,10 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         auto * waiting_output = input_state.waiting_output;
         auto & output_state = output_port_state.at(waiting_output);
 
+        /// The pairing is consumed by this chunk. If the pointer were kept, a later `isFinished`
+        /// on this input would release an output that has meanwhile been handed to another input.
+        input_state.waiting_output = nullptr;
+
         if (output_state.status == OutputStatus::NotActive)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid status NotActive for associated output");
 
