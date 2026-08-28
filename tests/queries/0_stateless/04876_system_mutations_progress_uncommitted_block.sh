@@ -7,9 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./transactions.lib
 . "$CUR_DIR"/transactions.lib
 
-# An uncommitted insert block below the mutation version keeps the entry alive after every visible
-# part is rewritten: is_done must stay 0 with parts_to_do = 0 and the byte-weighted progress at 1,
-# and the entry finishes only once the transaction commits and its part is rewritten too.
+# A still-open transaction's part below the mutation version keeps the entry alive after every
+# visible part is rewritten (its committing-block holder is released when the INSERT statement
+# finishes, so only the part marks the pending work): is_done must stay 0 with parts_to_do = 0 and
+# progress NULL, and the entry finishes only once the transaction commits and its part is rewritten.
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_mut_uncommitted SYNC"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_mut_uncommitted (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k"

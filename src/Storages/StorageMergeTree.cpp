@@ -1434,14 +1434,20 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         return {};
 
     std::vector<PartVersionWithName> part_versions_with_names;
+    std::vector<Int64> uncommitted_part_versions;
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
     for (const auto & part : data_parts)
     {
         /// Same rule as `startMutation`: a still-open transaction's part stays out of every
         /// mutation's visible scope - and out of the byte denominator - until it is committed.
+        /// Its existence is still unknown remaining work, though: the versions are kept so the
+        /// affected mutations report neither done nor a definite progress while the outcome is open.
         if (part->version && !part->version->getInfo().isCreated())
+        {
+            uncommitted_part_versions.push_back(part->info.getDataVersion());
             continue;
+        }
         part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info});
     }
     std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
@@ -1507,9 +1513,17 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
             0.0, 1.0);
 
-        /// An uncommitted lower block can still add a part to this mutation's scope, so
+        /// An uncommitted lower block can still add a part to this mutation's scope, and a
+        /// still-open transaction's lower-version part is pending work whose outcome is unknown
+        /// (`MergeTreeSink::commitPart` releases its committing-block holder before the outer
+        /// transaction commits, so only the part itself marks it) - either way,
         /// nothing-visible-left does not mean done yet.
-        const bool mutation_is_done = parts_to_do_names.empty() && (lowest_uncommitted_insert_block >= mutation_version);
+        const bool has_uncommitted_part_in_scope = std::any_of(
+            uncommitted_part_versions.begin(), uncommitted_part_versions.end(),
+            [&](Int64 version) { return version < mutation_version; });
+        const bool mutation_is_done = parts_to_do_names.empty()
+            && (lowest_uncommitted_insert_block >= mutation_version)
+            && !has_uncommitted_part_in_scope;
         if (mutation_is_done)
             entry.initial_bytes_to_do.finalize();
 
@@ -1553,7 +1567,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.latest_fail_error_code_name,
             });
             result.back().bytes_to_do = bytes_to_do;
-            if (lowest_uncommitted_insert_block >= mutation_version)
+            if (lowest_uncommitted_insert_block >= mutation_version && !has_uncommitted_part_in_scope)
                 result.back().progress = progress;
         }
     }
@@ -1685,10 +1699,15 @@ void StorageMergeTree::loadMutations()
     if (!current_mutations_by_version.empty())
     {
         /// Re-snapshot the denominators for byte-weighted progress from what remains: the byte
-        /// weight of the parts finished before the restart is not recoverable.
+        /// weight of the parts finished before the restart is not recoverable. Parts of
+        /// transactions still open across the reload stay out, as everywhere else.
         std::vector<std::tuple<Int64, UInt64, MergeTreePartInfo>> version_bytes_info;
         for (const auto & part : getDataPartsVectorForInternalUsage())
+        {
+            if (part->version && !part->version->getInfo().isCreated())
+                continue;
             version_bytes_info.emplace_back(part->info.getDataVersion(), part->getBytesOnDisk(), part->info);
+        }
         for (auto & mutation : current_mutations_by_version)
         {
             for (const auto & [data_version, bytes, info] : version_bytes_info)
