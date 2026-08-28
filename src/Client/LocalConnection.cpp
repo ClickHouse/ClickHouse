@@ -464,6 +464,11 @@ void LocalConnection::sendQuery(
         state->io.onException();
         state->exception.reset(e.clone());
     }
+    catch (const Poco::Exception & e)
+    {
+        state->io.onException();
+        state->exception = std::make_unique<Exception>(Exception::CreateFromPocoTag{}, e);
+    }
     catch (const std::exception & e)
     {
         state->io.onException();
@@ -590,6 +595,11 @@ bool LocalConnection::poll(size_t)
         {
             state->io.onException();
             state->exception.reset(e.clone());
+        }
+        catch (const Poco::Exception & e)
+        {
+            state->io.onException();
+            state->exception = std::make_unique<Exception>(Exception::CreateFromPocoTag{}, e);
         }
         catch (const std::exception & e)
         {

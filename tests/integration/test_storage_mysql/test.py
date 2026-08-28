@@ -1897,6 +1897,64 @@ def test_query_passing_engine(started_cluster):
     conn.close()
 
 
+def test_clickhouse_local_preserves_mysql_error_messages(started_cluster):
+    table_name = "local_mysql_error_message"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"CREATE TABLE clickhouse.{table_name} (id INT PRIMARY KEY) ENGINE=InnoDB"
+            )
+            cursor.execute(f"INSERT INTO clickhouse.{table_name} VALUES (1)")
+            conn.commit()
+
+        schema_error = node1.exec_in_container(
+            [
+                "clickhouse",
+                "local",
+                "--send_logs_level=fatal",
+                "--query",
+                f"""
+                SELECT *
+                FROM mysql(
+                    'mysql80:3306',
+                    'clickhouse',
+                    query($sql$
+                        SELECT count(*)
+                        FROM {table_name}
+                        WHERE (id = 1, id = 2)
+                    $sql$),
+                    'root',
+                    '{mysql_pass}'
+                )
+                """,
+            ],
+            nothrow=True,
+        )
+
+        assert "Operand should contain 1 column(s)" in schema_error
+        assert "POCO_EXCEPTION" in schema_error
+
+        write_error = node1.exec_in_container(
+            [
+                "clickhouse",
+                "local",
+                "--send_logs_level=fatal",
+                "--query",
+                f"INSERT INTO FUNCTION mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') SELECT 1",
+            ],
+            nothrow=True,
+        )
+
+        assert "Duplicate entry '1'" in write_error
+        assert "POCO_EXCEPTION" in write_error
+    finally:
+        drop_mysql_table(conn, table_name)
+        conn.close()
+
+
 def test_query_passing_type_mismatch(started_cluster):
     # A declared structure whose types disagree with the passed query must surface as a query error, never
     # abort the server.
