@@ -9,9 +9,9 @@ keywords: ['clickstack', 'warehouses', 'compute-compute separation', 'read-only'
 
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Observability workloads place two very different demands on the same data. Ingestion is continuous and write heavy, with background merges consuming CPU and memory long after an insert completes. Queries are bursty - dashboards and searches spike exactly when an incident is underway and you can least afford a slow response.
+Observability workloads place two very different demands on the same data. Ingestion is continuous and write heavy, with background merges consuming CPU and memory long after an insert completes. Query load is uneven: dashboards and searches peak during an incident, when a slow response is least acceptable.
 
-With ClickHouse Cloud [warehouses](/products/cloud/features/infrastructure/warehouses), both workloads can be served from the same data by separate compute, so neither can starve the other.
+With ClickHouse Cloud [warehouses](/products/cloud/features/infrastructure/warehouses), both workloads can be served from the same data by separate compute, so that neither competes with the other for CPU and memory.
 
 <ScalePlanFeatureBadge feature="Compute-compute separation"/>
 
@@ -130,18 +130,18 @@ If individual data sources need to target a different service, the connection us
 </Step>
 <Step title="Verify the split" id="verify">
 
-Run a search or open a dashboard in ClickStack, then check where the queries landed. On the **read-only** service, you should see the ClickStack queries:
+Run a search or open a dashboard in ClickStack, then check where the queries landed. `system` tables are written on the node that ran the query, so a service with more than one replica needs [`clusterAllReplicas`](/reference/system-tables/overview#querying-across-nodes) with the `default` cluster name to cover all of them. On the **read-only** service, you should see the ClickStack queries:
 
 ```sql
 SELECT user, query_kind, count()
-FROM system.query_log
+FROM clusterAllReplicas('default', system.query_log)
 WHERE event_time > now() - toIntervalMinute(10) AND type = 'QueryFinish'
 GROUP BY ALL
 ```
 
 On the **read-write** service, the same query should show inserts from the ingestion user and no ClickStack query traffic.
 
-These per-service queries are the reliable check, because `system` tables are local to each service. For an aggregate view across the warehouse, note that `clusterAllReplicas` with the `default` cluster name only targets the current service - use `all_groups.default` instead:
+Running the query on each service in turn is the reliable check, because the `default` cluster contains only the replicas of the service you're connected to. For an aggregate view across the warehouse, use the `all_groups.default` cluster name instead:
 
 ```sql
 SELECT hostName() AS host, query_kind, count()
@@ -223,7 +223,7 @@ Alert evaluation is a recurring query workload. Include it in the QPS you size t
 
 ## Further considerations {#considerations}
 
-**Auto-idling.** The first query to a read-only service that has idled pays a wake-up cost, so intermittent use trades a little latency for lower spend. Alerts evaluating continuously will generally keep the service awake. Continuous ingestion likewise keeps the read-write service awake, but if your ingestion is bursty or scheduled, the first batch after an idle period pays the same cost - which surfaces as delayed telemetry.
+**Auto-idling.** The first query to a read-only service that has idled waits for the service to start, so intermittent use trades a little latency for lower spend. Alerts evaluating continuously will generally keep the service awake. Continuous ingestion likewise keeps the read-write service awake, but if your ingestion is intermittent or scheduled, the first batch after an idle period waits in the same way, which surfaces as delayed telemetry.
 
 **Backups.** Backups are taken on the primary service only, which covers the data for the whole warehouse. Restoring a backup creates a completely new service that isn't connected to the existing warehouse.
 
