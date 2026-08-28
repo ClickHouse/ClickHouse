@@ -10,6 +10,11 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace DB
+{
+class IDataType;
+}
+
 namespace DB::Parquet
 {
 
@@ -105,12 +110,13 @@ struct FixedSizeConverter
 
     /// Decodes min/max value from parquet Statistics or ColumnIndex.
     /// Called separately for min (with is_max=false) and max (is_max=true).
-    /// The caller pre-fills `out` with corresponding +-infinity, so this function can just leave
-    /// `out` unchanged if the value can't be decoded.
+    /// Returns std::nullopt if the value can't be decoded; the caller then keeps the corresponding
+    /// range bound at +-infinity.
     /// Called only if PageDecoderInfo::allow_stats is true, which SchemaConverter sets only after
-    /// carefully checking that min/max stats are usable in this situation (e.g. no type conversion
-    /// is needed).
-    virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
+    /// carefully checking that min/max stats are usable in this situation (either no type
+    /// conversion is needed, or the Field is converted afterwards -
+    /// see PageDecoderInfo::cast_stats_to_output_type).
+    virtual std::optional<Field> convertField(std::span<const char> /*data*/, bool /*is_max*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FixedSizeConverter subclass doesn't support decoding Field");
     }
@@ -127,7 +133,7 @@ struct StringConverter
     /// `offsets[-1]` must be valid and is not necessarily 0.
     /// Does no range checks, the caller must ensure that `offsets` are valid and `chars` are long enough.
     virtual void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn &) const = 0;
-    virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
+    virtual std::optional<Field> convertField(std::span<const char> /*data*/, bool /*is_max*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StringConverter subclass doesn't support decoding Field");
     }
@@ -154,11 +160,24 @@ struct PageDecoderInfo
     /// E.g. if the parquet file has column `x String`, but we read it as `file(..., 'x Int64')`, we
     /// silently auto-cast data from String to Int64 (by parsing number as text); but we can't do the
     /// same for min/max stats because String min/max is not the same as Int64 min/max (e.g. "10" < "9").
-    /// So we have a small allowlist of type conversions (dispatched in SchemaConverter), and the
-    /// conversion is done together with decoding, by FixedSizeConverter/StringConverter.
-    /// In particular we don't call something like convertFieldToType because working through all
-    /// the cases would be a nightmare.
+    /// So we have a small allowlist of type conversions (dispatched in SchemaConverter).
     bool allow_stats = false;
+
+    /// If true, we need to call tryConvertFieldToType on the output of
+    /// FixedSizeConverter/StringConverter's convertField.
+    /// The conversion is from type PrimitiveColumnInfo::decoded_type to the column's type in the
+    /// output block (the type that KeyCondition compares the Field against), as provided to
+    /// decodeField.
+    /// E.g. if the file has timestamps in ms, but the requested type is DateTime64(6), IntConverter
+    /// will output Decimal64 Field with scale 3, then tryConvertFieldToType will rescale it to scale 6.
+    ///
+    /// SchemaConverter sets this only for type pairs where tryConvertFieldToType was audited to
+    /// behave exactly like the castColumn that is later applied to the data: monotonic, with the
+    /// same rounding (so the converted min/max still bound the converted values), and returning
+    /// Null on overflow (then we leave the bound at infinity) rather than clamping or wrapping.
+    /// E.g. this wouldn't be correct for Time64 output type: its cast wraps values around by day,
+    /// non-monotonically, while tryConvertFieldToType just rescales.
+    bool cast_stats_to_output_type = false;
 
     /// True if we can decompress the whole page directly into IColumn's memory.
     bool canReadDirectlyIntoColumn(parq::Encoding::type, size_t /*num_values*/, IColumn &, std::span<char> & out) const;
@@ -168,8 +187,9 @@ struct PageDecoderInfo
     std::unique_ptr<PageDecoder> makeDecoder(parq::Encoding::type, std::span<const char> data) const;
 
     /// Decode a min/max value from Statistics.
-    /// If not supported or allow_stats is false, leaves `out` unchanged.
-    void decodeField(std::span<const char> data, bool is_max, Field & out) const;
+    /// If not supported, allow_stats is false, or the value doesn't survive the conversion to
+    /// `final_output_type` (see cast_stats_to_output_type), leaves `out` unchanged.
+    void decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const;
 };
 
 
@@ -192,8 +212,25 @@ struct IntConverter : public FixedSizeConverter
     bool field_mac_address = false; // MacAddress
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
     bool field_signed = true; // Int64, otherwise UInt64
-    /// If not Ignore, it's a Date32 column and we should range-check it.
+    /// If not Ignore, it's a date column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+    /// Only used when date_overflow_behavior is not Ignore: the requested output type is Date rather
+    /// than Date32, so range-check against the narrower [0, DATE_LUT_MAX_DAY_NUM] window. The final
+    /// cast of the decoded Int32 column to Date narrows to UInt16 without checks, so an unchecked
+    /// extended Date32 value would wrap into an unrelated in-range Date.
+    bool date_target_is_date = false;
+    /// Same idea for a DateTime output type: the final context-less cast ignores
+    /// `date_time_overflow_behavior` and wraps day numbers whose midnight does not fit into
+    /// DateTime, so range-check against the [0, MAX_DATETIME_DAY_NUM] window of ToDateTimeImpl.
+    bool date_target_is_datetime = false;
+    /// Same idea for a DateTime64 output type, except that its window is scale-dependent: the cast clamps whole
+    /// seconds the target scale cannot represent, and a scale-9 DateTime64 stops at 2262-04-11, far below the
+    /// Date32 upper bound. Holds the day range of the requested DateTime64 type, when the output is one.
+    std::optional<std::pair<Int32, Int32>> date_target_datetime64_day_range;
+
+    /// The allowed day-number window of the requested output type, and its name for error messages.
+    std::pair<Int32, Int32> dateTargetDayRange() const;
+    String dateTargetTypeName() const;
 
     bool isTrivial() const override
     {
@@ -201,7 +238,7 @@ struct IntConverter : public FixedSizeConverter
     }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 /// Input physical type: FLOAT or DOUBLE.
@@ -214,7 +251,7 @@ struct FloatConverter : public FixedSizeConverter
 
     bool isTrivial() const override { return true; }
 
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 extern template struct FloatConverter<float>;
@@ -233,7 +270,7 @@ struct FixedStringConverter : public FixedSizeConverter
 {
     bool isTrivial() const override { return true; }
 
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 struct UUIDConverter : public FixedSizeConverter
@@ -241,7 +278,7 @@ struct UUIDConverter : public FixedSizeConverter
     UUIDConverter() { input_size = 16; }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool is_max, Field & out) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool is_max) const override;
 };
 
 struct TrivialStringConverter : public StringConverter
@@ -249,7 +286,7 @@ struct TrivialStringConverter : public StringConverter
     bool isTrivial() const override { return true; }
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 /// A thing that byteswaps and sign-extends integers up to 32 bytes long.
@@ -296,13 +333,49 @@ struct BigEndianDecimalFixedSizeConverter : public FixedSizeConverter
     }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 extern template struct BigEndianDecimalFixedSizeConverter<Int32>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int64>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int128>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int256>;
+
+/// Input physical type: a `DECIMAL`-annotated `FIXED_LEN_BYTE_ARRAY`.
+/// Output column and `Field` type: `T`, where `T` is `Int128`, `UInt128`, `Int256`, or `UInt256`.
+/// Values are range-checked instead of truncating leading sign-extension bytes.
+template <typename T>
+struct BigEndianDecimalWideIntegerConverter : public FixedSizeConverter
+{
+    explicit BigEndianDecimalWideIntegerConverter(size_t input_size_)
+    {
+        chassert(input_size_ > 0);
+        input_size = input_size_;
+    }
+
+    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
+};
+
+extern template struct BigEndianDecimalWideIntegerConverter<Int128>;
+extern template struct BigEndianDecimalWideIntegerConverter<UInt128>;
+extern template struct BigEndianDecimalWideIntegerConverter<Int256>;
+extern template struct BigEndianDecimalWideIntegerConverter<UInt256>;
+
+/// Input physical type: a `DECIMAL`-annotated `BYTE_ARRAY`.
+/// Output column and `Field` type: `T`, where `T` is `Int128`, `UInt128`, `Int256`, or `UInt256`.
+/// Values are range-checked instead of truncating leading sign-extension bytes.
+template <typename T>
+struct BigEndianDecimalWideIntegerStringConverter : public StringConverter
+{
+    void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
+};
+
+extern template struct BigEndianDecimalWideIntegerStringConverter<Int128>;
+extern template struct BigEndianDecimalWideIntegerStringConverter<UInt128>;
+extern template struct BigEndianDecimalWideIntegerStringConverter<Int256>;
+extern template struct BigEndianDecimalWideIntegerStringConverter<UInt256>;
 
 /// Input physical type: BYTE_ARRAY.
 /// Output column type: Decimal<T>, where T = Int{32,64,128,256}.
@@ -315,7 +388,7 @@ struct BigEndianDecimalStringConverter : public StringConverter
     explicit BigEndianDecimalStringConverter(UInt32 scale_) : scale(scale_) {}
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 extern template struct BigEndianDecimalStringConverter<Int32>;

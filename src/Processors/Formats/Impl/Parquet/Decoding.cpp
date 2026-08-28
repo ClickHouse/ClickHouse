@@ -3,6 +3,8 @@
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Functions/DateTimeTransforms.h>
 
 #include <arrow/util/bit_stream_utils_internal.h>
 #include <arrow/util/byte_stream_split_internal.h>
@@ -626,6 +628,10 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     {
         if (total_values_remaining < num_values)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Trying to read past total number of values in DELTA_BINARY_PACKED encoding");
+        /// Nothing to write. Returning early is important: the output buffer may have zero size,
+        /// and the first-value special case below would write through it.
+        if (num_values == 0)
+            return;
         total_values_remaining -= num_values;
 
         T * out_values = reinterpret_cast<T *>(out_bytes);
@@ -856,7 +862,20 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 return;
             }
             bool direct = string_converter->isTrivial();
-            ColumnString * col_str = assert_cast<ColumnString *>(&col);
+            ColumnString * col_str = nullptr;
+            if (direct)
+                col_str = assert_cast<ColumnString *>(&col);
+            else
+            {
+                /// The destination column is not a ColumnString in this case (e.g. it is a
+                /// ColumnDecimal for a BYTE_ARRAY Decimal), so decode into a temporary string
+                /// column and convert, the same way the unfiltered path above does it.
+                if (!temp_column)
+                    temp_column = ColumnString::create();
+                col_str = assert_cast<ColumnString *>(temp_column.get());
+                col_str->getOffsets().clear();
+                col_str->getChars().clear();
+            }
             col_str->reserve(col_str->size() + pass_count);
             decodeImpl<false, false>(num_values, col_str, nullptr, filter, filter_offset);
             if (!direct)
@@ -1012,17 +1031,37 @@ bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, s
     return false;
 }
 
-void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, Field & out) const
+void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const
 {
     if (!allow_stats)
         return;
 
+    std::optional<Field> field;
     if (fixed_size_converter)
-        fixed_size_converter->convertField(data, is_max, out);
+        field = fixed_size_converter->convertField(data, is_max);
     else if (string_converter)
-        string_converter->convertField(data, is_max, out);
+        field = string_converter->convertField(data, is_max);
     else
         chassert(false);
+
+    /// The converter couldn't produce a usable bound (e.g. NaN); leave `out` unchanged.
+    if (!field.has_value())
+        return;
+
+    if (cast_stats_to_output_type)
+    {
+        /// `convert_inexact_floats` opts into rounding Float64 to nearest Float32, matching the
+        /// castColumn that is applied to the values; it doesn't affect the other allowed
+        /// conversions (Decimal/DateTime64 rescaling).
+        *field = tryConvertFieldToType(*field, final_output_type, &decoded_type, /*format_settings=*/ {}, /*strict=*/ false, /*convert_inexact_floats=*/ true);
+
+        /// Conversion failed, e.g. the value overflows the output type. Leaving the bound at
+        /// infinity is always safe.
+        if (field->isNull())
+            return;
+    }
+
+    out = std::move(*field);
 }
 
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
@@ -1392,6 +1431,28 @@ static void convertIntColumnImpl(const char * from_bytes, char * to_bytes, size_
     }
 }
 
+std::pair<Int32, Int32> IntConverter::dateTargetDayRange() const
+{
+    if (date_target_is_date)
+        return {0, DATE_LUT_MAX_DAY_NUM};
+    if (date_target_is_datetime)
+        return {0, static_cast<Int32>(MAX_DATETIME_DAY_NUM)};
+    if (date_target_datetime64_day_range.has_value())
+        return *date_target_datetime64_day_range;
+    return {DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM};
+}
+
+String IntConverter::dateTargetTypeName() const
+{
+    if (date_target_is_date)
+        return "Date";
+    if (date_target_is_datetime)
+        return "DateTime";
+    if (date_target_datetime64_day_range.has_value())
+        return "DateTime64";
+    return "Date32";
+}
+
 void IntConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
     if (output_size.has_value())
@@ -1423,24 +1484,25 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
 
     if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
     {
+        const auto [min_day, max_day] = dateTargetDayRange();
         auto & values = assert_cast<ColumnInt32 &>(col).getData();
         for (size_t i = values.size() - num_values; i < values.size(); ++i)
         {
             Int32 & days_num = values[i];
-            if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
+            if (days_num > max_day || days_num < min_day)
             {
                 if (date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                    days_num = (days_num < min_day) ? min_day : max_day;
                 else
                     throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Input value {} is out of allowed Date32 range, which is [{}, {}]",
-                        days_num, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                        "Input value {} is out of allowed {} range, which is [{}, {}]",
+                        days_num, dateTargetTypeName(), min_day, max_day};
             }
         }
     }
 }
 
-void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> IntConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in int statistics: {} != {}", data.size(), input_size);
@@ -1461,14 +1523,15 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
 
     /// Check for overflow in signed <-> unsigned conversion.
     if (input_signed && !field_signed && Int64(val) < 0)
-        return;
+        return std::nullopt;
     if (!input_signed && field_signed && val > UInt64(INT64_MAX))
-        return;
+        return std::nullopt;
 
     if (field_ipv4)
     {
-        if (val <= UInt64(UINT32_MAX))
-            out = Field(IPv4(UInt32(val)));
+        if (val > UInt64(UINT32_MAX))
+            return std::nullopt;
+        return Field(IPv4(UInt32(val)));
     }
     else if (field_mac_address)
     {
@@ -1484,32 +1547,36 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
         ///  seconds by castColumn, with the same rounding. So the rounded min/max stats
         ///  accurately represent min/max among the rounded values.)
         val /= 1000;
-        if (val <= UInt64(UINT32_MAX))
-            out = Field(val);
+        if (val > UInt64(UINT32_MAX))
+            return std::nullopt;
+        return Field(val);
     }
     else if (field_decimal_scale.has_value())
     {
         switch (output_size.value_or(input_size))
         {
-            case 4: out = DecimalField<Decimal32>(Int32(val), *field_decimal_scale); break;
-            case 8: out = DecimalField<Decimal64>(val, *field_decimal_scale); break;
-            default: chassert(false);
+            case 4: return Field(DecimalField<Decimal32>(Int32(val), *field_decimal_scale));
+            case 8: return Field(DecimalField<Decimal64>(val, *field_decimal_scale));
+            default: chassert(false); return std::nullopt;
         }
     }
     else if (field_signed)
     {
-        if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore &&
-            (Int64(val) > DATE_LUT_MAX_EXTEND_DAY_NUM || Int64(val) < -DAYNUM_OFFSET_EPOCH))
-            return;
+        if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
+        {
+            const auto [min_day, max_day] = dateTargetDayRange();
+            if (Int64(val) > Int64(max_day) || Int64(val) < Int64(min_day))
+                return std::nullopt;
+        }
 
-        out = Field(Int64(val));
+        return Field(Int64(val));
     }
     else
-        out = Field(val);
+        return Field(val);
 }
 
 template<typename T>
-void FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in float statistics: {} != {}", data.size(), input_size);
@@ -1529,8 +1596,9 @@ void FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/
     ///
     /// We reject NaNs, but don't do anything about +-0 because normal Field comparisons should
     /// already treat them as equal.
-    if (!std::isnan(x))
-        out = Field(x);
+    if (std::isnan(x))
+        return std::nullopt;
+    return Field(x);
 }
 
 template struct FloatConverter<float>;
@@ -1581,20 +1649,20 @@ void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values,
     }
 }
 
-void UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
 
-    out = decodeParquetUUID(data.data());
+    return Field(decodeParquetUUID(data.data()));
 }
 
-void FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of fixed string in statistics: {} != {}", data.size(), input_size);
 
-    out = Field(String(data.data(), data.size()));
+    return Field(String(data.data(), data.size()));
 }
 
 void TrivialStringConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
@@ -1622,9 +1690,9 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
     }
 }
 
-void TrivialStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> TrivialStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
-    out = Field(String(data.data(), data.size()));
+    return Field(String(data.data(), data.size()));
 }
 
 /// Reverse bytes. Like std::byteswap, but works for Int128 and Int256 too.
@@ -1721,19 +1789,142 @@ void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> 
 }
 
 template <typename T>
-void BigEndianDecimalFixedSizeConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> BigEndianDecimalFixedSizeConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in Decimal statistics: {} != {}", data.size(), input_size);
 
     T x = helper.convertUnpaddedValue(data);
-    out = DecimalField<Decimal<T>>(Decimal<T>(x), scale);
+    return Field(DecimalField<Decimal<T>>(Decimal<T>(x), scale));
 }
 
 template struct BigEndianDecimalFixedSizeConverter<Int32>;
 template struct BigEndianDecimalFixedSizeConverter<Int64>;
 template struct BigEndianDecimalFixedSizeConverter<Int128>;
 template struct BigEndianDecimalFixedSizeConverter<Int256>;
+
+template <typename T>
+static T convertBigEndianDecimalWideInteger(std::span<const char> data)
+{
+    if (data.empty())
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected empty wide-integer Decimal value");
+
+    using Unsigned = std::conditional_t<sizeof(T) == sizeof(UInt128), UInt128, UInt256>;
+    constexpr bool is_signed = std::numeric_limits<T>::is_signed;
+    const bool negative = static_cast<uint8_t>(data.front()) >= 0x80;
+
+    if constexpr (!is_signed)
+    {
+        if (negative)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Negative Parquet Decimal cannot be read as an unsigned wide integer");
+    }
+
+    const size_t leading_bytes = data.size() > sizeof(T) ? data.size() - sizeof(T) : 0;
+    const uint8_t extension = negative ? 0xff : 0;
+    for (size_t i = 0; i < leading_bytes; ++i)
+    {
+        if (static_cast<uint8_t>(data[i]) != extension)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Parquet Decimal does not have valid sign extension for the requested wide integer type");
+    }
+
+    if constexpr (is_signed)
+    {
+        if (leading_bytes && (static_cast<uint8_t>(data[leading_bytes]) >= 0x80) != negative)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Parquet Decimal is out of range for the requested signed wide integer type");
+    }
+
+    /// Initialize every limb with the sign extension, then replace the bytes present in the input.
+    /// This avoids shifting the whole wide integer once per input byte.
+    const std::span significant_data = data.subspan(leading_bytes);
+    constexpr size_t num_limbs = sizeof(T) / sizeof(UInt64);
+    static_assert(sizeof(T) % sizeof(UInt64) == 0);
+    const UInt64 extension_limb = negative ? std::numeric_limits<UInt64>::max() : 0;
+    Unsigned value;
+    for (size_t limb_idx = 0; limb_idx < num_limbs; ++limb_idx)
+    {
+        UInt64 limb = extension_limb;
+        for (size_t byte_idx = 0; byte_idx < sizeof(UInt64); ++byte_idx)
+        {
+            const size_t input_byte_offset = limb_idx * sizeof(UInt64) + byte_idx;
+            if (input_byte_offset >= significant_data.size())
+                break;
+
+            const UInt64 shift = byte_idx * 8;
+            const UInt64 mask = UInt64(0xff) << shift;
+            const UInt64 byte = static_cast<uint8_t>(significant_data[significant_data.size() - input_byte_offset - 1]);
+            limb = (limb & ~mask) | (byte << shift);
+        }
+
+        const size_t native_limb_idx = std::endian::native == std::endian::little
+            ? limb_idx
+            : num_limbs - limb_idx - 1;
+        value.items[native_limb_idx] = limb;
+    }
+
+    return static_cast<T>(value);
+}
+
+template <typename T>
+void BigEndianDecimalWideIntegerConverter<T>::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    if (num_values > data.size() / input_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not enough bytes for wide-integer Decimal values");
+
+    auto to_bytes = col.insertRawUninitialized(num_values);
+    chassert(to_bytes.size() == num_values * sizeof(T));
+    T * to = reinterpret_cast<T *>(to_bytes.data());
+    for (size_t i = 0; i < num_values; ++i)
+        to[i] = convertBigEndianDecimalWideInteger<T>(data.subspan(i * input_size, input_size));
+}
+
+template <typename T>
+std::optional<Field> BigEndianDecimalWideIntegerConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
+{
+    if (data.size() != input_size)
+        throw Exception(
+            ErrorCodes::CANNOT_PARSE_NUMBER,
+            "Unexpected value size in wide-integer Decimal statistics: {} != {}",
+            data.size(),
+            input_size);
+
+    return Field(convertBigEndianDecimalWideInteger<T>(data));
+}
+
+template struct BigEndianDecimalWideIntegerConverter<Int128>;
+template struct BigEndianDecimalWideIntegerConverter<UInt128>;
+template struct BigEndianDecimalWideIntegerConverter<Int256>;
+template struct BigEndianDecimalWideIntegerConverter<UInt256>;
+
+template <typename T>
+void BigEndianDecimalWideIntegerStringConverter<T>::convertColumn(
+    std::span<const char> chars,
+    const UInt64 * offsets,
+    size_t separator_bytes,
+    size_t num_values,
+    IColumn & col) const
+{
+    auto to_bytes = col.insertRawUninitialized(num_values);
+    chassert(to_bytes.size() == num_values * sizeof(T));
+    T * to = reinterpret_cast<T *>(to_bytes.data());
+
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        const size_t begin = offsets[ssize_t(i) - 1];
+        const size_t size = offsets[i] - begin - separator_bytes;
+        to[i] = convertBigEndianDecimalWideInteger<T>(chars.subspan(begin, size));
+    }
+}
+
+template <typename T>
+std::optional<Field> BigEndianDecimalWideIntegerStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
+{
+    return Field(convertBigEndianDecimalWideInteger<T>(data));
+}
+
+template struct BigEndianDecimalWideIntegerStringConverter<Int128>;
+template struct BigEndianDecimalWideIntegerStringConverter<UInt128>;
+template struct BigEndianDecimalWideIntegerStringConverter<Int256>;
+template struct BigEndianDecimalWideIntegerStringConverter<UInt256>;
 
 template <typename T>
 void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
@@ -1754,13 +1945,13 @@ void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> cha
 }
 
 template <typename T>
-void BigEndianDecimalStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> BigEndianDecimalStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() > sizeof(T))
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpectedly wide value in Decimal statistics: {} > {} bytes", data.size(), sizeof(T));
 
     T x = BigEndianHelper<T>(data.size()).convertUnpaddedValue(data);
-    out = DecimalField<Decimal<T>>(Decimal<T>(x), scale);
+    return Field(DecimalField<Decimal<T>>(Decimal<T>(x), scale));
 }
 
 template struct BigEndianDecimalStringConverter<Int32>;

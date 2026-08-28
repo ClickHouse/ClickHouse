@@ -358,121 +358,24 @@ cursor.executemany(
 ```
 
 <div id="user-defined-functions">
-  ### Пользовательские функции (UDF)
+  ### Пользовательские функции Python (UDF)
 </div>
 
-Расширьте SQL с помощью пользовательских Python-функций:
-
-<div id="basic-udf-usage">
-  #### Основы использования UDF
-</div>
+chDB поддерживает нативные Python UDF, выполняемые в процессе приложения, с типизированными аргументами, автоматическим выводом типов и настраиваемой обработкой NULL и исключений.
 
 ```python
-from chdb.udf import chdb_udf
-from chdb import query
+from chdb import query, func
+from chdb.sqltypes import INT64
 
-# Простая математическая функция
-@chdb_udf()
-def add_numbers(a, b):
-    return int(a) + int(b)
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
 
-# Функция обработки строк
-@chdb_udf()
-def reverse_string(text):
-    return text[::-1]
-
-# Функция обработки JSON  
-@chdb_udf()
-def extract_json_field(json_str, field):
-    import json
-    try:
-        data = json.loads(json_str)
-        return str(data.get(field, ''))
-    except:
-        return ''
-
-# Использование UDF в запросах
-result = query("""
-    SELECT 
-        add_numbers('10', '20') as sum_result,
-        reverse_string('hello') as reversed,
-        extract_json_field('{"name": "John", "age": 30}', 'name') as name
-""")
-print(result)
+result = query("SELECT add(2, 3)")
+print(result)  # 5
 ```
 
-<div id="advanced-udf-custom-return-types">
-  #### Расширенные UDF с пользовательскими типами возвращаемых значений
-</div>
-
-```python
-# UDF с конкретным возвращаемым типом
-@chdb_udf(return_type="Float64")
-def calculate_bmi(height_str, weight_str):
-    height = float(height_str) / 100  # Перевод см в метры
-    weight = float(weight_str)
-    return weight / (height * height)
-
-# UDF для валидации данных
-@chdb_udf(return_type="UInt8") 
-def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return 1 if re.match(pattern, email) else 0
-
-# Использование в сложных запросах
-result = query("""
-    SELECT 
-        name,
-        calculate_bmi(height, weight) as bmi,
-        is_valid_email(email) as has_valid_email
-    FROM (
-        SELECT 
-            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
-        UNION ALL
-        SELECT 
-            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
-    )
-""", "Pretty")
-print(result)
-```
-
-<div id="udf-best-practices">
-  #### Рекомендации по UDF
-</div>
-
-1. **Функции без состояния**: UDF должны быть чистыми функциями без побочных эффектов
-2. **Импорт внутри функций**: Все необходимые модули нужно импортировать внутри UDF
-3. **Строковый ввод/вывод**: Все параметры UDF передаются как строки (формат TabSeparated)
-4. **Обработка ошибок**: Для надежности добавляйте блоки try-catch
-5. **Производительность**: UDF вызываются для каждой строки, поэтому уделяйте внимание производительности
-
-```python
-# Хорошо структурированный UDF с обработкой ошибок
-@chdb_udf(return_type="String")
-def safe_json_extract(json_str, path):
-    import json
-    try:
-        data = json.loads(json_str)
-        keys = path.split('.')
-        result = data
-        for key in keys:
-            if isinstance(result, dict) and key in result:
-                result = result[key]
-            else:
-                return 'null'
-        return str(result)
-    except Exception as e:
-        return f'error: {str(e)}'
-
-# Использование со сложным вложенным JSON
-query("""
-    SELECT safe_json_extract(
-        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
-        'user.profile.name'
-    ) as extracted_name
-""")
-```
+Полное руководство по методам регистрации, системе типов, обработке NULL, исключений и поддержке DateTime см. в [руководстве по Python UDF](/ru/chdb/guides/python-udf). Полный справочник API см. в [справочнике API Python UDF](/ru/chdb/api/python#user-defined-functions). Более старый декоратор `@chdb_udf` по-прежнему доступен, но заменён этим API — см. [устаревший API](/ru/chdb/api/python#legacy-udf).
 
 <div id="streaming-queries">
   ### Стриминговое выполнение запросов

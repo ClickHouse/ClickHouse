@@ -174,16 +174,11 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const handleClick = (e) => {
-        e.preventDefault();
-        const target = document.getElementById('mcp-setup');
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
+    const href = `${assetBase}/ar/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
     return (
         <a
-            href="#mcp-setup"
+            href={href}
             data-galaxy-event="docs.home.mcp-server"
-            onClick={handleClick}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
             <span
@@ -260,25 +255,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-          .ch-goal-icon { color: #374151; }
-          .dark .ch-goal-icon { color: #FAFF69; }
-          /* شريط Integrations: حدود بلون مميز في كلا الوضعين */
-          html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-          html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-          .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-          .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-          /* إخفاء الشريط الجانبي فورًا في الصفحة الرئيسية (لمنع الوميض) */
-          #sidebar { display: none !important; }
-          /* جعل شريط التنقل يمتد بعرض الصفحة بالكامل لأن الشريط الجانبي مخفي */
-          #navbar-transition-maple {
-            width: 100vw !important;
-            left: 0 !important;
-            margin-left: 0 !important;
-            /* مطابقة الحشوة اليمنى لشريط التنقل نفسه (3rem) */
-            padding-left: 3rem !important;
-            justify-content: flex-start !important;
-          }
-          `}
+            .ch-goal-icon { color: #374151; }
+            .dark .ch-goal-icon { color: #FAFF69; }
+            /* شريط Integrations: حدود بلون مميز في كلا الوضعين */
+            html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+            html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+            .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+            .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+            /* إخفاء الشريط الجانبي فورًا في الصفحة الرئيسية (لمنع الوميض) */
+            #sidebar { display: none !important; }
+            /* جعل شريط التنقل يمتد بعرض الصفحة بالكامل لأن الشريط الجانبي مخفي */
+            #navbar-transition-maple {
+              width: 100vw !important;
+              left: 0 !important;
+              margin-left: 0 !important;
+              /* مطابقة الحشوة اليمنى لشريط التنقل نفسه (3rem) */
+              padding-left: 3rem !important;
+              justify-content: flex-start !important;
+            }
+            `}
 </style>
 
 <PageWrapper>
@@ -368,7 +363,7 @@ export const PageWrapper = ({ children }) => {
         { label: "الإعدادات", href: "/ar/reference/settings/index" },
         { label: "الدوال", href: "/ar/reference/functions/regular-functions/overview" },
         { label: "المحركات", href: "/ar/reference/engines/engines" },
-        { label: "جداول النظام", href: "/ar/reference/system-tables" },
+        { label: "جداول النظام", href: "/ar/reference/system-tables/overview" },
         { label: "التنسيقات", href: "/ar/reference/formats/index" },
         { label: "أنواع البيانات", href: "/ar/reference/data-types/index" }
     ]}
@@ -387,7 +382,7 @@ export const PageWrapper = ({ children }) => {
           links={[
         { label: "ClickHouse Cloud", href: "/ar/products/cloud/getting-started/cloud-get-started" },
         { label: "ClickStack", href: "/ar/clickstack" },
-        { label: "Managed Postgres", href: "/ar/products/managed-postgres/overview" },
+        { label: "ClickHouse Managed Postgres", href: "/ar/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
         { label: "chDB", href: "/ar/chdb" },
         { label: "مشغّل Kubernetes", href: "/ar/products/kubernetes-operator/overview" },
@@ -436,7 +431,7 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">ما الذي ستتعلّمه:</p>
           </>}
               links={[
-              { label: "1. كيفية استيعاب البيانات من المصادر الشائعة بأقل جهد", href: "/integrations" },
+              { label: "1. كيفية استيعاب البيانات من المصادر الشائعة بأقل جهد", href: "/ar/integrations/home" },
               { label: "2. أفضل الممارسات لتنظيم البيانات لأغراض analytics والنمو", href: "/ar/guides/clickhouse/data-modelling/schema-design" },
               { label: "3. طرق query على datasets كبيرة في الوقت الفعلي", href: "/ar/get-started/use-cases/real-time-analytics" },
               { label: "4. كيفية بناء dashboards وتنبيهات وfeatures قائمة على الأحداث فوقها", href: "/ar/get-started/use-cases/data-warehousing" },
@@ -448,7 +443,7 @@ export const PageWrapper = ({ children }) => {
           <div className="flex flex-col gap-4">
             <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="حزمة observability متكاملة all in one ومدعومة من ClickHouse، تمنحك استعلامات فائقة السرعة وaggregations قوية على logs وmetrics وtraces وsession replay والأخطاء." href="/ar/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="خدمة Postgres سريعة وقابلة للتوسّع وبمستوى المؤسسات، ومتكاملة أصلاً مع ClickHouse. اجمع بسهولة بين Postgres للمعاملات وClickHouse من أجل analytics." href="/ar/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="خدمة Postgres سريعة وقابلة للتوسّع وبمستوى المؤسسات، ومتكاملة أصلاً مع ClickHouse. اجمع بسهولة بين Postgres للمعاملات وClickHouse من أجل analytics." href="/ar/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
@@ -467,51 +462,6 @@ export const PageWrapper = ({ children }) => {
         </div>
       </div>
 
-      <FullWidthDivider style={{ margin: '40px 0 0' }} />
-
-      <div id="mcp-setup" className="mt-16 scroll-mt-20">
-        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">إعداد خادم MCP للوثائق</h2>
-        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">استعلِم من وثائق ClickHouse مباشرةً عبر أدوات الذكاء الاصطناعي لديك باستخدام بروتوكول Model Context Protocol.</p>
-
-        <div className="mt-6">
-          <Tabs>
-            <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">شغّل في الطرفية:</p>
-
-              <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}
-              </CodeBlock>
-            </Tab>
-
-            <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">أضف إلى <code>claude&#95;desktop&#95;config.json</code>:</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-
-            <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">أضف إلى <code>.cursor/mcp.json</code>:</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-
-            <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">أضف إلى <code>~/.codeium/windsurf/mcp&#95;config.json</code>:</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-          </Tabs>
-        </div>
-
-        <div className="mt-6 p-4 rounded-lg bg-[#f9f9f9] dark:bg-white/[0.03] border border-[#e5e7eb] dark:border-white/10">
-          <p className="text-sm font-semibold text-gray-900 dark:text-zinc-50 mb-1">أضف مهارات ClickHouse إلى وكيل البرمجة لديك</p>
-          <p className="text-sm text-gray-500 dark:text-zinc-500 mb-3">ثبّت مهارات ClickHouse لمنح وكيلك معرفة متخصصة بـ ClickHouse وأفضل الممارسات.</p>
-
-          <CodeBlock language="bash">
-            {`npx skills add https://clickhouse.com`}
-          </CodeBlock>
-        </div>
-      </div>
     </div>
   </div>
 </PageWrapper>

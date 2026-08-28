@@ -558,6 +558,59 @@ struct ConverterNumberAsFixedString
     size_t fixedStringSize() { return sizeof(T); }
 };
 
+/// Serialize a wide integer as a Parquet fixed-length `DECIMAL`. The extra leading byte preserves
+/// the full unsigned range and sign-extends signed values. Building the result byte by byte makes
+/// the conversion independent of host endianness.
+template <typename T>
+struct ConverterWideIntegerAsDecimal
+{
+    static constexpr size_t encoded_size = sizeof(T) + 1;
+    static constexpr size_t num_limbs = sizeof(T) / sizeof(UInt64);
+    static_assert(sizeof(T) % sizeof(UInt64) == 0);
+    using Statistics = StatisticsFixedStringCopy<encoded_size, /*SIGNED=*/ true>;
+
+    const ColumnVector<T> & column;
+    PODArray<uint8_t> data_buf;
+    PODArray<parquet::FixedLenByteArray> ptr_buf;
+
+    explicit ConverterWideIntegerAsDecimal(const ColumnPtr & c) : column(assert_cast<const ColumnVector<T> &>(*c)) {}
+
+    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    {
+        data_buf.resize(count * encoded_size);
+        ptr_buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            uint8_t * out = data_buf.data() + i * encoded_size;
+            const T & source = column.getData()[offset + i];
+            if constexpr (std::numeric_limits<T>::is_signed)
+                out[0] = source < 0 ? 0xff : 0;
+            else
+                out[0] = 0;
+
+            /// `wide::integer` stores limbs in native order. Visit them from least to most
+            /// significant and emit each limb from least to most significant byte into the output
+            /// buffer backwards, producing big-endian bytes without repeatedly shifting `T`.
+            for (size_t limb_idx = 0; limb_idx < num_limbs; ++limb_idx)
+            {
+                const size_t native_limb_idx = std::endian::native == std::endian::little
+                    ? limb_idx
+                    : num_limbs - limb_idx - 1;
+                const UInt64 limb = source.items[native_limb_idx];
+                for (size_t byte_idx = 0; byte_idx < sizeof(UInt64); ++byte_idx)
+                {
+                    const size_t output_idx = encoded_size - 1 - limb_idx * sizeof(UInt64) - byte_idx;
+                    out[output_idx] = static_cast<uint8_t>(limb >> (byte_idx * 8));
+                }
+            }
+            ptr_buf[i].ptr = out;
+        }
+        return ptr_buf.data();
+    }
+
+    size_t fixedStringSize() { return encoded_size; }
+};
+
 struct ConverterJSON
 {
     using Statistics = StatisticsStringCopy;
@@ -1342,14 +1395,22 @@ void writeColumnChunkBody(
             break;
 
         #define F(source_type) \
-            writeColumnImpl<parquet::FLBAType>( \
-                s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
+            if (options.output_wide_integer_as_decimal) \
+                writeColumnImpl<parquet::FLBAType>( \
+                    s, options, out, ConverterWideIntegerAsDecimal<source_type>(s.primitive_column)); \
+            else \
+                writeColumnImpl<parquet::FLBAType>( \
+                    s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
         case TypeIndex::UInt128: F(UInt128); break;
         case TypeIndex::UInt256: F(UInt256); break;
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
-        case TypeIndex::IPv6:    F(IPv6); break;
         #undef F
+
+        case TypeIndex::IPv6:
+            writeColumnImpl<parquet::FLBAType>(
+                s, options, out, ConverterNumberAsFixedString<IPv6>(s.primitive_column));
+            break;
 
         case TypeIndex::UUID:
             writeColumnImpl<parquet::FLBAType>(s,

@@ -1,0 +1,14 @@
+no overflow
+3000	0
+overflow any OrNull
+1000	0
+overflow any OrDefault
+1000	0
+overflow any OrNull(Tuple)
+1000	0
+overflow any Tuple(OrNull)
+1000	0
+overflow any two keys
+1
+1000	0
+overflow throw

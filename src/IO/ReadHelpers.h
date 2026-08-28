@@ -499,7 +499,7 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf);
 
 /// Similar to readJSONObjectPossiblyInvalid but avoids copying the data if JSON object fits into current read buffer
 /// If copying is unavoidable, it copies data into provided object_buffer and returns string_view to it.
-std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer);
+std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer, size_t max_size = 0);
 
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
@@ -514,6 +514,7 @@ struct NullOutput
     void append(const char *) {}
     void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
+    size_t size() const { return 0; }
 };
 
 template <typename ReturnType>
@@ -690,7 +691,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
     else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
         return false;
 
-    /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
+    /// A calendar-invalid date (e.g. month 13) yields 1900-01-01 (-getDayNumOffsetEpoch(), -25567) for Date32 and 1970-01-01 for Date.
     date = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
