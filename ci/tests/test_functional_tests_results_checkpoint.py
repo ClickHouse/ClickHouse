@@ -668,6 +668,9 @@ JOB_NAME = {job!r}
 BUILD_TYPES = {build_types!r}
 ROWS = {rows!r}
 BLOCK_ON_STOP_SERVER_CALL = {block_call}
+# Blocks inside `check_fatal_messages_in_logs` once this many build types have produced
+# their rows, which is the window between a build type's rows and the checkpoint after it.
+BLOCK_ON_FATAL_SCAN_CALL = {block_fatal_call}
 BLOCKED_MARKER = {blocked!r}
 # "": all build types succeed. "first_fails": the first build type produces FAIL rows, so
 # `test_result.is_ok()` is false and the `build_types[1:]` loop never runs.
@@ -741,6 +744,12 @@ class _CH:
     def check_fatal_messages_in_logs(self):
         # The real method always returns at least one row, and `extend_sub_results`
         # asserts a non-empty list.
+        if (
+            BLOCK_ON_FATAL_SCAN_CALL is not None
+            and _calls["n"] >= BLOCK_ON_FATAL_SCAN_CALL
+        ):
+            open(BLOCKED_MARKER, "w").close()
+            time.sleep(600)
         return [Result.create_from(name=FATAL_ROW_NAME, status=Result.Status.OK)]
 
 
@@ -810,7 +819,13 @@ def _probe_children(tmp_path):
 
 
 def _kill_main_in_teardown(
-    tmp_path, build_types=None, rows=6174, block_call=None, failure_mode="", deadline=300
+    tmp_path,
+    build_types=None,
+    rows=6174,
+    block_call=None,
+    block_fatal_call=None,
+    failure_mode="",
+    deadline=300,
 ):
     """Run `main()` and SIGKILL its process group inside teardown.
 
@@ -831,6 +846,7 @@ def _kill_main_in_teardown(
                     build_types=build_types,
                     rows=rows,
                     block_call=block_call,
+                    block_fatal_call=block_fatal_call,
                     blocked=blocked,
                     failure_mode=failure_mode,
                     fatal_row=_FATAL_ROW_NAME,
@@ -934,6 +950,39 @@ def test_a_bugfix_job_killed_between_build_types_keeps_the_previous_build(tmp_pa
         "inversion runs later, so a terminal status here would publish the "
         "un-inverted verdict"
     )
+
+
+def test_a_kill_in_a_later_build_types_fatal_scan_keeps_that_builds_rows(tmp_path):
+    """The window between a later build type's rows and the checkpoint after them.
+
+    A build type's rows are complete when `FTResultsProcessor.run` returns, but
+    `check_fatal_messages_in_logs` scans the whole server log before the checkpoint that
+    persists them. The first build type has its own save before that scan; the later ones
+    are reached through the loop. Killed in that scan, the file still holds the PREVIOUS
+    build type's rows, so the one that just finished is missing entirely.
+
+    The `block_call` arms all block in `stop_server`, which is the next iteration - past
+    this window - so none of them can see it.
+    """
+    status, rows = _kill_main_in_teardown(
+        tmp_path,
+        build_types=["bt_first", "bt_second"],
+        rows=[7, 9],
+        block_fatal_call=2,
+    )
+
+    second = [name for name, _, _ in rows if name.startswith("bt_second_")]
+    stale = [name for name, _, _ in rows if name.startswith("bt_first_")]
+    assert len(second) == 9, (
+        f"the build type whose tests had finished published {len(second)} rows instead of "
+        f"9 (got {[name for name, _, _ in rows][:3]}...): a kill inside its fatal scan "
+        "loses the whole build type"
+    )
+    assert not stale, (
+        f"{len(stale)} row(s) of the previous build type are still published "
+        f"({stale[:3]}...) even though the loop has replaced them"
+    )
+    assert status == Result.Status.RUNNING, f"unexpected status [{status}]"
 
 
 def test_a_kill_entering_the_first_build_switch_keeps_labels_and_fatals(tmp_path):

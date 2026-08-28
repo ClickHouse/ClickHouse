@@ -1329,6 +1329,14 @@ def main():
                         runner_exit_code=bt_runner_exit_code,
                         is_bugfix_validation=is_labeled_bugfix_validation,
                     )
+                    # Until this call the file holds the previous build type's
+                    # rows, and the fatal scan below runs before the next one.
+                    # Re-assigned after that scan, which can change both.
+                    test_result.results = bt_result.results
+                    test_result.status = bt_result.status
+                    checkpoint_collected_results(
+                        info.job_name, results + [test_result], info.is_local_run
+                    )
 
                     # Check fatal messages for this build type. As with the
                     # first build type, a `BLOCKER` fatal is the bug crashing
