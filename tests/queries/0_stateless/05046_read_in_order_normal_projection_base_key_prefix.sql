@@ -77,8 +77,6 @@ SELECT 'A16', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FR
     WHERE k2 = 0 ORDER BY k1, k2, k3, k4 LIMIT 799)
     WHERE explain LIKE '%ReadFromMergeTree (%.t_bp)%';
 
-DROP TABLE t_bp;
-
 DROP TABLE IF EXISTS t_bp_full;
 
 CREATE TABLE t_bp_full
@@ -188,25 +186,11 @@ SELECT 'A13', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FR
 
 DROP TABLE t_bp_eq;
 
-DROP TABLE IF EXISTS t_bp_forced;
-
 -- `force_optimize_projection_name` is a separate setting from `force_optimize_projection` and has
 -- its own `INCORRECT_DATA` check, so a candidate it names must not be declined.
-CREATE TABLE t_bp_forced
-(
-    k1 String, k2 UInt32, k3 Bool, k4 UInt32, narrow UInt32,
-    wide1 String, wide2 String, wide3 String,
-    PROJECTION p_narrow (SELECT k1, k2, k3, k4, narrow ORDER BY k1, k2, k4)
-)
-ENGINE = MergeTree ORDER BY (k1, k2, k3, k4)
-SETTINGS index_granularity = 8192, index_granularity_bytes = 16384;
-
-INSERT INTO t_bp_forced SELECT 'a', intDiv(number, 500), (number % 3) = 0, number, number,
-    repeat('w', 500), repeat('x', 500), repeat('y', 500) FROM numbers(4000);
-
-SELECT 'A14', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FROM t_bp_forced
+SELECT 'A14', count() FROM (EXPLAIN actions = 1 SELECT k1, k2, k3, k4, narrow FROM t_bp
     WHERE k4 < 3500 ORDER BY k1, k2, k3, k4 LIMIT 10
     SETTINGS force_optimize_projection_name = 'p_narrow')
     WHERE explain LIKE '%ReadFromMergeTree (p_narrow)%';
 
-DROP TABLE t_bp_forced;
+DROP TABLE t_bp;

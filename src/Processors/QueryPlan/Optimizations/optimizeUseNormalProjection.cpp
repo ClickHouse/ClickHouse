@@ -659,8 +659,8 @@ std::optional<String> optimizeUseNormalProjections(
                  /// Declining a candidate named by `force_optimize_projection_name` would turn the query
                  /// into an `INCORRECT_DATA` error instead of a plan choice.
                  && optimization_settings.force_projection_name != candidate.projection->name
-                 /// No more rows than the `LIMIT` can match, so neither plan stops early, both mark
-                 /// counts are paid in full and comparing them is valid after all.
+                 /// At most `LIMIT` rows can match here, so the limit cannot cut short what either plan must produce;
+                 /// the base read only saves its trailing non-matching marks. A tie keeps the candidate.
                  && !(candidate.parent_parts.empty() && candidate.selected_rows <= outer_sorting_step->getLimit())
                  && sorted_prefix_length(candidate.projection->metadata->getSortingKey())
                      < outer_sorting_step->getSortDescription().size())
