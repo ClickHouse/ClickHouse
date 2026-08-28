@@ -988,9 +988,10 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 warn_about_ext4 |= fs_type.empty() || fs_type == "ext4";
             };
             probe_path(data_path);
+            /// Object-storage disks keep their metadata under a local path too, so every disk's
+            /// path is probed - getPath() is the local metadata directory for remote disks.
             for (const auto & [_, disk] : server.context()->getDisksMap())
-                if (!disk->isRemote())
-                    probe_path(disk->getPath());
+                probe_path(disk->getPath());
             if (warn_about_ext4)
                 kernel_warning = PreformattedMessage::create(
                     "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). Consider upgrading the kernel.",
