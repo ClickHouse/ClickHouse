@@ -81,8 +81,14 @@ account. The same privilege authorizes the equivalent
 
 ## Result {#result}
 
-The query returns one row with a single `String` column named `token`, holding the generated secret.
-To get it without any formatting, use `FORMAT TSVRaw`:
+The query returns one row with two columns:
+
+| Column        | Type            | Description                                                            |
+|---------------|-----------------|------------------------------------------------------------------------|
+| `token`       | `String`        | The generated secret.                                                   |
+| `valid_until` | `DateTime64(0)` | When the token expires. `0` means that it never expires, the same encoding as the `valid_until` column of [`system.users`](/reference/system-tables/users). |
+
+To get the secret without any formatting, select it with `FORMAT TSVRaw`:
 
 ```sql
 CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
@@ -98,12 +104,18 @@ constrain passwords chosen by humans.
 Limit the lifetime of the token. They work exactly as the corresponding clauses of an authentication method
 of [`CREATE USER`](/reference/statements/create/user#valid-until-clause): `VALID UNTIL` takes an absolute date
 and time, `VALID FOR` takes an [interval](/reference/data-types/special-data-types/interval) which is added to
-the current time when the query is executed. Without them the token never expires.
+the current time when the query is executed.
+
+Without either clause the token lives for
+[`create_token_default_ttl_seconds`](/reference/settings/session-settings/create#create_token_default_ttl_seconds), which is
+30 minutes by default, so a token that is not asked to live longer is short-lived. Set that setting to `0`, or
+write `VALID UNTIL 'infinity'`, to create a token that never expires.
 
 Examples:
 
 - `CREATE TOKEN VALID UNTIL '2026-12-31'`
 - `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
+- `CREATE TOKEN VALID UNTIL 'infinity'`
 
 ## GRANTS Clause {#grants-clause}
 

@@ -6,6 +6,7 @@ SELECT formatQuerySingleLine('CREATE TOKEN GRANTS (SELECT ON db.t)');
 SELECT formatQuerySingleLine($$CREATE TOKEN VALID UNTIL '2077-01-01' GRANTS (SELECT ON db.t, INSERT ON db.t)$$);
 SELECT formatQuerySingleLine($$CREATE TOKEN GRANTS (SELECT ON db.t) VALID UNTIL '2077-01-01'$$);
 SELECT formatQuerySingleLine('CREATE TOKEN VALID FOR INTERVAL 1 DAY GRANTS (USAGE ON *.*) FORMAT TSVRaw');
+SELECT formatQuerySingleLine('CREATE TOKEN SETTINGS create_token_default_ttl_seconds = 0 FORMAT TSVRaw');
 
 SELECT '-- A grant of an authentication method is never widened by the backward-compatibility rewrites';
 SELECT formatQuerySingleLine('CREATE TOKEN GRANTS (ALTER USER ON alice)');

@@ -5,10 +5,14 @@
 #include <Access/AuthenticationData.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Common/Exception.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
+#include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTLiteral.h>
@@ -32,6 +36,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 create_token_default_ttl_seconds;
+}
 
 namespace ErrorCodes
 {
@@ -109,6 +118,28 @@ namespace
 
         return salt;
     }
+
+    /// Resolves the deadline of the token: the `VALID UNTIL` / `VALID FOR` clause of the query when it
+    /// has one, otherwise `create_token_default_ttl_seconds` from now. Returns `0` when the token never
+    /// expires, which is what an explicit `VALID UNTIL 'infinity'` and a zero default TTL both mean.
+    time_t resolveValidUntil(const ASTCreateTokenQuery & query, ContextPtr context)
+    {
+        const time_t now = getCurrentTime();
+
+        if (query.valid_until)
+            return getValidUntilFromAST(query.valid_until, context, query.valid_until_is_interval, now);
+
+        const UInt64 default_ttl = context->getSettingsRef()[Setting::create_token_default_ttl_seconds];
+        if (default_ttl == 0)
+            return 0;
+
+        /// Saturate at the largest deadline that displays exactly in every time zone, the same way the
+        /// `VALID FOR` path does, instead of overflowing `time_t` into a deadline in the past.
+        if (now < 0 || default_ttl > static_cast<UInt64>(MAX_VALID_UNTIL_TIME - now))
+            return MAX_VALID_UNTIL_TIME;
+
+        return now + static_cast<time_t>(default_ttl);
+    }
 }
 
 BlockIO InterpreterCreateTokenQuery::execute()
@@ -121,6 +152,11 @@ BlockIO InterpreterCreateTokenQuery::execute()
     const String user_name = getContext()->getUserName();
     if (user_name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CREATE TOKEN is executed in a context which has no current user");
+
+    /// The deadline is resolved here rather than left to the statement below, so that the value
+    /// reported back to the user is exactly the one stored on the authentication method: the
+    /// clause is rewritten to the resolved absolute instant before the statement runs.
+    const time_t valid_until = resolveValidUntil(query, getContext());
 
     const String token = generateToken();
     const String salt = generateSalt();
@@ -145,11 +181,9 @@ BlockIO InterpreterCreateTokenQuery::execute()
     authentication_method->contains_hash = true;
     authentication_method->children.push_back(make_intrusive<ASTLiteral>(hash_hex));
     authentication_method->children.push_back(make_intrusive<ASTLiteral>(salt));
-    if (query.valid_until)
-    {
-        authentication_method->setValidUntil(query.valid_until->clone());
-        authentication_method->valid_until_is_interval = query.valid_until_is_interval;
-    }
+    /// `0` is the "no expiration" sentinel, which is expressed by the absence of the clause.
+    if (valid_until != 0)
+        authentication_method->setValidUntil(make_intrusive<ASTLiteral>(formatValidUntilInUTC(valid_until)));
     authentication_method->grants = query.grants;
 
     /// `CREATE TOKEN` is a shorthand for adding an authentication method to the current user, so it is
@@ -165,12 +199,17 @@ BlockIO InterpreterCreateTokenQuery::execute()
 
     InterpreterCreateUserQuery{alter_user_query, getContext()}.execute();
 
-    auto column = ColumnString::create();
-    column->insert(token);
+    auto token_column = ColumnString::create();
+    token_column->insert(token);
+
+    /// `0` means the token never expires, the same encoding as the `valid_until` column of `system.users`.
+    auto valid_until_column = ColumnDateTime64::create(0, 0);
+    valid_until_column->insertValue(static_cast<Int64>(valid_until));
 
     BlockIO res;
-    res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(
-        std::make_shared<const Block>(Block{{std::move(column), std::make_shared<DataTypeString>(), "token"}})));
+    res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{
+        {std::move(token_column), std::make_shared<DataTypeString>(), "token"},
+        {std::move(valid_until_column), std::make_shared<DataTypeDateTime64>(0), "valid_until"}})));
 
     return res;
 }

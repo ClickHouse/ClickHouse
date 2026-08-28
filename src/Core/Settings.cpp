@@ -8372,6 +8372,16 @@ This happens due to different parsing pipelines:
 DECLARE(Bool, create_if_not_exists, false, R"(
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 )", 0) \
+    DECLARE(UInt64, create_token_default_ttl_seconds, 1800, R"(
+The lifetime, in seconds, given to a token created by [`CREATE TOKEN`](/reference/statements/create/token) which does not specify its own `VALID UNTIL` or `VALID FOR` clause. The default is 30 minutes, so a token that is not asked to live longer is short-lived.
+
+Possible values:
+
+- Positive integer — the token expires this many seconds after it is created.
+- 0 — a token without an explicit clause never expires.
+
+This is only a default. An explicit `VALID UNTIL` or `VALID FOR` clause of the query always wins, including `VALID UNTIL 'infinity'`, which creates a token that never expires regardless of this setting.
+)", 0) \
     DECLARE(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \

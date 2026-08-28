@@ -32,6 +32,13 @@ function login_expect_error()
     login "$password" "$@" 2>&1 | grep -m1 -o "$error" | head -n 1
 }
 
+# Runs a CREATE TOKEN query as the user and prints the raw result row:
+# the secret, a tab, and the resolved deadline.
+function create_token()
+{
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=human_password" -d "$1 FORMAT TSVRaw"
+}
+
 function is_token()
 {
     echo "$1" | grep -c -E '^[0-9A-Za-z]{32}$'
@@ -58,9 +65,13 @@ login "human_password" "CREATE TOKEN" 2>&1 | grep -m1 -o -F "Not enough privileg
 
 admin "GRANT CREATE TOKEN ON *.* TO ${user}"
 
+# The tokens below are created with the default TTL disabled, so that the deadlines shown by
+# SHOW CREATE USER stay reproducible; the default TTL is covered on its own further down.
+no_ttl="SETTINGS create_token_default_ttl_seconds = 0"
+
 echo "-- The token is a 32-character alphanumeric string, and a new one is generated every time"
-token=$(login "human_password" "CREATE TOKEN FORMAT TSVRaw")
-another_token=$(login "human_password" "CREATE TOKEN FORMAT TSVRaw")
+token=$(create_token "CREATE TOKEN ${no_ttl}" | cut -f1)
+another_token=$(create_token "CREATE TOKEN ${no_ttl}" | cut -f1)
 is_token "$token"
 is_token "$another_token"
 test "$token" != "$another_token" && echo "tokens differ"
@@ -71,26 +82,47 @@ login "$token" "SELECT x FROM t1"
 login "$token" "SELECT x FROM t2"
 
 echo "-- The GRANTS clause limits the rights of the sessions authenticated with the token"
-limited_token=$(login "human_password" "CREATE TOKEN GRANTS (SELECT ON ${CLICKHOUSE_DATABASE}.t1) FORMAT TSVRaw")
+limited_token=$(create_token "CREATE TOKEN GRANTS (SELECT ON ${CLICKHOUSE_DATABASE}.t1) ${no_ttl}" | cut -f1)
 login "$limited_token" "SELECT x FROM t1"
 login_expect_error "$limited_token" "ACCESS_DENIED" "SELECT x FROM t2"
 
-echo "-- The VALID UNTIL clause is stored with the authentication method"
-dated_token=$(login "human_password" "CREATE TOKEN VALID UNTIL '2077-01-01 00:00:00' GRANTS (SELECT ON ${CLICKHOUSE_DATABASE}.t2) FORMAT TSVRaw")
+echo "-- The VALID UNTIL clause is stored with the authentication method and is reported back"
+dated=$(create_token "CREATE TOKEN VALID UNTIL '2077-01-01 00:00:00' GRANTS (SELECT ON ${CLICKHOUSE_DATABASE}.t2) ${no_ttl}")
+dated_token=$(echo "$dated" | cut -f1)
+echo "$dated" | cut -f2
 login "$dated_token" "SELECT x FROM t2"
 
 echo "-- The generated secrets are stored hashed and are not shown by SHOW CREATE USER"
 admin "SHOW CREATE USER ${user}" | sed "s/${user}/user/g; s/${CLICKHOUSE_DATABASE}/db/g"
 
+echo "-- Without a clause the token lives for create_token_default_ttl_seconds, 30 minutes by default"
+default_valid_until=$(create_token "CREATE TOKEN" | cut -f2)
+admin "SELECT dateDiff('second', now(), toDateTime64('${default_valid_until}', 0)) BETWEEN 1700 AND 1800"
+
+echo "-- The reported deadline is the one stored on the authentication method"
+admin "SELECT countEqual(valid_until, toDateTime64('${default_valid_until}', 0)) FROM system.users WHERE name = '${user}'"
+
+echo "-- The setting is honoured, and an explicit clause wins over it"
+short_valid_until=$(create_token "CREATE TOKEN SETTINGS create_token_default_ttl_seconds = 60" | cut -f2)
+admin "SELECT dateDiff('second', now(), toDateTime64('${short_valid_until}', 0)) BETWEEN 1 AND 60"
+explicit_valid_until=$(create_token "CREATE TOKEN VALID UNTIL '2077-01-01 00:00:00' SETTINGS create_token_default_ttl_seconds = 60" | cut -f2)
+echo "$explicit_valid_until"
+
+echo "-- A zero setting, and VALID UNTIL 'infinity', create a token which never expires (reported as 0)"
+never_valid_until=$(create_token "CREATE TOKEN ${no_ttl}" | cut -f2)
+admin "SELECT toDateTime64('${never_valid_until}', 0) = toDateTime64(0, 0)"
+infinite_valid_until=$(create_token "CREATE TOKEN VALID UNTIL 'infinity' SETTINGS create_token_default_ttl_seconds = 60" | cut -f2)
+admin "SELECT toDateTime64('${infinite_valid_until}', 0) = toDateTime64(0, 0)"
+
 echo "-- An already expired token does not authenticate"
-expired_token=$(login "human_password" "CREATE TOKEN VALID FOR INTERVAL -1 DAY FORMAT TSVRaw")
+expired_token=$(create_token "CREATE TOKEN VALID FOR INTERVAL -1 DAY ${no_ttl}" | cut -f1)
 login_expect_error "$expired_token" "AUTHENTICATION_FAILED" "SELECT 1"
 
 echo "-- A session authenticated with an unlimited token can create tokens"
-is_token "$(login "$token" "CREATE TOKEN FORMAT TSVRaw")"
+is_token "$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=${token}" -d "CREATE TOKEN FORMAT TSVRaw" | cut -f1)"
 
 echo "-- A session limited by the GRANTS clause cannot, even when CREATE TOKEN is listed and granted"
-minting_token=$(login "human_password" "CREATE TOKEN GRANTS (CREATE TOKEN ON *.*) FORMAT TSVRaw")
+minting_token=$(create_token "CREATE TOKEN GRANTS (CREATE TOKEN ON *.*) ${no_ttl}" | cut -f1)
 login_expect_error "$minting_token" "ACCESS_DENIED" "CREATE TOKEN"
 login_expect_error "$minting_token" "ACCESS_DENIED" "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY 'minted'"
 

@@ -11,10 +11,21 @@ user
 -- The GRANTS clause limits the rights of the sessions authenticated with the token
 1
 ACCESS_DENIED
--- The VALID UNTIL clause is stored with the authentication method
+-- The VALID UNTIL clause is stored with the authentication method and is reported back
+2077-01-01 00:00:00
 2
 -- The generated secrets are stored hashed and are not shown by SHOW CREATE USER
 CREATE USER user IDENTIFIED WITH plaintext_password, sha256_password, sha256_password, sha256_password GRANTS (SELECT ON db.t1), sha256_password VALID UNTIL \'2077-01-01 00:00:00\' GRANTS (SELECT ON db.t2)
+-- Without a clause the token lives for create_token_default_ttl_seconds, 30 minutes by default
+1
+-- The reported deadline is the one stored on the authentication method
+1
+-- The setting is honoured, and an explicit clause wins over it
+1
+2077-01-01 00:00:00
+-- A zero setting, and VALID UNTIL 'infinity', create a token which never expires (reported as 0)
+1
+1
 -- An already expired token does not authenticate
 AUTHENTICATION_FAILED
 -- A session authenticated with an unlimited token can create tokens
