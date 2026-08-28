@@ -137,7 +137,11 @@ void SocketImpl::connect(const SocketAddress& address, const Poco::Timespan& tim
 			if (!poll(timeout, SELECT_READ | SELECT_WRITE | SELECT_ERROR))
 				throw Poco::TimeoutException("connect timed out", address.toString());
 			err = socketError();
-			if (err != 0) error(err);
+			/// Deferred SO_ERROR failures must name the endpoint like the two paths above;
+			/// POCO_ETIMEDOUT keeps the poll-path timeout text.
+			if (err == POCO_ETIMEDOUT)
+				throw Poco::TimeoutException("connect timed out", address.toString(), err);
+			if (err != 0) error(err, address.toString());
 		}
 	}
 	catch (Poco::Exception&)

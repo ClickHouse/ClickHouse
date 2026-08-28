@@ -651,9 +651,8 @@ private:
             }
         }
 
-        /// Bare deferred connect errors ("Connection refused" and friends without an address) are
-        /// rewritten by `HTTPClientSession::reconnect` to name the endpoint it dialled, so
-        /// pool-backed and pool-less sessions report the peer alike.
+        /// Deferred connect errors name the dialled endpoint inside `SocketImpl::connect` itself,
+        /// so pool-backed and pool-less sessions report the peer alike.
         void doConnect(UInt64 * connect_time)
         {
             Session::reconnect(connect_time);
