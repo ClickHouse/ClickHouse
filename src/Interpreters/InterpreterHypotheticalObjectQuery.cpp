@@ -83,10 +83,6 @@ BlockIO createHypotheticalProjection(
 {
     const auto & projection_ast = query.projection_decl->as<ASTProjectionDeclaration &>();
 
-    /// the same privilege the real ADD PROJECTION needs, checked before the definition is resolved
-    /// so that a caller without it cannot probe which columns exist
-    context->checkAccess(AccessType::ALTER_ADD_PROJECTION, table_id);
-
     /// `IF NOT EXISTS` must short-circuit before building the descriptor, matching
     /// `ALTER TABLE ... ADD PROJECTION IF NOT EXISTS`
     if (query.if_not_exists)
@@ -220,6 +216,11 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             context->getHypotheticalObjectStore().clear();
         return {};
     }
+
+    /// same privilege as the real ADD PROJECTION, before the table is resolved so nothing about it leaks
+    if (is_projection && query.kind == ASTHypotheticalObjectQuery::Create)
+        context->checkAccess(
+            AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
