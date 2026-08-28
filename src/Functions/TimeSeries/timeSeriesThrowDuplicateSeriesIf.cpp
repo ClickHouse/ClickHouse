@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
@@ -157,9 +156,6 @@ private:
         }
 
         const auto & in_data = in->getData();
-        if (memoryIsZero(in_data.data(), 0, in_data.size() * sizeof(in_data[0])))
-            return static_cast<size_t>(-1); /// Not found.
-
         for (size_t i = 0; i != in->size(); ++i)
         {
             if (in_data[i] != 0)
@@ -179,13 +175,13 @@ REGISTER_FUNCTION(TimeSeriesThrowDuplicateSeriesIf)
 Checks the `condition` and if it's true throws an exception with the following message
 `Multiple series have the same tags <tags>, duplicate series in the same result set are not allowed`.
 If the `condition` is false the function returns `0`.
-This function is similar to [throwIf()](/reference/functions/regular-functions/other-functions#throwIf),
+This function is similar to [throwIf()](/sql-reference/functions/other-functions#throwIf),
 but uses a different error code and formats the error message differently.
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesThrowDuplicateSeriesIf(condition, group)";
     FunctionDocumentation::Arguments arguments = {
         {"condition",
-         "Condition to check, usually contains function [count()](/reference/functions/aggregate-functions/count#count)",
+         "Condition to check, usually contains function [count()](/sql-reference/aggregate-functions/reference/count#count)",
          {"UInt8"}},
         {"group", "Group of tags.", {"UInt64"}},
     };

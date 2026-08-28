@@ -10,15 +10,11 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
-#include <Common/assert_cast.h>
-#include <Common/Exception.h>
 
 
 namespace DB
@@ -69,18 +65,6 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
-bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
-{
-    if (!query_context)
-        return false;
-
-    auto access = query_context->getAccess();
-    if (column_name.empty())
-        return access->isGranted(access_type, target_database, target_table);
-
-    return access->isGranted(access_type, target_database, target_table, column_name);
-}
-
 /// AliasSink: Writes data to the target table using full INSERT pipeline
 /// which triggers materialized views on the target table.
 class AliasSink final : public SinkToStorage, WithContext
@@ -99,24 +83,6 @@ public:
     {
     }
 
-    ~AliasSink() override
-    {
-        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
-        /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
-        /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
-        if (executor)
-        {
-            try
-            {
-                executor->cancel();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("AliasSink");
-            }
-        }
-    }
-
     String getName() const override { return "AliasSink"; }
 
     void onStart() override
@@ -129,16 +95,7 @@ public:
 
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
-        if (getContext()->hasQueryContext())
-            insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);
-
-        /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only
-        /// stream). Keep the nested INSERT single-stream: with the outer fan-out already in place,
-        /// letting every branch fan out again would multiply the number of real sink branches (part
-        /// writers, squashing and compression buffers) up to `max_insert_threads^2`, exceeding the
-        /// budget the user allowed for this INSERT.
-        insert_context->setSetting("max_insert_threads", 1);
 
         /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
         /// Alias matches a direct insert: async batches select async dedup settings and skip the
@@ -344,20 +301,7 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    auto lock = target_storage->lockForShare(
-        local_context->getCurrentQueryId(),
-        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-
-    auto pipeline = target_storage->updateLightweight(commands, local_context);
-
-    /// The caller locks the alias, not the target, so the target needs its own share lock held
-    /// until the pipeline has committed the patch part.
-    QueryPlanResourceHolder target_resources;
-    target_resources.storage_holders.emplace_back(target_storage);
-    target_resources.table_locks.emplace_back(std::move(lock));
-    pipeline.addResources(std::move(target_resources));
-
-    return pipeline;
+    return target_storage->updateLightweight(commands, local_context);
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
@@ -373,39 +317,6 @@ void StorageAlias::waitForMutation(const String & mutation_id, bool wait_for_ano
 void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
 {
     getTargetTable()->setMutationCSN(mutation_id, csn);
-}
-
-namespace
-{
-
-/// Holds the resolved target StoragePtr alongside its task list
-struct AliasCheckTasks : IStorage::DataValidationTasksBase
-{
-    StoragePtr target;
-    IStorage::DataValidationTasksPtr inner;
-
-    AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
-        : target(std::move(target_)), inner(std::move(inner_))
-    {
-        chassert(inner);
-    }
-
-    size_t size() const override { return inner->size(); }
-};
-
-}
-
-IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
-{
-    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
-    auto inner = target->getCheckTaskList(filter, query_context);
-    return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
-}
-
-std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
-{
-    auto * tasks = assert_cast<AliasCheckTasks *>(check_task_list.get());
-    return tasks->target->checkDataNext(tasks->inner);
 }
 
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
@@ -431,46 +342,6 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & m
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
-}
-
-bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
-{
-    if (!storage_snapshot)
-        return false;
-
-    bool has_select_access = false;
-    for (const auto & column : storage_snapshot->metadata->getColumns())
-    {
-        if (isTargetTableGranted(query_context, AccessType::SELECT, column.name))
-        {
-            has_select_access = true;
-            break;
-        }
-    }
-
-    if (!has_select_access)
-        return false;
-
-    auto target = tryGetTargetTable();
-    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
-}
-
-std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
-{
-    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
-        return {};
-
-    auto target = tryGetTargetTable();
-    return target ? target->totalRows(query_context) : std::optional<UInt64>{};
-}
-
-std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
-{
-    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
-        return {};
-
-    auto target = tryGetTargetTable();
-    return target ? target->totalBytes(query_context) : std::optional<UInt64>{};
 }
 
 void StorageAlias::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
@@ -554,9 +425,6 @@ void registerStorageAlias(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Storage Alias does not support explicit column definitions");
         }
-
-        if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
-            local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
 
         return std::make_shared<StorageAlias>(
             args.table_id,

@@ -122,8 +122,6 @@ public:
     const SerializationPtr & getDynamicPathSerialization() const { return dynamic_serialization; }
     const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
 
-    static void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings);
-
 private:
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
@@ -172,6 +170,8 @@ private:
 
 protected:
     bool shouldSkipPath(const String & path) const;
+
+    void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;

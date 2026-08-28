@@ -6,7 +6,10 @@
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -114,8 +117,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.index = index;
     other.settings_changes = settings_changes;
     other.has_index_granularity_overrides = has_index_granularity_overrides;
-    if (where_clause_ast)
-        other.where_clause_ast = where_clause_ast->clone();
 
     return other;
 }
@@ -256,11 +257,6 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
 
-    /// The name is used unescaped as a directory name (`getDirectoryName`) inside a part directory,
-    /// so a '/' in it would address files outside of the part and outside of the data directory.
-    if (projection_definition->name.contains('/'))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Projection name ({}) cannot contain '/'", projection_definition->name);
-
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
@@ -277,7 +273,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     if (projection_definition->with_settings)
-        merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
+        merge_tree_settings->applyChanges(projection_definition->with_settings->changes);
     result.settings_changes = merge_tree_settings->changes();
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
@@ -335,13 +331,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
         const auto & ac = query_context->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
             allow_experimental,
-            allow_private_preview,
             allow_beta,
             query_context->wasBackgroundPoolAutoLowered());
     }
@@ -368,13 +362,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
 
-    /// Store the WHERE clause AST if present (Issue #74234).
-    /// This will be used by the optimizer to check if a query's WHERE implies
-    /// this projection's WHERE, and during materialization to filter rows.
-    auto projection_where = query.where();
-    if (projection_where)
-        result.where_clause_ast = projection_where->clone();
-
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
     /// `_part_offset` as physical columns, which would cause a conflict. Parent table cannot defines `_part_index` as
     /// physical column either because it's used to build part offset mapping during merge.
@@ -388,8 +375,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
     auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
-    /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
-    mut_context->setSetting("optimize_respect_aliases", true);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
@@ -403,7 +388,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         auto query_tree = buildQueryTree(result.query_ast, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
-        query_node.getJoinTreeNode() = std::make_shared<TableNode>(analyzer_storage, mut_context);
+        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
 
         QueryTreePassManager query_tree_pass_manager(mut_context);
         addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
@@ -430,7 +415,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         storage,
         {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{(is_aggregate || result.where_clause_ast) ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
+        SelectQueryOptions{is_aggregate ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
             .modify()
             .ignoreAlias()
             .ignoreASTOptimizations()
@@ -450,10 +435,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         if (projection_order_by)
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
-
-        /// Aggregate projections with WHERE are now supported: the optimizer's predicate
-        /// implication check (doesQueryFilterImplyProjectionWhere) ensures a filtered
-        /// aggregate projection is only selected when the query's filter covers it.
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
@@ -723,21 +704,9 @@ Block ProjectionDescription::calculateByQuery(
         if (!select_row_exists)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
 
-        auto row_exists_condition = makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1));
-
-        /// If the projection already has a WHERE clause (e.g., from a filtered projection),
-        /// we must AND the _row_exists condition with the existing WHERE rather than replacing it.
-        /// Otherwise the projection's own filter would be lost during mutations.
-        auto existing_where = select_row_exists->where();
-        if (existing_where)
-        {
-            auto combined_where = makeASTFunction("and", std::move(existing_where), std::move(row_exists_condition));
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_where));
-        }
-        else
-        {
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(row_exists_condition));
-        }
+        select_row_exists->setExpression(
+            ASTSelectQuery::Expression::WHERE,
+            makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
 
         source_block.insert(block.getByName(RowExistsColumn::name));
     }
@@ -772,7 +741,7 @@ Block ProjectionDescription::calculateByQuery(
                        mut_context,
                        Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
                        SelectQueryOptions{
-                           type == ProjectionDescription::Type::Normal && !where_clause_ast ? QueryProcessingStage::FetchColumns
+                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}
                            .ignoreASTOptimizations()
                            .ignoreSettingConstraints())
@@ -908,22 +877,9 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     map.erase(it);
 }
 
-void ProjectionsDescription::replace(ProjectionDescription && projection)
+std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
 {
-    auto it = map.find(projection.name);
-    if (it == map.end())
-        throw Exception(
-            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
-            "There is no projection {} in table{}",
-            projection.name,
-            getHintsMessage(projection.name));
-
-    *it->second = std::move(projection);
-}
-
-VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const
-{
-    VectorWithMemoryTracking<String> names;
+    std::vector<String> names;
     names.reserve(map.size());
     for (const auto & pair : map)
         names.push_back(pair.first);

@@ -270,6 +270,8 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
+    updateMaxDynamicPathsLimitIfNeeded(column, settings);
+
     typename Parser::Element document;
     auto parser = parsers_pool.get([] { return new Parser; });
     if (!parser->parse(object, document))
@@ -376,7 +378,7 @@ template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object_buffer;
-    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer, settings.json.max_row_size_for_json_each_row);
+    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
     deserializeObject(column, object_view, settings);
 }
 
