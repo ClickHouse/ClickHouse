@@ -1446,6 +1446,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
+            {"enable_adaptive_codec_selection", false, false, "The setting was renamed. The previous name is `allow_experimental_adaptive_codec_selection`."},
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
@@ -1458,7 +1459,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"always_fetch_mutated_part", false, false, "New setting to make a replica fetch mutated parts instead of executing mutations locally"},
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
             {"compute_exact_num_defaults_for_sparse_columns", false, true, "Promote to BETA and enable by default: compute the exact per-column `num_defaults` counter during inserts and merges (instead of the sampling estimate), so `optimize_trivial_count_with_sparsity_filter` and sparsity-based pruning can rely on it."},
-            {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
+            {"enable_adaptive_codec_selection", false, false, "New setting."},
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
