@@ -1047,6 +1047,14 @@ a.version-option:hover,
   justify-self: center;
 }
 
+.document-grid-wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.document-grid-wide .document {
+  max-width: none;
+}
+
 .breadcrumbs {
   min-height: 20px;
   display: flex;

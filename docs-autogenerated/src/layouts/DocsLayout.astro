@@ -36,6 +36,7 @@ interface Props {
   previous?: NavPage | null;
   next?: NavPage | null;
   showGeneratedBanner?: boolean;
+  wideContent?: boolean;
 }
 
 const {
@@ -46,6 +47,7 @@ const {
   previous,
   next,
   showGeneratedBanner = true,
+  wideContent = false,
 } = Astro.props;
 const canonical = new URL(document.route, Astro.site);
 const sourceRepositoryPath = document.sourcePath.startsWith('src/')
@@ -124,7 +126,7 @@ const entityKindLabel = entityKindLabels[document.entityKind];
         featureStateByRoute={featureStateByRoute}
       />
       <main class="document-main">
-        <div class="document-grid">
+        <div class:list={['document-grid', { 'document-grid-wide': wideContent }]}>
           <article class="document">
             <nav class="breadcrumbs" aria-label="Breadcrumb">
               {breadcrumbs.map((breadcrumb, index) => (

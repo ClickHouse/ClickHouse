@@ -274,6 +274,9 @@ async function main() {
     const documents = (await readJson(path.join(artifactDirectory, 'documents.json'))).documents;
     const search = (await readJson(path.join(artifactDirectory, 'search.json'))).records;
     const navigation = await readJson(path.join(artifactDirectory, 'navigation.json'));
+    const versionedNavigation = await readJson(
+      path.join(testArtifactDirectory, 'navigation.json'),
+    );
     const legacyStatementRoutes = await readJson(
       path.join(projectDirectory, 'legacy-statement-routes.json'),
     );
@@ -413,6 +416,7 @@ async function main() {
     );
     requireValue(
       referenceIndex.includes('<ReferenceSearch />')
+        && referenceIndex.includes('wideContent')
         && !referenceIndex.includes('reference-stats')
         && referenceSearch.includes(
           'data-search-index={`/docs/reference/_search/${manifest.channel}.json`}',
@@ -435,6 +439,21 @@ async function main() {
         && searchTitles.has('system.background_schedule_pool_log'),
       'System table navigation labels do not omit only the `system.` prefix',
     );
+    for (const [channel, channelNavigation] of [
+      ['latest', navigation],
+      ['26.8', versionedNavigation],
+    ]) {
+      const systemTables = findNavigationNode(
+        channelNavigation.root,
+        'reference.system-tables',
+      );
+      requireValue(
+        flattenNavigationNodes(systemTables?.children).every((node) => (
+          node.type !== 'document' || !String(node.label).startsWith('system.')
+        )),
+        `The ${channel} sidebar contains a system table label with the redundant prefix`,
+      );
+    }
 
     for (const [id, label] of [
       ['reference.functions.regular', 'Regular'],
