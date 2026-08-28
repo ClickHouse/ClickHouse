@@ -431,7 +431,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_JoinNonJoinedTransformRowCount` ([UInt64](/reference/data-types/int-uint)) — Number of non-joined rows emitted by NonJoinedBlocksTransform.
 - `ProfileEvent_JoinDelayedJoinedTransformBlockCount` ([UInt64](/reference/data-types/int-uint)) — Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.
 - `ProfileEvent_JoinDelayedJoinedTransformRowCount` ([UInt64](/reference/data-types/int-uint)) — Number of rows emitted by DelayedJoinedBlocksWorkerTransform.
-- `ProfileEvent_JoinSpillingHashJoinSwitchedToGraceJoin` ([UInt64](/reference/data-types/int-uint)) — Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
+- `ProfileEvent_JoinSpillingHashJoinSwitchedToGraceJoin` ([UInt64](/reference/data-types/int-uint)) — Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
 - `ProfileEvent_JoinReorderMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing JOIN reordering algorithm.
 - `ProfileEvent_JoinOptimizeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing JOIN plan optimizations.
 - `ProfileEvent_QueryPlanOptimizeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing query plan optimizations.
@@ -934,7 +934,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_HashJoinBuildScatterMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin build-side sub-phase: time spent in scatterBlockBySlot routing right-side rows into per-slot selectors. A subset of HashJoinBuildMicroseconds. Zero when the join uses a single slot.
 - `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/reference/data-types/int-uint)) — How many elements were preallocated in hash tables for hash join.
 - `ProfileEvent_HashJoinProbeGatherMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin probe-side sub-phase: gathering right-side column values in lazy_output.buildOutput. Does not include left-column replication. A subset of HashJoinProbeMicroseconds.
-- `ProfileEvent_HashJoinProbeLookupMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin probe-side sub-phase: hash-map lookup (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.
+- `ProfileEvent_HashJoinProbeLookupMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin probe-side sub-phase: hash-map lookup and per-row match emission (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.
 - `ProfileEvent_HashJoinProbeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent joining probe-side blocks in HashJoin (lookup plus draining HashJoinResult), summed over all probe threads.
 - `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request was answered from cache without making request to Keeper
 - `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request had to be answered from Keeper

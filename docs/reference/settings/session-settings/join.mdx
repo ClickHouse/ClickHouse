@@ -50,7 +50,7 @@ Possible values:
 
 - parallel_hash
 
- Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is. Set `parallel_hash_join_threshold = 0` to force a parallel build.
+ Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is. Set `parallel_hash_join_threshold = 0` to prefer the parallel layout when `max_threads > 1`.
 
 - partial_merge
 
