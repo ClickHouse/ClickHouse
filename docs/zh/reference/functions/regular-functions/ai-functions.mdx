@@ -9,9 +9,13 @@ doc_type: 'reference'
 AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入向量，以处理数据、提取信息、对数据进行分类等……
 
 <Note>
-  AI 函数处于 Experimental 阶段。设置 [`allow_experimental_ai_functions`](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) 以启用它们。
+  AI 函数处于 Beta 阶段。
 
   AI 函数可能会返回不可预测的输出。结果在很大程度上取决于提示词的质量和所使用的模型。
+</Note>
+
+<Note>
+  AI 函数目前在 ClickHouse Cloud 服务中不可用。敬请关注后续更新。
 </Note>
 
 <Warning>

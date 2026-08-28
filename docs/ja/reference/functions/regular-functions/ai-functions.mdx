@@ -9,9 +9,13 @@ doc_type: 'reference'
 AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め込みの生成に使用でき、データの処理、情報の抽出、データの分類などを行えます。
 
 <Note>
-  AI 関数は Experimental です。有効にするには [`allow_experimental_ai_functions`](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) を設定してください。
+  AI 関数はベータです。
 
   AI 関数は予測不能な出力を返す場合があります。結果は、プロンプトの品質と使用するモデルに大きく依存します。
+</Note>
+
+<Note>
+  AI 関数は現在 ClickHouse Cloud サービスでは利用できません。今後の更新をお待ちください。
 </Note>
 
 <Warning>

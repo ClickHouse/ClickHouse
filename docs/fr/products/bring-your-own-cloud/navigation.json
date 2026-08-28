@@ -2,7 +2,7 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "Vue d’ensemble",
+      "group": "Overview",
       "pages": [
         "fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "fr/products/bring-your-own-cloud/overview/architecture"
@@ -17,18 +17,18 @@
       ]
     },
     {
-      "group": "Prise en main",
+      "group": "Onboarding",
       "pages": [
         "fr/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Personnalisation",
+          "group": "Customization",
           "pages": [
             "fr/products/bring-your-own-cloud/onboarding/customization-aws",
             "fr/products/bring-your-own-cloud/onboarding/customization-gcp"
           ]
         },
         {
-          "group": "Réseau",
+          "group": "Network",
           "pages": [
             "fr/products/bring-your-own-cloud/onboarding/network",
             "fr/products/bring-your-own-cloud/onboarding/network-aws",
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "group": "Connecteur",
+      "group": "Connector",
       "pages": [
         "fr/products/bring-your-own-cloud/connector/overview",
         "fr/products/bring-your-own-cloud/connector/onboarding",
@@ -49,7 +49,7 @@
         "fr/products/bring-your-own-cloud/connector/configuration",
         "fr/products/bring-your-own-cloud/connector/operations",
         {
-          "group": "Référence",
+          "group": "Reference",
           "pages": [
             "fr/products/bring-your-own-cloud/connector/reference/cli",
             "fr/products/bring-your-own-cloud/connector/reference/configuration",
@@ -60,7 +60,7 @@
       ]
     },
     {
-      "group": "Référence",
+      "group": "Reference",
       "pages": [
         "fr/products/bring-your-own-cloud/reference/network-security",
         "fr/products/bring-your-own-cloud/reference/privilege",

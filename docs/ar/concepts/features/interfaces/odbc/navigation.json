@@ -1,5 +1,5 @@
 {
-  "group": "برنامج تشغيل ODBC",
+  "group": "ODBC driver",
   "pages": [
     "ar/concepts/features/interfaces/odbc/index"
   ]

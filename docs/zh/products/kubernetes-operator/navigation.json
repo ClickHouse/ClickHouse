@@ -5,7 +5,7 @@
     "zh/products/kubernetes-operator/overview",
     {
       "expanded": true,
-      "group": "安装",
+      "group": "Install",
       "pages": [
         "zh/products/kubernetes-operator/install/kubectl",
         "zh/products/kubernetes-operator/install/helm",
@@ -14,7 +14,7 @@
     },
     {
       "expanded": true,
-      "group": "指南",
+      "group": "Guides",
       "pages": [
         "zh/products/kubernetes-operator/guides/introduction",
         "zh/products/kubernetes-operator/guides/configuration",
@@ -28,7 +28,7 @@
     },
     {
       "expanded": true,
-      "group": "参考文档",
+      "group": "Reference",
       "pages": [
         "zh/products/kubernetes-operator/reference/api-reference"
       ]
