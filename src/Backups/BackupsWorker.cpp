@@ -167,8 +167,8 @@ namespace
         /// Authorize the locator that will actually be opened: `BackupImpl::getBaseBackupUnlocked`
         /// fills the credentials from the outer locator first, so a base missing them is not malformed.
         BackupInfo effective_base_backup_info = *base_backup_info;
-        if (use_same_s3_credentials_for_base_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        if (use_same_s3_credentials_for_base_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info, context))
+            backup_info.copyS3CredentialsTo(effective_base_backup_info, context);
 
         BackupFactory::instance().checkSourceAccess(effective_base_backup_info, context, IBackup::OpenMode::READ);
     }

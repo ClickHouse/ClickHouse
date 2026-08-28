@@ -106,6 +106,43 @@ namespace
         std::_Exit(0);
     }
 
+    [[noreturn]] void checkCopyS3CredentialsResolvesExtraCredentialsWithContext()
+    {
+        tryRegisterFunctions();
+        const auto & context = getContext().context;
+
+        /// `collectCredentials` resolves both sides of each assignment when the locator is opened, so what
+        /// a clause authenticates as is decided by what it loads, not by how it is written. A resolved
+        /// `role_arn` is lent whatever its spelling; a clause that resolves to no role is not.
+        const auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+        for (const auto * lendable :
+             {"S3('https://s3.example.com/backup', extra_credentials(concat('role_', 'arn') = 'arn::role'))",
+              "S3('https://s3.example.com/backup', extra_credentials(role_arn = concat('arn::', 'role')))"})
+        {
+            auto source = BackupInfo::fromString(lendable);
+            if (!source.canCopyS3CredentialsTo(dest, context))
+            {
+                std::cerr << "Expected to be able to lend the credentials of " << lendable << '\n';
+                std::_Exit(1);
+            }
+        }
+
+        for (const auto * barren :
+             {"S3('https://s3.example.com/backup', extra_credentials(concat('external_', 'id') = 'EXTERNALID'))",
+              "S3('https://s3.example.com/backup', extra_credentials(role_arn = concat('', '')))"})
+        {
+            auto source = BackupInfo::fromString(barren);
+            if (source.canCopyS3CredentialsTo(dest, context))
+            {
+                std::cerr << "Expected " << barren << " to name no role to assume\n";
+                std::_Exit(1);
+            }
+        }
+
+        std::_Exit(0);
+    }
+
     [[noreturn]] void checkExpressionURLKeyAndValueWithContext()
     {
         tryRegisterFunctions();
@@ -168,6 +205,13 @@ TEST(BackupInfoDeathTest, WithoutS3CredentialsKeepsExpressionRoleArnValue)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     EXPECT_EXIT(checkExpressionRoleArnValueWithContext(), ::testing::ExitedWithCode(0), ".*");
+}
+
+
+TEST(BackupInfoDeathTest, CopyS3CredentialsToResolvesExtraCredentials)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(checkCopyS3CredentialsResolvesExtraCredentialsWithContext(), ::testing::ExitedWithCode(0), ".*");
 }
 
 
@@ -419,23 +463,6 @@ TEST(BackupInfo, CopyS3CredentialsToKeepsDestinationKeyPairBesideTheCopiedRole)
     EXPECT_EQ(
         dest.toString(),
         "S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET', extra_credentials(equals(role_arn, 'ROLEARN')))");
-}
-
-TEST(BackupInfo, CopyS3CredentialsToLendsAClauseWhoseKeyIsAnExpression)
-{
-    /// `collectCredentials` resolves the key when the locator is opened, so this names a role and
-    /// `withoutSecretExtraCredentials` keeps it in the metadata. Refusing to lend it here would cost that
-    /// spelling both the setting and the marker -- the multi-hop failure this all exists to fix.
-    auto source
-        = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(concat('role_', 'arn') = 'arn::role'))");
-    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
-
-    EXPECT_TRUE(source.canCopyS3CredentialsTo(dest));
-    source.copyS3CredentialsTo(dest);
-
-    EXPECT_EQ(
-        dest.toString(),
-        "S3('https://s3.example.com/base', extra_credentials(equals(concat('role_', 'arn'), 'arn::role')))");
 }
 
 TEST(BackupInfo, CopyS3CredentialsToDropsADestinationClauseNamingNoRole)

@@ -197,7 +197,10 @@ namespace
     /// non-empty `role_arn` makes `getCredentialsProvider` wrap the provider chain in the STS assume-role
     /// provider, so a clause carrying only `role_session_name` or `external_id` names no identity to lend
     /// and is not credentials to copy. No other trailing function is carried over either.
-    bool hasRoleToAssume(const ASTPtr & function_arg)
+    /// Keys and values are resolved with the context the way `collectCredentials` resolves them when the
+    /// locator is opened, so every spelling is classified by what it loads as rather than how it is
+    /// written; without a context only literals can be read and anything else is not lent.
+    bool hasRoleToAssume(const ASTPtr & function_arg, const ContextPtr & context)
     {
         const auto * func = function_arg ? function_arg->as<const ASTFunction>() : nullptr;
         if (!func || func->name != "extra_credentials" || !func->arguments)
@@ -205,16 +208,11 @@ namespace
 
         for (const auto & child : func->arguments->children)
         {
-            /// A key or a value written as an expression is resolved only when the locator is opened, and
-            /// there is no context here to resolve it with. `collectCredentials` accepts both, so such a
-            /// clause may well name the role; assume it does rather than refuse to lend what opens fine.
-            auto key = getKeyValueArgName(child);
-            if (!key)
-                return true;
-            if (*key != "role_arn")
+            auto key = context ? getEffectiveKeyValueArgName(child, context) : getKeyValueArgName(child);
+            if (!key || *key != "role_arn")
                 continue;
-            auto value = getKeyValueArgStringValue(child);
-            return !value || !value->empty();
+            auto value = context ? getEffectiveKeyValueArgStringValue(child, context) : getKeyValueArgStringValue(child);
+            return value && !value->empty();
         }
 
         return false;
@@ -346,15 +344,15 @@ String BackupInfo::toStringForLogging() const
     return toAST()->formatForLogging();
 }
 
-bool BackupInfo::canCopyS3CredentialsTo(const BackupInfo & dest) const
+bool BackupInfo::canCopyS3CredentialsTo(const BackupInfo & dest, ContextPtr context) const
 {
     /// Must mirror the conditions checked by `copyS3CredentialsTo`.
     return id_arg.empty() && dest.id_arg.empty()
         && backup_engine_name == "S3" && dest.backup_engine_name == "S3"
-        && (args.size() == 3 || hasRoleToAssume(function_arg));
+        && (args.size() == 3 || hasRoleToAssume(function_arg, context));
 }
 
-void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
+void BackupInfo::copyS3CredentialsTo(BackupInfo & dest, ContextPtr context) const
 {
     /// named_collection case, no need to update
     if (!dest.id_arg.empty() || !id_arg.empty())
@@ -370,7 +368,7 @@ void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
     /// A clause naming no role authenticates nothing and is rejected, the same way a locator carrying
     /// no credentials at all is.
     const bool has_key_pair = args.size() == 3;
-    const bool has_role_to_assume = hasRoleToAssume(function_arg);
+    const bool has_role_to_assume = hasRoleToAssume(function_arg, context);
     if (!has_key_pair && !has_role_to_assume)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -382,7 +380,7 @@ void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
     /// left alone, so lending credentials never takes authentication away. A destination clause naming no
     /// role is the exception: it assumes nothing, and keeping it would leave the locator unreconstructable
     /// from its stripped form, which is what `writeBackupMetadata` compares before emitting the marker.
-    if (!hasRoleToAssume(dest.function_arg))
+    if (!hasRoleToAssume(dest.function_arg, context))
         dest.function_arg = nullptr;
 
     if (has_key_pair)
