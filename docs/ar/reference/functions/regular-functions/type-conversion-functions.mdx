@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 يستخدم ClickHouse عمومًا [السلوك نفسه المستخدم في برامج C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-تختلف دوال `to<type>` و[CAST](#CAST) في سلوكهما في بعض الحالات، مثل حالة [LowCardinality](/ar/reference/data-types/lowcardinality): إذ يزيل [CAST](#CAST) السمة [LowCardinality](/ar/reference/data-types/lowcardinality)، بينما لا تفعل دوال `to<type>` ذلك. وينطبق الأمر نفسه على [Nullable](/ar/reference/data-types/nullable). هذا السلوك غير متوافق مع معيار SQL، ويمكن تغييره باستخدام الإعداد [cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings#cast_keep_nullable).
+تختلف دوال `to<type>` و[cast](#CAST) في سلوكهما في بعض الحالات، مثل حالة [LowCardinality](/ar/reference/data-types/lowcardinality): إذ يزيل [cast](#CAST) السمة [LowCardinality](/ar/reference/data-types/lowcardinality)، بينما لا تفعل دوال `to<type>` ذلك. وينطبق الأمر نفسه على [Nullable](/ar/reference/data-types/nullable). هذا السلوك غير متوافق مع معيار SQL، ويمكن تغييره باستخدام الإعداد [cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings/cast#cast_keep_nullable).
 
 <Note>
   انتبه إلى احتمال فقدان البيانات إذا جرى تحويل قيم من نوع بيانات إلى نوع أصغر (على سبيل المثال من `Int64` إلى `Int32`) أو بين
@@ -2911,7 +2911,7 @@ SELECT toDate(20297)
 أُضيف في: v21.9.0
 
 يحوّل الوسيطة إلى نوع البيانات [Date32](/ar/reference/data-types/date32).
-إذا كانت القيمة خارج النطاق، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
+إذا كانت القيمة خارج النطاق `[0000-01-01, 9999-12-31]`، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
 إذا كانت الوسيطة من النوع [`Date`](/ar/reference/data-types/date)، فتُؤخذ حدودها في الاعتبار.
 
 **البنية**
@@ -2920,7 +2920,7 @@ SELECT toDate(20297)
 toDate32(expr)
 ```
 
-**المعاملات**
+**وسيط**
 
 * `expr` — القيمة المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`UInt32`](/ar/reference/data-types/int-uint) أو [`Date`](/ar/reference/data-types/date)
 
@@ -2944,7 +2944,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**خارج النطاق**
+**قبل عام 1900**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2954,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2962,9 +2962,11 @@ toTypeName(value): Date32
   ## toDate32OrDefault
 </div>
 
-استُحدث في: v21.11.0
+أُضيف في: v21.11.0
 
-يحوِّل الوسيط إلى نوع البيانات [Date32](/ar/reference/data-types/date32). إذا كانت القيمة خارج النطاق، فإن `toDate32OrDefault` تُرجع قيمة الحد الأدنى التي يدعمها [Date32](/ar/reference/data-types/date32). وإذا كان الوسيط من النوع [Date](/ar/reference/data-types/date)، فتُؤخذ حدوده في الاعتبار. وتُرجع القيمة الافتراضية إذا كان الوسيط غير صالح.
+يحوِّل الوسيط إلى نوع البيانات [Date32](/ar/reference/data-types/date32). إذا تعذّر تحويل الوسيط، بما في ذلك القيمة الرقمية الواقعة خارج نطاق [Date32](/ar/reference/data-types/date32)، فإن الدالة تُرجع قيمة افتراضية تكون إما الوسيط الثاني (إذا تم تحديده)، أو `1900-01-01` بخلاف ذلك، وهي القيمة الافتراضية التاريخية لـ [Date32](/ar/reference/data-types/date32) (وليست حدها الأدنى، وهو `0000-01-01`). وإذا كان الوسيط من النوع [Date](/ar/reference/data-types/date)، فتُؤخذ حدوده في الاعتبار.
+
+لاحظ أنه، بخلاف [toDate32](#toDate32)، لا تقيِّد هذه الدالة الوسيط الرقمي الواقع خارج النطاق ضمن حدود [Date32](/ar/reference/data-types/date32)؛ بل يُعامل هذا الوسيط على أنه غير قابل للتحويل.
 
 **البنية**
 
@@ -2997,6 +2999,16 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
+```
+
+```response title=Response
+2020-01-01
+```
+
+**رقم خارج النطاق**
+
+```sql title=Query
+SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3046,8 +3058,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 أُضيف في: v21.9.0
 
-يحوّل قيمة مُدخلة إلى قيمة من النوع [Date32](/ar/reference/data-types/date32)، لكنه يعيد الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) إذا كانت الوسيطة غير صالحة.
-وهو مماثل لـ [toDate32](#toDate32)، لكنه يعيد الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) إذا كانت الوسيطة غير صالحة.
+يحوّل قيمة الإدخال إلى قيمة من النوع [Date32](/ar/reference/data-types/date32)، لكنه يعيد القيمة الافتراضية `1900-01-01` إذا كانت الوسيطة غير صالحة.
+وهو مماثل لـ [toDate32](#toDate32)، لكنه يعيد `1900-01-01` إذا كانت الوسيطة غير صالحة.
+لاحظ أن `1900-01-01` قيمة افتراضية تاريخية للإدخال غير الصالح، وليست الحد الأدنى لـ [Date32](/ar/reference/data-types/date32)، وهو `0000-01-01`.
 
 انظر أيضًا:
 
@@ -3061,13 +3074,13 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 toDate32OrZero(x)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `x` — تمثيل نصي لتاريخ. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُعيد قيمة `Date32` عند النجاح، وإلا تُعيد الحد الأدنى لقيم `Date32` (`1900-01-01`). [`Date32`](/ar/reference/data-types/date32)
+تُعيد قيمة `Date32` عند النجاح، وإلا تُعيد القيمة الافتراضية التاريخية للإدخال غير الصالح (`1900-01-01`). [`Date32`](/ar/reference/data-types/date32)
 
 **أمثلة**
 
@@ -3258,13 +3271,15 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
   ## toDateTime32
 </div>
 
-استُحدثت في: v20.9.0
+مُتاح منذ: v20.9.0
 
 يحوّل قيمة الإدخال إلى النوع `DateTime`.
-يدعم التحويل من `String` و`FixedString` و`Date` و`Date32` و`DateTime` أو من الأنواع الرقمية (`(U)Int*` و`Float*` و`Decimal`).
-يوفّر DateTime32 نطاقًا أوسع مقارنةً بـ `DateTime`، إذ يدعم التواريخ من `1900-01-01` إلى `2299-12-31`.
+يدعم التحويل من `String` أو `FixedString` أو `Date` أو `Date32` أو `Time` أو `DateTime` أو `DateTime64` أو الأنواع الرقمية (`(U)Int8` أو `(U)Int16` أو `(U)Int32` أو `(U)Int64` أو `BFloat16` أو `Float32` أو `Float64`). لا تُدعم قيم `Decimal` و`Time64` وتؤدي إلى استثناء؛ أما النوع `Time` وأنواع الأعداد الصحيحة العريضة، مثل `(U)Int128`/`(U)Int256`، فتلتف قيمها بدلاً من إشباعها.
+`DateTime32` اسم مستعار لـ `DateTime` ويدعم التواريخ من `1970-01-01 00:00:00` إلى `2106-02-07 06:28:15`.
+عند التحويل من سلسلة أو من أحد الأنواع الرقمية القابلة للإشباع المذكورة أعلاه، تُقيَّد القيم الواقعة خارج هذا النطاق بحدوده. لا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وتؤدي إلى استثناء.
+تتبع التحويلات من أنواع التاريخ والوقت الأخرى، مثل `Date32` أو `DateTime64`، الإعداد `date_time_overflow_behavior`: فقد ينتج عن وضع `ignore` الافتراضي قيم ملتفة، بينما يقيّد `saturate` القيم بحدود النطاق، ويطرح `throw` استثناءً.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 toDateTime32(x[, timezone])
@@ -3272,7 +3287,7 @@ toDateTime32(x[, timezone])
 
 **الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`UInt*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`Time`](/ar/reference/data-types/time) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `timezone` — اختياري. المنطقة الزمنية لقيمة `DateTime` المُعادة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
@@ -3281,45 +3296,40 @@ toDateTime32(x[, timezone])
 
 **أمثلة**
 
-**القيمة ضمن النطاق**
+**من سلسلة نصية**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
 ```
 
-**كعدد عشري بدقة محددة**
+**من Unix timestamp**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
 ```
 
-**مع تحديد منطقة زمنية**
+**باستخدام منطقة زمنية**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -7099,10 +7109,23 @@ SELECT
   ## toTime
 </div>
 
-أُضيف في: v1.1.0
+أُضيف في: v25.5.0
 
 يحوّل قيمة الإدخال إلى النوع [Time](/ar/reference/data-types/time).
 يدعم التحويل من String وFixedString وDateTime وDateTime64 أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
+تُقيَّد القيم الرقمية الواقعة خارج نطاق النوع (`-999:59:59` إلى `999:59:59`، أي `-3599999` إلى `3599999` ثانية) بحدود النطاق، ولا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وينتج عن ذلك استثناء.
+
+<Info>
+  **`toTime` القديم**
+
+  قبل v25.5، كانت `toTime` دالة مختلفة تحوّل تاريخًا مع وقت إلى تاريخ ثابت (`1970-01-02`) مع الحفاظ على
+  مكوّن الوقت. ولا تزال تلك الدالة متاحة بالاسم [`toTimeWithFixedDate`](/ar/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+
+  يؤدي أيضًا ضبط [`use_legacy_to_time`](/ar/reference/settings/session-settings#use_legacy_to_time) على `1` إلى إبقاء الاسم `toTime` مرتبطًا بالدالة القديمة،
+  أي إن استدعاءات `toTime` تُفسَّر على أنها `toTimeWithFixedDate` بدلًا من دالة التحويل الموضحة هنا.
+  أثناء تمكين الإعداد، استخدم `CAST(x AS Time)` أو `x::Time` للتحويل إلى النوع `Time`.
+  تكون القيمة الافتراضية للإعداد `0` منذ v26.7، لكنها كانت `1` من v25.6 إلى v26.6، ولهذا تضبطها الأمثلة أدناه صراحةً.
+</Info>
 
 **البنية**
 
@@ -7112,7 +7135,7 @@ toTime(x)
 
 **الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 
@@ -7299,7 +7322,7 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
   ## toTimeOrNull
 </div>
 
-طُرح في: v1.1.0
+طُرح في: v25.5.0
 
 يحوّل قيمة الإدخال إلى قيمة من النوع Time، ولكنه يعيد `NULL` في حال حدوث خطأ.
 يشبه [`toTime`](#toTime)، لكنه يعيد `NULL` بدلًا من طرح استثناء عند حدوث أخطاء في التحويل.
@@ -7309,13 +7332,13 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 * [`toTime`](#toTime)
 * [`toTimeOrZero`](#toTimeOrZero)
 
-**الصياغة**
+**بنية**
 
 ```sql
 toTimeOrNull(x)
 ```
 
-**المعاملات**
+**وسيطة**
 
 * `x` — تمثيل نصي لوقت. [`String`](/ar/reference/data-types/string)
 
@@ -7341,12 +7364,12 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-استُحدث في: v1.1.0
+استُحدث في: v25.5.0
 
 يحوّل قيمة الإدخال إلى قيمة من النوع Time، لكنه يعيد `00:00:00` في حال حدوث خطأ.
 يشبه toTime، لكنه يعيد `00:00:00` بدلًا من إطلاق استثناء عند حدوث أخطاء في التحويل.
 
-**الصيغة**
+**بنية**
 
 ```sql
 toTimeOrZero(x)

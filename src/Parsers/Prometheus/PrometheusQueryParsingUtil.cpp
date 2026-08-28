@@ -28,7 +28,8 @@ namespace
     }
 
     /// Parses escape sequences in a string literal and replaces them with the characters which they mean.
-    bool tryUnescapeStringLiteral(std::string_view input, String & res_string, String * error_message, size_t * error_pos)
+    bool tryUnescapeStringLiteral(
+        std::string_view input, char quote_char, String & res_string, String * error_message, size_t * error_pos)
     {
         res_string.clear();
         res_string.reserve(input.length());
@@ -68,8 +69,19 @@ namespace
                 case 't':  res_string.push_back(0x09); pos += 2; break;  /// \t  U+0009 horizontal tab
                 case 'v':  res_string.push_back(0x0B); pos += 2; break;  /// \v  U+000B vertical tab
                 case '\\': res_string.push_back('\\'); pos += 2; break;  /// \\  U+005C backslash
-                case '\'': res_string.push_back('\''); pos += 2; break;  /// \'  U+0027 single quote
-                case '"':  res_string.push_back('"');  pos += 2; break;  /// \"  U+0022 double quote
+                case '\'':
+                case '"':
+                {
+                    if (c != quote_char)
+                    {
+                        setErrorMessage(error_message, "Invalid escape sequence {}", quoteString(input.substr(pos)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
+                    res_string.push_back(c);
+                    pos += 2;
+                    break;
+                }
                 case 'x':
                 {
                     /// \x followed by exactly two hexadecimal digits represents a single byte.
@@ -150,6 +162,14 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
+                    if (UTF8::isSurrogateCodePoint(code_point))
+                    {
+                        setErrorMessage(error_message,
+                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
+                                        quoteString(input.substr(pos, 6)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
                     char bytes[3];  /// 3 bytes is enough to represent a Unicode code point up to 0xFFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
@@ -184,7 +204,15 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0xFFFF.
+                    if (UTF8::isSurrogateCodePoint(code_point))
+                    {
+                        setErrorMessage(error_message,
+                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
+                                        quoteString(input.substr(pos, 10)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
+                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0x10FFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
                     pos += 10;
@@ -243,10 +271,20 @@ bool PrometheusQueryParsingUtil::tryParseStringLiteral(
 
     /// A string literal enclosed in quotes or double quotes: escape sequences need to be parsed.
     std::string_view unquoted = input.substr(1, input.length() - 2);
-    if (!tryUnescapeStringLiteral(unquoted, res_string, error_message, error_pos))
+    const size_t newline_pos = unquoted.find('\n');
+    size_t unescape_error_pos = 0;
+    const bool unescape_succeeded = tryUnescapeStringLiteral(unquoted, quote_char, res_string, error_message, &unescape_error_pos);
+
+    if (newline_pos != String::npos && (unescape_succeeded || newline_pos < unescape_error_pos))
     {
-        if (error_pos)
-            ++*error_pos;
+        setErrorMessage(error_message, "unterminated quoted string");
+        setErrorPos(error_pos, 0);
+        return false;
+    }
+
+    if (!unescape_succeeded)
+    {
+        setErrorPos(error_pos, unescape_error_pos + 1);
         return false;
     }
 

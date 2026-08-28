@@ -42,7 +42,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsString database;
     extern const SettingsDialect dialect;
+    extern const SettingsString input_format;
+    extern const SettingsString format;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
@@ -53,7 +56,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
-    extern const SettingsBool allow_experimental_json_ast_dialect;
+    extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsLogsLevel send_logs_level;
@@ -203,6 +206,22 @@ void LocalConnection::sendQuery(
     if (!current_database.empty() && current_database != query_context->getCurrentDatabase())
         query_context->setCurrentDatabase(current_database);
 
+    /// Keep the `database` setting consistent with the connection's current database. The setting is
+    /// applied by `executeQuery` (it is documented as equivalent to `USE`), and the per-query context
+    /// is rebuilt from the session on every query while the client-sent settings are not forwarded by
+    /// `LocalConnection`. Without this, the `database` value inherited from the server's startup
+    /// configuration (e.g. from `--database`) would be re-applied by `executeQuery` and override the
+    /// database just selected by a `USE` statement (which only updates `current_database` above). But a
+    /// standalone `SET database = ...` changes the inherited session setting away from the connection cache
+    /// (which only tracks `USE`) while keeping ordinary-setting semantics, so preserve it: write the cache
+    /// back only when the session has not diverged the `database` setting from it. A query's own
+    /// `SETTINGS database = ...` is applied later and still takes precedence.
+    const auto & session_settings = query_context->getSettingsRef();
+    const bool session_diverged_database =
+        session_settings[Setting::database].changed && session_settings[Setting::database].value != current_database;
+    if (!current_database.empty() && !session_diverged_database)
+        query_context->setSetting("database", current_database);
+
     query_context->addQueryParameters(query_parameters);
 
     state.reset();
@@ -214,7 +233,7 @@ void LocalConnection::sendQuery(
     /// during execution. The `input()` initializer below reparses `state->query`, and must use the
     /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
     state->parsed_as_json_dialect = query_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
-    state->allow_experimental_json_ast_dialect = query_context->getSettingsRef()[Setting::allow_experimental_json_ast_dialect];
+    state->enable_json_ast_dialect = query_context->getSettingsRef()[Setting::enable_json_ast_dialect];
     state->json_ast_max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
     state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
     state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
@@ -263,10 +282,10 @@ void LocalConnection::sendQuery(
         /// without being locked into JSON-only input.
         if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size))
         {
-            if (!state->allow_experimental_json_ast_dialect)
+            if (!state->enable_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Support for clickhouse_json dialect is disabled "
-                    "(turn on setting 'allow_experimental_json_ast_dialect')");
+                    "(turn on setting 'enable_json_ast_dialect')");
 
             const size_t max_query_size = state->json_ast_max_query_size;
             if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
@@ -338,6 +357,14 @@ void LocalConnection::sendQuery(
             if (!insert->format.empty())
                 current_format = insert->format;
         }
+
+        /// `input_format` / `format` settings override the FORMAT for input (mirrors
+        /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
+        /// `SETTINGS input_format = ...` take effect on the `clickhouse-local` `input()` path.
+        if (!settings[Setting::input_format].value.empty())
+            current_format = settings[Setting::input_format];
+        else if (!settings[Setting::format].value.empty())
+            current_format = settings[Setting::format];
 
         chassert(in, "ReadBuffer should be initialized");
 

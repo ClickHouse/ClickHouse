@@ -38,7 +38,7 @@ clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
 clickhousectl cloud postgres create \
   --name quickstart-pg \
   --region us-east-1 \
-  --size c6gd.large \
+  --size m6gd.large \
   --pg-version 18 \
   --json > pg.json
 ```
@@ -52,7 +52,7 @@ clickhousectl cloud postgres create \
   "provider": "aws",
   "region": "us-east-1",
   "postgresVersion": "18",
-  "size": "c6gd.large",
+  "size": "m6gd.large",
   "storageSize": 118,
   "haType": "none",
   "state": "creating",
@@ -175,7 +175,7 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-NVMeストレージにより、100万行の insert は `c6gd.large` (最小サイズ) で約7秒で完了します。クエリで確認してください。データは `random()` で生成されるため、行数は実行のたびに異なります。
+NVMeストレージにより、100万行の insert は `m6gd.large` (最小サイズ) で約7秒で完了します。クエリで確認してください。データは `random()` で生成されるため、行数は実行のたびに異なります。
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
@@ -215,7 +215,7 @@ done
   ### テーブルを ClickHouse にレプリケートする
 </div>
 
-ClickHouse サービス 上に、Managed Postgres の ホスト名 を指定した Postgres CDC ClickPipe を作成します。このパイプは既存の行をコピーし、その後も継続的な変更に合わせて ClickHouse を同期した状態に保ちます。
+ClickHouse サービス 上に、ClickHouse Managed Postgres の ホスト名 を指定した Postgres CDC ClickPipe を作成します。このパイプは既存の行をコピーし、その後も継続的な変更に合わせて ClickHouse を同期した状態に保ちます。
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -307,7 +307,7 @@ SQL
 
 ヒアドキュメントは意図的にクォートしていないため、SQL が Postgres に届く前に、シェルが `$CH_HOST` と `$CH_PASSWORD` を展開します。これで、レプリケートテーブルが `organization` スキーマ内の外部テーブルとして参照できるようになり、それらに対するクエリは ClickHouse で実行されます。
 
-このデータセットを `c6gd.large` で測定したところ、分析クエリは外部テーブル経由のほうが 6～9 倍高速でした (たとえば、5 つの集計を含む GROUP BY は ClickHouse 経由で 176 ms、ローカルでは 1,133 ms、集計を伴う JOIN は 298 ms、ローカルでは 2,764 ms) 。
+このデータセットを `m6gd.large` で測定したところ、分析クエリは外部テーブル経由のほうが 6～9 倍高速でした (たとえば、5 つの集計を含む GROUP BY は ClickHouse 経由で 176 ms、ローカルでは 1,133 ms、集計を伴う JOIN は 298 ms、ローカルでは 2,764 ms) 。
 
 <div id="cleanup-resources">
   ## クリーンアップ
