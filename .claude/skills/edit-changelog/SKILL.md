@@ -201,7 +201,9 @@ the re-apply rather than describing a change.
    that the choice is possible — the entry is quoted for you because nothing
    in the file remembers it any more.
 
-   Restore it under the category it was in, which is not necessarily the one
+   When the restoration merges into a surviving bullet, it lands under *that*
+   bullet's current category — which a later edit may have moved. Otherwise,
+   restore it under the category it was in, which is not necessarily the one
    its PR declares: the entry may have been promoted out of `NOT FOR
    CHANGELOG` (§3) or moved (§6) by the edit that first added it, and
    re-deriving the category from the PR would undo that.

@@ -2054,3 +2054,97 @@ def test_a_kept_entry_is_recorded_as_coming_from_the_section(monkeypatch):
         "base", VERSION, {"110800": "115850"}, ["115850"]
     )
     assert recorded == {"110800": (BUILD, "section", KEPT)}
+
+
+def test_only_the_merge_number_is_read_out_of_a_subject(monkeypatch):
+    """A squashed revert quotes the original title, which ends in its own
+    `(#N)`. Reading that number would put a pull request of an earlier release
+    into this range, and a revert of it would then look like something this
+    release cancels out rather than a user-visible reversal."""
+    subjects = "\n".join(
+        [
+            'Revert "Something published (#90000)" (#115800)',
+            "Merge pull request #116000 from someone/branch",
+            "A normal squashed change (#116001)",
+            # A fork's own numbering, inside a contributor branch: not on the
+            # first-parent walk in reality, and not at the start of the line.
+            "  Merge pull request #4 from someone/nested",
+        ]
+    )
+    monkeypatch.setattr(
+        cl.Shell, "get_output", staticmethod(lambda command, **kwargs: subjects)
+    )
+    assert cl.release_range_prs("26.9") == {"115800", "116000", "116001"}
+
+
+def test_a_sibling_moved_between_categories_is_still_the_merge_target(
+    monkeypatch, tmp_path
+):
+    """The recorded bullet was under `Bug Fix`; since then an edit moved the
+    surviving bullet to `Improvement`. The restoration merges into that bullet,
+    so it lands under `Improvement` - demanding the recorded category would make
+    the only correct edit impossible."""
+    _merged_revert_prs()
+    moved = improvement_changelog([SOLO], [REVERT_OF_MERGED])
+    reverts = analyze(
+        monkeypatch,
+        moved,
+        [
+            f"Changelog-deleted-entry: 109000 [{BUG_FIX}] [section] {MERGED}",
+            f'Changelog-revert: 115000 109000 Revert "{MERGED_TITLE}"',
+        ],
+    )
+    # Recorded under `Bug Fix`, but the bullet to merge into is under
+    # `Improvement` now.
+    assert [group["category"] for group in reverts["missing"]] == [BUG_FIX]
+    assert [group["siblings"] for group in reverts["missing"]] == [["109006"]]
+
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            moved,
+            improvement_changelog([with_reapply(MERGED, "115001")]),
+            reverts,
+        )
+        is None
+    )
+    # Moving the whole merged bullet on to another category is a legitimate
+    # move of that bullet (skill section 6), so it stays accepted - the check
+    # follows the bullet, not a remembered header.
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            moved,
+            changelog([with_reapply(MERGED, "115001")]),
+            reverts,
+        )
+        is None
+    )
+    # What is not allowed is leaving the survivor where it is and restoring the
+    # entry beside it under the recorded category: the shared-bullet rule owns
+    # that, and the two checks compose rather than contradicting each other.
+    beside = run_verify_edit(
+        monkeypatch,
+        tmp_path,
+        moved,
+        improvement_changelog([SOLO]).replace(
+            f"{SOLO}",
+            f"{SOLO}\n\n#### {BUG_FIX}\n\n"
+            + with_reapply(
+                "* The default value of `max_insert_threads` changed from `1` "
+                "to `auto`. "
+                "[#109000](https://github.com/ClickHouse/ClickHouse/pull/109000) "
+                "([Someone](https://github.com/someone)).",
+                "115001",
+            ),
+            1,
+        ),
+        reverts,
+    )
+    assert beside is not None
+    # Caught by the category check here, since the survivor's bullet is the one
+    # that decides the category; the shared-bullet rule would catch it too.
+    assert "wrong category" in beside
+    assert "instead of Improvement" in beside

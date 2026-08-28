@@ -563,8 +563,15 @@ def release_range_prs(version):
     something of this release and must be treated as such. Git remembers the
     range whatever the changelog did with it.
 
-    Both merge shapes the repository uses: the squash subject ending in `(#N)`
-    and `Merge pull request #N from ...`. `--first-parent`, so that the walk
+    Both merge shapes the repository uses, each anchored: the squash subject
+    ends in `(#N)` and `Merge pull request #N from ...` starts with it. Anchored
+    because a subject can carry a second number that is not the merge - a
+    squashed revert quotes the original title, `Revert "Something (#90000)"
+    (#115800)`, and reading `#90000` out of it would put a pull request of an
+    earlier release into this range, which is exactly the distinction the caller
+    uses the range for. (Not attested in the last 60000 commits of this
+    repository, where reverts are merge commits; anchoring is the right parse
+    regardless.) `--first-parent`, so that the walk
     stays on master's own commits: a contributor branch can carry merges of
     pull requests of the contributor's *fork*, whose numbers mean nothing here
     (`Merge pull request #4 from someone/...`, five of them in the 26.8 range).
@@ -578,7 +585,9 @@ def release_range_prs(version):
     )
     return {
         number
-        for pair in re.findall(r"\(#(\d+)\)|Merge pull request #(\d+)", subjects)
+        for pair in re.findall(
+            r"\(#(\d+)\)$|^Merge pull request #(\d+)", subjects, re.MULTILINE
+        )
         for number in pair
         if number
     }
@@ -1469,7 +1478,17 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     # entry again, and the ledger keeps the record for the rest of the cycle.
     misplaced = []
     for group in reverts["missing"]:
-        if not group["category"]:
+        # A restoration that merges back into a surviving bullet lands under
+        # *that* bullet's category, which a later edit may have moved since the
+        # deletion was recorded. The two rules would otherwise contradict each
+        # other: merge into the survivor, but be under the historical header.
+        expected = group["category"]
+        for sibling in group["siblings"]:
+            current = entry_placement(section, sibling)[0]
+            if current:
+                expected = current
+                break
+        if not expected:
             continue
         for pr in group["prs"]:
             if not is_attributed(section, pr):
@@ -1477,16 +1496,17 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
                 # rest were prunable and staying out is a valid decision.
                 continue
             found = entry_placement(section, pr)[0]
-            if found != group["category"]:
+            if found != expected:
                 misplaced.append(
                     f"#{pr} under {found or 'no category'} "
-                    f"instead of {group['category']}"
+                    f"instead of {expected}"
                 )
     if misplaced:
         return (
             f"Restored entries were put under the wrong category "
             f"({sorted(misplaced)}); a restoration keeps the category the "
-            f"entry had when it was deleted"
+            f"entry had when it was deleted, or that of the bullet it merges "
+            f"back into"
         )
     # A restored bullet may have been a merged one (skill section 7), carrying
     # pull requests that were never deleted and are still in the section.
