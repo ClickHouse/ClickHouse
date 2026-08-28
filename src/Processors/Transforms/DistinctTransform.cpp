@@ -268,7 +268,11 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    /// A hard cancellation (KILL) aborts the chunk immediately.
+                    /// A hard cancellation (KILL) aborts the chunk immediately. This poll is deliberately *not*
+                    /// guarded by `pre_latched`: even when a soft timeout was already latched upstream, a KILL
+                    /// that lands during this scan must be honored at the next boundary rather than after the
+                    /// whole committed prefix is rescanned. Only the *soft-timeout* truncation branch below is
+                    /// pre-latched-aware (so it does not re-drop an already-committed prefix).
                     if (isCancelled() && !isCancelledBySoftTimeout())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                     /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`

@@ -862,6 +862,108 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
     assert query_error[0] == "", f"break-mode soft timeout raised an error: {query_error[0]}"
 
 
+def test_lc_null_keys_break_then_kill(started_cluster):
+    """A BREAK-mode soft timeout latched upstream in the `skip_null_keys` prepass must not suppress a later
+    `KILL QUERY` while the resumed pre-latched `buildLowCardinalityMask` is mid-scan.
+
+    The reviewer flagged that once `pre_latched` is true the per-boundary `isCancelled()` poll could be skipped
+    together with the soft-timeout truncation branch, so a kill landing after the timeout would only be noticed
+    after the whole committed prefix is rescanned. The KILL check (`isCancelled() && !isCancelledBySoftTimeout()`)
+    is intentionally *not* guarded by `pre_latched` and runs at every 4096-row boundary; this test proves it by
+    latching the break timeout in the prepass (via `distinct_transform_null_pause`, committing a 2-slice prefix),
+    letting the pre-latched `buildLowCardinalityMask` resume and pause on `distinct_transform_lc_pause`, issuing
+    `KILL QUERY`, and asserting the resumed scan aborts before reaching its second LC pause.
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt_lc (k LowCardinality(Nullable(UInt64))) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+        "SETTINGS allow_suspicious_low_cardinality_types=1"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(0) FROM numbers(1000000)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(1) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(2) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+ WHERE number IN (SELECT k FROM null_keys_mt_lc)
+ FORMAT Null
+ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+          max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+    ## Arm both failpoints up front: the prepass pauses on `null_pause`, and the pre-latched
+    ## `buildLowCardinalityMask` (which runs after the prepass breaks) must already find `lc_pause`
+    ## armed when it reaches its first 4096-row boundary.
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+
+    thread_error = [None]
+    query_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                settings={"interactive_delay": 0},
+                query_id=query_id,
+            )
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        ## Latch the BREAK-mode soft timeout inside the `skip_null_keys` prepass, committing a 2-slice prefix.
+        wait_failpoint(NULL_FAULT_NAME)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+        second_pause_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE")
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=15)
+        if not done:
+            assert False, "prepass did not reach the second boundary: prefix path not exercised"
+        second_pause_future.result()
+        time.sleep(6)  # past the 5s deadline -> break timeout latches upstream
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        ## The resumed `buildLowCardinalityMask` runs pre-latched and pauses on the already-armed LC failpoint.
+        wait_failpoint(LC_FAULT_NAME)
+
+        ## Kill while the pre-latched scan is paused; the resumed scan must honor it before its next boundary.
+        node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+
+        second_lc_pause_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {LC_FAULT_NAME} PAUSE")
+        done, _ = concurrent.futures.wait([second_lc_pause_future], timeout=10)
+        if done:
+            second_lc_pause_future.result()
+            assert False, "pre-latched buildLowCardinalityMask reached a second LC pause: KILL was not honored"
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "killed query did not terminate within 60 s"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+    assert "Query was cancelled" in query_error[0], f"expected KILL to cancel the query, got: {query_error[0]}"
+
+
 def test_mixed_null_keys_break_prefix(started_cluster):
     """Break-mode soft timeout must preserve the committed source-row prefix across *multiple* nullable-key
     prepasses: when the timeout latches inside the first prepass, the remaining `LowCardinality(Nullable(...))`
