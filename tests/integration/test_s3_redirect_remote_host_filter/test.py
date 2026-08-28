@@ -108,7 +108,7 @@ def test_301_redirect_target_is_host_filtered(cluster, bucket):
     assert _followed(cluster) == "NO", "ClickHouse followed the 301 to a disallowed host (SSRF)"
 
 
-def test_failed_301_redirect_is_not_cached(cluster):
+def test_redirect_is_cached_after_access_denied(cluster):
     node = cluster.instances["node"]
     table = "s3_redirect_cache"
     node.query(f"DROP TABLE IF EXISTS {table}")
@@ -117,12 +117,12 @@ def test_failed_301_redirect_is_not_cached(cluster):
         "ENGINE = S3('http://resolver:8080/cache/key.csv', NOSIGN, 'CSV')"
     )
     try:
-        for _ in range(2):
+        for max_redirects in (5, 0):
             error = node.query_and_get_error(
-                f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1"
+                f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1, s3_max_redirects={max_redirects}"
             )
             assert "AccessDenied" in error
-        assert _initial_requests(cluster, "cache") == "2"
+        assert _initial_requests(cluster, "cache") == "1"
     finally:
         node.query(f"DROP TABLE {table}")
 

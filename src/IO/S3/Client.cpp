@@ -731,7 +731,17 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         /// In that case, we need to update the region and try again
         bool is_illegal_constraint_exception = error.GetExceptionName() == "IllegalLocationConstraintException";
         if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !is_illegal_constraint_exception)
+        {
+            if (found_new_endpoint
+                && error.GetResponseCode() != Aws::Http::HttpResponseCode::REQUEST_NOT_MADE
+                && error.GetResponseCode() != Aws::Http::HttpResponseCode::NO_RESPONSE)
+            {
+                auto uri_override = request.getURIOverride();
+                chassert(uri_override.has_value());
+                updateURIForBucket(bucket, std::move(*uri_override));
+            }
             return result;
+        }
 
         // maybe we detect a correct region
         if (!detect_region || is_illegal_constraint_exception)
