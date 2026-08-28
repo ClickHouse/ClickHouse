@@ -249,7 +249,7 @@ MutableSerializationInfoPtr DataTypeObject::createSerializationInfo(const Serial
     for (const auto & path : paths)
     {
         auto path_settings = settings;
-        if (!settings.canUseSparseSerialization(*typed_paths.at(path)))
+        if (!settings.shouldCollectSerializationInfo(*typed_paths.at(path)))
             path_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
         infos.push_back(typed_paths.at(path)->createSerializationInfo(path_settings));
     }
@@ -293,7 +293,7 @@ SerializationInfoPtr DataTypeObject::getSerializationInfo(const IColumn & column
     for (const auto & path : paths)
     {
         auto path_settings = settings;
-        if (!settings.canUseSparseSerialization(*typed_paths.at(path)))
+        if (!settings.shouldCollectSerializationInfo(*typed_paths.at(path)))
             path_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
         infos.push_back(const_pointer_cast<SerializationInfo>(
             typed_paths.at(path)->getSerializationInfo(*column_typed_paths.at(path), path_settings)));
@@ -306,7 +306,7 @@ bool DataTypeObject::hasSparseSerializationSubcolumns(const SerializationInfoSet
 {
     return std::any_of(typed_paths.begin(), typed_paths.end(), [&](const auto & path)
     {
-        return settings.canUseSparseSerialization(*path.second);
+        return settings.shouldCollectSerializationInfo(*path.second);
     });
 }
 

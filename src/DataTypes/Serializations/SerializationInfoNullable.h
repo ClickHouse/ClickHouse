@@ -39,4 +39,13 @@ private:
     MutableSerializationInfoPtr nested;
 };
 
+bool canReuseSerializationInfoForTypeChange(const SerializationInfo & old_info, const SerializationInfo & new_info);
+
+MutableSerializationInfoPtr tryReuseSerializationInfoThroughNullable(
+    const SerializationInfo & old_info,
+    const IDataType & old_type,
+    const MutableSerializationInfoPtr & new_info,
+    const IDataType & new_type,
+    const SerializationInfoSettings & new_settings);
+
 }

@@ -3,6 +3,7 @@
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/Serializations/SerializationInfoNullable.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 namespace DB
@@ -44,7 +45,7 @@ MutableSerializationInfoPtr SerializationInfoObject::createWithType(
     {
         const auto & new_path_type = new_object.getTypedPaths().at(path);
         auto path_settings = new_settings;
-        if (!new_settings.canUseSparseSerialization(*new_path_type))
+        if (!new_settings.shouldCollectSerializationInfo(*new_path_type))
             path_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
         auto new_info = new_path_type->createSerializationInfo(path_settings);
         auto old_type_it = old_object.getTypedPaths().find(path);
@@ -53,11 +54,15 @@ MutableSerializationInfoPtr SerializationInfoObject::createWithType(
         const auto * new_info_ptr = new_info.get();
         if (old_type_it != old_object.getTypedPaths().end()
             && old_info
-            && (old_info->structureEquals(*new_info_ptr)
-                || (typeid_cast<const SerializationInfoTuple *>(old_info)
-                    && typeid_cast<const SerializationInfoTuple *>(new_info_ptr))))
+            && canReuseSerializationInfoForTypeChange(*old_info, *new_info_ptr))
         {
             new_info = old_info_it->second->createWithType(*old_type_it->second, *new_path_type, path_settings);
+        }
+        else if (old_type_it != old_object.getTypedPaths().end() && old_info)
+        {
+            if (auto reused = tryReuseSerializationInfoThroughNullable(
+                    *old_info, *old_type_it->second, new_info, *new_path_type, path_settings))
+                new_info = std::move(reused);
         }
         else if (old_type_it == old_object.getTypedPaths().end() || old_info_it == name_to_elem.end())
         {
