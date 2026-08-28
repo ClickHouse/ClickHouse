@@ -22,7 +22,10 @@ CREATE TABLE test_nullcount_pruning
 ENGINE = MergeTree()
 PARTITION BY bucket
 ORDER BY id
-SETTINGS auto_statistics_types = '';
+-- `nullable_serialization_version` is pinned: randomized `allow_sparse` enables the
+-- sparsity-filter trivial count rewrite for `count() ... WHERE col IS NULL`, which
+-- replaces ReadFromMergeTree in EXPLAIN and hides the `Statistics` index section.
+SETTINGS auto_statistics_types = '', nullable_serialization_version = 'basic';
 
 -- Part 0: all NULL values.
 INSERT INTO test_nullcount_pruning VALUES (0, 0, NULL, NULL, NULL, NULL), (0, 1, NULL, NULL, NULL, NULL);
@@ -131,7 +134,9 @@ CREATE TABLE test_float_inf_pruning
 ENGINE = MergeTree()
 PARTITION BY bucket
 ORDER BY bucket
-SETTINGS auto_statistics_types = '';
+-- Pinned for the same reason as above: keep `count() ... WHERE f IS NULL` on the
+-- ReadFromMergeTree path so that the `Statistics` index section stays in EXPLAIN.
+SETTINGS auto_statistics_types = '', nullable_serialization_version = 'basic';
 
 -- Part 0: no NULLs, huge finite value and a real +Inf (NOT the +infinity NULL sentinel).
 INSERT INTO test_float_inf_pruning VALUES (0, 1e308), (0, inf);

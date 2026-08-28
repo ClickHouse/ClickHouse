@@ -172,7 +172,7 @@ CREATE TABLE test_non_null
 )
 ENGINE = MergeTree()
 ORDER BY ts
-SETTINGS index_granularity = 1, allow_nullable_key = 1;
+SETTINGS index_granularity = 1, allow_nullable_key = 1, auto_statistics_types = 'basic';
 INSERT INTO test_non_null VALUES
     (toDateTime64('2026-01-01 00:00:00', 3)),
     (toDateTime64('2026-01-02 00:00:00', 3)),
