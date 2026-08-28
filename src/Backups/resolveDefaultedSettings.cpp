@@ -1,5 +1,6 @@
 #include <Backups/resolveDefaultedSettings.h>
 
+#include <Core/Settings.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -59,6 +60,28 @@ CoreSettingsFromQuery extractCoreSettings(
             res.changes.emplace_back(setting);
 
     return res;
+}
+
+void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<String> & default_names)
+{
+    if (default_names.empty())
+        return;
+
+    /// The value a reset produces: `Context::resetSettingsToDefaultValue` assigns the declared default, and
+    /// `SettingsConstraints::checkResetToDefault` checks a reset as an assignment of that same value.
+    const Settings declared_defaults;
+
+    for (const auto & name : default_names)
+    {
+        /// A name that is not a built-in setting has no declared default to send. Resetting one removes a
+        /// custom setting, which no change can express, and resetting an unknown name does nothing at all;
+        /// either way it stays a local effect on the host that parsed the clause, which is where it already
+        /// was before `= DEFAULT` was accepted in this clause.
+        if (!Settings::hasBuiltin(name))
+            continue;
+
+        changes.emplace_back(name, declared_defaults.get(name));
+    }
 }
 
 }

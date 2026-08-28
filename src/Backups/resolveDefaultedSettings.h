@@ -53,4 +53,13 @@ SettingsWithDefaultsResolved resolveDefaultedSettings(
 CoreSettingsFromQuery extractCoreSettings(
     const ASTBackupQuery & query, std::span<const std::string_view> specific_names, CanonicalSettingNameFn canonical_name);
 
+/// Append each core name of `default_names` to `changes` as an ordinary `name = value` change carrying the
+/// setting's declared default, which is the value resetting it produces. For rebuilding a SETTINGS clause
+/// that has to survive a re-parse by another host: see `BackupSettings::copySettingsToQuery`.
+///
+/// Appended after the existing changes on purpose. A name may appear in both carriers, and then the reset
+/// wins, exactly as it wins on the host that parsed the clause, where the reset is applied after every
+/// override. Order is what decides that, so this holds for an alias spelling of the same field too.
+void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<String> & default_names);
+
 }

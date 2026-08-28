@@ -284,12 +284,14 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
 
-    /// Only the CORE `name = DEFAULT` items carry over, for the reason spelled out in
-    /// `BackupSettings::copySettingsToQuery`: this rebuild emits resolved effective state, and
-    /// `restore_uuid` is generated after parsing and emitted above as a change.
-    query_settings->default_settings = extractCoreSettingsFromQuery(query).default_names;
+    /// A CORE `name = DEFAULT` carries over as an ordinary change holding the declared default, and a
+    /// restore-specific one does not carry over at all, both for the reasons spelled out in
+    /// `BackupSettings::copySettingsToQuery`: the rebuilt clause is re-parsed from text by each receiving
+    /// host, so it must contain no `= DEFAULT`, and `restore_uuid` is generated after parsing and emitted
+    /// above as a change.
+    appendCoreDefaultsAsChanges(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
-    if (query_settings->changes.empty() && query_settings->default_settings.empty())
+    if (query_settings->changes.empty())
         query_settings = nullptr;
 
     query.settings = query_settings;

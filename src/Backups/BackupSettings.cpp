@@ -181,13 +181,23 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
 
-    /// Carry over only the CORE `name = DEFAULT` items: they describe a reset on the receiving host's query
-    /// context, which this rebuild cannot otherwise express. A backup-specific one must NOT ride along -
-    /// the rebuild emits resolved effective state, so re-resolving a defaulted name would discard state
-    /// generated since parsing (`backup_uuid` is the concrete case).
-    query_settings->default_settings = extractCoreSettingsFromQuery(query).default_names;
+    /// A CORE `name = DEFAULT` describes a reset on the receiving host's query context, and it is carried
+    /// as an ordinary change holding the declared default - the value the reset produces - rather than in
+    /// `ASTSetQuery::default_settings`. The reason is that this clause reaches the other hosts as SQL
+    /// *text*: `executeDDLQueryOnCluster` serializes the rebuilt query with `formatWithSecretsOneLine` and
+    /// every host re-parses that text with its own parser, before the DDL settings packet is applied.
+    /// `ASTSetQuery` prints all `changes` before all `default_settings`, and this rebuild always emits a
+    /// generated `backup_uuid` change, so a `name = DEFAULT` here would always be printed after a comma -
+    /// the one shape a parser without this fix rejects. Emitting it would make
+    /// `BACKUP ... ON CLUSTER ... SETTINGS <core setting> = DEFAULT` fail on every host of a cluster that
+    /// is mid-rolling-upgrade.
+    ///
+    /// A backup-specific `name = DEFAULT` is not carried in any form: the rebuild emits resolved effective
+    /// state, so re-resolving a defaulted name on the receiver would discard state generated since parsing
+    /// (`backup_uuid` is the concrete case).
+    appendCoreDefaultsAsChanges(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
-    if (query_settings->changes.empty() && query_settings->default_settings.empty())
+    if (query_settings->changes.empty())
         query_settings = nullptr;
 
     query.settings = query_settings;
