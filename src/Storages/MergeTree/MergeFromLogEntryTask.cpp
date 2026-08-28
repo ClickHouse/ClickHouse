@@ -41,6 +41,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_merge_task_sleep_in_prepare[];
+    extern const char rmt_merge_task_pause_after_reserve[];
 }
 
 namespace ErrorCodes
@@ -402,6 +403,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             *future_merged_part, metadata_snapshot, task_context, *merge_data_settings, mutations_snapshot, entry.create_time,
             output_disk->isRemote(), {CompactionStatistics::getDiskWriteBufferMemory(output_disk, task_context->getWriteSettings())},
             entry.deduplicate, entry.cleanup));
+
+    /// Holds the task right after the reservation above, so a test can observe the reserved amount
+    /// (the MergesMutationsMemoryReservation metric) while a replicated merge is committed to run
+    /// but has not started executing yet.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_merge_task_pause_after_reserve);
 
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))
