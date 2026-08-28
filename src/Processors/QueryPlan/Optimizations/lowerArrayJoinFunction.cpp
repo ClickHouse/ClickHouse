@@ -9,10 +9,8 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// Lower an `arrayJoin` function inside an Expression/Filter into a real ArrayJoinStep, so it goes through
-/// the same machinery as the ARRAY JOIN clause (lazy replication, and the fuseFilterIntoArrayJoin pass).
-/// Peels one array join at a time; the driver re-applies the pass for the rest, which is required because
-/// independent array joins compose as a cross product and each needs its own step.
+/// Lower an `arrayJoin` function into a real ArrayJoinStep so it gets lazy replication and filter fusion.
+/// Peels one join per call; the driver repeats for the rest (independent joins are a cross product).
 size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (!settings.lower_array_join_function || parent_node->children.size() != 1)
@@ -28,8 +26,7 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (!dag.hasArrayJoin())
         return 0;
 
-    /// Extraction splits one block into several, so a stateful function above would see different block
-    /// boundaries. mergeExpressions guards the same arrayJoin + stateful pair; bail here for the same reason.
+    /// Extraction changes block boundaries, so bail if a stateful function is above (as mergeExpressions does).
     if (dag.hasStatefulFunctions())
         return 0;
 

@@ -2915,12 +2915,10 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
 
     const std::string name = array_join->result_name;
 
-    /// after: split puts the ARRAY_JOIN in `first`, so `second` is array-join-free and consumes the array
-    /// join result as an input named `name` (element type) - exactly the ArrayJoinStep output.
+    /// after: split keeps the ARRAY_JOIN in `first`, so `second` is array-join-free and takes its result as input `name`.
     ActionsDAG after = split({array_join}).second;
 
-    /// before: splitting on the array argument leaves the ARRAY_JOIN (its parent) out of `first`, so
-    /// `before` is array-join-free; it computes the argument, which we output under `name` (array type).
+    /// before: splitting on the argument keeps the ARRAY_JOIN (its parent) out, so `before` just computes the array.
     const Node * arg = array_join->children.at(0);
     auto before_split = split({arg}, /*create_split_nodes_mapping=*/true);
     ActionsDAG before = std::move(before_split.first);
