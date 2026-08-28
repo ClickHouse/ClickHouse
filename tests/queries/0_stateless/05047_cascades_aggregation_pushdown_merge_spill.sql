@@ -83,19 +83,24 @@ SYSTEM FLUSH LOGS query_log, text_log;
 SELECT '-- merge spilled to disk';
 SELECT count() > 0 AS merge_spilled
 FROM system.text_log
-WHERE query_id IN (SELECT query_id FROM system.query_log WHERE log_comment = '05047_cascades_spill_probe')
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE log_comment = '05047_cascades_spill_probe' AND current_database = currentDatabase())
   AND logger_name = 'Aggregator' AND message LIKE 'Writing part of aggregation data%';
 
--- Result check: an order-insensitive digest of the full 100000-group result, pushed vs classic.
-SELECT '-- digest: pushed (with spill) vs classic';
+-- Result check: an order-insensitive digest of the full 100000-group result, compared against
+-- hand-computed constants of the deterministic dataset:
+--   groups = 100000: the dims carry 100000 distinct `g`;
+--   total_rows = 500000000: each of the 100000 `g` groups receives `c` = 5000 fact rows of its
+--     join key (facts hold 5000 rows per `j`);
+--   total_sum = 2499750000000: every fact row matches the 50000 dim rows of its `j`, so the sum
+--     is 50000 x (sum of `v` over the facts) = 50000 x 49995000.
+-- Pushed-vs-classic equality is covered by 04927 on sane sizes; the classic plan here would
+-- materialize the 500M-row join fan-out this optimization exists to avoid (it exceeded the query
+-- memory limit in CI with the session spill knobs).
+SELECT '-- digest: pushed (with spill) vs hand-computed constants';
 SELECT count() AS groups, sum(c) AS total_rows, sum(s) AS total_sum FROM
 (
     SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
 );
-SELECT count() AS groups, sum(c) AS total_rows, sum(s) AS total_sum FROM
-(
-    SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
-) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 DROP TABLE t_spill_facts;
 DROP TABLE t_spill_dims;
