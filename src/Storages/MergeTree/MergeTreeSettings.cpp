@@ -214,8 +214,8 @@ adds an O(rows) pass per sparse-eligible column.
     DECLARE(Bool, skip_empty_columns_on_insert, false, R"(
 If enabled, columns whose values are entirely type-defaults in a given INSERT
 block are not written to the data part on disk. When the part is later read,
-missing columns are filled with their frozen defaults — the same mechanism used
-by `ALTER TABLE ADD COLUMN`. This saves disk space for sparse-update workloads
+missing columns are filled with the default of their recorded type. This saves
+disk space for sparse-update workloads
 where most columns in each INSERT are left at their type's default value.
 Columns with `DEFAULT`, `MATERIALIZED`, or `ALIAS` expressions are never
 skipped, because the read path would evaluate the expression instead of
@@ -311,7 +311,7 @@ Possible values:
 - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
 This makes settings like `string_serialization_version` effective.
 - `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
-listing columns that were omitted from the part with their frozen defaults.
+listing omitted columns and the type whose default represents their values.
 Required to enable `skip_empty_columns_on_insert`.
 
 During rolling upgrades, set this to `basic` so that new servers produce

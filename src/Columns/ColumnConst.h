@@ -333,7 +333,7 @@ public:
 
     bool hasOnlyTypeDefaults() const override
     {
-        return data->hasOnlyTypeDefaults();
+        return s == 0 || data->hasOnlyTypeDefaults();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override

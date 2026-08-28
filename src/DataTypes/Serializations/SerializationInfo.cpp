@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
@@ -477,6 +478,12 @@ void SerializationInfoByName::setMissingColumns(MissingColumns columns)
 {
     chassert(columns.empty() || settings.version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
     std::sort(columns.begin(), columns.end());
+    auto duplicate = std::adjacent_find(columns.begin(), columns.end(), [](const auto & lhs, const auto & rhs)
+    {
+        return lhs.name == rhs.name;
+    });
+    if (duplicate != columns.end())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicate missing column '{}' in serialization infos", duplicate->name);
     missing_columns = std::move(columns);
 }
 
@@ -713,12 +720,20 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     {
         MissingColumns missing_columns;
         missing_columns.reserve(missing_columns_array->size());
+        const auto physical_column_names = columns.getNameSet();
         for (const auto & elem : *missing_columns_array)
         {
             const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+            for (const auto & [key, _] : *elem_object)
+                if (key != KEY_MISSING_COL_NAME && key != KEY_MISSING_COL_TYPE)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected field '{}' in missing_columns entry", key);
+
             MissingColumnInfo mc;
             mc.name = elem_object->getValue<String>(KEY_MISSING_COL_NAME);
             mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
+            if (physical_column_names.contains(mc.name))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Column '{}' is both physical and missing in serialization infos", mc.name);
+            DataTypeFactory::instance().get(mc.type_name);
             missing_columns.push_back(std::move(mc));
         }
         infos.setMissingColumns(std::move(missing_columns));
