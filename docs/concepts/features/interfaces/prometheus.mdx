@@ -162,6 +162,15 @@ remote_write:
 
 Prometheus sends samples to the `prometheus.metrics` table.
 
+To batch data from many concurrent remote-write requests into fewer parts, enable [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) by adding the `async_insert` setting to the URL (or by enabling it in the user profile):
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
+```
+
+ClickHouse acknowledges an asynchronous remote-write request only after the data is flushed to all inner tables of the `TimeSeries` table, regardless of the [`wait_for_async_insert`](/reference/settings/session-settings/wait-for#wait_for_async_insert) setting: the remote-write protocol treats an acknowledged write as durable. If the flush fails, the request returns an error and Prometheus retries it.
+
 ### Query with PromQL {#promql-query-support}
 
 Use the instant-query endpoint to evaluate a PromQL expression at one point in time:
@@ -212,7 +221,7 @@ datasources:
 Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
 
 <Note>
-Only the query endpoints `/api/v1/query` and `/api/v1/query_range` and the series metadata endpoint `/api/v1/series` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. The label metadata endpoints a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete (`/api/v1/labels`, `/api/v1/label/<name>/values`) are not implemented and return an error. Write PromQL expressions in code mode instead of the query builder.
+Only the query endpoints `/api/v1/query` and `/api/v1/query_range` and the metadata endpoints `/api/v1/series` and `/api/v1/labels` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). The label values endpoint (`/api/v1/label/<name>/values`), which a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete, is not implemented and returns an error. Write PromQL expressions in code mode instead of the query builder.
 </Note>
 
 #### SQL entry points {#sql-entry-points}
