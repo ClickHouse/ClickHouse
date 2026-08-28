@@ -146,6 +146,15 @@ void AllocationLimit::approveDecrease()
             /// including requests parked in sibling queues behind policy nodes.
             suspended_growth_retry_pending = true;
             child->retrySuspendedIncreases();
+
+            /// The retry activations were enqueued before this event. A stable-generation suction
+            /// pass therefore acts as their completion fence even when an intermediate policy
+            /// legitimately suppresses an unchanged null update.
+            if (memory_growth_suspension_beneficiaries == 0
+                && !allocation_to_kill
+                && !suspended_growth->allocation.isGrowthRecoveryActive()
+                && suspended_growth->allocation.memory_growth_suction_priority)
+                scheduleSuction();
         }
     }
 
@@ -318,6 +327,14 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     /// Wait until the changed eligibility has propagated through the child policy before
                     /// interpreting a null increase as exhaustion of the suspension round.
                     suspended_growth_retry_pending = true;
+
+                    /// The leaf activation was queued before this call returned. Queue the external
+                    /// suction decision behind it; generation validation postpones the decision
+                    /// across every fitting admission or release it exposes.
+                    if (new_increase == suspended_growth
+                        && new_increase->allocation.memory_growth_suction_priority)
+                        scheduleSuction();
+
                     SCHED_DBG("{} -- suspending increase(allocated={}, increase_size={}, max={}, allocation={})",
                         getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id);
                 }
@@ -417,7 +434,12 @@ void AllocationLimit::processSuction(
         return;
     }
 
-    if (suspended_growth_retry_pending || decrease != nullptr
+    /// A stable generation is the completion fence for the deferred subtree retry. Policy
+    /// nodes may suppress an unchanged null update, so waiting for that update at every ancestor
+    /// would lose suction permanently in stacked limits.
+    suspended_growth_retry_pending = false;
+
+    if (decrease != nullptr
         || memory_growth_suspension_beneficiaries != 0 || allocation_to_kill
         || suspended_growth->allocation.isGrowthRecoveryActive()
         || !suspended_growth->allocation.memory_growth_suction_priority)
