@@ -377,6 +377,7 @@ IMPLEMENT_SETTING_ENUM(
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
      {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
