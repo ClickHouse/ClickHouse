@@ -4392,17 +4392,64 @@ struct ToDateMonotonicity
     }
 };
 
+/// True if both bounds are known day numbers inside `[min_day_num, max_day_num]`. An absent or
+/// non-integer bound is treated as outside: the range may then contain any day number.
+inline bool dayNumRangeIsWithin(const Field & left, const Field & right, Int64 min_day_num, Int64 max_day_num)
+{
+    auto is_within = [&](const Field & bound)
+    {
+        if (bound.getType() == Field::Types::UInt64)
+        {
+            const UInt64 day_num = bound.safeGet<UInt64>();
+            return day_num <= static_cast<UInt64>(max_day_num) && static_cast<Int64>(day_num) >= min_day_num;
+        }
+        if (bound.getType() == Field::Types::Int64)
+        {
+            const Int64 day_num = bound.safeGet<Int64>();
+            return day_num >= min_day_num && day_num <= max_day_num;
+        }
+        return false;
+    };
+
+    return is_within(left) && is_within(right);
+}
+
 template <typename T>
 struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);
-            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
+
+            /// A `Date`/`Date32` day number is rescaled to seconds, so the `UInt32` result wraps
+            /// outside a bounded window of day numbers and keeps order only inside it. The floor is 0
+            /// for `Date` and 1 for `Date32`: `Date` reads the saturated lookup table, which is never
+            /// negative, while `Date32` reads the raw table, where day 0 is negative in a timezone
+            /// ahead of UTC. No overflow behaviour clamps either end, since each inspects the day
+            /// number before the timezone is applied. An integer source is a timestamp, not a day
+            /// number, so it is not rescaled.
+            if constexpr (std::is_same_v<T, DataTypeDateTime>)
+            {
+                const auto * source_type = &type;
+                if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(source_type))
+                    source_type = low_cardinality->getDictionaryType().get();
+
+                const WhichDataType which_source(*source_type);
+                if (which_source.isDateOrDate32())
+                {
+                    if (!dayNumRangeIsWithin(left, right, which_source.isDate32() ? 1 : 0, MAX_DATETIME_DAY_NUM))
+                        return {};
+
+                    /// Not strict: a timezone may skip a civil day, mapping two day numbers to one instant.
+                    return {.is_monotonic = true};
+                }
+            }
+
+            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isUInt8() || which.isUInt16()
                 || which.isUInt32()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
@@ -4419,6 +4466,32 @@ struct ToDateTimeMonotonicity
         }
         else
             return {};
+    }
+};
+
+/// `toUnixTimestamp` of a `Date`/`Date32` multiplies the day number by the seconds in a day, with no
+/// timezone term, so the `UInt32` result wraps above a bounded day number. `ToNumberMonotonicity`
+/// cannot express that, reasoning about integer width alone, under which a day number always fits.
+/// Every other source keeps that shared reasoning, so `toUInt32` of a `Date`, which reads the day
+/// number unscaled, stays monotonic on any range.
+struct ToUnixTimestampMonotonicity
+{
+    static bool has() { return true; }
+
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+    {
+        if (WhichDataType(type).isDateOrDate32())
+        {
+            /// Largest day number whose whole days of seconds still fit into the result.
+            static constexpr Int64 max_day_num = std::numeric_limits<UInt32>::max() / DATE_SECONDS_PER_DAY;
+            if (!dayNumRangeIsWithin(left, right, 0, max_day_num))
+                return {};
+
+            /// Strict: the rescaling has no timezone term, so distinct day numbers stay distinct.
+            return {.is_monotonic = true, .is_strict = true};
+        }
+
+        return ToNumberMonotonicity<UInt32>::get(type, left, right);
     }
 };
 
@@ -4554,7 +4627,7 @@ extern template class FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotoni
 extern template class FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 extern template class FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 extern template class FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
-extern template class FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
+extern template class FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToUnixTimestampMonotonicity>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
@@ -4595,7 +4668,7 @@ using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonoton
 using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
-using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToUnixTimestampMonotonicity>;
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
