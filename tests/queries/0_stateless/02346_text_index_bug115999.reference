@@ -1,0 +1,58 @@
+default settings
+1
+2
+query_plan_direct_read_from_text_index = 0
+1
+2
+nothing pushed below the JOIN
+1
+3
+use_join_disjunctions_push_down = 0
+1
+2
+one index constrained below the JOIN, the other above
+2
+OR with a column of the scanned table
+1
+3
+AND with the other side, no OR
+1
+explicit tokenizer argument
+1
+3
+has, not a text-search function
+1
+3
+hasAllTokens above the JOIN
+1
+3
+same column name on the other join side
+without a JOIN
+1
+2
+3
+a text-search function in the SELECT list above the JOIN
+1	1
+2	0
+3	1
+4	0
+a subquery between the scan and the predicate
+1
+3
+parallel replicas
+1
+3
+expression carrier above the JOIN
+1
+1
+Map carrier above the JOIN
+1
+1
+hasPhrase above the JOIN
+1
+1
+the indexed column renamed below the JOIN
+1
+a computed column reusing the indexed column name
+a filled join between the scan and the predicate
+1
