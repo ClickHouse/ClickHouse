@@ -332,10 +332,14 @@ public:
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
-        bool supports_skip_indexes_on_data_read);
+        bool supports_skip_indexes_on_data_read,
+        bool check_row_limits);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
+    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
+    /// or memoizing the result. The executed read analyzes again after its final mode is known.
+    AnalysisResultPtr selectRangesToReadForEstimation() const;
 
     /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
     /// the query condition cache and without caching the analysis on the step. Used for the automatic
@@ -346,6 +350,11 @@ public:
     AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+
+    /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
+    /// see filters whose value can change while that key stays the same: non-deterministic virtual
+    /// columns (query-wide part numbering, catalog names, disk placement).
+    static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
@@ -380,8 +389,15 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
+    void requestOutputEachPartitionThroughSeparatePortForWindow();
+    bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
+
+    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
+    /// window functions.
+    enum class ProcessorKind : uint8_t { Aggregation, Distinct, Window };
+    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
@@ -390,6 +406,7 @@ public:
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
+    const MergeTreeReaderSettings & getReaderSettings() const { return reader_settings; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
@@ -429,6 +446,9 @@ public:
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
+    /// Compose statistics over the part set of the given partition/PK analysis result
+    /// instead of all prepared parts. Passing nullptr falls back to getParts().
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const;
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
@@ -448,14 +468,15 @@ public:
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
     void setDistributedRead(size_t bucket_count);
-    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets and records them. A
-    /// non-FINAL read is sliced into contiguous mark-balanced buckets; a FINAL read is split into
-    /// primary-key-range layers (one merge per layer, per partition when FINAL does not merge across
-    /// partitions). Returns the bucket count, or 0 (read serially) when a FINAL read cannot be range-split
-    /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds `max_total_buckets`.
+    /// Ceiling for the tasks of one distributed read (lanes per task are unbounded).
+    static constexpr size_t max_distributed_read_buckets = 256;
+
+    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets: mark-balanced
+    /// slices for a plain read, primary-key-range layers grouped into the buckets for `FINAL`. Returns
+    /// the bucket count, or 0 (read serially) when a `FINAL` read cannot be split safely.
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
-    /// per-bucket blob shipped as the `read_bucket` task parameter; empty unless this is a distributed read.
+    /// per-bucket blob shipped as the per-read bucket task parameter; empty unless this is a distributed read.
     std::vector<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
@@ -492,6 +513,11 @@ public:
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
+    /// The task-parameter key under which this read's bucket marks travel. Unique per read so several
+    /// bucketed reads can share one worker fragment (e.g. a broadcast join's partitioned probe side and
+    /// its replicated build side) without their bucket blobs colliding in the shared parameter map.
+    const String & getDistributedReadParamName() const { return distributed_read_param_name; }
+    void setDistributedReadParamName(String param_name) { distributed_read_param_name = std::move(param_name); }
     bool getEnableVerticalFinal() const { return enable_vertical_final; }
 
     /// Whether a FINAL read must merge parts within each partition independently instead of globally
@@ -625,6 +651,15 @@ private:
         const Names & column_names,
         const InputOrderInfoPtr & input_order_info);
 
+    /// A pipe of `num_streams` `NullSource`s, used when there is nothing to read.
+    Pipe createEmptyPipe(size_t num_streams) const;
+
+    /// How many output ports this step must produce when there is nothing to read. Normally one, but
+    /// when the parts are pre-split into primary-key layers by `optimizeJoinByShards`, the number of
+    /// ports is a part of the plan: the JOIN above consumes exactly one port per layer and pairs the
+    /// ports of its two sides positionally (see `QueryPipelineBuilder::joinPipelinesYShapedByShards`).
+    size_t getNumStreamsWhenNothingToRead(const AnalysisResult & result) const;
+
     Pipe spreadMarkRangesAmongStreams(
         RangesInDataParts && parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -664,10 +699,6 @@ private:
 
     void logPredicateStatistics(const AnalysisResult & result) const;
 
-    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY and DISTINCT.
-    enum class ProcessorKind : uint8_t { Aggregation, Distinct };
-    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
-
     int getSortDirection() const;
     void updateSortDescription();
 
@@ -692,13 +723,15 @@ private:
     std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
-    /// `read_bucket` parameter.
+    /// per-read bucket parameter.
     size_t distributed_read_bucket_count = 0;
+    /// Per-read task-parameter key for this read's bucket marks (see getDistributedReadParamName).
+    String distributed_read_param_name;
     /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
-    /// `distributed_read_lanes_per_task` of them into each task's `read_bucket` parameter. Empty on a worker.
+    /// `distributed_read_lanes_per_task` of them into each task's bucket parameter. Empty on a worker.
     std::vector<DistributedReadBucket> distributed_read_buckets;
     size_t distributed_read_lanes_per_task = 1;
-    /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its `read_bucket`
+    /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its bucket
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
     std::vector<DistributedReadBucket> distributed_read_task_buckets;
 };

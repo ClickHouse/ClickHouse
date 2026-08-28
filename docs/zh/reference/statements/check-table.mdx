@@ -31,7 +31,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 * `part_name`： (可选) 如果要检查表中的特定分片，可以添加字符串字面量来指定其名称。
 * `FORMAT format`： (可选) 用于指定结果的输出格式。
 * `SETTINGS`： (可选) 用于添加其他设置。
-  * (可选) ：[check&#95;query&#95;single&#95;value&#95;result](/zh/reference/settings/session-settings#check_query_single_value_result)：此设置控制输出是详细模式 (`0`) 还是汇总模式 (`1`) 。
+  * (可选) ：[check&#95;query&#95;single&#95;value&#95;result](/zh/reference/settings/session-settings/check#check_query_single_value_result)：此设置控制输出是详细模式 (`0`) 还是汇总模式 (`1`) 。
   * 也可以应用其他设置。如果不要求结果顺序是确定性的，可以将 max&#95;threads 设置为大于 1 的值，以加快查询速度。
 
 查询响应取决于 `check_query_single_value_result` 设置的值。

@@ -21,6 +21,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldAccurateComparison.h>
 
+#include <list>
+
 #include <boost/functional/hash.hpp>
 
 #include <fmt/ranges.h>
@@ -1270,18 +1272,15 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
     return result_final_ranges;
 }
 
+/// Rewrites `dag` so that it returns the filter column followed by every column of `header`, in order.
+/// A header may hold several columns with the same name, so each header position gets its own input
+/// node: `ActionsDAG::updateHeader` consumes one input per name occurrence, and a shared node would
+/// leave the extra occurrences unconsumed and appended to the result, changing the stream header.
 static void reorderColumns(ActionsDAG & dag, const Block & header, const std::string & filter_column)
 {
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs_map;
+    std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs_map;
     for (const auto * input : dag.getInputs())
-        inputs_map[input->result_name] = input;
-
-    for (const auto & col : header)
-    {
-        auto & input = inputs_map[col.name];
-        if (!input)
-            input = &dag.addInput(col);
-    }
+        inputs_map[input->result_name].push_back(input);
 
     ActionsDAG::NodeRawConstPtrs new_outputs;
     new_outputs.reserve(header.columns() + 1);
@@ -1289,8 +1288,16 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
     new_outputs.push_back(&dag.findInOutputs(filter_column));
     for (const auto & col : header)
     {
-        auto & input = inputs_map[col.name];
-        new_outputs.push_back(input);
+        auto & inputs_list = inputs_map[col.name];
+        if (inputs_list.empty())
+        {
+            new_outputs.push_back(&dag.addInput(col));
+        }
+        else
+        {
+            new_outputs.push_back(inputs_list.front());
+            inputs_list.pop_front();
+        }
     }
 
     dag.getOutputs() = std::move(new_outputs);
@@ -1382,10 +1389,22 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 }
 
 /// Applies a FilterSortedStreamByRange built from a per-layer border predicate AST. No-op when the AST
-/// is null (the open first/last interval). `pipe`'s streams must be sorted by the primary key.
+/// is null (the open first/last interval) or when the pipe is empty. `pipe`'s streams must be sorted by
+/// the primary key.
 static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, const KeyDescription & primary_key, ContextPtr context)
 {
-    if (!filter_function)
+    /// An empty pipe has no header at all, and there is nothing to filter in it anyway. Skipping it here
+    /// is safe: the only step getters that can return an empty pipe are the merging-pipe getters (the
+    /// `ReadType::InOrder` getters in `ReadFromMergeTree::spreadMarkRangesAmongStreams` and
+    /// `spreadMarkRangesAmongStreamsFinal`, including the distributed `FINAL` lane getter passed to
+    /// `buildDistributedFinalPipe`), and their consumers drop the empty per-layer pipes:
+    /// the first unites them with `Pipe::unitePipes`, which starts with `removeEmptyPipes`, and the
+    /// other two skip them explicitly before attaching the `FINAL` merging transforms.
+    /// The join-by-shards path, where an empty layer must keep occupying its output port to preserve
+    /// positional shard pairing, never passes an empty pipe here: in `ReadFromMergeTree::readByLayers`
+    /// the in-order getter substitutes a `NullSource` placeholder, and the default getter reads through
+    /// `readFromPool`, which creates one source per thread regardless of the number of parts.
+    if (!filter_function || pipe.empty())
         return;
 
     auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());

@@ -40,7 +40,7 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    MINIO_LOG = f"{temp_dir}/minio.log"
+    SEAWEEDFS_LOG = f"{temp_dir}/seaweedfs.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
@@ -54,6 +54,9 @@ class ClickHouseProc:
     # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
     # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
     DUMP_SYSTEM_TABLE_TIMEOUT = 600
+    # Total wall-clock cap for symbolizing the jemalloc profiles of a job (seconds),
+    # for the same reason.
+    JEMALLOC_SYMBOLIZATION_BUDGET = 1200
 
     def __init__(
         self,
@@ -104,14 +107,14 @@ class ClickHouseProc:
         self.port = 9000
         self.port_1 = 19000
         self.port_2 = 29000
-        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
-        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --distributed_query.streaming_exchange_port 19223 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --distributed_query.streaming_exchange_port 29223 --macros.shard s2"
         self.proc = None
         self.proc_1 = None
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.minio_proc = None
+        self.seaweedfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
         # The failing sub-command + its ClickHouse error tail from
@@ -157,37 +160,51 @@ class ClickHouseProc:
 </clickhouse>
 """)
 
-    def start_minio(self, test_type):
+    def start_seaweedfs(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
-            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             test_type,
             "./tests",
         ]
-        with open(self.MINIO_LOG, "w") as log_file:
-            self.minio_proc = subprocess.Popen(
+        with open(self.SEAWEEDFS_LOG, "w") as log_file:
+            self.seaweedfs_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
+        print(
+            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
+        )
 
-        # Wait for setup_minio.sh to fully exit, not just for the bucket to be
-        # listable: the server's S3 disks authenticate at startup and need the
-        # whole user/policy/ACL setup in place. The minio server is nohup'd and
-        # outlives the script, so waiting on the script is safe. Its internal
-        # waits are bounded (wait_for_it caps at 60s), so pad the timeout.
+        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
+        # be listable: the server's S3 disks authenticate at startup and need
+        # the whole identity/bucket setup in place. The seaweedfs server is
+        # nohup'd and outlives the script, so waiting on the script is safe.
+        # Its internal waits are bounded (60s each), so pad the timeout.
         try:
-            returncode = self.minio_proc.wait(timeout=120)
+            returncode = self.seaweedfs_proc.wait(timeout=240)
         except subprocess.TimeoutExpired:
-            print("Failed to start minio: setup_minio.sh did not finish in time")
-            self.minio_proc.kill()
+            print(
+                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
+            )
+            self.seaweedfs_proc.kill()
             return False
         if returncode != 0:
-            print(f"setup_minio.sh exited with code {returncode}")
+            print(f"setup_seaweedfs.sh exited with code {returncode}")
             return False
 
-        # wait_for_it can exit 0 even if minio is down, so confirm the bucket.
-        if not Shell.check("/mc ls clickminio/test", verbose=False, retries=3):
-            print("Failed to start minio: bucket clickminio/test not reachable")
+        # pass the credentials explicitly: the setup script no longer writes
+        # ~/.aws, and without them the aws cli would sign with the runner's
+        # instance-role credentials, which SeaweedFS does not know
+        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
+        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
+        if not Shell.check(
+            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
+            "AWS_DEFAULT_REGION=us-east-1 "
+            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
+            verbose=False,
+            retries=3,
+        ):
+            print("Failed to start seaweedfs: bucket test not reachable")
             return False
         return True
 
@@ -417,9 +434,11 @@ class ClickHouseProc:
         )
 
         # set profile file for the server (not needed for per-test coverage,
-        # which uses system.coverage_log instead of .profraw files)
+        # which uses system.coverage_log instead of .profraw files).
+        # %c (continuous mode) keeps the profile valid at every instant, so the
+        # SIGTRAP/SIGKILL escalation in stop_server cannot tear an exit-time write.
         if not self.is_per_test_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%m.profraw"
+            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%c%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -681,11 +700,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     def run_test(self, cmd, timeout=7200):
         """Run a `clickhouse-test` command and return its integer exit code.
 
-        Returns 0 on success, non-zero on failure. In particular, exit code
-        `STOP_TESTING_EXIT_CODE` (2) signals that `clickhouse-test` aborted
-        the run via `StopTesting` (server died, hung check failed, etc.) and
-        is forwarded to `FTResultsProcessor.run` as `runner_exit_code` so it
-        can populate the synthetic "Server died" leaf.
+        Returns 0 on success, non-zero on failure. The code is forwarded
+        verbatim to `FTResultsProcessor.run` as `runner_exit_code`, which
+        distinguishes the abort causes `clickhouse-test` raises `StopTesting`
+        with and names the synthetic leaf accordingly.
         """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:
@@ -749,10 +767,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         """Gracefully stop only the ClickHouse server processes.
 
         Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
-        MinIO) running. It is used between bugfix-validation iterations so the
+        SeaweedFS) running. It is used between bugfix-validation iterations so the
         server binary can be swapped and restarted without tearing down the
         rest of the test environment: otherwise a changed test relying on
-        Kafka or MinIO would pass under the first build type and spuriously
+        Kafka or SeaweedFS would pass under the first build type and spuriously
         "reproduce" a bug under the next one.
         """
         print("Stop ClickHouse processes")
@@ -818,8 +836,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self._collect_core_dumps()
                 res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
-                if Path(self.MINIO_LOG).exists():
-                    res.append(self.MINIO_LOG)
+                if Path(self.SEAWEEDFS_LOG).exists():
+                    res.append(self.SEAWEEDFS_LOG)
                 if Path(self.AZURITE_LOG).exists():
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
@@ -931,16 +949,42 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
+        # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
+        # addresses in the profile, and on a coverage build a single jeprof run has taken over an
+        # hour, timing the whole job out here, long after every test had finished (the sibling
+        # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
+        # artifact of the job, not its result, so give them up rather than the job.
+        deadline = time.time() + cls.JEMALLOC_SYMBOLIZATION_BUDGET
+
         chbinary = Shell.get_output("readlink -f $(which clickhouse)")
         for pid, profile in latest_profiles.items():
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+            budget = int(deadline - time.time())
+            if budget <= 0:
+                print(f"WARNING: Out of time to symbolize the profile of process {pid}")
+                continue
+
+            text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
+            if not Shell.check(
+                f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
                 verbose=True,
-            )
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+            ):
+                print(f"WARNING: Failed to symbolize {profile}, dropping {text_report}")
+                Path(text_report).unlink(missing_ok=True)
+
+            budget = int(deadline - time.time())
+            if budget <= 0:
+                print(f"WARNING: Out of time to build the flamegraph of process {pid}")
+                continue
+
+            flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
+            # The whole pipeline is under the timeout: killing jeprof alone would leave
+            # flamegraph.pl to write a truncated graph out of what it had received.
+            if not Shell.check(
+                f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
                 verbose=True,
-            )
+            ):
+                print(f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}")
+                Path(flamegraph).unlink(missing_ok=True)
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
@@ -1004,6 +1048,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
             f'grep -a -v "False positive error reports may follow" | '
             f'grep -a -v "For details see https://github.com/google/sanitizers" | '
+            f'grep -a -v -F -x "Not running the leak check: other threads are still running." | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
@@ -1213,9 +1258,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.restore_system_metadata_files_from_remote_database_disk()
 
+        # Caches created via the disk() function live one level deeper, under
+        # disks/<name>/status.
         cache_status_files = glob.glob(
             f"{self.ch_var_lib_dir}/filesystem_caches/*/status"
-        )
+        ) + glob.glob(f"{self.ch_var_lib_dir}/filesystem_caches/disks/*/status")
         if cache_status_files:
             print(
                 f"WARNING: Server died? Removing cache status files: {cache_status_files}"
@@ -1425,10 +1472,10 @@ if __name__ == "__main__":
                 res = ch.stop_log_exports()
             else:
                 res = True
-        elif command == "start_minio":
+        elif command == "start_seaweedfs":
             param = sys.argv[2]
             assert param in ["stateless"]
-            res = ch.start_minio(param)
+            res = ch.start_seaweedfs(param)
         elif command == "start_azurite":
             res = ch.start_azurite()
         else:

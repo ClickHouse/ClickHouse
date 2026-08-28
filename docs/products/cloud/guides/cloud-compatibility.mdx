@@ -50,6 +50,7 @@ The following table engines are also supported and used as written. The supporte
 - Null
 - Buffer
 - Memory
+- `IcebergS3` and `IcebergAzure`
 - Deltalake
 - Hudi
 - MySQL
@@ -60,6 +61,8 @@ The following table engines are also supported and used as written. The supporte
 - S3
 - Kafka
 
+Experimental `PaimonS3` and `PaimonAzure` table engines can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability.
+
 ### Interfaces {#interfaces}
 ClickHouse Cloud supports HTTPS, native interfaces, and the [MySQL wire protocol](/concepts/features/interfaces/mysql). Support for more interfaces such as Postgres is coming soon.
 
@@ -68,6 +71,8 @@ Dictionaries are a popular way to speed up lookups in ClickHouse.  ClickHouse Cl
 
 ### Federated queries {#federated-queries}
 We support federated ClickHouse queries for cross-cluster communication in the cloud, and for communication with external self-managed ClickHouse clusters. ClickHouse Cloud currently supports federated queries using the following integration engines:
+- `IcebergS3` and `IcebergAzure`
+- `PaimonS3` and `PaimonAzure` (experimental; contact Support for availability)
 - Deltalake
 - Hudi
 - MySQL
@@ -102,7 +107,7 @@ Experimental features are disabled in ClickHouse Cloud services to ensure the st
 
 ### Named collections {#named-collections}
 
-[Named collections](/concepts/features/configuration/server-config/named-collections) aren't currently supported in ClickHouse Cloud.
+DDL-created [named collections](/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. Named collections defined in configuration files aren't available because users can't modify server configuration files in ClickHouse Cloud.
 
 ## Operational defaults and considerations {#operational-defaults-and-considerations}
 The following are default settings for ClickHouse Cloud services. In some cases, these settings are fixed to ensure the correct operation of the service, and in others, they can be adjusted.
@@ -113,10 +118,8 @@ The following are default settings for ClickHouse Cloud services. In some cases,
 The default value of the `max_parts_in_total` setting for MergeTree tables has been lowered from 100,000 to 10,000. The reason for this change is that we observed that a large number of data parts is likely to cause a slow startup time of services in the cloud. A large number of parts usually indicate a choice of too granular partition key, which is typically done accidentally and should be avoided. The change of default will allow the detection of these cases earlier.
 
 #### `max_concurrent_queries: 1,000` {#max_concurrent_queries-1000}
-Increased this per-server setting from the default of `100` to `1000` to allow for more concurrency. 
-This will result in `number of replicas * 1,000` concurrent queries for the offered tier services. 
-`1000` concurrent queries for Basic tier service limited to a single replica and `1000+` for Scale and Enterprise, 
-depending on the number of replicas configured.
+Increased this per-server setting from the default of `100` to `1000` to allow for more concurrency.
+This results in `number of replicas * 1,000` concurrent queries for a service. A single-replica service supports up to `1000` concurrent queries regardless of tier. Multi-replica services on the Scale and Enterprise tiers support up to `1000` concurrent queries per replica.
 
 #### `max_table_size_to_drop: 1,000,000,000,000` {#max_table_size_to_drop-1000000000000}
 Increased this setting from 50GB to allow for dropping of tables/partitions up to 1TB.

@@ -43,9 +43,9 @@ Arguments du moteur :
 
 Paramètres facultatifs :
 
-* `poll_timeout_ms` - Délai d&#39;expiration d&#39;une opération de poll unique sur le fichier de log. Par défaut : [stream&#95;poll&#95;timeout&#95;ms](/fr/reference/settings/session-settings#stream_poll_timeout_ms).
-* `poll_max_batch_size` — Nombre maximal d&#39;enregistrements récupérés lors d&#39;une seule opération de poll. Par défaut : [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size).
-* `max_block_size` — Taille maximale du lot (en enregistrements) pour le poll. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#max_insert_block_size).
+* `poll_timeout_ms` - Délai d&#39;expiration d&#39;une opération de poll unique sur le fichier de log. Par défaut : [stream&#95;poll&#95;timeout&#95;ms](/fr/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `poll_max_batch_size` — Nombre maximal d&#39;enregistrements récupérés lors d&#39;une seule opération de poll. Par défaut : [max&#95;block&#95;size](/fr/reference/settings/session-settings/max#max_block_size).
+* `max_block_size` — Taille maximale du lot (en enregistrements) pour le poll. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `max_threads` - Nombre maximal de threads pour analyser les fichiers. La valeur par défaut est 0, ce qui signifie que ce nombre sera égal à max(1, physical&#95;cpu&#95;cores / 4).
 * `poll_directory_watch_events_backoff_init` - Temporisation initiale du thread de surveillance du répertoire. Par défaut : `500`.
 * `poll_directory_watch_events_backoff_max` - Temporisation maximale du thread de surveillance du répertoire. Par défaut : `32000`.
