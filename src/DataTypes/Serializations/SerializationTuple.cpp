@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
@@ -65,6 +66,10 @@ void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr
 
 void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// The types of the elements can come from the data (this is how the values of a `Dynamic` column
+    /// are read), so the depth of the recursion is bounded only by the size of the input.
+    checkStackSize();
+
     const size_t size = elems.size();
 
     field = Tuple();
@@ -175,6 +180,9 @@ SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool h
 
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// See the comment in the Field overload: this is the same recursion on the column-building path.
+    checkStackSize();
+
     addElementSafe<void>(elems.size(), column, [&]
     {
         for (size_t i = 0; i < elems.size(); ++i)

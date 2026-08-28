@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -62,6 +63,10 @@ void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr
 
 void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// The nested type can come from the data (this is how the values of a `Dynamic` column are read),
+    /// so the depth of the recursion is bounded only by the size of the input.
+    checkStackSize();
+
     size_t size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
@@ -99,6 +104,9 @@ void SerializationArray::serializeBinary(const IColumn & column, size_t row_num,
 
 void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// See the comment in the Field overload: this is the same recursion on the column-building path.
+    checkStackSize();
+
     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
     ColumnArray::Offsets & offsets = column_array.getOffsets();
 

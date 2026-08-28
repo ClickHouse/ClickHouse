@@ -14,6 +14,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/checkStackSize.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
@@ -82,6 +83,12 @@ void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, 
 
 void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// The types of the keys and of the values can come from the data (this is how the values of a
+    /// `Dynamic` column are read), so the depth of the recursion is bounded only by the size of the input.
+    /// The column overload below goes through the nested `Array(Tuple(...))` serialization, which checks
+    /// the stack on its own.
+    checkStackSize();
+
     size_t size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)

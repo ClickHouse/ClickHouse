@@ -32,3 +32,19 @@ SETTINGS input_format_binary_max_type_complexity = 0;
 
 SELECT * FROM format(RowBinary, 'd Dynamic', unhex(repeat('30000000010161', 10000) || '30000000000000' || repeat('0000', 10000) || repeat('010161', 10000) || '00'))
 SETTINGS input_format_binary_max_type_complexity = 0; -- { serverError TOO_DEEP_RECURSION }
+
+-- The type of a `Dynamic` value comes from the data as well when it is not `Dynamic` or `JSON`, and it can
+-- nest arbitrarily deep through the ordinary containers, whose deserialization then recurses through their
+-- serializations without passing through `Dynamic` or `JSON` again.
+
+SELECT * FROM format(RowBinary, 'd Dynamic', unhex(repeat('1E', 3) || '01' || repeat('01', 3) || '00'))
+SETTINGS input_format_binary_max_type_complexity = 0;
+
+SELECT * FROM format(RowBinary, 'd Dynamic', unhex(repeat('1E', 100000) || '01' || repeat('01', 100000) || '00'))
+SETTINGS input_format_binary_max_type_complexity = 0; -- { serverError TOO_DEEP_RECURSION }
+
+SELECT * FROM format(RowBinary, 'd Dynamic', unhex(repeat('1F01', 3) || '01' || '00'))
+SETTINGS input_format_binary_max_type_complexity = 0;
+
+SELECT * FROM format(RowBinary, 'd Dynamic', unhex(repeat('1F01', 100000) || '01' || '00'))
+SETTINGS input_format_binary_max_type_complexity = 0; -- { serverError TOO_DEEP_RECURSION }
