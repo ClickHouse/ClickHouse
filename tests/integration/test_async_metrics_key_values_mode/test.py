@@ -3,6 +3,7 @@ import time
 import pytest
 import requests
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -42,6 +43,16 @@ node_reload = cluster.add_instance(
         "configs/key_values.xml",
     ],
 )
+# A Prometheus endpoint with a constant `disk` label, which is the label the key-value form writes the
+# disk name into. Such a configuration is only valid while that form is not published.
+node_legacy_names_labels = cluster.add_instance(
+    "node_legacy_names_labels",
+    main_configs=[
+        "configs/prometheus_with_labels.xml",
+        "configs/asynchronous_metric_log.xml",
+        "configs/legacy_names.xml",
+    ],
+)
 
 
 @pytest.fixture(scope="module")
@@ -78,8 +89,8 @@ def get_logged_metrics(node):
     return int(key_values), int(legacy)
 
 
-def get_prometheus_metrics(node, retries=10):
-    """Whether the Prometheus endpoint exposes the labelled sample and/or the legacy mangled name."""
+def fetch_prometheus_metrics(node, retries=10):
+    """The raw Prometheus exposition of the node."""
     while True:
         try:
             response = requests.get(
@@ -89,16 +100,19 @@ def get_prometheus_metrics(node, retries=10):
             )
             if response.status_code != 200:
                 response.raise_for_status()
-            break
+            return response.text
         except:
             if retries <= 0:
                 raise
             retries -= 1
             time.sleep(0.5)
 
+
+def get_prometheus_metrics(node):
+    """Whether the Prometheus endpoint exposes the labelled sample and/or the legacy mangled name."""
     key_values = False
     legacy = False
-    for line in response.text.split("\n"):
+    for line in fetch_prometheus_metrics(node).split("\n"):
         if line.startswith(
             f'ClickHouseAsyncMetrics_{KEY_VALUES_NAME}{{disk="default"}} '
         ):
@@ -155,3 +169,31 @@ def test_switching_the_mode_without_a_restart(start_cluster):
 
     assert get_current_metrics(node_reload) == ("1", "1")
     assert get_prometheus_metrics(node_reload) == (True, True)
+
+
+def test_legacy_names_mode_frees_the_key_labels(start_cluster):
+    """A constant label may reuse an asynchronous metric key label while the key-value form is not published."""
+    node_legacy_names_labels.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    lines = fetch_prometheus_metrics(node_legacy_names_labels).split("\n")
+    assert any(
+        line.startswith(
+            f'ClickHouseAsyncMetrics_{LEGACY_NAME}{{disk="the_whole_node"}} '
+        )
+        for line in lines
+    )
+
+
+def test_switching_back_revalidates_the_constant_labels(start_cluster):
+    """Switching the same node into the key-value form makes the constant label collide with the key label,
+    so the endpoint is rebuilt and the configuration is rejected instead of exposing two `disk` labels.
+    """
+    node_legacy_names_labels.replace_in_config(
+        "/etc/clickhouse-server/config.d/legacy_names.xml",
+        ">legacy_names<",
+        ">key_values<",
+    )
+
+    with pytest.raises(
+        QueryRuntimeException, match="Invalid Prometheus label name 'disk'"
+    ):
+        node_legacy_names_labels.query("SYSTEM RELOAD CONFIG")

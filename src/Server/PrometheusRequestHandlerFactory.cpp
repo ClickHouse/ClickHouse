@@ -6,6 +6,7 @@
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/StringUtils.h>
 
 
@@ -243,7 +244,8 @@ namespace
     }
 
     /// Creates a writer which serializes exposing metrics.
-    std::shared_ptr<PrometheusMetricsWriter> createPrometheusMetricWriter(const PrometheusRequestHandlerConfig & config, bool for_keeper)
+    std::shared_ptr<PrometheusMetricsWriter> createPrometheusMetricWriter(
+        const Poco::Util::AbstractConfiguration & server_config, const PrometheusRequestHandlerConfig & config, bool for_keeper)
     {
         std::shared_ptr<PrometheusMetricsWriter> writer;
         if (for_keeper)
@@ -252,14 +254,21 @@ namespace
             writer = std::make_unique<PrometheusMetricsWriter>(config.constant_labels);
 
         /// A constant label must not reuse a label name this endpoint writes itself for one of its
-        /// enabled sections (the "le" label, the ClickHouse_Info labels, or an exposed histogram/
-        /// dimensional family label) - otherwise an exported sample would carry two labels with the same
-        /// name. The reserved set is derived from the writer's actual surface (server vs Keeper) and the
-        /// enabled expose_* flags, so a name is only rejected when it can really collide.
+        /// enabled sections (the "le" label, the ClickHouse_Info labels, an asynchronous metric key label,
+        /// or an exposed histogram/dimensional family label) - otherwise an exported sample would carry
+        /// two labels with the same name. The reserved set is derived from the writer's actual surface
+        /// (server vs Keeper), the enabled expose_* flags and the form the key-value asynchronous metrics
+        /// are published in, so a name is only rejected when it can really collide. `Server::updateServers`
+        /// restarts the endpoint when `asynchronous_metrics_key_values_mode` changes, so that this check
+        /// runs again against the form that will actually be written.
         if (!config.constant_labels.empty())
         {
             const auto reserved_names = writer->getReservedLabelNames(
-                config.expose_info, config.expose_asynchronous_metrics, config.expose_histograms, config.expose_dimensional_metrics);
+                config.expose_info,
+                config.expose_asynchronous_metrics,
+                getAsynchronousMetricsKeyValuesMode(server_config),
+                config.expose_histograms,
+                config.expose_dimensional_metrics);
             for (const auto & label : config.constant_labels)
             {
                 if (reserved_names.contains(label.first))
@@ -277,6 +286,7 @@ namespace
     /// Base function for making a factory for PrometheusRequestHandler. This function can return nullptr.
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>> createPrometheusHandlerFactoryFromConfig(
         IServer & server,
+        const Poco::Util::AbstractConfiguration & server_config,
         const AsynchronousMetrics & async_metrics,
         const PrometheusRequestHandlerConfig & config,
         bool for_keeper,
@@ -284,7 +294,7 @@ namespace
     {
         if (!canBeHandled(config, for_keeper))
             return nullptr;
-        auto metric_writer = createPrometheusMetricWriter(config, for_keeper);
+        auto metric_writer = createPrometheusMetricWriter(server_config, config, for_keeper);
         auto creator = [&server, &async_metrics, config, metric_writer, headers_moved = std::move(headers)]() -> std::unique_ptr<PrometheusRequestHandler>
         {
             return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer, headers_moved);
@@ -312,7 +322,7 @@ namespace
                 String prefix = "prometheus.handlers." + key;
                 auto parsed_config = parseHandlerConfig(config, prefix + ".handler");
                 parsed_config.connection_config.default_session_user = default_session_user;
-                if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
+                if (auto handler = createPrometheusHandlerFactoryFromConfig(server, config, asynchronous_metrics, parsed_config, for_keeper))
                 {
                     handler->addFiltersFromConfig(config, prefix);
                     factory->addHandler(handler);
@@ -323,7 +333,7 @@ namespace
         {
             auto parsed_config = parseMetricsConfig(config, "prometheus");
             parsed_config.connection_config.default_session_user = default_session_user;
-            if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
+            if (auto handler = createPrometheusHandlerFactoryFromConfig(server, config, asynchronous_metrics, parsed_config, for_keeper))
             {
                 String endpoint = config.getString("prometheus.endpoint", "/metrics");
                 handler->attachStrictPath(endpoint);
@@ -364,7 +374,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     PrometheusRequestHandlerConfig parsed_config = parseHandlerConfig(config, handler_config_prefix);
     parsed_config.connection_config.default_session_user = default_session_user;
 
-    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
+    auto handler = createPrometheusHandlerFactoryFromConfig(server, config, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
     handler->addFiltersFromConfig(config, config_prefix);
     return handler;
@@ -385,7 +395,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     auto parsed_config = parseMetricsConfig(config, "prometheus");
     parsed_config.connection_config.default_session_user = default_session_user;
     String endpoint = config.getString("prometheus.endpoint", "/metrics");
-    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false);
+    auto handler = createPrometheusHandlerFactoryFromConfig(server, config, asynchronous_metrics, parsed_config, /* for_keeper= */ false);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
     handler->attachStrictPath(endpoint);
     handler->allowGetAndHeadRequest();

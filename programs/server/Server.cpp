@@ -16,6 +16,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/ErrorCodes.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
@@ -4842,6 +4843,19 @@ void Server::updateServers(
             {
                 force_restart = true;
                 LOG_TRACE(log, "<prometheus.keeper_metrics_only> had been changed, will reload {}", server->getDescription());
+            }
+            /// `asynchronous_metrics_key_values_mode` decides whether the keys of the key-value asynchronous
+            /// metrics are written as Prometheus labels (`device="sda"`) or mangled into the metric name, and
+            /// therefore whether a constant label such as `device` collides with a label the endpoint writes
+            /// itself. That collision is validated once, when the handler factory is built, so a listener that
+            /// exposes metrics must be rebuilt when the mode changes - both to re-validate its constant labels
+            /// and to reject a combination that would otherwise start emitting duplicate labels. An `http`
+            /// listener is included because an `http_handlers` rule can serve the same protocol.
+            if ((is_prometheus || is_http)
+                && getAsynchronousMetricsKeyValuesMode(previous_config) != getAsynchronousMetricsKeyValuesMode(config))
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<asynchronous_metrics_key_values_mode> had been changed, will reload {}", server->getDescription());
             }
             if (default_session_user_changed)
             {
