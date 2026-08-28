@@ -850,7 +850,8 @@ def test_remote_host_filter_reload_for_iceberg_maintenance(started_cluster):
     )
     instance.query(
         f"CREATE TABLE remote_host_filter_reload_iceberg (x UInt32) "
-        f"ENGINE = IcebergS3('{url}', 'minio', '{minio_secret_key}')"
+        f"ENGINE = IcebergS3('{url}', 'minio', '{minio_secret_key}') "
+        "SETTINGS iceberg_metadata_async_prefetch_period_ms = 100"
     )
     try:
         instance.query(
@@ -871,6 +872,9 @@ def test_remote_host_filter_reload_for_iceberg_maintenance(started_cluster):
             reload_before=True,
             reload_after=True,
         ):
+            instance.wait_for_log_line(
+                "URL .*remote_host_filter_reload_iceberg.* is not allowed in configuration file"
+            )
             assert "UNACCEPTABLE_URL" in instance.query_and_get_error(
                 "ALTER TABLE remote_host_filter_reload_iceberg ADD COLUMN y UInt32",
                 settings={"allow_insert_into_iceberg": 1},

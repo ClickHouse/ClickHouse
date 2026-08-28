@@ -545,6 +545,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
         for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
+            if (!for_disk_s3)
+                remote_host_filter.checkURL(target_uri);
 
             if (enable_s3_requests_logging && !proxy_configuration.isEmpty())
                 LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
