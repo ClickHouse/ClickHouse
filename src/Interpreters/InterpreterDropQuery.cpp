@@ -489,7 +489,10 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
     /// The temporary storage is not started and has no loaded parts.
     /// Mark it as dropped so MergeTree checks the data directory size instead of the active parts size.
     detached_table->is_dropped = true;
-    detached_table->checkTableCanBeDropped(getContext());
+    /// Each worker must authorize deleting its local data. Checking the initiator too would consume
+    /// its worker's one-shot `force_drop_table` flag and reject an otherwise permitted drop.
+    if (!should_replicate_query)
+        detached_table->checkTableCanBeDropped(getContext());
 
     bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];

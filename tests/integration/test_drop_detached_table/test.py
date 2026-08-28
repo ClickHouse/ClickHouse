@@ -414,6 +414,44 @@ def test_force_drop_flag_bypasses_detached_table_size_limit(start_cluster):
     check_no_table_in_detached_table(node=replica1, table_name=table_name)
 
 
+def test_force_drop_flag_bypasses_replicated_detached_table_size_limit(start_cluster):
+    database_name = "test_force_drop_detached_replicated_db"
+    table_name = "test_force_drop_detached_replicated_table"
+
+    replica1.query(
+        f"CREATE DATABASE {database_name} ENGINE=Replicated('/clickhouse/{database_name}', 'r1')"
+    )
+    replica2.query(
+        f"CREATE DATABASE {database_name} ENGINE=Replicated('/clickhouse/{database_name}', 'r2')"
+    )
+    replica1.query(
+        f"CREATE TABLE {database_name}.{table_name} (key UInt64) ENGINE=MergeTree ORDER BY key"
+    )
+    assert_eq_with_retry(replica2, f"EXISTS TABLE {database_name}.{table_name}", "1")
+
+    for replica in (replica1, replica2):
+        replica.query(
+            f"INSERT INTO {database_name}.{table_name} "
+            "SELECT number FROM system.numbers LIMIT 1000"
+        )
+
+    replica1.query(f"DETACH TABLE {database_name}.{table_name} PERMANENTLY")
+    assert_detached_table_count(replica1, table_name, "1")
+    assert_detached_table_count(replica2, table_name, "1")
+
+    create_force_drop_flag(replica1)
+    create_force_drop_flag(replica2)
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; "
+        f"DROP DETACHED TABLE {database_name}.{table_name} SYNC "
+        "SETTINGS max_table_size_to_drop=1"
+    )
+
+    check_no_table_in_detached_table(node=replica1, table_name=table_name)
+    check_no_table_in_detached_table(node=replica2, table_name=table_name)
+    replica1.query(f"DROP DATABASE {database_name} SYNC")
+
+
 def test_drop_detached_on_cluster(start_cluster):
     table_name = "test_replicated_table"
 
