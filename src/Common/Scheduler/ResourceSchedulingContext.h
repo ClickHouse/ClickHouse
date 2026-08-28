@@ -30,13 +30,15 @@ public:
         Float64 weight_lowering_factor_,
         Float64 weight_lowering_age_seconds_,
         Float64 weight_lowering_cpu_seconds_,
-        Float64 weight_lowering_io_bytes_)
+        Float64 weight_lowering_io_bytes_,
+        UInt64 priority_)
         : start_ns(start_ns_)
         , weight(weight_ > 0 ? weight_ : 1.0)
         , weight_lowering_factor(weight_lowering_factor_)
         , weight_lowering_age_seconds(weight_lowering_age_seconds_)
         , weight_lowering_cpu_seconds(weight_lowering_cpu_seconds_)
         , weight_lowering_io_bytes(weight_lowering_io_bytes_)
+        , priority(priority_)
     {
     }
 
@@ -47,6 +49,7 @@ public:
     const Float64 weight_lowering_age_seconds; /// Age threshold in seconds (0 = disabled)
     const Float64 weight_lowering_cpu_seconds; /// Attained CPU-seconds threshold (0 = disabled)
     const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 = disabled)
+    const UInt64 priority; /// Query priority (setting `priority`): 1 highest, larger = lower, 0 = none. Used by the `priority` scheduler.
 
     /// Mutable per-resource scheduling state for this query. There is one entry per scheduler leaf
     /// the query uses (a leaf is per workload-resource), keyed by the leaf's address. Each entry is

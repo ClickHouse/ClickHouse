@@ -37,6 +37,7 @@ enum class SchedulerAlgorithm
     Fifo, /// First-come-first-served
     Fair, /// Weighted fair queueing (SFQ) with per-query weight lowering
     Las, /// Least-Attained-Service, MLFQ-bucketed (favours short queries; can starve long ones)
+    Priority, /// Strict priority by the query's `priority` setting (lower value first; can starve)
 };
 
 inline SchedulerAlgorithm parseSchedulerAlgorithm(const String & name)
@@ -47,7 +48,9 @@ inline SchedulerAlgorithm parseSchedulerAlgorithm(const String & name)
         return SchedulerAlgorithm::Fair;
     if (name == "las")
         return SchedulerAlgorithm::Las;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload scheduler '{}' (expected 'fifo', 'fair' or 'las')", name);
+    if (name == "priority")
+        return SchedulerAlgorithm::Priority;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload scheduler '{}' (expected 'fifo', 'fair', 'las' or 'priority')", name);
 }
 
 /// Pluggable ordering strategy owned by a `RequestQueue`. It owns only the container of pending
@@ -354,6 +357,78 @@ private:
     Set requests;
 };
 
+/// `priority` — strict priority by the query's `priority` setting (the existing query setting,
+/// reused). Lower value = higher precedence, served first; `priority = 0` ("no priority", the
+/// default) and requests with no query context are treated as lowest precedence. Ties (equal
+/// priority, incl. the all-zero default) fall back to FIFO by arrival. Like any strict-priority
+/// scheme it can starve low-priority queries — `fair` is the non-starving alternative.
+class PriorityAlgorithm final : public ISchedulingAlgorithm
+{
+public:
+    void push(ResourceRequest * request) override
+    {
+        UInt64 priority = request->scheduling_context ? request->scheduling_context->priority : 0;
+        // `priority == 0` = no priority → lowest precedence: map to the max key so explicit
+        // priorities (1 = highest) sort ahead of it; FIFO within equal priority via the sequence.
+        double key = priority == 0 ? static_cast<double>(std::numeric_limits<UInt64>::max()) : static_cast<double>(priority);
+        request->scheduling_key = {key, next_seq++};
+        requests.insert(*request);
+    }
+
+    ResourceRequest * pop() override
+    {
+        if (requests.empty())
+            return nullptr;
+        auto it = requests.begin();
+        ResourceRequest * request = &*it;
+        requests.erase(it);
+        return request;
+    }
+
+    bool erase(ResourceRequest * request) override
+    {
+        if (!request->scheduling_hook.is_linked())
+            return false;
+        requests.erase(requests.iterator_to(*request));
+        return true;
+    }
+
+    ResourceRequest * popWorst() override
+    {
+        if (requests.empty())
+            return nullptr;
+        auto it = std::prev(requests.end());
+        ResourceRequest * request = &*it;
+        requests.erase(it);
+        return request;
+    }
+
+    void pullAll(std::vector<ResourceRequest *> & out) override
+    {
+        while (!requests.empty())
+        {
+            auto it = requests.begin();
+            out.push_back(&*it);
+            requests.erase(it);
+        }
+    }
+
+    bool empty() const override { return requests.empty(); }
+
+private:
+    struct ByKey
+    {
+        bool operator()(const ResourceRequest & lhs, const ResourceRequest & rhs) const noexcept
+        {
+            return lhs.scheduling_key < rhs.scheduling_key;
+        }
+    };
+    using Set = boost::intrusive::set<ResourceRequest, ResourceRequest::SchedulingHook, boost::intrusive::compare<ByKey>>;
+
+    UInt64 next_seq = 0;
+    Set requests;
+};
+
 /*
  * Time-shared scheduler leaf that runs one of several pluggable scheduling algorithms, chosen by
  * the workload setting `scheduler` (default `fifo`). Replaces the standalone FifoQueue as the
@@ -564,6 +639,8 @@ private:
                 return std::make_unique<FairAlgorithm>(unit_, leaf_);
             case SchedulerAlgorithm::Las:
                 return std::make_unique<LasAlgorithm>(unit_, leaf_);
+            case SchedulerAlgorithm::Priority:
+                return std::make_unique<PriorityAlgorithm>();
         }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected scheduler algorithm");
     }

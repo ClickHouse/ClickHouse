@@ -45,11 +45,12 @@ struct Fixture
     }
 
     ResourceSchedulingContext * makeQuery(
-        Float64 weight = 1.0, Float64 factor = 1.0, Float64 age_s = 0, Float64 cpu_s = 0, Float64 io_b = 0, UInt64 start_ns = 0)
+        Float64 weight = 1.0, Float64 factor = 1.0, Float64 age_s = 0, Float64 cpu_s = 0, Float64 io_b = 0,
+        UInt64 start_ns = 0, UInt64 priority = 0)
     {
         if (start_ns == 0)
             start_ns = clock_gettime_ns();
-        contexts.push_back(std::make_shared<ResourceSchedulingContext>(start_ns, weight, factor, age_s, cpu_s, io_b));
+        contexts.push_back(std::make_shared<ResourceSchedulingContext>(start_ns, weight, factor, age_s, cpu_s, io_b, priority));
         return contexts.back().get();
     }
 
@@ -162,6 +163,21 @@ TEST(RequestQueue, LasFavoursLeastAttained)
     f.enqueue(3, b, big); // B: attained 0 → level 0
     // B (least attained) is served before A's next request.
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{3, 2}));
+}
+
+/// priority: strict order by the query `priority` setting (1 = highest; 0 = none = lowest).
+TEST(RequestQueue, PriorityStrictOrder)
+{
+    Fixture f(SchedulerAlgorithm::Priority);
+    auto * p2 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 2);
+    auto * p1 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 1);
+    auto * p0 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 0); // no priority → lowest
+    f.enqueue(20, p2);
+    f.enqueue(0, p0);
+    f.enqueue(10, p1);
+    f.enqueue(21, p2);
+    // priority 1 first, then the priority-2 pair (FIFO within), then the priority-0 query last.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{10, 20, 21, 0}));
 }
 
 /// The swap hook migrates all pending requests to the new algorithm; none are lost, and the

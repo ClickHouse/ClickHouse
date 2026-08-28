@@ -116,7 +116,7 @@ To customize workload the following settings could be used:
 * `max_cpus` - the limit on the number of CPU cores to serve queries in this workload.
 * `max_cpu_share` - the same as `max_cpus`, but normalized to the number of available CPU cores.
 * `max_burst_cpu_seconds` - the maximum number of CPU seconds that could be consumed by the workload without being throttled due to `max_cpus`.
-* `scheduler` - (time-shared only) the scheduling algorithm used between the queries of this workload: `fifo` (default, first-come-first-served), `fair` (weighted fair queueing), or `las` (least-attained-service). See [Query-aware scheduling](#query_aware_scheduling).
+* `scheduler` - (time-shared only) the scheduling algorithm used between the queries of this workload: `fifo` (default, first-come-first-served), `fair` (weighted fair queueing), `las` (least-attained-service), or `priority` (strict order by the query `priority` setting). See [Query-aware scheduling](#query_aware_scheduling).
 * `max_memory` - the limit on the total memory reserved for this workload.
 
 All limits specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = '10Mi'` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
@@ -213,6 +213,7 @@ CREATE WORKLOAD all SETTINGS scheduler = 'fair'
 - **`fifo`** (default) — first-come-first-served, preserving the historical behaviour.
 - **`fair`** — weighted fair queueing: each query gets a share of the resource proportional to its `weight` (a query setting, default `1`), and no query is starved.
 - **`las`** — least-attained-service: the query that has consumed the least of this resource so far is served first (bucketed into levels, so a query drops a level each time its consumption doubles). This minimises latency for short queries under mixed workloads, but a long-running query can be starved by a continuous stream of short ones — prefer `fair` when a no-starvation guarantee is required.
+- **`priority`** — strict priority by the query's [`priority`](/operations/settings/settings#priority) setting (`1` = highest, larger values = lower, `0` = no priority = lowest). Queries are served in priority order, FIFO within the same priority. This reuses the existing `priority` query setting, so a value set for the query's admission priority also orders it inside the workload. Like any strict-priority scheme it can starve low-priority queries.
 
 The `scheduler` is time-shared only (CPU and IO) and can be set per resource with the `FOR <resource>` clause. Changing it on an existing workload swaps the algorithm in place, without interrupting other resources.
 

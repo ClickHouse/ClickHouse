@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsFloat weight_lowering_age_seconds;
     extern const SettingsFloat weight_lowering_cpu_seconds;
     extern const SettingsFloat weight_lowering_io_bytes;
+    extern const SettingsUInt64 priority;
     extern const SettingsBool jemalloc_enable_profiler;
     extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
     extern const SettingsInt32 os_threads_nice_value_query;
@@ -239,7 +240,8 @@ ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::funct
         settings[Setting::weight_lowering_factor],
         settings[Setting::weight_lowering_age_seconds],
         settings[Setting::weight_lowering_cpu_seconds],
-        settings[Setting::weight_lowering_io_bytes]);
+        settings[Setting::weight_lowering_io_bytes],
+        settings[Setting::priority]);
     return group;
 }
 

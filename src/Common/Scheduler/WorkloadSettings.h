@@ -37,8 +37,9 @@ struct WorkloadSettings
 
     /// Scheduling algorithm run by the time-shared leaf (`RequestQueue`) of this workload:
     /// "fifo" (default, first-come-first-served), "fair" (weighted fair queueing that can lower a
-    /// query's weight as it runs), or "las" (least-attained-service; favours short queries, may
-    /// starve long ones). Changing it on an existing workload swaps the algorithm in place.
+    /// query's weight as it runs), "las" (least-attained-service; favours short queries, may starve
+    /// long ones), or "priority" (strict order by the query `priority` setting; may starve).
+    /// Changing it on an existing workload swaps the algorithm in place.
     String scheduler = "fifo";
 
     /// Limits total number of concurrent resource requests that are allowed to consume
