@@ -746,11 +746,8 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
         /// The error must come from connecting to the proxy endpoint, proving the unresolvable
         /// target host was never resolved locally. Had local resolution run, the request would
         /// have failed first with a DNS error naming the target host. The positive signal is a
-        /// connection-level failure ("Connection refused" from the listener-less proxy port):
-        /// `Poco::Net::SocketImpl::connect` with a timeout reports a refused peer via `SO_ERROR`
-        /// after `poll`, and that path throws a `ConnectionRefusedException` whose message has no
-        /// address, so the proxy address text is not a reliable marker - match on the error kind,
-        /// and accept the address too for the synchronous-failure path.
+        /// connection-level failure ("Connection refused" from the listener-less proxy port);
+        /// both the synchronous and the deferred SO_ERROR connect paths name the peer.
         const std::string text = e.displayText();
         reached_proxy_connect = text.contains("Connection refused")
             || text.contains("127.0.0.1:1");
@@ -1223,9 +1220,9 @@ TEST_F(ConnectionPoolTest, DirectSessionReconnectNamesThePeer)
 {
     /// Sessions built without this pool - `src/IO/S3/Credentials.cpp`, `src/Client/JWTProvider.cpp`,
     /// `src/Client/BuzzHouse/Generator/ExternalIntegrations.cpp` and the like - go straight through
-    /// `Poco::Net::HTTPClientSession::sendRequest` -> `reconnect` -> `connect`. The rewrite of bare
-    /// deferred connect errors lives in `reconnect` precisely so those callers name the peer too,
-    /// not just pool-backed sessions.
+    /// `Poco::Net::HTTPClientSession::sendRequest` -> `reconnect` -> `connect`. The endpoint naming
+    /// lives in `SocketImpl::connect` itself precisely so those callers get it too, not just
+    /// pool-backed sessions.
     Poco::Net::ServerSocket port_probe(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
     const auto dead_port = port_probe.address().port();
     port_probe.close();
@@ -1257,8 +1254,8 @@ TEST_F(ConnectionPoolTest, DirectSessionReconnectNamesThePeer)
 namespace
 {
 
-/// Reproduces what the deferred poll + SO_ERROR connect path raises: `SocketImpl::error(int)`
-/// rethrows the plain per-errno exception with no address attached.
+/// Stands for the layers beneath a successful dial (a TLS handshake stall, a proxy CONNECT
+/// exchange) raising the bare shapes `SocketImpl::error(int)` produces.
 class BareConnectFailureSession : public Poco::Net::HTTPClientSession
 {
 public:
@@ -1276,71 +1273,54 @@ private:
 
 }
 
-TEST_F(ConnectionPoolTest, DeferredRefusalRewrapNamesThePeer)
+TEST_F(ConnectionPoolTest, BareFailuresBeneathConnectPassThroughUnlabeled)
 {
-    /// The listenerless-port tests above cannot reach the rewrap branch: loopback refusals fail
-    /// synchronously and already carry the peer. A refusal discovered after EINPROGRESS surfaces
-    /// as a bare "Connection refused", so it is injected here exactly as `SocketImpl` throws it.
+    /// The deferred connect path names its endpoint inside `SocketImpl::connect` itself, so the
+    /// same bare shapes raised beneath a successful dial (a TLS handshake stall, a blackholed
+    /// proxy CONNECT exchange) must reach the caller untouched - relabeling them in `reconnect`
+    /// blamed the dialled endpoint for failures that happened after the TCP connect succeeded.
     const String endpoint = "127.0.0.99:9";
-    try
-    {
-        BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::Net::ConnectionRefusedException(); });
-        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
-        session.sendRequest(request);
-        FAIL() << "Expected the connect to be refused";
-    }
-    catch (const Poco::Net::ConnectionRefusedException & e)
-    {
-        const auto text = e.displayText();
-        ASSERT_TRUE(text.contains(endpoint)) << "Peer address missing: " << text;
-    }
-}
-
-TEST_F(ConnectionPoolTest, DeferredTimeoutRewrapNamesThePeer)
-{
-    /// A timeout from the SO_ERROR path arrives as a code-only TimeoutException with an empty
-    /// message; the poll-path timeout already names the peer and must stay untouched.
-    const String endpoint = "127.0.0.99:9";
-    try
     {
         BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::TimeoutException(ETIMEDOUT); });
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
-        session.sendRequest(request);
-        FAIL() << "Expected the connect to time out";
-    }
-    catch (const Poco::TimeoutException & e)
-    {
-        const auto text = e.displayText();
-        ASSERT_TRUE(text.contains(endpoint)) << "Peer address missing: " << text;
-        ASSERT_EQ(ETIMEDOUT, e.code()) << "Errno not preserved: " << text;
-    }
-}
-
-TEST_F(ConnectionPoolTest, DeferredNetErrorRewrapNamesThePeer)
-{
-    /// The three bare deferred shapes the reconnect handler widens the contract to, verbatim from
-    /// `SocketImpl::error(int)`; each must come back as a NetException naming the dialled endpoint.
-    const String endpoint = "127.0.0.99:9";
-    const std::vector<std::pair<int, std::string>> shapes = {
-        {ENETUNREACH, "Network is unreachable"},
-        {EHOSTUNREACH, "No route to host"},
-        {EHOSTDOWN, "Host is down"},
-    };
-    for (const auto & [err, bare_text] : shapes)
-    {
         try
         {
-            BareConnectFailureSession session("127.0.0.99", 9, [code = err, message = bare_text] { throw Poco::Net::NetException(message, code); });
-            Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
             session.sendRequest(request);
-            FAIL() << "Expected the connect to fail: " << bare_text;
+            FAIL() << "Expected the injected timeout";
+        }
+        catch (const Poco::TimeoutException & e)
+        {
+            EXPECT_TRUE(e.message().empty()) << "Message rewritten: " << e.displayText();
+            EXPECT_FALSE(e.displayText().contains(endpoint)) << "Endpoint stitched in: " << e.displayText();
+            EXPECT_EQ(ETIMEDOUT, e.code()) << "Errno not preserved: " << e.displayText();
+        }
+    }
+    {
+        BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::Net::ConnectionRefusedException(); });
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        try
+        {
+            session.sendRequest(request);
+            FAIL() << "Expected the injected refusal";
+        }
+        catch (const Poco::Net::ConnectionRefusedException & e)
+        {
+            EXPECT_FALSE(e.displayText().contains(endpoint)) << "Endpoint stitched in: " << e.displayText();
+        }
+    }
+    {
+        BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::Net::NetException("Network is unreachable", ENETUNREACH); });
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        try
+        {
+            session.sendRequest(request);
+            FAIL() << "Expected the injected network error";
         }
         catch (const Poco::Net::NetException & e)
         {
-            const auto text = e.displayText();
-            EXPECT_TRUE(text.contains(bare_text)) << "Bare text missing: " << text;
-            EXPECT_TRUE(text.contains(endpoint)) << "Peer address missing: " << text;
-            EXPECT_EQ(err, e.code()) << "Errno not preserved: " << text;
+            EXPECT_TRUE(e.displayText().contains("Network is unreachable")) << e.displayText();
+            EXPECT_FALSE(e.displayText().contains(endpoint)) << "Endpoint stitched in: " << e.displayText();
+            EXPECT_EQ(ENETUNREACH, e.code()) << "Errno not preserved: " << e.displayText();
         }
     }
 }
