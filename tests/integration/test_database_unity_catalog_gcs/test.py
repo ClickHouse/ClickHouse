@@ -89,6 +89,15 @@ def test_gcs_vended_credentials_fall_back_from_delta_kernel(started_cluster):
             "Using the native Delta Lake metadata reader because Delta Kernel does not support bearer authentication"
         )
 
+        error = node.query_and_get_error(
+            "SELECT value FROM unity.`namespace.table`",
+            settings={
+                "allow_delta_kernel_rs": 1,
+                "delta_lake_reload_schema_for_consistency": 1,
+            },
+        )
+        assert "delta_lake_reload_schema_for_consistency) is not supported without Delta Kernel" in error
+
 
 def test_gcp_oauth_falls_back_from_delta_kernel(started_cluster):
     result = node.query(

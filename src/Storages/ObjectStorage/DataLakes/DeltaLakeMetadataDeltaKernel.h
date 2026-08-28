@@ -39,7 +39,7 @@ public:
         StorageObjectStorageConfigurationWeakPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
-    bool requiresRecreation(const ObjectStoragePtr & object_storage) const override;
+    bool requiresRecreation(const ObjectStoragePtr & object_storage_) const override;
 
     bool supportsWrites() const override { return true; }
 

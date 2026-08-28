@@ -70,6 +70,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_delta_kernel_rs;
+    extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -725,9 +726,9 @@ static bool usesBearerAuthentication(const ObjectStoragePtr & object_storage)
 #endif
 }
 
-bool DeltaLakeMetadataDeltaKernel::requiresRecreation(const ObjectStoragePtr & object_storage) const
+bool DeltaLakeMetadataDeltaKernel::requiresRecreation(const ObjectStoragePtr & object_storage_) const
 {
-    return usesBearerAuthentication(object_storage);
+    return usesBearerAuthentication(object_storage_);
 }
 #endif
 
@@ -758,6 +759,11 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
         LOG_DEBUG(getLogger("DeltaLakeMetadata"), "Using the native Delta Lake metadata reader because Delta Kernel does not support bearer authentication");
 #endif
     const auto & settings = local_context->getSettingsRef();
+    if (settings[Setting::delta_lake_reload_schema_for_consistency])
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Schema reload (delta_lake_reload_schema_for_consistency) is not supported without Delta Kernel");
+
     if (settings[Setting::delta_lake_snapshot_version].value != -1)
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,
