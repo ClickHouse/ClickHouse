@@ -625,6 +625,73 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     EXPECT_EQ(total_rows, 7u);
 }
 
+/// `execute` drains every stage that has already finished, stopping at the first unfinished one, and
+/// only its first wait may block. The stages of a plan finish together, so a driver that took one
+/// stage per call would cost the caller a poll interval for each of them.
+TEST_F(DistributedQueryTest, ExecuteCollectsAllFinishedStagesInOneCall)
+{
+    struct StageProbe : public DistributedQueryPlanExecutor
+    {
+        StageProbe(const DistributedQueryPlan & plan_, ContextPtr context_)
+            : DistributedQueryPlanExecutor(
+                UUIDHelpers::generateV4(),
+                plan_,
+                std::move(context_),
+                std::make_shared<DistributedQueryCancellation>(),
+                std::make_shared<WakeupFd>())
+        {
+        }
+
+        void cleanup() override {}
+        void startStage(const String &, const DistributedQueryStage &) override {}
+
+        bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
+        {
+            observed_timeouts.push_back(timeout_ms.value());
+            return finished.contains(stage_name);
+        }
+
+        void queue(const Strings & stage_names)
+        {
+            for (const auto & stage_name : stage_names)
+                running_stages.push_back(stage_name);
+        }
+
+        size_t queued() const { return running_stages.size(); }
+
+        std::unordered_set<String> finished;
+        std::vector<UInt64> observed_timeouts;
+    };
+
+    /// Bound by reference into the executor, so it outlives every probe below.
+    const DistributedQueryPlan plan;
+
+    {
+        StageProbe probe(plan, getContext().context);
+        probe.queue({"a", "b", "c"});
+        probe.finished = {"a", "b"};
+
+        ASSERT_FALSE(probe.execute(/*poll_timeout_ms=*/ 100));
+        ASSERT_EQ(probe.queued(), 1u);
+        ASSERT_EQ(probe.observed_timeouts, (std::vector<UInt64>{100, 0, 0}));
+
+        probe.finished.insert("c");
+        probe.observed_timeouts.clear();
+        ASSERT_TRUE(probe.execute(/*poll_timeout_ms=*/ 100));
+        ASSERT_EQ(probe.queued(), 0u);
+    }
+
+    {
+        StageProbe probe(plan, getContext().context);
+        probe.queue({"x", "y"});
+        probe.finished = {"y"};
+
+        /// A finished stage behind an unfinished one stays queued.
+        ASSERT_FALSE(probe.execute(/*poll_timeout_ms=*/ 0));
+        ASSERT_EQ(probe.queued(), 2u);
+    }
+}
+
 /// v1 only when every producer port matches the destination worker's exchange port (a v1
 /// consumer dials producers on its own port); v2 as soon as any producer differs.
 TEST(DistributedTaskSerializationVersion, LowersToV1ForLegacyPorts)
