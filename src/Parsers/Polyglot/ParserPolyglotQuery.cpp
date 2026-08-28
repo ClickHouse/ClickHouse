@@ -162,6 +162,12 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         insert->data = nullptr;
         insert->end = nullptr;
+        /// Remember that the statement does carry inline data, even though its pointers are gone: a
+        /// caller must not assume that this `INSERT` has a free slot for external data (the server
+        /// reads the inline data from its own transpiled buffer). An `INSERT` without inline data —
+        /// e.g. `INSERT INTO t FORMAT TSV` — leaves the flag unset and keeps the ordinary streaming
+        /// path, exactly like a native `INSERT`.
+        insert->inline_data_owned_by_transpiled_query = true;
         return true;
     }
 

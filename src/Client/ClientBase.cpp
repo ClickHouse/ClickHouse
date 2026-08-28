@@ -1661,9 +1661,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// An INSERT in a foreign SQL dialect is sent to the server verbatim: its inline data exists
             /// only in the original query text, and serializing the substituted AST back to SQL would
             /// silently drop it (`ASTInsertQuery`'s formatter prints only the header, never the data).
-            /// Fail close instead of sending a payload-less INSERT.
+            /// Fail close instead of sending a payload-less INSERT. An INSERT without inline data
+            /// serializes losslessly (its data travels in data packets) and is not affected.
             const auto * insert_ast = getInsertAST(parsed_query);
-            if (current_query_sent_verbatim && insert_ast && !insert_ast->select)
+            if (current_query_sent_verbatim && insert_ast && !insert_ast->select
+                && insert_ast->inline_data_owned_by_transpiled_query)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Substituting query parameters on the client (the server is too old to receive them) "
                     "is not supported for an INSERT query in a foreign SQL dialect: the query is sent to "
@@ -3082,12 +3084,17 @@ void ClientBase::processParsedSingleQuery(
                     "Processing inline insert data with both inlined and external data (from stdin or infile) is not supported");
         }
 
-        /// With a non-ClickHouse dialect a plain INSERT is sent to the server verbatim and the server
-        /// reads the inline INSERT data from the transpiled query text; there is no slot left for the
-        /// client to forward external data. Reject it (stdin or INFILE) instead of silently dropping it.
-        /// `INSERT ... SELECT * FROM input(...)` is different: the server requests the data explicitly,
-        /// so it keeps streaming external data below and is not rejected here.
-        if (send_query_verbatim && insert && !insert->select)
+        /// With a non-ClickHouse dialect an INSERT that carries inline data is sent to the server
+        /// verbatim and the server reads that data from the transpiled query text; there is no slot left
+        /// for the client to forward external data. Reject it (stdin or INFILE) instead of silently
+        /// dropping it. Two shapes are not affected and keep streaming external data below, exactly as
+        /// their native counterparts do: `INSERT ... SELECT * FROM input(...)`, for which the server
+        /// requests the data explicitly, and an INSERT without any inline data (e.g. `INSERT INTO t
+        /// FORMAT TSV`, transpilable by the `clickhouse` source dialect) — the server-side transpilation
+        /// produces no inline data either, so the data still travels in the usual data packets. This
+        /// mirrors the server, which rejects external data only for a transpiled INSERT that does have
+        /// inline data (`hasTranspiledInlineData` in `executeQuery`).
+        if (send_query_verbatim && insert && !insert->select && insert->inline_data_owned_by_transpiled_query)
         {
             bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
@@ -3108,11 +3115,13 @@ void ClientBase::processParsedSingleQuery(
             query = query_;
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        /// A verbatim (foreign dialect) query still takes this path when it uses `input`: the whole query text is
-        /// sent as is, and the server — after transpiling it — asks for the external data exactly as it does for a
-        /// native `input` query, so the client streams stdin or INFILE as usual.
+        /// A verbatim (foreign dialect) query still takes this path when it uses `input`, and likewise when its
+        /// transpiled form carries no inline data at all: the whole query text is sent as is, and the server —
+        /// after transpiling it — asks for the external data exactly as it does for a native INSERT, so the
+        /// client streams stdin or INFILE as usual. Only an INSERT whose data lives inline in the transpiled
+        /// query has no room left for a data stream (it was rejected above if any was supplied).
         if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data
-            && (!send_query_verbatim || input_function))
+            && (!send_query_verbatim || input_function || !insert->inline_data_owned_by_transpiled_query))
         {
             /// The reader format for `input()` can come from the query `FORMAT` clause or from the
             /// `input_format` / `format` settings (mirrors `getSourceFromASTInsertQuery`); only reject

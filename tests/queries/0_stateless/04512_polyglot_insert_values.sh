@@ -206,5 +206,19 @@ ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(
 echo "--- deferred HTTP 100 Continue with a body is still rejected (expect: 154 10) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# A foreign-dialect INSERT that carries no inline data at all keeps the ordinary native streaming
+# path: the transpiled query has no data section either, so the client streams stdin (or INFILE) in
+# data packets exactly as for a native INSERT, and the server does not reject external data for it.
+# Only the `clickhouse` source dialect is used here, because the bundled foreign dialects do not
+# parse the `FORMAT` clause.
+printf '17\n' | $CLICKHOUSE_CLIENT $POLY_CH -q "INSERT INTO t FORMAT TSV"
+echo "--- polyglot INSERT without inline data streams stdin (expect: 171 11) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
+# ... while stdin data on top of an INSERT that does carry its data inline is still rejected.
+printf '18\n' | $CLICKHOUSE_CLIENT $POLY_CH -q "INSERT INTO t VALUES (19)" 2>&1 | grep -om1 "NOT_IMPLEMENTED"
+echo "--- inline data plus stdin is still rejected (expect: 171 11) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

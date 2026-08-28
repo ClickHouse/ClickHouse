@@ -58,3 +58,8 @@ SYNTAX_ERROR
 NOT_IMPLEMENTED
 --- deferred HTTP 100 Continue with a body is still rejected (expect: 154 10) ---
 154	10
+--- polyglot INSERT without inline data streams stdin (expect: 171 11) ---
+171	11
+NOT_IMPLEMENTED
+--- inline data plus stdin is still rejected (expect: 171 11) ---
+171	11
