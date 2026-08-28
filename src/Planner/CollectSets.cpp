@@ -41,9 +41,10 @@ namespace
 class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
 {
 public:
-    explicit CollectSetsVisitor(PlannerContext & planner_context_)
+    CollectSetsVisitor(PlannerContext & planner_context_, std::vector<QueryTreeNodePtr> & pending_source_expressions_)
         : InDepthQueryTreeVisitorWithContext(planner_context_.getQueryContext())
         , planner_context(planner_context_)
+        , pending_source_expressions(pending_source_expressions_)
     {}
 
     void enterImpl(QueryTreeNodePtr & node)
@@ -51,8 +52,10 @@ public:
         if (const auto * constant_node = node->as<ConstantNode>())
             /// Collect sets from source expression as well.
             /// Most likely we will not build them, but those sets could be requested during analysis.
+            /// A source expression is not a query tree child, and a chain of them can be arbitrarily
+            /// long, so it is queued for a separate visit rather than descended into from here.
             if (constant_node->hasSourceExpression())
-                collectSets(constant_node->getSourceExpression(), planner_context);
+                pending_source_expressions.push_back(constant_node->getSourceExpression());
 
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
@@ -162,15 +165,25 @@ public:
 
 private:
     PlannerContext & planner_context;
+    std::vector<QueryTreeNodePtr> & pending_source_expressions;
 };
 
 }
 
 void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context)
 {
-    CollectSetsVisitor visitor(planner_context);
-    auto node_to_visit = node;
-    visitor.visit(node_to_visit);
+    std::vector<QueryTreeNodePtr> pending_source_expressions{node};
+
+    while (!pending_source_expressions.empty())
+    {
+        auto node_to_visit = pending_source_expressions.back();
+        pending_source_expressions.pop_back();
+
+        /// Each pending node is visited as a root: needChildVisit refuses QUERY and UNION
+        /// children, so a source expression that is itself a query must start its own visit.
+        CollectSetsVisitor visitor(planner_context, pending_source_expressions);
+        visitor.visit(node_to_visit);
+    }
 }
 
 }
