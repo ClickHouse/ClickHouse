@@ -1393,7 +1393,9 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     /// Every visible part is mutated, but an in-flight INSERT / ATTACH / MOVE PARTITION can still
     /// commit a part under a lower block number, which this mutation must also rewrite; reporting
     /// done here would let waiters return and see the mutation flip back to unfinished later.
-    if (getLowestUncommittedNewPartBlockNum() < mutation_version)
+    /// A transactional mutation is scoped by its own snapshot instead (`selectPartsToMutate` only
+    /// mutates parts visible to its tid), so another transaction's part is never its work.
+    if (mutation_entry.tid.isNonTransactional() && getLowestUncommittedNewPartBlockNum() < mutation_version)
         return result;
 
     result.is_done = true;
@@ -1515,18 +1517,20 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
         }
 
-        /// An uncommitted lower block can still add a part to this mutation's scope, and another
-        /// transaction's lower-version part is pending work whose outcome is unknown
-        /// (`MergeTreeSink::commitPart` releases its committing-block holder before the outer
-        /// transaction commits, so only the part itself marks it) - either way,
-        /// nothing-visible-left does not mean done yet. The mutation's own transaction's parts are
-        /// different: it sees and rewrites them, so they join the counted scope like any other.
+        /// A non-transactional mutation's scope is "every lower block number", so an uncommitted
+        /// lower block - or another transaction's lower-version part, whose committing-block holder
+        /// `MergeTreeSink::commitPart` already released - is pending work of unknown size, and
+        /// nothing-visible-left does not mean done yet. A transactional mutation is scoped by its
+        /// own snapshot instead (`selectPartsToMutate` only mutates parts visible to its tid), so
+        /// other transactions' parts are outside its contract; its own transaction's parts are
+        /// visible to it and join the counted scope like any committed part.
+        const bool scope_is_block_ordered = entry.tid.isNonTransactional();
         bool has_uncommitted_part_in_scope = false;
         for (const auto & uncommitted : uncommitted_parts)
         {
             if (uncommitted.part.version >= mutation_version)
                 continue;
-            if (uncommitted.creation_tid == entry.tid)
+            if (!scope_is_block_ordered && uncommitted.creation_tid == entry.tid)
             {
                 parts_to_do_names.push_back(uncommitted.part.name);
                 bytes_to_do += uncommitted.part.bytes_on_disk;
@@ -1536,7 +1540,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                     if (auto it = mutating_part_progress.find(uncommitted.part.name); it != mutating_part_progress.end())
                         bytes_in_flight_done += static_cast<Float64>(uncommitted.part.bytes_on_disk) * it->second;
             }
-            else
+            else if (scope_is_block_ordered)
                 has_uncommitted_part_in_scope = true;
         }
 
@@ -1549,8 +1553,9 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
             0.0, 1.0);
 
+        const bool waiting_for_lower_block = scope_is_block_ordered && lowest_uncommitted_insert_block < mutation_version;
         const bool mutation_is_done = parts_to_do_names.empty()
-            && (lowest_uncommitted_insert_block >= mutation_version)
+            && !waiting_for_lower_block
             && !has_uncommitted_part_in_scope;
         if (mutation_is_done)
             entry.initial_bytes_to_do.finalize();
@@ -1595,7 +1600,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.latest_fail_error_code_name,
             });
             result.back().bytes_to_do = bytes_to_do;
-            if (lowest_uncommitted_insert_block >= mutation_version && !has_uncommitted_part_in_scope)
+            if (!waiting_for_lower_block && !has_uncommitted_part_in_scope)
                 result.back().progress = progress;
         }
     }

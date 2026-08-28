@@ -102,3 +102,29 @@ echo "${same_tx_done:-FAIL: same-transaction mutation never finished}"
 
 $CLICKHOUSE_CLIENT -q "SELECT k, v FROM t_mut_same_tx ORDER BY k"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_mut_same_tx SYNC"
+
+# A transactional mutation is scoped by its own snapshot, so another transaction's uncommitted part
+# is invisible to it and never becomes its work: the entry must reach done while that other
+# transaction is still open, instead of hanging on a block number it will never rewrite.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_mut_other_tx SYNC"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_mut_other_tx (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_mut_other_tx VALUES (1, 1)"
+
+tx 4 "BEGIN TRANSACTION" > /dev/null
+tx 4 "INSERT INTO t_mut_other_tx SETTINGS async_insert = 0 VALUES (2, 2)" > /dev/null
+
+tx 5 "BEGIN TRANSACTION" > /dev/null
+tx 5 "ALTER TABLE t_mut_other_tx UPDATE v = v + 1 WHERE 1" > /dev/null
+tx 5 "COMMIT" > /dev/null
+
+other_tx_done=""
+for _ in {1..300}; do
+    other_tx_done=$($CLICKHOUSE_CLIENT -q "SELECT is_done, progress FROM system.mutations WHERE database = currentDatabase() AND table = 't_mut_other_tx' AND is_done")
+    [ -n "$other_tx_done" ] && break
+    sleep 0.2
+done
+echo "${other_tx_done:-FAIL: mutation blocked by an invisible other-transaction part}"
+
+tx 4 "ROLLBACK" > /dev/null
+$CLICKHOUSE_CLIENT -q "SELECT k, v FROM t_mut_other_tx ORDER BY k"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_mut_other_tx SYNC"
