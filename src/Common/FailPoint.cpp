@@ -92,6 +92,7 @@ static struct InitFiu
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(object_storage_queue_fail_tags_fetch) \
+    ONCE(object_storage_queue_fail_register_once) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
