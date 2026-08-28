@@ -1,0 +1,42 @@
+array tokenizer
+-- SELECT-list / aggregate-argument position (has, hasAnyTokens, hasAllTokens)
+47	47	47
+-- WHERE is consistent across use_skip_indexes
+47
+47
+47
+47
+-- EXPLAIN shows the tokenizer injected into SELECT-list functions
+Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\'), hasAllTokens(tags, [\'make-payment-check\'], \'array\')
+-- EXPLAIN shows the tokenizer injected into the WHERE filter (use_skip_indexes = 0)
+Filter column: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
+-- ORDER BY: projection lifted above the sort still gets the tokenizer
+47
+-- ORDER BY ... LIMIT -10: tokenizer injected above the negative-limit step
+Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
+-- LIMIT -N BY: tokenizer injected above the negative-limit-by step
+Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
+-- window function / QUALIFY: projection above the window still gets the tokenizer
+47
+47
+-- direct read preserved: eligible WHERE reads the __text_index_* virtual column
+1
+preprocessor is applied only on the index path
+-- SELECT-list position: preprocessor not applied
+0
+-- SELECT-list preprocessor is not applied even when a sibling WHERE uses the index
+0
+-- WHERE: preprocessor applied only with use_skip_indexes = 1
+0
+10
+-- EXPLAIN: SELECT-list injects the tokenizer but not the preprocessor
+Output: hasAnyTokens(s, [\'hello\'], \'splitByNonAlpha\')
+postprocessor is applied on the row-scan path too
+-- SELECT-list position: postprocessor applied
+10	10
+-- WHERE is consistent across use_skip_indexes
+10
+10
+postprocessor with an ALIAS column outside WHERE
+-- SELECT-list position on an ALIAS column: postprocessor applied
+10	990

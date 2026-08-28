@@ -36,9 +36,9 @@ notILike(haystack, pattern[, escape_character])
         "Usage example",
         "SELECT notILike('ClickHouse', '%house%');",
         R"(
-┌─notILike('Cl⋯ '%house%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notILike('ClickHouse', '%house%')─┐
+│                                 0 │
+└───────────────────────────────────┘
         )"
     }
     };
