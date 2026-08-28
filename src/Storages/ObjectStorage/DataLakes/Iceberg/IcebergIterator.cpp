@@ -272,6 +272,9 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const Manif
 
 std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManifest(const ManifestFileCacheKey & manifest_list_entry, std::function<bool()> stop_condition) const
 {
+    if (stop_condition && stop_condition())
+        return {};
+
     auto manifest_file_iterator = createManifestIterator(manifest_list_entry, std::move(stop_condition));
 
     ManifestEntryBatch batch;
