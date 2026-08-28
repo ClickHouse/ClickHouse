@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/SortCursor.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -21,7 +22,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
-#include <Core/SortCursor.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -797,6 +797,8 @@ void WindowTransform::advanceFrameStart()
         case WindowFrame::BoundaryType::Unbounded:
             // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
             // the new partition starts.
+            // partition_start is in the first group.
+            frame_start_group_number = 1;
             frame_started = true;
             break;
         case WindowFrame::BoundaryType::Current:
@@ -806,6 +808,8 @@ void WindowTransform::advanceFrameStart()
             chassert(peer_group_start < partition_end);
             chassert(peer_group_start <= current_row);
             frame_start = peer_group_start;
+            // peer_group_start is in the current group.
+            frame_start_group_number = peer_group_number;
             frame_started = true;
             break;
         case WindowFrame::BoundaryType::Offset:
@@ -817,11 +821,9 @@ void WindowTransform::advanceFrameStart()
                 case WindowFrame::FrameType::RANGE:
                     advanceFrameStartRangeOffset();
                     break;
-                default:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Frame start type '{}' for frame '{}' is not implemented",
-                        window_description.frame.begin_type,
-                        window_description.frame.type);
+                case WindowFrame::FrameType::GROUPS:
+                    advanceFrameStartGroupsOffset();
+                    break;
             }
             break;
     }
@@ -829,14 +831,17 @@ void WindowTransform::advanceFrameStart()
     chassert(frame_start_before <= frame_start);
     if (frame_start == frame_start_before)
     {
-        // If the frame start didn't move, this means we validated that the frame
-        // starts at the point we reached earlier but were unable to validate.
-        // This probably only happens in degenerate cases where the frame start
-        // is further than the end of partition, and the partition ends at the
-        // last row of the block, but we can only tell for sure after a new
-        // block arrives. We still have to update the state of aggregate
-        // functions when the frame start becomes valid, so we continue.
-        chassert(frame_started);
+        // The frame start didn't move. Usually this means we re-validated a
+        // position reached on an earlier call, so the frame is now started.
+        // This happens in degenerate cases where the frame start is further than
+        // the end of partition, and the partition ends at the last row of the
+        // block, but we can only tell for sure after a new block arrives.
+        // A GROUPS frame with a FOLLOWING-offset start is the exception: it can
+        // leave frame_start at its previous position when it still needs more
+        // input to locate the target peer group. Then the frame is not started
+        // yet and the partition cannot have ended -- the main loop waits for
+        // more data and retries.
+        chassert(frame_started || !partition_ended);
     }
 
     chassert(partition_start <= frame_start);
@@ -858,14 +863,18 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
         return true;
     }
 
-    if (window_description.frame.type == WindowFrame::FrameType::ROWS)
+    switch (window_description.frame.type)
     {
-        // For ROWS frame, row is only peers with itself (checked above);
-        return false;
+        case WindowFrame::FrameType::ROWS:
+            // For a ROWS frame a row is only a peer with itself (checked above).
+            return false;
+        case WindowFrame::FrameType::RANGE:
+        case WindowFrame::FrameType::GROUPS:
+            // For RANGE and GROUPS frames, rows that compare equal on the ORDER
+            // BY key are peers.
+            break;
     }
 
-    // For RANGE and GROUPS frames, rows that compare equal w/ORDER BY are peers.
-    chassert(window_description.frame.type == WindowFrame::FrameType::RANGE);
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
@@ -1067,6 +1076,152 @@ void WindowTransform::advanceFrameEndRangeOffset()
     frame_ended = partition_ended;
 }
 
+RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const
+{
+    need_more_data = false;
+
+    if (start == partition_end)
+        return partition_end;
+
+    // Resume from the frontier of a previous, unfinished scan of the same peer group: every row in
+    // [start, scan_frontier] is already known to be a peer of `start`. A frontier before `start` is
+    // stale (the boundary has moved to another group or partition since the last scan).
+    if (scan_frontier < start)
+        scan_frontier = start;
+
+    // Walk forward block by block while the peer group keeps extending.
+    const UInt64 blocks_end_block = first_block_number + blocks.size();
+    for (RowNumber cur = scan_frontier; cur.block < blocks_end_block; cur = RowNumber{cur.block + 1, 0})
+    {
+        const size_t block_rows = blockRowsNumber(cur);
+        const bool partition_ends_in_block = partition_end.block == cur.block;
+        const size_t end_bound = partition_ends_in_block ? partition_end.row : block_rows;
+
+        // `cur` is a valid row inside the partition, so the equal-range search has at least one row.
+        chassert(cur.row < end_bound);
+
+        // Try to jump over the whole peer group at once: the end of the run of rows equal to `cur` across
+        // all ORDER BY columns, within the sorted, partition-bounded range [cur.row, end_bound).
+        const size_t run_end = getEqualRangeEndAssumeSorted(
+            inputAt(cur), order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
+
+        if (run_end < end_bound)
+            return RowNumber{cur.block, run_end};   // a real peer-group boundary inside this block
+
+        // No earlier boundary, so the run of peers reached the bound. getEqualRangeEndAssumeSorted
+        // never returns past `end_bound`, so the group extends exactly to the end of what we scanned
+        // in this block -- the precondition for both the partition-end and cross-block cases below.
+        chassert(run_end == end_bound);
+
+        if (partition_ends_in_block)
+            return partition_end;                   // the peer group reaches the partition end
+
+        // The group extends to the end of `cur`'s block. It continues into the next block only if
+        // that block is buffered, is still in this partition, and its first row is a peer.
+        const RowNumber next_block_start{cur.block + 1, 0};
+
+        // We cannot extend the scan into the next block when it has not arrived yet, or when the next
+        // row is the partition boundary (a peer group never crosses partitions). In both cases the
+        // group's end depends on whether the partition has ended, which is decided after the loop.
+        // Remember the proven scan progress so a retry does not rescan the group from its first row.
+        if (next_block_start.block >= blocks_end_block || next_block_start == partition_end)
+        {
+            scan_frontier = RowNumber{cur.block, block_rows - 1};
+            break;
+        }
+
+        if (!arePeers({cur.block, block_rows - 1}, next_block_start))
+            return next_block_start;                // the peer group ends exactly at the block boundary
+
+        // Otherwise the group spans the boundary; the loop advances `cur` into the next block.
+    }
+
+    // We broke out because the group either reaches a partition boundary that sits on a block edge,
+    // or extends past the rows we can currently resolve. If the partition has ended, the group ends
+    // at the partition end.
+    if (partition_ended)
+        return partition_end;
+
+    // The partition has not ended and we ran past the buffered rows wait for more input.
+    chassert(partition_end == blocksEnd());
+    need_more_data = true;
+    return start;
+}
+
+bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const
+{
+    chassert(target_group >= 1);
+    chassert(group_counter <= static_cast<UInt64>(std::numeric_limits<Int64>::max()));
+
+    while (static_cast<Int64>(group_counter) < target_group)
+    {
+        bool need_more_data = false;
+        const RowNumber group_end = findPeerGroupEnd(pointer, scan_frontier, need_more_data);
+
+        if (need_more_data)
+        {
+            // Leave `pointer` and `group_counter` untouched so we can resume later.
+            return false;
+        }
+
+        if (group_end == partition_end)
+        {
+            // The target peer group is past the last group in the partition; clamp to the end.
+            pointer = partition_end;
+            return true;
+        }
+
+        // Move to the first row of the next peer group.
+        pointer = group_end;
+        ++group_counter;
+    }
+
+    return true;
+}
+
+void WindowTransform::advanceFrameStartGroupsOffset()
+{
+    const Int64 offset
+        = static_cast<Int64>(window_description.frame.begin_offset.safeGet<UInt64>()) * (window_description.frame.begin_preceding ? -1 : 1);
+
+    // The frame starts at the first row of the peer group `offset` groups away from the current one.
+    const Int64 target_group = static_cast<Int64>(peer_group_number) + offset;
+
+    if (target_group <= 1)
+    {
+        // The target peer group is at or before the first group: clamp to the partition start.
+        frame_start = partition_start;
+        frame_start_group_number = 1;
+        frame_started = true;
+        return;
+    }
+
+    frame_started = advanceGroupBoundary(frame_start, frame_start_group_number, frame_start_group_scan_frontier, target_group);
+}
+
+void WindowTransform::advanceFrameEndGroupsOffset()
+{
+    if (frame_end == frame_start)
+        frame_end_group_number = frame_start_group_number;
+
+    const Int64 offset
+        = static_cast<Int64>(window_description.frame.end_offset.safeGet<UInt64>()) * (window_description.frame.end_preceding ? -1 : 1);
+
+    // frame_end is not inclusive, so it must reach the first row of the group after the target one.
+    const Int64 target_group = static_cast<Int64>(peer_group_number) + offset + 1;
+
+    if (target_group <= 1)
+    {
+        // The frame ends before the first peer group: it is empty.
+        frame_end = frame_start;
+        frame_end_group_number = frame_start_group_number;
+        frame_ended = true;
+        return;
+    }
+
+    frame_ended = advanceGroupBoundary(frame_end, frame_end_group_number, frame_end_group_scan_frontier, target_group);
+}
+
 void WindowTransform::advanceFrameEnd()
 {
     // No reason for this function to be called again after it succeeded.
@@ -1091,10 +1246,9 @@ void WindowTransform::advanceFrameEnd()
                 case WindowFrame::FrameType::RANGE:
                     advanceFrameEndRangeOffset();
                     break;
-                default:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "The frame end type '{}' is not implemented",
-                        window_description.frame.end_type);
+                case WindowFrame::FrameType::GROUPS:
+                    advanceFrameEndGroupsOffset();
+                    break;
             }
             break;
     }
@@ -1927,6 +2081,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
         peer_group_start = partition_start;
         peer_group_start_row_number = 1;
         peer_group_number = 1;
+        frame_start_group_number = 1;
+        frame_end_group_number = 1;
 
         // Reinitialize the aggregate function states because the new partition
         // has started.
@@ -2107,8 +2263,13 @@ void WindowTransform::work()
     // than the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
+    // We also keep the start of the current peer group: it can lag behind the
+    // current row (its group may have started in an earlier block), and it is
+    // dereferenced by arePeers() on the next row. A FOLLOWING frame pushes the
+    // frame pointers ahead of the current row, so peer_group_start can be the
+    // trailing pointer.
     chassert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
+    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block, peer_group_start.block});
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -3460,7 +3621,7 @@ The [dense_rank](/reference/functions/window-functions/dense_rank) function prov
 ```sql
 rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3538,7 +3699,7 @@ Alias: `denseRank` (case-sensitive)
 ```sql
 dense_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3755,7 +3916,7 @@ Numbers the current row within its partition starting from 1.
 ```sql
 row_number (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3891,7 +4052,7 @@ Returns the first non-NULL value evaluated against the nth row (offset) in its o
 ```sql
 nth_value (x, offset)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3959,7 +4120,7 @@ Returns a value evaluated at the row that is at a specified physical offset row 
 
 <Warning>
 `lagInFrame` behavior differs from the standard SQL `lag` window function.
-Clickhouse window function `lagInFrame` respects the window frame.
+ClickHouse window function `lagInFrame` respects the window frame.
 To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 </Warning>
 
@@ -3968,7 +4129,7 @@ To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AN
 ```sql
 lagInFrame(x[, offset[, default]])
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -4118,7 +4279,7 @@ Returns a value evaluated at the row that is offset rows after the current row w
 
 <Warning>
 `leadInFrame` behavior differs from the standard SQL `lead` window function.
-Clickhouse window function `leadInFrame` respects the window frame.
+ClickHouse window function `leadInFrame` respects the window frame.
 To get behavior identical to the `lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 </Warning>
 
@@ -4127,7 +4288,7 @@ To get behavior identical to the `lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING A
 ```sql
 leadInFrame(x[, offset[, default]])
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -4660,9 +4821,9 @@ This is useful for monotonically increasing metrics, such as counters, where a d
 ```sql
 nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
-WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS or RANGE expression_to_bound_rows_within_the_group])
+WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group])
 ```
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).

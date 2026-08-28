@@ -108,12 +108,22 @@
                 },
                 "reference/statements/create/masking-policy",
                 "reference/statements/create/function",
+                "reference/statements/create/handler",
                 "reference/statements/create/named-collection",
                 "reference/statements/create/quota",
                 "reference/statements/create/role",
                 "reference/statements/create/row-policy",
                 "reference/statements/create/settings-profile",
-                "reference/statements/create/table",
+                {
+                  "expanded": false,
+                  "group": "TABLE",
+                  "pages": [
+                    "reference/statements/create/table",
+                    "reference/statements/create/table/codec",
+                    "reference/statements/create/table/temporary-table",
+                    "reference/statements/create/table/replace-table"
+                  ]
+                },
                 "reference/statements/create/user",
                 "reference/statements/create/view"
               ]
@@ -159,6 +169,7 @@
                 "reference/statements/select/limit",
                 "reference/statements/select/offset",
                 "reference/statements/select/order-by",
+                "reference/statements/select/pipe-operators",
                 "reference/statements/select/prewhere",
                 "reference/statements/select/qualify",
                 "reference/statements/select/replace_modifier",
@@ -319,6 +330,7 @@
                 "reference/engines/table-engines/integrations/arrowflight",
                 "reference/engines/table-engines/integrations/azure-queue",
                 "reference/engines/table-engines/integrations/azureBlobStorage",
+                "reference/engines/table-engines/integrations/bigquery",
                 "reference/engines/table-engines/integrations/deltalake",
                 "reference/engines/table-engines/integrations/embedded-rocksdb",
                 "reference/engines/table-engines/integrations/ExternalDistributed",
@@ -411,6 +423,7 @@
             "reference/engines/database-engines/materialized-postgresql",
             "reference/engines/database-engines/mysql",
             "reference/engines/database-engines/postgresql",
+            "reference/engines/database-engines/remote",
             "reference/engines/database-engines/replicated",
             "reference/engines/database-engines/shared",
             "reference/engines/database-engines/sqlite"
@@ -428,7 +441,7 @@
           "expanded": false,
           "group": "Regular functions",
           "pages": [
-            "reference/functions/regular-functions/regular-functions-index",
+            "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/ai-functions",
             "reference/functions/regular-functions/arithmetic-functions",
             "reference/functions/regular-functions/array-functions",
@@ -474,7 +487,6 @@
             "reference/functions/regular-functions/numeric-indexed-vector-functions",
             "reference/functions/regular-functions/other-functions",
             "reference/functions/regular-functions/random-functions",
-            "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/rounding-functions",
             "reference/functions/regular-functions/splitting-merging-functions",
             "reference/functions/regular-functions/string-functions",
@@ -546,6 +558,7 @@
                 "reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "reference/functions/aggregate-functions/first_value",
                 "reference/functions/aggregate-functions/flame_graph",
+                "reference/functions/aggregate-functions/gini",
                 "reference/functions/aggregate-functions/groupArray",
                 "reference/functions/aggregate-functions/groupArrayArray",
                 "reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -674,6 +687,7 @@
             "reference/functions/table-functions/arrowflight",
             "reference/functions/table-functions/azureBlobStorage",
             "reference/functions/table-functions/azureBlobStorageCluster",
+            "reference/functions/table-functions/bigquery",
             "reference/functions/table-functions/cluster",
             "reference/functions/table-functions/deltalake",
             "reference/functions/table-functions/deltalakeCluster",
@@ -871,6 +885,7 @@
             "reference/formats/Parquet/ParquetMetadata"
           ]
         },
+        "reference/formats/PNG",
         "reference/formats/PostgreSQLWire",
         {
           "expanded": false,
@@ -898,6 +913,14 @@
             "reference/formats/Protobuf/Protobuf",
             "reference/formats/Protobuf/ProtobufList",
             "reference/formats/Protobuf/ProtobufSingle"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Puffin",
+          "pages": [
+            "reference/formats/Puffin/Puffin",
+            "reference/formats/Puffin/PuffinMetadata"
           ]
         },
         "reference/formats/RawBLOB",
@@ -943,6 +966,15 @@
     {
       "expandable": true,
       "expanded": false,
+      "group": "Interfaces",
+      "pages": [
+        "reference/interfaces/specs/NativeProtocol",
+        "reference/interfaces/specs/NativeFormat"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
       "group": "Settings",
       "pages": [
         "reference/settings/index",
@@ -975,6 +1007,7 @@
         "reference/system-tables/asynchronous_metric_log",
         "reference/system-tables/asynchronous_metrics",
         "reference/system-tables/azure_queue_log",
+        "reference/system-tables/azure_queue_metadata",
         "reference/system-tables/azure_queue_metadata_cache",
         "reference/system-tables/azure_queue_settings",
         "reference/system-tables/backup_log",
@@ -1006,11 +1039,15 @@
         "reference/system-tables/detached_parts",
         "reference/system-tables/detached_tables",
         "reference/system-tables/dictionaries",
+        "reference/system-tables/dictionary_layouts",
+        "reference/system-tables/dictionary_sources",
         "reference/system-tables/dimensional_metrics",
         "reference/system-tables/disks",
+        "reference/system-tables/disk_types",
         "reference/system-tables/distributed_ddl_queue",
         "reference/system-tables/distribution_queue",
         "reference/system-tables/dns_cache",
+        "reference/system-tables/documentation",
         "reference/system-tables/dropped_tables",
         "reference/system-tables/dropped_tables_parts",
         "reference/system-tables/enabled_roles",
@@ -1026,9 +1063,11 @@
         "reference/system-tables/functions",
         "reference/system-tables/grants",
         "reference/system-tables/graphite_retentions",
+        "reference/system-tables/handlers",
         "reference/system-tables/histogram_metric_log",
         "reference/system-tables/histogram_metrics",
         "reference/system-tables/hypothetical_indexes",
+        "reference/system-tables/iceberg_files",
         "reference/system-tables/iceberg_history",
         "reference/system-tables/iceberg_metadata_log",
         "reference/system-tables/information_schema",
@@ -1037,6 +1076,9 @@
         "reference/system-tables/jemalloc_stats",
         "reference/system-tables/jemalloc_profile_text",
         "reference/system-tables/kafka_consumers",
+        "reference/system-tables/keeper_changelogs",
+        "reference/system-tables/keeper_cluster",
+        "reference/system-tables/keeper_snapshots",
         "reference/system-tables/keeper_storage",
         "reference/system-tables/keywords",
         "reference/system-tables/licenses",
@@ -1086,6 +1128,7 @@
         "reference/system-tables/role_grants",
         "reference/system-tables/roles",
         "reference/system-tables/row_policies",
+        "reference/system-tables/s3_queue_metadata",
         "reference/system-tables/s3_queue_settings",
         "reference/system-tables/s3queue_log",
         "reference/system-tables/s3queue_metadata_cache",
@@ -1098,6 +1141,7 @@
         "reference/system-tables/settings_profile_elements",
         "reference/system-tables/settings_profiles",
         "reference/system-tables/stack_trace",
+        "reference/system-tables/statements",
         "reference/system-tables/stemmers",
         "reference/system-tables/storage_policies",
         "reference/system-tables/symbols",

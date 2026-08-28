@@ -107,11 +107,6 @@ public:
 
     bool mergeIsEquivalentToAddingRows() const override { return nested_func->mergeIsEquivalentToAddingRows(); }
 
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        return nested_func->getArgumentsThatCanBeOnlyNull();
-    }
-
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 

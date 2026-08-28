@@ -1,0 +1,111 @@
+---
+title: الميزات غير المدعومة في Cloud
+---
+
+تسرد الجداول التالية الميزات وإجراءات النشر ذاتية الإدارة المصنّفة على أنها غير مدعومة في ClickHouse Cloud. يوضح كل إدخال الإمكانية غير المدعومة تحديدًا، حتى إذا كانت صفحته المصدر تتناول أيضًا وظائف مدعومة.
+
+<div id="unsupported-managed-infrastructure-and-operations">
+  ### البنية التحتية والعمليات المُدارة
+</div>
+
+| الإمكانات غير المدعومة                                              | الوثائق                                                                                                                                      |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| نشر `ClickHouse Keeper` وإعداده ذاتيًا                              | [دليل Keeper](/ar/guides/oss/deployment-and-scaling/keeper)، [تأمين اتصالات ZooKeeper](/ar/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper) |
+| توفير شهادات TLS يدويًا وإعداد الخادم                               | [توفير ACME](/ar/concepts/features/security/tls/configuring-tls-acme-client)، [إعداد TLS](/ar/concepts/features/security/tls/configuring-tls)      |
+| إعداد طبقات التخزين الساخنة والدافئة والباردة يدويًا باستخدام `TTL` | [الدليل](/ar/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture)                                                   |
+| إجراء اختبارات أداء للأجهزة المُدارة ذاتيًا                         | [الدليل](/ar/concepts/features/performance/troubleshoot/performance-test)                                                                       |
+| تطبيق التوصيات التشغيلية للإدارة الذاتية                            | [الدليل](/ar/guides/oss/best-practices/tips)                                                                                                    |
+
+<div id="unsupported-authentication-and-security">
+  ### المصادقة والأمان
+</div>
+
+| الإمكانية غير المدعومة         | الوثائق                                                                                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| المصادقة الخارجية عبر HTTP     | [مرجع](/ar/concepts/features/security/external-authenticators/http)                                                                               |
+| المصادقة الخارجية عبر Kerberos | [مرجع](/ar/concepts/features/security/external-authenticators/kerberos)                                                                           |
+| مصادقة LDAP وتعيين الأدوار     | [التهيئة](/ar/concepts/features/security/configuring-ldap)، [المصادِق](/ar/concepts/features/security/external-authenticators/ldap)                  |
+| المصادقة باستخدام شهادة X.509  | [مصادقة المستخدم](/ar/concepts/features/security/ssl-user-auth)، [المصادِق الخارجي](/ar/concepts/features/security/external-authenticators/ssl-x509) |
+
+<div id="unsupported-interfaces-and-integrations">
+  ### الواجهات والتكاملات
+</div>
+
+| الإمكانية غير المدعومة                       | الوثائق                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| واجهة البروتوكول السلكي لـ PostgreSQL        | [مرجع](/ar/concepts/features/interfaces/postgresql)                                                                                                                                                                                                                                                                                                                        |
+| واجهة SSH مع PTY                             | [مرجع](/ar/concepts/features/interfaces/ssh)                                                                                                                                                                                                                                                                                                                               |
+| محرك النسخ المتماثل `MaterializedPostgreSQL` | [دليل ClickPipes](/ar/integrations/clickpipes/postgres/connecting-to-postgresql#using-the-materializedpostgresql-database-engine)، [دليل الموصل](/ar/integrations/connectors/data-sources/postgres)، [محرك قاعدة البيانات](/ar/reference/engines/database-engines/materialized-postgresql)، [محرك الجدول](/ar/reference/engines/table-engines/integrations/materialized-postgresql) |
+| محرك الجدول `ODBC`                           | [مرجع](/ar/reference/engines/table-engines/integrations/odbc)                                                                                                                                                                                                                                                                                                              |
+| تكامل تخزين الكائنات MinIO المتوافق مع S3    | [دليل](/ar/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                                                |
+| تكامل تخزين الكائنات Tigris المتوافق مع S3   | [دليل](/ar/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                                               |
+
+<div id="unsupported-database-and-table-engines">
+  ### محركات قواعد البيانات والجداول
+</div>
+
+| إمكانية غير مدعومة                                               | الوثائق                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| محرك قاعدة البيانات `MySQL`                                   | [مرجع](/ar/reference/engines/database-engines/mysql)                                                                                                                                                                                                                      |
+| محرك الجدول `EmbeddedRocksDB`                                 | [مرجع](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)                                                                                                                                                                                                 |
+| محرك الجدول `HDFS`                                            | [مرجع](/ar/reference/engines/table-engines/integrations/hdfs)                                                                                                                                                                                                             |
+| محرك الجدول `Hive`                                            | [مرجع](/ar/reference/engines/table-engines/integrations/hive)                                                                                                                                                                                                             |
+| محرك الجدول `JDBC`                                            | [مرجع](/ar/reference/engines/table-engines/integrations/jdbc)                                                                                                                                                                                                             |
+| محرك الجدول `Redis` للاستعلامات الموحّدة                      | [مرجع](/ar/reference/engines/table-engines/integrations/redis)                                                                                                                                                                                                            |
+| محرك الجدول `SQLite`                                          | [مرجع](/ar/reference/engines/table-engines/integrations/sqlite)                                                                                                                                                                                                           |
+| محرك الجدول `TimeSeries`                                      | [مرجع](/ar/reference/engines/table-engines/integrations/time-series)                                                                                                                                                                                                      |
+| محرك الجدول `YTsaurus`                                        | [مرجع](/ar/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                                         |
+| محركات الجداول من عائلة `Log` (`Log` و`StripeLog` و`TinyLog`) | [نظرة عامة على العائلة](/ar/reference/engines/table-engines/log-family)، [`Log`](/ar/reference/engines/table-engines/log-family/log)، [`StripeLog`](/ar/reference/engines/table-engines/log-family/stripelog)، [`TinyLog`](/ar/reference/engines/table-engines/log-family/tinylog) |
+
+<div id="unsupported-dictionaries-and-server-configuration">
+  ### القواميس وإعدادات الخادم
+</div>
+
+| إمكانية غير مدعومة                                                              | الوثائق                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| المجموعات المُسمّاة وعبارتا `CREATE NAMED COLLECTION` و`ALTER NAMED COLLECTION` | [نظرة عامة](/ar/concepts/features/configuration/server-config/named-collections)، [إنشاء](/ar/reference/statements/create/named-collection)، [تعديل](/ar/reference/statements/alter/named-collection)                                |
+| إعدادات القواميس المستندة إلى الملفات                                           | [مرجع](/ar/reference/statements/create/dictionary#creating-a-dictionary-with-a-configuration-file)                                                                                                                             |
+| قواميس geobase المضمّنة                                                         | [مرجع](/ar/reference/statements/create/dictionary/embedded)                                                                                                                                                                    |
+| مصادر القواميس المحلية من نوع `YAMLRegExpTree`                                  | [دليل التخطيط](/ar/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)، [مرجع المصدر](/ar/reference/statements/create/dictionary/sources/yamlregexptree) |
+| مصدر القاموس `YTsaurus`                                                         | [مرجع](/ar/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                            |
+| قواميس محلّل النصوص اليابانية المُعدّة على الخادم                               | [مرجع](/ar/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                         |
+
+<div id="unsupported-data-formats-and-codecs">
+  ### تنسيقات البيانات ومرمّزات الضغط
+</div>
+
+| إمكانية غير مدعومة                                                                   | الوثائق                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| تنسيق `CapnProto` مع ملفات المخطط على جانب الخادم                                    | [مرجع التنسيقات](/ar/reference/formats/CapnProto)، [الدليل](/ar/guides/clickhouse/data-formats/binary#capn-proto)                                                                                   |
+| تنسيقات `Protobuf` و`ProtobufList` و`ProtobufSingle` مع ملفات المخطط على جانب الخادم | [الدليل](/ar/guides/clickhouse/data-formats/binary#protocol-buffers)، [`ProtobufList`](/ar/reference/formats/Protobuf/ProtobufList)، [`ProtobufSingle`](/ar/reference/formats/Protobuf/ProtobufSingle) |
+| مرمّزات الضغط المتقادمة `ZSTD_QAT` و`DEFLATE_QPL`                                    | [`ZSTD_QAT`](/ar/reference/statements/create/table#zstd_qat)، [`DEFLATE_QPL`](/ar/reference/statements/create/table#deflate_qpl)                                                                    |
+
+<div id="unsupported-functions-and-experimental-features">
+  ### الدوال والميزات التجريبية
+</div>
+
+| الإمكانية غير المدعومة                                    | الوثائق                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| دوال تجريبية لمعالجة اللغة الطبيعية                       | [مرجع](/ar/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                              |
+| معاملات تجريبية متعددة العبارات مع commit وrollback       | [دليل](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                                |
+| دوال تجريبية لاستبطان المعاملات                           | [`transactionID`](/ar/reference/functions/regular-functions/other-functions#transactionID)، [`transactionLatestSnapshot`](/ar/reference/functions/regular-functions/other-functions#transactionLatestSnapshot)، [`transactionOldestSnapshot`](/ar/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
+| دوال النوافذ الزمنية لـ `WindowView`                      | [مرجع](/ar/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                      |
+| `WindowView` التجريبية                                    | [مرجع](/ar/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                                     |
+| دوال WebAssembly المعرّفة من المستخدم                     | [نظرة عامة](/ar/reference/functions/regular-functions/udf#webassembly-user-defined-functions)، [دليل](/ar/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                       |
+| دوال تنفيذية معرّفة من المستخدم ومعتمدة على برامج التشغيل | [مرجع](/ar/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                         |
+| دالة الجدول `filesystem` للملفات المحلية على الخادم       | [مرجع](/ar/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                                   |
+
+<div id="unsupported-administration-and-access-control">
+  ### الإدارة والتحكّم في الوصول
+</div>
+
+| الإمكانية غير المدعومة                                            | الوثائق                                                                                                                                              |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| عمليات إحصاءات الأعمدة باستخدام `ALTER TABLE`                     | [مرجع](/ar/reference/statements/alter/statistics)                                                                                                       |
+| انتحال هوية المستخدم باستخدام `EXECUTE AS`                        | [مرجع](/ar/reference/statements/execute_as)                                                                                                             |
+| منح خاصة بمحرك الجدول                                             | [منح](/ar/reference/statements/grant#table-engine)، [إعداد الخادم](/ar/reference/settings/server-settings/settings/other#table_engines_require_grant)      |
+| اختصار الامتيازات `GRANT ALL`                                     | [مرجع](/ar/reference/statements/grant#all)                                                                                                              |
+| إيقاف تشغيل الخادم باستخدام `SYSTEM SHUTDOWN`                     | [مرجع](/ar/reference/statements/system#shutdown)                                                                                                        |
+| بدء عمليات الجلب في الخلفية وإيقافها باستخدام عبارات `SYSTEM`     | [`SYSTEM STOP FETCHES`](/ar/reference/statements/system#stop-fetches)، [`SYSTEM START FETCHES`](/ar/reference/statements/system#start-fetches)             |
+| بدء عمليات الدمج في الخلفية وإيقافها باستخدام عبارات `SYSTEM`     | [`SYSTEM STOP MERGES`](/ar/reference/statements/system#stop-merges)، [`SYSTEM START MERGES`](/ar/reference/statements/system#start-merges)                 |
+| بدء عمليات دمج `TTL` في الخلفية وإيقافها باستخدام عبارات `SYSTEM` | [`SYSTEM STOP TTL MERGES`](/ar/reference/statements/system#stop-ttl-merges)، [`SYSTEM START TTL MERGES`](/ar/reference/statements/system#start-ttl-merges) |

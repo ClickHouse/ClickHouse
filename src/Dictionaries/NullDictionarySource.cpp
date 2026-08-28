@@ -47,7 +47,25 @@ void registerDictionarySourceNull(DictionarySourceFactory & factory)
               bool /* created_from_ddl*/) -> DictionarySourcePtr { return std::make_unique<NullDictionarySource>(std::make_shared<const Block>(sample_block)); };
 
     factory.registerSource("null", create_table_source, Documentation{
-        .description = "A source that returns no data. Used internally as a placeholder and for testing.",
+        .description = R"DOCS_MD(
+# Null dictionary source
+
+A special source that can be used to create dummy (empty) dictionaries.
+Dummy dictionaries can be useful for testing purposes or for setups with separate data and query nodes with distributed tables.
+
+```sql
+CREATE DICTIONARY null_dict (
+    id              UInt64,
+    val             UInt8,
+    default_val     UInt8 DEFAULT 123,
+    nullable_val    Nullable(UInt8)
+)
+PRIMARY KEY id
+SOURCE(NULL())
+LAYOUT(FLAT())
+LIFETIME(0);
+```
+)DOCS_MD",
         .syntax = "SOURCE(NULL())",
         .related = {}});
 }

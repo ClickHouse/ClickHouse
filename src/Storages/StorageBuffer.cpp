@@ -15,6 +15,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -177,14 +178,9 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    if (columns_.empty())
-    {
-        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
-        storage_metadata.setColumns(dest_table_metadata->getColumns());
-    }
-    else
-        storage_metadata.setColumns(columns_);
+    /// Columns are always resolved by `registerStorageBuffer` under the user's context, so the
+    /// destination's structure is never read here under the long-lived context this storage holds.
+    storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -612,6 +608,44 @@ void StorageBuffer::read(
 
     auto result_header = buffers_plan.getCurrentHeader();
 
+    /// Reading the destination table can return a full column where the plan over the buffers keeps
+    /// it constant (e.g. constants come back materialized from a `Distributed` destination), and a
+    /// full column cannot be converted back to a constant. Materialize such constants in the buffers
+    /// branch and unite the branches on the materialized header.
+    {
+        const auto & destination_header = *query_plan.getCurrentHeader();
+        ColumnsWithTypeAndName materialized_columns;
+        materialized_columns.reserve(result_header->columns());
+        bool buffers_header_changed = false;
+        for (const auto & column : *result_header)
+        {
+            auto materialized_column = column;
+            if (column.column && isColumnConst(*column.column))
+            {
+                const auto * destination_column = destination_header.findByName(column.name);
+                if (destination_column && (!destination_column->column || !isColumnConst(*destination_column->column)))
+                {
+                    materialized_column.column = column.column->convertToFullColumnIfConst();
+                    buffers_header_changed = true;
+                }
+            }
+            materialized_columns.push_back(std::move(materialized_column));
+        }
+
+        if (buffers_header_changed)
+        {
+            auto materialize_actions_dag = ActionsDAG::makeConvertingActions(
+                    result_header->getColumnsWithTypeAndName(),
+                    materialized_columns,
+                    ActionsDAG::MatchColumnsMode::Name,
+                    local_context);
+
+            auto materializing = std::make_unique<ExpressionStep>(result_header, std::move(materialize_actions_dag));
+            buffers_plan.addStep(std::move(materializing));
+            result_header = buffers_plan.getCurrentHeader();
+        }
+    }
+
     /// Convert structure from table to structure from buffer.
     if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
     {
@@ -1008,6 +1042,13 @@ bool StorageBuffer::supportsOptimizationToSubcolumns() const
 {
     if (auto destination = getDestinationTable())
         return destination->supportsOptimizationToSubcolumns();
+    return false;
+}
+
+bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToTupleElementSubcolumns();
     return false;
 }
 
@@ -1491,9 +1532,25 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
+        /// Infer an omitted structure here, so the constructor never reads the destination under
+        /// the long-lived context it holds. A definition restored from metadata (including a short
+        /// `ATTACH`) has no user, so it is neither access-checked nor resolved under one.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !destination_id.empty())
+        {
+            const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+            const ContextPtr & structure_context = from_existing_metadata ? args.getContext() : args.getLocalContext();
+            if (!from_existing_metadata)
+                args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+
+            auto destination = DatabaseCatalog::instance().getTable(destination_id, structure_context);
+            auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
+            columns = destination_metadata->getColumns();
+        }
+
         return std::make_shared<StorageBuffer>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             args.getContext(),
@@ -1513,7 +1570,7 @@ void registerStorageBuffer(StorageFactory & factory)
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
 :::note
-A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/guides/best-practices/asyncinserts.md).
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/concepts/features/operations/insert/asyncinserts).
 :::
 
 ```sql

@@ -37,6 +37,11 @@ struct QuantileReservoirSamplerDeterministic
     using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
+    /// Version 1 adds the skip degree to the serialized state, without which merging states that
+    /// were thinned out to different degrees gives a result that depends on how the rows were
+    /// distributed between them - which defeats the whole point of `quantileDeterministic`.
+    static constexpr size_t state_version = 1;
+
     void add(const Value &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add without determinator is not implemented for ReservoirSamplerDeterministic");
@@ -53,14 +58,14 @@ struct QuantileReservoirSamplerDeterministic
         data.merge(rhs.data);
     }
 
-    void serialize(WriteBuffer & buf) const
+    void serialize(WriteBuffer & buf, size_t version) const
     {
-        data.write(buf);
+        data.write(buf, version);
     }
 
-    void deserialize(ReadBuffer & buf)
+    void deserialize(ReadBuffer & buf, size_t version)
     {
-        data.read(buf);
+        data.read(buf, version);
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
@@ -153,10 +158,10 @@ Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a 
 
 This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and deterministic algorithm of sampling.
 The result is deterministic.
-To get an exact quantile, use the [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileExact) function.
+To get an exact quantile, use the [`quantileExact`](/reference/functions/aggregate-functions/quantileExact#quantileExact) function.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileDeterministic(level)(expr, determinator)
@@ -194,7 +199,7 @@ SELECT quantileDeterministic(val, 1) FROM t;
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously, using deterministic reservoir sampling.
 
-This function is equivalent to [`quantileDeterministic`](/sql-reference/aggregate-functions/reference/quantiledeterministic) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileDeterministic`](/reference/functions/aggregate-functions/quantileDeterministic) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesDeterministic(level1, level2, ...)(expr, determinator)
