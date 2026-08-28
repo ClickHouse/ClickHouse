@@ -157,6 +157,14 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
+## enable_hash_join_row_store {#enable_hash_join_row_store}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to enable transforming the payload of a hash join into a row-major layout."}]}]}/>
+
+Enable transforming the payload of a hash join into a row-major layout.
+
 ## enable_hdfs_pread {#enable_hdfs_pread}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -362,7 +362,7 @@ def test_virtual_columns(started_cluster):
     hdfs_api.write_data("/file1", "1\n")
     hdfs_api.write_data("/file2", "2\n")
     hdfs_api.write_data("/file3", "3\n")
-    expected = "1\tfile1\tfile1\n2\tfile2\tfile2\n3\tfile3\tfile3\n"
+    expected = "1\tfile1\t/file1\n2\tfile2\t/file2\n3\tfile3\t/file3\n"
     assert (
         node1.query(
             "select id, _file as file_name, _path as file_path from virtual_cols order by id"
@@ -370,6 +370,24 @@ def test_virtual_columns(started_cluster):
         == expected
     )
     node1.query("drop table virtual_cols")
+
+
+def test_path_filter_pushdown(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/pushdown1", "1\n")
+    hdfs_api.write_data("/pushdown2", "2\n")
+
+    # A `_path` equality over a glob is answered by turning the value back into a storage key,
+    # so the predicate has to read the same paths the column reports. HDFS has no namespace,
+    # and an inverse that assumes one is present yields an empty key and drops every row.
+    assert (
+        node1.query(
+            "select id from hdfs('hdfs://hdfs1:9000/pushdown*', 'TSV', 'id UInt32') "
+            "where _path = '/pushdown2' settings s3_path_filter_limit = 10"
+        )
+        == "2\n"
+    )
 
 
 def test_read_files_with_spaces(started_cluster):
@@ -618,13 +636,13 @@ def test_hdfsCluster(started_cluster):
     actual = node1.query(
         "select id, _file as file_name, _path as file_path from hdfs('hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id"
     )
-    expected = "1\tfile1\ttest_hdfsCluster/file1\n2\tfile2\ttest_hdfsCluster/file2\n3\tfile3\ttest_hdfsCluster/file3\n"
+    expected = "1\tfile1\t/test_hdfsCluster/file1\n2\tfile2\t/test_hdfsCluster/file2\n3\tfile3\t/test_hdfsCluster/file3\n"
     assert actual == expected
 
     actual = node1.query(
         "select id, _file as file_name, _path as file_path from hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id"
     )
-    expected = "1\tfile1\ttest_hdfsCluster/file1\n2\tfile2\ttest_hdfsCluster/file2\n3\tfile3\ttest_hdfsCluster/file3\n"
+    expected = "1\tfile1\t/test_hdfsCluster/file1\n2\tfile2\t/test_hdfsCluster/file2\n3\tfile3\t/test_hdfsCluster/file3\n"
     assert actual == expected
     fs.delete(dir, recursive=True)
 
@@ -822,7 +840,7 @@ def test_virtual_columns_2(started_cluster):
     node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
 
     result = node1.query(f"SELECT _path FROM {table_function}")
-    assert result.strip() == "parquet_2"
+    assert result.strip() == "/parquet_2"
 
     table_function = (
         "hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
@@ -1140,25 +1158,25 @@ def test_read_subcolumns(started_cluster):
         "select a.b.d, _path, a.b, _file, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert res == "2\ttest_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
+    assert res == "2\t/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
 
     res = node.query(
         "select a.b.d, _path, a.b, _file, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert res == "2\ttest_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
+    assert res == "2\t/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
 
     res = node.query(
         "select x.b.d, _path, x.b, _file, x.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert res == "0\ttest_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
+    assert res == "0\t/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
 
     res = node.query(
         "select x.b.d, _path, x.b, _file, x.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
     )
 
-    assert res == "42\ttest_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
+    assert res == "42\t/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
 
 
 def test_read_subcolumn_time(started_cluster):
