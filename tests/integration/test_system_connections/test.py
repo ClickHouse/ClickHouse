@@ -180,7 +180,7 @@ def test_tcp_active_shows_correct_query_id(started_cluster):
             # SLEEP for 5 s; we observe the connection during this window.
             result_holder.append(
                 node.query(
-                    f"SELECT sleep(5)",
+                    "SELECT sleep(5)",
                     query_id=unique_id,
                 )
             )
