@@ -144,7 +144,7 @@ SELECT count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'c 
 -- Column a is declared Nullable and reads back as the lake's Int64, which is what a set-aside
 -- declaration means and what the values alone cannot show. It also makes the pin necessary rather than
 -- tidying: the cluster rewrite plans the initiator on the declared types while a worker reads the lake's.
-SELECT groupArray(a), count(), countIf(c IS NULL), toTypeName(a) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64) DEFAULT 42') SETTINGS parallel_replicas_for_cluster_engines = 0;
+SELECT groupArray(a), count(), countIf(c IS NULL), any(toTypeName(a)) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64) DEFAULT 42') SETTINGS parallel_replicas_for_cluster_engines = 0;
 -- A file written after the column was added carries real values, which the same declaration must
 -- still return: an evolution-added column is emitted by the lake's own transform, so its values come
 -- from the file whether or not the declaration also names a default.
