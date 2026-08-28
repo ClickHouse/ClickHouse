@@ -106,7 +106,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                 uint32_t col_counter = 0;
 
                 const uint64_t type_mask_backup = this->next_type_mask;
-                this->next_type_mask = fc.type_mask & ~(allow_nested);
+                this->next_type_mask = fc.type_mask & ~allow_nested;
                 auto tp = randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type());
                 this->next_type_mask = type_mask_backup;
             }
@@ -116,7 +116,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
             uint32_t col_counter = 0;
 
             const uint64_t type_mask_backup = this->next_type_mask;
-            this->next_type_mask = fc.type_mask & ~(allow_nested);
+            this->next_type_mask = fc.type_mask & ~allow_nested;
             auto tp = randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type());
             this->next_type_mask = type_mask_backup;
         }
@@ -330,7 +330,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             std::uniform_int_distribution<int> jrange(1, 10);
 
             lv->set_no_quote_str(
-                fmt::format("'{}'{}", strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator)), complex ? "::JSON" : ""));
+                fmt::format(
+                    "'{}'{}",
+                    strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator), this->fc.fuzz_floating_points),
+                    complex ? "::JSON" : ""));
         }
         break;
         case LitOp::LitNULLVal: lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL); break;
@@ -496,7 +499,16 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     /// Use search functions more often
     SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
     static const std::vector<std::string> searchFuncs
-        = {"endsWith", "has", "hasToken", "hasTokenOrNull", "mapContains", "match", "hasAllTokens", "hasAnyTokens", "startsWith"};
+        = {"endsWith",
+           "has",
+           "notHas",
+           "hasToken",
+           "hasTokenOrNull",
+           "mapContains",
+           "match",
+           "hasAllTokens",
+           "hasAnyTokens",
+           "startsWith"};
     const auto & nfunc = rg.pickRandomly(searchFuncs);
 
     sfc->mutable_func()->set_catalog_func(nfunc);
@@ -1217,7 +1229,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
             casexpr->set_simple(rg.nextMediumNumber() < 16);
             this->depth++;
-            this->next_type_mask = fc.type_mask & ~(allow_nested);
+            this->next_type_mask = fc.type_mask & ~allow_nested;
             auto tp = randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type());
             this->next_type_mask = type_mask_backup;
             this->generateExpression(rg, casexpr->mutable_expr());

@@ -98,23 +98,23 @@ SELECT L1Norm((1, 2))
 
 Introduzido em: v21.11.0
 
-Calcula o vetor unitário de um dado vetor (os elementos da tupla são as coordenadas) no espaço `L1` ([geometria do táxi](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+Calcula o vetor unitário de um dado vetor (os elementos da tupla ou do array são as coordenadas) no espaço `L1` ([geometria do táxi](https://en.wikipedia.org/wiki/Taxicab_geometry)).
 
 **Sintaxe**
 
 ```sql
-L1Normalize(tuple)
+L1Normalize(vector)
 ```
 
 **Aliases**: `normalizeL1`
 
 **Argumentos**
 
-* `tuple` — Uma tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `vector` — Uma tupla ou array de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
 
 **Valor retornado**
 
-Retorna o vetor unitário. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple)
+Retorna o vetor unitário. Para entradas `Array`, retorna `Array(Float32)` se o menor supertipo comum dos tipos de elemento for `Float32` ou `BFloat16`; caso contrário, `Array(Float64)`. Para entradas `Tuple`, sempre retorna `Tuple(Float64)`. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple) ou [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -218,7 +218,7 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 Introduzido na: v26.7.0
 
-Calcula a [distância euclidiana](https://en.wikipedia.org/wiki/Euclidean_distance) aproximada entre um `QBit(Int8)` de códigos `quantizeBFloat16ToInt8` (desquantizados em tempo de execução) e um vetor de referência. Um vetor de referência (consulta) `Float` é comparado diretamente com precisão `Float32` — a precisão de reconstrução dos códigos desquantizados; assim, uma consulta `Float64` é reduzida para `Float32`, enquanto uma consulta `BFloat16` é ampliada para esse formato exatamente (cálculo de distância assimétrico); uma referência `Array(Int8)` é tratada como códigos `quantizeBFloat16ToInt8` e desquantizada para seus níveis de reconstrução. Observe que `p` trunca apenas os códigos `QBit` armazenados; a referência `Array(Int8)` é, por si só, uma consulta completa e é sempre reconstruída com precisão total de 8 bits, portanto esta é uma distância simétrica entre quantizados apenas em `p = 8` (para `p < 8`, apenas o lado armazenado é lido com precisão mais grosseira). Ela deve estar no mesmo espaço em que os valores estavam antes da quantização (isto é, após a mesma rotação aleatória e o mesmo escalonamento), o que é responsabilidade de quem chama. A distância de cosseno é invariante à escala; o produto escalar e a distância L2 não são.
+Calcula a [distância euclidiana](https://en.wikipedia.org/wiki/Euclidean_distance) aproximada entre um `QBit(Int8)` de códigos `quantizeBFloat16ToInt8` (desquantizados em tempo de execução) e um vetor de referência. Um vetor de referência (consulta) `Float` é comparado diretamente com precisão `Float32` — a precisão de reconstrução dos códigos desquantizados; assim, uma consulta `Float64` é reduzida para `Float32`, enquanto uma consulta `BFloat16` é ampliada para esse formato exatamente (cálculo de distância assimétrico); uma referência `Array(Int8)` é tratada como códigos `quantizeBFloat16ToInt8` e desquantizada para seus níveis de reconstrução. Observe que `p` trunca apenas os códigos `QBit` armazenados; a referência `Array(Int8)` é, por si só, uma consulta completa e é sempre reconstruída com precisão total de 8 bits, portanto esta é uma distância simétrica entre quantizados apenas em `p = 8` (para `p < 8`, apenas o lado armazenado é lido com precisão mais baixa). Ela deve estar no mesmo espaço em que os valores estavam antes da quantização (isto é, após a mesma rotação aleatória e o mesmo escalonamento), o que é responsabilidade de quem chama. A distância de cosseno é invariante à escala; o produto escalar e a distância L2 não são.
 
 **Sintaxe**
 
@@ -230,7 +230,7 @@ L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — Vetores de códigos `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/pt-BR/reference/data-types/qbit)
 * `reference` — Vetor de referência (consulta): um array de `Float` (a consulta, comparada com precisão `Float32` -- uma consulta `Float64` é convertida para `Float32`) ou um `Array(Int8)` de códigos `quantizeBFloat16ToInt8` desquantizados em tempo de execução. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Int8)`](/pt-BR/reference/data-types/array)
-* `p` — Número dos bits mais altos de cada código `QBit` armazenado a serem usados (de 1 a 8). Menos bits reconstroem um quantizador embutido mais grosseiro para E/S mais rápida, com menor precisão; 8 bits correspondem à reconstrução com precisão total. `p` trunca apenas o `QBit` armazenado; uma referência `Array(Int8)` é sempre reconstruída com precisão total de 8 bits. [`UInt`](/pt-BR/reference/data-types/int-uint)
+* `p` — Número dos bits mais altos de cada código `QBit` armazenado a serem usados (de 1 a 8). Menos bits reconstroem um quantizador embutido mais grosseiro usando os centroides de média condicional gaussiana dos intervalos de prefixo Lloyd-Max existentes, para E/S mais rápida, com menor precisão; 8 bits correspondem à reconstrução com precisão total. `p` trunca apenas o `QBit` armazenado; uma referência `Array(Int8)` é sempre reconstruída com precisão total de 8 bits. [`UInt`](/pt-BR/reference/data-types/int-uint)
 * `used_dims` — Opcional. Número de dimensões iniciais a serem lidas, para uma busca de dimensão reduzida (Matryoshka) em um `QBit` com stride. Deve ser um múltiplo do stride do QBit que não exceda sua dimensão, e o vetor de referência deve ter pelo menos essa quantidade de elementos (quaisquer elementos extras no final são ignorados). Apenas os grupos de stride que abrangem essas dimensões são lidos. [`UInt`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**
@@ -291,23 +291,23 @@ SELECT L2Norm((1, 2))
 
 Introduzido em: v21.11.0
 
-Calcula o vetor unitário de um vetor dado (os elementos da tupla são as coordenadas) no espaço euclidiano (usando a [distância euclidiana](https://en.wikipedia.org/wiki/Euclidean_distance)).
+Calcula o vetor unitário de um vetor fornecido (os elementos da tupla ou do array são as coordenadas) no espaço euclidiano (usando a [distância euclidiana](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
 **Sintaxe**
 
 ```sql
-L2Normalize(tuple)
+L2Normalize(vector)
 ```
 
 **Aliases**: `normalizeL2`
 
 **Argumentos**
 
-* `tuple` — Uma tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `vector` — Uma tupla ou um array de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
 
 **Valor retornado**
 
-Retorna o vetor unitário. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple)
+Retorna o vetor unitário. Para entradas `Array`, retorna `Array(Float32)` se o menor supertipo comum dos tipos de elemento for `Float32` ou `BFloat16`; caso contrário, retorna `Array(Float64)`. Para entradas `Tuple`, sempre retorna `Tuple(Float64)`. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple) ou [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -483,23 +483,23 @@ SELECT LinfNorm((1, -2))
 
 Introduzido em: v21.11.0
 
-Calcula o vetor unitário de um determinado vetor (os elementos da tupla são as coordenadas) no espaço `L_{inf}` (usando a [norma máxima](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))).
+Calcula o vetor unitário de um determinado vetor (os elementos da tupla ou array são as coordenadas) no espaço `L_{inf}` (usando a [norma máxima](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))).
 
 **Sintaxe**
 
 ```sql
-LinfNormalize(tuple)
+LinfNormalize(vector)
 ```
 
 **Aliases**: `normalizeLinf`
 
 **Argumentos**
 
-* `tuple` — Uma tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `vector` — Uma tupla ou array de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
 
 **Valor retornado**
 
-Retorna o vetor unitário. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple)
+Retorna o vetor unitário. Para entradas do tipo `Array`, retorna `Array(Float32)` se o menor supertipo comum dos tipos dos elementos for `Float32` ou `BFloat16`; caso contrário, retorna `Array(Float64)`. Para entradas do tipo `Tuple`, sempre retorna `Tuple(Float64)`. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple) ou [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -535,7 +535,7 @@ LpDistance(vector1, vector2, p)
 
 * `vector1` — Primeiro vetor. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
 * `vector2` — Segundo vetor. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
-* `p` — A potência. Valores possíveis: número real em `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `p` — A potência. Valores possíveis: número real em `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
 
@@ -567,8 +567,7 @@ Casos especiais:
 
 * Quando p=1, é equivalente a L1Norm (distância de Manhattan).
 * Quando p=2, é equivalente a L2Norm (distância euclidiana).
-* Quando p=∞, é equivalente a LinfNorm (norma máxima).
-*
+* O valor de `p` deve ser um número finito não inferior a um; para a norma máxima (o limite para p→∞), use `LinfNorm`.
 
 **Sintaxe**
 
@@ -581,7 +580,7 @@ LpNorm(vector, p)
 **Arguments**
 
 * `vector` — Vetor ou tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
-* `p` — A potência. Os valores possíveis são números reais no intervalo `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `p` — A potência. Os valores possíveis são números reais no intervalo `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Returned value**
 
@@ -607,24 +606,24 @@ SELECT LpNorm((1, -2), 2)
 
 Introduzido em: v21.11.0
 
-Calcula o vetor unitário de um vetor dado (os elementos da tupla são as coordenadas) no espaço `Lp` (usando [norma p](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
+Calcula o vetor unitário de um dado vetor (os elementos da tupla ou do array são as coordenadas) no espaço `Lp` (usando a [norma p](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
 
 **Sintaxe**
 
 ```sql
-LpNormalize(tuple, p)
+LpNormalize(vector, p)
 ```
 
 **Aliases**: `normalizeLp`
 
 **Argumentos**
 
-* `tuple` — Uma tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
-* `p` — A potência. Os valores possíveis são quaisquer números no intervalo `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `vector` — Uma tupla ou um array de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
+* `p` — A potência. Os valores possíveis são números reais no intervalo `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
 
-Retorna o vetor unitário. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple)
+Retorna o vetor unitário. Para entradas `Array`, retorna `Array(Float32)` se o menor supertipo comum dos tipos dos elementos for `Float32` ou `BFloat16`; caso contrário, retorna `Array(Float64)`. Para entradas `Tuple`, sempre retorna `Tuple(Float64)`. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple) ou [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -728,7 +727,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 Introduzido em: v26.7.0
 
-Calcula a [distância de cosseno](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) aproximada entre um `QBit(Int8)` de códigos `quantizeBFloat16ToInt8` (desquantizados em tempo de execução) e um vetor de referência. Quanto menor o valor retornado, mais semelhantes são os vetores. Um vetor de referência (consulta) `Float` é comparado diretamente com precisão `Float32` — a precisão de reconstrução dos códigos desquantizados; assim, uma consulta `Float64` é reduzida para `Float32`, enquanto uma consulta `BFloat16` é promovida exatamente para `Float32` (cálculo de distância assimétrica). Já uma referência `Array(Int8)` é tratada como códigos `quantizeBFloat16ToInt8` e desquantizada para seus níveis de reconstrução. Observe que `p` trunca apenas os códigos `QBit` armazenados; a referência `Array(Int8)` é, por si só, uma consulta completa e sempre é reconstruída com precisão total de 8 bits, portanto esta é uma distância simétrica entre quantizados somente em `p = 8` (para `p < 8`, apenas o lado armazenado é lido com precisão mais baixa). Ela deve estar no mesmo espaço em que os valores estavam antes da quantização (isto é, após a mesma rotação aleatória e o mesmo escalonamento), o que é responsabilidade de quem faz a chamada. A distância de cosseno é invariante à escala; produto escalar e distância L2 não são.
+Calcula a [distância de cosseno](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) aproximada entre um `QBit(Int8)` de códigos `quantizeBFloat16ToInt8` (desquantizados em tempo de execução) e um vetor de referência. Quanto menor o valor retornado, mais semelhantes são os vetores. Um vetor de referência (consulta) `Float` é comparado diretamente com precisão `Float32` — a precisão de reconstrução dos códigos desquantizados; assim, uma consulta `Float64` é reduzida para `Float32`, enquanto uma consulta `BFloat16` é ampliada exatamente para `Float32` (cálculo de distância assimétrica). Já uma referência `Array(Int8)` é tratada como códigos `quantizeBFloat16ToInt8` e desquantizada para seus níveis de reconstrução. Observe que `p` trunca apenas os códigos `QBit` armazenados; a referência `Array(Int8)` é, por si só, uma consulta completa e sempre é reconstruída com precisão total de 8 bits, portanto esta é uma distância simétrica entre quantizados somente em `p = 8` (para `p < 8`, apenas o lado armazenado é lido com precisão mais baixa). Ela deve estar no mesmo espaço em que os valores estavam antes da quantização (isto é, após a mesma rotação aleatória e o mesmo escalonamento), o que é responsabilidade de quem faz a chamada. A distância de cosseno é invariante à escala; produto escalar e distância L2 não são.
 
 **Sintaxe**
 
@@ -740,7 +739,7 @@ cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — Vetores de códigos `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/pt-BR/reference/data-types/qbit)
 * `reference` — Vetor de referência (consulta): um array de `Float` (a consulta é comparada com precisão `Float32` — uma consulta `Float64` é reduzida para `Float32`), ou um `Array(Int8)` de códigos `quantizeBFloat16ToInt8` desquantizados em tempo de execução. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Int8)`](/pt-BR/reference/data-types/array)
-* `p` — Número de bits mais altos de cada código `QBit` armazenado a serem usados (de 1 a 8). Menos bits reconstroem um quantizador embutido mais grosseiro, para E/S mais rápida com menor precisão; 8 bits correspondem à reconstrução em precisão total. `p` trunca apenas o `QBit` armazenado; uma referência `Array(Int8)` é sempre reconstruída com precisão total de 8 bits. [`UInt`](/pt-BR/reference/data-types/int-uint)
+* `p` — Número de bits mais altos de cada código `QBit` armazenado a serem usados (de 1 a 8). Menos bits reconstroem um quantizador embutido mais grosseiro usando os centroides de média condicional gaussiana dos intervalos de prefixo Lloyd-Max existentes, para E/S mais rápida com menor precisão; 8 bits correspondem à reconstrução em precisão total. `p` trunca apenas o `QBit` armazenado; uma referência `Array(Int8)` é sempre reconstruída com precisão total de 8 bits. [`UInt`](/pt-BR/reference/data-types/int-uint)
 * `used_dims` — Opcional. Número de dimensões iniciais a serem lidas, para uma busca de dimensão reduzida (Matryoshka) em um `QBit` com stride. Deve ser um múltiplo do stride do QBit, sem exceder sua dimensão, e o vetor de referência deve ter pelo menos essa quantidade de elementos (quaisquer elementos extras ao final são ignorados). Apenas os grupos de stride que cobrem essas dimensões são lidos. [`UInt`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**
@@ -806,7 +805,7 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 
 Introduzido em: v26.7.0
 
-Calcula o [produto escalar](https://en.wikipedia.org/wiki/Dot_product) aproximado (produto interno) entre um `QBit(Int8)` de códigos `quantizeBFloat16ToInt8` (desquantizados em tempo de execução) e um vetor de referência. Esta é uma medida de similaridade: quanto maior o valor retornado, mais semelhantes são os vetores. Um vetor de referência `Float` (consulta) é comparado diretamente com precisão `Float32` — a precisão de reconstrução dos códigos desquantizados —, de modo que uma consulta `Float64` é reduzida para `Float32`, enquanto uma consulta `BFloat16` é ampliada exatamente para esse formato (cálculo de distância assimétrico); uma referência `Array(Int8)` é tratada como códigos `quantizeBFloat16ToInt8` e desquantizada para seus níveis de reconstrução. Observe que `p` trunca apenas os códigos `QBit` armazenados; a referência `Array(Int8)` é, por si só, uma consulta completa e sempre é reconstruída com precisão total de 8 bits, portanto esta é uma distância simétrica entre quantizados somente em `p = 8` (para `p < 8`, apenas o lado armazenado é lido com precisão mais baixa). Ela deve estar no mesmo espaço em que os valores estavam antes da quantização (isto é, após a mesma rotação aleatória e o mesmo escalonamento), o que é responsabilidade do chamador. A distância cosseno é invariante à escala; o produto escalar e a distância L2 não são.
+Calcula o [produto escalar](https://en.wikipedia.org/wiki/Dot_product) aproximado (produto interno) entre um `QBit(Int8)` de códigos `quantizeBFloat16ToInt8` (desquantizados em tempo de execução) e um vetor de referência. Esta é uma medida de similaridade: quanto maior o valor retornado, mais semelhantes são os vetores. Um vetor de referência `Float` (consulta) é comparado diretamente com precisão `Float32` — a precisão de reconstrução dos códigos desquantizados —, de modo que uma consulta `Float64` é reduzida para `Float32`, enquanto uma consulta `BFloat16` é ampliada exatamente para esse formato (cálculo de distância assimétrico); uma referência `Array(Int8)` é tratada como códigos `quantizeBFloat16ToInt8` e desquantizada para seus níveis de reconstrução. Observe que `p` trunca apenas os códigos `QBit` armazenados; a referência `Array(Int8)` é, por si só, uma consulta completa e sempre é reconstruída com precisão total de 8 bits, portanto esta é uma distância simétrica entre quantizados somente em `p = 8` (para `p < 8`, apenas o lado armazenado é lido com precisão mais baixa). Ela deve estar no mesmo espaço em que os valores estavam antes da quantização (isto é, após a mesma rotação aleatória e o mesmo escalonamento), o que é responsabilidade do chamador. A distância de cosseno é invariante à escala; o produto escalar e a distância L2 não são.
 
 **Sintaxe**
 
@@ -818,7 +817,7 @@ dotProductTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — Vetores de códigos `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/pt-BR/reference/data-types/qbit)
 * `reference` — Vetor de referência (consulta): um array de `Float` (a consulta, comparada com precisão `Float32` -- uma consulta `Float64` é convertida para `Float32`), ou um `Array(Int8)` de códigos `quantizeBFloat16ToInt8` desquantizados em tempo de execução. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Int8)`](/pt-BR/reference/data-types/array)
-* `p` — Número de bits mais significativos de cada código `QBit` armazenado a serem usados (de 1 a 8). Menos bits reconstroem um quantizador embutido mais grosseiro para E/S mais rápida, com menor precisão; 8 bits correspondem à reconstrução com precisão total. `p` trunca apenas o `QBit` armazenado; uma referência `Array(Int8)` é sempre reconstruída com precisão total de 8 bits. [`UInt`](/pt-BR/reference/data-types/int-uint)
+* `p` — Número de bits mais altos de cada código `QBit` armazenado a serem usados (de 1 a 8). Menos bits reconstroem um quantizador embutido mais grosseiro usando os centroides de média condicional gaussiana dos intervalos de prefixo Lloyd-Max existentes, para E/S mais rápida, com menor precisão; 8 bits correspondem à reconstrução com precisão total. `p` trunca apenas o `QBit` armazenado; uma referência `Array(Int8)` é sempre reconstruída com precisão total de 8 bits. [`UInt`](/pt-BR/reference/data-types/int-uint)
 * `used_dims` — Opcional. Número de dimensões iniciais a serem lidas, para uma busca de dimensão reduzida (Matryoshka) em um `QBit` com stride. Deve ser um múltiplo do stride do QBit que não exceda sua dimensão, e o vetor de referência deve ter pelo menos esse número de elementos (quaisquer elementos extras no final são ignorados). Somente os grupos de stride que abrangem essas dimensões são lidos. [`UInt`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**
