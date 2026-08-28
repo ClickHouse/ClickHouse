@@ -442,6 +442,8 @@ enum class AccessType : uint8_t
     M(ARROW_FLIGHT, "", GLOBAL, ALL) \
     M(BIGQUERY, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
+    /* CatBoost integration is removed, but the privilege is kept, so that access entities granted before the removal still parse after an upgrade. */ \
+    M(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, ALL) \
     \
     /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
