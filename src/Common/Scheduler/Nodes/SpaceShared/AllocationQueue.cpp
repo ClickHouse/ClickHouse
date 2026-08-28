@@ -423,16 +423,13 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Kill the largest allocation that does not already have an in-flight kill request.
-    // Stacked limits may reach their backstops in the same scheduling round; selecting the same
-    // victim twice would neither reclaim additional memory nor let the outer constraint progress.
-    auto victim_it = std::find_if(running_allocations.rbegin(), running_allocations.rend(), [](const ResourceAllocation & allocation)
-    {
-        return !allocation.kill_requested;
-    });
-    if (victim_it == running_allocations.rend())
+    // Do not fall through to a smaller allocation while the largest victim in this queue already
+    // has an in-flight kill. That would turn one pressure decision into multiple kills in the same
+    // workload. Returning null still lets a parent policy search a different sibling queue, which
+    // is required for stacked limits to choose distinct victims in distinct constrained branches.
+    ResourceAllocation & victim = *running_allocations.rbegin();
+    if (victim.kill_requested)
         return nullptr;
-    ResourceAllocation & victim = *victim_it;
 
     // If this is the least common ancestor of killer and victim - add details
     if (&killer.allocation.queue == this)

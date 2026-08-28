@@ -150,8 +150,7 @@ void AllocationLimit::approveDecrease()
             /// The retry activations were enqueued before this event. A stable-generation suction
             /// pass therefore acts as their completion fence even when an intermediate policy
             /// legitimately suppresses an unchanged null update.
-            if (memory_growth_suspension_beneficiaries == 0
-                && !allocation_to_kill
+            if (!allocation_to_kill
                 && !suspended_growth->allocation.isGrowthRecoveryActive()
                 && suspended_growth->allocation.memory_growth_suction_priority)
                 scheduleSuction();
@@ -273,7 +272,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     /// by this suspension is still productive. Eviction is never an inline consequence of an empty
     /// scheduling round: only externally injected suction may queue the separate last-resort decision.
     if (!new_increase && suspended_growth && !suspended_growth_retry_pending && decrease == nullptr
-        && memory_growth_suspension_beneficiaries == 0 && !allocation_to_kill
+        && !allocation_to_kill
         && !suspended_growth->allocation.isGrowthRecoveryActive()
         && suspended_growth->allocation.memory_growth_suction_priority)
         scheduleSuction();
