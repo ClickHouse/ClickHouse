@@ -201,6 +201,8 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
         {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
         {"_iceberg_metadata_file_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_last_updated_sequence_number", makeNullable(std::make_shared<DataTypeUInt64>())},
+        {"_row_id", makeNullable(std::make_shared<DataTypeUInt64>())},
     };
 }
 
@@ -419,6 +421,31 @@ ColumnPtr getFilterByPathAndFileIndexes(
     return block.getByName("_idx").column;
 }
 
+/// Builds a `Nullable(UInt64)` row lineage column out of the values materialized in the data file,
+/// falling back to the value derived from the file metadata wherever the file has no value.
+template <typename FallbackFn>
+static ColumnPtr buildRowLineageColumn(size_t num_rows, const IColumn * materialized, FallbackFn && fallback)
+{
+    auto column = ColumnUInt64::create();
+    auto null_map = ColumnUInt8::create();
+    column->reserve(num_rows);
+    null_map->reserve(num_rows);
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        std::optional<UInt64> value;
+        if (materialized && !materialized->isNullAt(row))
+            value = materialized->getUInt(row);
+        else
+            value = fallback(row);
+
+        column->insertValue(value.value_or(0));
+        null_map->insertValue(value.has_value() ? 0 : 1);
+    }
+
+    return ColumnNullable::create(std::move(column), std::move(null_map));
+}
+
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & requested_virtual_columns,
@@ -532,6 +559,50 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
+        else if (virtual_column.name == "_last_updated_sequence_number")
+        {
+            if (virtual_values.materialized_last_updated_sequence_numbers)
+            {
+                chunk.addColumn(buildRowLineageColumn(
+                    chunk.getNumRows(),
+                    virtual_values.materialized_last_updated_sequence_numbers.get(),
+                    [&](size_t) { return virtual_values.last_updated_sequence_number; }));
+            }
+            else if (virtual_values.last_updated_sequence_number)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.last_updated_sequence_number)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_row_id")
+        {
+            std::vector<UInt64> row_positions;
+#if USE_PARQUET
+            if (auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>(); chunk_info && virtual_values.first_row_id)
+            {
+                const auto & applied_filter = chunk_info->applied_filter;
+                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : chunk.getNumRows();
+                row_positions.reserve(chunk.getNumRows());
+                for (size_t i = 0; i < num_indices; ++i)
+                    if (!applied_filter.has_value() || applied_filter.value()[i])
+                        row_positions.push_back(chunk_info->row_num_offset + i);
+            }
+#endif
+            if (row_positions.empty() && !virtual_values.materialized_row_ids)
+            {
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+                continue;
+            }
+
+            chunk.addColumn(buildRowLineageColumn(
+                chunk.getNumRows(),
+                virtual_values.materialized_row_ids.get(),
+                [&](size_t row) -> std::optional<UInt64>
+                {
+                    if (row >= row_positions.size())
+                        return std::nullopt;
+                    return *virtual_values.first_row_id + row_positions[row];
+                }));
+        }
         else if (virtual_column.name == "_table")
         {
             if (!virtual_values.storage_id.empty())
@@ -554,7 +625,8 @@ bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_c
     return std::any_of(
         requested_virtual_columns.begin(),
         requested_virtual_columns.end(),
-        [](const auto & col) { return col.name == "_row_number"; });
+        [](const auto & col)
+        { return col.name == "_row_number" || col.name == "_row_id" || col.name == "_last_updated_sequence_number"; });
 }
 
 static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)

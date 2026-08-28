@@ -6,7 +6,6 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -84,143 +83,39 @@ namespace QueryPlanOptimizations
 
 static String dumpStatsForLogs(const RelationStats & stats);
 
-/// Functions whose output value is taken directly from their first argument, so the output's
-/// distinct values are bounded by that argument's. These are all deterministic.
-static bool isValuePassThroughFunction(std::string_view function_name)
-{
-    return function_name == "materialize" || function_name == "_CAST"
-        || function_name == "CAST" || function_name == "toNullable";
-}
-
-/// How a node relates its output NDV to the NDV of its first child's source column.
-struct ValueHop
-{
-    bool propagates = false;  /// output inherits the source NDV of children[0]
-    UInt64 ndv_delta = 0;     /// extra distinct values the hop can introduce over the source
-    bool preserves_width = false;  /// output value bytes equal the source's (relabel or same-type hop)
-};
-
-/// A node propagates a source column's NDV when it just relabels (ALIAS) or applies a value-
-/// preserving transform to its first argument. `ndv_delta` is how much the output NDV can exceed it.
-static ValueHop describeValueHop(const ActionsDAG::Node & node)
-{
-    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return {.propagates = true, .preserves_width = true};
-
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
-        return {};
-
-    /// A deterministic single-argument function has at most as many distinct values as its argument
-    /// (e.g. `toYear(date)`); the whitelisted functions pass their first argument's value through.
-    const bool propagates = isValuePassThroughFunction(node.function_base->getName())
-        || (node.children.size() == 1 && node.function_base->isDeterministic());
-    if (!propagates)
-        return {};
-
-    /// NDV counts only non-null values. A hop turning a Nullable first argument into a non-Nullable
-    /// result (e.g. `isNull`, or `CAST` dropping nullability) maps NULL to one extra counted value.
-    const bool collapses_null = isNullableOrLowCardinalityNullable(node.children[0]->result_type)
-        && !isNullableOrLowCardinalityNullable(node.result_type);
-    /// NDV can survive a value-changing hop (`toString(k)` has k's NDV), but the value bytes cannot;
-    /// only a hop that keeps the underlying type keeps the width. `Nullable`/`LowCardinality`
-    /// wrapping (the analyzer's `toNullable`/`CAST` around join keys) leaves the value bytes intact.
-    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
-        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
-    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width};
-}
-
-/// How an output column relates to the source input column it traces back to.
-struct BackTrackedColumn
-{
-    UInt64 ndv_offset = 0;   /// add to the source NDV to bound the output NDV
-    bool preserves_width = true; /// value bytes unchanged along the whole path
-};
-
-/// For each output column that traces back to `input_name`, describe the path to it.
-static std::unordered_map<String, BackTrackedColumn> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
-{
-    std::unordered_set<const ActionsDAG::Node *> input_nodes;
-    for (const auto * node : actions.getInputs())
-    {
-        if (input_name == node->result_name)
-            input_nodes.insert(node);
-    }
-
-    /// Path from a node down to a source input, or nullopt if it does not trace back to one.
-    /// Memoized so every node, including shared intermediates, is resolved once regardless of order.
-    std::unordered_map<const ActionsDAG::Node *, std::optional<BackTrackedColumn>> path_to_input;
-
-    /// Iterative post-order DFS (explicit stack to avoid deep recursion on long expression chains).
-    /// Each entry is a node paired with whether its source child has already been pushed.
-    for (const auto * out_node : actions.getOutputs())
-    {
-        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
-        nodes_to_process.push({out_node, false});
-        while (!nodes_to_process.empty())
-        {
-            auto [node, child_pushed] = nodes_to_process.top();
-
-            if (path_to_input.contains(node))
-            {
-                nodes_to_process.pop();
-                continue;
-            }
-            if (input_nodes.contains(node))
-            {
-                path_to_input[node] = BackTrackedColumn{};
-                nodes_to_process.pop();
-                continue;
-            }
-
-            ValueHop hop = describeValueHop(*node);
-            if (hop.propagates && !child_pushed)
-            {
-                nodes_to_process.top().second = true;
-                nodes_to_process.push({node->children[0], false});
-                continue;
-            }
-
-            std::optional<BackTrackedColumn> result;
-            if (hop.propagates)
-            {
-                if (auto source_path = path_to_input[node->children[0]])
-                    result = BackTrackedColumn{
-                        .ndv_offset = source_path->ndv_offset + hop.ndv_delta,
-                        .preserves_width = source_path->preserves_width && hop.preserves_width};
-            }
-            path_to_input[node] = result;
-            nodes_to_process.pop();
-        }
-    }
-
-    std::unordered_map<String, BackTrackedColumn> output_paths;
-    for (const auto * out_node : actions.getOutputs())
-    {
-        if (auto path = path_to_input[out_node])
-            output_paths[out_node->result_name] = *path;
-    }
-    return output_paths;
-}
-
-/// If we have stats for column names for storage we need to find corresponding internal column names
+/// If we have stats for storage column names, find the corresponding `ActionsDAG` outputs.
+/// Both identity and weaker NDV-bound lineage are valid for this existing statistics use.
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
-    std::unordered_map<String, ColumnStats> original = std::move(mapped);
-    mapped = {};
-    for (const auto & [name, source_stats] : original)
+    /// Column statistics are usually absent; do not pay for a full lineage walk of the
+    /// `ActionsDAG` when there is nothing to remap.
+    if (mapped.empty())
+        return;
+
+    std::unordered_map<String, ColumnStats> original;
+    original.swap(mapped);
+
+    const auto lineage = traceActionsDAGLineage(actions);
+    const auto & inputs = actions.getInputs();
+    const auto & outputs = actions.getOutputs();
+    for (const auto & output_lineage : lineage)
     {
-        for (const auto & [remapped, back_tracked] : backTrackColumnsInDag(name, actions))
-        {
-            ColumnStats stats = source_stats;
-            /// Add the offset, guarding against overflow when the source NDV is near the maximum.
-            if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - back_tracked.ndv_offset)
-                stats.num_distinct_values += back_tracked.ndv_offset;
-            /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
-            /// width to unknown.
-            if (!back_tracked.preserves_width)
-                stats.avg_bytes = 0;
-            mapped[remapped] = stats;
-        }
+        if (!output_lineage.input)
+            continue;
+
+        const auto stats_it = original.find(inputs[output_lineage.input->input_position]->result_name);
+        if (stats_it == original.end())
+            continue;
+
+        ColumnStats stats = stats_it->second;
+        /// Add the offset, guarding against overflow when the source NDV is near the maximum.
+        if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
+            stats.num_distinct_values += output_lineage.input->ndv_delta;
+        /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
+        /// width to unknown.
+        if (!output_lineage.input->preserves_width)
+            stats.avg_bytes = 0;
+        mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
 }
 

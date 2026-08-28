@@ -38,6 +38,7 @@ struct GroupConcatData : public GroupConcatDataBase
     UInt64 getSize(size_t i) const;
     UInt64 getString(size_t i) const;
 
+    void insertString(std::string_view str, Arena * arena);
     void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena);
 };
 

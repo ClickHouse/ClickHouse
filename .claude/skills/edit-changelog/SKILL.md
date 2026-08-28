@@ -49,6 +49,25 @@ Each edit type below was observed at least twice across the surveyed
 releases. For real before/after examples, consult the diffs listed at the
 bottom under "How to use the surveyed past releases".
 
+**Retention rule — read this before deleting anything.** An entry that the
+autogenerator put under one of the real categories (`Backward Incompatible
+Change`, `New Feature`, `Experimental Feature`, `Performance Improvement`,
+`Improvement`, `Bug Fix`) is never deleted. Rewrite it (§5), merge it into
+another bullet (§7), move it to another category (§6) — but its
+`[#NNNNN](...)` link stays in the file. Deletion is confined to three
+places: the `NOT FOR CHANGELOG / INSIGNIFICANT` and `NO CL ENTRY` bullets
+that carry no user-visible change (§3), the `Build/Testing/Packaging
+Improvement` entries that are pure CI plumbing (§4), and an entry that a
+revert cancels out — and that no later revert of that revert brings back
+(§2). "This looks unimportant" is not a reason to drop a real entry — an
+entry lost here is lost for good, because the changelog is generated once
+per range.
+
+The `NightlyChangelog` CI job enforces exactly this: a run whose edit drops
+such a link fails with `Entries disappeared in the edit without a matching
+revert`, and the raw entries stay unedited until someone fixes it. That was
+the state of the 26.8 changelog for twelve days in August 2026.
+
 ### 1. Release header
 
 The autogenerator emits:
@@ -77,27 +96,137 @@ These are revert PRs (`Revert "..."`) that the autogenerator includes
 because the revert PR has no `Changelog entry`. Walk every bullet in this
 section. For each:
 
+**A revert is not always in this section.** The autogenerator renders the
+author's own `Changelog entry` under the author's own `Changelog category`, so
+a revert whose author filled both in appears as an ordinary bullet — under
+`Improvement`, reading "Disable the setting again", with nothing to give it
+away. When a bullet undoes something you have seen in this release, check its
+PR (`gh pr view <N> --json title,body`; the title of a revert says `Revert`,
+and GitHub adds a `Reverts owner/repo#NNNNN` line to the body) and treat it by
+the rules below. Such a revert's own bullet is deleted with the entry it
+cancels, exactly like one from this section — the "never delete a real entry"
+rule does not protect it, because it is not a change that ships. A revert that
+undoes something of *this* release and something from an earlier one at the
+same time is the exception: the second half is user-visible, so it keeps an
+entry of its own (case 5 below) — its link appended to the entry it re-applied
+is an annotation on that entry, not a substitute for its own.
+
+"Something of this release" includes a PR whose entry was pruned earlier under
+§3 or §4: the change was still made and undone inside the range, so the revert
+has no user-visible effect either. It does *not* include a PR whose entry is
+already in a released section — merged into the last release branch after this
+cycle started, so users have the behaviour — and reverting that is case 5.
+
+Deleting the entry is only half of it — the revert must not be left behind as
+an entry of its own either, whatever category the autogenerator gave it. The
+user should see no trace of either side. The one place such a PR still appears
+is as the appended link on an entry it *re-applied* (§2.5), where it records
+the re-apply rather than describing a change.
+
 1. Read the title of the revert PR (`gh pr view <N> --json title,body`) to
    identify which earlier PR it reverts. Most reverts have a title of the
-   form `Revert "<original PR title>"` or `Revert #NNNNN`.
+   form `Revert "<original PR title>"` or `Revert #NNNNN`, and GitHub puts a
+   `Reverts owner/repo#NNNNN` line into the body.
 2. Search the rest of the in-progress changelog for the matching entry by
    PR number, title, or topic.
-3. **If the original PR is in the same release range** and is being
-   reverted: delete that entry from its category. Do **not** keep the
-   revert PR as a separate bullet — the user should see no trace of either.
-4. **If the original PR shipped in an earlier release** and the revert is
+3. **Check whether this revert is itself reverted** before you conclude
+   anything — by a `Revert "Revert "..."""` title elsewhere in the section,
+   or by a body containing `Reverts owner/repo#<this PR>`. If it is, the
+   change ships in this release: go to step 6 and leave the original entry
+   in place. A three-PR chain (change, revert, revert of the revert) sits
+   entirely inside one range often enough to matter, and when the release is
+   edited incrementally, the chain is spread over several of those
+   increments (step 6).
+4. **If the original PR is in the same release range** and stays reverted:
+   delete that entry from its category. Do **not** keep the revert PR as a
+   separate bullet — the user should see no trace of either.
+5. **If the original PR shipped in an earlier release** and the revert is
    meant to be visible to users: rewrite the revert into a normal entry
    under the appropriate category (often Bug Fix or Backward Incompatible
    Change), describing the user-visible effect of the revert.
-5. **If the revert PR is itself a revert-of-revert** (i.e. it re-applies a
+6. **If the revert PR is itself a revert-of-revert** (i.e. it re-applies a
    change that was previously reverted): keep the original entry, append
    the second revert's PR/author link to it so both PR numbers are
    recorded, and delete the intervening revert from the section.
-6. After processing, delete any leftover bullets and the section header
+
+   Real example from 26.8: `#109946` fixed the propagation of settings in
+   `accurateCastOrDefault`, `#114911` reverted it, `#114912` reverted that
+   revert. All three are in the range. The result is one `Bug Fix` bullet —
+   `#109946`'s entry with `#114912`'s link appended — and no trace of
+   `#114911`. Deleting `#109946` "because it was reverted" drops a fix that
+   ships in the release.
+
+   When a release is edited in daily increments, the three PRs arrive on
+   three different days: the entry was integrated on the first day, deleted
+   on the second, and the third brings only the revert of the revert. The
+   original entry is then not in the file to be kept — it has to be re-added
+   from the text it had when it was deleted, which the caller supplies (the
+   `NightlyChangelog` job lists such entries with their previous text and
+   category under "Entries to restore"). If nothing supplies it, reconstruct
+   the entry from the original PR with `gh pr view <N> --json title,body`; do
+   not leave the release without it.
+
+   A bullet that covered several PRs comes back as one bullet carrying all of
+   them, not as one bullet each — splitting it undoes the merge of §7. That
+   includes the PRs of that bullet which never left: re-adding the entry
+   beside the surviving bullet duplicates the prose even though no PR link
+   repeats, so merge it into that bullet instead. A revert can be one of those
+   PRs — a revert of an earlier release is a normal entry (case 5) and can have
+   been merged like any other; what is *not* a PR of the bullet is the link a
+   previous restoration appended to record a re-apply. And if
+   only some of those PRs were re-applied, leave the others' links off: their
+   reverts still stand, so those changes are not in the release, even though
+   the recorded text attributes them.
+
+   The link of the PR that re-applied the change goes on the restored entry,
+   as in the main rule above: its own revert bullet is deleted, so that link
+   is the only trace of the re-apply left in the release. A change can be
+   taken out and put back more than once in a cycle — `#109946` out by
+   `#114911`, back by `#114912`, out by `#115500`, back by `#116000` — and
+   then *every* PR that put it back belongs on the entry, not just the first.
+   The ones that took it out leave no trace.
+
+   One revert can revert several PRs at once. When such a revert is itself
+   reverted, every entry it brings back records that revert-of-revert, so the
+   same link appears on each of them — that is not the same as one entry
+   written twice. And a revert rewritten into a visible entry (case 5 above)
+   is an entry like any other: if it is deleted and later restored, it takes
+   the link of the PR that restored it too.
+
+   An entry the autogenerator had filed under `NOT FOR CHANGELOG` or as CI
+   plumbing and that was never added to the release is *offered* back, not
+   required: §3 and §4 were free to prune it, so decide again whether it
+   describes a user-visible change. One that had already been added is
+   required — that decision was made when it went in. What matters is
+   that the choice is possible — the entry is quoted for you because nothing
+   in the file remembers it any more.
+
+   When the restoration merges into a surviving bullet, it lands under *that*
+   bullet's current category — which a later edit may have moved. Otherwise,
+   restore it under the category it was in, which is not necessarily the one
+   its PR declares: the entry may have been promoted out of `NOT FOR
+   CHANGELOG` (§3) or moved (§6) by the edit that first added it, and
+   re-deriving the category from the PR would undo that.
+
+   If the deleted entry shared a bullet with other PRs (§7) and those are
+   still in the in-progress section, that bullet is still there too: append
+   the missing PR link to it instead of adding a second bullet. The same PR
+   appearing in an already-released section further down is not that bullet.
+   No PR may end up attributed twice within one section — one
+   `[#NNNNN](...) ([Author](...))` per PR.
+
+   A restored PR needs its own attribution, `[#NNNNN](...) ([Author](...))`.
+   A bare `[#NNNNN](...)` link inside somebody else's bullet — a
+   `This closes` reference, a follow-up named in prose — is not that PR's
+   entry and does not count as restoring it.
+7. After processing, delete any leftover bullets and the section header
    itself.
 
 The goal is that the final changelog reflects the *net* effect on the
-release: a PR that landed and then got reverted shouldn't appear at all.
+release: a PR that landed and then got reverted shouldn't appear at all, and
+one whose revert was itself reverted appears with every PR that put it back.
+Both halves are enforced by the `NightlyChangelog` job — keeping a reverted
+entry fails it just as dropping a real one does.
 
 ### 3. Drop entire `#### NOT FOR CHANGELOG / INSIGNIFICANT` section, but rescue user-visible entries
 
@@ -112,7 +241,9 @@ Walk every bullet in this section. For each:
   entry instead of promoting an empty one.
 - Otherwise — delete it.
 
-Then delete the section header itself.
+Then delete the section header itself. This section, `NO CL ENTRY` and the
+CI plumbing of §4 are the only places where entries are deleted; see the
+retention rule above.
 
 #### `This closes` / `Closes #N` / `Fixes #N` entries
 
@@ -262,6 +393,12 @@ as a noun (e.g. "Faster Float-to-String conversion").
 
 Observed across releases:
 
+- `Clickhouse` / `clickHouse` / `Click House` → `ClickHouse`. The
+  `clickhouse_spelling` style check accepts only `ClickHouse` and the token
+  spellings `clickhouse` and `CLICKHOUSE`, so a misspelling inherited from a
+  pull request body fails the CI of the changelog pull request itself (it did,
+  on 2026-08-25).
+- `loose` → `lose`
 - `Propogate` → `Propagate`
 - `on fly` → `on the fly`
 - `FIx` → `Fix`
