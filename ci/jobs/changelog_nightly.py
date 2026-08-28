@@ -674,11 +674,37 @@ def analyze_reverts(text, anchor):
     # into. This is not the question `disappeared_entries` asks of a raw entry
     # that never made it in, where a released copy is a legitimate reason for
     # it not to be in this section at all.
-    # The other side of `restore`: a recorded entry whose revert still stands
-    # stays out. Worth stating separately because a merged bullet mixes the
-    # two - the same recorded line can hold an entry to bring back and one
-    # that has to be left off.
-    withheld = {pr: credits[pr] for pr in deleted if pr in credits}
+    # The mirror of `restore`, and of `credits`: `credits` says a deletion is
+    # allowed, this says it is required. Every entry an uncancelled revert
+    # licenses the deletion of has to be out of the section - not only the
+    # ones an earlier run already deleted (a revert arriving today licenses a
+    # deletion the agent still has to make), and not only by leaving them out
+    # (a recorded merged bullet can attribute one next to an entry that is
+    # being restored).
+    withheld = dict(credits)
+    # Which pull requests have to carry which re-applying links. Asked of every
+    # entry that ships and was ever reverted, not only of the restorations:
+    # when the whole chain arrives in one raw block the entry never left the
+    # section, so there is nothing to restore and the link would go unchecked.
+    reapply = {
+        pr: reapplied_by([pr])
+        for pr in reverted_by
+        if pr not in credits and pr not in targets
+    }
+    reapply = {pr: links for pr, links in reapply.items() if links}
+    amend = [
+        {
+            "pr": pr,
+            "reapplied_by": links,
+            "line": entry_placement(section, pr)[1],
+        }
+        for pr, links in sorted(reapply.items(), key=lambda kv: int(kv[0]))
+        if is_attributed(section, pr)
+        and any(
+            not is_attributed(entry_placement(section, pr)[1], link)
+            for link in links
+        )
+    ]
     missing = group_restorations(
         {
             pr: record
@@ -696,6 +722,8 @@ def analyze_reverts(text, anchor):
         "restore": restore,
         "missing": missing,
         "withheld": withheld,
+        "reapply": reapply,
+        "amend": amend,
         "unresolved": unresolved,
         "ledger": [
             f"{REVERT_TRAILER} {pr} {target} {titles[pr]}".rstrip()
@@ -971,6 +999,17 @@ def _edit_prompt(version, reverts, previous_error=None):
 Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section as a single bullet — one bullet carrying all of the pull requests listed with it, never one bullet each — under the `#### <Category>` header named with it, carrying the links of every pull request listed as having re-applied it — some may already be on the recorded line from an earlier restoration, append the ones that are not — and do not add a bullet for the reverts themselves. Use that category as given: it is where the entry was when it was deleted, which is a decision of the earlier edit (an entry promoted out of `NOT FOR CHANGELOG` or moved between categories does not go back to the category of its pull request). No pull request may end up attributed twice in the section.
 {entries}
 """
+    amend = ""
+    if reverts["amend"]:
+        entries = "\n".join(
+            f"   - `#{item['pr']}`, re-applied by "
+            f"{_pr_list(item['reapplied_by'])}:\n     {item['line']}"
+            for item in reverts["amend"]
+        )
+        amend = f"""
+Entries to amend. These entries are already in the in-progress section and stay, because the reverts of their changes were themselves reverted. Append to each of them the link of every pull request listed as having re-applied it, if it is not there yet, and delete the raw revert bullets — a revert that was taken back leaves no trace of its own, so that link is the only record of the pull request that put the change back:
+{entries}
+"""
     retry = ""
     if previous_error:
         retry = f"""
@@ -1000,7 +1039,7 @@ Task:
 6. Do not commit. Do not modify any file other than {CHANGELOG_FILE}. Do not touch the sections of already-released versions or anything below them. Keep the `FIXME` placeholders in the header and table of contents — the release manager fills in the date and links at release time.
 
 The `gh` CLI is authenticated; use `gh pr view <N> --json title,body` when the skill requires consulting a pull request (reverts, unclear entries).
-{restore}{retry}"""
+{restore}{amend}{retry}"""
 
 
 def disappeared_entries(old_text, text, anchor):
@@ -1152,23 +1191,26 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     # bullet is deleted. Checked on the bullet the entry landed on, not merely
     # somewhere in the section.
     unrecorded = set()
-    for group in reverts["missing"]:
-        for pr in group["prs"]:
-            bullet = entry_placement(section, pr)[1]
-            for reapply in group["reapplied_by"]:
-                if not is_attributed(bullet, reapply):
-                    unrecorded.add(f"#{reapply} on the entry of #{pr}")
+    for pr, links in reverts["reapply"].items():
+        bullet = entry_placement(section, pr)[1]
+        if not bullet:
+            # Not in this section: left out (`not_restored` above already
+            # failed on that if it was recorded) or published earlier.
+            continue
+        for reapply in links:
+            if not is_attributed(bullet, reapply):
+                unrecorded.add(f"#{reapply} on the entry of #{pr}")
     if unrecorded:
         return (
             f"Restored entries do not record the pull request that re-applied "
             f"the change ({sorted(unrecorded)}); its link is appended to the "
             f"entry, so both pull request numbers stay in the changelog"
         )
-    # The mirror of the restoration: an entry whose revert still stands has no
-    # place in the section. It is not only a matter of not putting it back -
-    # a recorded merged bullet can attribute it next to an entry that *is*
-    # being restored, and replaying that line unchanged advertises a change
-    # that is out of the release.
+    # The mirror of the restoration, and of the disappearance check above:
+    # that one allows a deletion the reverts license, this one requires it.
+    # An entry whose revert stands has no place in the section, whether it
+    # was left there, or brought back as part of a merged bullet restored for
+    # another pull request.
     resurrected = sorted(
         f"#{pr} (reverted by #{revert})"
         for pr, revert in reverts["withheld"].items()

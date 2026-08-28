@@ -66,24 +66,29 @@ BUG_FIX = "Bug Fix (user-visible misbehavior in an official stable release)"
 LEDGER_DELETED = f"Changelog-deleted-entry: 109946 [{BUG_FIX}] {FIX}"
 
 
-def changelog(entries, raw_bullets=None, released=(), raw_category="NO CL ENTRY"):
-    """A minimal CHANGELOG.md: table of contents, an optional raw block (under
-    `raw_category`), the in-progress section, and one already-released section
-    (`released`)."""
+def changelog(
+    entries,
+    raw_bullets=None,
+    released=(),
+    raw_category="NO CL ENTRY",
+    raw_sections=None,
+):
+    """A minimal CHANGELOG.md: table of contents, an optional raw block, the
+    in-progress section, and one already-released section (`released`).
+
+    The raw block is `raw_bullets` under `raw_category`, or `raw_sections` -
+    a list of (category, bullets) - for the shape the generator really emits,
+    several category headers inside one block."""
     raw = ""
-    if raw_bullets is not None:
-        raw = "\n".join(
-            [
-                cl.RAW_BEGIN,
-                "",
-                f"#### {raw_category}",
-                "",
-                *raw_bullets,
-                "",
-                cl.RAW_END,
-                "",
-            ]
-        )
+    sections = raw_sections
+    if sections is None and raw_bullets is not None:
+        sections = [(raw_category, raw_bullets)]
+    if sections is not None:
+        lines = [cl.RAW_BEGIN]
+        for category, bullets in sections:
+            lines += ["", f"#### {category}", "", *bullets]
+        lines += ["", cl.RAW_END, ""]
+        raw = "\n".join(lines)
     return "\n".join(
         [
             "## Table of Contents",
@@ -253,6 +258,8 @@ def test_branch_without_a_ledger_keeps_the_previous_behaviour(monkeypatch):
         "restore": {},
         "missing": [],
         "withheld": {},
+        "reapply": {},
+        "amend": [],
         "unresolved": [],
         "ledger": [],
     }
@@ -957,7 +964,9 @@ def test_a_still_reverted_sibling_is_not_resurrected(monkeypatch, tmp_path):
     old_text = changelog([], [REVERT_OF_MERGED])
     reverts = analyze(monkeypatch, old_text, SPLIT_LEDGER)
     assert reverts["restore"] == {"109000": (BUG_FIX, MERGED)}
-    assert reverts["withheld"] == {"109006": "115100"}
+    # `#109006`, whose revert stands, and `#115000`, the revert `#115001` took
+    # back - both have to be out of the section.
+    assert reverts["withheld"] == {"109006": "115100", "115000": "115001"}
     assert [group["withheld"] for group in reverts["missing"]] == [["109006"]]
     prompt = cl._edit_prompt(VERSION, reverts)
     assert "Leave `#109006` off that bullet" in prompt
@@ -1114,6 +1123,84 @@ def test_a_longer_chain_records_every_reapply(monkeypatch, tmp_path):
             tmp_path,
             old_text,
             changelog([with_reapply(once_restored, "116000")]),
+            reverts,
+        )
+        is None
+    )
+
+
+STRICT = "Bug Fix (user-visible misbehavior in an official stable release)"
+
+
+def test_keeping_a_reverted_entry_is_rejected(monkeypatch, tmp_path):
+    """`credits` says a deletion is allowed; it also has to be required. The
+    fix and its revert arrive in the same raw block, so the change is out of
+    the release and the entry must not be published."""
+    old_text = changelog(
+        [], raw_sections=[(STRICT, [FIX]), ("NO CL ENTRY", [REVERT])]
+    )
+    reverts = analyze(monkeypatch, old_text, [])
+    assert reverts["credits"] == {"109946": "114911"}
+    assert reverts["withheld"] == {"109946": "114911"}
+
+    kept = run_verify_edit(monkeypatch, tmp_path, old_text, changelog([FIX]), reverts)
+    assert kept is not None
+    assert "whose revert still stands" in kept
+    assert "#109946 (reverted by #114911)" in kept
+
+    # Deleting it, which the revert licenses, passes.
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([]), reverts) is None
+    )
+
+
+def test_a_surviving_entry_must_pick_up_the_reapply(monkeypatch, tmp_path):
+    """The whole chain in one raw block while the entry is already in the
+    section: nothing is restored from the ledger, so the re-apply link would
+    have gone unchecked. `#114912` has no bullet of its own, so the link on
+    `#109946`'s entry is its only record."""
+    old_text = changelog(
+        [FIX], raw_sections=[("NO CL ENTRY", [REVERT, REVERT_OF_REVERT])]
+    )
+    reverts = analyze(monkeypatch, old_text, [])
+    assert reverts["missing"] == []
+    assert reverts["reapply"] == {"109946": ["114912"]}
+    assert [item["pr"] for item in reverts["amend"]] == ["109946"]
+    prompt = cl._edit_prompt(VERSION, reverts)
+    assert "Entries to amend" in prompt
+    assert "`#109946`, re-applied by `#114912`" in prompt
+
+    # Both raw bullets dropped, but nothing records #114912.
+    bare = run_verify_edit(monkeypatch, tmp_path, old_text, changelog([FIX]), reverts)
+    assert bare is not None
+    assert "do not record the pull request that re-applied the change" in bare
+    assert "#114912 on the entry of #109946" in bare
+
+    # The cancelled revert left visible instead.
+    visible = run_verify_edit(
+        monkeypatch,
+        tmp_path,
+        old_text,
+        changelog(
+            [
+                with_reapply(FIX, "114912"),
+                "* Reverted the fix. "
+                "[#114911](https://github.com/ClickHouse/ClickHouse/pull/114911) "
+                "([Someone](https://github.com/someone)).",
+            ]
+        ),
+        reverts,
+    )
+    assert visible is not None
+    assert "whose revert still stands" in visible
+    assert "#114911 (reverted by #114912)" in visible
+
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(FIX, "114912")]),
             reverts,
         )
         is None

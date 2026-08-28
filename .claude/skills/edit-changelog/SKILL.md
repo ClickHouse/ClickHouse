@@ -173,7 +173,10 @@ section. For each:
    itself.
 
 The goal is that the final changelog reflects the *net* effect on the
-release: a PR that landed and then got reverted shouldn't appear at all.
+release: a PR that landed and then got reverted shouldn't appear at all, and
+one whose revert was itself reverted appears with every PR that put it back.
+Both halves are enforced by the `NightlyChangelog` job — keeping a reverted
+entry fails it just as dropping a real one does.
 
 ### 3. Drop entire `#### NOT FOR CHANGELOG / INSIGNIFICANT` section, but rescue user-visible entries
 
