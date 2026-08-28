@@ -588,7 +588,9 @@ def test_neither_runner_patch_clears_the_checkpointed_rows():
             "path moved, so re-verify by hand that it still keeps the checkpointed rows"
         )
         for block in blocks:
-            body = ast.Module(body=block.body, type_ignores=[])
+            # Both arms: the guard can be inverted, and an `else` that clears the rows is
+            # as destructive as a body that does.
+            body = ast.Module(body=block.body + block.orelse, type_ignores=[])
             called = {
                 node.func.attr
                 for node in ast.walk(body)
