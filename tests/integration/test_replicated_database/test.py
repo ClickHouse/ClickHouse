@@ -425,10 +425,17 @@ def test_alter_drop_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
+        # A part covered by a pending drop is never fetched, so sync before dropping.
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part")
+            == "123\n"
+        )
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
         # The DROP operation is still replicated at the table engine level
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
         )
@@ -460,11 +467,14 @@ def test_alter_detach_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
+        # A part covered by a pending detach is never fetched, so sync before detaching.
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
     if engine == "ReplicatedMergeTree":
         # The detach operation is still replicated at the table engine level
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
         assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
     else:
         assert dummy_node.query(detached_parts_query) == ""
@@ -487,6 +497,11 @@ def test_alter_drop_detached_part(started_cluster, engine):
         f"CREATE TABLE {database}.alter_drop_detached (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
     main_node.query(f"INSERT INTO {database}.alter_drop_detached VALUES (123)")
+    if engine == "ReplicatedMergeTree":
+        # A part covered by a pending detach is never fetched, so sync before detaching.
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
+        )
     main_node.query(
         f"ALTER TABLE {database}.alter_drop_detached DETACH PART '{part_name}'"
     )
@@ -500,6 +515,10 @@ def test_alter_drop_detached_part(started_cluster, engine):
     )
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_drop_detached'"
     assert main_node.query(detached_parts_query) == ""
+    if engine == "ReplicatedMergeTree":
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
+        )
     assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
 
     main_node.query(f"DROP DATABASE {database} SYNC")
@@ -1370,7 +1389,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("CREATE TABLE table_structure.mem (n int) ENGINE=Memory")
-    dummy_node.query("DETACH DATABASE table_structure")
+    dummy_node.query("DETACH DATABASE table_structure SYNC")
 
     settings = {"distributed_ddl_task_timeout": 0}
     main_node.query(
@@ -1379,7 +1398,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    competing_node.query("DETACH DATABASE table_structure")
+    competing_node.query("DETACH DATABASE table_structure SYNC")
 
     main_node.query(
         "ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings
@@ -2039,13 +2058,14 @@ def test_timeseries(started_cluster):
         "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
     )
 
+    # The outer table + 4 inner tables (samples, tags, metrics and the on-by-default recent samples).
     for node in [competing_node, main_node, dummy_node]:
         assert node.query(
             """
             SYSTEM SYNC DATABASE REPLICA ts_db;
             SELECT count() FROM system.tables WHERE database='ts_db';
             """, timeout=10
-        ) == "4\n", f"Node {node.name} failed"
+        ) == "5\n", f"Node {node.name} failed"
 
 
 def test_mv_false_cyclic_dependency(started_cluster):
@@ -2107,6 +2127,38 @@ def test_ignore_cluster_name_setting(started_cluster):
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
+
+def test_attach_from(started_cluster):
+    db_name_replicated = "test_attach_from_replicated"
+    db_name_atomic = "test_attach_from_atomic"
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name_replicated} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {db_name_atomic} SYNC")
+
+        node.query(
+            f"CREATE DATABASE {db_name_replicated} ENGINE = Replicated('/clickhouse/databases/{db_name_replicated}', '{{shard}}', '{{replica}}')"
+        )
+        node.query(f"CREATE DATABASE {db_name_atomic} ENGINE = Atomic")
+        node.query(
+            f"CREATE TABLE {db_name_atomic}.src (a UInt32) ENGINE=MergeTree() ORDER BY a"
+        )
+        node.query(f"INSERT INTO {db_name_atomic}.src SELECT 1")
+
+    main_node.query(
+        f"CREATE TABLE {db_name_replicated}.dst (a UInt32) ENGINE=MergeTree() ORDER BY a"
+    )
+    main_node.query(
+        f"ALTER TABLE {db_name_replicated}.dst ATTACH PARTITION tuple() FROM {db_name_atomic}.src"
+    )
+
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name_replicated}")
+
+    assert main_node.query(f"SELECT count(*) FROM {db_name_replicated}.dst") == "1\n"
+    assert dummy_node.query(f"SELECT count(*) FROM {db_name_replicated}.dst") == "0\n"
+
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name_replicated} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {db_name_atomic} SYNC")
 
 def test_alias_with_dropped_target(started_cluster):
     db_name = "test_alias_dropped"

@@ -3,10 +3,10 @@
     {
       "group": "ClickHouse 소개",
       "pages": [
+        "ko/resources/about/index",
         "ko/resources/about/adopters",
         "ko/resources/about/support"
-      ],
-      "root": "ko/resources/about/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-about.svg",

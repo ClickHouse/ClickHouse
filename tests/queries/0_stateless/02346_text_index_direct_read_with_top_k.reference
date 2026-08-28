@@ -1,0 +1,8 @@
+top-K applied	1
+aggregate over subquery	1
+plain select	1
+single sort column	1
+limit with offset	1
+sort column selected first	1
+results	54000	9000
+results reference	54000	9000
