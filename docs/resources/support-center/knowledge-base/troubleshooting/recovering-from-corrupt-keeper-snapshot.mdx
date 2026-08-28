@@ -263,6 +263,14 @@ Set both of the following under `<keeper_server>` and restart the node:
 </keeper_server>
 ```
 
+<Note>
+**Requires the in-memory nodes storage**
+
+The cleanup is implemented only by the in-memory nodes storage. If `use_lsmt_storage` is enabled under
+`<coordination_settings>`, Keeper refuses to start with `remove_orphaned_nodes_on_startup` set: disable
+`use_lsmt_storage` for the recovery restart, then re-enable it after a successful startup.
+</Note>
+
 Keeper then drops the orphaned subtrees and starts. The removal is reported in the log at `WARNING`
 level as two lines: one with the total number of removed nodes and the roots of the removed orphaned
 subtrees, and one with the paths missing from the snapshot that bound the damaged region. Descendants
@@ -280,7 +288,8 @@ defaults once the node is up.
 Keeper deliberately refuses to start if a local log entry above the snapshot references the damaged
 region: a removed node, anything below it, or any parent of a removed subtree. A parent counts as a
 conflict because its set of children no longer matches the tree the log was written against, so even an
-entry that only touches the parent could replay differently. Replaying any such entry against the
+entry that only touches the parent — including a create or remove of a *sibling* under it, which updates
+the parent's repaired child counters — could replay differently. Replaying any such entry against the
 repaired tree would silently produce a different state. If that happens, recover the node from a healthy
 peer instead: stop it, clear its coordination directory, and let it re-sync from the leader, or use
 strategy 1 or 2.
