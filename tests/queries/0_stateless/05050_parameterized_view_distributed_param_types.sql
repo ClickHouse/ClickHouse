@@ -76,7 +76,7 @@ INSERT INTO t_pv VALUES ('a1', 'y', '2020-01-02', '00000000-0000-0000-0000-00000
 -- serialized plan instead of the re-rendered SQL whose text this test is about.
 SELECT 'forwarded-in', count() FROM t_pv_dist
 WHERE (name, val) IN (SELECT name, val FROM v_pv_array(tuples = [('a1', 'y'), ('a2', 'x')]))
-SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0;
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, enable_analyzer = 1;
 
 -- The scalar view forwards every CAST-wrapped parameter type at once, so a regression in
 -- forwarded scalar re-serialization cannot hide behind the array-tuple case above.
@@ -88,7 +88,7 @@ WHERE (name, val, d, u, ip, dec) IN (SELECT * FROM v_pv(
     u = '00000000-0000-0000-0000-000000000001',
     ip = '1.2.3.4',
     dec = 1.25))
-SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0;
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, enable_analyzer = 1;
 
 -- The legacy analyzer resolves parameters via FunctionParameterValuesVisitor; feed it the rendered
 -- CAST forms directly — a forwarded legacy case cannot run (the call is forwarded unqualified).
