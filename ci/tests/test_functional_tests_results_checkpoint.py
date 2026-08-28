@@ -414,7 +414,7 @@ def test_checkpoint_preserves_ext(tmp_path):
     )
 
 
-def test_a_failing_write_degrades_to_a_no_op(tmp_path):
+def test_a_failing_write_degrades_to_a_no_op(tmp_path, capsys):
     """A write that raises must cost nothing: the helper returns, the file is untouched.
 
     The load-bearing arm for the guard. `main()` has no enclosing try and the checkpoint
@@ -455,6 +455,21 @@ def test_a_failing_write_degrades_to_a_no_op(tmp_path):
         f"the failed write still left {len(reread.results)} children behind"
     )
     assert reread.ext.get("run_url") == _RUN_URL, "the failed write damaged ext"
+
+    # The diagnostics must not forge a runner failure. `check_fatal_messages_in_logs`
+    # scans `job.log` with `/^Traceback \(most recent call last\):/`, turns a hit into a
+    # failing `Exception in test runner` row, and bugfix validation reads a failing
+    # LOG_CHECK row as the bug reproducing.
+    printed = capsys.readouterr()
+    logged = printed.out + printed.err
+    assert "Failed to checkpoint collected results" in logged, (
+        "the guard swallowed the failure silently, leaving no diagnostic at all"
+    )
+    offenders = [ln for ln in logged.splitlines() if ln.startswith("Traceback")]
+    assert not offenders, (
+        f"the guard printed {offenders} at column zero: without --timestamp that is read "
+        "as an uncaught runner exception, and a best-effort checkpoint must cost nothing"
+    )
 
 
 def test_an_unparseable_result_file_degrades_to_a_no_op(tmp_path):

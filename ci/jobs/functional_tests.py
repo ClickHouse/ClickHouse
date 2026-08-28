@@ -427,7 +427,10 @@ def checkpoint_collected_results(
         # No temp-file cleanup here: a cleanup that itself raises would defeat the
         # guard. A leftover is named `*.tmp`, never the published name.
         print(f"WARNING: Failed to checkpoint collected results: {e}")
-        traceback.print_exc()
+        # Indented so no line starts at column zero: a column-zero
+        # `Traceback (most recent call last):` in `job.log` is read as a runner failure.
+        for line in traceback.format_exc().splitlines():
+            print(f"  {line}")
 
 
 def main():
