@@ -3,6 +3,10 @@
 -- part re-reads every column at the type in the metadata, so the resulting part must record that type
 -- and not the stale one from the source part.
 
+-- Read-in-order on the base table would decline the forced projections in this test
+-- (`PROJECTION_NOT_USED`), so disable it: plan shape is not this test's subject.
+SET optimize_read_in_order = 0;
+
 SELECT '--- materialize a projection after a type change ---';
 
 DROP TABLE IF EXISTS t_stale_part_type_1;
