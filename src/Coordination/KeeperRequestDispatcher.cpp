@@ -387,7 +387,6 @@ bool KeeperRequestDispatcher::tryPopRequest(KeeperRequestForSession & request)
     return res;
 }
 
-//TODO(keeper-batch2) Take a batch of responses: compute the byte cost and do the flow-control push once per batch (the timeout/drop-and-finishSession path must then handle multiple sessions in one batch).
 void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noexcept
 {
     size_t size = getResponseBytesCost(*response.response);
@@ -1004,7 +1003,6 @@ void KeeperRequestDispatcher::dropInFlightRequests()
         LOG_INFO(log, "Dropped {} batches with {} writes and {} reads", batches_dropped, requests_dropped, reads_dropped);
 }
 
-//TODO(keeper-batch2) When responses travel in batches, accumulate error responses into a batch at the call sites (dropInFlightRequests can generate many) instead of pushing them one at a time.
 void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & request_for_session, Coordination::Error error)
 {
     auto response = request_for_session.request->makeResponse();
@@ -1131,7 +1129,6 @@ void KeeperRequestDispatcher::onResponseDeallocated(const Coordination::ZooKeepe
     response_bytes_in_all_queues.fetch_sub(size);
 }
 
-//TODO(keeper-batch2) Pop response batches; within a batch, reuse the session lookup / sessions_mutex acquisition across consecutive responses for the same session.
 void KeeperRequestDispatcher::responseThread()
 {
     try

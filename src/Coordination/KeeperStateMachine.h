@@ -18,7 +18,6 @@ class ResponseForSession;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
-//TODO(keeper-batch2) Change to take a batch of responses (KeeperResponsesForSessions), so queue pushes and flow-control accounting in onResponse happen once per batch instead of once per response.
 using KeeperResponseCallback = std::function<void(KeeperResponseForSession)>; // noexcept
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
