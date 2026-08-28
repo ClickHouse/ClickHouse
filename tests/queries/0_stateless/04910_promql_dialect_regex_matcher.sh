@@ -51,11 +51,13 @@ promql_client -q 'set offset 0s' | cut -f1,3 | LC_ALL=C sort
 echo "-- a real SET statement still works under the dialect"
 promql_client -q 'SET max_threads = 1' && echo OK
 
-echo "-- a malformed SET still gets the ordinary SQL lexical error"
-promql_client -q 'SET max_threads = ~1' 2>&1 | grep -o "Unrecognized token"
+# The dialect lexer keeps `~` as an ordinary token, so the message is a plain syntax error rather
+# than the SQL lexer's "Unrecognized token"; committed SETs must still fail SQL-side, not as PromQL.
+echo "-- a malformed SET still gets an SQL-side syntax error"
+promql_client -q 'SET max_threads = ~1' 2>&1 | grep -o "SYNTAX_ERROR" | head -1
 
-echo "-- a malformed SET without = still gets the ordinary SQL lexical error"
-promql_client -q 'SET max_threads ~1' 2>&1 | grep -o "Unrecognized token"
+echo "-- a malformed SET without = still gets an SQL-side syntax error"
+promql_client -q 'SET max_threads ~1' 2>&1 | grep -o "SYNTAX_ERROR" | head -1
 
 # Without a setting name there is nothing to tell `SET <junk>` apart from a malformed query over a
 # metric named `set`, so the active dialect reports it. Committing to SET on the error token instead

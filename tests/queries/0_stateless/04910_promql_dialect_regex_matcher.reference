@@ -23,10 +23,10 @@
 [('__name__','set'),('instance','host3')]	2
 -- a real SET statement still works under the dialect
 OK
--- a malformed SET still gets the ordinary SQL lexical error
-Unrecognized token
--- a malformed SET without = still gets the ordinary SQL lexical error
-Unrecognized token
+-- a malformed SET still gets an SQL-side syntax error
+SYNTAX_ERROR
+-- a malformed SET without = still gets an SQL-side syntax error
+SYNTAX_ERROR
 -- a malformed SET without a setting name is reported by the dialect grammar
 CANNOT_PARSE_PROMQL_QUERY
 CANNOT_PARSE_PROMQL_QUERY
