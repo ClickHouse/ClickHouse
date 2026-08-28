@@ -1001,12 +1001,14 @@ TEST(SchedulerSpaceShared, SuspendedIncreaseIsHiddenThroughPrecedenceHierarchy)
     SchedulerNodeInfo high_info;
     high_info.setPrecedence(0);
     auto high_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, high_info);
+    high_queue->basename = "high";
     AllocationQueue * high_queue_ptr = high_queue.get();
     policy->attachChild(high_queue);
 
     SchedulerNodeInfo low_info;
     low_info.setPrecedence(1);
     auto low_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, low_info);
+    low_queue->basename = "low";
     AllocationQueue * low_queue_ptr = low_queue.get();
     policy->attachChild(low_queue);
 
