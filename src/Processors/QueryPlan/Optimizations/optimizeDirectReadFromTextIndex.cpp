@@ -1075,7 +1075,7 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 /// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
 ///
 /// See TextIndexDAGReplacer class for more details.
-void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & /*nodes*/, bool direct_read_from_text_index)
+void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1114,8 +1114,31 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
     }
 
+    auto begin = stack.rbegin() + 1;
+
+    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the
+    /// filter, e.g. the header-converting step of `tryOptimizeTopK`. Merge it into the filter above,
+    /// so the filter sits directly on the read step and the direct read is possible.
+    /// Only plans that read a text index get here, so no other plan is reshaped.
+    /// The merged-away node keeps the stack frame that points to it, but that frame has already
+    /// descended into its only child, so the traversal just pops it.
+    if (stack.size() >= 3 && typeid_cast<ExpressionStep *>(begin->node->step.get()))
+    {
+        QueryPlan::Node * node_above = (begin + 1)->node;
+        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, {}))
+            ++begin;
+    }
+
+    /// The direct read needs the filter directly on top of the read step: nothing would carry the virtual
+    /// column across an intermediate step. Log it, the fallback silently reads the whole text column.
+    if (!typeid_cast<FilterStep *>(begin->node->step.get()))
+        LOG_TRACE(
+            getLogger("optimizeDirectReadFromTextIndex"),
+            "Cannot use direct reading from text index. Reason: the parent of ReadFromMergeTree is a '{}' step, not a filter",
+            begin->node->step->getName());
+
     /// Walk the steps above the scan; traverse row-preserving pass-throughs (liftUpFunctions may hoist a projection above a sort) and stop where the column set changes (aggregation, join).
-    for (auto it = stack.rbegin() + 1; it != stack.rend(); ++it)
+    for (auto it = begin; it != stack.rend(); ++it)
     {
         QueryPlan::Node * node = it->node;
         IQueryPlanStep * step = node->step.get();
@@ -1130,7 +1153,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         }
 
         /// Direct read only for the WHERE filter directly above the scan (its rebuild uses the scan's header).
-        if (filter_step && it == stack.rbegin() + 1)
+        if (filter_step && it == begin)
         {
             ActionsDAG & filter_dag = filter_step->getExpression();
             bool direct_read_allowed = direct_read_from_text_index && !prewhere_optimized && !already_has_direct_read;
