@@ -456,7 +456,7 @@ RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FR
 ```
 
 :::note
-The `create_workloads_and_resources` restore setting selects how a workload or resource that already exists is handled while it is being restored (it does not turn restoring these entities on or off). Like the related `create_function` setting, it accepts:
+The `create_workloads_and_resources` restore setting selects how a workload or resource that already exists is handled while it is being restored (it does not turn restoring these entities on or off). It accepts:
 - `if not exists` (default) — keep an existing entity unchanged and create only the ones that are missing;
 - `create` — fail the restore if any entity being restored already exists;
 - `replace` — overwrite an existing entity with the definition from the backup (this additionally requires the `DROP WORKLOAD` / `DROP RESOURCE` privilege).
