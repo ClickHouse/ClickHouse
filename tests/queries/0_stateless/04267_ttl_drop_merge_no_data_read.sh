@@ -847,3 +847,56 @@ ${CLICKHOUSE_CLIENT} -q "
     WHERE database = currentDatabase() AND table = 't_ttl_patch_recompress' AND active AND rows = 100;
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_recompress;"
+
+# -------------------------------------------------------------------
+# Case 16: a patched merge cannot keep a finished rows-WHERE TTL entry
+#
+# TTLDeleteAlgorithm marks the recalculated entry finished off the old
+# (pre-patch) max, hiding the merged part from later TTL passes; rows a
+# patch moved into the near future then overstayed forever.
+# -------------------------------------------------------------------
+echo "-- Case 16: patched merge keeps rows-WHERE TTL entries live"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_rows_where
+    (
+        id UInt64,
+        event_time DateTime,
+        flag UInt8
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time DELETE WHERE flag = 1
+    SETTINGS
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_rows_where;
+
+    -- Every row is expired when the part is written.
+    INSERT INTO t_ttl_patch_rows_where SELECT number, now() - INTERVAL 2 DAY, 1 FROM numbers(100);
+
+    -- A lightweight update moves 10 rows into the near future.
+    UPDATE t_ttl_patch_rows_where SET event_time = now() + INTERVAL 10 SECOND WHERE id < 10
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM START MERGES t_ttl_patch_rows_where;
+
+    OPTIMIZE TABLE t_ttl_patch_rows_where FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_rows_where;"
+
+# Once their TTL is really due, a merge must still see the part as TTL work: a finished entry
+# would exclude it from the part's TTL bounds and the rows would survive every later OPTIMIZE.
+rows_where_left=""
+for _ in $(seq 1 90); do
+    ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_ttl_patch_rows_where FINAL;"
+    rows_where_left=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_rows_where;")
+    [ "$rows_where_left" = "0" ] && break
+    sleep 1
+done
+echo "$rows_where_left"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_rows_where;"

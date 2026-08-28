@@ -42,3 +42,6 @@ Vertical
 -- Case 15: patched merge does not recompress on pre-patch infos
 LZ4
 1
+-- Case 16: patched merge keeps rows-WHERE TTL entries live
+10
+0
