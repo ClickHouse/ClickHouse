@@ -164,6 +164,7 @@ TEST(SSLSocketError, SendFailureDoesNotConsumePendingApplicationData)
     }
     catch (...)
     {
+        /// Ok: this catch turns a non-Poco exception into a test failure.
         ADD_FAILURE() << "Expected Poco::Net::ConnectionResetException, got a non-Poco exception";
     }
 

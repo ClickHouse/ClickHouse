@@ -38,7 +38,7 @@ void leaveShutdownWhileInInit(Poco::Net::Context::Ptr context)
     ASSERT_LT(SSL_shutdown(ssl), 0);
     SSL_free(ssl);
 
-    const unsigned long error = ERR_peek_last_error();
+    const auto error = ERR_peek_last_error();
     /// Unwrap the error manually because OpenSSL declares `ERR_GET_LIB` and
     /// `ERR_GET_REASON` with `ossl_unused`, which causes compiler warnings when used.
     ASSERT_EQ((error >> ERR_LIB_OFFSET) & ERR_LIB_MASK, ERR_LIB_SSL);
@@ -150,6 +150,8 @@ private:
             }
             catch (...)
             {
+                /// Ok: report the failure but continue cleanup so that the server thread is always joined.
+                ADD_FAILURE() << "Failed to abort the TLS client during cleanup";
             }
         }
 
@@ -162,6 +164,8 @@ private:
         }
         catch (...)
         {
+            /// Ok: report the failure but continue cleanup so that the server thread is always joined.
+            ADD_FAILURE() << "Failed to close the TLS listener during cleanup";
         }
         if (server_thread.joinable())
             server_thread.join();
