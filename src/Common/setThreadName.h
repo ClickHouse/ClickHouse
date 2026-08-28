@@ -35,6 +35,7 @@ namespace DB
     M(BACKUP_COORDINATION, "BackupCoord") \
     M(BACKUP_COORDINATION_INTERNAL, "BackupCoordInt") \
     M(BACKUP_WORKER, "BackupWorker") \
+    M(BUCKETED_METRIC_LOG, "BMetricLog") \
     M(CACHE_DICTIONARY_UPDATE_QUEUE, "UpdQueue") \
     M(CGROUP_MEMORY_OBSERVER, "CgrpMemUsgObsr") \
     M(CLICKHOUSE_WATCH, "ClickHouseWatch") \
@@ -62,6 +63,7 @@ namespace DB
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
     M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
     M(DROP_TABLES, "DropTables") \
+    M(SHUTDOWN_TABLES, "ShutdownTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
