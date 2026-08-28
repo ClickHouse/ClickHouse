@@ -11,11 +11,33 @@
 
 #include <chrono>
 #include <functional>
+#include <string>
 
 #include <Poco/Net/HTTPClientSession.h>
 
 namespace ClickHouse
 {
+
+/// The Google "authorized user" refresh-token triple (the `google_adc_*` keys of the shared argument
+/// grammar). google-cloud-cpp has no public credential factory for it: only its Application Default
+/// Credentials path parses an `authorized_user` JSON document, and only from a file or the environment.
+/// So the transport builds the SDK's own `oauth2_internal::AuthorizedUserCredentials` from the triple
+/// instead, which is what makes the access token *refreshable* -- the refresh token is exchanged again
+/// whenever the cached access token nears expiry, so a long-lived disk, or a query outliving the first
+/// token, keeps working. When this option is set it supersedes `UnifiedCredentialsOption`.
+struct PocoRestAuthorizedUserOption
+{
+    struct AuthorizedUser
+    {
+        std::string client_id;
+        std::string client_secret;
+        std::string refresh_token;
+        /// Empty means the standard Google OAuth 2.0 refresh endpoint.
+        std::string token_uri;
+    };
+
+    using Type = AuthorizedUser;
+};
 
 /// TCP connection timeout of a single REST request. The libcurl-based transport derives it from
 /// CURLOPT_CONNECTTIMEOUT; the Poco transport has no equivalent upstream option, and its default
