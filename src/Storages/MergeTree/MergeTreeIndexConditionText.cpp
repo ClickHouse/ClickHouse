@@ -6,6 +6,7 @@
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
+#include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
@@ -39,6 +40,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
@@ -108,6 +110,8 @@ void TextSearchQuery::initializeHash()
                 hash_state.update(required_substring);
                 hash_state.update(is_trivial);
                 hash_state.update(required_substring_is_prefix);
+                /// Without it `^lit` and `^lit$` would hash the same, as neither compiles a re2 pattern.
+                hash_state.update(pattern.getMatchKind());
             }
         }
     }
@@ -763,15 +767,15 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
 {
     VectorWithMemoryTracking<String> tokens;
     const String & raw = field.safeGet<String>();
-    if (has_preprocessor)
-    {
-        const String processed = preprocessor->processConstant(raw);
-        tokenizer->stringLikeToTokens(processed.data(), processed.size(), tokens);
-    }
-    else
-    {
-        tokenizer->stringLikeToTokens(raw.data(), raw.size(), tokens);
-    }
+    const String processed = has_preprocessor ? preprocessor->processConstant(raw) : String{};
+    const String & pattern = has_preprocessor ? processed : raw;
+
+    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
+    /// granule holding matching rows. No tokens means "cannot prune", as for a pattern like `LIKE '%a%'`.
+    if (likePatternHasUnknownBackslashEscape(pattern))
+        return tokens;
+
+    tokenizer->stringLikeToTokens(pattern.data(), pattern.size(), tokens);
     if (!has_postprocessor)
         return tokenizer->compactTokens(tokens);
 
@@ -1178,10 +1182,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
+            SplitByRegexpTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
 #if USE_ICU
             IcuTokenizer::getExternalName(),
@@ -1190,6 +1195,18 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
+
+        /// The postprocessor in `optimizeDirectReadFromTextIndex` rejoins the normalized tokens with a
+        /// space and re-tokenizes them, and validates each token with the `splitByNonAlpha` separator rule.
+        /// Both assumptions are wrong for `splitByRegexp`: its separator need not be whitespace (so the rejoin
+        /// would collapse tokens, causing false negatives) and its tokens may contain characters such as `#` or
+        /// `+` (which the validation would reject). Rather than bypassing the index - which would silently fall
+        /// back to the default `splitByNonAlpha` and produce false positives - reject this combination
+        /// explicitly. `splitByRegexp` + `hasPhrase` without a postprocessor is fully supported.
+        if (tokenizer->getType() == ITokenizer::Type::SplitByRegexp && has_postprocessor)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function 'hasPhrase' is not supported on a text index that uses the 'splitByRegexp' tokenizer and a postprocessor");
 
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
