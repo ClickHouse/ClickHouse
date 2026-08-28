@@ -57,6 +57,7 @@
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCodingIP.h>
@@ -3567,6 +3568,19 @@ public:
         return Monotonic::get(type, left, right);
     }
 
+    bool hasInformationAboutPreimage() const override
+    {
+        return std::is_same_v<ToDataType, DataTypeDate>;
+    }
+
+    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
+            return Monotonic::getPreimage(type, point);
+
+        return IFunction::getPreimage(type, point);
+    }
+
 private:
     const FunctionConvertSettings settings;
 
@@ -4423,6 +4437,13 @@ template <typename T>
 struct ToDateMonotonicity
 {
     static bool has() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        /// The helper only accepts `DateTime`: with `date_time_overflow_behavior=ignore` a
+        /// `DateTime64` or `Date32` source can wrap and have several disjoint preimages.
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Day);
+    }
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
