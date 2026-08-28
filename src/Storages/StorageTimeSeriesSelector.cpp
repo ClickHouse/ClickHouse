@@ -179,18 +179,22 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     /// return only that component. This narrowing is applied when S is a LowCardinality type:
     /// the identifiers then stay dictionary-encoded end-to-end, and both the `IN <ids>` filter
     /// over the samples table and `timeSeriesIdToGroup` run per dictionary key instead of per row.
-    DataTypePtr narrowed_id_data_type;
-    if (const auto * id_tuple_type = typeid_cast<const DataTypeTuple *>(id_data_type.get());
+    DataTypePtr table_id_data_type = id_data_type;
+    bool narrow_id_to_second_component = false;
+    if (const auto * id_tuple_type = typeid_cast<const DataTypeTuple *>(table_id_data_type.get());
         id_tuple_type && (id_tuple_type->getElements().size() == 2)
         && typeid_cast<const DataTypeLowCardinality *>(id_tuple_type->getElements()[1].get()))
     {
         auto samples_target_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, context)->getInMemoryMetadataPtr(context, false);
         auto samples_id_column = samples_target_metadata->getColumns().tryGetPhysical(TimeSeriesColumnNames::ID);
-        bool samples_table_stores_same_id_type = samples_id_column && (samples_id_column->type->getName() == id_data_type->getName());
+        bool samples_table_stores_same_id_type = samples_id_column && (samples_id_column->type->getName() == table_id_data_type->getName());
 
         if (samples_table_stores_same_id_type
-            && tryGetCanonicalIDGenerator(id_data_type, *time_series_storage->getStorageSettings(), tags_target_metadata->columns))
-            narrowed_id_data_type = id_tuple_type->getElements()[1];
+            && tryGetCanonicalIDGenerator(table_id_data_type, *time_series_storage->getStorageSettings(), tags_target_metadata->columns))
+        {
+            narrow_id_to_second_component = true;
+            id_data_type = id_tuple_type->getElements()[1];
+        }
     }
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
@@ -210,7 +214,8 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     config.id_data_type = std::move(id_data_type);
     config.timestamp_data_type = std::move(timestamp_data_type);
     config.scalar_data_type = std::move(scalar_data_type);
-    config.narrowed_id_data_type = std::move(narrowed_id_data_type);
+    config.table_id_data_type = std::move(table_id_data_type);
+    config.narrow_id_to_second_component = narrow_id_to_second_component;
     config.selector = std::move(selector);
     config.min_time = min_time;
     config.max_time = max_time;
@@ -326,6 +331,23 @@ namespace
         return makeASTForLogicalAnd(std::move(asts));
     }
 
+    /// What the tags-table subquery returns (and stores in the per-query tags collector)
+    /// as the identifier of a time series.
+    enum class TagsSubqueryIDForm
+    {
+        /// timeSeriesStoreTags(id, ...) - the raw `id` column.
+        Full,
+
+        /// timeSeriesStoreTags(tupleElement(id, 2), ...) - only the second id component
+        /// (see `Configuration::narrow_id_to_second_component`).
+        SecondComponent,
+
+        /// tuple(tupleElement(id, 1), timeSeriesStoreTags(tupleElement(id, 2), ...)) - the second
+        /// component is stored in the collector, but the returned ids are full-shaped, so the set
+        /// built from them can serve primary-key index analysis over the samples table.
+        SecondComponentInFullShapedID,
+    };
+
     ASTPtr makeSelectQueryFromTagsTable(
         const StorageID & tags_table_id,
         const PrometheusQueryTree::MatcherList & matchers,
@@ -333,26 +355,19 @@ namespace
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
         const DataTypePtr & timestamp_data_type,
-        bool narrow_id_to_second_component,
-        bool return_first_component_too)
+        TagsSubqueryIDForm id_form)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         /// SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)
-        ///
-        /// With id narrowing (see `Configuration::narrowed_id_data_type`) the stored identifier is
-        /// only the second id component:
-        ///     SELECT timeSeriesStoreTags(tupleElement(id, 2), tags, ...)
-        /// and when the id set must also serve primary-key index analysis over the samples table
-        /// (`return_first_component_too`), the full-shaped id is reassembled around it:
-        ///     SELECT tuple(tupleElement(id, 1), timeSeriesStoreTags(tupleElement(id, 2), tags, ...))
+        /// (with the identifier shaped according to `id_form`, see `TagsSubqueryIDForm`)
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
             ASTs args;
             ASTPtr stored_id = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID);
-            if (narrow_id_to_second_component)
+            if (id_form != TagsSubqueryIDForm::Full)
                 stored_id = makeIDComponent(std::move(stored_id), 2);
             args.push_back(std::move(stored_id));
             args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
@@ -366,7 +381,7 @@ namespace
             }
 
             ASTPtr select_expression = makeASTFunction("timeSeriesStoreTags", std::move(args));
-            if (return_first_component_too)
+            if (id_form == TagsSubqueryIDForm::SecondComponentInFullShapedID)
             {
                 /// `timeSeriesStoreTags` returns its identifier argument with the dictionary
                 /// encoding stripped (the function is executed on materialized arguments), so the
@@ -471,7 +486,7 @@ namespace
                                         DateTime64 min_time,
                                         DateTime64 max_time,
                                         const DataTypePtr & timestamp_data_type,
-                                        bool narrow_id_to_second_component,
+                                        ASTPtr id_select_expression,
                                         ASTPtr id_in_left_arg,
                                         ASTs whole_metric_id_range_conditions)
     {
@@ -486,21 +501,13 @@ namespace
         /// The casts to the declared types are applied by an outer SELECT instead
         /// (see `makeSelectQuery`).
         ///
-        /// With id narrowing the id entry becomes `tupleElement(<qualified id>, 2) AS id`:
-        /// the alias makes the bare `id` of the WHERE conditions and of the outer SELECT resolve
-        /// to the narrowed component, while the qualified argument still resolves to the raw
-        /// table column (and reads only its second-component subcolumn).
+        /// The `id` entry of the SELECT list is supplied by the caller: it is the bare column
+        /// normally, or an expression aliased `AS id` when the id is narrowed.
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            if (narrow_id_to_second_component)
-            {
-                select_list.push_back(makeIDComponent(makeQualifiedIDIdentifier(data_table_id), 2));
-                select_list.back()->setAlias(TimeSeriesColumnNames::ID);
-            }
-            else
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            select_list.push_back(std::move(id_select_expression));
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
 
@@ -907,31 +914,53 @@ void StorageTimeSeriesSelector::readImpl(
         tags_table_id,
         tags_table_metadata->getColumns(),
         *time_series_settings,
-        config.id_data_type,
+        config.table_id_data_type,
         config.timestamp_data_type,
         min_time_to_filter_ids,
         max_time_to_filter_ids,
         context,
         log);
 
-    const bool narrow_id = config.narrowed_id_data_type != nullptr;
+    const bool narrow_id = config.narrow_id_to_second_component;
     const bool whole_metric = !whole_metric_id_range_conditions.empty();
 
-    /// With id narrowing the id set contains only second id components, so it cannot serve
-    /// primary-key index analysis over the samples table. For a whole-metric selector the range
-    /// conditions handle the index analysis anyway (and the set is excluded from it below); for
-    /// other selectors the tags subquery reassembles the full-shaped ids around the narrowed
-    /// component, and the `IN` compares the raw `id` column, keeping the index analysis intact.
-    const bool narrowed_set = narrow_id && whole_metric;
+    /// A narrowed id set (a set of second id components) cannot serve primary-key index analysis
+    /// over the samples table: the sorting key there starts with the whole `id` tuple, and a set
+    /// of second components alone does not constrain any prefix of it. So the narrowed set is
+    /// used only when the whole-metric range conditions handle the index analysis instead (the
+    /// set is also excluded from it below). Other narrowed selectors get a full-shaped set (see
+    /// `TagsSubqueryIDForm::SecondComponentInFullShapedID`) compared with the raw `id` column,
+    /// which keeps the index analysis exactly as without narrowing. (Filtering those selectors
+    /// by a narrowed set as well would require a second, index-analysis-only set, and therefore
+    /// a second scan of the tags table per selector - a fixed cost every cheap selector would pay.)
+    const bool use_narrowed_id_set = narrow_id && whole_metric;
+
+    TagsSubqueryIDForm tags_subquery_id_form = TagsSubqueryIDForm::Full;
+    if (narrow_id)
+        tags_subquery_id_form = use_narrowed_id_set ? TagsSubqueryIDForm::SecondComponent : TagsSubqueryIDForm::SecondComponentInFullShapedID;
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type,
-        /*narrow_id_to_second_component=*/narrow_id,
-        /*return_first_component_too=*/narrow_id && !narrowed_set);
+        tags_subquery_id_form);
 
-    /// The bare `id` binds to the narrowed alias of the SELECT list when the id is narrowed.
+    /// The `id` entry of the samples-table SELECT list. With id narrowing it is
+    /// `tupleElement(<qualified id>, 2) AS id`: the alias makes the bare `id` of the WHERE
+    /// conditions and of the outer SELECT resolve to the narrowed component, while the qualified
+    /// argument still resolves to the raw table column.
+    ASTPtr id_select_expression;
+    if (narrow_id)
+    {
+        id_select_expression = makeIDComponent(makeQualifiedIDIdentifier(samples_table_id), 2);
+        id_select_expression->setAlias(TimeSeriesColumnNames::ID);
+    }
+    else
+        id_select_expression = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID);
+
+    /// The left argument of the `IN <ids>` condition: the bare `id` (which binds to the narrowed
+    /// alias above when the id is narrowed), or the qualified raw column when the set is
+    /// full-shaped.
     ASTPtr id_in_left_arg;
-    if (narrow_id && !narrowed_set)
+    if (tags_subquery_id_form == TagsSubqueryIDForm::SecondComponentInFullShapedID)
         id_in_left_arg = makeQualifiedIDIdentifier(samples_table_id);
     else
         id_in_left_arg = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID);
@@ -939,7 +968,7 @@ void StorageTimeSeriesSelector::readImpl(
     if (narrow_id)
         LOG_DEBUG(log, "Reading only the second id component for selector {}", quoteString(config.selector.toString()));
 
-    if (narrowed_set)
+    if (use_narrowed_id_set)
     {
         /// The narrowed id set filters the rows exactly (the second component alone identifies a
         /// time series), so the range conditions are pure index-analysis conditions here: wrapping
@@ -984,13 +1013,13 @@ void StorageTimeSeriesSelector::readImpl(
         config.min_time,
         config.max_time,
         config.timestamp_data_type,
-        /*narrow_id_to_second_component=*/narrow_id,
+        std::move(id_select_expression),
         std::move(id_in_left_arg),
         std::move(whole_metric_id_range_conditions));
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_data_table),
-        narrow_id ? config.narrowed_id_data_type : config.id_data_type,
+        config.id_data_type,
         config.timestamp_data_type,
         config.scalar_data_type);
 
