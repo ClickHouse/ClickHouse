@@ -177,7 +177,7 @@ SELECT buildId()
         )",
         R"(
 ┌─buildId()────────────────────────────────┐
-│ AB668BEF095FAA6BD26537F197AC2AF48A927FB4 │
+│ B49BA4BC500E5E850F832BEC918885516B22FC0E │
 └──────────────────────────────────────────┘
         )"
     }
@@ -329,7 +329,7 @@ SELECT serverTimeZone()
         )",
         R"(
 ┌─serverTimeZone()─┐
-│ UTC              │
+│ Etc/UTC          │
 └──────────────────┘
         )"
     }
@@ -446,7 +446,7 @@ SELECT zookeeperSessionUptime();
         )",
         R"(
 ┌─zookeeperSessionUptime()─┐
-│                      286 │
+│                        3 │
 └──────────────────────────┘
         )"
     }
