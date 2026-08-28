@@ -577,6 +577,12 @@ struct ManualAllocation : public ResourceAllocation
         cv.wait(lock, [&] { return kills >= count; });
     }
 
+    bool waitKillsFor(size_t count, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [&] { return kills >= count; });
+    }
+
     ResourceCost size()
     {
         std::unique_lock lock(mutex);
@@ -1167,8 +1173,12 @@ TEST(SchedulerSpaceShared, NestedLimitsTrackTheSameBeneficiaryIndependently)
 
     /// The inner last resort releases its branch. The outer impossible growth must then reach its
     /// own last resort; a leaked nested beneficiary membership would leave it suspended forever.
-    inner_heavy.waitKills(1);
-    outer_heavy.waitKills(1);
+    EXPECT_TRUE(inner_heavy.waitKillsFor(1, std::chrono::seconds(5)))
+        << "inner limit lost its last-resort suction decision; inner kills="
+        << inner_heavy.killCount() << ", outer kills=" << outer_heavy.killCount();
+    EXPECT_TRUE(outer_heavy.waitKillsFor(1, std::chrono::seconds(5)))
+        << "outer limit lost its last-resort suction decision; inner kills="
+        << inner_heavy.killCount() << ", outer kills=" << outer_heavy.killCount();
 }
 
 
