@@ -617,3 +617,33 @@ ALTER TABLE t_mat_index_added_late ADD INDEX idx_tk t.k TYPE minmax GRANULARITY 
 ALTER TABLE t_mat_index_added_late MODIFY COLUMN t Tuple(k UInt64) MATERIALIZED tuple(a * 10 + 1000);
 ALTER TABLE t_mat_index_added_late MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_index_added_late;
+
+-- Case 48: A TTL-driven reset must not leave a stored MATERIALIZED column stale. Materializing `c`
+-- makes the mutation run the full TTL pass, which re-evaluates the column TTL `y TTL c + ...` and
+-- resets `y`; but `m MATERIALIZED y + 1` never enters the recompute machinery (`y` is neither
+-- updated nor materialized), and the recompute stages run before the TTL transform anyway, so the
+-- new part would hold fresh `y` and stale `m` (and any skip index / projection / statistics over
+-- `m` would stay stale with it). Refused up front.
+DROP TABLE IF EXISTS t_mat_ttl_target_materialized;
+CREATE TABLE t_mat_ttl_target_materialized
+    (a UInt64, c DateTime MATERIALIZED toDateTime(1000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     m UInt64 MATERIALIZED y + 1)
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_ttl_target_materialized (a, y) VALUES (1, 100);
+ALTER TABLE t_mat_ttl_target_materialized MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_target_materialized;
+
+-- Case 49: The Case 48 refusal must NOT over-reject a stored MATERIALIZED column that does not read
+-- the TTL target: `m MATERIALIZED a + 1` is untouched by the reset of `y`, so the command is allowed;
+-- the TTL pass resets `y` to its default 0 while `m` keeps its consistent value.
+DROP TABLE IF EXISTS t_mat_ttl_target_unrelated_mat;
+CREATE TABLE t_mat_ttl_target_unrelated_mat
+    (a UInt64, c DateTime MATERIALIZED toDateTime(1000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     m UInt64 MATERIALIZED a + 1)
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_ttl_target_unrelated_mat (a, y) VALUES (1, 100);
+ALTER TABLE t_mat_ttl_target_unrelated_mat MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
+SELECT y, m FROM t_mat_ttl_target_unrelated_mat;
+DROP TABLE t_mat_ttl_target_unrelated_mat;

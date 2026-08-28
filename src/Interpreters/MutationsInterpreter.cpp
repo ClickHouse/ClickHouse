@@ -9,6 +9,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
@@ -1649,6 +1650,33 @@ void MutationsInterpreter::prepare(bool dry_run)
                         "which the merge logic depends on. Resetting it could change the collapsing or "
                         "replacing semantics of existing data",
                         backQuote(command.column_name), backQuote(ttl_target_column));
+            }
+
+            /// A TTL-driven reset must not leave a stored MATERIALIZED column stale either. Any
+            /// `TTL_TARGET` dependency makes the mutation run the full TTL pass
+            /// (`ExecuteTTLType::NORMAL`), which re-evaluates *every* column TTL of the table and
+            /// resets expired targets. A stored MATERIALIZED column reading such a target (e.g.
+            /// `m MATERIALIZED y + 1` with `y ... TTL c + INTERVAL ...` while materializing `c`)
+            /// never enters `column_to_affected_materialized` — the target is neither updated nor
+            /// materialized — and the recompute stages run before `TTLTransform` anyway, so nothing
+            /// recalculates it from the reset value: the new part would hold fresh `y` and stale `m`
+            /// (and any skip index / projection / statistics over `m` would stay stale with it).
+            /// Following the same fail-close approach as above, refuse the command up front.
+            if (!ttl_target_columns.empty())
+            {
+                for (const auto & [ttl_column_name, ttl_entry] : metadata_snapshot->getColumnTTLs())
+                {
+                    for (const auto & [mat_column, mat_dependencies] : materialized_column_dependencies)
+                    {
+                        if (mat_dependencies.contains(ttl_column_name))
+                            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Refused to materialize column {} because it makes the mutation re-evaluate a TTL "
+                                "that can reset column {}, which the stored MATERIALIZED column {} is computed from. "
+                                "The reset would leave the stored value of {} stale",
+                                backQuote(command.column_name), backQuote(ttl_column_name),
+                                backQuote(mat_column), backQuote(mat_column));
+                    }
+                }
             }
 
             /// A TTL-target column rewritten as above lands in `changed_columns`, so the generic
