@@ -8,7 +8,8 @@ CREATE TABLE mtq_gated(a UInt64) ENGINE = MergeTreeQueue; -- { serverError SUPPO
 CREATE TABLE mtq_gated(a UInt64) ENGINE = ReplicatedMergeTreeQueue('/clickhouse/tables/{database}/mtq_gated', '1'); -- { serverError SUPPORT_IS_DISABLED }
 -- An `ATTACH` that carries a full table definition is CREATE-like user input, so it must not
 -- bypass the gate; only replayed metadata (short `ATTACH`, server startup) is exempt.
-ATTACH TABLE mtq_gated UUID 'aa4e2eb5-8b96-4d1a-9c5c-5e0a4a34cb01' (a UInt64) ENGINE = MergeTreeQueue; -- { serverError SUPPORT_IS_DISABLED }
+-- The full-definition `ATTACH` needs an explicit UUID, which must be unique per run, so those
+-- cases live in `05045_merge_tree_full_definition_attach_validation.sh`.
 
 set allow_experimental_merge_tree_queue = 1;
 
@@ -36,8 +37,8 @@ CREATE TABLE mtq_pk(a UInt64) ENGINE = MergeTreeQueue PRIMARY KEY a; -- { server
 
 select 'PARTITION BY is forbidden';
 CREATE TABLE mtq_partitioned(p UInt64, a UInt64) ENGINE = MergeTreeQueue PARTITION BY p; -- { serverError BAD_ARGUMENTS }
--- A full-definition `ATTACH` must not bypass the check either.
-ATTACH TABLE mtq_partitioned UUID 'aa4e2eb5-8b96-4d1a-9c5c-5e0a4a34cb02' (p UInt64, a UInt64) ENGINE = MergeTreeQueue PARTITION BY p; -- { serverError BAD_ARGUMENTS }
+-- A full-definition `ATTACH` must not bypass the check either; that case lives in
+-- `05045_merge_tree_full_definition_attach_validation.sh`.
 
 select 'ALTER MODIFY ORDER BY is forbidden';
 drop table if exists mtq_alter_order sync;

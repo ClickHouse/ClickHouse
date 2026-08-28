@@ -1,3 +1,7 @@
+-- Tags: no-random-merge-tree-settings
+-- `enable_block_number_column` / `enable_block_offset_column` are part of what is verified here,
+-- so the test must not run with randomized MergeTree settings.
+
 CREATE TABLE sorting_key_reader_virtual (x UInt8)
 ENGINE = MergeTree
 ORDER BY _part; -- { serverError BAD_ARGUMENTS }

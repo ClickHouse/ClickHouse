@@ -1,0 +1,4 @@
+the experimental gate applies to a full-definition ATTACH
+SUPPORT_IS_DISABLED
+PARTITION BY is rejected in a full-definition ATTACH
+BAD_ARGUMENTS
