@@ -22,7 +22,10 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT totals_having_transform_totals_
 
 # `TabSeparated` consumes the totals port. Each regular group passes its `HAVING` expression,
 # while the totals row reaches the dedicated `prepareTotals` execution site.
-timeout 30 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
+# The client must outlive the whole orchestration below (waiting for the failpoint, killing the
+# query and waiting for the cancellation to be observed), otherwise `timeout` terminates it before
+# the server reports `QUERY_WAS_CANCELLED` and the test fails spuriously on slow builds.
+timeout 120 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT number % 10 AS k, count()
     FROM numbers(1000000)
     GROUP BY k WITH TOTALS
@@ -32,7 +35,7 @@ timeout 30 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
 " >"$output_file" 2>&1 &
 client_pid=$!
 
-if ! timeout 30 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT totals_having_transform_totals_before_expression_pause PAUSE"
+if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT totals_having_transform_totals_before_expression_pause PAUSE"
 then
     echo "FAIL: timed out waiting for totals_having_transform_totals_before_expression_pause"
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '${query_id}'" >/dev/null
@@ -43,20 +46,23 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUE
 
 # Do not release the failpoint until the asynchronous kill has reached the query. Otherwise,
 # the query can resume and park at the post-expression failpoint before cancellation is set.
+# Poll over HTTP with a wall-clock deadline: starting `clickhouse-client` hundreds of times costs
+# more wall-clock time than the query client is allowed to live on a debug or sanitizer build.
 cancelled=0
-for _ in {1..300}
+deadline=$((SECONDS + 60))
+while (( SECONDS < deadline ))
 do
-    cancelled=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${query_id}' AND is_cancelled")
+    cancelled=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM system.processes WHERE query_id = '${query_id}' AND is_cancelled")
     [[ "$cancelled" -ge 1 ]] && break
     sleep 0.1
 done
-[[ "$cancelled" -ge 1 ]] || { echo "FAIL: query was not cancelled"; exit 1; }
+[[ "$cancelled" -ge 1 ]] || { echo "FAIL: the query was not marked as cancelled in system.processes"; exit 1; }
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_totals_before_expression_pause"
 
 wait "$client_pid"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_totals_pause"
 
-grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; cat "$output_file"; exit 1; }
+grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: the client did not report QUERY_WAS_CANCELLED"; cat "$output_file"; exit 1; }
 
 echo "OK"
