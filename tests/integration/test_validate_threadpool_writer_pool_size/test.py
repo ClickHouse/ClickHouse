@@ -19,7 +19,7 @@ def test_invalid_setting():
             cluster.start()
 
             assert (
-                "Code: 36. DB::Exception: A setting's value has to be greater than 0: while parsing setting 'threadpool_writer_pool_size' value. (BAD_ARGUMENTS)"
+                "Code: 36. DB::Exception: A setting's value has to be greater than 0: while setting 'threadpool_writer_pool_size' to value '0'. (BAD_ARGUMENTS)"
                 in str(exc_info.value)
             )
 
@@ -35,7 +35,7 @@ def test_invalid_setting():
             logs = f.read()
 
         assert (
-            "Code: 36. DB::Exception: A setting's value has to be greater than 0: while parsing setting 'threadpool_writer_pool_size' value. (BAD_ARGUMENTS)"
+            "Code: 36. DB::Exception: A setting's value has to be greater than 0: while setting 'threadpool_writer_pool_size' to value '0'. (BAD_ARGUMENTS)"
             in logs
         )
     finally:

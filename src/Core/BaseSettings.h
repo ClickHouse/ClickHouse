@@ -395,10 +395,22 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        accessor.setValue(*this, index, value);
-    else
-        getCustomSetting(name) = value;
+    /// A value of the wrong type or out of range is reported by the setting field itself, which does not
+    /// know its own name: `SETTINGS max_threads = 'abc'` used to say only "Cannot parse input: expected
+    /// 'eof' before: 'abc'", and `SETTINGS max_block_size = 0` only "A setting's value has to be greater
+    /// than 0". Name the setting and the value, the way `stringToValueUtil` already does.
+    try
+    {
+        if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+            accessor.setValue(*this, index, value);
+        else
+            getCustomSetting(name) = value;
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while setting '{}' to value {}", name, applyVisitor(FieldVisitorToString(), value));
+        throw;
+    }
 }
 
 template <typename TTraits>
@@ -606,12 +618,27 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    const size_t index = accessor.find(name);
+    if (index == static_cast<size_t>(-1))
+    {
+        if constexpr (Traits::allow_custom_settings)
+            return value;
+        else
+            BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+
+    /// This is where a value given in a `SETTINGS` clause or by `SET` is checked, so it is where the
+    /// message for a value of the wrong type or out of range is produced. The setting field itself does
+    /// not know its own name, so name it here, the way `stringToValueUtil` already does.
+    try
+    {
         return accessor.castValueUtil(index, value);
-    if constexpr (Traits::allow_custom_settings)
-        return value;
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while setting '{}' to value {}", name, applyVisitor(FieldVisitorToString(), value));
+        throw;
+    }
 }
 
 template <typename TTraits>
