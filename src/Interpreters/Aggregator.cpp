@@ -1105,13 +1105,41 @@ void NO_INLINE Aggregator::executeImpl(
     if (use_cache)
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        auto execute = [&](auto & dispatched_state)
+        {
+            executeImpl(
+                method,
+                dispatched_state,
+                key_columns,
+                aggregates_pool,
+                row_begin,
+                row_end,
+                aggregate_instructions,
+                no_more_keys,
+                all_keys_are_const,
+                overflow_row);
+        };
+        ColumnsHashing::dispatchLowCardinalityDictionaryCache(state, execute);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        auto execute = [&](auto & dispatched_state)
+        {
+            executeImpl(
+                method,
+                dispatched_state,
+                key_columns,
+                aggregates_pool,
+                row_begin,
+                row_end,
+                aggregate_instructions,
+                no_more_keys,
+                all_keys_are_const,
+                overflow_row);
+        };
+        ColumnsHashing::dispatchLowCardinalityDictionaryCache(state, execute);
     }
 }
 
@@ -1318,10 +1346,17 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         if (use_cache)
         {
             typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-            return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+            auto execute = [&](auto & dispatched_state)
+            {
+                return run_slices(
+                    dispatched_state,
+                    [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+            };
+            return ColumnsHashing::dispatchLowCardinalityDictionaryCache(state, execute);
         }
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        return run_slices(state, [](size_t) {});
+        auto execute = [&](auto & dispatched_state) { return run_slices(dispatched_state, [](size_t) {}); };
+        return ColumnsHashing::dispatchLowCardinalityDictionaryCache(state, execute);
     };
 
     #define M(NAME) \
@@ -4867,9 +4902,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
     };
 
-    if (use_cache)
+    auto merge_variant = [&](auto & state)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
@@ -4892,34 +4926,19 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 is_cancelled,
                 arena_for_keys);
         }
+    };
+
+    if (use_cache)
+    {
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        ColumnsHashing::dispatchLowCardinalityDictionaryCache(state, merge_variant);
 
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        if (is_simple_count)
-        {
-            /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
-            /// Guarding the call rather than the lambda keeps the lambda from being instantiated for one -
-            /// its body reads the count out of a mapped slot that a set cell does not have.
-            if constexpr (MapAggregationMethod<Method>)
-                merge_count_variant(state);
-        }
-        else
-        {
-            mergeStreamsImplCase(
-                aggregates_pool,
-                state,
-                data,
-                no_more_keys,
-                overflow_row,
-                row_begin,
-                row_end,
-                aggregate_columns_data,
-                is_cancelled,
-                arena_for_keys);
-        }
+        ColumnsHashing::dispatchLowCardinalityDictionaryCache(state, merge_variant);
     }
 }
 
@@ -5265,6 +5284,10 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
     if (merge_method == AggregatedDataVariants::Type::key_packed_string)
         merge_method = AggregatedDataVariants::Type::key_string_hash64;
 
+    /// `LowCardinality` numeric methods intentionally keep their fast CRC32-backed maps here. We
+    /// expect their merged cardinality to remain low enough that it does not warrant re-serializing
+    /// every `UInt128`/`UInt256` key and using a heavier full-width hash for external aggregation.
+
 #undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
 
     /// Temporary data for aggregation.
@@ -5274,6 +5297,7 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
     result.aggregator = this;
 
     result.init(merge_method);
+    LOG_TRACE(log, "External aggregation merge method: {}", result.getMethodName());
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
@@ -5366,48 +5390,37 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     /// Create a 'selector' that will contain bucket index for every row. It will be used to scatter rows to buckets.
     IColumn::Selector selector(rows);
 
+    auto build_selector = [&](auto & dispatched_state)
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+            {
+                if (dispatched_state.isNullAt(i))
+                {
+                    selector[i] = 0;
+                    continue;
+                }
+            }
+
+            /// Calculate bucket number from row hash.
+            auto hash = dispatched_state.getHash(method.data, i, *pool);
+            auto bucket = method.data.getBucketFromHash(hash);
+
+            selector[i] = bucket;
+        }
+    };
+
     /// Disable cache for simple count aggregation
     if (is_simple_count)
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-            {
-                if (state.isNullAt(i))
-                {
-                    selector[i] = 0;
-                    continue;
-                }
-            }
-
-            /// Calculate bucket number from row hash.
-            auto hash = state.getHash(method.data, i, *pool);
-            auto bucket = method.data.getBucketFromHash(hash);
-
-            selector[i] = bucket;
-        }
+        ColumnsHashing::dispatchLowCardinalityDictionaryCache(state, build_selector);
     }
     else
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-            {
-                if (state.isNullAt(i))
-                {
-                    selector[i] = 0;
-                    continue;
-                }
-            }
-
-            /// Calculate bucket number from row hash.
-            auto hash = state.getHash(method.data, i, *pool);
-            auto bucket = method.data.getBucketFromHash(hash);
-
-            selector[i] = bucket;
-        }
+        ColumnsHashing::dispatchLowCardinalityDictionaryCache(state, build_selector);
     }
 
     UInt32 num_buckets = static_cast<UInt32>(destinations.size());

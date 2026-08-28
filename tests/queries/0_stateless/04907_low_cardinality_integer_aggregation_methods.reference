@@ -1,0 +1,46 @@
+UInt8	forced in-order plan	1
+UInt8	regular method	Aggregation method: low_cardinality_key8
+UInt8	results equal	1
+UInt8	nullable regular method	Aggregation method: low_cardinality_key8
+UInt8	nullable results equal	1
+UInt16	forced in-order plan	1
+UInt16	regular method	Aggregation method: low_cardinality_key16
+UInt16	results equal	1
+UInt16	nullable regular method	Aggregation method: low_cardinality_key16
+UInt16	nullable results equal	1
+UInt32	forced in-order plan	1
+UInt32	regular method	Aggregation method: low_cardinality_key32
+UInt32	results equal	1
+UInt32	nullable regular method	Aggregation method: low_cardinality_key32
+UInt32	nullable results equal	1
+UInt64	forced in-order plan	1
+UInt64	regular method	Aggregation method: low_cardinality_key64
+UInt64	results equal	1
+UInt64	nullable regular method	Aggregation method: low_cardinality_key64
+UInt64	nullable results equal	1
+UInt128	forced in-order plan	1
+UInt128	regular method	Aggregation method: low_cardinality_key128
+UInt128	results equal	1
+UInt128	nullable regular method	Aggregation method: low_cardinality_key128
+UInt128	nullable results equal	1
+UInt256	forced in-order plan	1
+UInt256	regular method	Aggregation method: low_cardinality_key256
+UInt256	results equal	1
+UInt256	nullable regular method	Aggregation method: low_cardinality_key256
+UInt256	nullable results equal	1
+UInt128	spill results equal	1
+UInt128	nullable spill results equal	1
+UInt128	nullable external merge method	External aggregation merge method: low_cardinality_key128
+UInt256	spill results equal	1
+UInt256	nullable spill results equal	1
+UInt256	nullable external merge method	External aggregation merge method: low_cardinality_key256
+UInt8	0
+UInt16	0
+UInt32	1
+UInt64	1
+UInt128	1
+UInt256	1
+UInt128	1	1
+UInt128_nullable	1	1
+UInt256	1	1
+UInt256_nullable	1	1

@@ -34,7 +34,7 @@ template <typename State>
 concept MapAggregationState = State::has_mapped;
 
 /// For the case where there is one numeric key.
-/// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
+/// `FieldType` is a fixed-width integer type matching the key column.
 template <typename FieldType, typename TData,
         bool consecutive_keys_optimization = true, bool nullable = false>
 struct AggregationMethodOneNumber
