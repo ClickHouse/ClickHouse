@@ -1,72 +1,30 @@
 #pragma once
 
-#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Common/Logger.h>
-#include <stack>
-#include <utility>
+#include <Processors/QueryPlan/SortingStep.h>
 
+#include <optional>
 
 namespace DB
 {
 
-class OptimizerContext
+/// Per-query context the optimizer runs in: the cluster size, the cost model configuration
+/// and the query settings the rules honor. Field defaults match the settings' defaults. Set once
+/// before optimization starts; only the sort settings are captured later, while the memo is
+/// built from the query plan.
+struct OptimizerContext
 {
-    friend class CascadesOptimizer;
-
-public:
-    explicit OptimizerContext(IOptimizerStatistics & statistics, OptimizationEnvironment environment = {});
-
-    std::pair<GroupId, ExpressionProperties> addGroup(QueryPlan::Node & node);
-    void pushTask(OptimizationTaskPtr task);
-    GroupPtr getGroup(GroupId group_id);
-
-    void updateBestPlan(GroupExpressionPtr expression);
-    void deriveStatistics(GroupId group_id);
-
-    /// Costs the expression (local operator cost plus inputs' best subtree costs), stores the cost
-    /// on it and offers it to the group as a best-implementation candidate. Statistics must be
-    /// derived first. With `prune_against_best` the expression is dropped early (cost not stored)
-    /// when the group already holds a cheaper best for the same properties; returns false then.
-    bool costAndUpdateBest(GroupExpressionPtr expression, bool prune_against_best);
-
-    /// Fast-path costing: if all inputs already have best implementations,
-    /// compute the expression's cost directly and update the group's best plan.
-    /// Returns true if the expression was handled (all inputs ready), false otherwise.
-    bool tryUpdateBestPlanDirectly(GroupExpressionPtr expression);
-
-    /// Cost the expression now when every input already has a best implementation (avoids the
-    /// whole `OptimizeInputsTask` chain), otherwise schedule input optimization.
-    void scheduleCosting(GroupExpressionPtr expression);
-
-    LoggerPtr log = getLogger("CascadesOptimizer");
-
-    const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
-    const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
-    const std::vector<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
-
-    Memo & getMemo() { return memo; }
-    const Memo & getMemo() const { return memo; }
-
-private:
-    void addRule(OptimizationRulePtr rule);
-    void addEnforcerRule(OptimizationRulePtr rule);
-
-    std::vector<OptimizationRulePtr> transformation_rules;
-    std::vector<OptimizationRulePtr> implementation_rules;
-    std::vector<OptimizationRulePtr> enforcer_rules;
-
-    Memo memo{log};
-    std::stack<OptimizationTaskPtr> tasks;
-    CostEstimator cost_estimator;
-    StatisticsDerivation statistics_derivation;
+    size_t cluster_node_count = 1;
+    CostConfig cost_config;
+    /// All tasks run in one process reading the same local storage, so a replicated read is
+    /// consistent even on non-shared storage.
+    bool distributed_plan_execute_locally = false;
+    bool distributed_aggregation_memory_efficient = true;
+    bool distributed_plan_force_shuffle_aggregation = false;
+    bool exact_rows_before_limit = false;
+    /// Sort settings taken from the query (size limits, spill thresholds), used when
+    /// SortingEnforcer builds a new sort so it matches the rest of the query's pipeline.
+    std::optional<SortingStep::Settings> sort_settings;
 };
 
 }

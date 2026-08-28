@@ -362,7 +362,7 @@ For that we first need to copy the primary index file into the [user_files_path]
 SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
 ```
 
-returns `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` on the test machine.
+returns `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` on the test machine.
 
 **Step 2: Get user_files_path**
 
@@ -370,12 +370,12 @@ The [default user_files_path](https://github.com/ClickHouse/ClickHouse/blob/22.1
 
 and on Linux you can check if it got changed: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-On the test machine the path is `/Users/tomschreiber/Clickhouse/user_files/`
+On the test machine the path is `/Users/tomschreiber/ClickHouse/user_files/`
 
 **Step 3: Copy the primary index file into the user_files_path**
 
 ```bash
-cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
 ```
 
 Now we can inspect the content of the primary index via SQL:

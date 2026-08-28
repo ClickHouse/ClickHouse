@@ -13,6 +13,14 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+<div id="default_format">
+  ## default_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置：当查询不含 FORMAT 子句时使用的默认格式。"}]}]} />
+
+指定查询不含 `FORMAT` 子句且未应用其他格式覆盖时的查询结果格式。
+
 <div id="default_materialized_view_sql_security">
   ## default_materialized_view_sql_security
 </div>
