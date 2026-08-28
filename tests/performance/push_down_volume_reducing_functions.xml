@@ -37,7 +37,9 @@
          never admits it, so such a query would measure nothing. `lengthUTF8` is admitted by its own
          branch of `isSupportedArgumentType`, which requires `FixedString(N)` with `N` wider than a
          `UInt64`, so it needs a query of its own: `FixedString(64)` is the positive side of that
-         condition, while the stateless test covers the negative `FixedString(4)` side. -->
+         condition. Both sides of the condition are asserted on the plan shape by
+         `04101_volume_reducing_function_push_down`, so these queries cannot silently stop
+         exercising the pass without a stateless test failing. -->
     <query>SELECT length(fs) FROM (SELECT fs, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
     <query>SELECT lengthUTF8(fs) FROM (SELECT fs, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
 
