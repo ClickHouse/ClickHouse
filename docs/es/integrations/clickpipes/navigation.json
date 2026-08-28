@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "ClickPipes for Object Storage",
+      "group": "ClickPipes para almacenamiento de objetos",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
         "es/integrations/clickpipes/home",
@@ -34,7 +34,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Postgres",
+      "group": "ClickPipes para Postgres",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
         "es/integrations/clickpipes/postgres/index",
@@ -50,7 +50,7 @@
         "es/integrations/clickpipes/postgres/lifecycle",
         "es/integrations/clickpipes/postgres/auth",
         {
-          "group": "Operations",
+          "group": "Operaciones",
           "pages": [
             "es/integrations/clickpipes/postgres/add-table",
             "es/integrations/clickpipes/postgres/pause-and-resume",
@@ -80,7 +80,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Kafka",
+      "group": "ClickPipes para Kafka",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
         "es/integrations/clickpipes/kafka/index",
@@ -92,7 +92,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Kinesis",
+      "group": "ClickPipes para Kinesis",
       "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
       "pages": [
         "es/integrations/clickpipes/kinesis/overview",
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "group": "ClickPipes for GCP Pub/Sub",
+      "group": "ClickPipes para GCP Pub/Sub",
       "icon": "/images/integrations/logos/google_pubsub.svg",
       "pages": [
         "es/integrations/clickpipes/pubsub/overview",
@@ -108,7 +108,7 @@
       ]
     },
     {
-      "group": "ClickPipes for MySQL",
+      "group": "ClickPipes para MySQL",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
         "es/integrations/clickpipes/mysql/index",
@@ -118,7 +118,7 @@
         "es/integrations/clickpipes/mysql/schema-changes",
         "es/integrations/clickpipes/mysql/lifecycle",
         {
-          "group": "Operations",
+          "group": "Operaciones",
           "pages": [
             "es/integrations/clickpipes/mysql/add-table",
             "es/integrations/clickpipes/mysql/pause-and-resume",
@@ -144,7 +144,7 @@
       ]
     },
     {
-      "group": "ClickPipes for MongoDB",
+      "group": "ClickPipes para MongoDB",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
         "es/integrations/clickpipes/mongodb/index",
@@ -153,7 +153,7 @@
         "es/integrations/clickpipes/mongodb/lifecycle",
         "es/integrations/clickpipes/mongodb/faq",
         {
-          "group": "Operations",
+          "group": "Operaciones",
           "pages": [
             "es/integrations/clickpipes/mongodb/add-table",
             "es/integrations/clickpipes/mongodb/remove-table",
@@ -175,7 +175,7 @@
       ]
     },
     {
-      "group": "ClickPipes for BigQuery",
+      "group": "ClickPipes para BigQuery",
       "icon": "/images/logo-bigquery.svg",
       "pages": [
         "es/integrations/clickpipes/bigquery/overview",
@@ -183,7 +183,7 @@
       ]
     },
     {
-      "group": "Programmatic access",
+      "group": "Acceso programático",
       "icon": "code",
       "pages": [
         "es/integrations/clickpipes/programmatic-access/openapi",
@@ -191,7 +191,7 @@
       ]
     },
     {
-      "group": "Networking",
+      "group": "Redes",
       "icon": "network-wired",
       "pages": [
         "es/integrations/clickpipes/networking/index",
@@ -202,7 +202,7 @@
       ]
     },
     {
-      "group": "Other",
+      "group": "Otros",
       "icon": "ellipsis",
       "pages": [
         "es/integrations/clickpipes/dynamodb",

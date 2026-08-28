@@ -314,28 +314,37 @@ Os dashboards podem ser marcados como favoritos para facilitar o acesso na barra
 <Tagging />
 
 <div id="custom-filters">
-  ## Filtros personalizados
+  ## Filtros personalizados e variáveis
 </div>
 
 Além dos [filtros de texto livre](#filter-dashboards) disponíveis em todos os dashboards, os dashboards salvos oferecem suporte a filtros personalizados em listas suspensas preenchidas com dados consultados no ClickHouse. Esses filtros fornecem controles reutilizáveis de apontar e clicar, para que quem visualiza o dashboard possa filtrar sem precisar escrever expressões manualmente.
 
 <Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Filtro suspenso de serviços mostrando os nomes de serviço disponíveis" size="lg" />
 
-As etapas a seguir mostram como adicionar um filtro personalizado ao dashboard criado na seção [&quot;Criando dashboards&quot;](#creating-dashboards).
+Cada filtro permite que quem visualiza escolha um ou mais valores e realiza uma ou ambas as ações a seguir com eles:
+
+* **Transmissão** — aplica a seleção como uma condição de filtro aos blocos correspondentes. Os blocos não precisam ser atualizados para fazer referência ao filtro.
+* **Variável** — expõe a seleção às consultas dos blocos como `$variableName`, para que cada bloco decida onde e como o valor é usado.
+
+Um filtro deve realizar pelo menos uma das duas ações. A transmissão é ativada por padrão ao criar um filtro.
+
+As etapas a seguir mostram como adicionar um filtro ao dashboard criado na seção [&quot;Criando dashboards&quot;](#creating-dashboards).
 
 <Steps>
   <Step title="Abra a caixa de diálogo Editar filtros" id="open-edit-filters">
-    Abra um dashboard salvo e selecione **Editar filtros** na barra de ferramentas.
+    Abra um dashboard salvo e selecione **Editar filtros e variáveis** na barra de ferramentas.
 
     <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Botão Editar filtros na barra de ferramentas do dashboard" size="lg" />
   </Step>
 
   <Step title="Adicione um novo filtro" id="add-new-filter">
-    Clique em **Adicionar novo filtro**. Configure o filtro fornecendo um **Nome**, selecionando uma **Fonte de dados** e inserindo uma **Expressão de filtro** — uma coluna SQL ou expressão cujos valores distintos preencherão a lista suspensa. Clique em **Salvar filtro**.
+    Clique em **Adicionar novo filtro**. Configure o filtro fornecendo um **Nome de exibição**, selecionando uma **Fonte de dados** e inserindo uma **Expressão de filtro** — uma coluna SQL ou expressão cujos valores distintos preencherão a lista suspensa. Clique em **Salvar filtro**.
 
     Por exemplo, para adicionar um filtro de serviço a dados de traces, use `ServiceName` como expressão de filtro com a fonte de dados `Traces`. O &quot;Filtro de valores da lista suspensa&quot; é opcional e permite restringir quais valores aparecem na lista suspensa.
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Caixa de diálogo Adicionar filtro com os campos Nome, Fonte de dados e Expressão de filtro" size="md" />
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Caixa de diálogo Adicionar filtro com os campos Nome de exibição, Fonte de dados e Expressão de filtro" size="md" />
+
+    A mesma caixa de diálogo também controla se o filtro [transmite](#broadcast-filters) seu valor e se ele está [disponível como variável](#dashboard-variables), ambos descritos abaixo.
 
     O modal Filtros mostra todos os filtros configurados para o dashboard. Nele, você pode editar ou excluir filtros existentes, ou adicionar outros.
 
@@ -357,6 +366,85 @@ As etapas a seguir mostram como adicionar um filtro personalizado ao dashboard c
 
 <Note>
   Filtros personalizados em listas suspensas estão disponíveis em dashboards salvos. Para ver esse padrão em ação, consulte o [dashboard do Kubernetes](#kubernetes-dashboard), que fornece filtros suspensos integrados para pod do Kubernetes, Implantação, nome do nó, Espaço de nomes e Cluster.
+</Note>
+
+<div id="broadcast-filters">
+  ### Transmissão
+</div>
+
+Com a **Condição de filtro de transmissão** ativada, os valores selecionados são aplicados como condição de filtro aos blocos do dashboard, sem que nenhum deles faça referência explícita ao filtro. Por padrão, a condição é aplicada a todos os blocos. Use **Aplica-se às fontes** para restringi-la aos blocos que usam um determinado conjunto de fontes — útil quando a expressão do filtro só faz sentido para parte dos dados do dashboard.
+
+Os blocos do construtor de gráficos adotam filtros de transmissão automaticamente. Os blocos de Raw SQL devem incluir a [macro `$__filters`](/pt-BR/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) e ter uma fonte selecionada, pois o ClickStack não consegue inferir onde a condição deve ser inserida em uma consulta escrita manualmente.
+
+<div id="dashboard-variables">
+  ### Variáveis
+</div>
+
+Com **Disponível como variável** habilitado, a seleção do filtro também fica disponível para consultas de blocos como `$variableName`. Por padrão, o **Nome da variável** é o nome de exibição do filtro, com caracteres inválidos removidos, mas pode ser substituído. Os nomes devem começar com uma letra e podem conter apenas letras, dígitos e sublinhados.
+
+Use uma variável quando não quiser propagar uma condição `WHERE` — por exemplo, para inserir o valor em uma expressão `SELECT`, uma cláusula `HAVING` ou uma chave de junção, ou para filtrar um bloco com base em uma coluna diferente da expressão do próprio filtro.
+
+<div id="referencing-variables">
+  #### Referência a uma variável
+</div>
+
+Uma variável é expandida para os valores atualmente selecionados no respectivo menu suspenso. A forma de referência controla a renderização:
+
+| Referência          | Expande para                                                                                                                                                                             | Seleção vazia |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `$name`, `${name}`  | Os valores selecionados, no formato `sqlstring` ou `lucene`, dependendo do contexto. As chaves delimitam o nome quando ele é seguido por caracteres de palavra, como em `${name}_total`. | `NULL`        |
+| `${name:sqlstring}` | Os valores selecionados, entre aspas simples, separados por vírgulas e com escape como valores SQL, por exemplo, `'a', 'b'`                                                              | `NULL`        |
+| `${name:csv}`       | Sem aspas e separados por vírgulas: `a,b`. Sem escape para SQL.                                                                                                                          | string vazia  |
+| `${name:regex}`     | Uma alternância de regex, com escape para regex: `(a\|b)`.                                                                                                                               | `.*`          |
+| `${name:lucene}`    | Um `OR` de termos entre aspas, para entradas do Lucene: `("a" OR "b")`.                                                                                                                  | `("")`        |
+
+Como `$name` é renderizado como `NULL` antes de qualquer seleção, prefira as seguintes macros sempre que for esperado um predicado SQL. Ambas as macros são expandidas para `1=1` enquanto a variável não tiver nenhuma seleção, para que a consulta permaneça válida:
+
+| Macro                                         | Descrição                                                                                                                               |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | Expande para `toString(<filter expression>) IN ($variable)` quando há valores selecionados para `variable` e para `1=1` caso contrário. |
+| `$__filter(<expression>, $<variable>)`        | Expande para `<expression> IN ($variable)` quando há valores selecionados para `variable` e para `1=1` caso contrário.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | Expande para `<condition>` quando a variável tem uma seleção e para `1=1` caso contrário.                                               |
+
+<div id="variables-in-builder-tiles">
+  #### Como usar variáveis em blocos do construtor de gráficos
+</div>
+
+Cada campo de expressão SQL no construtor de gráficos aceita referências a variáveis: colunas `SELECT` e expressões por série, `WHERE`, `GROUP BY` e `HAVING`. O editor oferece preenchimento automático para as variáveis do dashboard e mostra no que cada referência é expandida para a seleção atual.
+
+Prefira usar as macros `$__filter` e `$__conditionalAll` no modo SQL para que as consultas permaneçam válidas quando não houver valores selecionados para as variáveis. As macros não estão disponíveis em campos Lucene — use referências diretas às variáveis nesses casos (por exemplo, `ServiceName:$service`).
+
+Em um campo Lucene, as aspas em torno da própria referência à variável determinam como uma seleção com vários valores é correspondida. Considerando `$service` selecionado como `a,b`:
+
+| Referência               | Expande para                           | Comportamento de correspondência                                                                             |
+| ------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `ServiceName:$service`   | `ServiceName:("a" OR "b")`             | Correspondência por substring — traduzida para SQL como `ServiceName ILIKE '%a%' OR ServiceName ILIKE '%b%'` |
+| `ServiceName:"$service"` | `(ServiceName:"a" OR ServiceName:"b")` | Correspondência exata para cada valor selecionado                                                            |
+
+Coloque a referência à variável entre aspas — `Field:"$var"` — quando os valores selecionados precisarem corresponder exatamente a `Field`, e não a substrings.
+
+<div id="variables-in-sql-tiles">
+  #### Como usar variáveis em blocos SQL
+</div>
+
+Blocos de Raw SQL fazem referência a variáveis da mesma forma, em qualquer ponto da consulta:
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+Consulte [visualizações baseadas em SQL](/pt-BR/clickstack/features/dashboards/sql-visualizations#dashboard-variables) para ver a lista completa de macros disponíveis para blocos SQL.
+
+<Note>
+  Os alertas em um bloco que faz referência a uma variável de dashboard são avaliados com todas as variáveis em seu estado vazio, e não com os valores selecionados no dashboard.
 </Note>
 
 <div id="drilldown-to-search">
