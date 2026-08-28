@@ -152,7 +152,12 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, true);
+    {
+        /// What the shrink gives back was settled into the server total when the query that inserted it ended,
+        /// so releasing it must not be credited to this one, as in `truncate` and `mutate`.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join->shrinkStoredBlocksToFit(dummy, true);
+    }
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
