@@ -1561,29 +1561,42 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             for (auto & op : operations)
             {
                 RequestInfo & request_info = op.second;
-                ZooKeeperResponsePtr response = request_info.request->makeResponse();
-
-                response->error = request_info.request->probably_sent
-                    ? Error::ZCONNECTIONLOSS
-                    : Error::ZSESSIONEXPIRED;
-                response->xid = request_info.request->xid;
-
-                chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
-                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.request->create_ts).count();
-
-                if (request_info.callback)
+                try
                 {
-                    try
+                    ZooKeeperResponsePtr response;
                     {
-                        request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, /* finalize = */ true, elapsed_microseconds);
-                        observeOperation(request_info.request.get(), response.get(), elapsed_microseconds, request_info.component);
+                        /// A memory-limit exception here would otherwise skip all remaining callbacks.
+                        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+                        response = request_info.request->makeResponse();
                     }
-                    catch (...)
+
+                    response->error = request_info.request->probably_sent
+                        ? Error::ZCONNECTIONLOSS
+                        : Error::ZSESSIONEXPIRED;
+                    response->xid = request_info.request->xid;
+
+                    chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
+                    UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.request->create_ts).count();
+
+                    if (request_info.callback)
                     {
-                        /// We must continue to all other callbacks, because the user is waiting for them.
-                        deferException(std::current_exception(), "Exception in ZooKeeper operation callback during session finalization");
+                        try
+                        {
+                            request_info.callback(*response);
+                            logOperationIfNeeded(request_info.request, response, /* finalize = */ true, elapsed_microseconds);
+                            observeOperation(request_info.request.get(), response.get(), elapsed_microseconds, request_info.component);
+                        }
+                        catch (...)
+                        {
+                            /// We must continue to all other callbacks, because the user is waiting for them.
+                            deferException(std::current_exception(), "Exception in ZooKeeper operation callback during session finalization");
+                        }
                     }
+                }
+                catch (...)
+                {
+                    /// We must continue to all other callbacks, because the user is waiting for them.
+                    deferException(std::current_exception(), "Exception while preparing ZooKeeper operation callback during session finalization");
                 }
             }
 
