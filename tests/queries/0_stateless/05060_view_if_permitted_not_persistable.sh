@@ -38,7 +38,9 @@ echo "$out" | grep -m1 -o "UNKNOWN_TABLE"
 echo "leaked: [$(echo "$out" | leaked)]"
 
 echo "--- refused with an explicit column list too ---"
-${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE TABLE ${db}.dst2_05060 (x UInt64) AS viewIfPermitted(SELECT * FROM ${db}.src_05060 ELSE null('x UInt64'))" 2>&1 | grep -m1 -o "cannot be used to create a table"
+out=$(${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE TABLE ${db}.dst2_05060 (x UInt64) AS viewIfPermitted(SELECT * FROM ${db}.src_05060 ELSE null('x UInt64'))" 2>&1)
+echo "$out" | grep -m1 -o "cannot be used to create a table"
+echo "$out" | grep -m1 -o "BAD_ARGUMENTS"
 
 echo "--- the ELSE fallback still works in a query, without the grant ---"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM viewIfPermitted(SELECT * FROM ${db}.src_05060 ELSE null('x UInt64'))"
