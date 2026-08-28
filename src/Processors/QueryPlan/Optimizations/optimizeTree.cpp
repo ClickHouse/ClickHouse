@@ -392,10 +392,10 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
-            if (optimization_settings.read_in_order && !cascades_active)
+            if (optimization_settings.read_in_order && !make_distributed_plan)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
-            if (optimization_settings.distinct_in_order && !cascades_active)
+            if (optimization_settings.distinct_in_order && !make_distributed_plan)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
         },
         [&](auto & frame_node)
