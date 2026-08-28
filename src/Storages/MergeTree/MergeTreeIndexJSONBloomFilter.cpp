@@ -1241,8 +1241,8 @@ std::vector<UInt64> makeValueProbes(
         return hashes;
 
     const auto unwrapped_source_type = removeJSONBloomWrappers(source_type);
-    if (!comparisonUsesExactConversion(*target_type, *unwrapped_source_type)
-        && !WhichDataType(unwrapped_source_type).isStringOrFixedString())
+    if ((WhichDataType(*target_type).isDecimal() && WhichDataType(*unwrapped_source_type).isNativeFloat())
+        || (WhichDataType(*unwrapped_source_type).isDecimal() && WhichDataType(*target_type).isNativeFloat()))
         return hashes;
 
     appendTypedProbe(hashes, path, role, value, source_type, target_type, format_settings);

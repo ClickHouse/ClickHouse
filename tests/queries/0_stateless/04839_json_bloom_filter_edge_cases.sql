@@ -53,8 +53,10 @@ SELECT 'decimal float conservative', groupArray(id) FROM json_bf_edges WHERE j.d
 SELECT 'decimal float collision', groupArray(id) FROM json_bf_edges WHERE j.big_dec = 1e16;
 SELECT 'date', groupArray(id) FROM json_bf_edges WHERE j.day = toDate('1970-01-02') SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'datetime64 typed', groupArray(id) FROM json_bf_edges WHERE j.dt = toDateTime64('1970-01-01 00:00:01.500000000', 9, 'UTC') SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'datetime64 date', groupArray(id) FROM json_bf_edges WHERE j.dt = toDate('1970-01-01') SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_bf_edges WHERE j.dt = 1.5; -- { serverError TYPE_MISMATCH }
 SELECT 'ipv4', groupArray(id) FROM json_bf_edges WHERE j.ip = toIPv4('192.0.2.1') SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'ipv4 uint64', groupArray(id) FROM json_bf_edges WHERE j.ip = toUInt64(3221225985) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'ipv6', groupArray(id) FROM json_bf_edges WHERE j.ip6 = toIPv6('2001:db8::2') SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'uuid', groupArray(id) FROM json_bf_edges WHERE j.uuid = toUUID('00000000-0000-0000-0000-000000000002') SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'nullable negative zero', arraySort(groupArray(id)) FROM json_bf_edges WHERE j.nf = 0.0 SETTINGS force_data_skipping_indices = 'idx';
