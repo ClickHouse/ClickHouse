@@ -1,6 +1,7 @@
 #include <utility>
 
 #include <Common/AsyncTaskExecutor.h>
+#include <Common/Exception.h>
 #include <base/scope_guard.h>
 #include <fmt/format.h>
 
@@ -29,14 +30,32 @@ void AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute)
     span_attributes.push_back(std::move(attribute));
 }
 
-void AsyncTaskExecutor::flushSpanAttributes(OpenTelemetry::Span & span) noexcept
+void AsyncTaskExecutor::setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept
 {
-    if (!span.isTraceEnabled())
-        return;
-    /// Span::addAttribute never throws, attributes are best-effort
     std::lock_guard guard(span_attributes_mutex);
-    for (const auto & attribute : span_attributes)
-        span.addAttribute(attribute);
+    if (span_status != OpenTelemetry::SpanStatus::UNSET)
+        return;
+    span_status = status;
+    span_status_message = std::move(message);
+}
+
+void AsyncTaskExecutor::flushSpanData(OpenTelemetry::Span & span) noexcept
+{
+    std::lock_guard guard(span_attributes_mutex);
+    if (span.isTraceEnabled())
+    {
+        /// Span::addAttribute never throws, attributes are best-effort
+        for (const auto & attribute : span_attributes)
+            span.addAttribute(attribute);
+
+        span.status_code = span_status;
+        span.status_message = std::move(span_status_message);
+    }
+
+    /// The buffered status belongs to this execution only: a task rerun after restart()
+    /// must not inherit the previous outcome.
+    span_status = OpenTelemetry::SpanStatus::UNSET;
+    span_status_message.clear();
 }
 
 void AsyncTaskExecutor::resume()
@@ -128,8 +147,8 @@ struct AsyncTaskExecutor::Routine
                 trace_context_holder.root_span.start_time_us = initial_start_time_us;
         }
 
-        /// Copy the buffered attributes onto the span right before it is finished
-        SCOPE_EXIT({ executor.flushSpanAttributes(trace_context_holder.root_span); });
+        /// Copy the buffered attributes and status onto the span right before it is finished
+        SCOPE_EXIT({ executor.flushSpanData(trace_context_holder.root_span); });
 
         auto async_callback = AsyncCallback{executor, suspend_callback};
         try
@@ -146,6 +165,11 @@ struct AsyncTaskExecutor::Routine
         catch (...)
         {
             executor.exception = std::current_exception();
+
+            /// The tracing holder logs the span when this scope exits: record the failure first,
+            /// otherwise failed task executions are logged with an UNSET status.
+            if (trace_context_holder.root_span.isTraceEnabled())
+                executor.setSpanStatus(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
 
         executor.routine_is_finished = true;

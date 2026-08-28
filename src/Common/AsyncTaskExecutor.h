@@ -65,6 +65,12 @@ public:
     /// Thread-safe: can be called both from inside the fiber and from other threads.
     void addSpanAttribute(OpenTelemetry::SpanAttribute attribute);
 
+    /// Record the outcome of the current task execution on its span. The status is buffered and
+    /// applied to the span when the routine exits (normally or by unwinding).
+    /// Write-once: the first recorded outcome is the task's outcome, later backstops don't overwrite it.
+    /// Thread-safe: can be called both from inside the fiber and from other threads.
+    void setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept;
+
     /// Resume task execution. This method returns when task is completed or suspended.
     void resume();
 
@@ -131,8 +137,9 @@ private:
 
     void createCoroutine();
     void destroyCoroutine();
-    /// make sure we flush current span data to a new span in case of unwind or a cancelled fiber
-    void flushSpanAttributes(OpenTelemetry::Span & span) noexcept;
+    /// make sure we flush current span data (attributes and buffered status) to the span
+    /// in case of unwind or a cancelled fiber
+    void flushSpanData(OpenTelemetry::Span & span) noexcept;
 
     CoroutineStack coroutine_stack;
     StackfulCoroutine coroutine;
@@ -154,6 +161,10 @@ private:
     /// Attributes for the span covering one execution of the task. Copied onto the span when the routine exits
     /// restart() runs the task again under a new span that must get them too
     OpenTelemetry::SpanAttributes span_attributes;
+    /// Buffered outcome of the current task execution, applied to the span when the routine exits.
+    /// Unlike the attributes it is consumed one-shot: a task rerun after restart() starts with no status.
+    OpenTelemetry::SpanStatus span_status = OpenTelemetry::SpanStatus::UNSET;
+    String span_status_message;
     /// Start time of a span handed over by the caller, adopted by the span of the first task
     /// A task rerun after restart() gets a fresh span. Only accessed from inside the fiber after construction, mp sync needed.
     UInt64 initial_span_start_time_us = 0;

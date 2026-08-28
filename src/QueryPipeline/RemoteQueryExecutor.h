@@ -423,8 +423,13 @@ private:
     /// effect; all callers except the destructor must hold `was_cancelled_mutex`.
     void finishSyncFragmentSpan(OpenTelemetry::SpanStatus status, const String & status_message = {}) noexcept;
 
+    /// Record the fragment's outcome on whichever span covers it: finishes the detached
+    /// synchronous-path span, or buffers the status onto the read context fiber span, which is
+    /// applied when the fiber exits. Write-once on both paths: the first recorded outcome wins.
+    void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept;
+
     /// Record the in-flight exception as this fragment's failure. Must be called from a catch block.
-    void finishSyncFragmentSpanWithCurrentException() noexcept;
+    void finishFragmentSpanWithCurrentException() noexcept;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);

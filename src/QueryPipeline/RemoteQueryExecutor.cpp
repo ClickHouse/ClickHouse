@@ -348,9 +348,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::~RemoteQueryExecutor()
 {
-    /// Backstop for the synchronous-path span: an executor destroyed without finish() or cancel() reaches here with the span still open.
-    /// For Failure paths this is a no-op.
-    finishSyncFragmentSpan(OpenTelemetry::SpanStatus::OK);
+    /// Backstop for the fragment span: an executor destroyed without finish() or cancel() reaches
+    /// here with no outcome recorded yet. For failure paths this is a no-op: the outcome is write-once.
+    finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
 
     /// We should finish establishing connections to disconnect it later,
     /// so these connections won't be in the out-of-sync state.
@@ -494,9 +494,17 @@ void RemoteQueryExecutor::finishSyncFragmentSpan(OpenTelemetry::SpanStatus statu
     }
 }
 
-void RemoteQueryExecutor::finishSyncFragmentSpanWithCurrentException() noexcept
+void RemoteQueryExecutor::finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message) noexcept
 {
-    finishSyncFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+    if (sync_fragment_span)
+        finishSyncFragmentSpan(status, status_message);
+    else if (read_context)
+        read_context->setSpanStatus(status, std::move(status_message));
+}
+
+void RemoteQueryExecutor::finishFragmentSpanWithCurrentException() noexcept
+{
+    finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
 }
 
 void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
@@ -519,7 +527,7 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     {
         /// A failure to establish the connections or to send the query is this fragment's
         /// failure: record it on the span instead of letting a later backstop mark it OK.
-        finishSyncFragmentSpanWithCurrentException();
+        finishFragmentSpanWithCurrentException();
         throw;
     }
 }
@@ -573,7 +581,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
             extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
         }
 
-        finishSyncFragmentSpan(OpenTelemetry::SpanStatus::OK);
+        finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
         return;
     }
 
@@ -736,7 +744,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     {
         /// A local failure while reading the fragment's data (e.g. a network error in `receivePacket`, or an unknown packet)
         /// is this fragment's failure: record it on the span instead of letting a later backstop mark it OK.
-        finishSyncFragmentSpanWithCurrentException();
+        finishFragmentSpanWithCurrentException();
         throw;
     }
 }
@@ -925,11 +933,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 /// The server terminated the query with this exception and will not send `EndOfStream`,
                 /// so mark the executor finished to signal end of data.
                 finished = true;
-                finishSyncFragmentSpan(OpenTelemetry::SpanStatus::OK);
+                finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
                 return ReadResult(Block{});
             }
 
-            finishSyncFragmentSpan(OpenTelemetry::SpanStatus::ERROR, packet.exception->message());
+            finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, packet.exception->message());
             packet.exception->rethrow();
             break;
 
@@ -937,7 +945,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (!connections->hasActiveConnections())
             {
                 finished = true;
-                finishSyncFragmentSpan(OpenTelemetry::SpanStatus::OK);
+                finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
                 /// TODO: Replace with Type::Finished
                 return ReadResult(Block{});
             }
@@ -1065,8 +1073,8 @@ void RemoteQueryExecutor::finish()
 {
     LockAndBlocker guard(was_cancelled_mutex);
 
-    /// The executor is done with the fragment so close the synchronous-path span on every exit from here.
-    SCOPE_EXIT({ finishSyncFragmentSpan(OpenTelemetry::SpanStatus::OK); });
+    /// The executor is done with the fragment so record its outcome on every exit from here.
+    SCOPE_EXIT({ finishFragmentSpan(OpenTelemetry::SpanStatus::OK); });
     try
     {
         finishUnlocked();
@@ -1074,7 +1082,7 @@ void RemoteQueryExecutor::finish()
     catch (...)
     {
         /// An exception thrown while cancelling or draining the connections is this fragment's failure.
-        finishSyncFragmentSpanWithCurrentException();
+        finishFragmentSpanWithCurrentException();
         throw;
     }
 }
@@ -1253,10 +1261,10 @@ void RemoteQueryExecutor::cancelUnlocked()
     {
         /// Failing to deliver the cancel (e.g. over a broken connection) ends the fragment
         /// abnormally: record it on the span instead of letting the destructor backstop mark it OK.
-        finishSyncFragmentSpanWithCurrentException();
+        finishFragmentSpanWithCurrentException();
         throw;
     }
-    finishSyncFragmentSpan(OpenTelemetry::SpanStatus::OK);
+    finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
 }
 
 void RemoteQueryExecutor::sendScalars()
