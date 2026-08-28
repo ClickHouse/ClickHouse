@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-old-analyzer
+# (the clamp is analyzer-path behaviour; the legacy interpreter throws on such a nested clause)
 # A readonly user must not be able to override a locked setting through a SETTINGS clause nested in
 # a subquery or in a view's inner query. The nested clause is clamped against the constraints: the
 # violating changes are dropped and the query keeps working with the constraints enforced.
