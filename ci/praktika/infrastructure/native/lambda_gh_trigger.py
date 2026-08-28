@@ -231,6 +231,14 @@ def _build_rerun_workflow(check_obj, payload, event_ts):
 
     Returns (workflow_dict, pr_number) or (None, None) if the event has no
     associated PR (e.g. a push-based check suite with no PR).
+
+    TODO: the rerun feature is not yet ready. check_run/check_suite payloads
+    omit PR labels/title/draft, so the reconstruction below hardcodes empty
+    labels. Label-gated filters (filter_job.py do-not-test / ci-*,
+    new_tests_check.py bugfix validation) read these, so an internal-PR rerun
+    schedules a different DAG than the live PR state. Before enabling reruns,
+    refetch the PR by number (or persist full PR metadata for all PRs, not only
+    external ones) to populate labels/title/draft.
     """
     prs = check_obj.get("pull_requests", [])
     if not prs:

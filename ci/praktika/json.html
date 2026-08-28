@@ -2899,6 +2899,21 @@
     });
 
     function createFavicon() {
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+        }
+        // Prefer a project-provided favicon deployed next to this page in the
+        // report bucket; fall back to a generated one if it's absent.
+        const img = new Image();
+        img.onload = () => { link.href = "favicon.png"; };
+        img.onerror = () => { link.href = generateFaviconDataURL(); };
+        img.src = "favicon.png";
+    }
+
+    function generateFaviconDataURL() {
         const width = 32;
         const height = 32;
         const lineColor = "rgb(0, 0, 0)";
@@ -2930,16 +2945,7 @@
         }
 
         // Convert canvas to Data URL (PNG format)
-        const faviconURL = canvas.toDataURL("image/png");
-
-        // Set the favicon dynamically
-        let link = document.querySelector("link[rel='icon']");
-        if (!link) {
-            link = document.createElement("link");
-            link.rel = "icon";
-            document.head.appendChild(link);
-        }
-        link.href = faviconURL;
+        return canvas.toDataURL("image/png");
     }
     createFavicon();
     </script>

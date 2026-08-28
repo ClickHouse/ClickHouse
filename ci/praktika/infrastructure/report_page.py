@@ -47,6 +47,19 @@ class ReportPage:
             )
             print(f"Uploaded report page '{Path(page_file).name}' to s3://{bucket_name}")
 
+            # Optional per-project favicon. The report page loads "favicon.png"
+            # from the bucket root next to itself and falls back to a generated
+            # icon when it's absent, so uploading it here is all a project needs.
+            favicon_file = Path(Settings.SETTINGS_DIRECTORY) / "favicon.png"
+            if favicon_file.is_file():
+                S3.copy_file_to_s3(
+                    s3_path=str(Path(bucket_name) / "favicon.png"),
+                    local_path=str(favicon_file),
+                    content_type="image/png",
+                    with_rename=True,
+                )
+                print(f"Uploaded favicon 'favicon.png' to s3://{bucket_name}")
+
             with open(page_file, "w", encoding="utf-8") as f:
                 f.write(html)
 
