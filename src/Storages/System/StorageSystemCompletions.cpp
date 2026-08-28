@@ -136,11 +136,22 @@ static void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, con
         const bool check_access_for_columns_in_db = check_access_for_columns
             && !access->isGranted(AccessType::SHOW_COLUMNS, database_name);
 
-        /// No guard around the listing: `getTablesIterator` is the best-effort variant, which a
-        /// remote engine (`MySQL`, `PostgreSQL`) already makes tolerant of its own unreachable
-        /// server, so one database cannot cost the completions of all the others. Anything it does
-        /// propagate is a real failure and must reach the user.
-        for (auto iterator = database_ptr->getTablesIterator(context); iterator->isValid(); iterator->next())
+        /// Completions are an aid for the client, offered for every database at once, so one
+        /// database whose remote is unreachable must only cost its own suggestions rather than all
+        /// of them. Only the listing is covered here; filling a table's columns below takes locks
+        /// and reads metadata, whose failures must still reach the user.
+        DatabaseTablesIteratorPtr iterator;
+        try
+        {
+            iterator = database_ptr->getTablesIterator(context);
+        }
+        catch (...)
+        {
+            handleCannotListTables(*database_ptr, UnavailableDatabasePolicy::SkipIfUnreachable);
+            continue;
+        }
+
+        for (; iterator->isValid(); iterator->next())
         {
             const auto & table_name = iterator->name();
             const auto & table = iterator->table();

@@ -80,13 +80,9 @@ echo -n 'named_database_fails '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.tables WHERE database = '${MYSQL_DB}'" 2>&1 | grep -c 'ALL_CONNECTION_TRIES_FAILED'
 echo -n 'show_tables_fails '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SHOW TABLES FROM ${MYSQL_DB}" 2>&1 | grep -c 'ALL_CONNECTION_TRIES_FAILED'
-# `system.columns` cannot report it, unlike `system.tables` above: it needs a storage object per
-# table, and the only listing variant that propagates a remote failure is the one `DatabaseDataLake`
-# uses to turn an unresolvable table into a row with a null storage object, which this query would
-# then silently drop. So it answers an empty result, exactly as it already does for an unreachable
-# `PostgreSQL` database. Pinned here so the asymmetry with `system.tables` is deliberate.
-echo -n 'named_database_columns_empty '
-${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.columns WHERE database = '${MYSQL_DB}'"
+# system.columns decides the same thing separately, so it needs its own assertion.
+echo -n 'named_database_columns_fails '
+${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.columns WHERE database = '${MYSQL_DB}'" 2>&1 | grep -c 'ALL_CONNECTION_TRIES_FAILED'
 
 # The `Remote` engine lists its tables from the remote ClickHouse server, so an unreachable server
 # is the same class of failure and goes through the same mechanism. It wraps a failure to reach every
@@ -98,15 +94,14 @@ ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() > 0 FROM system.tables"
 echo -n 'remote_engine_named_database_fails '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SHOW TABLES FROM ${REMOTE_DB}" 2>&1 | grep -c 'NO_REMOTE_SHARD_AVAILABLE'
 
-# Tolerance is only for a connection failure to the remote. A listing failure of any other kind must
-# propagate, rather than serve the local cache as if the listing had succeeded - on the best-effort
-# path (`system.iceberg_files`, which uses the plain iterator) as well as on the scan that decides
-# per database (`system.tables`).
+# Only a recognised connection failure is skipped. A listing failure of any other kind must reach
+# the user even on a whole-server scan, rather than be turned into a silently incomplete result.
+# Both guarded readers decide this separately, so both are asserted.
 ${CLICKHOUSE_CLIENT_QUIET} -q "SYSTEM ENABLE FAILPOINT mysql_fetch_tables_throw"
-echo -n 'injected_failure_propagates_best_effort '
-${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.iceberg_files" 2>&1 | grep -c 'Injected MySQL table listing failure'
-echo -n 'injected_failure_propagates_scan '
+echo -n 'injected_failure_propagates_tables '
 ${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.tables" 2>&1 | grep -c 'Injected MySQL table listing failure'
+echo -n 'injected_failure_propagates_completions '
+${CLICKHOUSE_CLIENT_QUIET} -q "SELECT count() FROM system.completions" 2>&1 | grep -c 'Injected MySQL table listing failure'
 ${CLICKHOUSE_CLIENT_QUIET} -q "SYSTEM DISABLE FAILPOINT mysql_fetch_tables_throw"
 
 # The tolerated failure is a warning: Error-level messages from these paths trip the Upgrade check.

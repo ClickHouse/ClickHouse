@@ -61,7 +61,12 @@ public:
         access = context_copy->getAccess();
         check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
-        auto all_databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
+        /// `with_remote_databases = false`: an Iceberg table is never held by a remote SQL database
+        /// (`MySQL`, `PostgreSQL`, `Remote`), whose tables are all of its own storage type, so listing
+        /// one costs a round-trip to a server that cannot contribute a row - and fails the whole scan
+        /// when that server is unreachable. Data lake catalogs, the source that matters here, are a
+        /// separate class and are kept.
+        auto all_databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = false});
 
         if (database_filter_)
         {

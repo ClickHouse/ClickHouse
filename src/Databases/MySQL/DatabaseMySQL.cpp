@@ -182,68 +182,25 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-Tables DatabaseMySQL::listTablesImpl(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool throw_on_error) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     Tables tables;
     std::lock_guard lock(mutex);
 
-    try
+    /// Drives a listing failure that is *not* a connection failure to the remote, so that a caller
+    /// which tolerates an unreachable database can be shown to still report anything else.
+    fiu_do_on(FailPoints::mysql_fetch_tables_throw,
     {
-        /// Not a connection failure to the remote, so it must propagate even here rather than be
-        /// served from `local_tables_cache` as if the listing had succeeded.
-        fiu_do_on(FailPoints::mysql_fetch_tables_throw,
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Injected MySQL table listing failure");
-        });
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Injected MySQL table listing failure");
+    });
 
-        fetchTablesIntoLocalCache(local_context);
-    }
-    catch (...)
-    {
-        /// Only an unreachable remote is tolerated, and only on the best-effort path. Anything else -
-        /// a malformed reply, a permission error, a logical error - propagates rather than turning
-        /// into a successful but incomplete list of tables. The classifier returns `warning` exactly
-        /// for a connection failure to the remote.
-        const auto level = mysqlToleratedConnectionFailureLogLevel();
-        if (throw_on_error || level != LogsLevel::warning)
-            throw;
-
-        /// Serve whatever the local cache holds. Logged at `warning` rather than `error`, because an
-        /// `Error` line would be reported as an error of a query that succeeds.
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", level);
-    }
+    fetchTablesIntoLocalCache(local_context);
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)
         if (!remove_or_detach_tables.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
             tables[table_name] = modify_time_and_storage.second;
 
-    return tables;
-}
-
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
-{
-    return std::make_unique<DatabaseTablesSnapshotIterator>(
-        listTablesImpl(local_context, filter_by_table_name, /* throw_on_error = */ false), getDatabaseName());
-}
-
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIteratorWithHint(
-    ContextPtr local_context,
-    const FilterByNameFunction & filter_by_table_name,
-    bool /* skip_not_loaded */,
-    const TablesFilter & /* tables_filter */) const
-{
-    return std::make_unique<DatabaseTablesSnapshotIterator>(
-        listTablesImpl(local_context, filter_by_table_name, /* throw_on_error = */ true), getDatabaseName());
-}
-
-std::vector<LightWeightTableDetails> DatabaseMySQL::getLightweightTablesIterator(
-    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
-{
-    std::vector<LightWeightTableDetails> result;
-    for (const auto & [table_name, storage] : listTablesImpl(local_context, filter_by_table_name, /* throw_on_error = */ true))
-        if (storage)
-            result.emplace_back(table_name);
-    return result;
+    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
 bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) const

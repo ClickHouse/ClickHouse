@@ -495,6 +495,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
                 database_column_mut->insertDefault(); /// Empty database for external tables.
         }
 
+        const size_t total_databases = database_column_mut->size();
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
@@ -509,6 +510,11 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         }
 
         ColumnPtr & database_column = block_to_filter.getByName("database").column;
+
+        /// True when the query named the databases it wants rather than scanning every one of them.
+        /// A whole-server scan must not fail because a single database cannot list its tables (an
+        /// unreachable `MySQL` / `PostgreSQL` remote); a query that named one must report it.
+        const bool databases_narrowed_by_query = database_column->size() < total_databases;
 
         /// Add `table` column.
         MutableColumnPtr table_column_mut = ColumnString::create();
@@ -529,22 +535,23 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-
-                /// No guard around the listing, and deliberately the best-effort variant: a remote
-                /// engine (`MySQL`, `PostgreSQL`, `Remote`) already tolerates its own unreachable
-                /// server here, so one database cannot fail a whole-server scan. The strict variant
-                /// is not usable: `DatabaseDataLake` defines it for `system.tables`, where a table
-                /// whose metadata cannot be resolved becomes a row with a null storage object, and
-                /// this loop would then silently drop that table instead of reporting the metadata
-                /// error that `database_datalake_require_metadata_access` promises.
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                try
                 {
-                    if (const auto & table = iterator->table())
+                    for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                     {
-                        const String & table_name = iterator->name();
-                        storages[{database_name, table_name}] = table;
-                        table_column_mut->insert(table_name);
+                        if (const auto & table = iterator->table())
+                        {
+                            const String & table_name = iterator->name();
+                            storages[{database_name, table_name}] = table;
+                            table_column_mut->insert(table_name);
+                        }
                     }
+                }
+                catch (...)
+                {
+                    if (databases_narrowed_by_query)
+                        throw;
+                    handleCannotListTables(*database, UnavailableDatabasePolicy::SkipIfUnreachable);
                 }
             }
             offsets[i] = table_column_mut->size();

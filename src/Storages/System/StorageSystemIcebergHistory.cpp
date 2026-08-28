@@ -147,7 +147,12 @@ void StorageSystemIcebergHistory::fillData(
     /// opens a connection, which a query filtering by database should not need to do.
     MutableColumnPtr database_name_column = ColumnString::create();
 
-    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
+    /// `with_remote_databases = false`: an Iceberg table is never held by a remote SQL database
+    /// (`MySQL`, `PostgreSQL`, `Remote`), whose tables are all of its own storage type, so listing
+    /// one costs a round-trip to a server that cannot contribute a row - and fails the whole scan
+    /// when that server is unreachable. Data lake catalogs, the source that matters here, are a
+    /// separate class and are kept.
+    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = false});
     for (const auto & [database_name, database] : databases)
         database_name_column->insert(database_name);
 

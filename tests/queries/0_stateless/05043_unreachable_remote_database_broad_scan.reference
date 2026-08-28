@@ -10,10 +10,10 @@ kafka_consumers 1
 unknown_table 1
 named_database_fails 1
 show_tables_fails 1
-named_database_columns_empty 0
+named_database_columns_fails 1
 remote_engine_scan 1
 remote_engine_named_database_fails 1
-injected_failure_propagates_best_effort 1
-injected_failure_propagates_scan 1
+injected_failure_propagates_tables 1
+injected_failure_propagates_completions 1
 scan_no_error	1
 scan_warning_seen	1
