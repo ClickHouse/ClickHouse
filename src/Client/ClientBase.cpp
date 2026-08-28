@@ -840,8 +840,10 @@ void ClientBase::onPreviewData(Block & block)
     if (!is_interactive || !tty_buf || written_first_block)
         return;
 
-    if (need_render_progress_table && progress_table_toggle_on.load())
-        return;
+    /// While the progress table is toggled on it owns this band of the terminal, so the preview is
+    /// not painted - but its state is still updated, otherwise toggling the table back off would
+    /// repaint a preview from before the toggle, or keep a preview that has since become empty.
+    const bool hidden_by_progress_table = need_render_progress_table && progress_table_toggle_on.load();
 
     /// An empty preview says the intermediate result is empty at the moment (e.g. `HAVING`
     /// filtered every row out); it replaces the previous preview, which has to leave the screen.
@@ -854,6 +856,9 @@ void ClientBase::onPreviewData(Block & block)
     }
 
     query_result_preview_display.setPreview(block, client_context);
+
+    if (hidden_by_progress_table)
+        return;
 
     std::unique_lock lock(tty_mutex);
     query_result_preview_display.writePreview(*tty_buf, lock);

@@ -21,6 +21,12 @@ previews carry their own window maximum
 --- a preview emptied by HAVING is still delivered
 has previews
 previews are empty
+--- a preview emptied by OFFSET is still delivered
+has previews
+previews are empty
+--- a preview emptied by LIMIT with an offset is still delivered
+has previews
+previews are empty
 --- the state-size threshold in bytes stops previews
 has previews below the threshold
 no previews above the threshold

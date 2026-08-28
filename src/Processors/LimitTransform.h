@@ -81,7 +81,10 @@ public:
     String getName() const override { return "Limit"; }
 
     /// Preview chunks get the offset and the limit applied standalone, without advancing `rows_read`.
-    bool supportsQueryResultPreviews() const override { return true; }
+    /// `LIMIT ... WITH TIES` cannot be applied to a preview: the tie boundary is decided by the
+    /// rows that follow the limit in the real result, which a preview does not have. Fail-close -
+    /// with previews unsupported here, `QueryPipeline::complete` keeps the emitters dormant.
+    bool supportsQueryResultPreviews() const override { return !with_ties; }
 
     Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.

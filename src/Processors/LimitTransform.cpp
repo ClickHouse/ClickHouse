@@ -202,8 +202,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     auto rows = data.current_chunk.getNumRows();
 
     /// A query result preview is a self-contained chunk (see `QueryResultPreview.h`): apply the
-    /// offset and the limit to it alone, without advancing `rows_read` or the counters (WITH TIES
-    /// is ignored for previews - the tie boundary belongs to the real result).
+    /// offset and the limit to it alone, without advancing `rows_read` or the counters. `WITH TIES`
+    /// never gets here: it does not support previews at all (see `supportsQueryResultPreviews`).
     if (isQueryResultPreview(data.current_chunk))
     {
         if (is_limit_reached || output_finished)
@@ -217,11 +217,13 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         if (offset < rows)
             preview_length = limit_is_unreachable ? (rows - offset) : std::min<UInt64>(limit, rows - offset);
 
+        /// An empty preview is a preview state of its own: it replaces the previous one and tells
+        /// the client to clear it. Dropping it here would leave stale rows on the screen.
         if (preview_length == 0)
         {
-            data.current_chunk.clear();
-            input.setNeeded();
-            return Status::NeedData;
+            data.current_chunk.setColumns(output.getHeader().cloneEmptyColumns(), 0);
+            output.push(std::move(data.current_chunk));
+            return Status::PortFull;
         }
 
         if (preview_length < rows)

@@ -1782,8 +1782,11 @@ void WindowTransform::computeQueryResultPreview()
             computed.append(next);
     }
 
-    if (!computed.hasRows())
-        return;
+    /// An empty preview is a preview state of its own: it replaces the previous one and tells the
+    /// client to clear it, so it is forwarded instead of being dropped (a preview emptied upstream
+    /// by `HAVING`, `OFFSET` or `LIMIT` arrives here with no rows).
+    if (!computed.hasColumns())
+        computed.setColumns(output.getHeader().cloneEmptyColumns(), 0);
 
     markAsQueryResultPreview(computed);
     pending_query_result_preview = std::move(computed);

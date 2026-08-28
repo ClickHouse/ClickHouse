@@ -121,11 +121,38 @@ for line in sys.stdin:
 print('previews are empty' if ok else 'non-empty previews')
 "
 
+check_previews_are_empty()
+{
+    RESPONSE="$1"
+    if [ "$(echo "${RESPONSE}" | grep -c '"packet":"preview"')" -ge 1 ]; then echo "has previews"; else echo "no previews: ${RESPONSE}"; fi
+    echo "${RESPONSE}" | grep '"packet":"preview"' | python3 -c "
+import json, sys
+ok = True
+for line in sys.stdin:
+    if json.loads(line)['data'] != '':
+        ok = False
+print('previews are empty' if ok else 'non-empty previews')
+"
+}
+
+echo '--- a preview emptied by OFFSET is still delivered'
+# The aggregation has four groups, so an offset past them empties every preview; the empty preview
+# must still be delivered, otherwise the rows of the previous preview stay on the screen.
+OFFSET_QUERY="SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k ORDER BY k OFFSET 10 FORMAT JSONCompactEachRow"
+check_previews_are_empty "$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}&framing_output_format=JSONEachPacketString" -d "${OFFSET_QUERY}")"
+
+echo '--- a preview emptied by LIMIT with an offset is still delivered'
+LIMIT_QUERY="SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k ORDER BY k LIMIT 3 OFFSET 10 FORMAT JSONCompactEachRow"
+check_previews_are_empty "$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}&framing_output_format=JSONEachPacketString" -d "${LIMIT_QUERY}")"
+
 echo '--- the state-size threshold in bytes stops previews'
 # `query_result_previews_max_result_bytes` is compared with the memory the aggregation really
-# holds, which for 100000 keys is megabytes - far above the 1 KiB threshold below and far below
-# the 1 GiB one, so the outcome does not depend on timing.
-STATE_QUERY="SELECT number % 100000 AS k, count() AS c FROM numbers(2000000) GROUP BY k ORDER BY k LIMIT 3 FORMAT JSONCompactEachRow"
+# holds, which for four `uniqExact` states over 2000000 values is megabytes - far above the 1 KiB
+# threshold below and far below the 1 GiB one, so the outcome does not depend on timing.
+# The query deliberately has no `ORDER BY ... LIMIT`: a sorting with a limit is a preview emitter
+# of its own, and its state (the top-N candidates) stays below any threshold, so it would keep
+# emitting previews after the aggregation stopped and make the assertion below depend on timing.
+STATE_QUERY="SELECT number % 4 AS k, uniqExact(number) AS u FROM numbers(2000000) GROUP BY k FORMAT JSONCompactEachRow"
 run_state()
 {
     ${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}&framing_output_format=JSONEachPacketString&query_result_previews_max_result_rows=1000000&query_result_previews_max_result_bytes=$1" -d "${STATE_QUERY}"
@@ -134,7 +161,8 @@ ROOMY=$(run_state 1000000000)
 TIGHT=$(run_state 1024)
 if [ "$(echo "${ROOMY}" | grep -c '"packet":"preview"')" -ge 1 ]; then echo "has previews below the threshold"; else echo "no previews below the threshold: ${ROOMY}"; fi
 if [ "$(echo "${TIGHT}" | grep -c '"packet":"preview"')" -eq 0 ]; then echo "no previews above the threshold"; else echo "previews above the threshold"; fi
-if [ "$(echo "${ROOMY}" | grep '"packet":"data"')" == "$(echo "${TIGHT}" | grep '"packet":"data"')" ]; then echo "identical"; else echo "differ"; fi
+# The result has no `ORDER BY`, so the rows of the two runs are compared as sets.
+if [ "$(echo "${ROOMY}" | grep '"packet":"data"' | sort)" == "$(echo "${TIGHT}" | grep '"packet":"data"' | sort)" ]; then echo "identical"; else echo "differ"; fi
 
 echo '--- without framing, previews are not emitted into the plain output'
 PLAIN_WITH=$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}" -d "${QUERY}")

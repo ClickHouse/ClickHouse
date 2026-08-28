@@ -134,11 +134,13 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
     /// offset to it alone, without advancing `rows_read` or the counters.
     if (isQueryResultPreview(data.current_chunk))
     {
+        /// An empty preview is a preview state of its own: it replaces the previous one and tells
+        /// the client to clear it. Dropping it here would leave stale rows on the screen.
         if (offset >= rows)
         {
-            data.current_chunk.clear();
-            input.setNeeded();
-            return Status::NeedData;
+            data.current_chunk.setColumns(output.getHeader().cloneEmptyColumns(), 0);
+            output.push(std::move(data.current_chunk));
+            return Status::PortFull;
         }
 
         if (offset > 0)
