@@ -1252,3 +1252,75 @@ TEST_F(ConnectionPoolTest, DirectSessionReconnectNamesThePeer)
     }
     ASSERT_TRUE(refused);
 }
+
+
+namespace
+{
+
+/// Reproduces what the deferred poll + SO_ERROR connect path raises: `SocketImpl::error(int)`
+/// rethrows the plain per-errno exception with no address attached.
+class BareConnectFailureSession : public Poco::Net::HTTPClientSession
+{
+public:
+    BareConnectFailureSession(const std::string & host, Poco::UInt16 port, std::function<void()> thrower_)
+        : Poco::Net::HTTPClientSession(host, port), thrower(std::move(thrower_))
+    {
+    }
+
+protected:
+    void connect(const Poco::Net::SocketAddress &) override { thrower(); }
+
+private:
+    std::function<void()> thrower;
+};
+
+}
+
+TEST_F(ConnectionPoolTest, DeferredRefusalRewrapNamesThePeer)
+{
+    /// The listenerless-port tests above cannot reach the rewrap branch: loopback refusals fail
+    /// synchronously and already carry the peer. A refusal discovered after EINPROGRESS surfaces
+    /// as a bare "Connection refused", so it is injected here exactly as `SocketImpl` throws it.
+    const String endpoint = "127.0.0.99:9";
+    try
+    {
+        BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::Net::ConnectionRefusedException(); });
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        session.sendRequest(request);
+        FAIL() << "Expected the connect to be refused";
+    }
+    catch (const Poco::Net::ConnectionRefusedException & e)
+    {
+        const auto text = e.displayText();
+        ASSERT_NE(std::string::npos, text.find(endpoint)) << "Peer address missing: " << text;
+    }
+}
+
+TEST_F(ConnectionPoolTest, DeferredNetErrorRewrapNamesThePeer)
+{
+    /// The three bare deferred shapes the reconnect handler widens the contract to, verbatim from
+    /// `SocketImpl::error(int)`; each must come back as a NetException naming the dialled endpoint.
+    const String endpoint = "127.0.0.99:9";
+    const std::vector<std::pair<int, std::string>> shapes = {
+        {ENETUNREACH, "Network is unreachable"},
+        {EHOSTUNREACH, "No route to host"},
+        {EHOSTDOWN, "Host is down"},
+    };
+    for (const auto & [err, bare_text] : shapes)
+    {
+        try
+        {
+            BareConnectFailureSession session("127.0.0.99", 9, [code = err, message = bare_text] { throw Poco::Net::NetException(message, code); });
+            Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+            session.sendRequest(request);
+            FAIL() << "Expected the connect to fail: " << bare_text;
+        }
+        catch (const Poco::Net::NetException & e)
+        {
+            const auto text = e.displayText();
+            EXPECT_NE(std::string::npos, text.find(bare_text)) << "Bare text missing: " << text;
+            EXPECT_NE(std::string::npos, text.find(endpoint)) << "Peer address missing: " << text;
+            EXPECT_EQ(err, e.code()) << "Errno not preserved: " << text;
+        }
+    }
+}
