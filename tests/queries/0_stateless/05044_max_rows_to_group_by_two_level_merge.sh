@@ -58,6 +58,18 @@ SELECT
     (SELECT count(), sum(c) FROM (SELECT number AS g, count() AS c FROM numbers_mt(600000) GROUP BY g SETTINGS max_rows_to_group_by = 0));
 "
 
+# A NULL group of a nullable single-column key lives in a dedicated slot of bucket 0's table
+# rather than in an ordinary cell, and the bucket table's size accessor counts it, so the
+# merged total must include it. The limit sits exactly one below the group count, and only the
+# NULL group crosses it: an accounting that missed the slot would return the full result.
+echo "The NULL group counts toward the limit"
+$CLICKHOUSE_LOCAL --query "
+$SETTINGS_COMMON
+SET group_by_two_level_threshold = 1000;
+SET max_rows_to_group_by = 599999;
+SELECT count() FROM (SELECT nullIf(number, 0) AS g, count() AS c FROM numbers_mt(600000) GROUP BY g);
+" 2>&1 | grep -oE "has [0-9]+ rows, maximum: [0-9]+" | head -1
+
 # The dropping modes leave the merge untouched: their contract is decided at the producers, and
 # every producer stays under the limit here, so the same union-over-limit query must succeed
 # with the complete result.
