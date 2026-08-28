@@ -27,7 +27,7 @@ void TTLDeleteAlgorithm::execute(Block & block)
     /// nothing expires - and then the block is handed on untouched.
     const size_t rows = block.rows();
     PaddedPODArray<Int64> timestamps;
-    extractTimestamps(ttl_column.get(), rows, timestamps);
+    extractTimestamps(ttl_column.get(), timestamps);
 
     IColumn::Filter filter(rows);
     size_t removed = 0;

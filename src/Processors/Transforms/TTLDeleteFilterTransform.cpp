@@ -96,9 +96,9 @@ TTLDeleteFilterTransform::TTLDeleteFilterTransform(
 {
 }
 
-void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column, size_t num_rows)
+void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column)
 {
-    ITTLAlgorithm::extractTimestamps(ttl_column, num_rows, date_lut, timestamps);
+    ITTLAlgorithm::extractTimestamps(ttl_column, date_lut, timestamps);
 }
 
 void TTLDeleteFilterTransform::transform(Chunk & chunk)
@@ -127,7 +127,7 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
         /// Phase 1: extract typed TTL column into a flat Int64 timestamp array.
         auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(
             entry.expressions.expression, block, entry.description.result_column);
-        extractTimestamps(ttl_column.get(), num_rows);
+        extractTimestamps(ttl_column.get());
 
         /// Phase 2: apply TTL expiration and WHERE filter to produce the filter mask.
         auto where_column = ITTLAlgorithm::executeExpressionAndGetColumn(

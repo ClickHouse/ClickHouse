@@ -56,9 +56,10 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
 /// `updateTTLInfoConst` fold the same types into `MergeTreeDataPartTTLInfo` without building an
 /// array, and still need the new type too.
 void ITTLAlgorithm::extractTimestamps(
-    const IColumn * column, size_t num_rows, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps)
+    const IColumn * column, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps)
 {
     const IColumn * ttl_column = column;
+    const size_t num_rows = column->size();
     timestamps.resize_exact(num_rows);
 
     /// Sparse columns must be converted to dense before type dispatch, since typeid_cast does not
