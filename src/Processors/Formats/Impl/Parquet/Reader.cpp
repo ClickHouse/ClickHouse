@@ -249,8 +249,15 @@ static void decompressGzip(const char * data, size_t compressed_size, size_t unc
 
         if (zstr.next_in == prev_in && zstr.next_out == prev_out)
         {
-            /// No progress: either the output is full while the stream continues, or the page ended
-            /// in the middle of a member.
+            /// No progress. While the current member's trailer is being validated, `next_out` points
+            /// into the scratch byte, so it cannot be compared or subtracted with the output buffer;
+            /// the page simply ended in the middle of that trailer.
+            if (checking_main_trailer)
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                    "Unexpected end of compressed page: the gzip member is not properly terminated");
+
+            /// Either the output is full while the stream continues, or the page ended in the middle
+            /// of a member.
             if (zstr.next_out == zlib_out_end)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Compressed page uncompresses to more than the declared {} bytes", uncompressed_size);
