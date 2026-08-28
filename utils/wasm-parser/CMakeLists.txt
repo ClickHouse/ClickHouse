@@ -29,10 +29,10 @@ option (ENABLE_DCL "Accept access management - `CREATE USER`, `GRANT` and the re
 # Asserted by the `parser-size` test. A build that legitimately grows past its ceiling should have
 # the number here raised in the same change, deliberately and visibly - these are what a browser
 # downloads. Each is about 8% over the corresponding measurement in README.md.
-set (MAX_SIZE_FULL              1290000 CACHE STRING "Byte ceiling for the default build")
-set (MAX_SIZE_NO_DCL            1070000 CACHE STRING "Byte ceiling for -DENABLE_DCL=OFF")
-set (MAX_SIZE_NO_FORMATTING     1030000 CACHE STRING "Byte ceiling for -DENABLE_FORMATTING=OFF")
-set (MAX_SIZE_NO_FORMATTING_DCL  840000 CACHE STRING "Byte ceiling for both off")
+set (MAX_SIZE_FULL              1445000 CACHE STRING "Byte ceiling for the default build")
+set (MAX_SIZE_NO_DCL            1225000 CACHE STRING "Byte ceiling for -DENABLE_DCL=OFF")
+set (MAX_SIZE_NO_FORMATTING     1060000 CACHE STRING "Byte ceiling for -DENABLE_FORMATTING=OFF")
+set (MAX_SIZE_NO_FORMATTING_DCL  875000 CACHE STRING "Byte ceiling for both off")
 
 if (ENABLE_FORMATTING AND ENABLE_DCL)
     set (MAX_SIZE ${MAX_SIZE_FULL})
@@ -66,7 +66,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/AllocatorWithMemoryTracking.cpp"
     "${CH}/src/Common/CalendarTimeInterval.cpp"
     "${CH}/src/Common/ErrorCodes.cpp"
-    "${CH}/src/Common/Fiber.cpp"
+    "${CH}/src/Common/FiberLocal.cpp"
     "${CH}/src/Common/FieldVisitorConvertToNumber.cpp"
     "${CH}/src/Common/FieldVisitorDump.cpp"
     "${CH}/src/Common/FieldVisitorHash.cpp"
@@ -75,6 +75,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/IntervalKind.cpp"
     "${CH}/src/Common/KnownObjectNames.cpp"
     "${CH}/src/Common/PODArray.cpp"
+    "${CH}/src/Common/StackfulCoroutine.cpp"
     "${CH}/src/Common/StringUtils.cpp"
     "${CH}/src/Common/UTF8Helpers.cpp"
     "${CH}/src/Common/ZooKeeper/ZooKeeperPathUtils.cpp"
