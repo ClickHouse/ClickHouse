@@ -2924,11 +2924,15 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     ActionsDAG before = std::move(before_split.first);
     const Node * arg_before = before_split.split_nodes_mapping.at(arg);
 
-    std::unordered_map<std::string_view, const Node *> before_inputs_by_name;
+    /// `after` may reuse a value computed inside the argument subtree (e.g. arrayJoin(f(a)) and f(a) both used).
+    /// Forward the node `before` already produces for such a name; only truly-original columns become inputs.
+    std::unordered_map<std::string_view, const Node *> before_by_name;
+    for (const auto * output : before.getOutputs())
+        before_by_name.emplace(output->result_name, output);
     for (const auto * input : before.inputs)
-        before_inputs_by_name.emplace(input->result_name, input);
+        before_by_name.emplace(input->result_name, input);
 
-    /// Output exactly what `after` consumes: the array under `name`, and a pass-through of every other input.
+    /// Output exactly what `after` consumes: the array under `name`, and a pass-through of every other column.
     NodeRawConstPtrs before_outputs;
     before_outputs.reserve(after.inputs.size());
     for (const auto * after_input : after.inputs)
@@ -2939,11 +2943,11 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
         }
         else
         {
-            auto it = before_inputs_by_name.find(after_input->result_name);
-            const Node * in = it != before_inputs_by_name.end()
+            auto it = before_by_name.find(after_input->result_name);
+            const Node * in = it != before_by_name.end()
                 ? it->second
                 : &before.addInput(after_input->result_name, after_input->result_type);
-            before_inputs_by_name.emplace(after_input->result_name, in);
+            before_by_name.emplace(after_input->result_name, in);
             before_outputs.push_back(in);
         }
     }

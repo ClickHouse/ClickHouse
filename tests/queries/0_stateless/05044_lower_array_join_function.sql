@@ -39,4 +39,17 @@ SELECT (SELECT count() FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJ
 SELECT countIf(explain LIKE '%Element filter%') = 3 FROM (EXPLAIN actions = 1 SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c FROM t_cart WHERE a = 'X-A' AND b = 'X-B' AND c = 'X-C' SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0, query_plan_merge_filters = 1);
 DROP TABLE t_cart;
 
+-- the array argument is reused above the join: the lowered step must forward the already-computed column,
+-- not demand a fresh one (regression: `Not found column arraySort(a)`).
+DROP TABLE IF EXISTS t_reuse;
+CREATE TABLE t_reuse (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_reuse VALUES ([3, 1, 2]), ([5]);
+SELECT (SELECT groupArray((x, l)) FROM (SELECT arrayJoin(arraySort(a)) AS x, length(arraySort(a)) AS l FROM t_reuse ORDER BY x) SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT groupArray((x, l)) FROM (SELECT arrayJoin(arraySort(a)) AS x, length(arraySort(a)) AS l FROM t_reuse ORDER BY x) SETTINGS query_plan_lower_array_join_function = 0);
+DROP TABLE t_reuse;
+
+-- a query-scope non-deterministic function keeps its pre-expansion value (computed once per source row and
+-- replicated), not one value per expanded row. 2 source rows -> at most 2 distinct values.
+SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1) <= 2;
+
 DROP TABLE t_laj;
