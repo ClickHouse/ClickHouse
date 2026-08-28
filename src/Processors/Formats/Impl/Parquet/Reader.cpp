@@ -390,6 +390,12 @@ std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta)
         Range range = Range::createWholeUniverse();
         column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
         column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+
+        /// Same validation as the static min/max pruning path: self-contradictory statistics
+        /// (`min_value > max_value`) must fail closed rather than become pruning input. We get here
+        /// only for chunks proven to have no nulls, hence `can_be_null = false`.
+        adjustRangeFromIndexIfNeeded(range, column_info, /*can_be_null=*/ false);
+
         return range;
     }
     catch (Exception & e)
@@ -756,7 +762,11 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
     /// TopN dynamic filtering: locate the sort column among the primitive columns, for skipping
     /// row groups by its min/max statistics against the running threshold (see topKShouldSkipRowGroup).
-    if (format_filter_info->top_k_filter)
+    /// The row-group statistics shortcut is unsound for a collated `ORDER BY`: Parquet string
+    /// `min_value` / `max_value` are bytewise extrema, not extrema in the query's collation order,
+    /// so a row group could be skipped while still holding values that sort before the threshold
+    /// under the collator. The per-row `__topKFilter` (which does compare with the collator) stays.
+    if (format_filter_info->top_k_filter && !format_filter_info->top_k_filter->threshold_tracker->getCollator())
     {
         auto pos = extended_sample_block.findPositionByName(format_filter_info->top_k_filter->column_name);
         if (pos.has_value())

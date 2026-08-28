@@ -2047,8 +2047,16 @@ Chunk StorageFileSource::generate()
         /// happens while this file was being read would otherwise let a version token, still valid
         /// at open time, get written together with row groups derived from bytes it no longer
         /// describes.
+        /// TopN dynamic filtering makes the matched buckets threshold-dependent rather than a
+        /// predicate-only verdict: a row group can end up empty (hence "unmatched") only because the
+        /// running `__topKFilter` threshold - established from the rows of *all* files this query
+        /// reads - had already excluded its rows. The cache key encodes just the predicate and the
+        /// single file's version, so such an entry would poison a later plain read, a read with a
+        /// different `LIMIT` or sort direction, or a read of only one file of the glob. Never write
+        /// cache entries for TopK reads. Reading the cache stays enabled: entries are only ever
+        /// written by threshold-oblivious reads, so applying them to a TopK read is sound.
         if (input_format && current_file_cache_version.has_value() && current_file_version_settled
-            && format_filter_info && format_filter_info->condition_hash
+            && format_filter_info && format_filter_info->condition_hash && !format_filter_info->top_k_filter
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try

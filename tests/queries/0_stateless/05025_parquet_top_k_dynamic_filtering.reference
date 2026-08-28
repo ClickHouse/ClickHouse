@@ -13,3 +13,10 @@ OK
 OK
 OK
 OK
+-- collated ORDER BY: Parquet min/max statistics are bytewise, not collation-ordered, so the
+-- row-group shortcut must stay off; 'ä' sorts before 'b' in the 'de' locale but its UTF-8
+-- bytes are above 'z', so a stats-based skip of the second file would lose it
+ä
+b
+c
+OK

@@ -72,3 +72,22 @@ for query in "${queries[@]}"; do
         <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
         && echo "OK"
 done
+
+echo "-- collated ORDER BY: Parquet min/max statistics are bytewise, not collation-ordered, so the"
+echo "-- row-group shortcut must stay off; 'ä' sorts before 'b' in the 'de' locale but its UTF-8"
+echo "-- bytes are above 'z', so a stats-based skip of the second file would lose it"
+"${LOCAL[@]}" --query "
+    INSERT INTO FUNCTION file('${DIR}/coll1.parquet', Parquet)
+    SELECT arrayJoin(['b', 'c', 'd']) AS s SETTINGS engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${DIR}/coll2.parquet', Parquet)
+    SELECT arrayJoin(['z', 'ä']) AS s SETTINGS engine_file_truncate_on_insert = 1;
+"
+collate_query="SELECT s FROM file('${DIR}/coll{1,2}.parquet', Parquet) ORDER BY s COLLATE 'de' LIMIT 3"
+# `LOCAL` pins the variable-length opt-in to 0; a String sort column needs it on.
+LOCAL_STRING=("${LOCAL[@]/--use_top_k_dynamic_filtering_for_variable_length_types=0/--use_top_k_dynamic_filtering_for_variable_length_types=1}")
+"${LOCAL_STRING[@]}" "${ON[@]}" --query "${collate_query}"
+diff \
+    <("${LOCAL_STRING[@]}" "${ON[@]}" --query "${collate_query}") \
+    <("${LOCAL_STRING[@]}" "${OFF[@]}" --query "${collate_query}") \
+    && echo "OK"
