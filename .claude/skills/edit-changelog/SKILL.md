@@ -115,6 +115,12 @@ is an annotation on that entry, not a substitute for its own.
 §3 or §4: the change was still made and undone inside the range, so the revert
 has no user-visible effect either.
 
+Deleting the entry is only half of it — the revert must not be left behind as
+an entry of its own either, whatever category the autogenerator gave it. The
+user should see no trace of either side. The one place such a PR still appears
+is as the appended link on an entry it *re-applied* (§2.5), where it records
+the re-apply rather than describing a change.
+
 1. Read the title of the revert PR (`gh pr view <N> --json title,body`) to
    identify which earlier PR it reverts. Most reverts have a title of the
    form `Revert "<original PR title>"` or `Revert #NNNNN`, and GitHub puts a

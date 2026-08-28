@@ -1378,6 +1378,16 @@ def test_a_revert_under_a_real_category_is_still_a_revert(monkeypatch, tmp_path)
     assert kept is not None
     assert "whose revert still stands" in kept
 
+    # And so is the other half of "no trace of either": deleting the entry but
+    # publishing the revert as an ordinary `Improvement`. The change and its
+    # undoing cancel out, so the user sees neither.
+    lingering = run_verify_edit(
+        monkeypatch, tmp_path, old_text, changelog([disguised]), reverts
+    )
+    assert lingering is not None
+    assert "still have entries of their own" in lingering
+    assert "['#115800']" in lingering
+
 
 def test_a_literal_revert_bullet_under_a_real_category_may_be_deleted(
     monkeypatch, tmp_path
@@ -1724,4 +1734,45 @@ def test_a_revert_of_a_pruned_entry_is_still_same_cycle(monkeypatch, tmp_path):
     assert (
         run_verify_edit(monkeypatch, tmp_path, old_text, changelog([]), informed)
         is None
+    )
+
+
+def test_a_reapply_link_is_not_a_lingering_revert_entry(monkeypatch, tmp_path):
+    """The reverts a `cancelling` entry may not keep are entries of their own.
+    The link of a revert-of-revert on the entry it brought back is the record
+    of the re-apply, and skill section 2.5 requires it - it must not be read as
+    a revert that failed to disappear."""
+    old_text = changelog(
+        [FIX], raw_sections=[("NO CL ENTRY", [REVERT, REVERT_OF_REVERT])]
+    )
+    reverts = analyze(monkeypatch, old_text, [])
+    # Both reverts are same-cycle, so neither keeps an entry ...
+    assert reverts["cancelling"] == ["114911", "114912"]
+    # ... yet `#114912`'s link is required on `#109946`'s entry.
+    assert reverts["reapply"] == {"109946": ["114912"]}
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(FIX, "114912")]),
+            reverts,
+        )
+        is None
+    )
+    # A bullet of its own on top of the annotation is rejected - by the
+    # duplicate guard here, since `#114912` is then attributed twice and its
+    # allowance is one. Which check catches it is not the point; that nothing
+    # accepts it is.
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog(
+                [with_reapply(FIX, "114912"), _entry("114912", "Re-applied the fix")]
+            ),
+            reverts,
+        )
+        is not None
     )

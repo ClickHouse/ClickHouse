@@ -1517,6 +1517,27 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
             f"section ({resurrected}); those changes are not in the release, "
             f"so they have no entry"
         )
+    # And the same for the reverts themselves. `cancelling` says a revert's own
+    # bullet *may* go, the way `credits` said a deletion may happen; it has to.
+    # A revert of something in this release leaves no trace of its own - the
+    # user should see neither the change nor its undoing. The one place such a
+    # pull request may still be attributed is on an entry it brought back,
+    # where its link is the record of the re-apply.
+    lingering = []
+    for pr in reverts["cancelling"]:
+        annotated = {
+            entry_placement(section, brought_back)[1]
+            for brought_back, links in reverts["reapply"].items()
+            if pr in links
+        }
+        if [b for b in attributed_bullets(section, pr) if b not in annotated]:
+            lingering.append(f"#{pr}")
+    if lingering:
+        return (
+            f"Reverts of changes of this release still have entries of their "
+            f"own ({sorted(lingering)}); the change and its undoing cancel "
+            f"out, so neither is in the changelog"
+        )
     _, old_tail = split_at_first_released_section(old_text, anchor)
     _, new_tail = split_at_first_released_section(text, anchor)
     if old_tail.rstrip() != new_tail.rstrip():
