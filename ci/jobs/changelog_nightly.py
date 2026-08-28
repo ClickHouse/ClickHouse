@@ -822,10 +822,17 @@ def analyze_reverts(text, anchor):
     # One revert can revert several pull requests at once, and when it is
     # itself reverted, the link of that revert-of-revert goes on every entry
     # it brings back - which is not the same thing as an entry written twice.
+    # And when it is not exempt (`cancelling`), it also keeps an entry of its
+    # own: a pull request that re-applies something of this release and reverts
+    # something of an earlier one at the same time is legitimately attributed
+    # once per entry it brings back plus once for its own visible entry.
     allowance = {}
     for links in reapply.values():
         for link in links:
             allowance[link] = allowance.get(link, 0) + 1
+    for link in list(allowance):
+        if link not in cancelling:
+            allowance[link] += 1
     amend = [
         {
             "pr": pr,

@@ -1620,3 +1620,62 @@ def test_a_restoration_merges_into_the_surviving_bullet(monkeypatch, tmp_path):
         )
         is None
     )
+
+
+def test_a_mixed_target_reapply_keeps_its_own_entry_too(monkeypatch, tmp_path):
+    """`#116500` takes back `#114911` - the revert that removed `#109946`, so
+    that fix ships again and records `#116500` - and in the same pull request
+    reverts `#90000` from an earlier release, which is a user-visible change of
+    its own (skill section 2, case 5). The correct changelog therefore
+    attributes `#116500` twice: on the restored entry and on its own bullet."""
+    PULL_REQUESTS["116500"] = {
+        "title": "Revert the settings change and the older default",
+        "body": (
+            "Reverts ClickHouse/ClickHouse#114911\n"
+            "Reverts ClickHouse/ClickHouse#90000"
+        ),
+    }
+    own = _entry("116500", "The 26.3 default is restored")
+    old_text = changelog([], raw_sections=[(STRICT, [own])])
+    reverts = analyze(monkeypatch, old_text, [LEDGER_REVERT, LEDGER_DELETED])
+    assert reverts["restore"] == {"109946": (BUG_FIX, FIX)}
+    assert reverts["reapply"] == {"109946": ["116500"]}
+    # `#116500` is not exempt - `#90000` is not part of this cycle - so its own
+    # entry stays. `#114911`, whose only target is a cycle entry, is exempt.
+    assert reverts["cancelling"] == ["114911"]
+    # One entry it brings back, plus its own.
+    assert reverts["reapply_allowance"] == {"116500": 2}
+
+    correct = changelog([with_reapply(FIX, "116500"), own])
+    assert cl.attribution_counts(correct)["116500"] == 2
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, correct, reverts) is None
+    )
+
+    # A third copy is still a duplicate.
+    over = changelog(
+        [
+            with_reapply(FIX, "116500"),
+            own,
+            with_reapply(_entry("110900", "Something else"), "116500"),
+        ]
+    )
+    rejected = run_verify_edit(monkeypatch, tmp_path, old_text, over, reverts)
+    assert rejected is not None
+    assert "#116500 3 times" in rejected
+
+    # Its own entry is not separately enforced, and deliberately so: with the
+    # link appended to the restored entry `#116500` is attributed, and the rules
+    # do allow an entry to be merged into another bullet (skill section 7), so
+    # link presence cannot tell a legitimate merge from an entry reduced to an
+    # annotation. Pinned here so the limit is not mistaken for a check.
+    assert (
+        run_verify_edit(
+            monkeypatch,
+            tmp_path,
+            old_text,
+            changelog([with_reapply(FIX, "116500")]),
+            reverts,
+        )
+        is None
+    )
