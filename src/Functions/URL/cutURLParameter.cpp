@@ -222,9 +222,9 @@ SELECT
     cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) AS url_without_c_and_e;
         )",
         R"(
-┌─url_without_a────────────────┬─url_without_c_and_e──────┐
-│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
-└──────────────────────────────┴──────────────────────────┘
+┌─url_without_a────────────────┬─url_without_c_and_e───────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b&#g │
+└──────────────────────────────┴───────────────────────────┘
         )"
     }
     };
