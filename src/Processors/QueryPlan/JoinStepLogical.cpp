@@ -297,6 +297,25 @@ String JoinStepLogical::getReadableRelationName() const
     return fmt::format("{} {} {}", left_relation.displayName(), joinTypePretty(join_operator), right_name);
 }
 
+void JoinStepLogical::swapInputs()
+{
+    auto inputs = getInputHeaders();
+    chassert(inputs.size() == 2);
+
+    /// TODO: any other checks that join sides can be swapped?
+
+    updateInputHeaders({inputs[1], inputs[0]});
+
+    if (join_operator.kind == JoinKind::Left)
+        join_operator.kind = JoinKind::Right;
+    else if (join_operator.kind == JoinKind::Right)
+        join_operator.kind = JoinKind::Left;
+
+    expression_actions.swapExpressionSources();
+
+    std::swap(left_relation, right_relation);
+}
+
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
 {
     std::vector<std::pair<String, String>> description;
@@ -1801,6 +1820,7 @@ void JoinStepLogical::buildPhysicalJoin(
     }
 
     UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
+    UInt64 join_output_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getJoinOutputCacheKey() : 0;
 
     if (!join_step->join_algorithm_params)
     {
@@ -1808,12 +1828,16 @@ void JoinStepLogical::buildPhysicalJoin(
             join_step->join_settings,
             optimization_settings.max_threads,
             hash_table_key_hash,
+            join_output_key_hash,
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.initial_query_id,
             optimization_settings.lock_acquire_timeout);
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
+
+        if (join_step->result_rows_estimation)
+            join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
 
         if (hash_table_key_hash)
         {
@@ -1846,6 +1870,8 @@ void JoinStepLogical::buildPhysicalJoin(
         nodes,
         std::move(logical_join_info)
     );
+
+    new_node.cost_estimation = node.cost_estimation;
 
     node = std::move(new_node);
 }
@@ -2243,9 +2269,10 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->imprecise_estimate = imprecise_estimate;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
+    result_step->join_output_cache_key = join_output_cache_key;
     result_step->left_relation = left_relation;
     result_step->right_relation = right_relation;
-    result_step->dummy_stats = dummy_stats;
+    result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
 
     return result_step;

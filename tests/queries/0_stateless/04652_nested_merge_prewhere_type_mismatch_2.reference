@@ -5,7 +5,6 @@
 10
 -- the leaf policy still enforces through the Distributed read, matching shard-side model --
 5
-5
 -- Remote over a nested Merge must be rejected too --
 -- a matching column still supports PREWHERE through Remote --
 10
@@ -55,9 +54,6 @@ lazy_outer	TableProxy
 1	2
 2	3
 3	4
-1	2
-2	3
-3	4
 -- a policy on a matching column keeps working --
 3	4
 4	5
@@ -70,29 +66,14 @@ lazy_outer	TableProxy
 1	2
 2	3
 3	4
-1	2
-2	3
-3	4
 -- a subcolumn PREWHERE rides its origin column through a Buffer --
 10
-5
 5
 -- and through a Merge whose origin type matches the leaf --
 10
 5
 -- the auto WHERE -> PREWHERE move admits subcolumns through their origin too --
-10
-10
-SELECT sum(x)
-FROM sub_merge
-PREWHERE less(t.a, 5)
-SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0
 -- a subcolumn of a type-drifted origin stays rejected --
-10
-SELECT sum(x)
-FROM sub_merge_bad
-WHERE less(t.a, 5)
-SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0
 -- a row policy consuming a subcolumn maps to its origin for the push decision --
 0
 1

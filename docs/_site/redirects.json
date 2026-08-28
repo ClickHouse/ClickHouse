@@ -1,5 +1,21 @@
 [
   {
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data"
+  },
+  {
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data/index"
+  },
+  {
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion"
+  },
+  {
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion/index"
+  },
+  {
     "destination": "/products/cloud/features/backups/overview",
     "source": "/products/cloud/features/backups/faq"
   },
@@ -1404,7 +1420,7 @@
     "source": "/cloud/connect"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/cloud/data-ingestion"
   },
   {
@@ -1496,8 +1512,12 @@
     "source": "/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/ask-ai",
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
     "source": "/cloud/features/ai-ml/ask-ai"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "source": "/products/cloud/features/ai-ml/ask-ai"
   },
   {
     "destination": "/products/cloud/features/ai-ml/langfuse",
@@ -1612,8 +1632,16 @@
     "source": "/cloud/get-started/sql-console"
   },
   {
-    "destination": "/products/cloud/guides",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides/index"
   },
   {
     "destination": "/products/cloud/guides/security/data-masking",
@@ -2016,8 +2044,16 @@
     "source": "/cloud/overview"
   },
   {
-    "destination": "/products/cloud/reference",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference/index"
   },
   {
     "destination": "/products/cloud/reference/architecture",
@@ -2294,6 +2330,10 @@
   {
     "destination": "/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
     "source": "/cloud/security/saml-setup"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+    "source": "/cloud/security/jwt-authentication-setup"
   },
   {
     "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup",
@@ -4356,7 +4396,7 @@
     "source": "/integrations/data-ingestion"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/integrations/data-ingestion-overview"
   },
   {
@@ -4380,8 +4420,12 @@
     "source": "/integrations/data-ingestion/dbms/"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion/odbc-with-clickhouse",
+    "destination": "/reference/engines/table-engines/integrations/odbc",
     "source": "/integrations/data-ingestion/dbms/odbc-with-clickhouse"
+  },
+  {
+    "destination": "/reference/engines/table-engines/integrations/odbc",
+    "source": "/integrations/connectors/data-ingestion/odbc-with-clickhouse"
   },
   {
     "destination": "/integrations/home",
@@ -4892,6 +4936,10 @@
     "source": "/integrations/metabase"
   },
   {
+    "destination": "/integrations/connectors/data-integrations/integrations/microsoft-fabric",
+    "source": "/integrations/microsoft-fabric"
+  },
+  {
     "destination": "/integrations/connectors/data-integrations/integrations/middleware",
     "source": "/integrations/middleware"
   },
@@ -5018,6 +5066,10 @@
   {
     "destination": "/integrations/connectors/data-visualization/powerbi-and-clickhouse",
     "source": "/integrations/powerbi"
+  },
+  {
+    "destination": "/integrations/connectors/sql-clients/probedeck",
+    "source": "/integrations/probedeck"
   },
   {
     "destination": "/products/cloud/features/monitoring/prometheus",
@@ -5154,6 +5206,10 @@
   {
     "destination": "/integrations/connectors/sql-clients/jupysql",
     "source": "/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/integrations/connectors/sql-clients/probedeck",
+    "source": "/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/integrations/connectors/sql-clients/qstudio",
@@ -9860,6 +9916,10 @@
     "source": "/jp/integrations/powerbi"
   },
   {
+    "destination": "/ja/integrations/connectors/sql-clients/probedeck",
+    "source": "/jp/integrations/probedeck"
+  },
+  {
     "destination": "/ja/products/cloud/features/monitoring/prometheus",
     "source": "/jp/integrations/prometheus"
   },
@@ -9994,6 +10054,10 @@
   {
     "destination": "/ja/integrations/connectors/sql-clients/jupysql",
     "source": "/jp/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ja/integrations/connectors/sql-clients/probedeck",
+    "source": "/jp/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ja/integrations/connectors/sql-clients/qstudio",
@@ -20612,6 +20676,10 @@
     "source": "/ko/integrations/powerbi"
   },
   {
+    "destination": "/ko/integrations/connectors/sql-clients/probedeck",
+    "source": "/ko/integrations/probedeck"
+  },
+  {
     "destination": "/ko/products/cloud/features/monitoring/prometheus",
     "source": "/ko/integrations/prometheus"
   },
@@ -20746,6 +20814,10 @@
   {
     "destination": "/ko/integrations/connectors/sql-clients/jupysql",
     "source": "/ko/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ko/integrations/connectors/sql-clients/probedeck",
+    "source": "/ko/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ko/integrations/connectors/sql-clients/qstudio",
@@ -32720,6 +32792,10 @@
     "source": "/ru/integrations/powerbi"
   },
   {
+    "destination": "/ru/integrations/connectors/sql-clients/probedeck",
+    "source": "/ru/integrations/probedeck"
+  },
+  {
     "destination": "/ru/products/cloud/features/monitoring/prometheus",
     "source": "/ru/integrations/prometheus"
   },
@@ -32854,6 +32930,10 @@
   {
     "destination": "/ru/integrations/connectors/sql-clients/jupysql",
     "source": "/ru/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ru/integrations/connectors/sql-clients/probedeck",
+    "source": "/ru/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ru/integrations/connectors/sql-clients/qstudio",
@@ -39160,6 +39240,10 @@
     "source": "/sql-reference/aggregate-functions/reference/flame_graph"
   },
   {
+    "destination": "/reference/functions/aggregate-functions/gini",
+    "source": "/sql-reference/aggregate-functions/reference/gini"
+  },
+  {
     "destination": "/reference/functions/aggregate-functions/groupArray",
     "source": "/sql-reference/aggregate-functions/reference/grouparray"
   },
@@ -41776,7 +41860,7 @@
     "source": "/use-cases/observability/clickstack/getting-started/telemetrygen"
   },
   {
-    "destination": "/clickstack/ingesting-data",
+    "destination": "/clickstack/ingesting-data/overview",
     "source": "/use-cases/observability/clickstack/ingesting-data"
   },
   {
@@ -46280,6 +46364,10 @@
     "source": "/zh/integrations/powerbi"
   },
   {
+    "destination": "/zh/integrations/connectors/sql-clients/probedeck",
+    "source": "/zh/integrations/probedeck"
+  },
+  {
     "destination": "/zh/products/cloud/features/monitoring/prometheus",
     "source": "/zh/integrations/prometheus"
   },
@@ -46414,6 +46502,10 @@
   {
     "destination": "/zh/integrations/connectors/sql-clients/jupysql",
     "source": "/zh/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/zh/integrations/connectors/sql-clients/probedeck",
+    "source": "/zh/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/zh/integrations/connectors/sql-clients/qstudio",
@@ -54360,7 +54452,71 @@
     "source": "/cloud/reference/byoc/reference/security-shared-responsibility"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
     "source": "/cloud/guides/security/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+    "source": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/ar/concepts/features/interfaces/prometheus",
+    "source": "/ar/interfaces/prometheus"
+  },
+  {
+    "destination": "/ar/reference/functions/table-functions/prometheusQuery",
+    "source": "/ar/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/ar/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/ar/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/es/concepts/features/interfaces/prometheus",
+    "source": "/es/interfaces/prometheus"
+  },
+  {
+    "destination": "/es/reference/functions/table-functions/prometheusQuery",
+    "source": "/es/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/es/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/es/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/fr/concepts/features/interfaces/prometheus",
+    "source": "/fr/interfaces/prometheus"
+  },
+  {
+    "destination": "/fr/reference/functions/table-functions/prometheusQuery",
+    "source": "/fr/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/fr/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/fr/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/prometheus",
+    "source": "/ja/interfaces/prometheus"
+  },
+  {
+    "destination": "/ja/reference/functions/table-functions/prometheusQuery",
+    "source": "/ja/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/ja/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/ja/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/interfaces/prometheus",
+    "source": "/pt-BR/interfaces/prometheus"
+  },
+  {
+    "destination": "/pt-BR/reference/functions/table-functions/prometheusQuery",
+    "source": "/pt-BR/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/pt-BR/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/pt-BR/sql-reference/table-functions/prometheusQueryRange"
   }
 ]

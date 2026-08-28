@@ -30,17 +30,17 @@ keywords: ['البروتوكول الأصلي', 'بروتوكول tcp', 'عمي�
   ## Hello
 </div>
 
-استجابة لـ [client hello](/ar/resources/develop-contribute/native-protocol/client#hello).
+استجابة لـ [العميل hello](/ar/resources/develop-contribute/native-protocol/client#hello).
 
-| الحقل             | النوع   | القيمة          | الوصف                        |
-| ----------------- | ------- | --------------- | ---------------------------- |
-| name              | String  | `Clickhouse`    | اسم الخادم                   |
-| version&#95;major | UVarInt | `21`            | الإصدار الرئيسي للخادم       |
-| version&#95;minor | UVarInt | `12`            | الإصدار الثانوي للخادم       |
-| revision          | UVarInt | `54452`         | مراجعة الخادم                |
-| tz                | String  | `Europe/Moscow` | المنطقة الزمنية للخادم       |
-| display&#95;name  | String  | `Clickhouse`    | اسم الخادم في واجهة المستخدم |
-| version&#95;patch | UVarInt | `3`             | إصدار التصحيح للخادم         |
+| الحقل             | النوع   | القيمة                       | الوصف                        |
+| ----------------- | ------- | ---------------------------- | ---------------------------- |
+| name              | String  | `ClickHouse`                 | اسم الخادم                   |
+| version&#95;major | UVarInt | `21`                         | الإصدار الرئيسي للخادم       |
+| version&#95;minor | UVarInt | `12`                         | الإصدار الثانوي للخادم       |
+| revision          | UVarInt | `54452`                      | مراجعة الخادم                |
+| tz                | String  | `Europe/Moscow`              | المنطقة الزمنية للخادم       |
+| display&#95;name  | String  | `<display_name-or-hostname>` | اسم الخادم في واجهة المستخدم |
+| version&#95;patch | UVarInt | `3`                          | إصدار التصحيح للخادم         |
 
 <div id="exception">
   ## Exception

@@ -8,6 +8,7 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
+from ci.praktika.utils import Shell
 
 
 def only_docs(changed_files):
@@ -115,6 +116,10 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
+    # are continuous-mode kill-safe.
+    "ci/jobs/scripts/clickhouse_proc.py",
+    "tests/integration/helpers/cluster.py",
     "ci/defs/job_configs.py",
     "ci/defs/defs.py",
     "tests/clickhouse-test",
@@ -188,6 +193,35 @@ def _is_bugfix_pr():
     return any(lb in _info_cache.pr_labels for lb in _BUGFIX_LABELS)
 
 
+def _is_empty_merge_commit(sha):
+    """True if `sha` is a merge commit (>=2 parents) that introduced no changes -
+    i.e. its diff against the first parent is empty.
+
+    This is the commit produced by merging the base branch into the PR branch when
+    the merge brings nothing new (e.g. the GitHub "Update branch" button on a branch
+    that is already effectively up to date). The reviewed code is then identical to
+    the previous head, so re-running the AI `Code Review` job would only repeat the
+    previous review.
+
+    Resolved via the GitHub API rather than local git: the CI checkout may be a
+    shallow clone that lacks the merge commit's parents, and the commits endpoint
+    reports `.files` for a merge commit relative to its first parent. Returns False
+    on any uncertainty (not a merge, API error, unparseable output) so that we
+    prefer to run the review rather than silently skip it.
+    """
+    out = Shell.get_output(
+        f"gh api repos/{_info_cache.repo_name}/commits/{sha} "
+        "--jq '\"\\(.parents | length) \\(.files | length)\"'",
+        verbose=True,
+        retries=3,
+    ).split()
+    if len(out) != 2 or not all(s.isdigit() for s in out):
+        print(f"WARNING: could not determine parents/files for commit {sha}")
+        return False
+    num_parents, num_files = int(out[0]), int(out[1])
+    return num_parents >= 2 and num_files == 0
+
+
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
@@ -202,6 +236,17 @@ def should_skip_job(job_name):
         or Labels.RELEASE_LTS in _info_cache.pr_labels
     ):
         return True, "Skipped for release PR"
+
+    # The AI `Code Review` job reviews the PR's code. When the PR's latest commit is
+    # an empty merge commit (base branch merged in with no net change - e.g. the
+    # GitHub "Update branch" button), the code is identical to the previous head and
+    # a fresh review would only repeat itself, so skip it.
+    if (
+        job_name == JobNames.CODE_REVIEW
+        and _info_cache.pr_number > 0
+        and _is_empty_merge_commit(_info_cache.sha)
+    ):
+        return True, "Skipped, PR latest commit is an empty merge commit"
 
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
@@ -267,11 +312,24 @@ def should_skip_job(job_name):
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.INTEGRATION)
         or job_name in BUILDS_FOR_TESTS
+        or (
+            job_name == JobNames.PROMQL_COMPLIANCE
+            and Labels.COMP_PROMQL in _info_cache.pr_labels
+        )
     ):
         _add_pipeline_note(Labels.CI_INTEGRATION)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
+        )
+
+    if (
+        job_name == JobNames.PROMQL_COMPLIANCE
+        and Labels.COMP_PROMQL not in _info_cache.pr_labels
+    ):
+        return (
+            True,
+            f"Skipped, PR not labeled '{Labels.COMP_PROMQL}' — PromQL compliance comment job only",
         )
 
     if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
@@ -410,7 +468,10 @@ def should_skip_job(job_name):
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
-            if match and match.group(1) != "1" or "sequential" in job_name:
+            if (
+                (match and match.group(1) != "1")
+                or ("sequential" in job_name and "selected tests" not in job_name)
+            ):
                 return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 
         if JobNames.INTEGRATION in job_name:
