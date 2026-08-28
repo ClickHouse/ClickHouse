@@ -8,7 +8,7 @@ Code: 53. Cannot convert string '' to type Int32
 --- SELECT toUInt8(1) IN ('', '1')
 Code: 53. Cannot convert string '' to type UInt8. (TYPE_MISMATCH)
 --- SELECT toDate('2020-01-01') = ''
-Code: 38. Cannot parse date: value is too short: while converting '' to Date
+Code: 38. Cannot parse date: <reason>: while converting '' to Date
 
 === a correlated subquery of several columns where a single value is expected
 --- SELECT a FROM outer_table WHERE NOT (SELECT * FROM inner_table WHERE b = a)

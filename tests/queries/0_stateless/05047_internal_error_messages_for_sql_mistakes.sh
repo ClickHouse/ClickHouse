@@ -12,7 +12,8 @@ run()
     ${CLICKHOUSE_CLIENT} -q "$1" 2>&1 | grep -m1 -E '^Code: ' \
         | sed -e 's/^Code: \([0-9]*\)\. DB::Exception: Received from [^ ]* DB::Exception: /Code: \1. /' \
               -e 's/^Code: \([0-9]*\)\. DB::Exception: /Code: \1. /' \
-              -e 's/: In scope .*//' -e 's/ (version [^)]*)$//'
+              -e 's/: In scope .*//' -e 's/ (version [^)]*)$//' \
+              -e 's/Cannot parse date: [^:]*/Cannot parse date: <reason>/'
 }
 
 echo '=== a string that a number cannot be parsed from is reported the same way whether it is empty or not'
