@@ -760,7 +760,7 @@ size_t HashJoin::sizeHintForMaps() const
         return reserve_num;
 
     /// Sizing a serial map from the estimate lands on a worse load factor than the grower picks.
-    if (num_slots <= 1)
+    if (!use_parallel_layout)
         return 0;
 
     /// A 256-bucket map does need it, or every bucket rehashes its way up from 256 cells.
