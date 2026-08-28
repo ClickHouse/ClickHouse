@@ -55,6 +55,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
@@ -245,10 +246,13 @@ namespace ServerSetting
     extern const ServerSettingsBool concurrent_threads_lazy_allocation;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsBool enable_read_through_distributed_cache;
+    extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -261,6 +265,7 @@ namespace ServerSetting
     extern const ServerSettingsInt32 dns_cache_update_period;
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
+    extern const ServerSettingsBool enable_silk_runtime;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -1637,6 +1642,13 @@ try
         has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
         has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
 
+#if USE_SILK
+    if (server_settings[ServerSetting::enable_silk_runtime])
+    {
+        Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
+    }
+#endif
+
     if (has_trace_collector)
     {
         global_context->createTraceCollector();
@@ -1677,6 +1689,15 @@ try
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     std::vector<ProtocolServerAdapter> introspection_servers;
 
+    auto stop_silk_fiber_scheduler = [&]{
+#if USE_SILK
+        if (server_settings[ServerSetting::enable_silk_runtime])
+        {
+            LOG_INFO(log, "Stopping silk fiber scheduler");
+            Silk::destroyFiberScheduler();
+        }
+#endif
+    };
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT_SAFE({
         Stopwatch watch;
@@ -1684,6 +1705,8 @@ try
         DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
+
+        stop_silk_fiber_scheduler();
     });
 
     if (page_cache_max_size != 0)
@@ -1910,6 +1933,15 @@ try
         server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
+
+    /// Zero means the number of CPU cores.
+    const size_t shutdown_concurrency = server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        ? server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        : getNumberOfCPUCoresToUse();
+    getDatabaseCatalogShutdownTablesThreadPool().initialize(
+        shutdown_concurrency,
+        0, // Threads are only needed during server shutdown.
+        shutdown_concurrency);
 
     getMergeTreePrefixesDeserializationThreadPool().initialize(
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
@@ -2825,6 +2857,8 @@ try
                     : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
+            global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
