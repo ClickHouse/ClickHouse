@@ -8492,7 +8492,6 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 When a hash join is used, this threshold decides whether the join may run in parallel.
 If an estimate of the right table size is available and it is below the threshold, the join uses a simpler single-threaded layout.
 At or above the threshold, and also when there is no row-count estimate, the join can use multiple threads (when `max_threads` > 1).
-Without an estimate the right side cannot be ruled small, so a large value of this setting does not force a serial build.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.

@@ -971,11 +971,11 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
     return JoinCommon::materializeColumnsFromRightBlock(std::move(block), savedBlockSample());
 }
 
-std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(const Block & block)
+void HashJoin::initRowStore(const Block & block)
 {
     /// Skip initializing if it's already initialized or disabled.
     if (data->row_store_state != RowStoreState::Enabled)
-        return {};
+        return;
 
     /// Skip using row store when the right table rerange optimization could get triggered.
     /// TODO: allow row store when right table could get reranged and build the reranged table
@@ -983,7 +983,7 @@ std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(
     if (isRightTableRerangeEnabled())
     {
         data->row_store_state = RowStoreState::Disabled;
-        return {};
+        return;
     }
 
     /// Extract columns suitable for row store.
@@ -1011,7 +1011,7 @@ std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(
     if (row_store_columns.size() <= 1)
     {
         data->row_store_state = RowStoreState::Disabled;
-        return {};
+        return;
     }
 
     /// Add each field's offset, size and nullability to the row store access indexes.
@@ -1031,24 +1031,6 @@ std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(
     data->row_store_state = RowStoreState::Initialized;
 
     LOG_DEBUG(log, "{}Initialized Row store with {} columns", instance_log_id, row_store_columns.size());
-    return {RowStoreLayoutWithAccessIndexes{data->row_store_layout, data->column_access_indexes}};
-}
-
-void HashJoin::initRowStore(const std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> & layout_with_access_indexes)
-{
-    /// Skip initializing if it's already initialized or disabled.
-    if (data->row_store_state != RowStoreState::Enabled)
-        return;
-
-    if (!layout_with_access_indexes)
-    {
-        data->row_store_state = RowStoreState::Disabled;
-        return;
-    }
-
-    data->row_store_layout = layout_with_access_indexes->layout;
-    data->column_access_indexes = layout_with_access_indexes->access_indexes;
-    data->row_store_state = RowStoreState::Initialized;
 }
 
 RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const

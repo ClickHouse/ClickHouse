@@ -894,16 +894,6 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
-    struct RowStoreLayoutWithAccessIndexes
-    {
-        RowDataStore::RowLayoutPtr layout;
-        ColumnAccessIndexes access_indexes;
-    };
-
-    /// Derives the row store layout from the first right block.
-    std::optional<RowStoreLayoutWithAccessIndexes> initRowStore(const Block & block);
-    /// Takes a pre-computed row store layout.
-    void initRowStore(const std::optional<RowStoreLayoutWithAccessIndexes> & layout_with_access_indexes);
     /// Creates a row store based on the already initialized layout and fills from block columns.
     RowDataStorePtr createRowStoreForBlock(const Block & block) const;
 
@@ -1079,6 +1069,9 @@ private:
     void freezeMapsForProbing();
 
     bool isRowStoreSupported() const;
+
+    /// Layout is from the sample block, before any fill thread.
+    void initRowStore(const Block & block);
 
     void reinitUsedFlags();
 
