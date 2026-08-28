@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -686,6 +687,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
+    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+
     if (is_extended_storage_def)
     {
         ASTPtr partition_by_key;
@@ -859,14 +862,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
-        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
-        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
-        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-
         /// Previously validated definitions must stay loadable even if the current strictness settings
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:
         /// otherwise a strict session could attach a TTL that `CREATE TABLE` rejects, and the first
@@ -1027,7 +1022,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    auto projection = ProjectionDescription::getProjectionFromAST(
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, is_fresh_definition);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -1108,7 +1104,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
             (*storage_settings)[MergeTreeSetting::index_granularity] = ast->value.safeGet<UInt64>();
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            /// The old syntax states `index_granularity` as an engine argument instead of a setting
+            if (is_fresh_definition)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field((*storage_settings)[MergeTreeSetting::index_granularity]));

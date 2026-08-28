@@ -940,3 +940,76 @@ def test_reset_of_a_merge_tree_setting_cannot_escape_its_constraint(start_cluste
     )
     assert output == ""
     assert error == "", error
+
+
+def test_old_syntax_index_granularity_cannot_escape_its_constraint(start_cluster):
+    # The old syntax states `index_granularity` as an engine argument, and a full-definition `ATTACH`
+    # is user input like `CREATE`. Either way it is a fresh definition, so the constraint applies.
+    node = instance_with_merge_tree_constraint
+    old_syntax = {"allow_deprecated_syntax_for_merge_tree": 1}
+    node.query("DROP TABLE IF EXISTS test_old_syntax_granularity")
+
+    output, error = node.query_and_get_answer_with_error(
+        "CREATE TABLE test_old_syntax_granularity (d Date, k UInt64) "
+        "ENGINE = MergeTree(d, k, 1024)",
+        settings=old_syntax,
+    )
+    assert output == ""
+    assert "shouldn't be less than" in error, error
+
+    output, error = node.query_and_get_answer_with_error(
+        "ATTACH TABLE test_old_syntax_granularity_attached "
+        "UUID '5b5c1c0e-0e1d-4f0a-9d7f-6b7a4a2f1c21' (d Date, k UInt64) "
+        "ENGINE = MergeTree(d, k, 1024)",
+        settings=old_syntax,
+    )
+    assert output == ""
+    assert "shouldn't be less than" in error, error
+
+    # A value the constraint allows is accepted
+    output, error = node.query_and_get_answer_with_error(
+        "CREATE TABLE test_old_syntax_granularity (d Date, k UInt64) "
+        f"ENGINE = MergeTree(d, k, {MERGE_TREE_FORBIDDEN_DEFAULT_MIN})",
+        settings=old_syntax,
+    )
+    assert output == ""
+    assert error == "", error
+
+    node.query("DROP TABLE IF EXISTS test_old_syntax_granularity")
+
+
+def test_projection_settings_of_a_freshly_attached_table_are_checked(start_cluster):
+    # A projection's `WITH SETTINGS` is part of the definition, so a full-definition `ATTACH` cannot
+    # carry settings that `CREATE` would refuse
+    node = instance_with_merge_tree_constraint
+    node.query("DROP TABLE IF EXISTS test_projection_settings")
+
+    definition = (
+        "(a UInt64, PROJECTION p (SELECT a ORDER BY a) WITH SETTINGS (index_granularity = 1024)) "
+        "ENGINE = MergeTree ORDER BY a"
+    )
+
+    output, error = node.query_and_get_answer_with_error(
+        f"CREATE TABLE test_projection_settings {definition}"
+    )
+    assert output == ""
+    assert "shouldn't be less than" in error, error
+
+    output, error = node.query_and_get_answer_with_error(
+        "ATTACH TABLE test_projection_settings "
+        f"UUID '5b5c1c0e-0e1d-4f0a-9d7f-6b7a4a2f1c22' {definition}"
+    )
+    assert output == ""
+    assert "shouldn't be less than" in error, error
+
+    # A setting a projection does not accept at all is refused the same way
+    output, error = node.query_and_get_answer_with_error(
+        "ATTACH TABLE test_projection_settings "
+        "UUID '5b5c1c0e-0e1d-4f0a-9d7f-6b7a4a2f1c23' "
+        "(a UInt64, PROJECTION p (SELECT a ORDER BY a) WITH SETTINGS (merge_max_block_size = 1024)) "
+        "ENGINE = MergeTree ORDER BY a"
+    )
+    assert output == ""
+    assert "is not allowed for projections" in error, error
+
+    node.query("DROP TABLE IF EXISTS test_projection_settings")
