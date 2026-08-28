@@ -16,7 +16,7 @@ import SystemTableCloud from '/snippets/_system_table_cloud.mdx';
 
 Contains the query plan that was executed for a query, annotated with per-step runtime statistics, captured while the query ran. Unlike [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze), which executes the query a second time, this table lets you inspect an execution that has already happened — including one that failed partway through.
 
-Capture is disabled by default. Set [`log_query_plans`](/operations/settings/settings) to `1` to enable it, per query, per session or per user.
+Capture is disabled by default. Set [`log_query_plans`](/operations/settings/settings#log_query_plans) to `1` to enable it, per query, per session or per user.
 
 One row is written per query execution. The following are captured:
 
@@ -96,7 +96,7 @@ LIMIT 10;
 
 ## See also {#see-also}
 
-- [`log_query_plans`](/operations/settings/settings) — setting that enables capture.
+- [`log_query_plans`](/operations/settings/settings#log_query_plans) — setting that enables capture.
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan) — shows the plan of a query without executing it.
 - [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze) — executes the query and shows the plan with runtime statistics.
 - [`system.query_log`](/operations/system-tables/query_log) — query-level metrics, joinable on `query_id`.
