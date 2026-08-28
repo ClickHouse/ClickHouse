@@ -1507,8 +1507,16 @@ static QueryPlanNode buildPhysicalJoinImpl(
             table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
         }
         if (found_asof_predicate_it == join_expression.end())
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
-                formatJoinCondition(join_expression));
+        {
+            /// The equality predicates have already been taken out of `join_expression` by the loop above,
+            /// so for the common mistake - `ASOF JOIN ... ON l.a = r.a`, with no inequality at all - what is
+            /// left to print is nothing, and the message used to end in ", in .".
+            const auto remaining_condition = formatJoinCondition(join_expression);
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "ASOF join requires one inequality predicate ( <, <=, > or >= ) in the JOIN ON expression, "
+                "in addition to the equality predicates{}",
+                remaining_condition.empty() ? "" : fmt::format(", but only found: {}", remaining_condition));
+        }
 
         join_expression.erase(found_asof_predicate_it);
     }
