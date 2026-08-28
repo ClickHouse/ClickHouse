@@ -38,8 +38,10 @@ SELECT '-- whole-metric selector: results and the emitted id range';
 
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) ORDER BY value, timestamp;
 
-SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
+-- The range conditions are index-analysis-only (`indexHint`) here: the narrowed id set filters
+-- the rows exactly, so at runtime only the second-component subcolumn of the id is read.
+SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%id.2 IN subquery%' AS filters_by_narrowed_id
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
 
 SELECT '-- partial selector (the id set is full-shaped for index analysis): results, no id range';
 

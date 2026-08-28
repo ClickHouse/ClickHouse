@@ -368,6 +368,11 @@ namespace
             ASTPtr select_expression = makeASTFunction("timeSeriesStoreTags", std::move(args));
             if (return_first_component_too)
             {
+                /// `timeSeriesStoreTags` returns its identifier argument with the dictionary
+                /// encoding stripped (the function is executed on materialized arguments), so the
+                /// reassembled ids have a fully-materialized element type. This is intentional:
+                /// probing a set of materialized tuples (the column is converted once per block)
+                /// measured faster than probing dictionary-encoded tuples row by row.
                 select_expression = makeASTFunction(
                     "tuple",
                     makeIDComponent(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), 1),
@@ -934,8 +939,19 @@ void StorageTimeSeriesSelector::readImpl(
     if (narrow_id)
         LOG_DEBUG(log, "Reading only the second id component for selector {}", quoteString(config.selector.toString()));
 
+    if (narrowed_set)
+    {
+        /// The narrowed id set filters the rows exactly (the second component alone identifies a
+        /// time series), so the range conditions are pure index-analysis conditions here: wrapping
+        /// them in `indexHint` removes them from the runtime filter, and the first id component
+        /// is then not read at all (the narrowed conditions read only the second-component
+        /// subcolumn).
+        for (auto & condition : whole_metric_id_range_conditions)
+            condition = makeASTFunction("indexHint", std::move(condition));
+    }
+
     ContextPtr interpreter_context = context;
-    if (!whole_metric_id_range_conditions.empty())
+    if (whole_metric)
     {
         /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering
         /// (and its subquery keeps collecting the tags of the matched series), but its set must
@@ -950,6 +966,16 @@ void StorageTimeSeriesSelector::readImpl(
         interpreter_context = modified_context;
         LOG_DEBUG(log, "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
                   quoteString(config.selector.toString()));
+    }
+    else if (narrow_id)
+    {
+        /// The full-shaped id set filters the raw `id` column, which is therefore read anyway:
+        /// keep `tupleElement(id, 2)` of the SELECT list evaluated on the read column (a zero-copy
+        /// extraction) instead of being rewritten to a subcolumn, which would read the
+        /// second-component streams from disk twice.
+        auto modified_context = Context::createCopy(context);
+        modified_context->setSetting("optimize_functions_to_subcolumns", false);
+        interpreter_context = modified_context;
     }
 
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
