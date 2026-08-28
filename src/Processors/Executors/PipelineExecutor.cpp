@@ -1,6 +1,7 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Scheduler/MemoryReservation.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
@@ -147,7 +148,7 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     }
     if (auto group = CurrentThread::getGroup())
     {
-        for (const auto & processor : processors)
+        for (const auto & processor : *processors)
             group->memory_spill_scheduler->registerProcessor(processor.get());
     }
     if (process_list_element)
