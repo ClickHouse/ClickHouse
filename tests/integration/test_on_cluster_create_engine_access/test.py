@@ -80,9 +80,14 @@ def started_cluster():
                 f"CREATE TABLE {DB}.local_target (x UInt64) ENGINE = MergeTree ORDER BY x"
             )
             node.query(f"INSERT INTO {DB}.local_target VALUES (42)")
-            # A second table whose engine is inherited by `CREATE ... AS other_table`.
+            # Two tables whose engine is inherited by `CREATE ... AS other_table`: one whose
+            # engine needs nothing beyond the statement, one pointed at the guarded target.
             node.query(
                 f"CREATE TABLE {DB}.plain_source (x UInt64) ENGINE = MergeTree ORDER BY x"
+            )
+            node.query(
+                f"CREATE TABLE {DB}.remote_source (x UInt64) "
+                f"ENGINE = Remote('127.0.0.1:9000', {DB}, local_target, 'default')"
             )
         yield cluster
     finally:
@@ -392,20 +397,28 @@ def test_legacy_funnel_explicit_engine_is_checked(started_cluster):
         node.query(f"DROP TABLE {DB}.{table} SYNC")
 
 
-def test_legacy_funnel_inherited_engine_is_rejected(started_cluster):
-    # On this funnel the engine has not been resolved yet, so an engine inherited through
-    # `AS other_table` is unknown and cannot be authorized. Rejecting is the only honest
-    # answer: silently enqueueing would reinstate the bypass.
-    user = make_user("u_legacy_as", grant_target_access=True)
-    table = unique("t_legacy_as")
+def test_inherited_engine_is_checked_at_the_default_version(started_cluster):
+    # `setEngine` resolves an engine inherited through `AS other_table`, and it runs before the
+    # enqueue only from `NORMALIZE_CREATE_ON_INITIATOR_VERSION` on: there the preflight authorizes
+    # the resolved engine's target like an explicit one. Below it every host resolves the source in
+    # its own catalog, so nothing is authorized there - stateless
+    # `05030_totime_on_cluster_as_settings_in_zk_version` pins that the statement stays accepted.
+    user = make_user("u_as_default")
+    table = unique("t_as_default")
 
-    error = create_on_cluster(user, table, f"AS {DB}.plain_source", settings=LEGACY)
-    assert error is not None and "NOT_IMPLEMENTED" in error, error
-    assert_absent_everywhere(table)
+    error = create_on_cluster(user, table, f"AS {DB}.remote_source")
+    assert_denied_on_target(error, table)
 
-    # At the default version the query is normalized before it is enqueued, so the
-    # inherited engine is known and the statement works.
-    table = unique("t_default_as")
+    # The target's own grants are what unblock it, so the denial above was the engine's.
+    for node in (node1, node2):
+        node.query(f"GRANT SELECT, INSERT ON {DB}.local_target TO {user}")
+    assert create_on_cluster(user, table, f"AS {DB}.remote_source") is None
+    for node in (node1, node2):
+        node.query(f"DROP TABLE {DB}.{table} SYNC")
+
+    # A source whose engine needs no target access stays accepted: the preflight authorizes the
+    # inherited engine, it does not refuse inheritance.
+    table = unique("t_as_plain")
     assert create_on_cluster(user, table, f"AS {DB}.plain_source") is None
     for node in (node1, node2):
         node.query(f"DROP TABLE {DB}.{table} SYNC")

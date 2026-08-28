@@ -3525,21 +3525,10 @@ void InterpreterCreateQuery::preflightEngineTarget(ASTCreateQuery & create, bool
     if (internal)
         return;
 
+    /// `setEngine` has not run here, and each host resolves `AS other_table` in its own catalog, so an
+    /// inherited engine has no single value the initiator could authorize.
     if (!create.storage || !create.storage->engine)
-    {
-        /// `setEngine` has not run, so an engine inherited from `AS other_table` is unknown here and
-        /// cannot be authorized.
-        if (!create.as_table.empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "CREATE TABLE ... ON CLUSTER ... AS {} is not supported with "
-                "distributed_ddl_entry_format_version < {}, because the inherited table engine cannot be "
-                "authorized on the initiator. Use the default value of the setting, or specify the engine "
-                "explicitly.",
-                backQuoteIfNeed(create.as_table),
-                DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION);
         return;
-    }
 
     const String & engine_name = create.storage->engine->name;
 
