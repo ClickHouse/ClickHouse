@@ -201,8 +201,9 @@ void IMergeTreeReader::fillMissingColumns(
                         name_in_part = alter_conversions->getColumnOldName(name_in_part);
 
                     /// DROP/CLEAR invalidates both the physical and current name.
-                    if (alter_conversions->isColumnDropped(name_in_part)
-                        || alter_conversions->isColumnDropped(column.getNameInStorage()))
+                    bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
+                    if (alter_conversions->isColumnDropped(name_in_part, share_nested)
+                        || alter_conversions->isColumnDropped(column.getNameInStorage(), share_nested))
                     {
                         ++column_index;
                         continue;

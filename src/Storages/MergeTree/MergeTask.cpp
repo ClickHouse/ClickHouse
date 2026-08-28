@@ -141,6 +141,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_rows_to_activate;
@@ -954,8 +955,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 current_name = part_alter_conversions->getColumnNewName(mc.name);
 
             /// Pending DROP/CLEAR invalidates either spelling of the marker.
-            if (part_alter_conversions->isColumnDropped(mc.name)
-                || part_alter_conversions->isColumnDropped(current_name))
+            bool share_nested = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+            if (part_alter_conversions->isColumnDropped(mc.name, share_nested)
+                || part_alter_conversions->isColumnDropped(current_name, share_nested))
                 continue;
 
             source_missing_column_names.insert(current_name);
