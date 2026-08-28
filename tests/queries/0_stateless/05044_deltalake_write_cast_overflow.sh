@@ -36,7 +36,7 @@ INSERT INTO t_dl_cast VALUES (1000);
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dl_cast"
 
-# With delta_lake_accurate_write_cast = 0 the old plain cast is restored: the value is silently
+# With delta_lake_accurate_write_cast = 0 the plain cast is used: the value is silently
 # truncated, so the INSERT succeeds (the row is written).
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
@@ -50,3 +50,27 @@ DROP TABLE t_dl_cast;
 "
 
 rm -rf "$TABLE_PATH"
+
+# With `compatibility` set below 26.9, delta_lake_accurate_write_cast defaults to 0 (the plain,
+# non-throwing cast), so the overflowing INSERT succeeds without an explicit per-query override.
+COMPAT_PATH="${CLICKHOUSE_USER_FILES_UNIQUE}_cast_overflow_compat"
+rm -rf "$COMPAT_PATH"
+$CLICKHOUSE_CLIENT --query "
+SET allow_experimental_delta_kernel_rs = 1;
+SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_create_table = 1;
+CREATE TABLE t_dl_cast_compat (id Int8) ENGINE = DeltaLakeLocal('${COMPAT_PATH}', Parquet);
+DROP TABLE t_dl_cast_compat;
+"
+$CLICKHOUSE_CLIENT --query "
+SET allow_experimental_delta_kernel_rs = 1;
+SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_create_table = 1;
+SET compatibility = '25.8';
+CREATE TABLE t_dl_cast_compat (id Int32) ENGINE = DeltaLakeLocal('${COMPAT_PATH}', Parquet);
+INSERT INTO t_dl_cast_compat VALUES (1000);
+SELECT count() FROM t_dl_cast_compat;
+DROP TABLE t_dl_cast_compat;
+"
+
+rm -rf "$COMPAT_PATH"

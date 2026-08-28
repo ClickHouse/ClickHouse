@@ -174,6 +174,27 @@ def started_cluster():
             with_zookeeper=True,
         )
         cluster.add_instance(
+            # A released version that has Delta writes (>= 25.10) but not the 26.9 write-schema cast, so it
+            # can demonstrate the old "write the value as-is" behaviour before `restart_with_latest_version`.
+            # Uses only `users.xml` (not `enable_writes.xml`, which carries the 26.9-only
+            # `allow_delta_lake_create_table` setting the old binary would reject at startup); write settings
+            # are passed per query instead.
+            "node_old_writes",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
+            ],
+            user_configs=["configs/users.d/users.xml"],
+            with_installed_binary=True,
+            image="clickhouse/clickhouse-server",
+            tag="26.8",
+            with_minio=True,
+            stay_alive=True,
+            with_zookeeper=True,
+        )
+        cluster.add_instance(
             "node_with_disabled_delta_kernel",
             main_configs=[
                 "configs/config.d/named_collections.xml",
@@ -525,6 +546,58 @@ def test_delta_lake_engine_secret_masked(started_cluster):
         assert minio_secret_key not in result, result
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_write_cast_upgrade_compatibility(started_cluster):
+    node = started_cluster.instances["node_old_writes"]
+    table_name = randomize_table_name("test_write_cast_upgrade")
+
+    # Existing Delta table whose column is stored as int8 (Delta `byte`).
+    storage_options = {
+        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        "AWS_ACCESS_KEY_ID": minio_access_key,
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{table_name}"
+    schema = pa.schema([("a", pa.int8())])
+    table = pa.Table.from_arrays([pa.array([1, 2], type=pa.int8())], schema=schema)
+    write_deltalake_with_retry(path, table, storage_options=storage_options)
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
+    write = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+    }
+
+    try:
+        # Attach on the OLD version with a declared column (Int32) wider than the Delta type (int8). The old
+        # version has no write-schema cast, so the out-of-range INSERT writes the value as-is and succeeds.
+        node.query(
+            f"CREATE TABLE {table_name} (a Int32) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')",
+            settings=write,
+        )
+        node.query(f"INSERT INTO {table_name} VALUES (1000)", settings=write)
+
+        # Upgrade to the current build; the table definition (Int32 column) is reloaded from metadata.
+        node.restart_with_latest_version()
+
+        # New version, default (delta_lake_accurate_write_cast = 1): the write-schema cast Int32 -> int8 now
+        # throws on the out-of-range value instead of silently truncating.
+        error = node.query_and_get_error(
+            f"INSERT INTO {table_name} VALUES (1000)", settings=write
+        )
+        assert "cannot be safely converted" in error, error
+
+        # New version with the setting off (as `compatibility` below 26.9 selects): the plain cast is used, so
+        # the INSERT succeeds again, preserving the old permissive behaviour.
+        node.query(
+            f"INSERT INTO {table_name} VALUES (1000)",
+            settings={**write, "delta_lake_accurate_write_cast": 0},
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 
 def test_single_log_file_azure_connection_string(started_cluster):
