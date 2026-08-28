@@ -1406,6 +1406,10 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 Clears the query condition cache.
 
+## SYSTEM CLEAR|DROP QUERY PLAN CACHE {#drop-query-plan-cache}
+
+Clears the [query plan cache](/concepts/features/performance/caches/query-plan-cache).
+
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
 Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
