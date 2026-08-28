@@ -1,3 +1,4 @@
+#include <Functions/FastTrig.h>
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 
@@ -7,7 +8,16 @@ namespace
 {
 
 struct TanName { static constexpr auto name = "tan"; };
-using FunctionTan = FunctionMathUnary<UnaryFunctionVectorized<TanName, tan>>;
+struct TanFast
+{
+    static constexpr auto name = TanName::name;
+    static void fast(const double * src, size_t size, double * dst) { FastTrig::tan(src, size, dst); }
+};
+struct FunctionTan
+{
+    static constexpr auto name = TanName::name;
+    static FunctionPtr create(ContextPtr context) { return createGatedMathUnary<TanName, TanFast, tan>(context); }
+};
 
 }
 

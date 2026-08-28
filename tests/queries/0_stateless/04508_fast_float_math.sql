@@ -1,10 +1,10 @@
--- Vectorized (SIMD) implementations of exp2/exp10/log2/log10/pow behind the `fast_float_math`
+-- Vectorized (SIMD) implementations of exp2/exp10/log2/log10/pow/sin/cos/tan behind the `fast_float_math`
 -- setting. The default (precise) path must be bit-for-bit unchanged; the fast path must stay
 -- correct across the whole domain (zero, negatives, NaN/Inf, subnormals, large magnitudes).
 
 -- Default path: precise scalar results, exact on the documented integer cases.
 SET fast_float_math = 0;
-SELECT exp2(3) = 8 AND exp10(2) = 100 AND log2(8) = 3 AND log10(100) = 2 AND pow(2, 10) = 1024;
+SELECT exp2(3) = 8 AND exp10(2) = 100 AND log2(8) = 3 AND log10(100) = 2 AND pow(2, 10) = 1024 AND sin(0) = 0 AND cos(0) = 1 AND tan(0) = 0;
 
 SET fast_float_math = 1;
 
@@ -58,3 +58,27 @@ SELECT abs(pow(10, 2) - 100) / 100 < 1e-9 AND abs(pow(2.0, 0.5) - sqrt(2)) / sqr
 SELECT pow(1, 100000) = 1 AND pow(1, nan) = 1;
 -- Non-positive base with a non-integer exponent falls back to precise pow (NaN, as libm).
 SELECT isNaN(pow(-2, 0.5));
+
+-- sin / cos / tan: the setting is read when the function is created, so the precise reference is
+-- materialized first with it off, then compared against the fast path.
+SET fast_float_math = 0;
+CREATE TEMPORARY TABLE t04508_trig (x Float64, s Float64, c Float64, t Float64);
+INSERT INTO t04508_trig SELECT x, sin(x), cos(x), tan(x) FROM
+(
+    SELECT (number - 50000) * 0.9973 AS x FROM numbers(100000)
+    UNION ALL SELECT (number - 500) * 1e4 FROM numbers(1000)
+    UNION ALL SELECT pi() / 2 * number + 1e-3 FROM numbers(1000)
+    UNION ALL SELECT arrayJoin([1e9, -1e9, 1e300, inf, -inf, nan, 0, -0.])
+);
+SET fast_float_math = 1;
+-- Accurate to ~1 ulp (relative for large results, absolute near zero).
+SELECT max(abs(sin(x) - s) / greatest(abs(s), 1)) < 3e-16, max(abs(cos(x) - c) / greatest(abs(c), 1)) < 3e-16, max(abs(tan(x) - t) / greatest(abs(t), 1)) < 6e-16
+FROM t04508_trig WHERE isFinite(x) AND abs(x) <= 1e8;
+-- Beyond |x| > 1e8, and for NaN/Inf, the precise path is used: bit-identical, NaN included.
+SELECT count() = countIf(sin(x) = s OR (isNaN(sin(x)) AND isNaN(s))) AND count() = countIf(cos(x) = c OR (isNaN(cos(x)) AND isNaN(c))) AND count() = countIf(tan(x) = t OR (isNaN(tan(x)) AND isNaN(t)))
+FROM t04508_trig WHERE NOT (isFinite(x) AND abs(x) <= 1e8);
+SELECT sin(0) = 0 AND cos(0) = 1 AND tan(0) = 0 AND abs(sin(pi() / 2) - 1) < 1e-15 AND abs(cos(pi()) + 1) < 1e-15 AND cos(1e-300) = 1;
+SELECT sin(-0.), cos(-0.), tan(-0.);
+SELECT isNaN(sin(inf)) AND isNaN(cos(-inf)) AND isNaN(tan(nan));
+-- Integer and Float32 inputs also take the fast path and return Float64.
+SELECT abs(sin(toUInt32(1)) - 0.8414709848078965) < 1e-15, toTypeName(cos(toFloat32(1))), abs(tan(toInt8(1)) - 1.5574077246549023) < 1e-15;
