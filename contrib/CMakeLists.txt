@@ -114,7 +114,6 @@ add_contrib (libarchive-cmake libarchive)
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
-add_contrib (wasmedge-cmake wasmedge)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -184,6 +183,13 @@ add_contrib (fast_float-cmake fast_float)
 add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (sqids-cpp-cmake sqids-cpp)
+
+option(ENABLE_CHINESE_TOKENIZER "Enable the Chinese tokenizer (jieba-style segmentation in contrib/Jieba-CPP)" ${ENABLE_LIBRARIES})
+if (ENABLE_CHINESE_TOKENIZER)
+    # The dictionary ships little- and big-endian variants and is #embed-ed per host byte order, so no s390x guard is needed.
+    add_contrib (darts-clone-cmake darts-clone)
+    add_contrib (Jieba-CPP-cmake Jieba-CPP)
+endif()
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
 if (USE_MONGODB)

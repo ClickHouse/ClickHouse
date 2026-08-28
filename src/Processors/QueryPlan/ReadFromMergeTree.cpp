@@ -3,12 +3,8 @@
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
 
-#include <cmath>
-#include <limits>
-
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
@@ -81,6 +77,7 @@
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -92,6 +89,9 @@
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <cmath>
+#include <limits>
+
 #include <city.h>
 
 #include <boost/functional/hash.hpp>
@@ -238,11 +238,14 @@ namespace Setting
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
+    extern const SettingsBool force_creating_set_partitions_independently;
     extern const SettingsBool force_distinct_partitions_independently;
+    extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_aggregation;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_distinct;
+    extern const SettingsUInt64 max_number_of_partitions_for_independent_window;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
@@ -506,22 +509,27 @@ ReadFromMergeTree::ReadFromMergeTree(
     }
 
     const auto & settings = context->getSettingsRef();
-    if (settings[Setting::max_streams_for_merge_tree_reading])
+    /// The `max_streams_for_merge_tree_reading` setting is bounded by `doSettingsSanityCheckClamp`.
+    if (const UInt64 max_streams_for_merge_tree_reading = settings[Setting::max_streams_for_merge_tree_reading])
     {
         if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree])
         {
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
-            output_streams_limit = std::min<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+            output_streams_limit = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
             /// We intentionally set `max_streams` to 1 in InterpreterSelectQuery in case of small limit.
             /// Changing it here to `max_streams_for_merge_tree_reading` proven itself as a threat for performance.
             if (requested_num_streams != 1)
-                requested_num_streams = std::max<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+                requested_num_streams = std::max<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
         }
         else
             /// Just limit requested_num_streams otherwise.
-            requested_num_streams = std::min<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+            requested_num_streams = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
     }
+    /// `requested_num_streams` drives pipes.reserve()/resize() downstream, which throws
+    /// std::length_error when unbounded. It can be amplified past any setting clamp via
+    /// `max_streams_to_max_threads_ratio`, so bound the effective value here too.
+    requested_num_streams = std::min<size_t>(requested_num_streams, 256 * getNumberOfCPUCoresToUse());
 
     /// Add explicit description.
     std::string description = data.getStorageID().getFullNameNotQuoted();
@@ -1655,7 +1663,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (num_streams > 1)
     {
         /// Reduce the number of num_streams if the data is small.
-        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        /// The comparison is done with a division rather than with `num_streams * info.min_marks_for_concurrent_read`,
+        /// because `num_streams` is derived from `max_streams_to_max_threads_ratio`, which is a `Float64` setting,
+        /// and the product can overflow. `info.min_marks_for_concurrent_read` is always at least one.
+        if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             /*
             If the data is fragmented, then allocate the size of parts to num_streams. If the data is not fragmented, besides the sum_marks and
@@ -1879,7 +1890,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// Additional increase of streams number in case of skewed parts, like it's
         /// done in `spreadMarkRangesAmongStreams` won't affect overall performance
         /// due to the single downstream `MergingSortedTransform`.
-        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        /// As in `spreadMarkRangesAmongStreams`, the comparison avoids the overflow of
+        /// `num_streams * info.min_marks_for_concurrent_read`.
+        if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             num_streams = std::max(
                 (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
@@ -2488,8 +2501,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
 
+                /// A layer may produce an empty pipe (the in-order getter creates one source per part,
+                /// and a layer may end up with no parts). An empty pipe has no header, so it must not
+                /// reach `createProjection` or `addMergingFinal` below. Dropping it is safe here:
+                /// unlike the join-by-shards path, the per-layer pipes are simply united, so their
+                /// positions carry no meaning.
                 for (auto && merging_pipe : split_ranges_result.merging_pipes)
-                    pipes.push_back(std::move(merging_pipe));
+                {
+                    if (!merging_pipe.empty())
+                        pipes.push_back(std::move(merging_pipe));
+                }
             }
             else
             {
@@ -3024,7 +3045,7 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSource.
     if (query_info.isStream())
         return;
 
@@ -3133,6 +3154,26 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
+bool ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_)
+{
+    auto dag_has_input = [&](const ActionsDAG & dag)
+    {
+        for (const auto * input : dag.getInputs())
+        {
+            const auto * column = virtuals.tryGetDescription(input->result_name, VirtualsKind::All, VirtualsMaterializationPlace::All);
+            if (column && !column->deterministic)
+                return true;
+        }
+        return false;
+    };
+
+    if (query_info_.filter_actions_dag && dag_has_input(*query_info_.filter_actions_dag))
+        return true;
+    if (query_info_.prewhere_info && dag_has_input(query_info_.prewhere_info->prewhere_actions))
+        return true;
+    return false;
+}
+
 using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
 /// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
 /// Used for distributed index analysis
@@ -3205,9 +3246,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSource
     /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
     /// filter below. Fail closed rather than serve logically-deleted rows.
+    ///
     /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
     if (query_info_.isStream())
     {
@@ -3330,17 +3372,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (!allow_query_condition_cache_)
         reader_settings.use_query_condition_cache = false;
 
-    /// The query-condition cache is server-shared and CSN-oblivious (keyed on
-    /// part+condition+mark, no CSN). For a UNIQUE KEY read it can cache marks as
-    /// non-matching after a delete-bitmap + WHERE drop their rows, then let a
-    /// reader pinned at an OLDER snapshot skip a mark whose rows are live at its
-    /// CSN -> missing rows. Disable it for UK reads. The consult/skip side is the
-    /// filterPartsByQueryConditionCache call below (guarded here); the write side
-    /// is gated where the member reader_settings is finalized in initializePipeline.
-    /// This local reader_settings only drives index analysis, but keep it consistent.
-    /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
+    /// TODO(unique-key): unique-key multi-versioned bitmap is conflicted with the single-versioned query-condition cache
     const bool table_has_unique_key = metadata_snapshot->hasUniqueKey();
     if (table_has_unique_key)
+        reader_settings.use_query_condition_cache = false;
+
+    const bool filter_depends_on_non_deterministic_virtuals = filterDependsOnNonDeterministicVirtuals(metadata_snapshot->virtuals, query_info_);
+    if (filter_depends_on_non_deterministic_virtuals)
         reader_settings.use_query_condition_cache = false;
 
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
@@ -3372,11 +3410,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        /// Consult/skip side of the query-condition cache. Disabled for UK reads (see above) and for a
-        /// read whose step turned the cache off (`allow_query_condition_cache`): that flag means this
-        /// read neither consults nor populates the cache, so it must also not skip granules based on
-        /// entries written by other queries.
-        if (!table_has_unique_key && allow_query_condition_cache_)
+        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
@@ -3397,6 +3431,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         bool is_initial_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
 
         bool distributed_index_analysis_enabled = !final_second_pass
+            /// Projection parts are identified only by the projection name, which is identical in every
+            /// parent part, so per-part analysis results cannot be attributed back, and remote replicas
+            /// resolve part names against the parent table. Analyze projection parts locally.
+            && !projection_parts_exist
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
@@ -3833,17 +3871,34 @@ bool ReadFromMergeTree::isVectorColumnReplaced() const
 
 bool ReadFromMergeTree::isPartitionIndependentProcessingProfitable(ProcessorKind kind) const
 {
-    const bool is_distinct = kind == ProcessorKind::Distinct;
-    const std::string_view operation = is_distinct ? "DISTINCT" : "aggregation";
-    const std::string_view force_setting
-        = is_distinct ? "force_distinct_partitions_independently" : "force_aggregate_partitions_independently";
-    const std::string_view max_partitions_setting
-        = is_distinct ? "max_number_of_partitions_for_independent_distinct" : "max_number_of_partitions_for_independent_aggregation";
-
     const auto & settings = context->getSettingsRef();
-    const UInt64 max_partitions = is_distinct
-        ? settings[Setting::max_number_of_partitions_for_independent_distinct]
-        : settings[Setting::max_number_of_partitions_for_independent_aggregation];
+
+    std::string_view operation;
+    std::string_view force_setting;
+    std::string_view max_partitions_setting;
+    UInt64 max_partitions = 0;
+    switch (kind)
+    {
+        case ProcessorKind::Aggregation:
+            operation = "aggregation";
+            force_setting = "force_aggregate_partitions_independently";
+            max_partitions_setting = "max_number_of_partitions_for_independent_aggregation";
+            max_partitions = settings[Setting::max_number_of_partitions_for_independent_aggregation];
+            break;
+        case ProcessorKind::Distinct:
+            operation = "DISTINCT";
+            force_setting = "force_distinct_partitions_independently";
+            max_partitions_setting = "max_number_of_partitions_for_independent_distinct";
+            max_partitions = settings[Setting::max_number_of_partitions_for_independent_distinct];
+            break;
+        case ProcessorKind::Window:
+            operation = "window functions";
+            force_setting = "force_window_partitions_independently";
+            max_partitions_setting = "max_number_of_partitions_for_independent_window";
+            max_partitions = settings[Setting::max_number_of_partitions_for_independent_window];
+            break;
+    }
+
     const auto partitions_cnt = countPartitions(getParts());
 
     if (partitions_cnt == 1 || partitions_cnt < settings[Setting::max_threads] / 2)
@@ -3981,6 +4036,58 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
     return output_each_partition_through_separate_port = true;
 }
 
+/// Like LIMIT BY, set building for `IN (subquery)` is lenient: the ordinary set fill merges all incoming
+/// streams into one and hashes every row in a single `CreatingSetsTransform`. With per-partition streams
+/// each partition is pre-deduplicated in parallel, so the single filling transform only sees unique rows;
+/// any parallelism at all in the reduction is a win over the fully serial baseline. The one layout that
+/// loses is heavy partition skew, checked below.
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForCreatingSet()
+{
+    if (isQueryWithFinal())
+        return false;
+
+    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
+    /// With creating-set by partitions optimisation we might create a separate pool for each partition.
+    if (is_parallel_reading_from_replicas)
+        return false;
+
+    /// This becomes no different from the ordinary set fill which is single stream anyway.
+    if (countPartitions(getParts()) == 1)
+        return false;
+
+    if (!context->getSettingsRef()[Setting::force_creating_set_partitions_independently])
+    {
+        /// A dominant partition is deduplicated through a single stream and its single-threaded pass
+        /// dominates the whole build, while the ordinary fill at least reads in parallel. What matters is
+        /// skew, not the partition count: a balanced layout wins at any count (even two partitions halve
+        /// the serial reduction), so unlike the aggregation/DISTINCT heuristic there is no lower bound on
+        /// the number of partitions, and the threshold compares against the average partition rather than
+        /// a `max_threads`-based share (the baseline is a serial fill whose cost does not scale with
+        /// threads).
+        std::unordered_map<String, size_t> partition_rows;
+        for (const auto & part : getParts())
+            partition_rows[part.data_part->info.getPartitionId()] += part.data_part->rows_count;
+        size_t sum_rows = 0;
+        size_t max_rows = 0;
+        for (const auto & [_, rows] : partition_rows)
+        {
+            sum_rows += rows;
+            max_rows = std::max(max_rows, rows);
+        }
+
+        if (max_rows * partition_rows.size() > 2 * sum_rows)
+        {
+            LOG_TRACE(
+                log,
+                "Independent set creation by partitions won't be used because the largest partition holds more than twice "
+                "the rows of the average partition. You can set force_creating_set_partitions_independently to suppress this check");
+            return false;
+        }
+    }
+
+    return output_each_partition_through_separate_port = true;
+}
+
 /// DISTINCT uses the same cost heuristic as GROUP BY. Similar to GROUP BY, the ordinary DISTINCT plan has
 /// a parallel preliminary `DistinctTransform` per stream.
 void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct()
@@ -3995,6 +4102,27 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
 
     if (!context->getSettingsRef()[Setting::force_distinct_partitions_independently]
         && !isPartitionIndependentProcessingProfitable(ProcessorKind::Distinct))
+        return;
+
+    output_each_partition_through_separate_port = true;
+}
+
+/// Window functions use the same cost heuristic as GROUP BY / DISTINCT: the ordinary plan is already
+/// parallel (the input is scattered by the hash of the window `PARTITION BY` columns and every stream is
+/// sorted and processed by its own window transform), so per-partition processing must provide comparable
+/// parallelism (enough partitions, no dominant partition) to make skipping the scatter worthwhile.
+void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForWindow()
+{
+    if (isQueryWithFinal())
+        return;
+
+    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
+    /// With window-by-partitions optimisation we might create a separate pool for each partition.
+    if (is_parallel_reading_from_replicas)
+        return;
+
+    if (!context->getSettingsRef()[Setting::force_window_partitions_independently]
+        && !isPartitionIndependentProcessingProfitable(ProcessorKind::Window))
         return;
 
     output_each_partition_through_separate_port = true;
@@ -4111,8 +4239,11 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
 Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
+#if !defined(OS_LINUX) && !defined(OS_DARWIN)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries are supported only on Linux and macOS");
+#else
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
-    SharedHeader header = getOutputHeader();
+    const SharedHeader header = getOutputHeader();
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -4121,7 +4252,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
     {
         auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i);
         data.subscription_manager.registerSubscription(subscription);
-        pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSequentialSource>(
+        pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSource>(
             header,
             data,
             query_info,
@@ -4134,6 +4265,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 
     data.triggerStreamingSubscriptionEnrichment();
     return Pipe::unitePipes(std::move(pipes));
+#endif
 }
 
 Pipe ReadFromMergeTree::groupStreamsByPartition(
@@ -4208,6 +4340,17 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
+    cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
+    /// The coordinator-computed mark buckets and their per-task grouping; without them the
+    /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read
+    /// with several lanes per task would serialize misaligned lanes and lose rows.
+    cloned_step->distributed_read_buckets = distributed_read_buckets;
+    cloned_step->distributed_read_lanes_per_task = distributed_read_lanes_per_task;
+    cloned_step->distributed_read_param_name = distributed_read_param_name;
+    /// Filters deferred until after FINAL merging: losing them would apply the filter
+    /// before deduplication and return rows a newer version should have replaced.
+    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
+    cloned_step->deferred_prewhere_info = deferred_prewhere_info;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
     /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
@@ -4223,6 +4366,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    cloned_step->setStepDescription(*this);
     return cloned_step;
 }
 
@@ -4547,20 +4691,50 @@ static std::vector<RangesInDataPartsDescription> sliceMarksAcrossBuckets(const R
     return result;
 }
 
+Pipe ReadFromMergeTree::createEmptyPipe(size_t num_streams) const
+{
+    Pipes pipes;
+    pipes.reserve(num_streams);
+    for (size_t i = 0; i < num_streams; ++i)
+        pipes.emplace_back(std::make_shared<NullSource>(getOutputHeader()));
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
+size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & result) const
+{
+    /// The layers are a static pre-split of the parts made by `optimizeJoinByShards`, and the number of
+    /// output ports is a part of that plan: the JOIN above consumes exactly one port per layer and pairs
+    /// the ports of its two sides positionally. The layers are built from the parts of all the sources at
+    /// once, so both sides always get the same number of them, even when a source contributes no parts to
+    /// a layer. That is why an empty layer still occupies its port instead of being dropped, and why a
+    /// source that reads nothing at all must produce one port per layer as well: collapsing it to a single
+    /// port makes the two sides disagree on the number of shards. The same reasoning does not apply to a
+    /// read coordinated across parallel replicas, which ignores the layers (see `spreadMarkRanges`).
+    if (result.split_parts.layers.empty() || is_parallel_reading_from_replicas)
+        return 1;
+
+    return result.split_parts.layers.size();
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
 
+    /// `spreadMarkRanges` consumes `result.split_parts`, so remember the number of ports the plan expects
+    /// before it is moved from.
+    const size_t num_streams_when_nothing_to_read = getNumStreamsWhenNothingToRead(result);
+
     logPredicateStatistics(result);
 
-    /// A distributed worker reads exactly the bucket described by its `read_bucket` task parameter: its
+    /// A distributed worker reads exactly the bucket described by its per-read bucket task parameter: its
     /// marks, whether it needs a FINAL merge, and (for a merge layer) the borders + index. Match the marks
     /// to local parts by name; a missing part is a retryable error (the replica diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
-        /// Read this task's lanes from the `read_bucket` parameter, in the layout
+        /// Read this task's lanes from this read's own bucket parameter, in the layout
         /// `serializeDistributedReadBuckets` wrote.
-        String blob = settings.parameter_lookup->getParameter("read_bucket").safeGet<String>();
+        String blob = settings.parameter_lookup->getParameter(distributed_read_param_name).safeGet<String>();
         ReadBufferFromString buf(blob);
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
         DB::FormatSettings format_settings;
@@ -4725,18 +4899,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (!allow_query_condition_cache || !has_where_or_prewhere)
         reader_settings.use_query_condition_cache = false;
 
-    /// Disable the query-condition cache (write side: this `reader_settings` flows to
-    /// MergeTreeSelectProcessor) for UNIQUE KEY reads — the cache is CSN-oblivious and
-    /// server-shared, so caching marks as non-matching after a delete-bitmap drop can
-    /// make an older-snapshot reader skip a mark whose rows are live at its CSN. The
-    /// consult/skip side is gated separately in selectRangesToReadImpl.
-    /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
+    /// TODO(unique-key): unique-key multi-versioned bitmap is conflicted with the single-versioned query-condition cache
     if (storage_snapshot->metadata->hasUniqueKey())
         reader_settings.use_query_condition_cache = false;
 
     /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
     /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
     if (result.sampling.use_sampling)
+        reader_settings.use_query_condition_cache = false;
+
+    if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
@@ -4747,7 +4919,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (result.parts_with_ranges.empty() && !query_info.isStream())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
+        pipeline.init(createEmptyPipe(num_streams_when_nothing_to_read));
         return;
     }
 
@@ -4960,7 +5132,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         for (const auto & ranges : result.parts_with_ranges)
         {
-            read_ranges.emplace(ranges.part_index_in_query, ranges);
+            read_ranges.emplace(
+                ranges.part_index_in_query,
+                SkipIndexReadInput{ranges.ranges, ranges.read_hints, ranges.part_starting_offset_in_query});
             part_remaining_marks.emplace(ranges.part_index_in_query, ranges.getMarksCount());
         }
 
@@ -4984,7 +5158,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (pipe.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
+        pipeline.init(createEmptyPipe(num_streams_when_nothing_to_read));
         return;
     }
 
@@ -5009,8 +5183,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             input_names.insert(input->result_name);
         restoreDAGInputs(filter_dag, input_names);
 
+        /// The filter column can be a source column, which the stream must keep for the rest of the query.
+        if (input_names.contains(column_name))
+            remove_column = false;
+
         auto actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
-        pipe.addSimpleTransform([&, actions](const SharedHeader & header)
+        pipe.addSimpleTransform([&, actions, remove_column](const SharedHeader & header)
         {
             return std::make_shared<FilterTransform>(header, actions, column_name, remove_column);
         });
@@ -5926,12 +6104,23 @@ void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
     distributed_read_bucket_count = bucket_count;
 }
 
+/// A process-wide counter gives each bucketed read a distinct task-parameter key. Assigned on the
+/// coordinator and serialized, so the worker reads under the same key.
+static String nextDistributedReadParamName()
+{
+    static std::atomic<UInt64> counter{0};
+    return "read_bucket_" + toString(counter.fetch_add(1, std::memory_order_relaxed));
+}
+
 size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets)
 {
     /// A bucketed read is pinned to the coordinator's marks and cannot reproduce these features on the
     /// worker, so fall back to a serial read instead of bucketing and then failing when the fragment ships.
     if (!supportsBucketedRead())
+    {
+        LOG_TRACE(log, "Distributed read not bucketed: the read does not support bucketing");
         return 0;
+    }
 
     /// A non-FINAL read needs no merge, so its marks can be split arbitrarily: cut the analyzed marks into
     /// contiguous mark-balanced slices, one bucket each. FINAL needs primary-key-range layers (handled
@@ -5940,7 +6129,10 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     {
         auto analysis = selectRangesToRead();
         if (!analysis || analysis->parts_with_ranges.empty())
+        {
+            LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
             return 0;
+        }
 
         /// Keep every bucket, including empty ones, so the count stays `target_buckets` and matches the
         /// downstream exchange (dropping empties would shrink the count for tiny tables and force a reshuffle).
@@ -5953,6 +6145,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
 
         distributed_read_lanes_per_task = 1;
         setDistributedRead(buckets.size());
+        distributed_read_param_name = nextDistributedReadParamName();
         distributed_read_buckets = std::move(buckets);
         return distributed_read_buckets.size();
     }
@@ -5962,28 +6155,42 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// ordered primary key. Read serially otherwise.
     const auto & modifiers = query_info.table_expression_modifiers;
     if (modifiers && (modifiers->hasSampleSizeRatio() || modifiers->hasSampleOffsetRatio()))
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: SAMPLE");
         return 0;
+    }
 
     /// `Graphite` rollup parameters are not shipped to the worker, so its FINAL cannot be range-split. Read serially.
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: Graphite rollup");
         return 0;
+    }
 
     const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
     if (!isSafePrimaryKey(primary_key))
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: the primary key is not safe for range splitting");
         return 0;
+    }
 
     auto in_reverse_order = deriveReverseOrder(primary_key, storage_snapshot->metadata->getSortingKey());
     if (!in_reverse_order)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: mixed sort directions");
         return 0;
+    }
 
     auto analysis = selectRangesToRead();
     if (!analysis || analysis->parts_with_ranges.empty())
+    {
+        LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
         return 0;
+    }
 
-    /// When FINAL does not merge across partitions, each partition is deduplicated independently, so a
-    /// layer must not span partitions (a key may repeat across partitions and must not be merged). Group
-    /// the parts into one span per partition (parts of a partition are adjacent in the analyzed order);
-    /// otherwise all parts form a single span that is merged together.
+    /// When FINAL does not merge across partitions, a layer must not span partitions (a key may
+    /// repeat across partitions and must stay unmerged): make one span per partition. Otherwise
+    /// all parts form a single span.
     std::vector<RangesInDataParts> spans;
     if (doNotMergePartsAcrossPartitionsFinal())
     {
@@ -6007,24 +6214,22 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (const auto & span : spans)
         total_marks += span.getMarksCountAllParts();
 
-    /// Lanes (merge layers) per task, matching single-node FINAL's parallelism
-    /// `min(requested_num_streams, max_final_threads)`.
-    const size_t lanes_per_task
-        = std::max<size_t>(1, std::min<size_t>(requested_num_streams, context->getSettingsRef()[Setting::max_final_threads]));
+    /// Target number of merge layers per task, fixed so the split does not depend on the
+    /// machine that builds the plan.
+    constexpr size_t target_lanes_per_task = 16;
+    const size_t layer_budget = target_buckets * target_lanes_per_task;
 
-    /// Split each span by primary key into non-intersecting ranges (each owned by a single level>0 part,
-    /// already deduplicated, so read without a merge) and intersecting ranges (overlapping across parts,
-    /// merged in PK-range layers). Each gets a share of the span's bucket budget proportional to its marks;
-    /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split. A
-    /// read-in-order read is caught by `supportsBucketedRead` at the top of this method and
-    /// falls back to a serial read before reaching here, so the split needs no read-in-order guard.
+    /// Split each span by primary key into non-intersecting ranges (owned by a single level>0 part,
+    /// already deduplicated, read without a merge) and intersecting ranges (merged in PK-range layers),
+    /// each getting a share of the span's budget proportional to its marks.
+    /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split.
     const bool split_non_intersecting
         = context->getSettingsRef()[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final];
     std::vector<DistributedReadBucket> buckets;
     for (auto & span : spans)
     {
         const size_t span_marks = span.getMarksCountAllParts();
-        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * lanes_per_task * span_marks / total_marks);
+        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, layer_budget * span_marks / total_marks);
 
         RangesInDataParts intersecting;
         if (split_non_intersecting)
@@ -6057,20 +6262,29 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
             auto split = splitIntersectingPartsRangesIntoLayers(
                 std::move(intersecting), intersecting_layers, primary_key.column_names.size(), *in_reverse_order, log);
             for (size_t i = 0; i < split.layers.size(); ++i)
-                buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
+                if (!split.layers[i].empty())
+                    buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
         }
     }
 
-    /// Group `lanes_per_task` consecutive virtual buckets into each task. A single task has nothing to
-    /// distribute, and a per-partition split with many partitions can exceed the task limit. Read serially
-    /// rather than under-parallelize or exceed it.
+    /// Group the layers into `target_buckets` tasks. More layers than the target (a per-partition
+    /// split makes at least one per partition) just mean more lanes per task, and each task ships
+    /// only its own lanes. A single task or a task count above the ceiling reads serially.
+    const size_t lanes_per_task = std::max<size_t>(1, (buckets.size() + target_buckets - 1) / target_buckets);
     const size_t tasks = (buckets.size() + lanes_per_task - 1) / lanes_per_task;
     if (tasks <= 1 || tasks > max_total_buckets)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: {} layers in {} lanes per task make {} tasks (target {}, limit {})",
+            buckets.size(), lanes_per_task, tasks, target_buckets, max_total_buckets);
         return 0;
+    }
 
+    LOG_TRACE(log, "Distributed FINAL read bucketed: {} layers in {} lanes per task make {} tasks (target {})",
+        buckets.size(), lanes_per_task, tasks, target_buckets);
     distributed_read_lanes_per_task = lanes_per_task;
     distributed_read_buckets = std::move(buckets);
     setDistributedRead(tasks);
+    distributed_read_param_name = nextDistributedReadParamName();
     return tasks;
 }
 
@@ -6250,9 +6464,11 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
             "version >= 2; all nodes must run the same version");
 
-    /// Every distributed bucket's marks travel in its own `read_bucket` task parameter (set during
-    /// fan-out), so the shared step carries only the bucket count.
+    /// Every distributed bucket's marks travel in its own per-read task parameter (set during fan-out),
+    /// so the shared step carries only the bucket count and this read's parameter key.
     writeVarUInt(distributed_read_bucket_count, ctx.out);
+    if (distributed_read_bucket_count > 0)
+        writeStringBinary(distributed_read_param_name, ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
@@ -6303,7 +6519,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     if (has_prewhere_info)
         query_info.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
 
-    /// The per-bucket marks travel in the `read_bucket` task parameter, so the step carries only the count.
+    /// The per-bucket marks travel in a per-read task parameter, so the step carries only the count and
+    /// this read's parameter key.
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
@@ -6312,6 +6529,9 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
             "version >= 2; all nodes must run the same version");
+    String distributed_read_param_name;
+    if (distributed_read_bucket_count > 0)
+        readStringBinary(distributed_read_param_name, ctx.in);
 
     /// The plan is only being drained off the buffer (TCPHandler::skipData) and will be discarded.
     /// All serialized fields have been consumed above, so return a lightweight placeholder that
@@ -6362,6 +6582,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+        read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution

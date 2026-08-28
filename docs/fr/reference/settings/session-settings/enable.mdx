@@ -14,6 +14,18 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="enable_adaptive_aggregator">
+  ## enable_adaptive_aggregator
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d’activer l’agrégation `GROUP BY` adaptative, qui fige la table de hachage locale de chaque thread lorsqu’elle atteint `adaptive_aggregator_freeze_threshold` clés, afin que les clés fréquentes continuent d’être agrégées dans les petites tables locales, tandis que les clés rares sont routées selon leur hash vers des files d’attente par bucket et agrégées exactement une fois lors de la fusion parallèle des buckets ; les clés rares sont ainsi stockées et traitées une seule fois au lieu d’une fois par thread."}]}]} />
+
+Active l’algorithme `GROUP BY` adaptatif : chaque thread agrège dans sa table de hachage locale jusqu’à ce qu’elle atteigne `adaptive_aggregator_freeze_threshold` clés, puis celle-ci est figée. Les lignes associées aux clés déjà rencontrées (fréquentes) continuent alors de la mettre à jour sur place, tandis que les nouvelles clés (rares) sont routées selon leur hash vers des files d’attente par bucket et agrégées exactement une fois lors de la fusion parallèle des buckets. Les clés fréquentes restent dans de petites tables tenant en cache, tandis que les clés rares ne sont stockées et traitées qu’une seule fois, au lieu d’une fois par thread.
+
+Les paramètres d’agrégation externe (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) sont respectés : au-delà du seuil, les files d’attente sont vidées de manière anticipée dans la table partagée et, si cela ne suffit pas à repasser sous ce seuil, la table partagée est déversée sur disque via l’agrégation externe ordinaire.
+
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
 </div>
@@ -47,6 +59,19 @@ Cependant, l’activation de ce paramètre ajoute des opérations de fusion supp
 
 Si ce paramètre est activé, ClickHouse activera automatiquement cette optimisation lorsque l&#39;expression de la clé de partition est déterministe et que toutes les colonnes utilisées dans cette expression sont incluses dans la clé primaire.
 Cette déduction automatique garantit que les lignes ayant les mêmes valeurs de clé primaire appartiendront toujours à la même partition, ce qui permet d&#39;éviter en toute sécurité les fusions entre partitions.
+
+<div id="enable_cascades_optimizer">
+  ## enable_cascades_optimizer
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre expérimental."}]}]} />
+
+Active l’optimiseur Cascades basé sur les coûts pour les plans de requêtes distribuées.
+Ne prend effet qu’avec `make_distributed_plan = 1` : ce paramètre n’a à lui seul aucun effet sur la planification des requêtes sur un seul nœud.
 
 <div id="enable_early_constant_folding">
   ## enable_early_constant_folding

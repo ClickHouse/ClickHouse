@@ -17,7 +17,9 @@ services:
           ]
         }
         EOF
-        exec weed mini -dir=/data -s3 -s3.config=/etc/seaweedfs/s3.json -tableBucket=analytics
+        # admin.port + 10000 is the derived admin gRPC port; it must stay below the
+        # 32768 ephemeral floor, or an outbound dial can take it before admin binds it.
+        exec weed mini -dir=/data -s3 -s3.config=/etc/seaweedfs/s3.json -tableBucket=analytics -admin.port=12646
     ports:
       - "${ICEBERG_REST_CATALOG_PORT}:8181"
     healthcheck:
