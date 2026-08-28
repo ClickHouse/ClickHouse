@@ -226,6 +226,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_merge_selecting_sleep_ms;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 max_replicated_fetches_network_bandwidth;
     extern const MergeTreeSettingsUInt64 max_replicated_merges_in_queue;
     extern const MergeTreeSettingsUInt64 max_replicated_merges_with_ttl_in_queue;
@@ -6656,6 +6657,10 @@ bool StorageReplicatedMergeTree::optimize(
             /// min_unreserved_disk_space_for_merge when selecting parts, so the queue must not re-apply
             /// the headroom, or the entry is postponed forever (see #80006). The empty-partition
             /// (plain OPTIMIZE) path selected parts under the headroom-respecting limit instead.
+            /// With the setting disabled there is no headroom to bypass, and the bit stays off the
+            /// wire so mixed-version rolling upgrades keep parsing OPTIMIZE entries.
+            const bool bypass_min_unreserved_space = !partition_id.empty()
+                && (*getSettings())[MergeTreeSetting::min_unreserved_disk_space_for_merge] > 0;
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                 zookeeper,
                 select_merge_result.value()->parts,
@@ -6666,7 +6671,7 @@ bool StorageReplicatedMergeTree::optimize(
                 deduplicate,
                 deduplicate_by_columns,
                 cleanup,
-                /*bypass_min_unreserved_space=*/!partition_id.empty(),
+                bypass_min_unreserved_space,
                 &merge_entry,
                 merge_predicate->getVersion(),
                 select_merge_result.value()->merge_type);
