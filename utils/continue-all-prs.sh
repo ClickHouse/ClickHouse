@@ -1135,12 +1135,71 @@ create_triage_clone()
 # The private triage clone starts without a checkout. Materialize its
 # submodules only after `prepare_triage_worktree` has checked out the actual
 # PR head, so builds and source inspection see the same revision as triage.
+#
+# `.gitmodules` is pull-request content, and this runs in the orchestrator,
+# before the Bubblewrap namespace and the scrubbed Git environment exist: a
+# plain `git submodule update --init` would resolve author-chosen URLs with the
+# operator's SSH agent, credential helpers, and tokens still available, so a
+# `.gitmodules` pointing at `ssh://git@attacker.example/...` would make the
+# worker authenticate to that endpoint. Take every submodule URL from the
+# trusted worker's checkout instead, keyed by submodule path, and leave
+# submodules the worker does not know - the only thing a `.gitmodules` change
+# can introduce - unmaterialized.
 setup_triage_submodules()
 {
-    local triage_wt="$1" deadline="$2"
+    local triage_wt="$1" wt="$2" deadline="$3"
 
     (( SKIP_SUBMODULES )) && return 0
-    run_with_deadline "$deadline" git -C "$triage_wt" submodule update --init --checkout --recursive
+    materialize_trusted_submodules "$triage_wt" "$wt" "$deadline"
+}
+
+# One level of submodules, then the same rule for their own submodules: a
+# nested `.gitmodules` is pull-request content as well, so its URLs are no more
+# trustworthy than the top-level ones.
+materialize_trusted_submodules()
+{
+    local repo="$1" trusted="$2" deadline="$3"
+    local record key value name path
+    local -A trusted_path=() trusted_url=() url_of_path=()
+    local -a paths=()
+
+    [[ -e "$repo/.gitmodules" && -e "$trusted/.gitmodules" ]] || return 0
+
+    while IFS= read -r -d '' record; do
+        key=${record%%$'\n'*}
+        [[ "$key" != "$record" ]] && value=${record#*$'\n'} || value=""
+        case "$key" in
+            submodule.*.path) name=${key#submodule.}; trusted_path[${name%.path}]="$value" ;;
+            submodule.*.url) name=${key#submodule.}; trusted_url[${name%.url}]="$value" ;;
+        esac
+    done < <(git config -f "$trusted/.gitmodules" --list -z)
+    for name in "${!trusted_path[@]}"; do
+        [[ -n "${trusted_url[$name]:-}" ]] || continue
+        url_of_path[${trusted_path[$name]}]="${trusted_url[$name]}"
+    done
+
+    while IFS= read -r -d '' record; do
+        key=${record%%$'\n'*}
+        [[ "$key" != "$record" ]] && value=${record#*$'\n'} || value=""
+        [[ "$key" == submodule.*.path ]] || continue
+        name=${key#submodule.}
+        name=${name%.path}
+        path="$value"
+        [[ -n "${url_of_path[$path]:-}" ]] || continue
+        git -C "$repo" config "submodule.$name.url" "${url_of_path[$path]}" || return 1
+        paths+=("$path")
+    done < <(git config -f "$repo/.gitmodules" --list -z)
+
+    (( ${#paths[@]} )) || return 0
+    # Allow only the transports the trusted URLs actually use, so a redirect or
+    # an unexpected URL form cannot reach an arbitrary remote helper either.
+    run_with_deadline "$deadline" git -C "$repo" \
+        -c protocol.allow=never -c protocol.https.allow=always -c protocol.file.allow=always \
+        submodule update --checkout -- "${paths[@]}" || return $?
+
+    for path in "${paths[@]}"; do
+        materialize_trusted_submodules "$repo/$path" "$trusted/$path" "$deadline" || return $?
+    done
 }
 
 # Use the remaining per-PR budget for setup operations as well as agent turns.
@@ -1186,7 +1245,11 @@ recreate_validated_triage_merge()
         git -C "$wt" merge --abort || true
         return 1
     fi
-    git -C "$wt" commit -m "Merge base branch into pull request head"
+    # This synthetic merge is a mechanical handoff step, not a commit the
+    # operator authors: never make it depend on the local signing setup. With
+    # `commit.gpgSign=true` configured, an otherwise clean validated merge
+    # would fail here on any machine where signing needs interaction.
+    git -C "$wt" -c commit.gpgSign=false commit -m "Merge base branch into pull request head"
 }
 
 discard_untrusted_triage_changes()
@@ -1269,7 +1332,7 @@ run_continue_pr()
         create_triage_clone "$wt" "$triage_wt" "$deadline" || return $?
         local triage_metadata
         triage_metadata=$(prepare_triage_worktree "$triage_wt" "$number" "$deadline") || return $?
-        setup_triage_submodules "$triage_wt" "$deadline" || return $?
+        setup_triage_submodules "$triage_wt" "$wt" "$deadline" || return $?
         IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable <<< "$triage_metadata"
     fi
     : > "$log"

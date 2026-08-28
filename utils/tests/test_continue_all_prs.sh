@@ -262,6 +262,7 @@ fi
 # Triage uses a private clone. After the PR head is checked out, it must still
 # initialize submodules so it can build and inspect the complete source tree.
 source <(sed -n '/^setup_triage_submodules()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+source <(sed -n '/^materialize_trusted_submodules()/,/^}/p' "$repo/utils/continue-all-prs.sh")
 run_with_deadline()
 {
     shift
@@ -284,13 +285,40 @@ git -C "$triage_superproject" commit -qam 'Add test submodule'
 git clone -q --shared --no-checkout "$triage_superproject" "$triage_clone"
 git -C "$triage_clone" checkout -q --detach HEAD
 SKIP_SUBMODULES=0
-GIT_CONFIG_COUNT=1
-GIT_CONFIG_KEY_0=protocol.file.allow
-GIT_CONFIG_VALUE_0=always
-export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
-setup_triage_submodules "$triage_clone" $(( $(date +%s) + 30 ))
-unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+# The worker's own checkout is the trusted source of submodule URLs.
+setup_triage_submodules "$triage_clone" "$triage_superproject" $(( $(date +%s) + 30 ))
 [[ "$(<"$triage_clone/dependency/content")" == 'triage submodule' ]]
+
+# `.gitmodules` is pull-request content, and submodules are materialized in the
+# orchestrator, before the triage sandbox exists. A URL taken from the pull
+# request would make the worker authenticate to an author-chosen endpoint with
+# its own SSH and credential configuration; every URL must come from the
+# trusted worker checkout instead, and a submodule the worker does not know
+# must not be fetched at all.
+hostile_clone="$scratch/hostile-triage-clone"
+hostile_super="$scratch/hostile-superproject"
+hostile_ssh_marker="$scratch/hostile-ssh-invoked"
+cp -a "$triage_superproject" "$hostile_super"
+git -C "$hostile_super" config -f .gitmodules submodule.dependency.url ssh://git@example.com/evil/dependency.git
+git -C "$hostile_super" config -f .gitmodules submodule.evil.path evil
+git -C "$hostile_super" config -f .gitmodules submodule.evil.url ssh://git@example.com/evil/evil.git
+git -C "$hostile_super" update-index --add --cacheinfo \
+    "160000,$(git -C "$triage_submodule_source" rev-parse HEAD),evil"
+git -C "$hostile_super" add .gitmodules
+git -C "$hostile_super" commit -qm 'Point the submodules at an attacker endpoint'
+git clone -q --shared --no-checkout "$hostile_super" "$hostile_clone"
+git -C "$hostile_clone" checkout -q --detach HEAD
+printf '%s\n' '#!/usr/bin/env bash' 'printf invoked > "$HOSTILE_SSH_MARKER"' 'exit 1' > "$bin/hostile-ssh"
+chmod +x "$bin/hostile-ssh"
+HOSTILE_SSH_MARKER="$hostile_ssh_marker" GIT_SSH_COMMAND="$bin/hostile-ssh" \
+    setup_triage_submodules "$hostile_clone" "$triage_superproject" $(( $(date +%s) + 30 ))
+[[ ! -e "$hostile_ssh_marker" ]]
+# The known submodule is materialized from the trusted URL, and the one the
+# pull request invented is left alone.
+[[ "$(<"$hostile_clone/dependency/content")" == 'triage submodule' ]]
+[[ "$(git -C "$hostile_clone" config --get submodule.dependency.url)" == "$triage_submodule_source" ]]
+[[ -z "$(git -C "$hostile_clone" config --get submodule.evil.url || true)" ]]
+[[ -z "$(ls -A "$hostile_clone/evil" 2>/dev/null)" ]]
 
 # `headRefName` is chosen by the fork, and a short refname is ambiguous: when a
 # remote carries both `refs/heads/<name>` and `refs/tags/<name>`, `FETCH_HEAD`
@@ -432,6 +460,39 @@ import_merge_oid=$(git -C "$import_worker" rev-parse HEAD)
 [[ "$(git -C "$import_worker" show -s --format='%P' "$import_merge_oid")" == "$import_head_oid $import_base_oid" ]]
 [[ "$(<"$import_worker/head")" == 'head' ]]
 [[ "$(<"$import_worker/newer-base")" == 'newer base' ]]
+
+# The synthetic merge is a mechanical handoff step. It must not depend on the
+# operator's commit signing setup: with `commit.gpgSign` enabled, a clean
+# validated merge would otherwise fail before the handoff.
+sign_source="$scratch/sign-source"
+sign_worker="$scratch/sign-worker"
+sign_triage="$scratch/sign-triage"
+git init -q -b master "$sign_source"
+git -C "$sign_source" config user.email test@example.com
+git -C "$sign_source" config user.name test
+printf 'base\n' > "$sign_source/base"
+git -C "$sign_source" add base
+git -C "$sign_source" commit -qm 'Add base'
+git clone -q "$sign_source" "$sign_worker"
+git -C "$sign_worker" config user.email test@example.com
+git -C "$sign_worker" config user.name test
+git -C "$sign_worker" config commit.gpgSign true
+git -C "$sign_worker" config gpg.program /bin/false
+git -C "$sign_source" checkout -q -b pr-head
+printf 'head\n' > "$sign_source/head"
+git -C "$sign_source" add head
+git -C "$sign_source" commit -qm 'Add head'
+sign_head_oid=$(git -C "$sign_source" rev-parse refs/heads/pr-head)
+git -C "$sign_source" checkout -q master
+printf 'newer base\n' > "$sign_source/newer-base"
+git -C "$sign_source" add newer-base
+git -C "$sign_source" commit -qm 'Advance the base'
+sign_base_oid=$(git -C "$sign_source" rev-parse refs/heads/master)
+git clone -q --shared --no-checkout "$sign_worker" "$sign_triage"
+git -C "$sign_triage" fetch -q "$sign_source" \
+    "+refs/heads/pr-head:refs/remotes/origin/pr-head" "+refs/heads/master:refs/remotes/origin/master"
+recreate_validated_triage_merge "$sign_worker" "$sign_head_oid" "$sign_base_oid" "$sign_triage" >/dev/null
+[[ "$(git -C "$sign_worker" show -s --format='%P' HEAD)" == "$sign_head_oid $sign_base_oid" ]]
 
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
