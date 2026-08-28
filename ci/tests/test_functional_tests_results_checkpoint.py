@@ -67,6 +67,13 @@ _RUNNER_SCRIPT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../praktika/runner.py")
 )
 
+# Every method praktika's two killed-job patches may call on the result. Each was read and
+# touches only status, errors, info or the file - never `results`. An allow-list rather than
+# a list of destructive spellings: a new call has to be checked, not guessed at.
+_ROW_PRESERVING_CALLS = frozenset(
+    {"add_error", "get_latest_log", "is_running", "set_info", "set_status", "dump"}
+)
+
 _CHECKPOINT_HELPER = "checkpoint_collected_results"
 _JOB_NAME = "Stateless tests (checkpoint probe)"
 _RUN_URL = "https://example.invalid/run/1/job/2"
@@ -552,10 +559,16 @@ def test_neither_runner_patch_clears_the_checkpointed_rows():
     The arm above drives `_get_result_object`, which is not the patch a job that overruns
     its timeout gets: `_run` patches first, adding `TIMEOUT` and `ERROR` while the result
     is still incomplete, after which `_get_result_object` finds it completed and skips its
-    own patch. Driving `_run` would need a workflow, a patched `_Environment` and a
-    `TeePopen` fake, so both patch blocks are read instead. A statement that rebound or
-    emptied `results` in either one would republish the empty `ERROR` this change exists
-    to prevent, and no arm here would notice.
+    own patch. So the timeout path, the one the reported run took, has no arm driving it -
+    a change there that emptied `results` while setting `ERROR` would republish the empty
+    `ERROR` this change exists to prevent, and every other arm here would stay green.
+
+    Both patch blocks are read rather than run: reaching the block inside `_run` means
+    supplying a workflow, a patched `_Environment` and a `TeePopen` whose process reports
+    a timeout, which is more praktika scaffolding than this change earns. What is pinned
+    instead is that each block only ever calls row-preserving methods and rebinds only
+    local names. Read as a guard, not as a proof of `_run`: it cannot see a row dropped
+    inside one of the allowed methods.
     """
     tree = _parse(_RUNNER_SCRIPT)
     for name in ("_run", "_get_result_object"):
@@ -575,24 +588,33 @@ def test_neither_runner_patch_clears_the_checkpointed_rows():
             "path moved, so re-verify by hand that it still keeps the checkpointed rows"
         )
         for block in blocks:
-            for node in ast.walk(ast.Module(body=block.body, type_ignores=[])):
+            body = ast.Module(body=block.body, type_ignores=[])
+            called = {
+                node.func.attr
+                for node in ast.walk(body)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            }
+            assert called <= _ROW_PRESERVING_CALLS, (
+                f"{name}()'s killed-job patch now calls {sorted(called - _ROW_PRESERVING_CALLS)}, "
+                "which this arm has not checked against the checkpointed rows: confirm the "
+                "new call keeps them, then add it here"
+            )
+            for node in ast.walk(body):
                 targets = []
                 if isinstance(node, (ast.Assign, ast.AugAssign)):
                     targets = getattr(node, "targets", None) or [node.target]
+                elif isinstance(node, ast.Delete):
+                    targets = node.targets
                 offenders = [
                     target
                     for target in targets
-                    if (isinstance(target, ast.Attribute) and target.attr == "results")
-                    or (isinstance(target, ast.Name) and target.id == "result")
+                    if not (isinstance(target, ast.Name) and target.id != "result")
                 ]
                 assert not offenders, (
-                    f"{name}()'s killed-job patch assigns to "
-                    f"{[ast.dump(t) for t in offenders]} at line {node.lineno}: it can "
-                    "now drop the checkpointed rows and republish an empty ERROR"
+                    f"{name}()'s killed-job patch writes to "
+                    f"{[ast.dump(t) for t in offenders]} at line {node.lineno}: only local "
+                    "names may be rebound, or the checkpointed rows can be dropped"
                 )
-                assert not (
-                    isinstance(node, ast.Call) and _is_named_call(node, "clear")
-                ), f"{name}()'s killed-job patch calls .clear() at line {node.lineno}"
 
 
 def test_cidb_ingests_the_children_of_a_killed_checkpointed_result(tmp_path):
