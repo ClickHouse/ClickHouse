@@ -258,6 +258,7 @@ void KeeperRequestDispatcher::shutdownRequests()
         {
             KeeperRequestBatch close_batch;
             close_batch.requests = std::move(close_requests);
+            close_batch.dispatcher_server_id = server->getServerID();
             auto entries = KeeperStateMachine::serializeRequestBatch(
                 close_batch, keeper_context->getCoordinationSettings()[CoordinationSetting::use_batched_log_entries]);
 
@@ -918,6 +919,7 @@ void KeeperRequestDispatcher::dispatchThread()
 
                 KeeperRequestBatch log_entry_batch;
                 log_entry_batch.requests = std::move(requests);
+                log_entry_batch.dispatcher_server_id = server->getServerID();
                 auto entries = KeeperStateMachine::serializeRequestBatch(
                     log_entry_batch, use_batched_log_entries);
 

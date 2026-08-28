@@ -971,6 +971,10 @@ int deserializeChangelog(
                         auto batch = state_machine->parseRequestBatch(*buffer, true);
                         if (batch->digest.version != KeeperDigestVersion::NO_DIGEST)
                             std::cout << fmt::format("Digest: {} ({})\n", batch->digest.value, batch->digest.version);
+                        if (batch->dispatcher_server_id != -1)
+                            std::cout << "Dispatcher server ID: " << batch->dispatcher_server_id << "\n";
+                        if (batch->committed_log_idx != 0)
+                            std::cout << "Committed log index: " << batch->committed_log_idx << "\n";
                         for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
                         {
                             const auto & request = batch->requests[request_idx];

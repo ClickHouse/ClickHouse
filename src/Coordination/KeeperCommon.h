@@ -90,12 +90,11 @@ struct KeeperRequestBatch
     /// Which server's Keeper[Request]Dispatcher produced this batch. That dispatcher owns the
     /// sessions of all requests in the batch. Only that server needs to produce responses to
     /// these requests when committing this batch. -1 if unknown (e.g. if parsed from log entry in old format).
-    //TODO(keeper-batch2): assign it.
     //TODO(keeper-batch3): Use this to avoid producing useless responses on servers that don't own the
     ///       corresponding client sessions. Probably pass the flag all the way to processRequest so we don't waste time creating responses at all.
     int32_t dispatcher_server_id{-1};
-    /// Lower bound on last committed log entry idx, as of the time this batch reached the leader.
-    //TODO(keeper-batch2): assign (patch) it on leader.
+    /// Lower bound on last committed log entry idx, patched in by the leader in the
+    /// PreAppendLogLeader callback. 0 if unknown (e.g. log entry in old format).
     /// TODO: Use this to avoid the localLogsPreprocessed() dance on startup: read last local log
     ///       entry, take committed_log_idx from it, preprocess+commit entries up to it, preprocess
     ///       entries after it.
