@@ -151,7 +151,7 @@ GTEST_TEST(DataTypesBinaryEncoding, DeclaredAggregateStateTypeWithVariantIsSetti
     encodeDataType(type, ostr);
 
     /// Reset `current_thread` to avoid conflicts of `ThreadStatus` with `MainThreadStatus`.
-    auto * previous_thread = current_thread;
+    ThreadStatus * previous_thread = current_thread;
     current_thread = nullptr;
     SCOPE_EXIT({ current_thread = previous_thread; });
 
