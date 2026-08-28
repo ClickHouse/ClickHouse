@@ -28,14 +28,14 @@ ENGINE = MergeTree
 ORDER BY tuple();
 INSERT INTO sql_insert_no_names_04657 VALUES (7);
 7
-schema with unquoted column names
+schema forces quoted column names
 CREATE TABLE sql_insert_unquoted_04657
 (
-    x UInt8
+    `x` UInt8
 )
 ENGINE = MergeTree
 ORDER BY tuple();
-INSERT INTO sql_insert_unquoted_04657 (x) VALUES (8);
+INSERT INTO sql_insert_unquoted_04657 (`x`) VALUES (8);
 8
 schema with an escaped column name
 CREATE TABLE sql_insert_escaped_name_04657

@@ -124,7 +124,8 @@ void SQLInsertRowOutputFormat::printColumnNames()
 
 void SQLInsertRowOutputFormat::printColumnName(const String & column_name)
 {
-    if (format_settings.sql_insert.quote_names)
+    /// Schema output must remain replayable even when a column name is not a valid unquoted identifier.
+    if (format_settings.sql_insert.quote_names || format_settings.sql_insert.include_table_schema)
         writeBackQuotedString(column_name, out);
     else
         writeString(column_name, out);
@@ -279,7 +280,7 @@ Output with the table definition can be executed as a ClickHouse SQL script inst
 | [`output_format_sql_insert_table_name`](/reference/settings/formats/output-format#output_format_sql_insert_table_name)            | The name of the table in the output INSERT query.   | `'table'` |
 | [`output_format_sql_insert_include_column_names`](/reference/settings/formats/output-format#output_format_sql_insert_include_column_names) | Include column names in INSERT query.               | `true`    |
 | [`output_format_sql_insert_use_replace`](/reference/settings/formats/output-format#output_format_sql_insert_use_replace)          | Use REPLACE statement instead of INSERT.            | `false`   |
-| [`output_format_sql_insert_quote_names`](/reference/settings/formats/output-format#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters.            | `true`    |
+| [`output_format_sql_insert_quote_names`](/reference/settings/formats/output-format#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters. Schema output always quotes column names. | `true` |
 | [`output_format_sql_insert_include_table_schema`](/reference/settings/formats/output-format#output_format_sql_insert_include_table_schema) | Include a `CREATE TABLE` statement before the data. | `false`   |
 )DOCS_MD"});
 }

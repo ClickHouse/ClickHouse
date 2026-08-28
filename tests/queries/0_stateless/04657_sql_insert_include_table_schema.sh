@@ -98,7 +98,7 @@ printf '%s\n' "${no_names_dump}"
 printf '%s\n' "${no_names_dump}" | ${CLICKHOUSE_CLIENT} --multiquery
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${no_names_table_name} FORMAT TSV"
 
-echo "schema with unquoted column names"
+echo "schema forces quoted column names"
 unquoted_dump="$(${CLICKHOUSE_CLIENT} --query "
     SELECT toUInt8(8) AS x
     FORMAT SQLInsert

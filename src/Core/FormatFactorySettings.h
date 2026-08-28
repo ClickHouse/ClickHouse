@@ -1558,7 +1558,7 @@ Include column names in INSERT query
 Use REPLACE statement instead of INSERT
 )", 0) \
     DECLARE(Bool, output_format_sql_insert_quote_names, true, R"(
-Quote column names with '`' characters
+Quote column names with '`' characters. Column names are always quoted when `output_format_sql_insert_include_table_schema` is enabled.
 )", 0) \
     DECLARE(Bool, output_format_sql_insert_include_table_schema, false, R"(
 If enabled, prepends a `CREATE TABLE` statement using the result column names and types before `SQLInsert` data.
