@@ -1843,14 +1843,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         if (hasIndexForColumn(node.getColumnName()) || hasIndexForMapElementValue(node))
             return true;
 
-        if (!matchesNodeToJSONAllValuesIndex(node, header))
-            return false;
-
-        const auto * node_dag = node.getDAGNode();
-        if (!node_dag)
-            return false;
-
-        return hasKnownJSONAllValuesSerialization(node_dag->result_type);
+        return matchesNodeToJSONAllValuesIndex(node, header);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
