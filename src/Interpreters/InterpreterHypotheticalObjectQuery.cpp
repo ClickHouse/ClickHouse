@@ -83,6 +83,10 @@ BlockIO createHypotheticalProjection(
 {
     const auto & projection_ast = query.projection_decl->as<ASTProjectionDeclaration &>();
 
+    /// the same privilege the real ADD PROJECTION needs, checked before the definition is resolved
+    /// so that a caller without it cannot probe which columns exist
+    context->checkAccess(AccessType::ALTER_ADD_PROJECTION, table_id);
+
     /// `IF NOT EXISTS` must short-circuit before building the descriptor, matching
     /// `ALTER TABLE ... ADD PROJECTION IF NOT EXISTS`
     if (query.if_not_exists)

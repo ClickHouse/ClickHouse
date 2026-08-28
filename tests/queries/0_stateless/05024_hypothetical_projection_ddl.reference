@@ -38,3 +38,7 @@ status: not_applicable
 reason: EXPLAIN WHATIF does not estimate hypothetical projections yet
 --- with nothing defined the report says so ---
 No hypothetical indexes or projections defined for this table. Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.
+--- creating needs the same privilege as a real ADD PROJECTION ---
+ACCESS_DENIED
+ACCESS_DENIED
+granted user can create

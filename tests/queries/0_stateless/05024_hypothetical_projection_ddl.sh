@@ -132,4 +132,17 @@ $CLICKHOUSE_CLIENT -q "
 echo "--- with nothing defined the report says so ---"
 $CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;" 2>&1 | grep -oE 'No hypothetical indexes or projections defined.*' | head -1
 
+# Without ALTER ADD PROJECTION the statement must not resolve the definition, otherwise a caller
+# could tell an existing column from a missing one by the error they get back
+echo "--- creating needs the same privilege as a real ADD PROJECTION ---"
+user="u_05024_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}; CREATE USER ${user} NOT IDENTIFIED;"
+$CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL PROJECTION p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl (SELECT a, b ORDER BY b);" 2>&1 | grep -m1 -o 'ACCESS_DENIED'
+# a missing column must give the same answer, not UNKNOWN_IDENTIFIER
+$CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL PROJECTION p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl (SELECT nosuchcol ORDER BY nosuchcol);" 2>&1 | grep -m1 -oE 'ACCESS_DENIED|UNKNOWN_IDENTIFIER'
+$CLICKHOUSE_CLIENT -q "GRANT ALTER ADD PROJECTION ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl TO ${user};"
+# that privilege alone is enough; reading the columns is not required until estimation exists
+$CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL PROJECTION p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl (SELECT a, b ORDER BY b); SELECT 'granted user can create';" 2>&1 | grep -m1 -oE 'granted user can create|ACCESS_DENIED'
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user};"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_ddl; DROP TABLE IF EXISTS t_hypo_proj_log; DROP TABLE IF EXISTS t_hypo_proj_drift; DROP TABLE IF EXISTS t_hypo_proj_co;"
