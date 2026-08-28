@@ -63,6 +63,9 @@ _JOB_SCRIPT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../jobs/functional_tests.py")
 )
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+_RUNNER_SCRIPT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../praktika/runner.py")
+)
 
 _CHECKPOINT_HELPER = "checkpoint_collected_results"
 _JOB_NAME = "Stateless tests (checkpoint probe)"
@@ -77,11 +80,11 @@ def _parse(path):
         return ast.parse(f.read(), filename=path)
 
 
-def _find_function(tree, name):
+def _find_function(tree, name, path=_JOB_SCRIPT):
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == name:
             return node
-    raise AssertionError(f"{name}() not found in {_JOB_SCRIPT}")
+    raise AssertionError(f"{name}() not found in {path}")
 
 
 def _checkpoint_calls(scope):
@@ -541,6 +544,55 @@ def test_runner_kill_patch_keeps_the_checkpointed_results(tmp_path):
         "the report would still be empty"
     )
     assert patched.duration is not None, "the runner did not fill in the duration"
+
+
+def test_neither_runner_patch_clears_the_checkpointed_rows():
+    """Both of praktika's killed-job patches must leave `result.results` alone.
+
+    The arm above drives `_get_result_object`, which is not the patch a job that overruns
+    its timeout gets: `_run` patches first, adding `TIMEOUT` and `ERROR` while the result
+    is still incomplete, after which `_get_result_object` finds it completed and skips its
+    own patch. Driving `_run` would need a workflow, a patched `_Environment` and a
+    `TeePopen` fake, so both patch blocks are read instead. A statement that rebound or
+    emptied `results` in either one would republish the empty `ERROR` this change exists
+    to prevent, and no arm here would notice.
+    """
+    tree = _parse(_RUNNER_SCRIPT)
+    for name in ("_run", "_get_result_object"):
+        function = _find_function(tree, name, _RUNNER_SCRIPT)
+        blocks = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.If)
+            and any(
+                _is_named_call(call, "is_completed")
+                for call in ast.walk(node.test)
+                if isinstance(call, ast.Call)
+            )
+        ]
+        assert blocks, (
+            f"{name}() no longer guards its patch with is_completed(): the killed-job "
+            "path moved, so re-verify by hand that it still keeps the checkpointed rows"
+        )
+        for block in blocks:
+            for node in ast.walk(ast.Module(body=block.body, type_ignores=[])):
+                targets = []
+                if isinstance(node, (ast.Assign, ast.AugAssign)):
+                    targets = getattr(node, "targets", None) or [node.target]
+                offenders = [
+                    target
+                    for target in targets
+                    if (isinstance(target, ast.Attribute) and target.attr == "results")
+                    or (isinstance(target, ast.Name) and target.id == "result")
+                ]
+                assert not offenders, (
+                    f"{name}()'s killed-job patch assigns to "
+                    f"{[ast.dump(t) for t in offenders]} at line {node.lineno}: it can "
+                    "now drop the checkpointed rows and republish an empty ERROR"
+                )
+                assert not (
+                    isinstance(node, ast.Call) and _is_named_call(node, "clear")
+                ), f"{name}()'s killed-job patch calls .clear() at line {node.lineno}"
 
 
 def test_cidb_ingests_the_children_of_a_killed_checkpointed_result(tmp_path):
@@ -1345,6 +1397,7 @@ if __name__ == "__main__":
         test_checkpoint_publishes_by_rename,
         test_checkpoint_assigns_no_status,
         test_checkpoint_guards_every_step_against_every_exception,
+        test_neither_runner_patch_clears_the_checkpointed_rows,
     ):
         fn()
         print(f"ok {fn.__name__}")
