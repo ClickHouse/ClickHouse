@@ -490,10 +490,14 @@ void HTTPClientSession::reconnect(uint64_t * connect_time)
         if (connect_time)
             *connect_time = connect_watch.elapsed();
     }
-    catch (Poco::TimeoutException&)
+    catch (Poco::TimeoutException& e)
     {
         if (connect_time)
             *connect_time = getConnectionTimeout().totalMicroseconds();
+        /// A timeout surfacing through the deferred SO_ERROR path is thrown by code only, with no
+        /// message at all - name the endpoint; the poll-path timeout already carries the address.
+        if (e.message().empty())
+            throw Poco::TimeoutException("connect timed out", dialled_endpoint, e.code());
         throw;
     }
     catch (Poco::Net::ConnectionRefusedException& e)

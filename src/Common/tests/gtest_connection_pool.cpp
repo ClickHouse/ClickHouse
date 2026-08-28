@@ -1296,6 +1296,26 @@ TEST_F(ConnectionPoolTest, DeferredRefusalRewrapNamesThePeer)
     }
 }
 
+TEST_F(ConnectionPoolTest, DeferredTimeoutRewrapNamesThePeer)
+{
+    /// A timeout from the SO_ERROR path arrives as a code-only TimeoutException with an empty
+    /// message; the poll-path timeout already names the peer and must stay untouched.
+    const String endpoint = "127.0.0.99:9";
+    try
+    {
+        BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::TimeoutException(ETIMEDOUT); });
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        session.sendRequest(request);
+        FAIL() << "Expected the connect to time out";
+    }
+    catch (const Poco::TimeoutException & e)
+    {
+        const auto text = e.displayText();
+        ASSERT_TRUE(text.contains(endpoint)) << "Peer address missing: " << text;
+        ASSERT_EQ(ETIMEDOUT, e.code()) << "Errno not preserved: " << text;
+    }
+}
+
 TEST_F(ConnectionPoolTest, DeferredNetErrorRewrapNamesThePeer)
 {
     /// The three bare deferred shapes the reconnect handler widens the contract to, verbatim from
