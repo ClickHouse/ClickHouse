@@ -1788,26 +1788,30 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// `TTL <expr> DELETE WHERE <cond>` (a rows-where TTL) and `TTL <expr> GROUP BY ... [WHERE
             /// <cond>]` also read the columns of their WHERE condition, stored separately in
-            /// `where_expression_columns`. These are NOT covered by the recalculation above:
-            /// `getColumnDependencies` only expands a row / group-by TTL's `expression_columns` (it even
-            /// carries a `//TODO what about rows_where_ttl and group_by_ttl ??`), so changing a column
-            /// used only in the WHERE condition can change which rows participate in the TTL while the
-            /// mutation copies the part's `rows_where_ttl_info` with stale bounds.
+            /// `where_expression_columns`. For a rows-where TTL, `getColumnDependencies` expands the
+            /// WHERE columns the same way as the TTL expression columns (`add_for_rows_ttl`): a match
+            /// forces every physical column into the mutation and re-evaluates the whole TTL
+            /// (`ExecuteTTLType::NORMAL`), which re-evaluates the WHERE condition too and rebuilds the
+            /// part's `rows_where_ttl_info`. So a column used only in a rows-where WHERE condition is
+            /// materialized safely and must not be refused.
             ///
-            /// When a rewritten column feeds a row / rows-where / group-by TTL *expression*, the
-            /// recalculation above forces every physical column into the mutation and re-evaluates the
-            /// whole TTL (`ExecuteTTLType::NORMAL`), which re-evaluates the WHERE condition too — that
-            /// case is already handled and refusing it would over-reject. Otherwise nothing recomputes
-            /// the WHERE side. Making it recompute on its own would require teaching the shared
-            /// `getColumnDependencies` to expand `where_expression_columns`, which would also change the
-            /// UPDATE path; so, following the same fail-close approach used for subcolumn TTL
+            /// That expansion matches by exact name only, and does NOT cover:
+            /// - a *subcolumn* of a rewritten column used in a rows-where WHERE condition (`DELETE
+            ///   WHERE t.k = 1` while materializing the parent `t`) — the dependency is recorded under
+            ///   the subcolumn name, which never matches the parent;
+            /// - the WHERE condition of a group-by TTL, whose `where_expression_columns` the dependency
+            ///   expansion does not read at all.
+            /// Nothing recomputes those, so changing such a column can change which rows participate in
+            /// the TTL while the mutation copies the part's TTL infos with stale bounds. Making them
+            /// recompute would require changing the shared `getColumnDependencies` expansion, which also
+            /// drives UPDATE; so, following the same fail-close approach used for subcolumn TTL
             /// dependencies above, refuse the command rather than leaving stale TTL bounds in the new part.
             ///
-            /// The trigger must be checked against the row / rows-where / group-by TTL *expression*
-            /// columns specifically (mirroring `add_for_rows_ttl` in `getColumnDependencies`, the only
-            /// path that pulls in every physical column). A plain `TTL_TARGET` dependency is NOT a
-            /// sufficient signal: `getColumnDependencies` also emits `TTL_TARGET` for a *column* TTL
-            /// target (`x ... TTL c + INTERVAL ...`, which only resets that one target column and does
+            /// The full-recalculation shortcut below must mirror `add_for_rows_ttl` in
+            /// `getColumnDependencies` exactly: the row / rows-where / group-by TTL *expression* columns
+            /// plus the rows-where WHERE columns, matched by exact name. A plain `TTL_TARGET` dependency
+            /// is NOT a sufficient signal: `getColumnDependencies` also emits `TTL_TARGET` for a *column*
+            /// TTL target (`x ... TTL c + INTERVAL ...`, which only resets that one target column and does
             /// not re-evaluate any rows-where TTL). Keying off any `TTL_TARGET` let a column-TTL target
             /// wrongly disable the refusal below and leave the part's `rows_where_ttl_info` stale.
             /// Matching by exact name against `rewritten_columns` (rather than resolving subcolumns or
@@ -1823,7 +1827,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (metadata_snapshot->hasRowsTTL())
                 full_ttl_recalc = rewritten_feeds_rows_ttl_expression(metadata_snapshot->getRowsTTL().expression_columns.getNames());
             for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
-                full_ttl_recalc = full_ttl_recalc || rewritten_feeds_rows_ttl_expression(ttl_entry.expression_columns.getNames());
+                full_ttl_recalc = full_ttl_recalc
+                    || rewritten_feeds_rows_ttl_expression(ttl_entry.expression_columns.getNames())
+                    || rewritten_feeds_rows_ttl_expression(ttl_entry.where_expression_columns.getNames());
             for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
                 full_ttl_recalc = full_ttl_recalc || rewritten_feeds_rows_ttl_expression(ttl_entry.expression_columns.getNames());
 
