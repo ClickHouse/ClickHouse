@@ -535,14 +535,18 @@ const Block & GraceHashJoin::getTotals() const
 size_t GraceHashJoin::getTotalRowCount() const
 {
     std::lock_guard lock(hash_join_mutex);
-    chassert(hash_join);
+    /// A failed rehash leaves no in-memory join until the next `addBlockToJoinImpl` rebuilds one,
+    /// and the spill scheduler reads these counts from another thread meanwhile.
+    if (!hash_join)
+        return 0;
     return hash_join->getTotalRowCount();
 }
 
 size_t GraceHashJoin::getTotalByteCount() const
 {
     std::lock_guard lock(hash_join_mutex);
-    chassert(hash_join);
+    if (!hash_join)
+        return 0;
     return hash_join->getTotalByteCount();
 }
 
@@ -934,8 +938,11 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
         force_spill = false;
         /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
         stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
-        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
-        hash_join = nullptr;
+        /// `releaseJoinedBlocks` resets the join's data before it finishes allocating, so detach
+        /// first: a throw must not leave `hash_join` pointing at a join whose data is gone.
+        auto released_join = std::move(hash_join);
+        auto right_blocks = released_join->releaseJoinedBlocks(/* restructure */ false);
+        released_join.reset();
 
         {
             Blocks current_blocks;

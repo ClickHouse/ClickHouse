@@ -44,13 +44,14 @@
 #include <Interpreters/joinDispatch.h>
 #include <IO/WriteHelpers.h>
 
+#include <Interpreters/IJoin.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/IJoin.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
@@ -89,6 +90,12 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int TYPE_MISMATCH;
 extern const int NO_SUCH_COLUMN_IN_TABLE;
 extern const int INCOMPATIBLE_TYPE_OF_JOIN;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char hash_join_throw_after_data_release[];
 }
 
 size_t slotCountForThreads(size_t max_threads)
@@ -1072,6 +1079,11 @@ Block HashJoin::prepareRightBlock(const Block & block) const
 
 bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, size_t worker_id, bool check_limits)
 {
+    /// `materializeColumnsFromRightBlock` dereferences `data`, so the identical check in the
+    /// overload below is reached too late to guard it.
+    if (!data)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
+
     auto materialized = materializeColumnsFromRightBlock(source_block);
     return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), worker_id, check_limits);
 }
@@ -2375,16 +2387,27 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
         return restored_blocks;
     }
 
-    BlocksList result;
-    const size_t n = getNumReleaseChunks();
-    for (size_t i = 0; i < n; ++i)
-    {
-        auto chunk = releaseJoinedBlocksChunk(i);
-        result.splice(result.end(), chunk);
-    }
+    if (!data)
+        return {};
 
-    if (data)
-        data.reset();
+    Block sample_block = std::move(data->sample_block);
+    const auto column_access_indexes = data->column_access_indexes;
+    StoredBlocksList right_columns;
+    for (auto & worker : data->workers)
+    {
+        right_columns.splice(right_columns.end(), worker.columns);
+        worker.nullmaps.clear();
+        worker.shrink_done = false;
+    }
+    data.reset();
+    /// Materializing allocates, so it can throw here with `data` already gone.
+    fiu_do_on(FailPoints::hash_join_throw_after_data_release, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the join data was released");
+    });
+
+    BlocksList result;
+    for (auto & columns : right_columns)
+        result.emplace_back(sample_block.cloneWithColumns(materializeStoredBlock(columns, column_access_indexes)));
     return result;
 }
 
