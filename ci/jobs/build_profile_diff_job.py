@@ -103,6 +103,10 @@ FINAL_BINARIES = [
 PR_DAYS = 7
 BASE_DAYS = 7
 TU_BASE_DAYS = 14
+# How long after a master commit its profile can still arrive: the master-side
+# windows end that far past their anchor. Over 673 master `Build (arm_release)`
+# commits the upload lagged the commit by 4 hours at p99 and 85 hours at most.
+UPLOAD_DELAY_DAYS = 4
 
 # Significance thresholds. Object files are compared against the flag-identical
 # warmup build, so their thresholds are tight. The stripped binary is compared
@@ -196,6 +200,60 @@ def in_list(values) -> str:
     return ", ".join(quote(v) for v in values)
 
 
+def recent_days(days: int) -> str:
+    """A `date` condition covering the last `days` days up to today."""
+    return f"date >= today() - {days}"
+
+
+def anchored_window(anchor_date: datetime.date, days: int, today: datetime.date) -> str:
+    """A `date` condition covering `days` before `anchor_date` up to its uploads.
+
+    Closed on both ends: `date` leads the primary key of every profile table, so
+    a bounded range prunes on it while an open `date >= start` scans every newer
+    day of the whole fleet's telemetry. The upper end allows for profiles that
+    arrive after their commit (UPLOAD_DELAY_DAYS) and never moves into the
+    future, so an anchor at today reproduces `recent_days` exactly.
+    """
+    start = anchor_date - datetime.timedelta(days=days)
+    end = min(anchor_date + datetime.timedelta(days=UPLOAD_DELAY_DAYS), today)
+    return f"date BETWEEN '{start.isoformat()}' AND '{end.isoformat()}'"
+
+
+def master_windows(event_time: str, days_by_name: Dict[str, int]) -> Dict[str, str]:
+    """The master-side `date` conditions, anchored on the run's own event.
+
+    The baseline candidates are the frozen first-parent chain of the head's
+    master parent, so a window measured from the wall clock excludes them all
+    once the run is replayed later than the event it was triggered by (a rerun
+    keeps the event payload, and with it `event_time`). Anchoring both on the
+    event makes the candidate set and the row filter commensurable.
+
+    An absent `event_time` (only `LocalInfo`, where `--base-sha` is mandatory
+    and short-circuits the baseline lookup) keeps the wall-clock windows.
+    """
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    if not event_time:
+        return {name: recent_days(days) for name, days in days_by_name.items()}
+    anchor = min(datetime.date.fromisoformat(event_time[:10]), today)
+    return {name: anchored_window(anchor, days, today) for name, days in days_by_name.items()}
+
+
+def walk_cutoff(event_time: str, days: int) -> str:
+    """The ISO 8601 UTC timestamp the first-parent walk stops at.
+
+    Reaches past the lower bound of the anchored window: that bound is a whole
+    calendar upload day, and an upload lags its commit, so a commit older than
+    the bound can still own a row inside the window.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    anchor = now
+    if event_time:
+        parsed = datetime.datetime.fromisoformat(event_time.replace("Z", "+00:00"))
+        anchor = min(parsed, now)
+    start = anchor.date() - datetime.timedelta(days=days + UPLOAD_DELAY_DAYS)
+    return f"{start.isoformat()}T00:00:00Z"
+
+
 @dataclasses.dataclass
 class Side:
     """One comparison side, pinned to a single concrete build run.
@@ -210,7 +268,7 @@ class Side:
     silently falls back to an older one.
     """
 
-    days: int
+    date_condition: str
     pr_number: int
     sha: str
     check_start_time: str
@@ -220,7 +278,7 @@ class Side:
 
 def resolve_run(
     db: "Db",
-    days: int,
+    date_condition: str,
     pr_number: int,
     sha: str,
     table: str = "binary_sizes",
@@ -235,7 +293,7 @@ def resolve_run(
     rows = db.query(
         f"""SELECT check_start_time, instance_id
         FROM {table}
-        WHERE date >= today() - {days}
+        WHERE {date_condition}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(sha)}
             AND check_name = {quote(check_name)}
@@ -244,13 +302,13 @@ def resolve_run(
     )
     if not rows:
         return None
-    return Side(days, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"], check_name)
+    return Side(date_condition, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"], check_name)
 
 
 def side_conditions(side: Side, extra_where: str = "") -> str:
     """The WHERE conditions selecting one side's rows, pinned to its build run."""
     where = f"\n            AND {extra_where}" if extra_where else ""
-    return f"""date >= today() - {side.days}
+    return f"""{side.date_condition}
             AND pull_request_number = {side.pr_number}
             AND commit_sha = {quote(side.sha)}
             AND check_name = {quote(side.check_name)}
@@ -373,6 +431,7 @@ class LocalInfo:
     repo_name = "ClickHouse/ClickHouse"
     pr_number = 0
     sha = ""
+    event_time = ""
 
     def get_kv_data(self, key):
         return None
@@ -416,7 +475,8 @@ def get_master_shas(info) -> List[str]:
 # `repos/.../commits` interleaves merged PRs' own commits with the master
 # merge commits, so one 100-commit page typically advances the first-parent
 # chain by only ~25-50 commits. ClickHouse master merges up to ~100 commits a
-# day, so 60 fetches cover the TU_BASE_DAYS window with margin.
+# day, so 60 fetches cover the walk's TU_BASE_DAYS + UPLOAD_DELAY_DAYS horizon
+# with margin (measured: 21 fetches for 19 days over 1247 first-parent commits).
 EXTEND_MAX_PAGES = 60
 
 
@@ -485,7 +545,7 @@ def _walk_first_parent(anchor_sha: str, cutoff: str, max_pages: int, list_page, 
             raise RuntimeError(f"the commit listing anchored at {wanted} does not contain it")
 
 
-def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_page=_list_commits_page) -> List[str]:
+def extend_master_shas(master_shas: List[str], cutoff: str, list_page=_list_commits_page) -> List[str]:
     """Extend the anchored chain far enough back to cover the per-TU window.
 
     `master_track_commits_sha` holds only ~100 first-parent commits - a day or
@@ -496,6 +556,10 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     master commit and an ancestor of the PR's merge base (a baseline must
     never contain changes the PR does not have).
 
+    `cutoff` comes from the same anchor as the per-TU SQL window and reaches
+    further back than it, so the returned chain is a superset of the commits
+    that window can return a row for.
+
     Fail-close: a GitHub API failure propagates and fails the job (which is
     `allow_failure`) instead of degrading to the un-extended ~100-sha chain.
     The shallow chain would silently hide valid 8-14 day warmup baselines,
@@ -504,7 +568,6 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     """
     if not master_shas:
         return master_shas
-    cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     chain, complete = _walk_first_parent(master_shas[-1], cutoff, EXTEND_MAX_PAGES, list_page)
     seen = set(master_shas)
     shas = list(master_shas)
@@ -515,7 +578,7 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     if not complete:
         # Hitting the fetch cap is a bounded, loud partial (well past the
         # window under normal merge rates), unlike the unbounded API failure.
-        print(f"WARNING: the master chain still does not span {days} days after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
+        print(f"WARNING: the master chain still does not reach {cutoff} after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
     return shas
 
 
@@ -536,7 +599,7 @@ def seed_master_shas(anchor_sha: str, list_page=_list_commits_page) -> List[str]
     return chain
 
 
-def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
+def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str) -> Optional[str]:
     """The most recent master commit with uploaded arm_release profile data.
 
     The PR-side commit is excluded so that a re-run on an already-merged
@@ -555,7 +618,7 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
     rows = db.query(
         f"""SELECT DISTINCT commit_sha
         FROM binary_sizes
-        WHERE date >= today() - {BASE_DAYS}
+        WHERE {date_condition}
             AND pull_request_number = 0
             AND check_name = {quote(CHECK_NAME)}
             AND file = {quote(MAIN_BINARY)}
@@ -568,7 +631,7 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
     return None
 
 
-def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
+def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str) -> Optional[str]:
     """The most recent master commit with uploaded warmup-build profile data.
 
     The warmup build compiles with the PR flags but does not link, so its
@@ -585,7 +648,7 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optiona
     rows = db.query(
         f"""SELECT DISTINCT commit_sha
         FROM binary_sizes
-        WHERE date >= today() - {BASE_DAYS}
+        WHERE {date_condition}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
             AND commit_sha IN ({in_list(candidates)})"""
@@ -601,7 +664,7 @@ def has_pr_data(db: Db, pr_number: int, pr_sha: str) -> bool:
     rows = db.query(
         f"""SELECT count() AS c
         FROM binary_sizes
-        WHERE date >= today() - {PR_DAYS}
+        WHERE {recent_days(PR_DAYS)}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(pr_sha)}
             AND check_name = {quote(CHECK_NAME)}
@@ -944,7 +1007,7 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     return section
 
 
-def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
+def compare_compile_times(db: Db, pr_side, master_shas, date_condition: str) -> Section:
     """Per-TU compile time of TUs this PR recompiled.
 
     sccache makes the recompiled set exactly the TUs affected by the PR. Each
@@ -999,7 +1062,7 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
             argMax(check_start_time, time) AS check_start_time,
             argMax(instance_id, time) AS instance_id
         FROM build_time_trace
-        WHERE date >= today() - {TU_BASE_DAYS}
+        WHERE {date_condition}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
             AND name = 'ExecuteCompiler'
@@ -1035,7 +1098,7 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
         any_warmup = db.query(
             f"""SELECT count() AS c
             FROM build_time_trace
-            WHERE date >= today() - {TU_BASE_DAYS}
+            WHERE {date_condition}
                 AND pull_request_number = 0
                 AND check_name = {quote(WARMUP_CHECK_NAME)}
                 AND name = 'ExecuteCompiler'
@@ -1069,7 +1132,7 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
         if tu not in base_durs:
             continue
         base_dur, base_tu_sha, base_cst, base_iid = base_durs[tu]
-        base_tu_side = Side(TU_BASE_DAYS, 0, base_tu_sha, base_cst, base_iid, WARMUP_CHECK_NAME)
+        base_tu_side = Side(date_condition, 0, base_tu_sha, base_cst, base_iid, WARMUP_CHECK_NAME)
         adjusted_base = base_dur * skew
         delta_s = (pr_dur - adjusted_base) / 1e6
         ratio = max(pr_dur, adjusted_base) / max(min(pr_dur, adjusted_base), 1)
@@ -1353,34 +1416,38 @@ def run_comparison(db, info, args, pr_number: int, pr_sha: str):
         if not args.base_sha:
             raise RuntimeError("A local run has no CI master-chain metadata - pass --base-sha to anchor the baseline")
         master_shas = seed_master_shas(args.base_sha)
-    base_sha = args.base_sha or find_baseline(db, master_shas, pr_sha)
+    # The baseline chain is frozen at the head's master parent, so the windows
+    # that look for its profile rows are measured from the same event rather
+    # than from the wall clock (see master_windows).
+    windows = master_windows(info.event_time, {"base": BASE_DAYS, "tu": TU_BASE_DAYS})
+    base_sha = args.base_sha or find_baseline(db, master_shas, pr_sha, windows["base"])
     if not base_sha:
         # Fail-close: no baseline means no comparison, not a comparison against
         # an arbitrary commit.
         raise RuntimeError("No master baseline with build profile data found - cannot compare")
-    warmup_sha = find_warmup_baseline(db, master_shas, pr_sha)
+    warmup_sha = find_warmup_baseline(db, master_shas, pr_sha, windows["base"])
     print(f"Comparing PR {pr_number} sha {pr_sha} against master {base_sha} (warmup baseline: {warmup_sha})")
 
     # Pin each side to one concrete build run once, and reuse it for every
     # table (see Side / resolve_run): the whole comparison then reflects a
     # single build instead of a per-table mix of reruns.
-    pr_side = resolve_run(db, PR_DAYS, pr_number, pr_sha)
-    base_side = resolve_run(db, BASE_DAYS, 0, base_sha)
+    pr_side = resolve_run(db, recent_days(PR_DAYS), pr_number, pr_sha)
+    base_side = resolve_run(db, windows["base"], 0, base_sha)
     if pr_side is None or base_side is None:
         raise RuntimeError("Could not resolve a concrete build run for one of the sides")
     # The warmup baseline may lag while master catches up with profiling the
     # warmup build; the sections that depend on it degrade to a catch-up note.
-    warmup_side = resolve_run(db, BASE_DAYS, 0, warmup_sha, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
+    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
     # The per-TU compile baseline looks back TU_BASE_DAYS - far past the ~100
     # commits of the anchored chain - so its candidate set is extended with
     # older ancestors (see extend_master_shas).
-    tu_master_shas = extend_master_shas(master_shas)
+    tu_master_shas = extend_master_shas(master_shas, walk_cutoff(info.event_time, TU_BASE_DAYS))
 
     sections = [
         compare_binaries(db, pr_side, base_side),
         compare_objects(db, pr_side, warmup_side),
         compare_opt_functions(db, pr_side, base_side),
-        compare_compile_times(db, pr_side, tu_master_shas),
+        compare_compile_times(db, pr_side, tu_master_shas, windows["tu"]),
         compare_symbols(db, pr_side, base_side),
     ]
 

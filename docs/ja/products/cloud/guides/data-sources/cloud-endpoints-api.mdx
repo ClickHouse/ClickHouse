@@ -15,6 +15,8 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 静的 IP の一覧を取得する必要がある場合は、次の ClickHouse Cloud API エンドポイントを使用できます: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json)。この API では、リージョンやクラウドごとのイングレス/エグレス IP、S3 エンドポイントなど、ClickHouse Cloud サービスのエンドポイントを取得できます。
 
+[ClickPipes](/ja/integrations/clickpipes/home) が利用可能なリージョンでは、各エントリに、ClickPipes がお使いのデータソースへエグレスする際に使用する固定 NAT IP を一覧表示する `clickpipes_egress_ips` フィールドも含まれます。ClickPipes 経由で取り込む場合は、これらをソースの許可リストに追加してください。詳細は [ClickPipes の静的 IP 一覧](/ja/integrations/clickpipes/networking/static-ips)を参照してください。
+
 MySQL や PostgreSQL Engine などのインテグレーションを使用している場合は、ClickHouse Cloud からお使いのインスタンスへのアクセスを許可する必要が生じることがあります。この API を使ってパブリック IP を取得し、GCP の `firewalls` や `Authorized networks`、Azure や AWS の `Security Groups`、または使用中のその他のインフラストラクチャのエグレス管理システムに設定できます。
 
 たとえば、リージョン `ap-south-1` の AWS でホストされている ClickHouse Cloud サービスからのアクセスを許可するには、そのリージョンの `egress_ips` アドレスを追加できます:
@@ -24,6 +26,14 @@ MySQL や PostgreSQL Engine などのインテグレーションを使用して�
 {
   "aws": [
     {
+      "clickpipes_egress_ips": [
+        "13.203.140.189",
+        "13.232.213.12",
+        "13.235.145.208",
+        "35.154.167.40",
+        "65.0.39.245",
+        "65.1.225.89"
+      ],
       "egress_ips": [
         "3.110.39.68",
         "15.206.7.77",

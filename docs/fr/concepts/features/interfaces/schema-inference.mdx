@@ -150,7 +150,7 @@ il est possible d’utiliser la structure de la table d’insertion au lieu de l
 Cela peut améliorer les performances d’insertion, car l’inférence de schéma peut prendre un certain temps. Cela est également utile lorsque la table possède un schéma optimisé, car
 aucune conversion de type ne sera alors effectuée.
 
-Il existe un paramètre spécial [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/fr/reference/settings/session-settings#use_structure_from_insertion_table_in_table_functions)
+Il existe un paramètre spécial [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/fr/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions)
 qui contrôle ce comportement. Il a 3 valeurs possibles :
 
 * 0 - la fonction de table extraira la structure des données.
@@ -220,7 +220,7 @@ CREATE TABLE hobbies3
 ORDER BY identifier;
 ```
 
-Et insérez les données à partir du fichier `hobbies.jsonl` :
+Et insérez les données du fichier `hobbies.jsonl` :
 
 ```sql
 INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -243,7 +243,7 @@ CREATE TABLE hobbies4
 ORDER BY id;
 ```
 
-Puis insérez des données depuis le fichier `hobbies.jsonl` :
+Et insérez les données du fichier `hobbies.jsonl` :
 
 ```sql
 INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
@@ -1831,7 +1831,7 @@ DESC format(JSONEachRow, $$
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Remarque : lors de l’inférence du schéma, l’analyse des valeurs DateTime respecte le paramètre [date&#95;time&#95;input&#95;format](/fr/reference/settings/formats#date_time_input_format)
+Remarque : lors de l’inférence du schéma, l’analyse des valeurs DateTime respecte le paramètre [date&#95;time&#95;input&#95;format](/fr/reference/settings/formats/date-time#date_time_input_format)
 
 <div id="input-format-try-infer-dates">
   #### input_format_try_infer_dates
@@ -2111,6 +2111,7 @@ Dans le format ORC, ClickHouse lit le schéma à partir des données et le conve
 | `List`                               | [Array](/fr/reference/data-types/array)           |
 | `Struct`                             | [Tuple](/fr/reference/data-types/tuple)           |
 | `Map`                                | [Map](/fr/reference/data-types/map)               |
+| `Union`                              | [Variant](/fr/reference/data-types/variant)       |
 
 Les autres types ORC ne sont pas pris en charge.
 
