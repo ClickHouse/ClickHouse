@@ -11,8 +11,9 @@ Code: 27. Cannot parse input: expected 'eof' before: ' elephants': while setting
 Code: 27. Cannot parse input: expected 'eof' before: 'abc': while setting 'max_threads' to value 'abc'. (CANNOT_PARSE_INPUT_ASSERTION_FAILED)
 
 === an unknown setting keeps the message it had, with no context appended
---- SELECT 1 SETTINGS max_threadz = 4
-Code: 115. Unknown setting 'max_threadz': Maybe you meant ['max_threads']. (UNKNOWN_SETTING)
+code: UNKNOWN_SETTING
+hint: Maybe you meant ['max_threads']
+context appended: 0
 
 === values that are fine still work
 1

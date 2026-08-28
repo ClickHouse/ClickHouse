@@ -24,7 +24,12 @@ run "SET max_threads = 'abc'"
 
 echo
 echo '=== an unknown setting keeps the message it had, with no context appended'
-run "SELECT 1 SETTINGS max_threadz = 4"
+# The text of that message depends on whether custom-setting prefixes are configured, so assert the two
+# things that matter: the hint survives, and no ": while setting ..." is appended to it.
+unknown=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "SELECT 1 SETTINGS max_threadz = 4" 2>&1)
+echo "code: $(echo "$unknown" | grep -oE 'UNKNOWN_SETTING' | head -1)"
+echo "hint: $(echo "$unknown" | grep -oE "Maybe you meant \['max_threads'\]" | head -1)"
+echo "context appended: $(echo "$unknown" | grep -c 'while setting')"
 
 echo
 echo '=== values that are fine still work'
