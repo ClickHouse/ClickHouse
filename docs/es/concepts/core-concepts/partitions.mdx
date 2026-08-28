@@ -44,7 +44,7 @@ Puedes [consultar esta tabla](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJP
   ### Estructura en disco
 </div>
 
-Siempre que se inserta un conjunto de filas en la tabla, en lugar de crear una sola parte de datos que contenga todas las filas insertadas (como se describe [aquí](/es/concepts/core-concepts/parts)) con [al menos](/es/reference/settings/session-settings#max_insert_block_size), ClickHouse crea una nueva parte de datos para cada valor único de la clave de partición presente en las filas insertadas:
+Siempre que se inserta un conjunto de filas en la tabla, en lugar de crear (como [mínimo](/es/reference/settings/session-settings/max-insert#max_insert_block_size)) una sola parte de datos que contenga todas las filas insertadas (como se describe [aquí](/es/concepts/core-concepts/parts)), ClickHouse crea una nueva parte de datos para cada valor único de la clave de partición presente en las filas insertadas:
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="PROCESAMIENTO DE INSERCIÓN" />
 
@@ -217,7 +217,7 @@ La salida anterior muestra:
 Peak memory usage: 2.73 MiB.
 ```
 
-Esto significa que ClickHouse escaneó y procesó 1 gránulo (bloque de [8192](/es/reference/settings/merge-tree-settings#index_granularity) filas) en 6 milisegundos para calcular el resultado de la consulta.
+Esto significa que ClickHouse escaneó y procesó 1 gránulo (bloque de [8192](/es/reference/settings/merge-tree-settings/index-granularity#index_granularity) filas) en 6 milisegundos para calcular el resultado de la consulta.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### El particionamiento es principalmente una función de gestión de datos
