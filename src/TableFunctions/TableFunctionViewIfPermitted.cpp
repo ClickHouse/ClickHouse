@@ -44,6 +44,10 @@ public:
 
     std::string getName() const override { return name; }
 
+    /// The branch this function chooses depends on the current user, and a persisted table has no
+    /// user: under the global context it is created and attached with, the `ELSE` branch is unreachable.
+    bool canBeUsedToCreateTable() const override { return false; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
