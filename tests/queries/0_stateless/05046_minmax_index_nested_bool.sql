@@ -118,27 +118,30 @@ SELECT 'json <= noidx', count(), sum(id) FROM oj WHERE j <= '{"a": false}' SETTI
 
 -- All five settings below are randomized, and each one decides whether these arms reach the
 -- comparison at all - including query_plan_max_limit_for_top_k_optimization, which is drawn from a
--- set containing 1 and then refuses the rewrite because the LIMIT is larger. The clause belongs on
--- the outer query: the top-K rewrite is a plan-level optimization and reads these from the outer
--- context, so a SETTINGS clause on the subquery alone leaves the arms silently vacuous.
+-- set containing 1 and then refuses the rewrite because the LIMIT is larger. The two row limits are
+-- pinned to their default 0 as well: the stateless-test user profile sets max_rows_to_read, and a
+-- throwing row limit turns off skip indexes on data read, which is the path the granule comparison
+-- below runs on (see 04812_row_policy_top_k_optimization). The clause belongs on the outer query:
+-- the top-K rewrite is a plan-level optimization and reads these from the outer context, so a
+-- SETTINGS clause on the subquery alone leaves the arms silently vacuous.
 SELECT 'top-k asc', groupArray(f) FROM (SELECT f FROM tk ORDER BY f ASC LIMIT 6)
   SETTINGS max_block_size = 8, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_top_k_dynamic_filtering = 1,
-           query_plan_max_limit_for_top_k_optimization = 0;
+           query_plan_max_limit_for_top_k_optimization = 0, max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 SELECT 'top-k asc noidx', groupArray(f) FROM (SELECT f FROM tk ORDER BY f ASC LIMIT 6)
   SETTINGS max_block_size = 8, use_skip_indexes_for_top_k = 0, use_skip_indexes_on_data_read = 1, use_top_k_dynamic_filtering = 1,
-           query_plan_max_limit_for_top_k_optimization = 0;
+           query_plan_max_limit_for_top_k_optimization = 0, max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 SELECT 'top-k desc', groupArray(f) FROM (SELECT f FROM tk ORDER BY f DESC LIMIT 6)
   SETTINGS max_block_size = 8, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_top_k_dynamic_filtering = 1,
-           query_plan_max_limit_for_top_k_optimization = 0;
+           query_plan_max_limit_for_top_k_optimization = 0, max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 SELECT 'top-k desc noidx', groupArray(f) FROM (SELECT f FROM tk ORDER BY f DESC LIMIT 6)
   SETTINGS max_block_size = 8, use_skip_indexes_for_top_k = 0, use_skip_indexes_on_data_read = 1, use_top_k_dynamic_filtering = 1,
-           query_plan_max_limit_for_top_k_optimization = 0;
+           query_plan_max_limit_for_top_k_optimization = 0, max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 SELECT 'top-k uint8 asc', groupArray(f) FROM (SELECT f FROM tk8 ORDER BY f ASC LIMIT 6)
   SETTINGS max_block_size = 8, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_top_k_dynamic_filtering = 1,
-           query_plan_max_limit_for_top_k_optimization = 0;
+           query_plan_max_limit_for_top_k_optimization = 0, max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 SELECT 'top-k uint8 desc', groupArray(f) FROM (SELECT f FROM tk8 ORDER BY f DESC LIMIT 6)
   SETTINGS max_block_size = 8, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_top_k_dynamic_filtering = 1,
-           query_plan_max_limit_for_top_k_optimization = 0;
+           query_plan_max_limit_for_top_k_optimization = 0, max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 
 -- The index must still prune, otherwise the rows above would be correct only because it stopped working.
 SELECT 'array prunes', count() > 0 FROM (EXPLAIN indexes = 1, actions = 0 SELECT sum(id) FROM arr WHERE a <= [(1., false)]) WHERE explain LIKE '%Granules: 1/2%';
@@ -163,7 +166,7 @@ SELECT 'json prunes', count() > 0 FROM (EXPLAIN indexes = 1, actions = 0 SELECT 
 SELECT 'top-k wide', count(), min(f), max(f) FROM (SELECT f FROM tkw ORDER BY f ASC LIMIT 8)
   SETTINGS max_block_size = 8, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_top_k_dynamic_filtering = 1,
            query_plan_max_limit_for_top_k_optimization = 0, max_threads = 1, enable_parallel_replicas = 0,
-           ast_fuzzer_runs = 0, log_comment = '05046_tkw';
+           max_rows_to_read = 0, max_rows_to_read_leaf = 0, ast_fuzzer_runs = 0, log_comment = '05046_tkw';
 SYSTEM FLUSH LOGS query_log;
 SELECT 'top-k wide skips', read_rows < 48 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05046_tkw';
