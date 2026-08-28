@@ -423,8 +423,16 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Kill the largest allocation. It is the last as the set is ordered by size.
-    ResourceAllocation & victim = *running_allocations.rbegin();
+    // Kill the largest allocation that does not already have an in-flight kill request.
+    // Stacked limits may reach their backstops in the same scheduling round; selecting the same
+    // victim twice would neither reclaim additional memory nor let the outer constraint progress.
+    auto victim_it = std::find_if(running_allocations.rbegin(), running_allocations.rend(), [](const ResourceAllocation & allocation)
+    {
+        return !allocation.kill_requested;
+    });
+    if (victim_it == running_allocations.rend())
+        return nullptr;
+    ResourceAllocation & victim = *victim_it;
 
     // If this is the least common ancestor of killer and victim - add details
     if (&killer.allocation.queue == this)

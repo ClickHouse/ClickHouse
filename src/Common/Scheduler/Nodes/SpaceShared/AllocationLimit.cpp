@@ -432,11 +432,25 @@ void AllocationLimit::processSuction(
     /// would lose suction permanently in stacked limits.
     suspended_growth_retry_pending = false;
 
-    if (decrease != nullptr
-        || memory_growth_suspension_beneficiaries != 0 || allocation_to_kill
+    if (decrease != nullptr || allocation_to_kill
         || suspended_growth->allocation.isGrowthRecoveryActive()
         || !suspended_growth->allocation.memory_growth_suction_priority)
         return;
+
+    if (memory_growth_suspension_beneficiaries != 0)
+    {
+        /// Productive fitting work protects itself and the parked owner, but it must not let a
+        /// larger pre-existing competitor pin the externally authorized suction decision forever.
+        /// Approval epochs identify productive beneficiaries without allocating pointer containers
+        /// on the memory-pressure path.
+        String details;
+        ResourceAllocation * candidate = selectAllocationToKill(*suspended_growth, max_allocated, details);
+        if (!candidate
+            || candidate == &suspended_growth->allocation
+            || (candidate->last_increase_approval_epoch > memory_growth_suspension_start_epoch
+                && candidate->last_increase_approval_epoch > candidate->last_productivity_end_epoch))
+            return;
+    }
 
     selectAndKill(*suspended_growth);
 }
@@ -448,6 +462,9 @@ void AllocationLimit::selectAndKill(IncreaseRequest & killer)
     allocation_to_kill = selectAllocationToKill(killer, max_allocated, details);
     if (!allocation_to_kill)
         return;
+
+    chassert(!allocation_to_kill->kill_requested);
+    allocation_to_kill->kill_requested = true;
 
     SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
         getPath(), allocated, killer.size, max_allocated, killer.allocation.id, allocation_to_kill->id);

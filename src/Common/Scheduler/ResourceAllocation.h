@@ -86,6 +86,7 @@ private:
     bool memory_growth_suspended = false; /// Scheduler-thread only.
     bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
     bool memory_growth_suction_priority = false; /// External controller has authorized the last-resort path.
+    bool kill_requested = false; /// Scheduler-thread marker preventing duplicate victim selection across stacked limits.
     IncreaseRequest increase;
     DecreaseRequest decrease;
 
