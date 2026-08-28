@@ -1015,6 +1015,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
 
             const auto & key_type = key_dag->result_type;
+
+            if ((function_name == "startsWith" || function_name == "endsWith")
+                && !WhichDataType(removeLowCardinalityAndNullable(key_type)).isStringOrFixedString())
+                return false;
+
             DataTypePtr target_type;
 
             if (function_name == "equals")
