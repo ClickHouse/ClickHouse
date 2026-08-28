@@ -547,6 +547,37 @@ def revert_net_effect(targets):
     return credits, cancelled
 
 
+def release_range_prs(version):
+    """The pull request numbers merged into master since this cycle started.
+
+    The durable answer to "does this pull request belong to the release?", and
+    the only one that survives the editing: an entry pruned as insignificant on
+    an earlier run leaves no trace in `CHANGELOG.md`, in the raw blocks or in
+    the ledger, yet a revert of it that arrives weeks later still cancels
+    something of this release and must be treated as such. Git remembers the
+    range whatever the changelog did with it.
+
+    Both merge shapes the repository uses: the squash subject ending in `(#N)`
+    and `Merge pull request #N from ...`. `--first-parent`, so that the walk
+    stays on master's own commits: a contributor branch can carry merges of
+    pull requests of the contributor's *fork*, whose numbers mean nothing here
+    (`Merge pull request #4 from someone/...`, five of them in the 26.8 range).
+
+    The upper bound is `origin/master` rather than the generation point, which
+    only means a pull request merged after today's range is recognised a run
+    early - it belongs to the cycle either way."""
+    tag = _start_tag(version)
+    subjects = Shell.get_output(
+        f"git log --first-parent --format=%s {shlex.quote(tag)}..origin/master"
+    )
+    return {
+        number
+        for pair in re.findall(r"\(#(\d+)\)|Merge pull request #(\d+)", subjects)
+        for number in pair
+        if number
+    }
+
+
 def read_revert_ledger():
     """The revert relations and the revert-licensed deletions that previous
     runs recorded in the trailers of their own edit commits on this branch.
@@ -599,6 +630,16 @@ def is_attributed(text, pr):
     restoration is satisfied by someone else's bullet merely mentioning the
     pull request."""
     return bool(_attribution_re(pr).search(text))
+
+
+def attributed_bullets(text, pr):
+    """Every bullet of `text` that attributes `pr`."""
+    attributed = _attribution_re(pr)
+    return [
+        line
+        for line in text.splitlines()
+        if line.startswith("* ") and attributed.search(line)
+    ]
 
 
 def entry_placement(text, pr):
@@ -670,7 +711,7 @@ def attribution_counts(text):
     return counts
 
 
-def analyze_reverts(text, anchor):
+def analyze_reverts(text, anchor, range_prs=()):
     """Everything the editing step needs to know about reverts, resolved
     against the branch's ledger so that a chain spread over several nightly
     runs is handled exactly like one arriving inside a single raw block.
@@ -697,6 +738,9 @@ def analyze_reverts(text, anchor):
                    the section: neither left there nor brought back as part of
                    a merged bullet that is being restored for another pull
                    request;
+    `own_entry_required`
+                 - re-appliers that also carry an entry of their own, which the
+                   link they contribute to another entry cannot replace;
     `unresolved` - the reverts of this raw block whose target stayed unknown;
     `ledger`     - the trailer lines to record on the edit commit.
     """
@@ -789,15 +833,17 @@ def analyze_reverts(text, anchor):
     # The reverts whose own bullet goes with the entry they cancel. A revert of
     # something in this release leaves no trace (skill section 2); one of an
     # earlier release is rewritten into a visible entry (case 5) and stays. The
-    # difference is whether its target belongs to this cycle - which is what
-    # the section, this run's raw entries (all of them, whatever category the
-    # generator filed them under), the recorded deletions and the revert graph
-    # itself between them say.
+    # difference is whether its target belongs to this cycle. `range_prs` is
+    # the durable answer to that (see `release_range_prs`); the section, this
+    # run's raw entries, the recorded deletions and the revert graph are kept
+    # alongside it so that a branch whose caller passes no range still behaves
+    # as it did.
     cycle_entries = (
         set(PR_ATTRIBUTION_RE.findall(section))
         | all_prs
         | set(deleted)
         | set(targets)
+        | set(range_prs)
     )
     # Every target, not any: a revert that undoes something of this release
     # *and* something from an earlier one is still a user-visible change for
@@ -833,6 +879,20 @@ def analyze_reverts(text, anchor):
     for link in list(allowance):
         if link not in cancelling:
             allowance[link] += 1
+    # A re-applier that is not exempt and arrived under a strict-retention
+    # category has a user-visible change of its own - it reverted something of
+    # an earlier release (skill section 2, case 5) - on top of the link it
+    # contributes to the entries it brings back. That link is an annotation on
+    # someone else's bullet, so it cannot stand in for the entry: the pull
+    # request needs a bullet of its own as well.
+    own_entry_required = sorted(
+        (
+            link
+            for link in allowance
+            if link in strict_prs and link not in cancelling
+        ),
+        key=int,
+    )
     amend = [
         {
             "pr": pr,
@@ -868,6 +928,7 @@ def analyze_reverts(text, anchor):
         "cancelling": sorted(cancelling, key=int),
         "reapply": reapply,
         "reapply_allowance": allowance,
+        "own_entry_required": own_entry_required,
         "amend": amend,
         "unresolved": unresolved,
         "ledger": [
@@ -1419,6 +1480,27 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
             f"the change ({sorted(unrecorded)}); its link is appended to the "
             f"entry, so both pull request numbers stay in the changelog"
         )
+    # A re-applying link is an annotation on the entry it brings back; when the
+    # pull request also has a change of its own it needs a bullet that is not
+    # one of those. Checked as "some other bullet", not "a bullet of its own",
+    # so that a legitimate merge into a third entry (skill section 7) still
+    # passes.
+    annotation_only = []
+    for pr in reverts["own_entry_required"]:
+        annotated = {
+            entry_placement(section, brought_back)[1]
+            for brought_back, links in reverts["reapply"].items()
+            if pr in links
+        }
+        if not [b for b in attributed_bullets(section, pr) if b not in annotated]:
+            annotation_only.append(f"#{pr}")
+    if annotation_only:
+        return (
+            f"Pull requests that re-applied a change are only annotating the "
+            f"entries they brought back ({sorted(annotation_only)}); each also "
+            f"reverted something of an earlier release, which is a change of "
+            f"its own and needs its own entry"
+        )
     # The mirror of the restoration, and of the disappearance check above:
     # that one allows a deletion the reverts license, this one requires it.
     # An entry whose revert stands has no place in the section, whether it
@@ -1456,7 +1538,9 @@ def edit_raw_entries(version):
     # Resolving the reverts talks to GitHub, and every attempt starts from the
     # same raw blocks, so it is done once for all of them.
     refresh_gh_token()
-    reverts = analyze_reverts(_read_changelog(), _anchor_id(version))
+    reverts = analyze_reverts(
+        _read_changelog(), _anchor_id(version), release_range_prs(version)
+    )
     last_error = None
     for attempt in range(1, MAX_EDIT_ATTEMPTS + 1):
         # `last_error` still holds the rejection of the previous attempt here:

@@ -124,9 +124,10 @@ def fake_graphql(command):
     return json.dumps({"data": {"repository": nodes}})
 
 
-def analyze(monkeypatch, text, ledger=()):
+def analyze(monkeypatch, text, ledger=(), range_prs=()):
     """`analyze_reverts` with the pull request lookup and the branch log stubbed
-    out. `ledger` is newest first, the order `git log` walks the branch in."""
+    out. `ledger` is newest first, the order `git log` walks the branch in;
+    `range_prs` stands in for `release_range_prs`."""
 
     def fake_get_output(command, strict=False, verbose=False, retries=1, delay=2):
         if command.startswith("gh api graphql"):
@@ -138,7 +139,7 @@ def analyze(monkeypatch, text, ledger=()):
     monkeypatch.setattr(
         cl, "Info", lambda: type("I", (), {"repo_name": "ClickHouse/ClickHouse"})()
     )
-    return cl.analyze_reverts(text, ANCHOR)
+    return cl.analyze_reverts(text, ANCHOR, range_prs)
 
 
 def with_reapply(line, pr):
@@ -277,6 +278,7 @@ def test_branch_without_a_ledger_keeps_the_previous_behaviour(monkeypatch):
         "cancelling": [],
         "reapply": {},
         "reapply_allowance": {},
+        "own_entry_required": [],
         "amend": [],
         "unresolved": [],
         "ledger": [],
@@ -1664,18 +1666,62 @@ def test_a_mixed_target_reapply_keeps_its_own_entry_too(monkeypatch, tmp_path):
     assert rejected is not None
     assert "#116500 3 times" in rejected
 
-    # Its own entry is not separately enforced, and deliberately so: with the
-    # link appended to the restored entry `#116500` is attributed, and the rules
-    # do allow an entry to be merged into another bullet (skill section 7), so
-    # link presence cannot tell a legitimate merge from an entry reduced to an
-    # annotation. Pinned here so the limit is not mistaken for a check.
+    # Dropping its own bullet leaves it attributed - on the entry it brought
+    # back - so link presence alone cannot see the loss. The re-applying link is
+    # an annotation on someone else's entry, so it does not count as this pull
+    # request's entry.
+    assert reverts["own_entry_required"] == ["116500"]
+    annotation = run_verify_edit(
+        monkeypatch,
+        tmp_path,
+        old_text,
+        changelog([with_reapply(FIX, "116500")]),
+        reverts,
+    )
+    assert annotation is not None
+    assert "only annotating the entries they brought back" in annotation
+    assert "['#116500']" in annotation
+
+    # A legitimate merge of its entry into a third bullet still passes: the
+    # check asks for some other bullet, not for a bullet of its own.
+    merged_elsewhere = changelog(
+        [
+            with_reapply(FIX, "116500"),
+            with_reapply(_entry("110900", "A related change"), "116500"),
+        ]
+    )
     assert (
-        run_verify_edit(
-            monkeypatch,
-            tmp_path,
-            old_text,
-            changelog([with_reapply(FIX, "116500")]),
-            reverts,
-        )
+        run_verify_edit(monkeypatch, tmp_path, old_text, merged_elsewhere, reverts)
+        is None
+    )
+
+
+def test_a_revert_of_a_pruned_entry_is_still_same_cycle(monkeypatch, tmp_path):
+    """Day N pruned `#110700` from `NOT FOR CHANGELOG` - no revert, so nothing
+    was recorded and nothing remains of it anywhere. Day N+5 brings a revert of
+    it under a real category. It still cancels something of this release, so it
+    leaves no trace of its own; only the release range knows that, since the
+    changelog itself has forgotten the entry."""
+    PULL_REQUESTS["115950"] = {
+        "title": 'Revert "Fix a crash in `arrayJoin` with an empty array"',
+        "body": "Reverts ClickHouse/ClickHouse#110700",
+    }
+    revert = _entry("115950", "Undo the `arrayJoin` change")
+    old_text = changelog([], raw_sections=[(STRICT, [revert])])
+
+    # Without the range, the revert looks like one of an earlier release.
+    blind = analyze(monkeypatch, old_text, [])
+    assert blind["credits"] == {"110700": "115950"}
+    assert blind["cancelling"] == []
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([]), blind)
+        is not None
+    )
+
+    # With it, deleting the revert is right and passes.
+    informed = analyze(monkeypatch, old_text, [], range_prs={"110700", "115950"})
+    assert informed["cancelling"] == ["115950"]
+    assert (
+        run_verify_edit(monkeypatch, tmp_path, old_text, changelog([]), informed)
         is None
     )
