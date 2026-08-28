@@ -153,9 +153,9 @@ UInt128 fingerprintTLSMaterial(const Poco::Util::AbstractConfiguration & config)
 
         try
         {
-            ReadBufferFromFile in(path);
+            DB::ReadBufferFromFile in(path);
             String contents;
-            readStringUntilEOF(contents, in);
+            DB::readStringUntilEOF(contents, in);
             hash.update(contents);
         }
         catch (...) // Ok: unreadable file is marked with a sentinel byte so that becoming readable later counts as a change
