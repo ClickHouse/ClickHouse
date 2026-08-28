@@ -6,6 +6,7 @@
 
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Port.h>
 #include <Processors/Streaming/Markers.h>
 
@@ -51,6 +52,53 @@ PartitionCursor chunkRowCursor(const Chunk & chunk, size_t row, size_t block_num
     return {columns[block_number_pos]->getInt(row), columns[block_offset_pos]->getInt(row)};
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+struct ChunkBoundaries : public ChunkInfoCloneable<ChunkBoundaries>
+{
+    PartitionCursor left_cursor;
+    PartitionCursor right_cursor;
+};
+
+class ExtractBoundariesTransform final : public ISimpleTransform
+{
+public:
+    ExtractBoundariesTransform(SharedHeader header, bool drop_data_)
+        : ISimpleTransform(header, header, /*skip_empty_chunks=*/false)
+        , drop_data(drop_data_)
+        , block_number_pos(header->getPositionByName(BlockNumberColumn::name))
+        , block_offset_pos(header->getPositionByName(BlockOffsetColumn::name))
+    {
+    }
+
+    String getName() const override { return "ExtractBoundaries"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        if (chunk.getNumRows() == 0)
+            return;
+
+        auto boundaries = std::make_shared<ChunkBoundaries>();
+        boundaries->left_cursor = chunkRowCursor(chunk, 0, block_number_pos, block_offset_pos);
+        boundaries->right_cursor = chunkRowCursor(chunk, chunk.getNumRows() - 1, block_number_pos, block_offset_pos);
+
+        if (drop_data)
+        {
+            Chunk boundaries_chunk(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+            boundaries_chunk.setChunkInfos(std::move(chunk.getChunkInfos()));
+            chunk = std::move(boundaries_chunk);
+        }
+
+        chunk.getChunkInfos().add(std::move(boundaries));
+    }
+
+private:
+    const bool drop_data;
+    const size_t block_number_pos;
+    const size_t block_offset_pos;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 class AlignStreamsProcessor final : public IProcessor
 {
     struct HeldMarker
@@ -120,8 +168,8 @@ class AlignStreamsProcessor final : public IProcessor
 
     void consumeMetadataChunk(Chunk chunk)
     {
-        if (chunk.getNumRows() > 0)
-            metadata_progress = chunkRowCursor(chunk, chunk.getNumRows() - 1, metadata_block_number_pos, metadata_block_offset_pos);
+        if (auto boundaries = chunk.getChunkInfos().extract<ChunkBoundaries>())
+            metadata_progress = boundaries->right_cursor;
 
         if (isMarkerChunk(chunk))
         {
@@ -133,12 +181,8 @@ class AlignStreamsProcessor final : public IProcessor
 
     void consumeDataChunk(Chunk chunk)
     {
-        if (chunk.getNumRows() == 0)
-            return;
-
-        auto left_cursor = chunkRowCursor(chunk, 0, data_block_number_pos, data_block_offset_pos);
-        auto right_cursor = chunkRowCursor(chunk, chunk.getNumRows() - 1, data_block_number_pos, data_block_offset_pos);
-        held_data = HeldData{std::move(chunk), left_cursor, right_cursor};
+        if (auto boundaries = chunk.getChunkInfos().extract<ChunkBoundaries>())
+            held_data = HeldData{std::move(chunk), boundaries->left_cursor, boundaries->right_cursor};
     }
 
 public:
@@ -147,10 +191,6 @@ public:
         , metadata_input(inputs.front())
         , data_input(inputs.back())
         , output(outputs.front())
-        , metadata_block_number_pos(metadata_header->getPositionByName(BlockNumberColumn::name))
-        , metadata_block_offset_pos(metadata_header->getPositionByName(BlockOffsetColumn::name))
-        , data_block_number_pos(data_header->getPositionByName(BlockNumberColumn::name))
-        , data_block_offset_pos(data_header->getPositionByName(BlockOffsetColumn::name))
     {
     }
 
@@ -208,11 +248,6 @@ private:
     InputPort & data_input;
     OutputPort & output;
 
-    const size_t metadata_block_number_pos;
-    const size_t metadata_block_offset_pos;
-    const size_t data_block_number_pos;
-    const size_t data_block_offset_pos;
-
     PartitionCursor metadata_progress;
     std::queue<HeldMarker> held_markers;
 
@@ -241,6 +276,9 @@ QueryPipelineBuilderPtr AlignStreamsStep::updatePipeline(QueryPipelineBuilders p
 
     if (pipelines[0]->getNumStreams() != 1 || pipelines[1]->getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreamsStep requires single-stream inputs, got {} and {}", pipelines[0]->getNumStreams(), pipelines[1]->getNumStreams());
+
+    pipelines[0]->addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ExtractBoundariesTransform>(header, /*drop_data=*/true); });
+    pipelines[1]->addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ExtractBoundariesTransform>(header, /*drop_data=*/false); });
 
     auto processor = std::make_shared<AlignStreamsProcessor>(input_headers.front(), input_headers.back());
     return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), std::move(processor), &processors);
