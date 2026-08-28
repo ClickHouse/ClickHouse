@@ -11,12 +11,12 @@ doc_type: 'reference'
   ## timeSeriesPredictLinearToGrid
 </div>
 
-Introduzido em: v25.6.0
+Introduzida em: v25.6.0
 
-Função de agregação que recebe dados de séries temporais como pares de timestamps e valores e calcula uma [previsão linear no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) com um offset de timestamp de previsão especificado a partir desses dados em uma grade de tempo regular descrita pelo timestamp inicial, pelo timestamp final e pelo passo. Para cada ponto na grade, as amostras para o cálculo de `predict_linear` são consideradas dentro da janela de tempo especificada.
+Função de agregação que recebe dados de séries temporais como pares de timestamps e valores e calcula uma [previsão linear no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear), com um deslocamento de timestamp de previsão especificado, em uma grade temporal regular definida pelo timestamp inicial, pelo timestamp final e pelo passo. Para cada ponto da grade, são consideradas as amostras dentro da janela de tempo especificada para calcular `predict_linear`.
 
 <Note>
-  Esta função é experimental; habilite-a definindo `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Esta função é experimental. Para habilitá-la, defina `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
 
 **Sintaxe**
@@ -27,19 +27,23 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
 
 **Parâmetros**
 
-* `start_timestamp` — Especifica o início da grade. - `end_timestamp` — Especifica o fim da grade. - `grid_step` — Especifica o passo da grade, em segundos. - `staleness` — Especifica a &quot;desatualização&quot; máxima, em segundos, das amostras consideradas. A janela de desatualização é um intervalo aberto à esquerda e fechado à direita. - `predict_offset` — Especifica o número de segundos de deslocamento a ser adicionado ao instante da previsão.
+* `start_timestamp` — Especifica o início da grade. Quando recebe um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contenha um número ou texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `end_timestamp` — Especifica o fim da grade. Quando recebe um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contenha um número ou texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `grid_step` — Especifica o passo da grade em segundos. Quando recebe um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contenha um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `staleness` — Especifica a defasagem máxima, em segundos, das amostras consideradas. A janela de defasagem é um intervalo aberto à esquerda e fechado à direita. Quando recebe um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contenha um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `predict_offset` — Especifica o número de segundos de deslocamento a adicionar ao instante da previsão. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
 
 **Argumentos**
 
-* `timestamp` — Timestamp da amostra. Pode ser um valor individual ou um array. - `value` — Valor da série temporal correspondente ao timestamp. Pode ser um valor individual ou um array.
+* `timestamp` — Timestamp da amostra. Pode consistir em valores individuais ou arrays. - `value` — Valor da série temporal correspondente ao timestamp. Pode consistir em valores individuais ou arrays.
 
 **Valor retornado**
 
-Valores de `predict_linear` na grade especificada como um `Array(Nullable(Float64))`. O array retornado contém um valor para cada ponto da grade de tempo. O valor é NULL se não houver amostras suficientes dentro da janela para calcular o valor da taxa para um determinado ponto da grade.
+Valores de `predict_linear` na grade especificada como um `Array(Nullable(Float64))`. O array retornado contém um valor para cada ponto da grade temporal. O valor é NULL se não houver amostras suficientes na janela para calcular o valor da taxa em determinado ponto da grade.
 
 **Exemplos**
 
-**Calcular valores de predict&#95;linear na grade [90, 105, 120, 135, 150, 165, 180, 195, 210] com um offset de 60 segundos**
+**Calcule valores de predict&#95;linear na grade [90, 105, 120, 135, 150, 165, 180, 195, 210] com um deslocamento de 60 segundos**
 
 ```sql title=Query
 SET allow_experimental_time_series_aggregate_functions = 1;
