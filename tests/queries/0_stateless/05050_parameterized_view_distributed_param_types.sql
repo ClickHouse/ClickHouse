@@ -90,6 +90,23 @@ WHERE (name, val, d, u, ip, dec) IN (SELECT * FROM v_pv(
     dec = 1.25))
 SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0;
 
+-- The legacy analyzer resolves parameters via FunctionParameterValuesVisitor; feed it the rendered
+-- CAST forms directly — a forwarded legacy case cannot run (the call is forwarded unqualified).
+SELECT 'legacy-cast', * FROM v_pv(
+    name = 'a1',
+    val = CAST('y', 'Enum8(\'x\' = 0, \'y\' = 1)'),
+    d = CAST('2020-01-02', 'Date'),
+    u = CAST('00000000-0000-0000-0000-000000000001', 'UUID'),
+    ip = CAST('1.2.3.4', 'IPv4'),
+    dec = CAST(1.25, 'Decimal(10, 2)'))
+SETTINGS enable_analyzer = 0;
+
+-- The array parameter exactly as the initiator renders it: element-wise _CAST in the array literal.
+SELECT 'legacy-cast-array', name, val
+FROM v_pv_array(tuples = [_CAST(('a1', 'y'), 'Tuple(String, String)'), _CAST(('a2', 'x'), 'Tuple(String, String)')])
+ORDER BY name
+SETTINGS enable_analyzer = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- The shard really received both view calls as text: non-initial queries mentioning them ran.

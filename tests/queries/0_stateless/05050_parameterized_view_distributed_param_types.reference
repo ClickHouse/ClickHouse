@@ -3,5 +3,8 @@ array	a1	y
 array	a2	x
 forwarded-in	1
 forwarded-in-scalar	1
+legacy-cast	a1	y	2020-01-02	00000000-0000-0000-0000-000000000001	1.2.3.4	1.25
+legacy-cast-array	a1	y
+legacy-cast-array	a2	x
 shard saw the view call	1
 shard saw the scalar view call	1
