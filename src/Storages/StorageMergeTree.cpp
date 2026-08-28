@@ -984,6 +984,10 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         if (part->info.getDataVersion() < version)
         {
+            /// A part of a still-open transaction may be rolled back and never enter the real
+            /// scope; it joins the byte weight only once its creation is committed.
+            if (part->version && !part->version->getInfo().isCreated())
+                continue;
             prepared.entry.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
         }
     }
@@ -1433,7 +1437,13 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
     for (const auto & part : data_parts)
+    {
+        /// Same rule as `startMutation`: a still-open transaction's part stays out of every
+        /// mutation's visible scope - and out of the byte denominator - until it is committed.
+        if (part->version && !part->version->getInfo().isCreated())
+            continue;
         part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info});
+    }
     std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
 
     /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
