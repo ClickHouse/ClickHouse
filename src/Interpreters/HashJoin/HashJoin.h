@@ -220,15 +220,7 @@ public:
     {
         /// Pipeline copies keep this join's layout. A side-swap has to go through
         /// `cloneWithParallelLayout` with a layout recomputed from the new right-side estimate.
-        return std::make_shared<HashJoin>(
-            table_join_,
-            right_sample_block_,
-            any_take_last_row,
-            reserve_num,
-            instance_id,
-            HashJoinStatsCollectingParams{},
-            max_threads,
-            use_parallel_layout);
+        return cloneWith(table_join_, right_sample_block_, max_threads, use_parallel_layout);
     }
 
     /// Same as `clone`, but the caller has already recomputed the layout (side swap).
@@ -238,15 +230,7 @@ public:
         SharedHeader right_sample_block_,
         bool use_parallel_layout_) const
     {
-        return std::make_shared<HashJoin>(
-            table_join_,
-            right_sample_block_,
-            any_take_last_row,
-            reserve_num,
-            instance_id,
-            HashJoinStatsCollectingParams{},
-            max_threads,
-            use_parallel_layout_);
+        return cloneWith(table_join_, right_sample_block_, max_threads, use_parallel_layout_);
     }
 
     /// `joinPipelinesByShards` clones one join per PK layer and never installs
@@ -257,15 +241,7 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<HashJoin>(
-            table_join_,
-            right_sample_block_,
-            any_take_last_row,
-            reserve_num,
-            instance_id,
-            HashJoinStatsCollectingParams{},
-            /*max_threads=*/1,
-            /*use_parallel_layout=*/false);
+        return cloneWith(table_join_, right_sample_block_, /*max_threads=*/1, /*use_parallel_layout=*/false);
     }
 
     /** Add block of data from right hand of JOIN to the map.
@@ -915,6 +891,23 @@ private:
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
     friend class HashJoinMethods;
+
+    std::shared_ptr<IJoin> cloneWith(
+        const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader right_sample_block_,
+        size_t max_threads_,
+        bool use_parallel_layout_) const
+    {
+        return std::make_shared<HashJoin>(
+            table_join_,
+            right_sample_block_,
+            any_take_last_row,
+            reserve_num,
+            instance_id,
+            HashJoinStatsCollectingParams{},
+            max_threads_,
+            use_parallel_layout_);
+    }
 
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, size_t worker_id, bool check_limits, RowDataStorePtr row_store = nullptr);
 
