@@ -95,9 +95,10 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
         auto * command = child->as<ASTAlterCommand>();
 
         /// Every slot that reaches table metadata, so that a reload re-derives the same spelling the
-        /// statement resolved. Mutation expressions (`predicate`, `update_assignments`) need it too:
-        /// they are persisted in mutation entries and resolved by the background executor and by
-        /// replicas with the server default settings, not with the settings of this session.
+        /// statement resolved. Mutation expressions (`predicate`, `update_assignments`, the
+        /// `IN PARTITION` value in `partition`) need it too: they are persisted in mutation entries
+        /// and resolved by the background executor and by replicas with the server default settings,
+        /// not with the settings of this session.
         for (IAST * payload : {command->col_decl,
                                command->order_by,
                                command->sample_by,
@@ -107,7 +108,8 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
                                command->ttl,
                                command->select,
                                command->predicate,
-                               command->update_assignments})
+                               command->update_assignments,
+                               command->partition})
         {
             if (payload)
                 replaceLegacyToTime(*payload);
