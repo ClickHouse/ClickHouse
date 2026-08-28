@@ -3618,10 +3618,18 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
+void Context::checkSettingsConstraintsForSettingsReset(const ContextMutablePtr & reset_target, const SettingsChanges & changes, const std::vector<String> & names, SettingSource source)
 {
+    if (names.empty())
+        return;
+    /// The default a reset restores depends on `compatibility` and on the profile, either of which
+    /// the same statement may itself change, so the value cannot be modelled and has to be observed.
+    auto after_reset = Context::createCopy(reset_target);
+    after_reset->applySettingsChanges(changes);
+    after_reset->resetSettingsToDefaultValueRespectingCompatibility(names);
+
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, after_reset->getSettingsRef(), names, source);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -3647,6 +3655,13 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
     std::lock_guard lock(mutex);
     for (const String & name: names)
         settings->setDefaultValue(name);
+}
+
+void Context::resetSettingsToDefaultValueRespectingCompatibility(const std::vector<String> & names)
+{
+    std::lock_guard lock(mutex);
+    for (const String & name : names)
+        settings->setDefaultValueRespectingCompatibility(name);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const

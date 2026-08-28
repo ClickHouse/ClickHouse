@@ -85,7 +85,8 @@ public:
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
-    void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
+    /// `after_reset` holds the values the resets land on, which the caller obtains by performing them.
+    void checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;

@@ -1265,12 +1265,17 @@ public:
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
-    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// `changes` is the rest of the same statement and `reset_target` the context the resets will be
+    /// applied to: the value a reset restores depends on both, so the statement is replayed on a copy.
+    void checkSettingsConstraintsForSettingsReset(const ContextMutablePtr & reset_target, const SettingsChanges & changes, const std::vector<String> & names, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
     void resetSettingsToDefaultValue(const std::vector<String> & names);
+    /// Reset settings to the default that is in effect for them, i.e. the value an active
+    /// `compatibility` implies. This is what `SET <name> = DEFAULT` means.
+    void resetSettingsToDefaultValueRespectingCompatibility(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;

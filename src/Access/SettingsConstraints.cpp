@@ -252,16 +252,15 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
     checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
 }
 
-void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const
 {
-    /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
+    /// A reset of a built-in setting is equivalent to assigning the value it lands on. The regular
     /// check also deliberately permits a reset that does not change the value.
-    const Settings defaults;
     for (const auto & name : names)
     {
         if (Settings::hasBuiltin(name))
         {
-            check(current_settings, SettingChange{name, defaults.get(name)}, source);
+            check(current_settings, SettingChange{name, after_reset.get(name)}, source);
             continue;
         }
 

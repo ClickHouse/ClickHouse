@@ -1,0 +1,29 @@
+the probe values differ from their declared defaults under compatibility 26.7
+enable_group_by_top_k_optimization	1
+input_format_read_datetime_number_as_raw_value	1
+SET name = DEFAULT
+1
+SET name = DEFAULT after the setting was assigned explicitly
+1
+SET compatibility = DEFAULT reverts what it derived
+0
+1
+an explicitly assigned setting is left alone by a later compatibility change
+0
+SETTINGS name = DEFAULT in a query
+1
+1
+a reset that lands on a value the profile forbids is rejected
+SETTING_CONSTRAINT_VIOLATION
+1
+and when the same statement is what activates compatibility
+SETTING_CONSTRAINT_VIOLATION
+
+1
+and when the same statement is what switches the profile
+SETTING_CONSTRAINT_VIOLATION
+1
+resetting a CONST compatibility is still rejected
+SETTING_CONSTRAINT_VIOLATION
+26.7
+1
