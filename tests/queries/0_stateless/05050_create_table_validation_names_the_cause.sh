@@ -31,11 +31,11 @@ run "CREATE TABLE t (a UInt32, b UInt32 DEFAULT 'not a number') ENGINE = MergeTr
 
 echo
 echo '=== the same for ALTER, which builds the pair of expressions in its own place'
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE at (a UInt32, s String) ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS at; CREATE TABLE at (a UInt32, s String) ORDER BY a"
 run "ALTER TABLE at ADD COLUMN z UInt32 DEFAULT nosuch"
 run "ALTER TABLE at MODIFY COLUMN s DEFAULT nosuch"
 # Changing the type of a column that has a default re-checks the existing default expression.
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE at2 (a UInt32, b UInt32 DEFAULT a * 2) ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS at2; CREATE TABLE at2 (a UInt32, b UInt32 DEFAULT a * 2) ORDER BY a"
 run "ALTER TABLE at2 MODIFY COLUMN b Date"
 
 echo
@@ -51,3 +51,5 @@ ${CLICKHOUSE_CLIENT} -q "
     INSERT INTO ok (a, c) VALUES (1, NULL);
     SELECT a, b, c IS NULL FROM ok;
 "
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE at; DROP TABLE at2; DROP TABLE ok"
