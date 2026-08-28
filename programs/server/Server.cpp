@@ -1029,6 +1029,23 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     }
 #endif
 
+#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_DARWIN))
+    {
+        /// Whether disabled at runtime by jemalloc itself or overridden by the operator, per-CPU
+        /// arenas are worth recommending on platforms with a working current-CPU query.
+        const char * effective_mode = nullptr;
+        if (Jemalloc::tryGetValue("opt.percpu_arena", effective_mode) && effective_mode == std::string_view("disabled"))
+        {
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::JEMALLOC_PERCPU_ARENA_DISABLED,
+                PreformattedMessage::create(
+                    "jemalloc per-CPU arenas are disabled, either via configuration or automatically by jemalloc itself "
+                    "(it disables them at startup when it cannot query the current CPU). They reduce memory usage by "
+                    "capping the arena count at the number of CPUs"));
+        }
+    }
+#endif
+
     try
     {
         if (getAvailableMemoryAmount() < (2l << 30))
