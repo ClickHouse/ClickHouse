@@ -36,6 +36,8 @@ SELECT
     {dec:Decimal(10, 2)} AS dec
 FROM system.one;
 
+-- distributed_foreground_insert keeps the rows visible to the immediate SELECT below even when
+-- the runner randomizes prefer_localhost_replica = 0 (async delivery would race the check).
 INSERT INTO t_pv_dist
 SELECT * FROM v_pv(
     name = 'a1',
@@ -44,7 +46,7 @@ SELECT * FROM v_pv(
     u = '00000000-0000-0000-0000-000000000001',
     ip = '1.2.3.4',
     dec = 1.25)
-SETTINGS parallel_distributed_insert_select = 2;
+SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1;
 
 SELECT 'scalar', * FROM t_pv ORDER BY name;
 
@@ -63,7 +65,7 @@ FROM (SELECT arrayJoin({tuples:Array(Tuple(String, Enum8('x' = 0, 'y' = 1)))}) A
 
 INSERT INTO t_pv_dist
 SELECT * FROM v_pv_array(tuples = [('a1', 'y'), ('a2', 'x')])
-SETTINGS parallel_distributed_insert_select = 2;
+SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1;
 
 SELECT 'array', name, val FROM t_pv ORDER BY name;
 
