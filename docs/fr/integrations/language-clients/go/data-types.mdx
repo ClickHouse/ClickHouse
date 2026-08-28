@@ -258,7 +258,7 @@ Note : les slices typées et les maps sont prises en charge, à condition que l
   ### Nested
 </div>
 
-Un champ Nested équivaut à un Array de Tuples nommés. Son utilisation dépend de la valeur 1 ou 0 définie par l’utilisateur pour [flatten&#95;nested](/fr/reference/settings/session-settings#flatten_nested).
+Un champ Nested équivaut à un Array de Tuples nommés. Son utilisation dépend de la valeur 1 ou 0 définie par l’utilisateur pour [flatten&#95;nested](/fr/reference/settings/session-settings/other#flatten_nested).
 
 Lorsque flatten&#95;nested est défini sur 0, les colonnes Nested restent un seul tableau de tuples. Cela vous permet d’utiliser des slices de maps pour l’insertion et la récupération, ainsi que des niveaux d’imbrication arbitraires. La clé de la map doit être identique au nom de la colonne, comme indiqué dans l’exemple ci-dessous.
 
@@ -367,7 +367,7 @@ rows.Close()
 
 [Exemple complet - `flatten_tested=0`](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nested.go#L28-L118)
 
-Si la valeur par défaut de 1 est utilisée pour `flatten_nested`, les colonnes imbriquées sont aplaties en tableaux séparés. Cela nécessite l’utilisation de slices imbriquées pour l’insertion et la lecture. Bien que des niveaux d’imbrication arbitraires puissent fonctionner, cela n’est pas officiellement pris en charge.
+Si la valeur par défaut de 1 est utilisée pour `flatten_nested`, les colonnes Nested sont aplaties en tableaux séparés. Cela nécessite l’utilisation de slices imbriquées pour l’insertion et la lecture. Bien que des niveaux d’imbrication arbitraires puissent fonctionner, cela n’est pas officiellement pris en charge.
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)

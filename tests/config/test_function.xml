@@ -11,6 +11,7 @@
         </argument>
         <format>TabSeparated</format>
         <command>awk -F'\t' '{print $1 + $2}'</command>
+        <command_read_timeout>60000</command_read_timeout>
         <execute_direct>0</execute_direct>
     </function>
     <function>
