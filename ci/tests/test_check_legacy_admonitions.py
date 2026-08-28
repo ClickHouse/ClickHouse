@@ -43,6 +43,22 @@ class TestLegacyAdmonitionGuard(unittest.TestCase):
                 Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
                 "SELECT ':::note' /* separator */ || '\\nBody\\n:::';\n",
             ),
+            (
+                Path("src/example.cpp"),
+                'constexpr auto doc = ":::note" // separator\n    "\\nBody\\n:::";\n',
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT ':::note' -- separator\n    || '\\nBody\\n:::';\n",
+            ),
+            (
+                Path("src/example.cpp"),
+                'constexpr auto doc = "Introduction\\n" ":::note\\nBody\\n:::";\n',
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT 'Introduction\\n' || ':::note\\nBody\\n:::';\n",
+            ),
         ]
         for relative_path, content in fixtures:
             with self.subTest(relative_path=relative_path), self.temporary_repo() as root:
@@ -58,17 +74,34 @@ class TestLegacyAdmonitionGuard(unittest.TestCase):
 
     def test_syntax_mentions_are_not_rejected(self):
         fixtures = [
-            'constexpr auto syntax = ":::note";\n',
-            'constexpr auto syntax = ":::note" "suffix";\n',
-            'constexpr auto syntax = ":::note" /* separator */ "suffix";\n',
-            "SELECT ':::note' || 'suffix';\n",
-            "SELECT ':::note' /* separator */ || 'suffix';\n",
+            (Path("src/example.cpp"), 'constexpr auto syntax = ":::note";\n'),
+            (Path("src/example.cpp"), 'constexpr auto syntax = ":::note" "suffix";\n'),
+            (
+                Path("src/example.cpp"),
+                'constexpr auto syntax = ":::note" /* separator */ "suffix";\n',
+            ),
+            (
+                Path("src/example.cpp"),
+                'constexpr auto syntax = "Use :::note\\nBody\\n::: as legacy syntax.";\n',
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT ':::note' || 'suffix';\n",
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT ':::note' /* separator */ || 'suffix';\n",
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT 'Use :::note\\nBody\\n::: as legacy syntax.';\n",
+            ),
         ]
-        for content in fixtures:
-            with self.subTest(content=content), self.temporary_repo() as root:
+        for relative_path, content in fixtures:
+            with self.subTest(relative_path=relative_path), self.temporary_repo() as root:
                 repo_root = Path(root)
-                path = repo_root / "src/example.cpp"
-                path.parent.mkdir(parents=True)
+                path = repo_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
 
                 self.assertEqual(CHECK.find_legacy_admonitions(repo_root), [])
