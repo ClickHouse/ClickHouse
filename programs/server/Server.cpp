@@ -988,10 +988,17 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 warn_about_ext4 |= fs_type.empty() || fs_type == "ext4";
             };
             probe_path(data_path);
-            /// Object-storage disks keep their metadata under a local path too, so every disk's
-            /// path is probed - getPath() is the local metadata directory for remote disks.
+            /// Object-storage disks keep their metadata under a local path too, so disk paths are
+            /// probed as well - but only ones that really exist locally: web and plain metadata
+            /// backends report an empty string or a remote prefix here, which must not raise the
+            /// unknown-filesystem alarm.
             for (const auto & [_, disk] : server.context()->getDisksMap())
-                probe_path(disk->getPath());
+            {
+                const String disk_path = disk->getPath();
+                std::error_code ec;
+                if (!disk_path.empty() && std::filesystem::is_directory(std::filesystem::path(disk_path), ec))
+                    probe_path(disk_path);
+            }
             if (warn_about_ext4)
                 kernel_warning = PreformattedMessage::create(
                     "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). Consider upgrading the kernel.",
