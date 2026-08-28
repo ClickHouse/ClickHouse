@@ -1,6 +1,15 @@
--- Tags: no-msan, no-debug, no-fasttest, no-llvm-coverage, long
+-- Tags: no-msan, no-debug, no-fasttest, no-flaky-check, no-llvm-coverage, long
 -- Tag no-msan: the sampling query profiler is disabled under Memory Sanitizer (QUERY_PROFILER_SUPPORTED).
 -- Tag no-fasttest: Not sure why fail even in sequential mode. Disabled for now to make some progress.
+-- Tag no-flaky-check: the flaky check runs dozens of copies of this test concurrently against one
+-- server, and everything this test asserts on travels over a single shared, deliberately lossy
+-- channel: one trace pipe (which discards writes when full), one `SystemLogQueue`, and one flush
+-- thread with a 180 second `waitFlush` deadline that all the concurrent forced flushes serialize
+-- on. Under that self-inflicted saturation either every sample of a sub-test can be legitimately
+-- dropped (the `trace_log` oracles then read 0) or the final `SYSTEM FLUSH LOGS` times out - both
+-- were observed repeatedly even after the test's sample budget was cut to ~600 rows per run. A
+-- normal stateless run executes one copy of this test among diverse tests, which the budgeting
+-- below handles fine.
 
 SET allow_introspection_functions = 1;
 SET trace_profile_events = 0; -- This can inhibit profiler from working, because it prevents sending samples from different profilers concurrently.
