@@ -1942,7 +1942,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          false)},
     {"wait_for_part_commit_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
-    {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
     {"zstd_window_log_max",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 31)); }, {}, false)}};
