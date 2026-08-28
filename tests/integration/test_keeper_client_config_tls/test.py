@@ -25,7 +25,9 @@ node1 = cluster.add_instance(
 )
 
 # Separate cluster for mTLS: Keeper requires a client certificate.
-cluster_mtls = ClickHouseCluster(__file__)
+# name="mtls" gives this cluster a distinct Docker Compose project name so
+# cluster_mtls.start() does not reconcile-away node1 from cluster.
+cluster_mtls = ClickHouseCluster(__file__, name="mtls")
 node_mtls = cluster_mtls.add_instance(
     "node_mtls",
     main_configs=[
