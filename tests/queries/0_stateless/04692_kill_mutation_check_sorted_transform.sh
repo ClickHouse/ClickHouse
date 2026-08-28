@@ -60,16 +60,34 @@ $CLICKHOUSE_CLIENT -q "KILL MUTATION WHERE database = '${CLICKHOUSE_DATABASE}' A
 # Release the paused transform thread.
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT check_sorted_transform_pause"
 
-# The foreground ALTER (mutations_sync=1) must exit once the mutation is cancelled.
-for _ in $(seq 1 600); do
+# The foreground ALTER (mutations_sync=1) must exit through the expected cancellation path once the
+# mutation is killed. Wait only ~15 s (a small multiple of one chunk rewrite): the within-chunk cancel
+# makes the pull return as soon as the paused transform resumes, so real cancellation latency is well
+# under this bound. A regression that cancels only later, or fails to cancel at all, must fail the test.
+for _ in $(seq 1 150); do
     kill -0 "$alter_pid" 2>/dev/null || break
     sleep 0.1
 done
 if kill -0 "$alter_pid" 2>/dev/null; then
-    echo "FAIL: ALTER still running 60 s after KILL MUTATION"
-    kill "$alter_pid" 2>/dev/null
+    echo "FAIL: ALTER still running 15 s after KILL MUTATION (cancellation did not take effect)"
+    exit 1
 fi
-wait "$alter_pid" 2>/dev/null
+wait "$alter_pid"
+alter_rc=$?
+
+# If the ALTER failed, it must have failed due to the cancellation, not some other error.
+if [ "$alter_rc" -ne 0 ] && ! grep -qiE 'killed|ABORTED|UNFINISHED|Cancelled' "$alter_stderr"; then
+    echo "FAIL: ALTER failed for a non-cancellation reason (rc=$alter_rc): $(cat "$alter_stderr")"
+    exit 1
+fi
+
+# Prove the mutation was actually killed (no full rewrite committed) rather than merely having
+# unchanged data by coincidence: no successfully-completed mutation may remain.
+done_ok=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutations WHERE database = '${CLICKHOUSE_DATABASE}' AND table = '${TABLE}' AND is_done = 1 AND latest_fail_reason = ''")
+if [ "${done_ok:-0}" != "0" ]; then
+    echo "FAIL: a mutation completed successfully although it should have been killed"
+    exit 1
+fi
 
 # The mutation was cancelled before writing anything, so the data must be unchanged.
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(id), sum(value) FROM ${CLICKHOUSE_DATABASE}.${TABLE}"
