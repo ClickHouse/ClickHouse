@@ -214,11 +214,18 @@ bool tryBuildNumberLiteralSet(
     if (tryBuildNumberLiteralSetElement(right_arg, reference_type, out_column, out_type))
         return true;
 
+    /// Not a single element, so the composite is the list of them: a tuple for `x IN (1.1, 2.2)`, an
+    /// array for `x IN [1.1]` where the array itself is the set.
     Field unresolved;
-    if (!tryGetUnresolvedLiteralField(right_arg, unresolved) || unresolved.getType() != Field::Types::Tuple)
+    if (!tryGetUnresolvedLiteralField(right_arg, unresolved))
+        return false;
+    const bool is_array_list = unresolved.getType() == Field::Types::Array;
+    if (unresolved.getType() != Field::Types::Tuple && !is_array_list)
         return false;
 
-    const auto & elements = unresolved.safeGet<Tuple>();
+    const auto & elements = is_array_list
+        ? static_cast<const FieldVector &>(unresolved.safeGet<Array>())
+        : static_cast<const FieldVector &>(unresolved.safeGet<Tuple>());
     /// Checked before the rebuild below, which copies every element of a possibly huge IN list.
     if (std::none_of(elements.begin(), elements.end(), fieldHasNumberLiteral))
         return false;
@@ -247,8 +254,20 @@ bool tryBuildNumberLiteralSet(
     if (!any_element_resolved)
         return false;
 
-    out_type = std::make_shared<DataTypeTuple>(std::move(resolved_types));
     /// A kept number literal element is resolved to its default type by the conversion.
+    if (is_array_list)
+    {
+        /// An array holds one type, so the elements have to meet in a common one.
+        auto element_type = tryGetLeastSupertype(resolved_types);
+        if (!element_type)
+            return false;
+        out_type = std::make_shared<DataTypeArray>(element_type);
+        Array array_elements(resolved_elements.begin(), resolved_elements.end());
+        out_column = out_type->createColumnConst(1, convertFieldToTypeOrThrow(Field(std::move(array_elements)), *out_type));
+        return true;
+    }
+
+    out_type = std::make_shared<DataTypeTuple>(std::move(resolved_types));
     out_column = out_type->createColumnConst(1, convertFieldToTypeOrThrow(Field(std::move(resolved_elements)), *out_type));
     return true;
 }
