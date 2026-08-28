@@ -525,6 +525,31 @@ TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)
     }
 }
 
+TEST(TreeHashCompleteness, TableFunctionsRejectAPrimaryKeyTheyCannotFormat)
+{
+    /// A table created from a table function has no storage definition of its own, so a PRIMARY KEY
+    /// in the column list used to be normalized into a synthesized storage definition that
+    /// formatting printed after the table function - a position that no longer parsed back (and
+    /// would have made the table unloadable from its metadata). Found by the AST fuzzer.
+    for (const std::string query : {
+             "CREATE TABLE t (a UInt8 PRIMARY KEY) AS numbers(5)",
+             "CREATE TABLE t (a UInt8, PRIMARY KEY a) AS numbers(5)",
+             "ATTACH TABLE t (a UInt8 PRIMARY KEY) AS numbers(5)",
+         })
+        EXPECT_THROW(parse(query), Exception) << query;
+
+    /// Without a PRIMARY KEY the table function keeps its column list; with an explicit ENGINE the
+    /// storage definition is the table's own.
+    for (const std::string query : {
+             "CREATE TABLE t (a UInt8) AS numbers(5)",
+             "CREATE TABLE t (a UInt8 PRIMARY KEY) ENGINE = MergeTree",
+         })
+    {
+        ASTPtr ast = parse(query);
+        EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+    }
+}
+
 TEST(TreeHashCompleteness, ExplicitNilUuidClausesAreRejected)
 {
     /// Both clauses used to retain presence state that formatting could not represent. Reject them
@@ -659,6 +684,22 @@ TEST(TreeHashCompleteness, JSONRejectsColumnPrimaryKeyMultiTargetDetachAndOrphan
     EXPECT_EQ(hashOfJSONRoundTrip("DETACH TABLE t"), hashOf("DETACH TABLE t"));
     EXPECT_EQ(hashOfJSONRoundTrip("TRUNCATE TABLE t"), hashOf("TRUNCATE TABLE t"));
     EXPECT_EQ(hashOfJSONRoundTrip("DROP TABLE t1, t2"), hashOf("DROP TABLE t1, t2"));
+
+    /// A table created from a table function has no storage definition of its own, so the parser
+    /// accepts only one of the two clauses. A payload carrying both formats to a definition that
+    /// no longer parses back, which the metadata written for such a table could not be loaded from.
+    {
+        String json = serializeASTToJSON(*parse("CREATE TABLE t (a UInt8) AS numbers(5)"));
+        const String key = R"("as_table_function":)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.insert(pos, R"("storage":{"type":"Storage","engine":{"type":"Function","name":"MergeTree","no_empty_args":true,"kind":"TABLE_ENGINE"}},)");
+        expectJSONRejected(json);
+    }
+
+    /// Either clause on its own stays accepted.
+    EXPECT_EQ(hashOfJSONRoundTrip("CREATE TABLE t (a UInt8) AS numbers(5)"), hashOf("CREATE TABLE t (a UInt8) AS numbers(5)"));
+    EXPECT_EQ(hashOfJSONRoundTrip("CREATE TABLE t (a UInt8) ENGINE = MergeTree"), hashOf("CREATE TABLE t (a UInt8) ENGINE = MergeTree"));
 
     /// The parser produces the watermark fields only together with the column; orphaned fields
     /// would previously be dropped silently, hashing and executing as an unwatermarked stream.

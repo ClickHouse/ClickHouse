@@ -732,6 +732,12 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(as_table_function, child);
 
+    /// A table created from a table function has no storage definition of its own, so the grammar
+    /// accepts only one of the two and formatting prints them in an order it cannot read back.
+    if (storage && as_table_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares both 'storage' and 'as_table_function' during AST JSON deserialization");
+
     child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
         set(select, child);

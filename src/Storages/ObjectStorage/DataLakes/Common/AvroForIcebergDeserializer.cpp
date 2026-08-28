@@ -362,6 +362,11 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                     "Couldn't find field {} in equality delete file entry",
                     c_data_file_equality_ids);
+            if (equality_ids.empty())
+                throw Exception(
+                    DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Field {} is empty in equality delete file entry, but at least one equality field id is required",
+                    c_data_file_equality_ids);
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::EQUALITY_DELETE,
                 file_path_key,
