@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http';
-import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import {
+  candidatesWithin,
+  firstReadableFile,
+  snapshotRoots,
+  staticContentType,
+} from './lib/version-snapshot-files.mjs';
 
 const projectDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distributionDirectory = path.join(projectDirectory, 'dist');
@@ -20,51 +26,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error(`Invalid preview port: ${port}`);
 }
 
-const contentTypes = new Map([
-  ['.css', 'text/css; charset=utf-8'],
-  ['.html', 'text/html; charset=utf-8'],
-  ['.ico', 'image/x-icon'],
-  ['.js', 'text/javascript; charset=utf-8'],
-  ['.json', 'application/json; charset=utf-8'],
-  ['.map', 'application/json; charset=utf-8'],
-  ['.png', 'image/png'],
-  ['.svg', 'image/svg+xml'],
-  ['.wasm', 'application/wasm'],
-  ['.webp', 'image/webp'],
-  ['.woff', 'font/woff'],
-  ['.woff2', 'font/woff2'],
-]);
-
-async function snapshotRoots() {
-  let entries;
-  try {
-    entries = await readdir(snapshotsDirectory, { withFileTypes: true });
-  } catch (error) {
-    if (error?.code === 'ENOENT') return [];
-    throw error;
-  }
-  return entries
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-    .map((entry) => ({
-      version: entry.name,
-      directory: path.join(snapshotsDirectory, entry.name),
-    }));
-}
-
-function candidatesWithin(root, relativePath) {
-  if (!relativePath) return [path.join(root, 'index.html')];
-  const resolved = path.resolve(root, relativePath);
-  if (!resolved.startsWith(`${root}${path.sep}`)) return [];
-  if (path.extname(relativePath)) return [resolved];
-  return [path.join(resolved, 'index.html'), resolved];
-}
-
 async function requestCandidates(requestUrl) {
   const pathname = decodeURIComponent(new URL(requestUrl, `http://${host}:${port}`).pathname);
   const relativePath = pathname.replace(/^\/+/, '');
   if (relativePath.split('/').includes('..')) return [];
 
-  const snapshots = await snapshotRoots();
+  const snapshots = await snapshotRoots(snapshotsDirectory);
   const requestedVersion = relativePath.match(
     /^docs\/reference\/versions\/([^/]+)(?:\/|$)/,
   )?.[1];
@@ -77,17 +44,6 @@ async function requestCandidates(requestUrl) {
     ]
     : [distributionDirectory, ...snapshots.map(({ directory }) => directory)];
   return orderedRoots.flatMap((root) => candidatesWithin(root, relativePath));
-}
-
-async function firstReadableFile(candidates) {
-  for (const candidate of candidates) {
-    try {
-      return { content: await readFile(candidate), filePath: candidate };
-    } catch (error) {
-      if (error?.code !== 'ENOENT' && error?.code !== 'EISDIR') throw error;
-    }
-  }
-  return null;
 }
 
 const server = createServer(async (request, response) => {
@@ -107,7 +63,7 @@ const server = createServer(async (request, response) => {
 
     response.writeHead(200, {
       'Cache-Control': 'no-store',
-      'Content-Type': contentTypes.get(path.extname(file.filePath)) ?? 'application/octet-stream',
+      'Content-Type': staticContentType(file.filePath),
     });
     response.end(request.method === 'HEAD' ? undefined : file.content);
   } catch (error) {

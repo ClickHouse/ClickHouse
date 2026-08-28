@@ -13,6 +13,9 @@ import rehypeCodeBlocks from './src/markdown/code-blocks.mjs';
 import rehypeCustomCodeHighlighter from './src/markdown/custom-code-highlighter.mjs';
 import rehypeHeadingAnchors from './src/markdown/heading-anchors.mjs';
 import rewriteGeneratedCodeBlocks from './src/markdown/rewrite-generated-code-blocks.mjs';
+import versionSnapshotFiles from './scripts/lib/version-snapshot-files.mjs';
+
+const snapshotsDirectory = fileURLToPath(new URL('./.snapshots', import.meta.url));
 
 export default defineConfig({
   site: 'https://clickhouse.com',
@@ -39,7 +42,7 @@ export default defineConfig({
     mdx(),
   ],
   vite: {
-    plugins: [tailwindcss()],
+    plugins: [versionSnapshotFiles({ snapshotsDirectory }), tailwindcss()],
     resolve: {
       alias: {
         '@components': fileURLToPath(new URL('./src/components', import.meta.url)),

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,7 @@ import {
 } from './export-reference-docs.mjs';
 import { resolveStatementPages } from './lib/statement-metadata.mjs';
 import { loadStatementRegistrations } from './lib/statement-source.mjs';
+import { findVersionSnapshotFile } from './lib/version-snapshot-files.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectDirectory = path.resolve(scriptDirectory, '..');
@@ -192,6 +193,46 @@ async function main() {
   const versionedGeneratedDirectory = path.join(temporaryDirectory, 'generated-26.8');
 
   try {
+    const snapshotFixtureDirectory = path.join(temporaryDirectory, 'snapshots');
+    const snapshotVersionDirectory = path.join(snapshotFixtureDirectory, '26.8');
+    const snapshotPagePath = path.join(
+      snapshotVersionDirectory,
+      'docs/reference/versions/26.8/formats/Parquet/Parquet/index.html',
+    );
+    const snapshotSearchPath = path.join(
+      snapshotVersionDirectory,
+      'docs/reference/_search/26.8.json',
+    );
+    const snapshotAssetPath = path.join(snapshotVersionDirectory, '_astro/frozen.js');
+    await Promise.all([
+      mkdir(path.dirname(snapshotPagePath), { recursive: true }),
+      mkdir(path.dirname(snapshotSearchPath), { recursive: true }),
+      mkdir(path.dirname(snapshotAssetPath), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(snapshotPagePath, '<h1>Frozen Parquet</h1>'),
+      writeFile(snapshotSearchPath, '{"records":[]}'),
+      writeFile(snapshotAssetPath, 'export const frozen = true;'),
+    ]);
+    for (const [requestUrl, expectedPath] of [
+      ['/docs/reference/versions/26.8/formats/Parquet/Parquet', snapshotPagePath],
+      ['/docs/reference/_search/26.8.json', snapshotSearchPath],
+      ['/_astro/frozen.js', snapshotAssetPath],
+    ]) {
+      requireValue(
+        (await findVersionSnapshotFile(requestUrl, snapshotFixtureDirectory))?.filePath
+          === expectedPath,
+        `Development server did not resolve snapshot request ${requestUrl}`,
+      );
+    }
+    requireValue(
+      await findVersionSnapshotFile(
+        '/docs/reference/formats/Parquet/Parquet',
+        snapshotFixtureDirectory,
+      ) === null,
+      'Development snapshot serving intercepted the mutable latest route',
+    );
+
     run('export-reference-docs.mjs', ['--output', artifactDirectory]);
     const snapshotArguments = [
       '26.8',
