@@ -3608,6 +3608,10 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         if (!canVerticalTTLDelete(*global_ctx))
             return MergeAlgorithm::Horizontal;
     }
+    /// The metadata-only TTL recalculation of a blocked patch merge reads the TTL input columns
+    /// from the merged stream, which only the horizontal algorithm carries in full.
+    if (ctx->recalculate_ttl_for_patches && !ctx->need_remove_expired_values)
+        return MergeAlgorithm::Horizontal;
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
         return MergeAlgorithm::Horizontal;
     if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)

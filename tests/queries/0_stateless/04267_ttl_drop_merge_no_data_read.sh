@@ -711,7 +711,9 @@ ${CLICKHOUSE_CLIENT} -q "
         apply_patches_on_merge = 1,
         enable_block_number_column = 1,
         enable_block_offset_column = 1,
-        min_bytes_for_wide_part = 1;
+        min_bytes_for_wide_part = 1,
+        vertical_merge_algorithm_min_rows_to_activate = 1,
+        vertical_merge_algorithm_min_columns_to_activate = 1;
 
     SYSTEM STOP MERGES t_ttl_patch_blocked;
 
