@@ -132,7 +132,7 @@ Les données sont chargées dans ClickHouse à l’aide de la méthode la plus e
   ## Jeux de données
 </div>
 
-`Clickhouse` ne prend pas en charge plusieurs jeux de données dans une même base de données, alors que `dlt` s&#39;appuie sur les jeux de données pour plusieurs raisons. Pour faire fonctionner `Clickhouse` avec `dlt`, les noms des tables générées par `dlt` dans votre base de données `Clickhouse` seront préfixés par le nom du jeu de données, séparé par le `dataset_table_separator` configurable. De plus, une table sentinelle spéciale, ne contenant aucune donnée, sera créée afin de permettre à `dlt` d&#39;identifier quels jeux de données virtuels existent déjà dans une destination `Clickhouse`.
+`ClickHouse` ne prend pas en charge plusieurs jeux de données dans une même base de données, alors que `dlt` s&#39;appuie sur les jeux de données pour plusieurs raisons. Pour faire fonctionner `ClickHouse` avec `dlt`, les noms des tables générées par `dlt` dans votre base de données `ClickHouse` seront préfixés par le nom du jeu de données, séparé par le `dataset_table_separator` configurable. De plus, une table sentinelle spéciale, ne contenant aucune donnée, sera créée afin de permettre à `dlt` d&#39;identifier quels jeux de données virtuels existent déjà dans une destination `ClickHouse`.
 
 <div id="supported-file-formats">
   ## Formats de fichier pris en charge
@@ -143,11 +143,11 @@ Les données sont chargées dans ClickHouse à l’aide de la méthode la plus e
 
 La destination `clickhouse` présente quelques différences spécifiques par rapport aux destinations SQL par défaut :
 
-1. `Clickhouse` dispose d&#39;un type de données `object` expérimental, mais nous avons constaté qu&#39;il est quelque peu imprévisible. La destination ClickHouse de dlt chargera donc ce type de données complexe dans une colonne de texte. Si vous avez besoin de cette fonctionnalité, contactez notre communauté Slack et nous envisagerons de l&#39;ajouter.
-2. `Clickhouse` ne prend pas en charge le type de données `time`. `time` sera chargé dans une colonne `text`.
-3. `Clickhouse` ne prend pas en charge le type de données `binary`. À la place, les données binaires seront chargées dans une colonne `text`. Lors d&#39;un chargement depuis `jsonl`, les données binaires seront stockées sous forme de chaîne base64, et lors d&#39;un chargement depuis parquet, l&#39;objet `binary` sera converti en `text`.
-4. `Clickhouse` accepte l&#39;ajout de colonnes non nulles à une table déjà remplie.
-5. `Clickhouse` peut produire des erreurs d&#39;arrondi dans certaines conditions lors de l&#39;utilisation du type de données float ou double. Si vous ne pouvez pas tolérer d&#39;erreurs d&#39;arrondi, veillez à utiliser le type de données decimal. Par exemple, charger la valeur 12.7001 dans une colonne double avec le format de fichier du chargeur défini sur `jsonl` produira systématiquement une erreur d&#39;arrondi.
+1. `ClickHouse` dispose d&#39;un type de données `object` expérimental, mais nous avons constaté qu&#39;il est quelque peu imprévisible. La destination ClickHouse de dlt chargera donc ce type de données complexe dans une colonne de texte. Si vous avez besoin de cette fonctionnalité, contactez notre communauté Slack et nous envisagerons de l&#39;ajouter.
+2. `ClickHouse` ne prend pas en charge le type de données `time`. `time` sera chargé dans une colonne `text`.
+3. `ClickHouse` ne prend pas en charge le type de données `binary`. À la place, les données binaires seront chargées dans une colonne `text`. Lors d&#39;un chargement depuis `jsonl`, les données binaires seront stockées sous forme de chaîne base64, et lors d&#39;un chargement depuis parquet, l&#39;objet `binary` sera converti en `text`.
+4. `ClickHouse` accepte l&#39;ajout de colonnes non nulles à une table déjà remplie.
+5. `ClickHouse` peut produire des erreurs d&#39;arrondi dans certaines conditions lors de l&#39;utilisation du type de données float ou double. Si vous ne pouvez pas tolérer d&#39;erreurs d&#39;arrondi, veillez à utiliser le type de données decimal. Par exemple, charger la valeur 12.7001 dans une colonne double avec le format de fichier du chargeur défini sur `jsonl` produira systématiquement une erreur d&#39;arrondi.
 
 <div id="supported-column-hints">
   ## Indications de colonnes prises en charge
