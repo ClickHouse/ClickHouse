@@ -897,6 +897,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.getLocalContext()->checkMergeTreeSettingsConstraints(
                 initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
 
+        /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
+        /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
+        /// such as `index_granularity = 0` that the same `CREATE` refuses, and the table is created broken.
+        if (is_fresh_definition && args.mode > LoadingStrictnessLevel::CREATE)
+        {
+            context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+            storage_settings->sanityCheck(
+                context->getMergeMutateExecutor()->getMaxTasksCount(), context->wasBackgroundPoolAutoLowered());
+        }
+
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
             metadata.settings_changes = args.storage_def->settings->ptr();
