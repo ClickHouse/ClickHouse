@@ -3,12 +3,8 @@
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
 
-#include <cmath>
-#include <limits>
-
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
@@ -93,6 +89,9 @@
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <cmath>
+#include <limits>
+
 #include <city.h>
 
 #include <boost/functional/hash.hpp>
@@ -1664,7 +1663,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (num_streams > 1)
     {
         /// Reduce the number of num_streams if the data is small.
-        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        /// The comparison is done with a division rather than with `num_streams * info.min_marks_for_concurrent_read`,
+        /// because `num_streams` is derived from `max_streams_to_max_threads_ratio`, which is a `Float64` setting,
+        /// and the product can overflow. `info.min_marks_for_concurrent_read` is always at least one.
+        if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             /*
             If the data is fragmented, then allocate the size of parts to num_streams. If the data is not fragmented, besides the sum_marks and
@@ -1888,7 +1890,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// Additional increase of streams number in case of skewed parts, like it's
         /// done in `spreadMarkRangesAmongStreams` won't affect overall performance
         /// due to the single downstream `MergingSortedTransform`.
-        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        /// As in `spreadMarkRangesAmongStreams`, the comparison avoids the overflow of
+        /// `num_streams * info.min_marks_for_concurrent_read`.
+        if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             num_streams = std::max(
                 (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
@@ -3041,7 +3045,7 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSource.
     if (query_info.isStream())
         return;
 
@@ -3242,7 +3246,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSource
     /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
     /// filter below. Fail closed rather than serve logically-deleted rows.
     /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
@@ -4250,8 +4254,11 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
 Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
+#if !defined(OS_LINUX) && !defined(OS_DARWIN)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries are supported only on Linux and macOS");
+#else
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
-    SharedHeader header = getOutputHeader();
+    const SharedHeader header = getOutputHeader();
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -4260,7 +4267,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
     {
         auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i);
         data.subscription_manager.registerSubscription(subscription);
-        pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSequentialSource>(
+        pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSource>(
             header,
             data,
             query_info,
@@ -4273,6 +4280,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 
     data.triggerStreamingSubscriptionEnrichment();
     return Pipe::unitePipes(std::move(pipes));
+#endif
 }
 
 Pipe ReadFromMergeTree::groupStreamsByPartition(
@@ -5144,7 +5152,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         for (const auto & ranges : result.parts_with_ranges)
         {
-            read_ranges.emplace(ranges.part_index_in_query, ranges);
+            read_ranges.emplace(
+                ranges.part_index_in_query,
+                SkipIndexReadInput{ranges.ranges, ranges.read_hints, ranges.part_starting_offset_in_query});
             part_remaining_marks.emplace(ranges.part_index_in_query, ranges.getMarksCount());
         }
 
@@ -5193,8 +5203,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             input_names.insert(input->result_name);
         restoreDAGInputs(filter_dag, input_names);
 
+        /// The filter column can be a source column, which the stream must keep for the rest of the query.
+        if (input_names.contains(column_name))
+            remove_column = false;
+
         auto actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
-        pipe.addSimpleTransform([&, actions](const SharedHeader & header)
+        pipe.addSimpleTransform([&, actions, remove_column](const SharedHeader & header)
         {
             return std::make_shared<FilterTransform>(header, actions, column_name, remove_column);
         });
