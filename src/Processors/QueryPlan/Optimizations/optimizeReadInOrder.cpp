@@ -188,6 +188,9 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
     {
         const auto * node = stack.top();
         stack.pop();
+        /// An ALIAS has the same value as its child, so it fixes the same columns.
+        while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+            node = node->children.front();
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
