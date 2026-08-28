@@ -52,9 +52,16 @@ MAX_MEM_PER_WORKER = 11
 # cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
 MAX_MEM_PER_WORKER_DIST_EACH = 20
 
-INFRASTRUCTURE_ERROR_PATTERNS = [
+# A timeout says nothing about its own origin: a container orchestration command and
+# the process under test both raise `subprocess.TimeoutExpired`, rendering the same two
+# substrings. These two are therefore matched by the argv that timed out rather than by
+# a plain substring search.
+TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
+]
+
+INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
     "Error response from daemon",
     "Name or service not known",
@@ -69,13 +76,133 @@ INFRASTRUCTURE_ERROR_PATTERNS = [
     "Got exception pulling images:",  # docker pull failure during cluster.start()
 ]
 
+# compose options that consume the token after them, so the subcommand is not the
+# first non-option token but the first one no option has claimed.
+COMPOSE_VALUED_OPTIONS = {
+    "--ansi",
+    "--env-file",
+    "--file",
+    "--parallel",
+    "--profile",
+    "--progress",
+    "--project-directory",
+    "--project-name",
+    "-f",
+    "-p",
+}
+
+# Subcommands whose timeout does not mean the server failed to respond, so exceeding the
+# python-side budget says nothing about the server under test.
+ORCHESTRATION_LIFECYCLE_VERBS = {
+    "config",
+    "create",
+    "down",
+    "images",
+    "login",
+    "logs",
+    "ps",
+    "pull",
+    "rm",
+    "start",
+    "unpause",
+    "up",
+}
+
+# Subcommands that wait on the server exiting: an unguarded `stop` with no `--timeout`
+# (cluster.py:2641) is bounded only by the generated template's `stop_grace_period: 10m`,
+# which outlives the python-side budget, so its timeout means the server did not respond.
+ORCHESTRATION_PRODUCT_VERBS = {"kill", "pause", "restart", "stop"}
+
+# Top-level `docker` subcommands the harness runs on its own behalf, outside compose, and
+# whose timeout is known to arrive here (`run_and_check` re-raises `TimeoutExpired` even
+# under `nothrow`). `exec` and `update` are absent: a test body runs those.
+DOCKER_TOPLEVEL_LIFECYCLE_VERBS = {"login", "ps", "rm"}
+
+
+def _raising_exception_lines(info: str) -> list:
+    """The `E   <ExcType>: <msg>` lines, i.e. the exceptions actually raised.
+
+    Scoped to these lines because an embedded server stack trace can carry a timeout
+    substring tens of kilobytes away from anything that timed out.
+    """
+    return [line for line in info.splitlines() if line.startswith("E ")]
+
+
+def _argv_lists(line: str) -> list:
+    """Every bracketed argv on `line`, in either rendering."""
+    argvs = []
+    for match in re.finditer(r"\[((?:'[^']*'(?:,\s*)?)+)\]", line):
+        argvs.append(re.findall(r"'([^']*)'", match.group(1)))
+    for match in re.finditer(r"\[([^\[\]']+)\]", line):
+        argvs.append(match.group(1).split())
+    return argvs
+
+
+def _orchestration_verb(argv: list):
+    """The docker subcommand `argv` invokes, or None if it is not orchestration."""
+    if len(argv) < 2 or argv[0] != "docker":
+        return None
+    if argv[1] in DOCKER_TOPLEVEL_LIFECYCLE_VERBS:
+        return argv[1]
+    if argv[1] != "compose":
+        return None
+    i = 2
+    while i < len(argv):
+        if argv[i] in COMPOSE_VALUED_OPTIONS:
+            i += 2
+        elif argv[i].startswith("-"):
+            i += 1
+        else:
+            return argv[i]
+    return None
+
+
+def _is_orchestration_lifecycle_timeout(info: str) -> bool:
+    """Whether the timeout is docker's or the registry's rather than the server's.
+
+    Every command a raised exception reports as timing out must be one docker runs on the
+    harness's behalf. A row can name several: `raise ... from ex` makes pytest render both
+    exceptions with their own `E ` prefix, a teardown reports its own commands beside the
+    body's, and captured output is embedded verbatim in the message. So anything else on a
+    timeout-bearing line -- a product-sensitive subcommand, a command that is not
+    orchestration at all, or no argv whatsoever -- means the wait that expired is not
+    known to be docker's.
+
+    An unrecognised subcommand is not a lifecycle one: a new compose verb must be
+    classified deliberately rather than default to suppressing the result.
+    """
+    saw_lifecycle = False
+    for line in _raising_exception_lines(info):
+        if not any(p in line for p in TIMEOUT_ERROR_PATTERNS):
+            continue
+        argvs = _argv_lists(line)
+        if not argvs:
+            return False
+        for argv in argvs:
+            verb = _orchestration_verb(argv)
+            if verb is None or verb in ORCHESTRATION_PRODUCT_VERBS:
+                return False
+            if verb not in ORCHESTRATION_LIFECYCLE_VERBS:
+                return False
+            saw_lifecycle = True
+    return saw_lifecycle
+
+
+def _non_timeout_patterns_match(info: str) -> bool:
+    return any(
+        p in info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        if p not in TIMEOUT_ERROR_PATTERNS
+    )
+
 
 def _is_infrastructure_error(result: Result) -> bool:
     """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
     if result.status == Result.Status.ERROR:
-        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+        return _non_timeout_patterns_match(
+            result.info
+        ) or _is_orchestration_lifecycle_timeout(result.info)
     # Docker compose/pull infrastructure failures may appear with FAIL status
     # when pytest reports fixture (setup phase) errors as test failures.
     # Require both docker context and an infrastructure pattern to avoid
@@ -84,8 +211,9 @@ def _is_infrastructure_error(result: Result) -> bool:
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
-        return has_docker_context and any(
-            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        return has_docker_context and (
+            _non_timeout_patterns_match(result.info)
+            or _is_orchestration_lifecycle_timeout(result.info)
         )
     return False
 
@@ -416,15 +544,46 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
+def merge_profraw_files(llvm_profdata_cmd: str, run_complete: bool):
     """Merge all profraw files into final profdata file.
 
     Args:
         llvm_profdata_cmd: Path to llvm-profdata tool
-        job_params: List of job parameters for naming output file
+        run_complete: whether the test run executed everything it planned
     """
     import subprocess
     from pathlib import Path
+
+    # Name the profile after this job's own coverage artifact, so the
+    # aggregation can tell which shards arrived from the filenames alone.
+    # JOB_CONFIG has been through dump()/get() by the time a job body runs, so
+    # it is a plain dict here.
+    provides = (Info().job_config or {}).get("provides")
+    assert (
+        isinstance(provides, list)
+        and len(provides) == 1
+        and isinstance(provides[0], str)
+        and provides[0]
+    ), f"expected exactly one provided artifact name, got {provides!r}"
+    final_file = f"./{provides[0]}.profdata"
+
+    # llvm-profdata truncates its -o target in place instead of replacing it,
+    # so a stale profile at the target name must be removed before deciding
+    # whether to merge at all - otherwise a skipped or failed merge would let
+    # the uploader publish the stale file as this shard's contribution.
+    if os.path.exists(final_file):
+        print(f"Removing pre-existing {final_file}", flush=True)
+        os.unlink(final_file)
+
+    # An incomplete run's .profraw files understate coverage, so publish nothing
+    # and let the aggregate job abstain; the inputs stay on disk for inspection.
+    if not run_complete:
+        print(
+            "ERROR: the run timed out or hit an infrastructure error, so this "
+            "shard's coverage is incomplete; publishing no profile",
+            flush=True,
+        )
+        return None
 
     # Find all profraw files
     profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
@@ -433,42 +592,31 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         print("No profraw files found", flush=True)
         return
 
-    joined_job_params = "_".join(job_params) if job_params else "all"
-    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
-    final_file = f"./it-{joined_job_params}.profdata"
+    # A zero-length .profraw is silently accepted by llvm-profdata at every
+    # --failure-mode, so it would drop one process's coverage with no signal.
+    # Treat it as an incomplete shard and publish no profile.
+    empty_files = [f for f in profraw_files if os.path.getsize(f) == 0]
+    if empty_files:
+        print(
+            f"ERROR: {len(empty_files)} .profraw files are empty, so this shard's coverage "
+            f"is incomplete; publishing no profile: {', '.join(empty_files)}",
+            flush=True,
+        )
+        return None
+
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
+    # --failure-mode=any makes the merge all-or-nothing: on any invalid input it
+    # exits non-zero and writes no file, so the shard is simply absent (and the
+    # aggregate job reports SKIPPED with the shard name) instead of contributing
+    # a silently short profile.
     result = subprocess.run(
-        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=warn"]
+        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=any"]
         + profraw_files
         + ["-o", final_file],
         capture_output=True,
         text=True,
     )
-
-    # Check for corrupted files in stderr
-    corrupted_count = result.stderr.count(
-        "invalid instrumentation profile"
-    ) + result.stderr.count("file header is corrupt")
-    if corrupted_count > 0:
-        print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)
-        # Extract and display corrupted filenames from stderr
-        corrupted_files = set()
-        for line in result.stderr.split("\n"):
-            if (
-                "invalid instrumentation profile" in line
-                or "file header is corrupt" in line
-                or "error:" in line.lower()
-            ):
-                print(f"    {line.strip()}", flush=True)
-                # Extract filename from error message (format: "error: file.profraw: ..." or "warning: file.profraw: ...")
-                parts = line.split(":")
-                if len(parts) >= 2:
-                    potential_file = parts[1].strip()
-                    if potential_file.endswith(".profraw"):
-                        corrupted_files.add(potential_file)
-        if corrupted_files:
-            print(f"  Corrupted files: {', '.join(corrupted_files)}", flush=True)
 
     if result.returncode == 0:
         print(f"Successfully created final coverage file: {final_file}", flush=True)
@@ -1077,7 +1225,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ),
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
+        # %c enables continuous mode: the counters are memory-mapped into the
+        # file and updated as the code runs, so the file is structurally valid
+        # at every instant. Without it the profile is written only at process
+        # exit, and a SIGKILL inside that multi-second write left a half-written
+        # file whose header claims a bogus size - llvm-profdata then aborts with
+        # "LLVM ERROR: out of memory" trying to honour it (observed repeatedly
+        # on this shard family; see LLVM issue #50970). Requires the coverage
+        # build to compile with -mllvm -runtime-counter-relocation.
+        test_env["LLVM_PROFILE_FILE"] = "it-%c%4m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -1192,7 +1348,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
-    if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
+    # Under LLVM coverage the sequential phase runs regardless of how many
+    # parallel tests failed: the coverage shard exists to execute code, and
+    # dropping the phase would silently publish a profile that is short by
+    # every sequential test. Test failures gate the PR through the regular
+    # (non-coverage) jobs. An infrastructure error still skips the phase.
+    if sequential_test_modules and (fail_num < MAX_FAILS_BEFORE_DROP or is_llvm_coverage) and not has_error:
         for attempt in range(sequential_repeat_cnt):
             # Recompute remaining budget for flaky-check at every iteration and stop
             # scheduling new runs once it is exhausted (soft timeout).
@@ -1453,6 +1614,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         files=attached_files,
     )
 
+    # Snapshot the run's health before the blocks below launder `has_error`;
+    # a timed-out or errored run must publish no coverage profile.
+    coverage_run_complete = not timed_out and not has_error
+
     if is_llvm_coverage:
         assert (
             is_bugfix_validation is False
@@ -1590,7 +1755,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print("Collecting and merging LLVM coverage files...")
 
         # Merge all profraw files into final profdata file
-        merged_profdata = merge_profraw_files(llvm_profdata_cmd, job_params)
+        merged_profdata = merge_profraw_files(
+            llvm_profdata_cmd, run_complete=coverage_run_complete
+        )
 
         # Attach profdata file to the result report so it is uploaded
         # unconditionally (even when tests fail) and visible in the CI report.

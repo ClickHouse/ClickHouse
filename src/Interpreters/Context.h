@@ -157,7 +157,7 @@ class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
-class HypotheticalIndexStore;
+class HypotheticalObjectStore;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -373,6 +373,15 @@ protected:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<std::vector<UUID>> external_roles;
+    /// If not null, the access rights are limited to the intersection with these elements.
+    /// This comes from the GRANTS clause of the authentication method the user logged in with.
+    std::shared_ptr<const AccessRightsElements> authentication_grants;
+    /// Expiry (VALID UNTIL) of the authentication method the user logged in with, 0 if none.
+    /// Carried alongside `authentication_grants` so deferred-execution paths (asynchronous insert
+    /// flush, `QueryRunner` invoker jobs) can fail closed if the credential has expired between
+    /// enqueue and execution; the synchronous path re-checks it per query in
+    /// `Session::makeQueryContextImpl` (via `Session::checkIfUserIsStillValid`) for every protocol.
+    time_t authentication_valid_until = 0;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -417,7 +426,7 @@ protected:
     String http_combined_filter;
 
     TemporaryTablesMapping external_tables_mapping;
-    mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
+    mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
     /// Query scalars
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
@@ -598,6 +607,9 @@ protected:
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
     /// this flag can only be set server-side and is safe to use for security-sensitive checks.
     bool is_ddl_or_on_cluster_internal = false;
+    /// Set for CREATE queries a Replicated database replays from a definition it already stored.
+    /// Such a definition describes existing state, so validation that may reject a new one must not run.
+    bool is_recovery_from_stored_metadata = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -900,8 +912,32 @@ public:
 
     /// Sets the current user, assuming they are already authenticated.
     /// WARNING: This function doesn't check the password!
-    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
+    /// `authentication_grants_` limits the access rights to the intersection with these elements
+    /// (it comes from the GRANTS clause of the authentication method the user logged in with);
+    /// it is reset if not specified, because it is a property of the authentication, not of the user.
+    /// `authentication_valid_until_` records the method's expiry (0 = none) for the same reason; it is
+    /// likewise reset if not specified, so switching the principal never keeps a stale expiry.
+    /// Callers that switch the principal within the SAME authenticated session (e.g. `EXECUTE AS`)
+    /// must read both limits back from the source context and pass them here, so the session cannot
+    /// escape its credential's limit by impersonating a less restricted principal.
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
     UserPtr getUser() const;
+
+    /// Limits the access rights to the intersection with the elements (or resets the limit if null).
+    /// See the GRANTS clause of the authentication methods in CREATE USER.
+    void setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_);
+
+    /// Returns the credential grant limit of the current session (null if the session is not limited).
+    /// Deferred executors that re-create a context for the same session (asynchronous insert flush,
+    /// the `QueryRunner` invoker) must carry this over, otherwise a limited credential would regain
+    /// full rights when its work is replayed under a freshly-built context.
+    std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
+
+    /// Records the expiry (VALID UNTIL) of the authentication method used to log in (0 = no expiry).
+    /// Like `authentication_grants`, deferred executors carry this over so a credential's queued work
+    /// can be failed closed if the credential has expired before the deferred job runs.
+    void setAuthenticationValidUntil(time_t authentication_valid_until_);
+    time_t getAuthenticationValidUntil() const;
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;
@@ -911,6 +947,11 @@ public:
     void setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants = true);
     void setCurrentRolesDefault();
     std::vector<UUID> getCurrentRoles() const;
+    /// The external (pushed) roles received from another node over the interserver protocol.
+    /// Deferred executors that re-create a context for the same session (asynchronous insert flush,
+    /// the `QueryRunner` invoker) must carry these over and re-apply them via `setUser`, otherwise a
+    /// role that exists only as an external role fails revalidation with `SET_NON_GRANTED_ROLE`.
+    std::vector<UUID> getExternalRoles() const;
     std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
@@ -1020,6 +1061,7 @@ public:
     void increaseDistributedDepth();
     const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
     OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
+    void setClientTraceContext(const OpenTelemetry::TracingContext & trace_context);
 
     enum StorageNamespace
     {
@@ -1046,7 +1088,7 @@ public:
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
-    HypotheticalIndexStore & getHypotheticalIndexStore() const;
+    HypotheticalObjectStore & getHypotheticalObjectStore() const;
 
     Scalars getScalars() const;
     Block getScalar(const String & name) const;
@@ -1223,6 +1265,7 @@ public:
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
@@ -1353,6 +1396,20 @@ public:
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     bool getMessageQueueDisableInsertion() const;
+
+    /// The server-level distributed cache switches. They live in `shared`, which is common to every context
+    /// (including the background and buffer contexts created once at startup), so a config reload is observed
+    /// by background operations as well. A query may deviate from them with the `force_*` settings.
+    bool getReadThroughDistributedCache() const;
+    void setReadThroughDistributedCache(bool read_through_distributed_cache) const;
+
+    bool getWriteThroughDistributedCache() const;
+    void setWriteThroughDistributedCache(bool write_through_distributed_cache) const;
+
+    /// The switches with this context's `force_*` setting applied. The global context ignores that setting:
+    /// it is the startup snapshot serving operations without a query context, which follow the server switch.
+    bool resolveReadThroughDistributedCache() const;
+    bool resolveWriteThroughDistributedCache() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1822,6 +1879,9 @@ public:
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
 
+    bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
+    void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
+
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
 
@@ -2025,6 +2085,10 @@ private:
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 
