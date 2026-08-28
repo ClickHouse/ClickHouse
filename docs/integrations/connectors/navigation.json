@@ -102,7 +102,6 @@
       "expanded": true,
       "group": "Data ingestion",
       "pages": [
-        "integrations/connectors/data-ingestion/index",
         "integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
