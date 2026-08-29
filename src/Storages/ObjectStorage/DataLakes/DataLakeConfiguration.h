@@ -198,6 +198,14 @@ public:
         return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
     }
 
+    void check(ContextPtr context) override
+    {
+        if (ready_object_storage)
+            StorageObjectStorageConfiguration::check(context);
+        else
+            BaseStorageConfiguration::check(context);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         assertInitialized();
