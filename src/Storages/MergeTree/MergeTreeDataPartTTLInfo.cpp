@@ -66,6 +66,27 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
 }
 
 
+void MergeTreeDataPartTTLInfos::recalculatePartMinMaxTTL()
+{
+    /// The same families, treated the same way, as `update` above: `recompression_ttl` and
+    /// `moves_ttl` do not feed these bounds, and a finished GROUP BY entry still contributes its
+    /// range. Keep the two in step.
+    part_min_ttl = 0;
+    part_max_ttl = 0;
+
+    for (const auto & [name, ttl_info] : columns_ttl)
+        updatePartMinMaxTTL(ttl_info);
+
+    for (const auto & [name, ttl_info] : rows_where_ttl)
+        updatePartMinMaxTTL(ttl_info);
+
+    for (const auto & [name, ttl_info] : group_by_ttl)
+        updatePartMinMaxTTL({ .min = ttl_info.min, .max = ttl_info.max, .ttl_finished = false });
+
+    updatePartMinMaxTTL(table_ttl);
+}
+
+
 void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 {
     String json_str;
