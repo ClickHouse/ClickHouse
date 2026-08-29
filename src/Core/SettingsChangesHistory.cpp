@@ -89,7 +89,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
             {"throw_on_hive_partitioning_resolution_failure", false, false, "New setting to fail the query when Hive-style partitioning detection for an object storage table cannot list the storage. Disabled here to keep the pre-existing behavior of running without the Hive partition columns, and enabled by default from 26.8."},
+            {"statistics_max_set_size_for_exact_selectivity_estimation", 0, 10000, "New setting to bound the cost of estimating the selectivity of `IN` with a large set: above the limit the estimator uses the size of the set and its bounding range instead of the exact ranges. Before 26.8 the estimation was uncapped, so the previous value is 0 (no limit) and `compatibility` with an earlier version restores the exact ranges for sets of any size."},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
