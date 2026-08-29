@@ -1,5 +1,6 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -93,8 +94,20 @@ bool statisticsSupportsPartPruning(const ColumnStatisticsDescription & stats_des
     return false;
 }
 
+/// For `Nullable(T)` where `T` owns a `null` subcolumn of its own (e.g. `Nullable(JSON)`,
+/// where `json.null` is the nested JSON path of type `Dynamic`), `<col>.null` resolves to
+/// that real subcolumn instead of the `Nullable` null-map. Mirrors
+/// `nestedTypeHasNullSubcolumn` in `FunctionToSubcolumnsPass`.
+bool nestedTypeHasNullSubcolumn(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        return nullable_type->getNestedType()->hasSubcolumn("null");
+    return false;
+}
+
 /// Collect names of `.null` subcolumns whose parent column has `Basic` statistics and a
 /// nullable type, so that bare boolean inputs on them can be rewritten to comparisons.
+/// Columns where `.null` resolves to a real subcolumn are excluded.
 NameSet collectNullSubcolumnsToNormalize(const StorageMetadataPtr & metadata)
 {
     NameSet result;
@@ -103,7 +116,8 @@ NameSet collectNullSubcolumnsToNormalize(const StorageMetadataPtr & metadata)
     for (const auto & col : metadata->getColumns())
     {
         if (col.statistics.types_to_desc.contains(StatisticsType::Basic)
-            && isNullableOrLowCardinalityNullable(col.type))
+            && isNullableOrLowCardinalityNullable(col.type)
+            && !nestedTypeHasNullSubcolumn(col.type))
             result.insert(col.name + ".null");
     }
     return result;
@@ -111,7 +125,9 @@ NameSet collectNullSubcolumnsToNormalize(const StorageMetadataPtr & metadata)
 
 /// If `name` is a `<parent>.null` subcolumn of a nullable column with `Basic` statistics,
 /// return the parent column name. A physical column literally named `foo.null` is never
-/// treated as a virtual key: the physical-column check wins.
+/// treated as a virtual key: the physical-column check wins. Neither is a parent whose
+/// nested type owns a `null` subcolumn (e.g. `Nullable(JSON)`), where `<parent>.null` is
+/// that real subcolumn, not the null-map.
 std::optional<String> tryResolveVirtualKeyParent(const StorageMetadataPtr & metadata, const String & name)
 {
     if (!name.ends_with(".null"))
@@ -123,7 +139,8 @@ std::optional<String> tryResolveVirtualKeyParent(const StorageMetadataPtr & meta
     if (const auto * parent_col = columns.tryGet(parent))
     {
         if (parent_col->statistics.types_to_desc.contains(StatisticsType::Basic)
-            && isNullableOrLowCardinalityNullable(parent_col->type))
+            && isNullableOrLowCardinalityNullable(parent_col->type)
+            && !nestedTypeHasNullSubcolumn(parent_col->type))
             return parent;
     }
     return std::nullopt;
