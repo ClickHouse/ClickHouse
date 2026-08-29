@@ -8845,6 +8845,7 @@ Allows using statistics to optimize queries
 Allows defining columns with [statistics](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) and [manipulate statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
 )", 0, allow_experimental_statistics) \
     DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", 0) \
+    DECLARE(UInt64, statistics_cache_max_entries, 1024, R"(Maximal number of merged part statistics the statistics cache of one query keeps. Reads beyond the limit load statistics as if `use_statistics_cache` were disabled, which bounds how much a query holds when its reads never share statistics. 0 disables the cache.)", 0) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.

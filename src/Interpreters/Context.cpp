@@ -117,6 +117,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryStatisticsCache.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/HypotheticalObjectStore.h>
@@ -7884,6 +7885,18 @@ QueryMetadataCachePtr Context::getQueryMetadataCache() const
 void Context::setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_)
 {
     query_metadata_cache = query_metadata_cache_;
+}
+
+QueryStatisticsCachePtr Context::tryGetQueryStatisticsCache() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+
+    auto owner = getQueryContext();
+    std::lock_guard lock(owner->query_statistics_cache_mutex);
+    if (!owner->query_statistics_cache)
+        owner->query_statistics_cache = std::make_shared<QueryStatisticsCache>();
+    return owner->query_statistics_cache;
 }
 
 bool Context::hasQueryParameters() const

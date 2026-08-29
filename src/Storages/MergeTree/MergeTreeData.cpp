@@ -76,6 +76,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/QueryStatisticsCache.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -263,6 +264,7 @@ namespace Setting
     extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
+    extern const SettingsUInt64 statistics_cache_max_entries;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_skip_indexes;
@@ -937,19 +939,52 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (cached && !cached->isStale(parts))
         return cached;
 
-    LOG_DEBUG(log, "Loading statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
-    for (const auto & part : parts)
+    /// Part sets the cache above cannot serve - pruned ones, and any set until a refresh publishes -
+    /// go through the per-query cache instead.
+    const size_t query_cache_max_entries = local_context->getSettingsRef()[Setting::statistics_cache_max_entries];
+    QueryStatisticsCachePtr query_cache;
+    QueryStatisticsCache::Key key;
+    if (local_context->getSettingsRef()[Setting::use_statistics_cache] && query_cache_max_entries > 0)
+        query_cache = local_context->tryGetQueryStatisticsCache();
+
+    if (query_cache)
     {
-        auto parts_lock = readLockParts();
-        auto stats = part.data_part->loadStatistics(required_columns);
-        estimator_builder.markDataPart(part.data_part);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
+        key.storage = this;
+        key.part_names.reserve(parts.size());
+        for (const auto & part : parts)
+            key.part_names.push_back(part.data_part->name);
+        /// Canonical set form: `loadStatistics` reads the names as a set, so two callers naming the
+        /// same columns in a different order ask for the same statistics.
+        key.required_columns = QueryStatisticsCache::Key::makeRequiredColumns(required_columns);
+
+        if (auto payload = query_cache->get(key))
+            return *payload ? std::make_shared<ConditionSelectivityEstimator>(*payload, local_context) : nullptr;
     }
 
-    return estimator_builder.getEstimator();
+    LOG_DEBUG(log, "Loading statistics");
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
+        for (const auto & part : parts)
+        {
+            auto parts_lock = readLockParts();
+            auto stats = part.data_part->loadStatistics(required_columns);
+            estimator_builder.markDataPart(part.data_part);
+            for (const auto & [column_name, stat] : stats)
+                estimator_builder.addStatistics(column_name, stat);
+        }
+    }
+
+    /// Stored immutable, and never handed back to a builder: the merge above aliases the first
+    /// part's statistics object and then mutates it in place for the remaining parts, so merging
+    /// into a payload a second time would double-count rows and sketches.
+    auto payload = estimator_builder.getPayload();
+    if (query_cache)
+        query_cache->set(std::move(key), payload, query_cache_max_entries);
+
+    /// Each caller gets its own estimator: estimation reads settings through the context it is
+    /// bound to, so a shared one would answer with whichever context built it.
+    return payload ? std::make_shared<ConditionSelectivityEstimator>(payload, local_context) : nullptr;
 }
 
 bool MergeTreeData::supportsFinal() const

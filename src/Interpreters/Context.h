@@ -317,6 +317,9 @@ class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
+class QueryStatisticsCache;
+using QueryStatisticsCachePtr = std::shared_ptr<QueryStatisticsCache>;
+
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
@@ -719,6 +722,11 @@ protected:
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
+
+    /// Owned by the query context, so it dies with the query. Created on first use by whichever
+    /// caller reuses statistics; its existence is not conditional on any setting.
+    mutable QueryStatisticsCachePtr query_statistics_cache;
+    mutable std::mutex query_statistics_cache_mutex;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -1936,6 +1944,9 @@ public:
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
     QueryMetadataCachePtr getQueryMetadataCache() const;
     void setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_);
+
+    /// Returns null when there is no query context to own the cache.
+    QueryStatisticsCachePtr tryGetQueryStatisticsCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
