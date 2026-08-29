@@ -1,0 +1,6 @@
+select_multiplexed: 2
+select_hedged: 2
+dialect_on_shard_multiplexed: clickhouse
+dialect_on_shard_hedged: clickhouse
+insert_remote: OK
+count_after_insert: 2

@@ -206,8 +206,10 @@ void HedgedConnections::sendQuery(
         modified_settings.markSettingsChangedByCompatibilityAsUnchanged();
 
         /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
+        /// The override must stay `changed`, otherwise `Connection::sendQuery` - which serializes only
+        /// changed settings - drops it and the shard re-parses the already rewritten ClickHouse-SQL under
+        /// whatever `dialect` its own user or profile defaults to.
         modified_settings[Setting::dialect] = Dialect::clickhouse;
-        modified_settings[Setting::dialect].changed = false;
 
         modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
             modified_settings[Setting::interactive_delay],
