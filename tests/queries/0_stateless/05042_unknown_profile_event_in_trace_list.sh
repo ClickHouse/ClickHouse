@@ -13,11 +13,11 @@ echo "$error" | grep -qF 'DiskAzureCommitBlockList' && echo 'the suggestions con
 echo "$error" | grep -qF 'out_of_range' && echo 'FAIL: std::out_of_range leaked into the message'
 
 # Spaces around the names and a trailing comma are allowed, and only the named events are traced.
-query_id_listed="listed-$CLICKHOUSE_DATABASE"
+query_id_listed="listed-$CLICKHOUSE_DATABASE-$RANDOM$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$query_id_listed" --trace_profile_events 1 --trace_profile_events_list ' Query, SelectQuery, ' --query "SELECT 2 FORMAT Null"
 
 # A list of only separators and spaces means "trace everything", exactly as an empty list does.
-query_id_normalized_empty="normalized-empty-$CLICKHOUSE_DATABASE"
+query_id_normalized_empty="normalized-empty-$CLICKHOUSE_DATABASE-$RANDOM$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$query_id_normalized_empty" --trace_profile_events 1 --trace_profile_events_list ' , ' --query "SELECT 3 FORMAT Null"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS trace_log"
