@@ -1966,7 +1966,7 @@ bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
 
         /// Checked unconditionally, like `selectPartsToRead` does: a condition that is useless before
         /// substitution can still be decisive once specialized for this part's partition value.
-        if (!minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (!minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             return true;
     }
 
@@ -1983,7 +1983,7 @@ bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(
             filter_dag, std::move(key_condition_factory), metadata_snapshot, context, skip_constant_folding);
 
-        const auto & key_condition = key_condition_template->generateForPartition(part->partition);
+        const auto & key_condition = key_condition_template->generateForPart(part);
 
         if (key_condition.alwaysFalse())
             return true;
