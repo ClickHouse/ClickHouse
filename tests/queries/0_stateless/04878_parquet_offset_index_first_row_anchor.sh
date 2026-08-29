@@ -181,6 +181,6 @@ echo "${BAD_TYPE_ERR}" | grep -oF "Page doesn't contain requested row" | head -n
 ${CLICKHOUSE_LOCAL} -q "SELECT if(a[1] = id AND a[2] = id * 10, 'ok', 'wrong') FROM file('${GOOD_INTERIOR}', Parquet) WHERE id = ${MOVED_ROW}"
 BAD_INTERIOR_ERR=$(${CLICKHOUSE_LOCAL} -q "SELECT id, a FROM file('${BAD_INTERIOR}', Parquet) WHERE id = ${MOVED_ROW}" 2>&1)
 echo "${BAD_INTERIOR_ERR}" | grep -oF "Code: 117" | head -n 1
-echo "${BAD_INTERIOR_ERR}" | grep -oF "Number of rows in page doesn't match offset index" | head -n 1
+echo "${BAD_INTERIOR_ERR}" | grep -oF "doesn't match offset index: page has" | head -n 1
 
 rm -f "${GOOD_FLAT}" "${BAD_FLAT}" "${GOOD_ARR}" "${BAD_ARR}" "${BAD_TYPE}" "${GOOD_INTERIOR}" "${BAD_INTERIOR}"

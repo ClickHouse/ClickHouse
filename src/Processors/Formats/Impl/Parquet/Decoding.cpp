@@ -130,6 +130,10 @@ struct BitPackedRLEDecoder : public PageDecoder
     template <bool skip, bool count_zeros = false>
     void skipOrDecode(size_t num_values, T * out, size_t * num_zeros = nullptr)
     {
+        /// The skip path below advances `bit_idx` past a bit-packed run without looking at the
+        /// values, so it can't count zeros. Counting requires decoding.
+        static_assert(!(skip && count_zeros));
+
         if (bit_width == 0)
         {
             /// bit_width == 0 means all values are 0.
