@@ -120,7 +120,11 @@ was written for proves nothing about the others; a check with no test is a **Maj
 ### Sibling surfaces
 
 Surfaces of one family are written from each other's template, so a defect in one is usually in all
-of them. Grep the family, say which ones you checked, and report the siblings that share the defect.
+of them. Enumerate the family from the **registrations** — `factory.registerFunction` and
+`registerAlias` for table functions, the equivalent registry elsewhere — rather than from the files
+or class names, since one class can be registered under several names with a constructor flag that
+changes how it resolves its target. Then say which ones you checked, and report the siblings that
+share the defect.
 Do not assume the family shares one carrier: locate the earliest resolution per function, because
 the entrypoint that leaks differs even between siblings, and a sweep that looks at
 `getActualTableStructure` alone will clear the ones that leak somewhere else.
@@ -134,12 +138,23 @@ read while every function resolves its source table before that, in one of three
   (`TableFunctionMergeTreeProjection`, in `TableFunctionProjection.cpp`), and
   `mergeTreeCodecBlockCounts`. Each throws before returning: `expected MergeTree table, got: {}`,
   `There is no projection {} in table {}`.
-- `executeImpl` — `mergeTreeTextIndex` and `mergeTreeAnalyzeIndexes`, whose
-  `getActualTableStructure` is a fixed column list that touches no table. `mergeTreeTextIndex`
-  throws `Got index '{}' of type '{}', expected 'text'` there; for `mergeTreeAnalyzeIndexes` the
-  disclosure is one level deeper still, in the `StorageMergeTreeAnalyzeIndexes` **constructor**
+- `executeImpl` — `mergeTreeTextIndex`, and both `mergeTreeAnalyzeIndexes` and
+  `mergeTreeAnalyzeIndexesUUID`, whose `getActualTableStructure` is a fixed column list that touches
+  no table. `mergeTreeTextIndex` throws `Got index '{}' of type '{}', expected 'text'` there; for the
+  analyze-indexes pair the disclosure is one level deeper still, in the
+  `StorageMergeTreeAnalyzeIndexes` **constructor**
   (`Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}`), which `executeImpl` calls.
   A storage constructor invoked while building the surface is an entrypoint too.
+
+  The two analyze-indexes names are one class, `TableFunctionMergeTreeAnalyzeIndexes`, registered
+  twice with a `resolve_by_uuid` constructor flag. That is worth its own note: **enumerate a family
+  from the registrations, not from the files or the class names**, because one class can expose
+  several functions and reading the file suggests one surface. The `UUID` variant also addresses its
+  table by UUID through `DatabaseCatalog::tryGetByUUID`, so it never calls `resolveStorageID` and
+  there is no database or table name in its arguments at all — a guard phrased as "check `SELECT` on
+  the database and table the user named" has nothing to read, and must work from the resolved
+  storage's own `StorageID` instead. Both are registered `allow_readonly`, so the
+  `CREATE_TEMPORARY_TABLE` check in `execute` does not fire for them either.
 - `parseArguments` — `timeSeriesSamples` / `timeSeriesMetrics` / `timeSeriesTags`
   (`TableFunctionTimeSeriesTarget`), which calls `getTargetTable` to store the target engine name,
   so the leak precedes `getActualTableStructure` even though that derives columns from the source
