@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskLocal.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 
 namespace DB
 {
@@ -55,9 +56,11 @@ void loadDiskLocalConfig(const String & name,
         if (tmp_path.empty())
             tmp_path = context->getPath();
 
-        // Create tmp disk for getting total disk space.
+        // Read the total space straight from the filesystem: a throwaway DiskLocal would run every
+        // real disk's construction-time checks under a fake disk name.
+        struct statvfs stat = getStatVFS(tmp_path);
         keep_free_space_bytes
-            = static_cast<UInt64>(static_cast<double>(*DiskLocal("tmp", tmp_path, 0, config, config_prefix).getTotalSpace()) * ratio);
+            = static_cast<UInt64>(static_cast<double>(stat.f_blocks * stat.f_frsize) * ratio);
     }
 }
 

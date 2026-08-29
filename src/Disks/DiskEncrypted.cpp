@@ -333,10 +333,10 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
 {
     delegate->createDirectories(disk_path);
     /// The encrypted root is its own subpath of the wrapped disk, so a nested mount there is not
-    /// covered by the wrapped disk's own check (see #18794). Probe it only when it really is a
-    /// local directory - a wrapped object storage can hand back a remote prefix instead.
-    std::error_code ec;
-    if (std::filesystem::is_directory(disk_absolute_path, ec))
+    /// covered by the wrapped disk's own check (see #18794). Only a local wrapped disk gives a
+    /// real host path: an object storage's getPath() can be a bare remote key prefix, which may
+    /// even coincide with a directory under the server's working directory.
+    if (!delegate->isRemote())
         warnIfAffectedByExt4CorruptionKernelBug(disk_absolute_path, fmt::format("the path of encrypted disk '{}'", encrypted_name));
 }
 
@@ -350,10 +350,10 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
 {
     delegate->createDirectories(disk_path);
     /// The encrypted root is its own subpath of the wrapped disk, so a nested mount there is not
-    /// covered by the wrapped disk's own check (see #18794). Probe it only when it really is a
-    /// local directory - a wrapped object storage can hand back a remote prefix instead.
-    std::error_code ec;
-    if (std::filesystem::is_directory(disk_absolute_path, ec))
+    /// covered by the wrapped disk's own check (see #18794). Only a local wrapped disk gives a
+    /// real host path: an object storage's getPath() can be a bare remote key prefix, which may
+    /// even coincide with a directory under the server's working directory.
+    if (!delegate->isRemote())
         warnIfAffectedByExt4CorruptionKernelBug(disk_absolute_path, fmt::format("the path of encrypted disk '{}'", encrypted_name));
 }
 
