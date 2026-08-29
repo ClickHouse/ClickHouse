@@ -114,6 +114,13 @@ private:
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+
+    /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
+    /// the share of rows inside the set's bounding range, capped by the share of distinct values the set
+    /// can possibly cover. Costs one pass for the bounds and a single statistics probe, where turning the
+    /// set into ranges costs a `Field` per element, a sort and one probe per element.
+    Selectivity estimateSelectivityFromSetSize(
+        const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
