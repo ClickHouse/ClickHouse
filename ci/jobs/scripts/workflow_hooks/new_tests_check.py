@@ -141,16 +141,17 @@ def describe_per_arch_validation(states):
         )
     lines = ["Bugfix validation as seen by this check:"]
     for sub in states:
-        lines.append(
-            f"  {sub.name}: {sub.status}" + (f" ({sub.info})" if sub.info else "")
-        )
+        reason = " | ".join(part.strip() for part in sub.info.splitlines() if part.strip())
+        lines.append(f"  {sub.name}: {sub.status}" + (f" ({reason})" if reason else ""))
     return "\n".join(lines)
 
 
 def any_bugfix_validation_passed(states=None):
     """Return True iff at least one per-arch Bugfix Validation job reported a
-    success status: OK or XFAIL, i.e. `Result.is_success` rather than `Result.is_ok`,
-    which would also accept `SKIPPED`.
+    success status: `OK` or `XFAIL`, i.e. `Result.is_success` rather than `Result.is_ok`,
+    which would also accept `SKIPPED`. A job that `filter_job` skipped because the
+    corresponding test type wasn't changed has no opinion on whether the bug was
+    validated, so `SKIPPED` cannot count as a pass.
     """
     if states is None:
         states = per_arch_validation_states()
