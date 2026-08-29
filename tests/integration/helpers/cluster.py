@@ -42,7 +42,6 @@ try:
     import pymongo
     import pymysql
     import nats
-    from filelock import FileLock, Timeout
     from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
@@ -53,6 +52,7 @@ except Exception as e:
 
 import docker
 from dict2xml import dict2xml
+from filelock import FileLock, Timeout
 from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
