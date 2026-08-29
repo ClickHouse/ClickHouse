@@ -469,6 +469,7 @@ public:
 
     NameSet invalidated_system_columns;
     bool isSystemColumnInvalidated(const String & column_name) const;
+    static NameSet getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info);
     static void writeInvalidatedSystemColumns(WriteBuffer & out, const NameSet & columns);
     static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
     static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
