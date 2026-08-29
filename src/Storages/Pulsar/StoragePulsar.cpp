@@ -169,7 +169,9 @@ namespace
 
 /// The engine opens outbound connections to the brokers listed in `pulsar_service_url`, so the
 /// address must pass the server's outbound allowlist (`remote_url_allow_hosts`), like every other
-/// remote surface (`RabbitMQ`, `ArrowFlight`, ...). Called before the client is constructed.
+/// remote surface (`RabbitMQ`, `ArrowFlight`, ...). Called before the client is constructed, and
+/// again from the client's connection validator for every physical broker address the client
+/// learns from lookup responses (see `createClientConfiguration`).
 void checkServiceURLIsAllowed(const String & service_url, const ContextPtr & context)
 {
     /// A service URL is `<scheme>://host[:port]`, optionally listing several brokers as
@@ -223,6 +225,32 @@ pulsar::ClientConfiguration createClientConfiguration()
     /// Route the client library logs into the server logging (`setLogger` takes ownership).
     /// The default logger writes to stdout from the client's internal threads without synchronization.
     config.setLogger(new PulsarLoggerFactory());
+    /// The service URL is checked against `remote_url_allow_hosts` when the table is created, but
+    /// the client also follows lookup responses and dials the returned broker addresses directly,
+    /// so a redirecting broker could otherwise steer the server to a host outside the allowlist.
+    /// Validate every physical address the client is about to open a connection to. The callback
+    /// runs on the client's executor threads and must not throw through the client's frames, so
+    /// a rejection is logged here and reported to the client as a failed connection (fail-close,
+    /// including when the global context is already gone during shutdown).
+    config.setConnectionValidator(
+        [](const std::string & physical_address) -> bool
+        {
+            try
+            {
+                auto global_context = Context::getGlobalContextInstance();
+                if (!global_context)
+                    return false;
+                checkServiceURLIsAllowed(physical_address, global_context);
+                return true;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    getLogger("StoragePulsar"),
+                    fmt::format("Rejected a connection to the Pulsar broker at '{}'", physical_address));
+                return false;
+            }
+        });
     return config;
 }
 
@@ -910,7 +938,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Required parameters:
 
-- `pulsar_service_url` – The Pulsar binary-protocol broker URL, for example, `pulsar://localhost:6650` or `pulsar+ssl://localhost:6651`. Several brokers can be listed as `pulsar://host1:6650,host2:6650`. Every listed host must be allowed by the [remote_url_allow_hosts](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) server setting, otherwise the table is not created and `UNACCEPTABLE_URL` is thrown.
+- `pulsar_service_url` – The Pulsar binary-protocol broker URL, for example, `pulsar://localhost:6650` or `pulsar+ssl://localhost:6651`. Several brokers can be listed as `pulsar://host1:6650,host2:6650`. Every listed host must be allowed by the [remote_url_allow_hosts](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) server setting, otherwise the table is not created and `UNACCEPTABLE_URL` is thrown. The allowlist also constrains every broker address the client later learns from lookup responses: a connection to a host outside the allowlist is rejected and logged.
 - `pulsar_group_name` – The subscription name. All consumers sharing the same group name belong to the same subscription.
 - `pulsar_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
 - `pulsar_topic_list` – A comma-separated list of Pulsar topics to consume from. Writing via `INSERT` is supported only when the list contains exactly one topic; an `INSERT` into a table with multiple topics throws `NOT_IMPLEMENTED`.

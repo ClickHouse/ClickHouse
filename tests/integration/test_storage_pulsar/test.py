@@ -892,3 +892,90 @@ def test_empty_messages_are_skipped(pulsar_cluster):
     # Delivery is at-least-once, so tolerate duplicate rows.
     wait_query_result("7\t7", "SELECT DISTINCT key, value FROM test.view")
 
+
+def test_remote_host_filter_applies_to_lookup_results(pulsar_cluster):
+    # The service URL is validated when the table is created, but the client
+    # also follows lookup responses and dials the returned broker addresses
+    # directly, so those physical addresses must pass `remote_url_allow_hosts`
+    # too - otherwise a redirecting broker could steer the server to a host
+    # outside the allowlist. Tighten the allowlist after the table is created
+    # and sever the connections: every reconnect goes through a fresh lookup,
+    # and its result (this very broker) is now disallowed.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(
+        pulsar_table(
+            "test.pulsar_reader",
+            "lookup_filter_topic",
+            "lookup_filter_group",
+            extra_settings=", pulsar_commit_on_select = 1",
+        )
+    )
+
+    def produce(message):
+        # Produce with the broker-local CLI client: the table engine's own
+        # producer would be cut off by the very filter under test.
+        subprocess.check_call(
+            [
+                "docker",
+                "exec",
+                pulsar_cluster.pulsar_docker_id,
+                "bin/pulsar-client",
+                "produce",
+                "lookup_filter_topic",
+                "-m",
+                message,
+            ]
+        )
+
+    def read_rows():
+        # While the connections are cut the pooled consumers can be dropped and
+        # recreated in the background, in which case a direct SELECT reports
+        # CANNOT_CONNECT_PULSAR instead of returning an empty set.
+        result, _ = instance.query_and_get_answer_with_error(
+            "SELECT key, value FROM test.pulsar_reader"
+        )
+        return result
+
+    def wait_row_seen(row, timeout):
+        seen = set()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and row not in seen:
+            for line in read_rows().splitlines():
+                seen.add(line.strip())
+            time.sleep(0.5)
+        assert row in seen
+
+    # Baseline: messages flow while the broker is allowed.
+    produce('{"key":1,"value":1}')
+    wait_row_seen("1\t1", 120)
+
+    allowed_config = """<clickhouse>
+    <remote_url_allow_hosts>
+        <host>pulsar1:6650</host>
+    </remote_url_allow_hosts>
+</clickhouse>"""
+    blocked_config = allowed_config.replace("pulsar1:6650", "some-other-host:6650")
+    config_path = "/etc/clickhouse-server/config.d/remote_hosts.xml"
+    try:
+        instance.replace_config(config_path, blocked_config)
+        instance.query("SYSTEM RELOAD CONFIG")
+        # The allowlist is checked per connection attempt, so the connections
+        # established while the broker was allowed keep working: sever them.
+        stop_pulsar(pulsar_cluster)
+        start_pulsar(pulsar_cluster)
+        instance.wait_for_log_line(
+            "Rejected a connection to the Pulsar broker", timeout=120
+        )
+        produce('{"key":2,"value":2}')
+        # The message must not reach the table while the broker is disallowed.
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            assert "2\t2" not in read_rows()
+            time.sleep(1)
+    finally:
+        instance.replace_config(config_path, allowed_config)
+        instance.query("SYSTEM RELOAD CONFIG")
+
+    # Once the allowlist permits the broker again, the client's reconnect
+    # attempts start passing the filter and consumption resumes.
+    wait_row_seen("2\t2", 240)
