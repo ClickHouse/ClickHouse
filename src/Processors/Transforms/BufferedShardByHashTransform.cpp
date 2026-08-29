@@ -113,15 +113,13 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     SharedHeader header,
     size_t num_shards_,
     ColumnNumbers key_columns_,
-    size_t max_queue_length_,
     size_t max_buffered_bytes_,
     std::shared_ptr<BufferedShardByHashBudget> budget_)
     : IProcessor(InputPorts{header}, OutputPorts{num_shards_, header})
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
-    , max_queue_length(max_queue_length_)
     , max_buffered_bytes(max_buffered_bytes_)
-    , budget_enabled(max_queue_length_ == 0 && max_buffered_bytes_ != 0)
+    , budget_enabled(max_buffered_bytes_ != 0)
     , budget(budget_ ? std::move(budget_) : std::make_shared<BufferedShardByHashBudget>())
     , output_queues(num_shards)
     , port_resident_charges(num_shards)
@@ -541,7 +539,6 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     /// Scan queues to decide what to do next.
     bool has_queued_chunks = false;         /// any shard has chunks waiting in its queue
     bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now (port is ready)
-    bool any_queue_at_capacity = false;      /// at least one shard's queue hit the back-pressure cap
     bool has_starving_ready_output = false;  /// at least one output wants data (canPush) but has nothing queued
 
     auto queued_output_it = outputs.begin();
@@ -552,8 +549,6 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
 
         const auto & queue = output_queues[shard];
         const bool can_push = queued_output_it->canPush();
-        if (max_queue_length != 0 && queue.size() >= max_queue_length)
-            any_queue_at_capacity = true;
         if (!queue.empty())
         {
             has_queued_chunks = true;
@@ -607,24 +602,15 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     if (has_pushable_queued_chunks)
         return Status::Ready;
 
-    /// Nothing can be pushed right now. Decide whether to pull a new input chunk.
-    ///   - Demand-driven mode (max_queue_length == 0, used when a downstream *sorted* merge consumes the
-    ///     shards selectively): pull only to feed an output that is ready AND starving (empty queue). This
-    ///     never stalls the shared scatter on a slow lane — a slow lane just keeps its data buffered — so
-    ///     there is no cross-lane deadlock, while a lane that is genuinely waiting for its next rows always
-    ///     gets fed. The read-ahead this buffers is capped by max_buffered_bytes (shared across all scatters
-    ///     of the stage): once the cap is hit, the next pull throws. Refusing to pull instead could deadlock
-    ///     (a merge may need this scatter's EOF to make progress, and reaching EOF requires buffering
-    ///     everything in between), so with a selective consumer the only bounded-memory behavior that cannot
-    ///     hang is to fail the query.
-    ///   - Bounded mode: classic back-pressure — pull unless some queue is at capacity. The cap yields
-    ///     when the sole demand is a starving output with an empty queue: nothing is drainable anywhere
-    ///     (push-priority above already returned Ready otherwise), and an empty demanded queue can only ever
-    ///     be filled from input, so honouring the cap would deadlock the pipeline. See `MAX_QUEUE_LENGTH` for
-    ///     why yielding is the only non-deadlocking option there.
-    const bool may_pull = (max_queue_length == 0)
-        ? has_starving_ready_output
-        : (!any_queue_at_capacity || has_starving_ready_output);
+    /// Nothing can be pushed right now. Decide whether to pull a new input chunk: pull only to feed an
+    /// output that is ready AND starving (empty queue). This never stalls the shared scatter on a slow lane
+    /// — a slow lane just keeps its data buffered — so there is no cross-lane deadlock, while a lane that is
+    /// genuinely waiting for its next rows always gets fed. The read-ahead this buffers is capped by
+    /// max_buffered_bytes (shared across all scatters of the stage): once the cap is hit, the next pull
+    /// throws. Refusing to pull instead could deadlock (a merge may need this scatter's EOF to make progress,
+    /// and reaching EOF requires buffering everything in between), so with a selective consumer the only
+    /// bounded-memory behavior that cannot hang is to fail the query.
+    const bool may_pull = has_starving_ready_output;
     if (may_pull)
     {
         /// Short-circuit: if bytes actually buffered elsewhere in the stage already exceed the cap (a sibling

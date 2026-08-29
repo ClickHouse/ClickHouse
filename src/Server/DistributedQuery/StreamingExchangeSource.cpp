@@ -72,7 +72,7 @@ void StreamingExchangeSource::sendHello()
         .source_version = StreamingExchangeProtocol::PROTOCOL_VERSION,
         .query_id = query_id,
         .stream_name = stream_name,
-        .jwt_token = jwt_token,
+        .auth_token = auth_token,
     };
     source_hello.write(body);
     body.finalize();

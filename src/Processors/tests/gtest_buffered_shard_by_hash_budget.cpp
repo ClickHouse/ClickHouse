@@ -91,7 +91,7 @@ Int64 bufferedBytesAfterSplit(const SharedHeader & header, Columns columns, size
 
     /// Unbounded budget: this test measures the counter, it must not throw.
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+        header, num_shards, key_columns, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -139,7 +139,7 @@ PortResidencyOutcome portResidentThenRetainedThenReleasedBytes(
     auto budget = std::make_shared<BufferedShardByHashBudget>();
 
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+        header, num_shards, key_columns, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -192,9 +192,8 @@ BudgetedSplitOutcome splitOneChunkUnderBudget(
     const size_t num_rows = columns.at(0)->size();
     auto budget = std::make_shared<BufferedShardByHashBudget>();
 
-    /// Demand-driven mode (max_queue_length == 0) is the only mode that enforces max_buffered_bytes.
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, max_buffered_bytes, budget);
+        header, num_shards, key_columns, max_buffered_bytes, budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -252,9 +251,8 @@ SecondPullOutcome attemptSecondPull(size_t first_rows, size_t second_rows, size_
     auto header = std::make_shared<const Block>(std::move(header_block));
     auto budget = std::make_shared<BufferedShardByHashBudget>();
 
-    /// Demand-driven mode (max_queue_length == 0) is the only mode that enforces max_buffered_bytes.
     BufferedShardByHashTransform transform(
-        header, num_shards, ColumnNumbers{0}, /*max_queue_length_=*/ 0, max_buffered_bytes, budget);
+        header, num_shards, ColumnNumbers{0}, max_buffered_bytes, budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -318,7 +316,7 @@ Int64 twoBlocksResidentBytes(
 
     /// Unbounded budget: this test measures the counter, it must not throw.
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+        header, num_shards, key_columns, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -376,7 +374,7 @@ Int64 twoScattersSharingBudgetResidentBytes(
     {
         const size_t num_rows = columns.at(0)->size();
         auto transform = std::make_shared<BufferedShardByHashTransform>(
-            header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+            header, num_shards, key_columns, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
         auto source = std::make_unique<OutputPort>(header);
         connect(*source, transform->getInputs().front());
@@ -448,9 +446,8 @@ ConnectedScatter makeConnectedScatter(
     const std::shared_ptr<BufferedShardByHashBudget> & budget)
 {
     ConnectedScatter scatter;
-    /// Demand-driven mode (max_queue_length == 0) is the only mode that enforces max_buffered_bytes.
     scatter.transform = std::make_shared<BufferedShardByHashTransform>(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, max_buffered_bytes, budget);
+        header, num_shards, key_columns, max_buffered_bytes, budget);
 
     scatter.source = std::make_unique<OutputPort>(header);
     connect(*scatter.source, scatter.transform->getInputs().front());
@@ -685,7 +682,7 @@ TEST(BufferedShardByHashTransform, OwnedLowCardinalityDictionaryCountedOnAdmissi
 
     /// Unbounded budget: this test measures the counter, it must not throw.
     BufferedShardByHashTransform transform(
-        header, num_shards, ColumnNumbers{0}, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+        header, num_shards, ColumnNumbers{0}, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -1295,18 +1292,17 @@ struct NoBudgetOutcome
     bool finished = false;           /// The transform reached Status::Finished after the input was closed.
 };
 
-/// Drive one block through a transform that has NO byte budget to enforce - either the bounded-queue mode
-/// (`max_queue_length != 0`, what the sharded aggregator uses) or the demand-driven mode with the cap
-/// disabled (`max_buffered_bytes == 0`) - and report what it did to the shared budget state, how many rows it
-/// shuffled, and whether it terminated.
+/// Drive one block through a transform that has NO byte budget to enforce (`max_buffered_bytes == 0`, the cap
+/// explicitly disabled) and report what it did to the shared budget state, how many rows it shuffled, and
+/// whether it terminated.
 NoBudgetOutcome runWithoutByteBudget(
-    const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns, size_t max_queue_length)
+    const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns)
 {
     const size_t num_rows = columns.at(0)->size();
     auto budget = std::make_shared<BufferedShardByHashBudget>();
 
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, max_queue_length, /*max_buffered_bytes_=*/ 0, budget);
+        header, num_shards, key_columns, /*max_buffered_bytes_=*/ 0, budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -1358,12 +1354,9 @@ NoBudgetOutcome runWithoutByteBudget(
 
 /// The ownership accounting the buffer budget needs - a recursive walk of every pulled block and of every
 /// scattered column, plus per-chunk charge vectors and a shared hash table - must not run when there is no byte
-/// cap to enforce. The bounded-queue mode (`max_queue_length != 0`) is what `enable_sharding_aggregator` uses
-/// (`AggregatingStep::transformPipeline`), and it is itself a hot-path optimization: nothing there ever reads
-/// `total_buffered_bytes`, so paying two ownership walks and hash-table churn per input block would be a pure
-/// regression for queries that do not use `aggregation_in_order_shuffle` at all. The same holds for the
-/// demand-driven mode with `aggregation_in_order_shuffle_max_buffered_bytes = 0` (cap explicitly disabled).
-/// Skipping the accounting must not change what the transform shuffles, nor keep it from finishing (the drain
+/// cap to enforce, i.e. with `aggregation_in_order_shuffle_max_buffered_bytes = 0` (the cap explicitly
+/// disabled): nothing there ever reads `total_buffered_bytes`, so paying two ownership walks and hash-table
+/// churn per input block would be a pure regression. Skipping the accounting must not change what the transform shuffles, nor keep it from finishing (the drain
 /// at EOF is gated on the port-residency bookkeeping the accounting maintains).
 TEST(BufferedShardByHashTransform, NoOwnershipAccountingWithoutAByteBudget)
 {
@@ -1378,18 +1371,15 @@ TEST(BufferedShardByHashTransform, NoOwnershipAccountingWithoutAByteBudget)
 
     /// A `LowCardinality` payload: the one column whose accounting is most elaborate (a shared dictionary
     /// registered at any nesting depth), so any leftover charging would show up here.
-    for (size_t max_queue_length : {10UL, 0UL})
-    {
-        Columns columns{makeDistinctKeyColumn(num_rows), makeBigDictLowCardinalityColumn(num_rows, 500, 64)};
-        const auto outcome = runWithoutByteBudget(header, std::move(columns), num_shards, ColumnNumbers{0}, max_queue_length);
+    Columns columns{makeDistinctKeyColumn(num_rows), makeBigDictLowCardinalityColumn(num_rows, 500, 64)};
+    const auto outcome = runWithoutByteBudget(header, std::move(columns), num_shards, ColumnNumbers{0});
 
-        EXPECT_EQ(outcome.peak_buffered_bytes, 0) << "max_queue_length = " << max_queue_length;
-        EXPECT_EQ(outcome.peak_registered_objects, 0u) << "max_queue_length = " << max_queue_length;
-        EXPECT_EQ(outcome.registered_scatters, 0u) << "max_queue_length = " << max_queue_length;
-        /// The shuffle itself is unaffected: every row is handed downstream, and the transform terminates.
-        EXPECT_EQ(outcome.rows_pushed, num_rows) << "max_queue_length = " << max_queue_length;
-        EXPECT_TRUE(outcome.finished) << "max_queue_length = " << max_queue_length;
-    }
+    EXPECT_EQ(outcome.peak_buffered_bytes, 0);
+    EXPECT_EQ(outcome.peak_registered_objects, 0u);
+    EXPECT_EQ(outcome.registered_scatters, 0u);
+    /// The shuffle itself is unaffected: every row is handed downstream, and the transform terminates.
+    EXPECT_EQ(outcome.rows_pushed, num_rows);
+    EXPECT_TRUE(outcome.finished);
 }
 
 /// A downstream `LimitTransform` closes every input it holds the moment it reaches its limit, and so does a
@@ -1424,7 +1414,7 @@ TEST(BufferedShardByHashTransform, ShardCopiesForFinishedOutputsAreFreed)
     auto budget = std::make_shared<BufferedShardByHashBudget>();
     /// Unbounded budget: this test observes residency, it must not throw.
     BufferedShardByHashTransform transform(
-        header, num_shards, ColumnNumbers{0}, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+        header, num_shards, ColumnNumbers{0}, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());

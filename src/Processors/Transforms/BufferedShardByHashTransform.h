@@ -104,11 +104,10 @@ struct BufferedShardByHashBudget
 class BufferedShardByHashTransform : public IProcessor
 {
 public:
-    /// `max_queue_length_` bounds each per-shard queue: once a queue hits it the transform stops pulling
-    /// new input (back-pressure). Pass 0 for queues without per-queue back-pressure (never stall on a full
-    /// queue) — required when a downstream *sorted* merge consumes the shards selectively, where
-    /// back-pressure could deadlock. In that mode, `max_buffered_bytes_` caps the total bytes queued across
-    /// all transforms sharing `budget_` (0 = no cap); exceeding the cap throws TOO_MANY_ROWS_OR_BYTES instead
+    /// The per-shard queues have no per-queue back-pressure: the transform never stalls on a full queue,
+    /// because the downstream *sorted* merge consumes the shards selectively (it waits for the smallest key),
+    /// so back-pressure could deadlock. `max_buffered_bytes_` caps the total bytes queued across all
+    /// transforms sharing `budget_` (0 = no cap); exceeding the cap throws TOO_MANY_ROWS_OR_BYTES instead
     /// of buffering without limit, because with a selective consumer the only alternatives to reading ahead
     /// are deadlock or spilling.
     ///
@@ -130,7 +129,6 @@ public:
         SharedHeader header,
         size_t num_shards_,
         ColumnNumbers key_columns_,
-        size_t max_queue_length_ = MAX_QUEUE_LENGTH,
         size_t max_buffered_bytes_ = 0,
         std::shared_ptr<BufferedShardByHashBudget> budget_ = nullptr);
 
@@ -143,22 +141,6 @@ public:
 
 private:
     void generateOutputChunks();
-
-    /// Default back-pressure threshold for the bounded mode (`max_queue_length != 0`). Pulling stops once
-    /// any queue reaches this length, unless a demanded output has an empty queue and nothing else is
-    /// drainable - then a queue can exceed it, bounded only by memory.
-    ///
-    /// That escape is only reachable under a consumer that activates our outputs one at a time,
-    /// `ConcatProcessor` being the one that produces it: its `prepare` calls `setNeeded` on a
-    /// single input and advances only once that input finishes, so every other shard's port
-    /// reports `canPush() == false` until then. Buffering the not-yet-demanded shards in full is
-    /// therefore inherent to that topology rather than something the escape introduces - a
-    /// producer feeding a `Concat` has to hold its later inputs' rows somewhere. Honouring the cap
-    /// instead deadlocks, because the demanded empty queue can only ever be filled from input.
-    /// Queued chunks are tracked memory, so overflow surfaces as a memory-limit exception rather
-    /// than the `Pipeline stuck` logical error the cap would cause. Making the cap a hard bound
-    /// needs an overflow/spill path for the over-cap shard.
-    static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
     /// A buffered shard chunk, carrying the physical buffers (by pointer) its own budget charge registered, so
     /// that charge is reversed exactly when this chunk - and no other - stops being buffered. Accounting is per
@@ -278,13 +260,10 @@ private:
 
     size_t num_shards;
     ColumnNumbers key_columns;
-    /// 0 means no per-queue back-pressure (never stall on a full queue).
-    size_t max_queue_length;
-    /// Total-bytes cap for max_queue_length == 0 mode; 0 means no cap.
+    /// Total-bytes cap on what the whole stage buffers; 0 means no cap.
     size_t max_buffered_bytes;
-    /// True only when there is a byte cap to enforce: the demand-driven mode (`max_queue_length == 0`, where a
-    /// selective downstream merge rules out back-pressure) with a non-zero `max_buffered_bytes`. When false -
-    /// the bounded-queue mode used by the sharded aggregator, and a demand-driven stage with the cap disabled -
+    /// True only when there is a byte cap to enforce (a non-zero `max_buffered_bytes`). When false -
+    /// a stage with the cap explicitly disabled -
     /// nothing ever consults `total_buffered_bytes`, so the transform does no ownership accounting whatsoever:
     /// it neither walks the pulled block nor the scattered columns, keeps no charges in `QueuedChunk` /
     /// `port_resident_charges`, does not register in `BufferedShardByHashBudget::scatters`, and never takes
@@ -308,8 +287,7 @@ private:
     /// it is split.
     std::vector<const void *> pending_input_touched;
 
-    /// Per-shard FIFO of chunks waiting to be pushed downstream. Soft-capped at `max_queue_length` when it
-    /// is nonzero (bounded mode); unbounded chunk-wise in demand-driven mode, where `max_buffered_bytes`
+    /// Per-shard FIFO of chunks waiting to be pushed downstream. Unbounded chunk-wise; `max_buffered_bytes`
     /// bounds the resident bytes instead.
     std::vector<std::deque<QueuedChunk>> output_queues;
 
