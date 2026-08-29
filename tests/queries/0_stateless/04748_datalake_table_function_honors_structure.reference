@@ -42,64 +42,6 @@ Code: 10
 1
 1
 5
--- iceberg: a retyped filter column does not prune manifest entries by the metadata type
-['0','1','10','11','12','13','2','3']
-[0,1,2,3]
--- iceberg: a retyped filter column does not prune row groups by the file type on an evolved file
-['10','11','12','13']
--- iceberg: a structure-bearing read does not keep the metadata sorting key
-0
-1
--- iceberg: a declared subset that omits a key column does not keep the metadata sorting key
-0
-1
--- iceberg: a nested sorting key is recognized as present when the declaration keeps its parent
-0
-0
-1
-1
--- iceberg cluster: a worker keeps the metadata sorting key when only the initiator injected a structure
-1
-0
-1
-1
--- iceberg: a declaration differing only in nullability still prunes manifest entries
-1
--- iceberg: a declaration differing only in low cardinality still prunes manifest entries
-1
--- iceberg: an undeclared read of a promoted column still prunes row groups
-1
--- iceberg: a declaration differing only in nullability still prunes row groups
-1
--- iceberg: a declaration differing only in low cardinality still prunes row groups
-1
--- paimon: a declaration differing only in nullability still prunes partitions
-1
--- paimon: a declaration differing only in low cardinality still prunes partitions
-1
--- paimon: retyping a column outside the partition keys still prunes partitions
-1
--- iceberg cluster: a worker keeps declared columns that the metadata does not have
-2	2	Nullable(String)
--- iceberg cluster: a DEFAULT declared in the structure is not honored, on either branch
--- iceberg cluster: a structure given as a server-constant expression is dispatched
-2	2
-2	2
-2
--- iceberg cluster: a declared type that reorders the key column is not ordered by the metadata key
-['10','2','9']
-[2,9,10]
--- iceberg: a retyped filter column is read as declared where equality deletes are applied
-92
-92
-92
-92
-2
-String	881
--- paimon: a retyped partition key is not pruned against the metadata-typed partition key
-['0','1000']
-['0','1000']
-['0','1000']
 -- iceberg: a retyped identity partition column is read as declared
 ['10','2']
 ['ten','two']
@@ -131,5 +73,3 @@ Nullable(Int64)	10
 Nullable(Int64)	20
 -- control: deltaLake with an explicit schema reload still prefers the metadata schema
 Tuple(\n    `values` Nullable(String),\n    id Nullable(Int32))
--- control: a declared DEFAULT is still honored where it always was
-2	84
