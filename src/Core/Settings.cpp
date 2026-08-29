@@ -1006,6 +1006,10 @@ Also allows the `WHERE` to `PREWHERE` optimization to move such conditions even 
 
 Supported for reading from `MergeTree` tables and from the `Parquet` format.
 
+Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
+(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
+the amount of data read from disk when the values are replaced by empty strings.
+
 Possible values:
 
 - 0 — Disabled.

@@ -9,16 +9,16 @@ DROP TABLE IF EXISTS t_string_filter_single;
 -- The default serialization of String columns (with a separate stream for sizes).
 CREATE TABLE t_string_filter_wide (id UInt32, s String, n Nullable(String))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
 
 CREATE TABLE t_string_filter_compact (id UInt32, s String, n Nullable(String))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, ratio_of_defaults_for_sparse_serialization = 1.0;
 
 -- The legacy serialization of String columns (with inline sizes).
 CREATE TABLE t_string_filter_single (id UInt32, s String, n Nullable(String))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, string_serialization_version = 'single_stream';
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, string_serialization_version = 'single_stream', ratio_of_defaults_for_sparse_serialization = 1.0;
 
 INSERT INTO t_string_filter_wide
 SELECT
@@ -113,7 +113,7 @@ SELECT s, count() FROM t_string_filter_wide PREWHERE endsWith(s, 'needle') GROUP
 
 SELECT 'long values and needle crossing value boundaries';
 DROP TABLE IF EXISTS t_string_filter_long;
-CREATE TABLE t_string_filter_long (id UInt32, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+CREATE TABLE t_string_filter_long (id UInt32, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
 -- Some values are larger than the read buffer, and the values of two adjacent rows contain
 -- the needle only across the boundary between them (`need` + `le...`), which must not match.
 INSERT INTO t_string_filter_long SELECT number,

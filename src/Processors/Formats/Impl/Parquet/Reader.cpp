@@ -1478,7 +1478,7 @@ bool Reader::decodeDictionaryPage(
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
             size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type,
-            column_info.string_value_filter != nullptr);
+            column_info.string_value_filter != nullptr && column_info.string_value_filter->isEnabled());
         if (!reservation.tryReserve(reserved_bytes))
             return false;
     }
@@ -1569,7 +1569,9 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
 
     /// Check the string filter from PREWHERE once per dictionary entry: the rows referencing
     /// non-matching entries then materialize empty strings without copying the data.
-    if (column_info.string_value_filter)
+    /// Once the shared filter has disabled itself (it turned out to be non-selective), the mask
+    /// would never be consulted, so do not pay for the dictionary scan and the mask allocation.
+    if (column_info.string_value_filter && column_info.string_value_filter->isEnabled())
         column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter);
 }
 
