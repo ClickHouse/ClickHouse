@@ -18,6 +18,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
+#include <Common/ObjectStorageKey.h>
+#include <base/pathToString.h>
 
 namespace DB
 {
@@ -146,6 +148,27 @@ void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string
                 lake_name, position);
         ++position;
     }
+}
+
+std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    if (prefix.empty())
+        return path;
+
+    std::string key = path;
+    if (key.starts_with("/"))
+        key.erase(0, 1);
+    /// The values are object storage keys, not filesystem paths: join them in string space, so
+    /// the separator stays a forward slash and the bytes stay UTF-8 on every host.
+    return appendObjectStorageKeySegment(prefix, key);
+}
+
+std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    if (prefix.empty())
+        return path;
+
+    return pathToGenericString(fs::relative(pathFromString(path), pathFromString(prefix)));
 }
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args)

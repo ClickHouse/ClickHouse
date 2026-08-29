@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Interpreters/ExpressionActions.h>
@@ -77,10 +76,9 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             const auto key = object->getPath();
             std::vector<std::string> keys({key});
 
-            auto path = key;
-            if (path.starts_with("/"))
-                path = path.substr(1);
-            path = pathToGenericString(std::filesystem::path(object_namespace) / path);
+            /// Must be the formatter the `_path` column is produced with: this filter is
+            /// evaluated against that column's values.
+            const auto path = joinPathUnderPrefix(object_namespace, key);
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,

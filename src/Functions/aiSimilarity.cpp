@@ -38,7 +38,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
@@ -50,7 +49,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -89,12 +87,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiSimilarity>(context); }
 
-    explicit FunctionAiSimilarity(ContextPtr context_) : context(context_)
-    {
-        if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
-    }
+    explicit FunctionAiSimilarity(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -293,9 +286,9 @@ named collection or the parameter map.
            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the embeddings; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The cosine similarity in `[-1, 1]`, or NULL if either text is NULL or empty, an embedding request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Nullable(Float32)"}},
         .examples
-        = {{"Compare two strings (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SET allow_experimental_ai_functions = 1;\nSELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
-           {"Rank reviews by similarity to a query", "SET allow_experimental_ai_functions = 1;\nCREATE TABLE product_reviews (review String) ENGINE = Memory;\nINSERT INTO product_reviews VALUES ('It works well under rain.');\nSELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100", ""},
-           {"Semantic dedup over a self-join", "SET allow_experimental_ai_functions = 1;\nCREATE TABLE docs (id UInt64, title String) ENGINE = Memory;\nINSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');\nSELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9", ""}},
+        = {{"Compare two strings (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
+           {"Rank reviews by similarity to a query", "CREATE TABLE product_reviews (review String) ENGINE = Memory;\nINSERT INTO product_reviews VALUES ('It works well under rain.');\nSELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100", ""},
+           {"Semantic dedup over a self-join", "CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;\nINSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');\nSELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9", ""}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::AI});
 

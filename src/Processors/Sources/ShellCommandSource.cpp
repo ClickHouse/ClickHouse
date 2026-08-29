@@ -610,6 +610,7 @@ namespace
                 }
 
                 pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                pipeline.disableProfileEventUpdate();
                 executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
             catch (...)
@@ -721,6 +722,7 @@ namespace
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
                         pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                        pipeline.disableProfileEventUpdate();
                         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
                     }
 
@@ -905,7 +907,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
                 return std::make_unique<ShellCommandHolder>(std::move(func));
             },
-            configuration.max_command_execution_time_seconds * 10000);
+            configuration.max_command_execution_time_seconds * 1000);
 
         /// Pool wait is frozen here on both the success and the timeout-failure
         /// paths so that `PoolWaitMicroseconds` always records contention for a
