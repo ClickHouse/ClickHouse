@@ -326,6 +326,8 @@ void Context::init(const Params& params)
 			if (!file)
 				file = X509_get_default_cert_file();
 
+			errCode = 0;
+
 			if (poco_file_cert(file) && SSL_CTX_load_verify_locations(_pSSLContext, file, 0))
 			{
 				/// `SSL_CTX_load_verify_locations` (unlike `SSL_CTX_set_default_verify_paths`) fails when
@@ -335,12 +337,17 @@ void Context::init(const Params& params)
 				_caPaths.caDefaultFile = file;
 				errCode = 1;
 			}
-			else if (poco_dir_cert(dir) && poco_dir_contains_certs(dir))
+
+			if (poco_dir_cert(dir) && poco_dir_contains_certs(dir) && SSL_CTX_load_verify_locations(_pSSLContext, 0, dir))
 			{
+				/// The default file and the default directory are not alternatives:
+				/// `SSL_CTX_set_default_verify_paths` loads both, and a split trust store may keep some
+				/// roots only in the directory, so the directory is loaded even when the file succeeded.
 				_caPaths.caDefaultDir = dir;
-				errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
+				errCode = 1;
 			}
-			else
+
+			if (errCode != 1)
 			{
 				/// The default locations are missing or contain no certificates (e.g. a container built
 				/// "from scratch"): probe the well-known locations, and then fall back to the certificates

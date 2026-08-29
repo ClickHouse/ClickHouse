@@ -129,3 +129,54 @@ def test_embedded_ca_certificates(started_cluster):
         )
         > 100
     )
+
+
+def test_default_ca_file_does_not_shadow_default_dir(started_cluster):
+    # A split trust store: a valid default CA file plus a root that exists only in the
+    # default CA directory. Loading the file must not shadow the directory - OpenSSL's
+    # own `SSL_CTX_set_default_verify_paths` loads both, and roots that exist only in
+    # the directory must stay in the trust store.
+    #
+    # The server certificate doubles as the extra root: it is copied both to the
+    # default CA file and, under its OpenSSL subject-hash name ("f1a05c1a.0", so that
+    # the directory counts as containing certificates), to the default CA directory.
+    cert = "/etc/clickhouse-server/config.d/server-cert.pem"
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p /etc/ssl/certs && cp {cert} /etc/ssl/cert.pem"
+            f" && cp {cert} /etc/ssl/certs/f1a05c1a.0",
+        ],
+        privileged=True,
+        user="root",
+    )
+    node.restart_clickhouse()
+
+    assert https_ping() == "Ok.\n"
+
+    # The default CA file was loaded...
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.certificates WHERE path = '/etc/ssl/cert.pem'"
+            ).strip()
+        )
+        > 0
+    )
+    # ...and the default CA directory was loaded as well, not shadowed by the file.
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.certificates WHERE path LIKE '/etc/ssl/certs%'"
+            ).strip()
+        )
+        > 0
+    )
+    # Certificates were found on the filesystem, so the embedded ones are not used.
+    assert (
+        node.query(
+            "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
+        ).strip()
+        == "0"
+    )
