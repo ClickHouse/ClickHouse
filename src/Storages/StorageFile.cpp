@@ -2928,15 +2928,19 @@ public:
                 if (!fileCacheVersionTokenStillHolds(path, file.file.version_token))
                     throwFileChanged(path);
 
-                /// Exactly the synthetic metadata the main pass builds - unconditionally, under the
-                /// same rules - so both passes read this file under one and the same format metadata
-                /// cache contract (e.g. the Parquet footer cache, keyed by path and this token).
+                /// Exactly the synthetic metadata the main pass builds, under the same rules - so
+                /// both passes read this file under one and the same format metadata cache contract
+                /// (e.g. the Parquet footer cache, keyed by path and this token).
                 /// Symmetry is what matters here: whatever footer the main pass interpreted the file
                 /// with when it picked the row numbers, this pass gets the very same one, so the two
                 /// passes cannot end up on different interpretations of the file. How strong the token
                 /// itself is (sub-second mtime + inode + size) is a property of every local `Parquet`
                 /// read, single-pass ones included, not something lazy materialization changes.
+                /// `use_parquet_metadata_cache` gates it exactly as it gates the main pass: with the
+                /// setting off neither pass consults or populates `ParquetMetadataCache`, so the
+                /// meaning of the setting does not depend on whether the plan is lazy.
                 std::optional<RelativePathWithMetadata> object_with_metadata;
+                if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
                 {
                     ObjectMetadata md;
                     md.size_bytes = file_stat.st_size;
