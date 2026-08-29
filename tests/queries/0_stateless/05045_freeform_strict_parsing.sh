@@ -17,7 +17,7 @@ echo -e "a - 1
 b - 2" > $DATA_FILE
 
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Freeform')"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Freeform') order by all"
 
 echo "A row after the inference sample that stops matching the solution fails instead of reusing the previous row"
 
@@ -42,4 +42,4 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Freeform', 'c0 Int64')"
 
 echo "An explicit structure of the right width works"
 
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Freeform', 'c0 Int64, c1 Int64, c2 Int64')"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Freeform', 'c0 Int64, c1 Int64, c2 Int64') order by all"

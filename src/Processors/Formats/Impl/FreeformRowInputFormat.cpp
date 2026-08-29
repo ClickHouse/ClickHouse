@@ -145,6 +145,12 @@ FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, unsigned 
 {
     try
     {
+        /// The buffer may be exhausted here: trailing whitespace and delimiters are consumed
+        /// before a matcher is tried. Dereferencing the position of an exhausted buffer would
+        /// read uninitialized memory beyond the last byte of the data.
+        if (in.eof())
+            return makeFailedResult();
+
         auto fields = readFieldsByEscapingRule(in, index);
 
         /// A matcher has to consume the whole field: if it stopped in the middle of a token
@@ -181,12 +187,20 @@ FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(Peekable
 
     skipWhitespacesAndDelimiters(in);
     NamesAndFields cols_and_fields;
-    while (*in.position() != '}')
+    while (true)
     {
+        /// The object may be truncated by the end of the data, and the position of an exhausted
+        /// buffer must not be dereferenced.
+        if (in.eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing a JSON object");
+
+        if (*in.position() == '}')
+            break;
+
         String col = JSONUtils::readFieldName(in, settings.json);
         String field;
 
-        if (*in.position() == '{')
+        if (!in.eof() && *in.position() == '{')
             readJSONObjectPossiblyInvalid(field, in);
         else
             readJSONField(field, in, settings.json);
