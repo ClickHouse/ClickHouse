@@ -73,12 +73,14 @@ void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<St
 
     for (const auto & name : default_names)
     {
-        /// A name that is not a built-in setting has no declared default to send. Resetting one removes a
-        /// custom setting, which no change can express, and resetting an unknown name does nothing at all;
-        /// either way it stays a local effect on the host that parsed the clause, which is where it already
-        /// was before `= DEFAULT` was accepted in this clause.
+        /// A name that is not a built-in setting has no declared default to send, so dropping every
+        /// override of it is what leaves the receiver where the reset leaves the initiator: with the
+        /// setting absent. Matched exactly, because a custom setting is addressed by its exact name.
         if (!Settings::hasBuiltin(name))
+        {
+            std::erase_if(changes, [&](const SettingChange & change) { return change.name == name; });
             continue;
+        }
 
         changes.emplace_back(name, declared_defaults.get(name));
     }

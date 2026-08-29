@@ -96,6 +96,31 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryResolvesANameInBothCarriers
         << "the last value the receiver applies is not the declared default, so the reset lost";
 }
 
+/// A name with no declared default cannot be forwarded as a value, so the rebuild drops its overrides
+/// instead: a setting the reset removed on the host that parsed the clause must not arrive set on any
+/// other host. The unrelated override pins that only the reset name is dropped.
+TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsAResetCustomSetting)
+{
+    const String query = "BACKUP TABLE t TO Disk('d', 'b') "
+                         "SETTINGS SQL_x = 1, SQL_x = DEFAULT, max_threads = 4";
+    ASTPtr holder;
+    ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
+    ASSERT_NE(nullptr, backup_query) << "query: " << query;
+
+    BackupSettings settings = BackupSettings::fromBackupQuery(*backup_query);
+    settings.copySettingsToQuery(*backup_query);
+
+    ASSERT_NE(nullptr, backup_query->settings);
+    const auto & rebuilt = backup_query->settings->as<const ASTSetQuery &>();
+
+    EXPECT_EQ(nullptr, rebuilt.changes.tryGet("SQL_x"))
+        << "a reset custom setting arrives set on every other host: " << backup_query->formatWithSecretsOneLine();
+
+    const auto * kept = rebuilt.changes.tryGet("max_threads");
+    ASSERT_NE(nullptr, kept) << "an unrelated override was dropped with it";
+    EXPECT_EQ(Field(UInt64{4}), *kept);
+}
+
 /// The RESTORE twin of the case above. `restore_uuid` is generated after parsing exactly like
 /// `backup_uuid` and emitted by the `LIST_OF_RESTORE_SETTINGS` copy loop, so the same defect is
 /// possible on this side and is pinned the same way.

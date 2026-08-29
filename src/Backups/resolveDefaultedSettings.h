@@ -60,6 +60,8 @@ CoreSettingsFromQuery extractCoreSettings(
 /// Appended after the existing changes on purpose. A name may appear in both carriers, and then the reset
 /// wins, exactly as it wins on the host that parsed the clause, where the reset is applied after every
 /// override. Order is what decides that, so this holds for an alias spelling of the same field too.
+///
+/// A name with no declared default has its overrides dropped instead, which is the same end state.
 void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<String> & default_names);
 
 }
