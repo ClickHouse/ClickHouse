@@ -359,6 +359,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
     ONCE(hash_join_throw_after_data_release) \
+    ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set)
 

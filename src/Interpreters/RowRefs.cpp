@@ -6,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Core/Joins.h>
@@ -23,7 +24,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
+    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char stored_columns_index_throw_on_add[];
 }
 
 namespace
@@ -288,7 +295,20 @@ UInt32 StoredColumnsIndex::add(const StoredBlock * block)
     if (blocks.size() > RowRef::BLOCK_NO_MASK)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many stored blocks in HashJoin: {}", blocks.size());
     blocks.push_back(block);
-    row_stores.push_back(block->row_store.get());
+    try
+    {
+        fiu_do_on(FailPoints::stored_columns_index_throw_on_add,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while registering a stored block");
+        });
+        row_stores.push_back(block->row_store.get());
+    }
+    catch (...)
+    {
+        /// `blocks` and `row_stores` are indexed by the same block number.
+        blocks.pop_back();
+        throw;
+    }
     ++blocks_generation; /// Invalidate any previously built emit table (StorageJoin can insert between joins).
     return static_cast<UInt32>(blocks.size() - 1);
 }

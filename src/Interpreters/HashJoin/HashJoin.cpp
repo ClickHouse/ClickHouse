@@ -900,7 +900,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     }
 
     const size_t rows = selector.size();
-    data->rows_to_join += rows;
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
     for (const auto & column_name : right_key_names)
@@ -941,9 +940,20 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         doDebugAsserts();
         data->columns.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
         auto * stored_columns = &data->columns.back();
-        stored_columns->block_no = data->stored_columns_index->add(stored_columns);
-        size_t data_allocated_bytes = stored_columns->allocatedBytes();
-        data->allocated_size += data_allocated_bytes;
+        size_t data_allocated_bytes = 0;
+        try
+        {
+            stored_columns->block_no = data->stored_columns_index->add(stored_columns);
+            data_allocated_bytes = stored_columns->allocatedBytes();
+            data->allocated_size += data_allocated_bytes;
+            /// `data->columns`, `data->allocated_size` and `data->rows_to_join` describe the same set of stored blocks.
+            data->rows_to_join += rows;
+        }
+        catch (...)
+        {
+            data->columns.pop_back();
+            throw;
+        }
         doDebugAsserts();
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
