@@ -28,6 +28,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "
+    SELECT estimateCompressionRatio(arr) > 0 FROM ${table};
     SELECT subcolumns.serializations[indexOf(subcolumns.names, 'x')]
     FROM system.parts_columns
     WHERE active

@@ -20,6 +20,9 @@ SELECT
         'JSON(x Nullable(String), max_dynamic_paths = 0)'))
 FROM numbers(3);
 
+SELECT estimateCompressionRatio(t) > 0
+FROM json_typed_path_sparse_top_level_tuple;
+
 SELECT tupleElement(path, 1), tupleElement(path, 2)
 FROM
 (

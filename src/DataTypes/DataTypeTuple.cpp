@@ -410,7 +410,7 @@ bool DataTypeTuple::hasSparseSerializationSubcolumns(const SerializationInfoSett
 {
     return std::any_of(elems.begin(), elems.end(), [&](const auto & elem)
     {
-        return settings.shouldCollectSerializationInfo(*elem);
+        return settings.canUseSparseSerialization(*elem) || elem->hasSparseSerializationSubcolumns(settings);
     });
 }
 

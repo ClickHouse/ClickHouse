@@ -260,7 +260,10 @@ TEST(SerializationInfoObject, EnabledOnlyForSubcolumnsVersion)
     const auto * object_info = typeid_cast<const SerializationInfoObject *>(infos.tryGet("j").get());
     ASSERT_NE(object_info, nullptr);
     EXPECT_FALSE(object_info->getSettings().choose_kind);
-    EXPECT_EQ(typeid_cast<const SerializationInfoObject *>(object_info->getTypedPathInfo("n").get()), nullptr);
+    const auto * nested_object_info
+        = typeid_cast<const SerializationInfoObject *>(object_info->getTypedPathInfo("n").get());
+    ASSERT_NE(nested_object_info, nullptr);
+    EXPECT_TRUE(nested_object_info->getTypedPathInfo("x")->getSettings().choose_kind);
     EXPECT_TRUE(object_info->getTypedPathInfo("y")->getSettings().choose_kind);
 
     WriteBufferFromOwnString out;
@@ -327,7 +330,7 @@ TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
 
     settings.string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     auto ineligible_json = DataTypeFactory::instance().get(
-        "JSON(x JSON(y String, max_dynamic_paths=0), max_dynamic_paths=0)");
+        "JSON(x JSON(max_dynamic_paths=0), max_dynamic_paths=0)");
     EXPECT_EQ(
         SerializationInfoByName(NamesAndTypesList{{"j", ineligible_json}}, settings).getVersion(),
         MergeTreeSerializationInfoVersion::BASIC);

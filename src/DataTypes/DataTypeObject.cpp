@@ -306,7 +306,7 @@ bool DataTypeObject::hasSparseSerializationSubcolumns(const SerializationInfoSet
 {
     return std::any_of(typed_paths.begin(), typed_paths.end(), [&](const auto & path)
     {
-        return settings.shouldCollectSerializationInfo(*path.second);
+        return settings.canUseSparseSerialization(*path.second) || path.second->hasSparseSerializationSubcolumns(settings);
     });
 }
 

@@ -130,6 +130,9 @@ SerializationPtr DataTypeArray::getSerialization(const SerializationInfo & info)
 
 SerializationPtr DataTypeArray::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
 {
+    if (getCustomSerialization())
+        return IDataType::getSerialization(info, use_type_serialization_settings);
+
     const auto * array_info = typeid_cast<const SerializationInfoArray *>(&info);
     if (!array_info)
         return IDataType::getSerialization(info, use_type_serialization_settings);
@@ -176,7 +179,7 @@ SerializationInfoPtr DataTypeArray::getSerializationInfo(const IColumn & column,
 
 bool DataTypeArray::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
 {
-    return settings.shouldCollectSerializationInfo(*nested);
+    return settings.canUseSparseSerialization(*nested) || nested->hasSparseSerializationSubcolumns(settings);
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const
