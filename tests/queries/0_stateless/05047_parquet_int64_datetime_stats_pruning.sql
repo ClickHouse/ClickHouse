@@ -35,6 +35,11 @@ select count() from file(currentDatabase() || '_05047_of.parquet', Parquet, 't D
 select count() from file(currentDatabase() || '_05047_of.parquet', Parquet, 't DateTime')
     where t = toDateTime(1000000000, 'UTC') settings log_comment = '05047prune_of_mid';
 
+-- Reading the same raw INT64 column as IPv4 is an unsupported cast; stats must not prune here,
+-- otherwise a fully-pruned scan would return an empty result instead of the cast error.
+select count() from file(currentDatabase() || '_05047.parquet', Parquet, 't IPv4')
+    where t = toIPv4('1.2.3.4'); -- { serverError NOT_IMPLEMENTED }
+
 -- Same results with pruning disabled.
 select count() from file(currentDatabase() || '_05047_of.parquet', Parquet, 't DateTime')
     where t <= toDateTime(0, 'UTC') settings input_format_parquet_filter_push_down = 0;
