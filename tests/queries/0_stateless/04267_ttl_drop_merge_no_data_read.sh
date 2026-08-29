@@ -791,14 +791,15 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_vertical_recompress;"
 
-# The merge that dropped the expired rows really ran the vertical algorithm.
+# The two-part merge that dropped the expired rows really ran the vertical algorithm. It is matched
+# by source-part count rather than by recency: a background TTL merge of the single resulting part
+# can follow it, and that one-part merge is free to pick the horizontal algorithm.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT merge_algorithm
+    SELECT max(merge_algorithm = 'Vertical')
     FROM system.part_log
-    WHERE database = currentDatabase() AND table = 't_ttl_vertical_recompress' AND event_type = 'MergeParts'
-    ORDER BY event_time DESC
-    LIMIT 1;
+    WHERE database = currentDatabase() AND table = 't_ttl_vertical_recompress'
+        AND event_type = 'MergeParts' AND length(merged_from) > 1;
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_vertical_recompress;"
 
