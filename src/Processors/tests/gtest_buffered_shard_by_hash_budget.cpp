@@ -177,6 +177,61 @@ PortResidencyOutcome portResidentThenRetainedThenReleasedBytes(
     return {while_parked, while_retained, after_released};
 }
 
+/// Same drive as `portResidentThenRetainedThenReleasedBytes`, except the downstream *closes* each input right
+/// after pulling its chunk - what a `MergingSortedTransform` does when its own output finishes - and the
+/// scatter is scheduled once more afterwards. The pulled chunks are still owned downstream, so the charge must
+/// survive that close and disappear only when they are dropped.
+PortResidencyOutcome portResidentThenPulledThenClosedBytes(
+    const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns)
+{
+    const size_t num_rows = columns.at(0)->size();
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+
+    BufferedShardByHashTransform transform(
+        header, num_shards, key_columns, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+
+    OutputPort source_output(header);
+    connect(source_output, transform.getInputs().front());
+
+    std::vector<std::unique_ptr<InputPort>> sinks;
+    for (auto & output : transform.getOutputs())
+    {
+        auto sink = std::make_unique<InputPort>(header);
+        connect(output, *sink);
+        sinks.push_back(std::move(sink));
+    }
+
+    source_output.push(Chunk(std::move(columns), num_rows));
+    for (auto & sink : sinks)
+        sink->setNeeded();
+
+    for (int step = 0; step < 8; ++step)
+    {
+        if (transform.prepare() != IProcessor::Status::Ready)
+            break;
+        transform.work();
+    }
+    const Int64 while_parked = budget->total_buffered_bytes.load();
+
+    std::vector<Chunk> retained;
+    for (auto & sink : sinks)
+    {
+        if (sink->hasData())
+            retained.push_back(sink->pull());
+        /// The merge closes every input as soon as its own output is finished, keeping what it already pulled.
+        sink->close();
+    }
+    /// Let the scatter observe the closed outputs: this is where it decides who owns the charge of a chunk that
+    /// is no longer parked in the port.
+    transform.prepare();
+    const Int64 while_retained = budget->total_buffered_bytes.load();
+
+    retained.clear();
+    const Int64 after_released = budget->total_buffered_bytes.load();
+
+    return {while_parked, while_retained, after_released};
+}
+
 struct BudgetedSplitOutcome
 {
     bool work_threw_budget_error = false;  /// work() threw TOO_MANY_ROWS_OR_BYTES for the shared buffer budget.
@@ -974,6 +1029,34 @@ TEST(BufferedShardByHashTransform, PortResidentChunksChargedUntilConsumed)
     /// A sorted merge retains pulled chunks until it advances its input, so they remain charged then.
     EXPECT_EQ(outcome.while_retained, outcome.while_parked);
     /// The charge is released only when that downstream owner drops the chunks.
+    EXPECT_EQ(outcome.after_released, 0);
+}
+
+/// A downstream merge can pull a chunk and close that input immediately afterwards (`IMergingTransformBase`
+/// retains the pulled chunk, and closes all of its inputs once its own output is finished). The scatter then
+/// sees a finished output, but the chunk is still owned - and its memory still resident - downstream. Releasing
+/// the charge on `isFinished()` alone would stop counting those bytes, so a sibling scatter could read a shared
+/// counter far below what the stage actually holds and read ahead past
+/// `aggregation_in_order_shuffle_max_buffered_bytes`. Only a chunk still parked in the port (the port reports
+/// data) is discarded by the close and may be released early.
+TEST(BufferedShardByHashTransform, PulledThenClosedOutputStaysChargedUntilDropped)
+{
+    const size_t num_rows = 4000;
+    const size_t num_shards = 8;
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    Columns columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)};
+    const auto outcome = portResidentThenPulledThenClosedBytes(header, std::move(columns), num_shards, ColumnNumbers{0});
+
+    EXPECT_GT(outcome.while_parked, 0);
+    /// Closing the input after the pull does not make the chunks any less resident.
+    EXPECT_EQ(outcome.while_retained, outcome.while_parked);
+    /// The charge goes away exactly when the downstream owner drops them.
     EXPECT_EQ(outcome.after_released, 0);
 }
 

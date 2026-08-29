@@ -363,27 +363,39 @@ void BufferedShardByHashTransform::reclaimPortResidentChunks()
     /// block that hashes entirely to one shard could park a full block in each of the `num_shards` ports
     /// while the counter reads zero, defeating `aggregation_in_order_shuffle_max_buffered_bytes`.
     ///
-    /// A parked chunk on a *finished* port can only mean the downstream closed the port without pulling
-    /// (cancellation, LIMIT): OutputPort::finish() and InputPort::close() both set the same IS_FINISHED
-    /// flag, but this transform never finishes a port that still holds a parked chunk (see the EOF drain in
-    /// prepare()) and never pushes to a finished port, so IS_FINISHED here is always the downstream's doing.
+    /// A *parked* chunk (the port still reports data) on a *finished* port can only mean the downstream closed
+    /// the port without pulling (cancellation, LIMIT): OutputPort::finish() and InputPort::close() both set the
+    /// same IS_FINISHED flag, but this transform never finishes a port that still holds a parked chunk (see the
+    /// EOF drain in prepare()) and never pushes to a finished port, so IS_FINISHED here is always the
+    /// downstream's doing. A finished port with no data is the opposite case - the chunk was pulled first and
+    /// is still owned downstream - and must not be released here.
     /// Such a chunk is unreachable - nothing can pull it, its memory is freed only at pipeline teardown - so
     /// its charge is released rather than kept: keeping it could only make sibling scatters throw for bytes
     /// nobody can reclaim, while that subtree of the pipeline is shutting down anyway.
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
-        if (port_resident_charges[shard] && output_it->isFinished())
+        if (!port_resident_charges[shard])
+            continue;
+
+        /// Whether the chunk is still parked decides who owns its charge, so it is checked before
+        /// `isFinished()`: a finished port with no data means the downstream pulled the chunk and only then
+        /// closed the input, not that the chunk was discarded. That order really happens - a
+        /// `MergingSortedTransform` keeps a pulled chunk in `IMergingTransformBase`'s retained input state (and
+        /// afterwards in the algorithm's current inputs), and closes all of its inputs as soon as its own
+        /// output finishes - so releasing on `isFinished()` alone would stop charging bytes that are still
+        /// resident downstream.
+        if (!output_it->hasData())
+        {
+            /// The downstream pulled the chunk. Its ChunkInfo now keeps the charge until the downstream
+            /// processor releases its retained input.
+            port_resident_charges[shard].reset();
+        }
+        else if (output_it->isFinished())
         {
             /// A finished output still reporting data has discarded that parked chunk. The ChunkInfo remains
             /// attached until the port is torn down, so release its shared charge explicitly now.
             port_resident_charges[shard]->releaseUnlocked();
-            port_resident_charges[shard].reset();
-        }
-        else if (port_resident_charges[shard] && !output_it->hasData())
-        {
-            /// The downstream pulled the chunk. Its ChunkInfo now keeps the charge until the downstream
-            /// processor releases its retained input.
             port_resident_charges[shard].reset();
         }
     }
@@ -726,7 +738,11 @@ void BufferedShardByHashTransform::work()
             /// The output closed since prepare(): drop the chunk parked in its port (if any) and its queue.
             if (port_resident_charges[shard])
             {
-                port_resident_charges[shard]->releaseUnlocked();
+                /// Only a chunk the downstream never pulled is discarded by the close. If the port no longer
+                /// reports data, the chunk is live downstream (a merge can pull a chunk and close the input
+                /// right after), and its ChunkInfo keeps the charge until that owner releases it.
+                if (output_it->hasData())
+                    port_resident_charges[shard]->releaseUnlocked();
                 port_resident_charges[shard].reset();
             }
             clearQueue(shard);
