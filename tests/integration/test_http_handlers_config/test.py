@@ -288,6 +288,24 @@ def test_predefined_query_handler():
         assert response.status_code == 500
         assert b"Maximum parse depth" in response.content
 
+        # The stored query is server-owned, so it is parsed as ClickHouse SQL whatever `dialect` the request
+        # names. A request that switches the dialect would otherwise feed the stored `SELECT ...` to the PRQL,
+        # KQL, PromQL, polyglot or JSON parser and make the handler uninvokable.
+        for dialect_params in (
+            "dialect=prql",
+            "dialect=kusto",
+            "dialect=promql",
+            "dialect=polyglot",
+            "dialect=clickhouse_json",
+            "dialect=clickhouse_json&enable_json_ast_dialect=1",
+        ):
+            response = cluster.instance.http_request(
+                f"test_predefined_handler_request_parser_limits?{dialect_params}",
+                method="GET",
+            )
+            assert response.status_code == 200, (dialect_params, response.content)
+            assert response.content == b"1\n", (dialect_params, response.content)
+
         # The handler is parsed while the server starts and when its configuration is reloaded. Both paths
         # must keep accepting it.
         cluster.instance.query("SYSTEM RELOAD CONFIG")

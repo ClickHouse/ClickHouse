@@ -2287,6 +2287,14 @@ static BlockIO executeQueryImpl(
     size_t max_parser_depth_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_depth];
     size_t max_parser_backtracks_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_backtracks];
 
+    /// A server-owned query text is also parsed as ClickHouse SQL regardless of the caller's `dialect`.
+    /// The stored text is written by the server (a config-defined `predefined_query_handler`, or the
+    /// `formatWithSecretsOneLine` output of a `CREATE HANDLER ... AS` statement), so a request that asks for
+    /// `dialect = 'prql'`, `'kusto'`, `'promql'`, `'polyglot'` or `'clickhouse_json'` would otherwise feed it to
+    /// the wrong parser and make the handler uninvokable. Only the request-owned construction snippets
+    /// (`filter`/`select`/`order`/`page`) stay under the caller's settings; they are parsed elsewhere.
+    const bool use_request_dialect = !internal && !parse_server_owned_query_without_limits;
+
     String query;
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
@@ -2303,7 +2311,7 @@ static BlockIO executeQueryImpl(
             /// Increment ProfileEvents::Query here because Interpreter is not created.
             ProfileEvents::increment(ProfileEvents::Query);
         }
-        else if (settings[Setting::dialect] == Dialect::kusto && !internal)
+        else if (settings[Setting::dialect] == Dialect::kusto && use_request_dialect)
         {
             const char * kql_pos = begin;
             if (!settings[Setting::allow_experimental_kusto_dialect])
@@ -2320,21 +2328,21 @@ static BlockIO executeQueryImpl(
                 out_ast = parseKQLQuery(
                     kql_pos, end, /*allow_multi_statements=*/false, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
-        else if (settings[Setting::dialect] == Dialect::prql && !internal)
+        else if (settings[Setting::dialect] == Dialect::prql && use_request_dialect)
         {
             if (!settings[Setting::allow_experimental_prql_dialect])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
             ParserPRQLQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
-        else if (settings[Setting::dialect] == Dialect::promql && !internal)
+        else if (settings[Setting::dialect] == Dialect::promql && use_request_dialect)
         {
             if (!settings[Setting::allow_experimental_time_series_table])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
-        else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
+        else if (settings[Setting::dialect] == Dialect::polyglot && use_request_dialect)
         {
             /// Pass through to `ParserPolyglotQuery` which handles SET queries
             /// internally (via the standard parser) even when the feature gate
@@ -2349,7 +2357,7 @@ static BlockIO executeQueryImpl(
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
-        else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
+        else if (settings[Setting::dialect] == Dialect::clickhouse_json && use_request_dialect)
         {
             /// Allow `SET` queries in plain SQL so users can switch back to another dialect
             /// without being locked into JSON-only input. The experimental gate must be

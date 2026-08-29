@@ -478,7 +478,9 @@ void HTTPHandler::processQuery(
     /// The parser limits are not zeroed on the query context here: `executeQuery` lifts them only for
     /// the stored text itself via the `parse_server_owned_query_without_limits` flag (`has_server_owned_query`
     /// is set by `PredefinedQueryHandler`, from which `SQLDefinedQueryHandler` inherits), so the
-    /// request-controlled construction snippets (`select`/`filter`/`order`/`page`) keep the caller's limits.
+    /// request-controlled construction snippets (`select`/`filter`/`order`/`page`) keep the caller's limits. The
+    /// same flag also pins the stored text to the ClickHouse SQL parser, so a request cannot make the handler
+    /// unparsable by asking for another `dialect`.
 
     const auto & settings = context->getSettingsRef();
 
