@@ -57,6 +57,10 @@ void FairAllocation::removeChild(ISchedulerNode * child_base)
         child->setParentNode(nullptr);
         child->updateMinMaxAllocated(std::numeric_limits<ResourceCost>::max());
         children.erase(iter);
+
+        /// A parent can only re-evaluate descendant state after the descendant is gone.
+        if (parent)
+            propagate(Update().setIncrease(increase));
     }
 }
 
