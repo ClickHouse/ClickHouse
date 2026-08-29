@@ -69,14 +69,19 @@ def zk_rmr_with_retries(zk, path):
 # different address and is re-raised immediately, so an already-enqueued ON CLUSTER DDL
 # or a partially-applied INSERT is never resubmitted.
 def query_with_connect_retry(node, sql, retries=20, sleep_time=0.5, **kwargs):
-    connect_refused = f"Connection refused ({node.ip_address}:9000)"
+    # The client now names the address it dialled inside the message as well, so the text reads
+    # "Connection refused: <ip>:9000 (<ip>:9000)". Matching the two parts separately accepts that
+    # and the older bare form, while still pinning the endpoint -- a refusal from a remote shard or
+    # Keeper carries a different address and must not be retried.
+    endpoint = f"{node.ip_address}:9000"
     for attempt in range(retries):
         try:
             return node.query(sql, **kwargs)
         except QueryRuntimeException as ex:
             if (
                 ex.returncode == 210
-                and connect_refused in str(ex)
+                and "Connection refused" in str(ex)
+                and endpoint in str(ex)
                 and attempt + 1 < retries
             ):
                 print(f"Connection refused from {node.name}, retry {attempt + 1}: {ex}")
