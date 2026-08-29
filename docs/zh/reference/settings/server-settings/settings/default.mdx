@@ -27,9 +27,14 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 可接受的值为：
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **默认值：** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -40,6 +45,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 </div>
 
 默认的设置 profile。profile 位于设置 `user_config` 指定的文件中。
+
+* **默认值：** `default`
 
 **示例**
 
@@ -52,6 +59,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 </div>
 
 默认会话超时时长，单位为秒。
+
+* **默认值：** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>

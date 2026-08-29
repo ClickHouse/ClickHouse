@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 이 단계별 가이드는 [MySQL ClickPipe](/ko/integrations/clickpipes/mysql/index)를 사용하여 Amazon Aurora MySQL의 데이터를 ClickHouse Cloud로 복제하도록 구성하는 방법을 안내합니다. MySQL CDC와 관련된 일반적인 질문은 [MySQL FAQ 페이지](/ko/integrations/clickpipes/mysql/faq)를 참조하십시오.
 
@@ -136,13 +137,7 @@ GTID 기반 복제는 Amazon Aurora MySQL v2(MySQL 5.7)와 v3(MySQL 8.0), 그리
   ### IAM 인증 사용(선택 사항)
 </div>
 
-비밀번호 대신 AWS IAM 역할 기반 접근을 사용해 ClickPipes 사용자를 인증할 수 있습니다. 다음과 같이 사용자를 생성한 다음, 위에 표시된 것과 동일한 스키마(schema) 및 복제 권한을 부여하십시오:
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-ClickPipes가 이 방식으로 인증하는 데 필요한 IAM role 및 policy를 설정하는 전체 절차는 [AWS IAM DB authentication (RDS/Aurora)](/ko/integrations/clickpipes/postgres/auth)를 참고하십시오.
+<IAMAuthentication engine="mysql" service="aurora" />
 
 <div id="configure-network-access">
   ## 네트워크 액세스 설정
@@ -152,7 +147,7 @@ ClickPipes가 이 방식으로 인증하는 데 필요한 IAM role 및 policy를
   ### IP 기반 액세스 제어
 </div>
 
-Aurora MySQL 인스턴스로 들어오는 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 Aurora 보안 그룹의 **인바운드 규칙**에 추가하십시오.
+Aurora MySQL 인스턴스로 들어오는 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 Aurora 보안 그룹의 **인바운드 규칙**에 추가하십시오.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Aurora MySQL에서 보안 그룹을 찾는 위치" size="lg" border />
 

@@ -4,6 +4,9 @@
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 
+#include <cstdio>
+#include <unistd.h>
+
 #include <Core/Settings.h>
 
 #include <IO/WriteBufferFromOStream.h>
@@ -50,6 +53,7 @@ extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int TOO_DEEP_RECURSION;
+extern const int AST_FUZZER_ORACLE_MISMATCH;
 extern const int BUZZHOUSE;
 using ErrorCode = int;
 extern std::string_view getName(ErrorCode error_code);
@@ -130,6 +134,35 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
         server_exception.reset();
         client_exception.reset();
         return true;
+    }
+    /// The server-side AST fuzzer oracle reports a wrong-result bug by throwing
+    /// `AST_FUZZER_ORACLE_MISMATCH`. Treat this as fatal: print the reproducer
+    /// to stderr (so it lands in fuzzer.log for CI) and terminate the client
+    /// immediately, so the CI run fails fast with logs attached instead of
+    /// running for the full FUZZ_TIME_LIMIT and being classified as a clean
+    /// timeout.
+    ///
+    /// We deliberately do NOT use `LOGICAL_ERROR` for oracle mismatches: in
+    /// sanitizer / debug builds `LOGICAL_ERROR` triggers `abortOnFailedAssertion`
+    /// from inside the `Exception` constructor, which crashes the server before
+    /// the message can even propagate back here.
+    if (have_error
+        && exception->code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+    {
+        fmt::print(
+            stderr,
+            "\n\n"
+            "=== AST FUZZER ORACLE MISMATCH (fatal) ===\n"
+            "Client-side seed query (the server may have mutated it further):\n"
+            "  {}\n"
+            "Server-side oracle reproducer (includes the actual fuzzed query):\n"
+            "{}\n"
+            "==========================================\n",
+            parsed_query->formatForErrorMessage(),
+            exception->message());
+        (void)std::fflush(stderr);
+        (void)std::fflush(stdout);
+        _exit(49);
     }
     if (have_error)
     {
@@ -923,7 +956,8 @@ bool Client::buzzHouse()
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::MOVE_PARTITION; }},
                               {10 * static_cast<uint32_t>(test_content && is_mt),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
-                              {15 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
+                               /// If ADD COLUMN fails, DROP column may issue NOT_FOUND_COLUMN_IN_BLOCK for some engines such as File
+                              {15 * static_cast<uint32_t>(test_content && !fuzz_config->disallowed_error_codes.contains(10)), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
                               {3
                                    * static_cast<uint32_t>(
                                        test_content && !tbl.get().isAnyS3Engine(true) && !tbl.get().isAnyAzureEngine(true)),
@@ -1185,12 +1219,15 @@ bool Client::buzzHouse()
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                          const auto & engine = tbl.isAnyIcebergEngine()
                              ? "iceberg"
-                             : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
-                         const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
+                             : (tbl.isAnyDeltaLakeEngine()
+                                    ? "deltalake"
+                                    : (tbl.isAnyPaimonEngine() ? "paimon" : (tbl.isFileEngine() ? "file" : "kafka")));
+                         const auto & ndname
+                             = (tbl.isKafkaEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine());
+                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine() || tbl.isFileEngine());
                          fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine
                                            << " table " << markerHexEncode(ndname) << " " << markerHexEncode(ntname) << std::endl;
                          runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);
@@ -1236,7 +1273,7 @@ bool Client::buzzHouse()
 #else
 bool Client::buzzHouse()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
 }
 #endif
 

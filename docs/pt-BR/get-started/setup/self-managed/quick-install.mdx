@@ -18,9 +18,11 @@ Se você não precisa instalar o ClickHouse em produção, pode executar um scri
     curl https://clickhouse.com/ | sh
     ```
 
-    No Linux e no macOS, isso também instala o [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
-    em `~/.local/bin` (com um link simbólico `chctl`) para que você possa gerenciar versões
-    locais e servidores do ClickHouse.
+    No Linux e no macOS, isso também instala o [`clickhousectl`](/pt-BR/get-started/setup/self-managed/clickhousectl),
+    a CLI do ClickHouse, em `~/.local/bin` (com um alias `chctl`). O `clickhousectl`
+    ajuda você a instalar e gerenciar várias versões locais do ClickHouse, executar servidores em
+    segundo plano e gerenciar o ClickHouse Cloud. Consulte a [página de instalação do clickhousectl](/pt-BR/get-started/setup/self-managed/clickhousectl)
+    para conhecer o fluxo de trabalho baseado em CLI.
 
     Para instalar apenas o binário `clickhouse`, sem o `clickhousectl`, defina
     `CLICKHOUSE_ONLY=1`:

@@ -201,7 +201,7 @@ export const kbIndex = {
     {
       "id": "configuration-settings/change-the-prompt-in-clickhouse-client",
       "title": "Change the prompt in clickhouse-client",
-      "description": "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      "description": "This article explains how to change the prompt in your ClickHouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
       "href": "/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       "category": "Configuration & settings",
       "tags": [
@@ -1123,6 +1123,16 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "title": "Set up the ClickHouse documentation MCP server",
+      "description": "Connect AI tools to the ClickHouse documentation through the Model Context Protocol.",
+      "href": "/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "category": "Setup & installation",
+      "tags": [
+        "Tools and Utilities"
+      ]
+    },
+    {
       "id": "performance-optimization/query-max-execution-time",
       "title": "Setting a limit on query execution time",
       "description": "How to enforce limit on max query execution time",
@@ -1307,6 +1317,18 @@ export const kbIndex = {
       "href": "/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
       "category": "General & FAQs",
       "tags": []
+    },
+    {
+      "id": "security/set-role-not-persisting-in-sql-console",
+      "title": "Why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console",
+      "description": "Learn why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console and how to assign persistent per-user permissions.",
+      "href": "/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
+      "category": "Security & access control",
+      "tags": [
+        "Security and Authentication",
+        "Managing Cloud",
+        "Troubleshooting"
+      ]
     },
     {
       "id": "data-management/dictionaries-consistent-state",

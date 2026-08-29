@@ -46,6 +46,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_credential_file = '/var/nats_credentials',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
+    [nats_commit_on_select = false,]
     [nats_handle_error_mode = 'default']
 ```
 
@@ -66,28 +67,30 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_reconnect_wait` – Время ожидания в миллисекундах между попытками переподключения. По умолчанию: `2000`.
 * `nats_server_list` - Список серверов для подключения. Можно указать для подключения к кластеру NATS.
 * `nats_skip_broken_messages` - Допустимое число несовместимых со схемой сообщений для parser сообщений NATS на блок. По умолчанию: `0`. Если `nats_skip_broken_messages = N`, то движок пропускает *N* сообщений NATS, которые не удаётся разобрать (одно сообщение соответствует одной строке данных).
-* `nats_max_block_size` - Число строк, собираемых с помощью poll(s) для сброса данных из NATS. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings#max_insert_block_size).
-* `nats_flush_interval_ms` - Тайм-аут для сброса данных, прочитанных из NATS. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings#stream_flush_interval_ms).
+* `nats_max_block_size` - Число строк, собираемых с помощью poll(s) для сброса данных из NATS. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `nats_flush_interval_ms` - Тайм-аут для сброса данных, прочитанных из NATS. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms).
+* `nats_wait_for_flush_interval` - Если `true`, фоновый цикл стриминга остаётся открытым на весь интервал сброса (`nats_flush_interval_ms` или, в противном случае, `stream_flush_interval_ms`) вместо завершения сразу после опустошения очереди consumer, что позволяет накопить больше сообщений в одном блоке ценой дополнительной задержки ингестии до одного интервала сброса. По умолчанию: `false` (поведение с низкой задержкой: опустошить очередь и завершить).
 * `nats_username` - Имя пользователя NATS.
 * `nats_password` - Пароль NATS.
 * `nats_token` - Токен аутентификации NATS.
 * `nats_credential_file` - Путь к файлу учётных данных NATS.
 * `nats_startup_connect_tries` - Количество попыток подключения при запуске. По умолчанию: `5`.
 * `nats_max_rows_per_message` — Максимальное количество строк, записываемых в одно сообщение NATS для построчных форматов. (по умолчанию: `1`).
+* `nats_commit_on_select` - Выполнять коммит сообщений при выполнении запроса. Применяется только к JetStream; в core NATS нет подтверждений. По умолчанию: `0`.
 * `nats_handle_error_mode` — Как обрабатывать ошибки движка NATS. Возможные значения: default (если не удаётся разобрать сообщение, будет сгенерировано исключение), stream (сообщение об исключении и исходное сообщение будут сохранены в виртуальных столбцах `_error` и `_raw_message`).
 
-SSL-подключение:
+SSL-соединение:
 
-Для безопасного подключения используйте `nats_secure = 1`.
-Проверка сертификата управляется переменной окружения `CLICKHOUSE_NATS_TLS_SECURE`;
-Если срок действия сертификата истёк, сертификат самоподписанный, отсутствует или иным образом недействителен, отключите проверку, установив `CLICKHOUSE_NATS_TLS_SECURE=0`.
+Для защищённого соединения используйте `nats_secure = 1`.
+Проверка сертификата управляется переменной окружения `CLICKHOUSE_NATS_TLS_SECURE`.
+Если сертификат просрочен, самоподписан, отсутствует или по другим причинам недействителен, отключите проверку, задав `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
 Запись в таблицу NATS:
 
 Если таблица читает только из одного subject, любая вставка будет публиковаться в тот же subject.
-Однако если таблица читает из нескольких subject, нужно указать, в какой subject следует публиковать данные.
-Поэтому при вставке в таблицу с несколькими subject необходимо задать `stream_like_engine_insert_queue`.
-Вы можете выбрать один из subject, из которых читает таблица, и опубликовать туда свои данные. Например:
+Однако, если таблица читает из нескольких subject, необходимо указать, в какой subject публиковать данные.
+Поэтому при вставке в таблицу с несколькими subject требуется установка параметра `stream_like_engine_insert_queue`.
+Вы можете выбрать один из subject, из которых читает таблица, и публиковать данные туда. Например:
 
 ```sql
 CREATE TABLE queue (
@@ -103,7 +106,7 @@ SETTINGS stream_like_engine_insert_queue = 'subject2'
 VALUES (1, 1);
 ```
 
-Также можно добавить настройки формата вместе с настройками NATS.
+Кроме того, вместе с настройками, относящимися к nats, можно указать настройки формата.
 
 Пример:
 
@@ -120,7 +123,7 @@ CREATE TABLE queue (
 ```
 
 Конфигурацию сервера NATS можно добавить в файл конфигурации ClickHouse.
-В частности, можно добавить пароль для движка NATS:
+В частности, можно указать пароль для движка NATS:
 
 ```xml
 <nats>
@@ -194,7 +197,7 @@ ATTACH TABLE consumer;
 Количество строк в одном сообщении NATS зависит от того, является ли формат построчным или блочным:
 
 * Для построчных форматов количеством строк в одном сообщении NATS можно управлять с помощью настройки `nats_max_rows_per_message`.
-* Для блочных форматов блок нельзя разделить на более мелкие части, однако количество строк в одном блоке можно регулировать с помощью общей настройки [max&#95;block&#95;size](/ru/reference/settings/session-settings#max_block_size).
+* Для блочных форматов блок нельзя разделить на более мелкие части, однако количество строк в одном блоке можно регулировать с помощью общей настройки [max&#95;block&#95;size](/ru/reference/settings/session-settings/max#max_block_size).
 
 <div id="using-jetstream">
   ## Использование JetStream
@@ -237,7 +240,7 @@ ATTACH TABLE consumer;
                 Direct Get: true
          Allows Msg Delete: true
               Allows Purge: true
-    Allows Per-Message TTL: false
+  Allows Per-Message TTL: false
             Allows Rollups: false
 
   Limits:
@@ -288,7 +291,7 @@ ATTACH TABLE consumer;
 
   State:
 
-    Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
+  Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
       Acknowledgment Floor: Consumer sequence: 0 Stream sequence: 0
           Outstanding Acks: 0 out of maximum 1,000
       Redelivered Messages: 0
@@ -310,5 +313,7 @@ CREATE TABLE nats_jet_stream (
               nats_subjects = 'stream_subject',
               nats_format = 'JSONEachRow';
 ```
+
+Таблицы JetStream обеспечивают доставку как минимум один раз: сообщение подтверждается только после его вставки в зависимые materialized view, поэтому сообщение, вставка которого завершилась ошибкой или была прервана, остаётся неподтверждённым и доставляется повторно. Core NATS (без JetStream) не поддерживает подтверждения или повторную доставку, поэтому гарантирует доставку не более одного раза, а сообщение, обработка которого была прервана, теряется.
 
 {/*AUTOGENERATED_END*/}

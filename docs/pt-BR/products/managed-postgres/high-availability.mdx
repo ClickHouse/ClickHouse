@@ -12,9 +12,9 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
 
-O Managed Postgres oferece diferentes níveis de alta disponibilidade para atender aos seus requisitos de durabilidade e desempenho. Você pode adicionar uma ou duas réplicas em standby ao provisionar seu banco de dados ou ajustar essa configuração mais tarde na página **Settings**, conforme necessário.
+O ClickHouse Managed Postgres oferece diferentes níveis de alta disponibilidade para atender aos seus requisitos de durabilidade e desempenho. Você pode adicionar uma ou duas réplicas em standby ao provisionar seu banco de dados ou ajustar essa configuração mais tarde na página **Settings**, conforme necessário.
 
-{/* TODO(kaushik-ubi): Captura de tela da tela de configuração de alta disponibilidade
+{/* TODO(kaushik-ubi): Captura de tela da configuração de alta disponibilidade
     Caminho: /images/cloud/managed-postgres/high-availability-config.png */}
 
 <div id="high-availability-options">
@@ -47,17 +47,17 @@ Com esta opção, apenas um nó primário é provisionado no tamanho selecionado
   ## Standbys vs réplicas de leitura
 </div>
 
-Standbys e réplicas de leitura têm finalidades diferentes no Managed Postgres e são configurados separadamente.
+Standbys e réplicas de leitura têm finalidades diferentes no ClickHouse Managed Postgres e são configurados separadamente.
 
-**Standbys** são dedicados exclusivamente à alta disponibilidade e ao failover automático. Eles replicam os dados da instância primária usando replicação por streaming e estão sempre prontos para ser promovidos se a primária falhar. Os standbys não ficam disponíveis para consultas de leitura.
+**Standbys** são dedicados exclusivamente à alta disponibilidade e ao failover automático. Eles replicam os dados da instância primária usando replicação por streaming e estão sempre prontos para ser promovidos se o primário falhar. Os standbys não ficam disponíveis para consultas de leitura.
 
-**Réplicas de leitura** são projetadas para escalabilidade de leitura. Elas extraem dados do WAL (Write-Ahead Log) do armazenamento de objetos e são executadas em um ambiente de rede separado, com seu próprio endpoint de conexão. As réplicas de leitura permitem descarregar o tráfego de leitura da instância primária sem afetar as garantias de HA.
+**Réplicas de leitura** são projetadas para escalabilidade de leitura. Elas extraem dados do WAL (Write-Ahead Log) do armazenamento de objetos e são executadas em um ambiente de rede separado, com seu próprio endpoint de conexão. As réplicas de leitura permitem descarregar o tráfego de leitura do primário sem afetar as garantias de HA.
 
 <div id="why-standbys-dont-serve-read-queries">
   ### Por que standbys não processam consultas de leitura
 </div>
 
-Embora alguns provedores de banco de dados disponibilizem hot standbys para consultas somente leitura, o Managed Postgres intencionalmente não faz isso. Permitir consultas de leitura em standbys pode comprometer o principal objetivo deles: estar prontos para assumir imediatamente quando o primário falhar.
+Embora alguns provedores de banco de dados disponibilizem hot standbys para consultas somente leitura, o ClickHouse Managed Postgres intencionalmente não faz isso. Permitir consultas de leitura em standbys pode comprometer o principal objetivo deles: estar prontos para assumir imediatamente quando o primário falhar.
 
 Há duas preocupações principais:
 
@@ -65,12 +65,12 @@ Há duas preocupações principais:
 
 2. **Interferência no `VACUUM`**: Consultas de leitura de longa duração em um standby podem impedir que o `VACUUM` (e o `AUTOVACUUM`) limpem tuplas mortas no primário. O PostgreSQL não pode remover linhas que uma consulta ativa em qualquer réplica ainda possa precisar acessar. Isso pode levar ao inchaço da tabela e à degradação do desempenho ao longo do tempo.
 
-Ao manter os standbys dedicados ao failover, o Managed Postgres garante que eles estejam sempre sincronizados e prontos para assumir com perda mínima de dados e tempo de inatividade. Para escalar leituras, use [réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas) em vez disso.
+Ao manter os standbys dedicados ao failover, o ClickHouse Managed Postgres garante que eles estejam sempre sincronizados e prontos para assumir com perda mínima de dados e tempo de inatividade. Para escalar leituras, use [réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas) em vez disso.
 
 <div id="handling-failures">
   ## Como lidar com falhas
 </div>
 
-Todas as instâncias do Managed Postgres são monitoradas continuamente em busca de falhas, independentemente de a alta disponibilidade estar habilitada. Em todos os casos, o sistema tenta se recuperar automaticamente das falhas.
+Todas as instâncias do ClickHouse Managed Postgres são monitoradas continuamente em busca de falhas, independentemente de a alta disponibilidade estar habilitada. Em todos os casos, o sistema tenta se recuperar automaticamente das falhas.
 
 Quando há instâncias standby disponíveis, a recuperação automática é mais rápida e mais simples. Em geral, o sistema se recupera em poucos minutos promovendo uma instância standby a primária. Sem instâncias standby, a recuperação pode exigir intervenção manual, aumentando significativamente a duração de qualquer indisponibilidade.
