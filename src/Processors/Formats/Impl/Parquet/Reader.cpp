@@ -3166,15 +3166,20 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
         if (page.is_dictionary_encoded)
         {
-            if (!page.indices_column)
-                page.indices_column = ColumnUInt32::create();
-            auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
-            auto & data = indices_column_uint32.getData();
-            chassert(data.empty());
             chassert(!filter);
-            page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
-            column.dictionary.index(indices_column_uint32, *subchunk.column);
-            data.clear();
+            /// Fused decode-and-gather; falls back to materializing the indexes as a column when
+            /// the decoder or the dictionary mode does not support the fusion.
+            if (!page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            {
+                if (!page.indices_column)
+                    page.indices_column = ColumnUInt32::create();
+                auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
+                auto & data = indices_column_uint32.getData();
+                chassert(data.empty());
+                page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
+                column.dictionary.index(indices_column_uint32, *subchunk.column);
+                data.clear();
+            }
         }
         else
         {
