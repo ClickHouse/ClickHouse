@@ -1480,8 +1480,11 @@ void WindowTransform::FrameAggregateTree::activate(const IAggregateFunction & fu
     // The suffix caches pay off when the query cost is dominated by the number of
     // merge calls, i.e. for cheap fixed-size states. The trivial destructor also makes
     // the cache lifecycle trivial: slots are reused by calling create over the
-    // previous contents, and reset just drops the buffers.
-    use_accel = function_.hasTrivialDestructor() && padded_state_size <= 64;
+    // previous contents, and reset just drops the buffers. A trivial destructor is not
+    // enough on its own: a state such as `sumForEach` still suballocates from the arena
+    // on every merge, and rebuilding the cache slots on successive rows would leave those
+    // allocations abandoned until the end of the partition.
+    use_accel = function_.hasTrivialDestructor() && !function_.allocatesMemoryInArena() && padded_state_size <= 64;
     levels.emplace_back();
 }
 
