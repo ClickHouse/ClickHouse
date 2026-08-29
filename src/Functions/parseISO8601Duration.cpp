@@ -5,6 +5,8 @@
 #include <Functions/IFunction.h>
 #include <Common/StringUtils.h>
 
+#include <cmath>
+
 namespace DB
 {
 
@@ -135,6 +137,9 @@ namespace
                         invalid(str, "expected digits after the decimal point");
                 }
 
+                if (!std::isfinite(value))
+                    invalid(str, "the numeric value of a component is too large to represent");
+
                 if (pos == str.length())
                     invalid(str, "a number is not followed by a unit designator");
 
@@ -197,6 +202,11 @@ namespace
 
             if (after_t && time_components == 0)
                 invalid(str, "'T' must be followed by at least one time component");
+
+            /// A component can be finite on its own and still overflow once scaled to seconds,
+            /// so the total is checked separately from the individual values.
+            if (!std::isfinite(result))
+                invalid(str, "the duration is too large to represent in seconds");
 
             return result;
         }

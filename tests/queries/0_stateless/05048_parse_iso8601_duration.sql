@@ -44,6 +44,12 @@ SELECT parseISO8601Duration('PT1HT1M'); -- { serverError BAD_ARGUMENTS }
 SELECT parseISO8601Duration('P1H'); -- { serverError BAD_ARGUMENTS }
 SELECT parseISO8601Duration('PT1D'); -- { serverError BAD_ARGUMENTS }
 
+-- Values that do not fit into Float64 are rejected rather than returned as infinity.
+-- A single component that overflows on its own:
+SELECT parseISO8601Duration(concat('PT', repeat('9', 309), 'S')); -- { serverError BAD_ARGUMENTS }
+-- and one that is finite on its own but overflows once scaled to seconds:
+SELECT parseISO8601Duration(concat('P', repeat('9', 305), 'D')); -- { serverError BAD_ARGUMENTS }
+
 -- Wrong argument type and arity.
 SELECT parseISO8601Duration(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT parseISO8601Duration(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
