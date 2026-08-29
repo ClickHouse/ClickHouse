@@ -88,6 +88,7 @@ namespace FailPoints
     extern const char storage_url_pause_before_input_format_initialization[];
     extern const char storage_url_pause_after_pull[];
     extern const char storage_url_pause_before_handling_interrupted_read_error[];
+    extern const char storage_url_pause_before_handling_option_error[];
 }
 
 namespace Setting
@@ -906,10 +907,19 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             /// makes it the error the read is interrupted with. The check precedes the single-option
             /// fast path below for the same reason: the rethrown error of the lone option must not
             /// mask a cancellation which landed while it was unwinding.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_handling_option_error);
+
             if (cancellation && cancellation->isCancelled())
             {
                 throw ReadInterruptedException(std::current_exception());
             }
+
+            /// The readers which pass no cancellation flag - among them the schema inference of
+            /// `url`, which chooses the URI with this same loop - have only the query status to
+            /// tell them the query is gone. The terminal check inside doWithRetries does not cover
+            /// a kill or a hard timeout landing while the error of the request unwinds to this
+            /// catch, so ask the query status once more before the error is reported.
+            CurrentThread::checkIfNotCancelled();
 
             if (options == 1)
                 throw;

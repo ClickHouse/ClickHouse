@@ -365,6 +365,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(storage_url_pause_before_input_format_initialization) \
     PAUSEABLE_ONCE(storage_url_pause_after_pull) \
     PAUSEABLE_ONCE(storage_url_pause_before_handling_interrupted_read_error) \
+    PAUSEABLE_ONCE(storage_url_pause_before_handling_option_error) \
     PAUSEABLE_ONCE(http_read_buffer_pause_before_metadata_fallback) \
     PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
     ONCE(hash_join_throw_after_data_release) \
