@@ -21,9 +21,12 @@ structure hash - and therefore the destination table - is shared with them.
 There is no dedicated column for the server, so the two servers are told apart
 by a suffix in `check_name`: '<job name> (left)' is the reference build and
 '<job name> (right)' is the patched one. `commit_sha` carries each server's own
-build commit as well.
+build commit as well; that lookup is the one fail-closed step here (see
+get_server_commit_sha), because a row whose build cannot be named is of no use
+in the CI Logs cluster.
 
-The export is best effort: any failure is logged and never fails the job.
+The export is best effort otherwise: any failure is logged and never fails the
+job.
 
 The credentials are taken from the CLICKHOUSE_CI_LOGS_HOST / _USER / _PASSWORD
 environment variables (see setup_credentials_env); they are passed to
@@ -161,6 +164,30 @@ def _run_client(args, sql, timeout, env=None):
 
 def _server_query(port, sql, timeout, extra_args=None):
     return _run_client(["--port", str(port)] + (extra_args or []), sql, timeout)
+
+
+# `system.build_options` reports the full git hash of the build; it is empty
+# only if the binary was built without git information available.
+GIT_HASH_RE = re.compile(r"[0-9a-f]{7,40}")
+
+
+def get_server_commit_sha(port):
+    """Return the git hash of the build of the server listening on the given
+    local port.
+
+    Unlike everything else in this module this is not best effort: `commit_sha`
+    is a part of the identity of every exported row, so a server whose build
+    cannot be named must be skipped by the caller instead of contributing rows
+    that cannot be attributed to a build. `_server_query` raises if the query
+    fails, and an answer that is not a git hash is rejected here."""
+    sha = _server_query(
+        port,
+        "SELECT value FROM system.build_options WHERE name = 'GIT_HASH'",
+        timeout=60,
+    ).strip()
+    if not GIT_HASH_RE.fullmatch(sha):
+        raise RuntimeError(f"the server reported an unusable build commit: '{sha}'")
+    return sha
 
 
 def _remote_query(sql, timeout=90, extra_args=None):

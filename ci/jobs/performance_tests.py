@@ -1711,10 +1711,20 @@ def main():
                 check_start_time = get_check_start_time()
                 for node_name, server in (("left", leftCH), ("right", rightCH)):
                     # Each server reports the commit of its own build, so that
-                    # commit_sha distinguishes the reference and the patched rows
-                    server_sha = server.ask(
-                        "SELECT value FROM system.build_options WHERE name='GIT_HASH'"
-                    ).strip()
+                    # commit_sha distinguishes the reference and the patched
+                    # rows. This lookup is fail-closed: rows with an empty
+                    # commit_sha cannot be attributed to a build, which is
+                    # exactly what this stage is supposed to preserve, so a
+                    # server whose build commit cannot be read is skipped.
+                    try:
+                        server_sha = ci_logs_export.get_server_commit_sha(server.port)
+                    except Exception as e:
+                        print(
+                            "WARNING: Cannot read the build commit of the "
+                            f"[{node_name}] server, its system logs will not "
+                            f"be exported: {e}"
+                        )
+                        continue
                     ci_logs_export.export_system_logs_from_server(
                         port=server.port,
                         node_name=node_name,
