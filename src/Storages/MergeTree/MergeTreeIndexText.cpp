@@ -1605,6 +1605,12 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document, co
         });
 }
 
+template <typename... Args>
+static PostingListBuilder & constructBuilder(TokenToPostingsBuilderMap::LookupResult it, Args &&... args)
+{
+    return *new (&it->getMapped()) PostingListBuilder(std::forward<Args>(args)...);
+}
+
 void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 {
     if (!postprocessor_drop_filter || postprocessor_drop_filter->drop_on_match)
@@ -1622,6 +1628,7 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
+
     for (const auto & filter_token : filter_tokens)
     {
         memcpy(data, filter_token.data(), filter_token.size());
@@ -1630,9 +1637,7 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 
         tokens_map.emplace(key, it, inserted);
         chassert(inserted);
-
-        /// `emplace` leaves the mapped storage uninitialized: start its lifetime with placement new.
-        new (&it->getMapped()) PostingListBuilder(PostingListBuilder::Filtered{});
+        constructBuilder(it, PostingListBuilder::Filtered{});
     }
 }
 
@@ -1640,6 +1645,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
 {
     const auto row = static_cast<UInt32>(current_row);
 
+    /// Keep-set mode: the map is pre-seeded with the only tokens to keep, everything else is skipped.
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
         auto it = tokens_map.find(token);
@@ -1648,40 +1654,42 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
 
         auto & mapped = it->getMapped();
 
-        /// The first occurrence of a pre-seeded keep-set token: replace the `Filtered` placeholder with a real builder.
+        /// The first occurrence of a pre-seeded token: replace the `Filtered` placeholder with a real builder.
         if (mapped.isFiltered())
             mapped = PostingListBuilder(row, token_position, context);
         else
             mapped.add(row, token_position, context);
+
+        ++num_processed_tokens;
+        return;
+    }
+
+    bool inserted = false;
+    TokenToPostingsBuilderMap::LookupResult it;
+
+    ArenaKeyHolder key_holder(token, *arena);
+    tokens_map.emplace(key_holder, it, inserted);
+
+    if (inserted)
+    {
+        /// A token from the drop set holds no postings.
+        if (postprocessor_drop_filter && postprocessor_drop_filter->tokens.contains(token))
+        {
+            constructBuilder(it, PostingListBuilder::Filtered{});
+            return;
+        }
+
+        constructBuilder(it, row, token_position, context);
     }
     else
     {
-        bool inserted = false;
-        TokenToPostingsBuilderMap::LookupResult it;
-
-        ArenaKeyHolder key_holder(token, *arena);
-        tokens_map.emplace(key_holder, it, inserted);
         auto & mapped = it->getMapped();
 
-        /// `emplace` leaves the mapped storage uninitialized: a fresh slot must start
-        /// the builder's lifetime with placement new before any other access.
-        if (inserted)
-        {
-            if (postprocessor_drop_filter && postprocessor_drop_filter->tokens.contains(token))
-            {
-                new (&mapped) PostingListBuilder(PostingListBuilder::Filtered{});
-                return;
-            }
+        /// A token from the drop set holds no postings.
+        if (mapped.isFiltered())
+            return;
 
-            new (&mapped) PostingListBuilder(row, token_position, context);
-        }
-        else
-        {
-            if (postprocessor_drop_filter && mapped.isFiltered())
-                return;
-
-            mapped.add(row, token_position, context);
-        }
+        mapped.add(row, token_position, context);
     }
 
     ++num_processed_tokens;
