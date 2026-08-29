@@ -60,7 +60,6 @@
             <allow_distributed_ddl>1</allow_distributed_ddl>
             <allow_drop_detached>1</allow_drop_detached>
             <allow_dynamic_type_in_join_keys>1</allow_dynamic_type_in_join_keys>
-            <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
             <allow_experimental_alias_table_engine>1</allow_experimental_alias_table_engine>
             <allow_experimental_cleanup_old_data_files_compaction>1</allow_experimental_cleanup_old_data_files_compaction>
             <allow_experimental_codecs>1</allow_experimental_codecs>
