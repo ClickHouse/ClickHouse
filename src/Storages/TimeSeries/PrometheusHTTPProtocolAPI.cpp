@@ -123,6 +123,12 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
+    /// Every endpoint of this API synthesizes its SQL from the Prometheus request (a PromQL
+    /// expression, `match[]` selectors, a metric name); the user never submitted that SQL, so the
+    /// session's `query_rules` must not rewrite or reject it (rules apply once, to the initial user
+    /// query only, and a Prometheus request carries no SQL to apply them to). The context is
+    /// private to this HTTP request, so clearing the setting does not affect anything else.
+    getContext()->setSetting("query_rules", String{});
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
@@ -177,12 +183,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
-    /// The SQL below is synthesized from the user's PromQL request by `PrometheusQueryToSQL`; the
-    /// user never submitted that SQL, so the session's `query_rules` must not rewrite or reject it
-    /// (rules apply once, to the initial user query only, and a PromQL request carries no SQL to
-    /// apply them to). The context is private to this HTTP request, so clearing the setting does
-    /// not affect anything else.
-    getContext()->setSetting("query_rules", String{});
 
     /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
     /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
