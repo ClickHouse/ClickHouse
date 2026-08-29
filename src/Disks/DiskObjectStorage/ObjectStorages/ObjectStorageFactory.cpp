@@ -19,6 +19,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 
 #include <Interpreters/Context.h>
 
@@ -258,6 +259,10 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
 
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
+
+        /// This is where the blobs really land, and neither the disk's getPath() (its metadata
+        /// directory) nor its isRemote() (hard-coded true) exposes it, so it is checked here.
+        warnIfAffectedByExt4CorruptionKernelBug(object_key_prefix, fmt::format("the blob path of disk '{}'", name));
 
         bool read_only = config.getBool(config_prefix + ".readonly", false);
         LocalObjectStorageSettings settings(name, object_key_prefix, read_only);

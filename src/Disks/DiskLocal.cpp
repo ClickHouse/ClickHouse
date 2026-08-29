@@ -658,8 +658,11 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
     /// Every local root self-checks with its constructor-normalized path (see #18794); this also
-    /// covers the local metadata disks that object storages construct directly.
-    warnIfAffectedByExt4CorruptionKernelBug(disk_path, fmt::format("the path of disk '{}'", name_));
+    /// covers the local metadata disks that object storages construct directly. Disks whose name
+    /// starts with an underscore are internal helpers (`_tmp_default`) that an operator cannot map
+    /// back to a config entry, so their roots are probed by whoever owns them instead.
+    if (!name_.starts_with('_'))
+        warnIfAffectedByExt4CorruptionKernelBug(disk_path, fmt::format("the path of disk '{}'", name_));
 }
 
 DiskLocal::DiskLocal(
@@ -679,7 +682,8 @@ DiskLocal::DiskLocal(const String & name_, const String & path_)
     , logger(getLogger("DiskLocal"))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
-    warnIfAffectedByExt4CorruptionKernelBug(disk_path, fmt::format("the path of disk '{}'", name_));
+    if (!name_.starts_with('_'))
+        warnIfAffectedByExt4CorruptionKernelBug(disk_path, fmt::format("the path of disk '{}'", name_));
 }
 
 DataSourceDescription DiskLocal::getDataSourceDescription() const
