@@ -83,6 +83,7 @@ public:
     std::string getPathInArchive() const override;
 
     void check(ContextPtr context) override;
+    void checkForUpdate(ContextPtr context) override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 

@@ -206,6 +206,14 @@ public:
             BaseStorageConfiguration::check(context);
     }
 
+    void checkForUpdate(ContextPtr context) override
+    {
+        if (ready_object_storage)
+            this->checkFormat();
+        else
+            BaseStorageConfiguration::checkForUpdate(context);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         assertInitialized();

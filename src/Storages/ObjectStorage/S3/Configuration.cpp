@@ -144,6 +144,15 @@ void StorageS3Configuration::check(ContextPtr context)
     StorageObjectStorageConfiguration::check(context);
 }
 
+void StorageS3Configuration::checkForUpdate(ContextPtr context)
+{
+    validateNamespace(url.bucket);
+    context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
+    auto headers_to_check = headers_from_ast;
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
+    StorageObjectStorageConfiguration::check(context);
+}
+
 void StorageS3Configuration::validateNamespace(const String & name) const
 {
     S3::URI::validateBucket(name, {});

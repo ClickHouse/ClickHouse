@@ -142,6 +142,18 @@ void StorageWebConfiguration::check(ContextPtr context)
     context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
 }
 
+void StorageWebConfiguration::checkForUpdate(ContextPtr context)
+{
+    StorageObjectStorageConfiguration::check(context);
+    for (const auto & url_shard : url_shards)
+    {
+        for (const auto & url_option : url_shard)
+            context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
+    }
+    auto headers_to_check = headers_from_ast;
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
+}
+
 ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context, bool, CredentialsConfigurationCallback) /// NOLINT
 {
     assertInitialized();
