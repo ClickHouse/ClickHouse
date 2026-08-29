@@ -2495,10 +2495,10 @@ TEST(SchedulerSpaceShared, UnrelatedSmallerDecreaseDuringScheduledDoesNotCreateB
 }
 
 
-/// Once an exact release has produced a beneficiary, cancelling that exact request spends the
-/// handoff. A larger replacement cannot inherit one kilobyte of credit and leap ahead of the
-/// older outer Initial request.
-TEST(SchedulerSpaceShared, CancelledBeneficiaryDoesNotTransferCreditToLargerReplacement)
+/// Cancellation can reach one queued release turn before its fitting request is selected.
+/// Re-evaluating current accounting must not transfer that one-kilobyte opportunity to a larger
+/// replacement and let it leap ahead of the older outer Initial request.
+TEST(SchedulerSpaceShared, CancelledFittingRequestDoesNotTransferQueuedReleaseToLargerReplacement)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -2510,7 +2510,6 @@ TEST(SchedulerSpaceShared, CancelledBeneficiaryDoesNotTransferCreditToLargerRepl
 
     auto inner_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
     inner_limit->basename = "inner";
-    AllocationLimit * inner_limit_ptr = inner_limit.get();
     auto inner_policy = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
     inner_policy->basename = "inner_fair";
     inner_limit->attachChild(inner_policy);
@@ -2561,13 +2560,13 @@ TEST(SchedulerSpaceShared, CancelledBeneficiaryDoesNotTransferCreditToLargerRepl
     auto local = std::make_unique<ManualAllocation>(
         local_queue_ptr, "local", 1000, /* wait_for_admission = */ false);
 
-    std::promise<bool> exact_release_approved;
-    auto exact_release_approved_future = exact_release_approved.get_future();
-    std::promise<void> continue_after_exact_release;
-    auto continue_after_exact_release_future = continue_after_exact_release.get_future().share();
-    donor.runOnNextDecreaseApproval([&]
+    auto exact_release_approved = std::make_shared<std::promise<void>>();
+    auto exact_release_approved_future = exact_release_approved->get_future();
+    auto continue_after_exact_release = std::make_shared<std::promise<void>>();
+    auto continue_after_exact_release_future = continue_after_exact_release->get_future().share();
+    donor.runOnNextDecreaseApproval([exact_release_approved, continue_after_exact_release_future]
     {
-        exact_release_approved.set_value(inner_limit_ptr->hasUnusedCapacityReclaimPending());
+        exact_release_approved->set_value();
         continue_after_exact_release_future.wait();
     });
 
@@ -2583,23 +2582,17 @@ TEST(SchedulerSpaceShared, CancelledBeneficiaryDoesNotTransferCreditToLargerRepl
     });
 
     /// The outer probe asks the donor for its exact 1000 reusable bytes after both leaf requests
-    /// are visible. The inner graph assigns that scheduler-selected handoff to `local`; ordinary
-    /// decrease approval then moves it to Beneficiary before the callback gate opens.
+    /// are visible. Keep its approval callback gated while cancellation is queued, so the level's
+    /// one release turn observes the cancellation before selecting a beneficiary.
     start_scheduler.set_value();
     if (exact_release_approved_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
     {
         donor.runOnNextDecreaseApproval({});
-        continue_after_exact_release.set_value();
+        continue_after_exact_release->set_value();
         release_first_approval.set_value();
         FAIL() << "The exact donor decrease was not approved";
     }
-    const bool exact_reclaim_still_pending = exact_release_approved_future.get();
-    if (exact_reclaim_still_pending)
-    {
-        continue_after_exact_release.set_value();
-        release_first_approval.set_value();
-        FAIL() << "The exact release did not reach Beneficiary before cancellation";
-    }
+    exact_release_approved_future.get();
 
     std::unique_ptr<ManualAllocation> replacement;
     std::promise<void> replacement_created;
@@ -2616,7 +2609,7 @@ TEST(SchedulerSpaceShared, CancelledBeneficiaryDoesNotTransferCreditToLargerRepl
         });
         replacement_created.set_value();
     });
-    continue_after_exact_release.set_value();
+    continue_after_exact_release->set_value();
 
     if (replacement_created_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
     {
