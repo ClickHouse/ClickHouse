@@ -45,7 +45,7 @@ public:
 
     void addDefaults(size_t length) override
     {
-        SerializationInfo::addDefaults(length);
+        data.addDefaults(length);
     }
 
     MutableSerializationInfoPtr clone() const override
