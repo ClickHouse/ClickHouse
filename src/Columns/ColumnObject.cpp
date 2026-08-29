@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -2428,6 +2429,31 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
                 setSharedDataPathMatcherRecursively(
                     column_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(discriminator_it->second),
                     replaceNestedJSONObjectType(variant_type, object_type->getTypeOfNestedObjects(path + ".")));
+            }
+
+            /// A nested object that currently lives only in the shared variant has no column for the
+            /// loop above to retarget: its retired type survives solely as a statistics key, and
+            /// `ColumnDynamic::chooseDynamicStructureForMerge` rebuilds a type from that key when it
+            /// promotes the variant back out. Rewriting the keys is what keeps that promotion from
+            /// resurrecting the old matcher and prefix.
+            if (const auto & statistics = column_dynamic->getStatistics())
+            {
+                auto rewritten = std::make_shared<ColumnDynamic::Statistics>(*statistics);
+                rewritten->shared_variants_statistics.clear();
+                for (const auto & [variant_name, size] : statistics->shared_variants_statistics)
+                {
+                    String rewritten_name = variant_name;
+                    /// `tryGet`, not `get`: these keys are arbitrary type names and a merge must not
+                    /// abort on one that no longer parses.
+                    auto variant_type = DataTypeFactory::instance().tryGet(variant_name);
+                    if (variant_type && containsJSONObjectType(*variant_type))
+                        rewritten_name
+                            = replaceNestedJSONObjectType(variant_type, object_type->getTypeOfNestedObjects(path + "."))
+                                  ->getName();
+                    /// Accumulated rather than assigned: two retired names can share one rewritten name.
+                    rewritten->shared_variants_statistics[rewritten_name] += size;
+                }
+                column_dynamic->setStatistics(rewritten);
             }
         }
         return;
