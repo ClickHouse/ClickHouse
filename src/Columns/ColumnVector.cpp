@@ -73,7 +73,11 @@ void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    hash.update(data[n]);
+    /// Negative zero is equal to positive zero, but has a different binary representation.
+    /// This is the generic way to hash a single value of a column, and it is used to deduplicate
+    /// or group equal values (`arrayEnumerateUniq`, `uniqExact` of composite values, `transform`),
+    /// so it has to agree with the `equals` function. For non-floating point types this is a no-op.
+    hash.update(normalizeNegativeZero(data[n]));
 }
 
 template <typename T>
