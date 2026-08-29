@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/ProjectionIndex/MergeTreeProjectionIndexText.h>
 
 #include "config.h"
 
@@ -137,7 +138,9 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    bool enable_phrase_query_support_,
+    bool is_projection_index_)
     : WithContext(context_)
     , header(index_sample_block)
     , normalized_index_column_name(normalized_index_column_name_)
@@ -148,6 +151,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
+    , enable_phrase_query_support(enable_phrase_query_support_)
+    , is_projection_index(is_projection_index_)
 {
     if (!predicate)
     {
@@ -304,6 +309,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     if (function_name == "like"
+        || function_name == "ilike"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "mapContainsKeyLike"
@@ -455,11 +461,46 @@ bool hasAllTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer:
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     const auto * granule = typeid_cast<const MergeTreeIndexGranuleText *>(idx_granule.get());
-    if (!granule)
+    const auto * proj_granule = typeid_cast<const MergeTreeProjectionIndexGranuleText *>(idx_granule.get());
+    if (!granule && !proj_granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index condition got a granule with the wrong type.");
 
-    const auto & analyzer = granule->getAnalyzer();
-    const auto & current_range = granule->getCurrentRange();
+    /// Dispatch granule methods — projection granule and skip-index granule share
+    /// the same interface but cannot share a base class (MergeTreeIndexGranuleText is final).
+    /// The skip-index granule is queried through its analyzer state, like upstream does,
+    /// while the projection granule keeps its own posting-list machinery.
+    /// Using a visitor-style dispatch so that adding a new granule method to upstream
+    /// requires a single addition here; the compiler enforces coverage.
+    struct GranuleDispatch
+    {
+        const MergeTreeIndexGranuleText * skip;
+        const MergeTreeProjectionIndexGranuleText * proj;
+
+        bool hasAnyQueryTokens(const TextSearchQuery & q) const
+        {
+            if (proj)
+                return proj->hasAnyQueryTokens(q);
+            return hasAnyTokensInRange(q, skip->getAnalyzer().getQueryBuilder(q), skip->getCurrentRange());
+        }
+        bool hasAllQueryTokens(const TextSearchQuery & q) const
+        {
+            if (proj)
+                return proj->hasAllQueryTokens(q);
+            return hasAllTokensInRange(q, skip->getAnalyzer().getQueryBuilder(q), skip->getCurrentRange());
+        }
+        bool hasAllQueryTokensOrEmpty(const TextSearchQuery & q) const
+        {
+            if (proj)
+                return proj->hasAllQueryTokensOrEmpty(q);
+            return hasAllTokensOrEmptyInRange(q, skip->getAnalyzer().getQueryBuilder(q), skip->getCurrentRange());
+        }
+        bool hasAnyQueryPatterns(const TextSearchQuery & q) const
+        {
+            if (proj)
+                return proj->hasAnyQueryPatterns(q);
+            return hasAnyPatternsInRange(q, skip->getAnalyzer().getQueryBuilder(q), skip->getCurrentRange());
+        }
+    } g{granule, proj_granule};
 
     /// Check like in KeyCondition.
     absl::InlinedVector<BoolMask, 8> rpn_stack;
@@ -474,8 +515,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAnyPatternsInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = g.hasAnyQueryPatterns(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
 
         }
@@ -483,16 +523,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAnyTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = g.hasAnyQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = g.hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_PHRASE)
@@ -501,16 +539,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             /// Actual positional phrase checking is done at the row level via position data.
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = g.hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = g.hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
@@ -520,9 +556,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
             for (const auto & text_search_query : element.text_search_queries)
             {
-                const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-
-                if (hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range))
+                if (g.hasAllQueryTokensOrEmpty(*text_search_query))
                 {
                     exists_in_granule = true;
                     break;
@@ -1292,7 +1326,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto patterns = stringLikeToPatterns(value_field, false);
             if (patterns.size() == 1)
             {
-                const auto pattern_read_mode = candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+                /// For a projection text index, never advertise `Exact`. The pattern-only branch has
+                /// no tokens that the projection text index reader can use to produce results;
+                /// `Exact` would let the optimizer drop the original predicate entirely, and the
+                /// reader (which has no fallback path for pattern-only matches) would memset the
+                /// virtual column to 1 and return false positives. `Hint` keeps the original LIKE
+                /// as a post-filter.
+                const auto pattern_read_mode
+                    = (candidate_for_exact_mode && !is_projection_index) ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
@@ -1323,7 +1364,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto patterns = stringLikeToPatterns(value_field, true);
         if (patterns.size() == 1)
         {
-            const auto pattern_read_mode = candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+            /// See the `like` branch above: a projection text index must not advertise `Exact`
+            /// for a pattern-only query, otherwise the original predicate is dropped and the
+            /// reader returns false positives.
+            const auto pattern_read_mode
+                = (candidate_for_exact_mode && !is_projection_index) ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
             out.function = RPNElement::FUNCTION_LIKE;
             out.text_search_queries.emplace_back(

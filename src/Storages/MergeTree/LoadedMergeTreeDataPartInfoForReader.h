@@ -11,10 +11,17 @@ class LoadedMergeTreeDataPartInfoForReader final : public IMergeTreeDataPartInfo
 {
 public:
     LoadedMergeTreeDataPartInfoForReader(
-        MergeTreeData::DataPartPtr data_part_, AlterConversionsPtr alter_conversions_)
+        MergeTreeData::DataPartPtr data_part_,
+        AlterConversionsPtr alter_conversions_,
+        const MergedPartOffsets * merged_part_offsets_ = nullptr,
+        size_t part_index_ = 0,
+        size_t part_starting_offset_ = 0)
         : IMergeTreeDataPartInfoForReader(data_part_->storage.getContext())
         , data_part(std::move(data_part_))
         , alter_conversions(std::move(alter_conversions_))
+        , merged_part_offsets(merged_part_offsets_)
+        , part_index(part_index_)
+        , part_starting_offset(part_starting_offset_)
     {
     }
 
@@ -100,6 +107,12 @@ public:
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
+    const MergedPartOffsets * getMergedPartOffsets() const override { return merged_part_offsets; }
+
+    size_t getPartIndex() const override { return part_index; }
+
+    size_t getPartStartingOffset() const override { return part_starting_offset; }
+
     MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
 
     std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }
@@ -108,6 +121,9 @@ public:
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
+    const MergedPartOffsets * merged_part_offsets;
+    size_t part_index;
+    size_t part_starting_offset;
 };
 
 }

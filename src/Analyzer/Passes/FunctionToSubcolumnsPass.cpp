@@ -1156,6 +1156,12 @@ private:
 
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
             add_key_columns(index.expression->getRequiredColumns());
+
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projection.index && projection.index->getIndexDescription())
+                add_key_columns(projection.getRequiredColumns());
+        }
     }
 
     void enterImpl(const ColumnNode & column_node)

@@ -47,12 +47,12 @@ public:
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
 
-    /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
-    /// Looks up its own index name in the map.
-    void setPrecomputedGranule(const IndexGranulesMap & granules);
+    /// Sets a pre-computed granule from the skip index reader.
+    /// Called after `filterMarksUsingIndex` passes granules to readers.
+    virtual void setPrecomputedGranule(const IndexGranulesMap & granules);
 
-private:
-    void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
+protected:
+    virtual void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
     std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;

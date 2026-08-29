@@ -2810,9 +2810,6 @@ void ReadFromMergeTree::buildIndexes(
 
     const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
 
-    if (all_indexes.empty())
-        return;
-
     std::unordered_set<std::string> ignored_index_names;
 
     if (settings[Setting::ignore_data_skipping_indices].changed)
@@ -2895,6 +2892,38 @@ void ReadFromMergeTree::buildIndexes(
                         index_helper->index.name, top_k_filter_info->column_name, top_k_filter_info->limit_n, top_k_filter_info->direction, top_k_filter_info->num_sort_columns);
             if (settings[Setting::use_skip_indexes_on_data_read])
                 skip_indexes.threshold_tracker = top_k_filter_info->threshold_tracker;
+        }
+    }
+
+    if (filter_dag.predicate)
+    {
+        const auto & all_projections = metadata_snapshot->getProjections();
+        for (const auto & projection : all_projections)
+        {
+            if (projection.index)
+            {
+                if (ignored_index_names.contains(projection.name))
+                    continue;
+
+                auto index_helper = projection.index->getIndex();
+                if (index_helper)
+                {
+                    ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory
+                        = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+                    {
+                        if (!predicate)
+                            return nullptr;
+                        return index_helper->createIndexCondition(predicate, query_context);
+                    };
+
+                    auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(
+                        filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding);
+
+                    const auto & unsubstituted = condition_template->generateUnsubstituted();
+                    if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
+                        skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
+                }
+            }
         }
     }
 
@@ -5862,7 +5891,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 
     for (const auto & index : skip_indexes.useful_indices)
     {
-        if (dynamic_cast<const MergeTreeIndexText *>(index.index.get()))
+        if (index.index->isTextIndex())
         {
             /// Create tasks for text indexes which don't read virtual columns.
             /// It's required to always read text indexes on separate step on data read.

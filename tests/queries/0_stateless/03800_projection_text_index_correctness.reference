@@ -1,0 +1,194 @@
+Part 1: Small data
+hasToken apple
+100
+100
+hasToken cherry
+100
+100
+hasToken elderberry
+100
+100
+AND intersection (empty)
+0
+0
+AND same group
+100
+100
+OR union
+200
+200
+non-existent token
+0
+0
+row values
+0	apple banana
+3	apple banana
+6	apple banana
+9	apple banana
+12	apple banana
+0	apple banana
+3	apple banana
+6	apple banana
+9	apple banana
+12	apple banana
+hasAnyTokens array: apple or cherry
+200
+200
+hasAnyTokens array: elderberry or grape
+100
+100
+hasAnyTokens array: all three
+300
+300
+hasAnyTokens array: none exist
+0
+0
+hasAnyTokens string: apple cherry
+200
+200
+hasAnyTokens string: grape mango
+0
+0
+hasAllTokens array: apple and banana
+100
+100
+hasAllTokens array: apple and cherry (empty)
+0
+0
+hasAllTokens array: cherry and date
+100
+100
+hasAllTokens array: single token apple
+100
+100
+hasAllTokens array: non-existent grape
+0
+0
+hasAllTokens string: apple banana
+100
+100
+hasAllTokens string: apple cherry
+0
+0
+Part 2: Large data (triggers large posting list path)
+large: hasToken common
+2000
+2000
+large: hasToken rare
+1000
+1000
+large: hasToken frequent
+1000
+1000
+large: AND common AND frequent
+1000
+1000
+large: AND common AND rare (empty)
+0
+0
+large: OR rare OR unique
+3000
+3000
+large: 3-way AND common AND medium (not frequent)
+1000
+1000
+large: hasAnyTokens array: common or rare
+3000
+3000
+large: hasAnyTokens array: frequent or special or odd
+3000
+3000
+large: hasAnyTokens array: nonexistent
+0
+0
+large: hasAnyTokens array: one exists one not
+2000
+2000
+large: hasAnyTokens string: common rare
+3000
+3000
+large: hasAnyTokens string: frequent special odd
+3000
+3000
+large: hasAllTokens array: common and frequent
+1000
+1000
+large: hasAllTokens array: common and medium
+1000
+1000
+large: hasAllTokens array: common and rare (empty)
+0
+0
+large: hasAllTokens array: rare and special
+1000
+1000
+large: hasAllTokens array: unique and even
+1000
+1000
+large: hasAllTokens array: common and nonexistent
+0
+0
+large: hasAllTokens string: common frequent
+1000
+1000
+large: hasAllTokens string: rare special
+1000
+1000
+large: hasAllTokens string: common rare
+0
+0
+large: hasAnyTokens AND hasToken
+2000
+2000
+large: hasAllTokens OR hasToken
+2000
+2000
+Part 3: After merge
+after merge: hasToken alpha
+2000
+2000
+after merge: hasToken beta
+2000
+2000
+after merge: AND alpha AND beta (empty)
+0
+0
+after merge: AND merge AND alpha
+2000
+2000
+after merge: OR alpha OR beta
+4000
+4000
+after merge: hasAnyTokens array: alpha or beta
+4000
+4000
+after merge: hasAnyTokens array: alpha or nonexistent
+2000
+2000
+after merge: hasAnyTokens array: nonexistent only
+0
+0
+after merge: hasAnyTokens string: alpha beta
+4000
+4000
+after merge: hasAllTokens array: merge and alpha
+2000
+2000
+after merge: hasAllTokens array: merge and beta
+2000
+2000
+after merge: hasAllTokens array: alpha and beta (empty)
+0
+0
+after merge: hasAllTokens array: merge and nonexistent
+0
+0
+after merge: hasAllTokens string: merge alpha
+2000
+2000
+after merge: hasAllTokens string: alpha beta
+0
+0
+after merge: hasAnyTokens AND hasAllTokens
+4000
+4000

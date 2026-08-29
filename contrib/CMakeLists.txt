@@ -364,3 +364,4 @@ function (organize_ide_folders_2_level _dir)
 endfunction ()
 
 organize_ide_folders_2_level ("${CMAKE_CURRENT_LIST_DIR}")
+add_contrib (abpfor-cmake abpfor)

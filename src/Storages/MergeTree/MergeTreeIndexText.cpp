@@ -728,9 +728,9 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
                     continue;
                 }
             }
-            else
+            else if (auto token_info = std::dynamic_pointer_cast<TokenPostingsInfo>(cached_infos[i]))
             {
-                analyzer->addTokenInfo(all_search_tokens[i], cached_infos[i]);
+                analyzer->addTokenInfo(all_search_tokens[i], std::move(token_info));
                 ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
                 continue;
             }
@@ -2033,7 +2033,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions, params.enable_phrase_query_support);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -2061,6 +2061,8 @@ static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "diction
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
+static const String ARGUMENT_HAS_BLOCK_INDEX = "has_block_index";
+static const String ARGUMENT_ENABLE_PHRASE_QUERY_SUPPORT = "enable_phrase_query_support";
 
 namespace
 {
@@ -2166,6 +2168,8 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
     UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    UInt64 has_block_index = extractFieldOption<UInt64>(options, ARGUMENT_HAS_BLOCK_INDEX).value_or(1);
+    UInt64 enable_phrase_query_support = extractFieldOption<UInt64>(options, ARGUMENT_ENABLE_PHRASE_QUERY_SUPPORT).value_or(0);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
@@ -2195,12 +2199,23 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         positions,
         std::move(preprocessor_ast),
         std::move(postprocessor_ast),
+        static_cast<bool>(has_block_index),
+        static_cast<bool>(enable_phrase_query_support),
         serialization_version};
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
+}
+
+UInt64 getTextIndexDictionaryBlockSizeFromAST(const ASTPtr & text_index_arguments, const MergeTreeSettings & settings)
+{
+    if (!text_index_arguments)
+        return settings[MergeTreeSetting::text_index_dictionary_block_size];
+
+    auto options = convertArgumentsToOptionsMap(text_index_arguments);
+    return extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
 }
 
 void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
@@ -2244,6 +2259,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
+
+    UInt64 has_block_index = extractFieldOption<UInt64>(options, ARGUMENT_HAS_BLOCK_INDEX).value_or(1);
+    if (has_block_index > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_HAS_BLOCK_INDEX, has_block_index);
+
+    UInt64 enable_phrase_query_support = extractFieldOption<UInt64>(options, ARGUMENT_ENABLE_PHRASE_QUERY_SUPPORT).value_or(0);
+    if (enable_phrase_query_support > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_ENABLE_PHRASE_QUERY_SUPPORT, enable_phrase_query_support);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));

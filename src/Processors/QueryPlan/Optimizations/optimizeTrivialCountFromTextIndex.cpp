@@ -238,8 +238,11 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (!indexes)
         return false;
 
+    /// `ReadFromTextIndexCount` reads the index's own `skp_idx_*` files directly. A projection
+    /// text index does not have them — its granules live in a projection part — so the rewrite
+    /// would fail at execution time with FILE_DOESNT_EXIST. Leave those to normal reading.
     for (const auto & useful : indexes->skip_indexes.useful_indices)
-        if (!useful.index->isTextIndex())
+        if (!useful.index->isTextIndex() || useful.index->isProjectionIndex())
             return false;
 
     /// Row policy filters rows the cardinality ignores; without a database name it can't be resolved, so fail closed.

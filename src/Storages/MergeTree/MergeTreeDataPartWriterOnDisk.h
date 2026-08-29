@@ -11,6 +11,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListData.h>
 #include <Columns/IColumn_fwd.h>
 #include <Compression/ICompressionCodec.h>
 
@@ -39,6 +40,58 @@ struct Granule
 
 /// Multiple granules to write for concrete block.
 using Granules = std::vector<Granule>;
+
+/// Data-only writer stream for large posting lists (no marks file).
+struct LargePostingListWriterStream
+{
+    LargePostingListWriterStream(
+        const String & escaped_column_name_,
+        const MutableDataPartStoragePtr & data_part_storage,
+        const String & data_path_,
+        const std::string & data_file_extension_,
+        size_t max_compress_block_size_,
+        const WriteSettings & query_write_settings);
+
+    ~LargePostingListWriterStream()
+    {
+        plain_file.reset();
+    }
+
+    void preFinalize();
+    void finalize();
+    void cancel() noexcept;
+    void sync() const;
+    void addToChecksums(MergeTreeDataPartChecksums & checksums);
+
+    String escaped_column_name;
+    std::string data_file_extension;
+
+    /// compressed_hashing -> compressor -> plain_hashing -> plain_file
+    std::unique_ptr<WriteBufferFromFileBase> plain_file;
+    HashingWriteBuffer plain_hashing;
+
+    bool is_prefinalized = false;
+
+    alignas(16) UInt32 doc_buffer[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+    /// Sized for 64-bit abpfor worst case (position index uses `abpfor::b256::encodeBlockDelta1` on UInt64).
+    uint8_t packed_buffer[ABPFOR_MAX_ENCODED_SIZE_64]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+
+    /// Phrase-mode scratch buffer for position delta accumulation across doc blocks.
+    /// Not zero-initialized — always overwritten before use.
+    /// Non-phrase mode does not use this buffer.
+    ///
+    /// `packed_buffer` (above) is reused as the abpfor encode output buffer for
+    /// positions in finish(), and for freq re-encoding in merge() — it is unused by
+    /// those paths for its original purpose (tokenize add/finalize already completed).
+    alignas(16) UInt32 pos_accum[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+
+    /// Phrase-mode scratch buffer for frequency accumulation during merge.
+    /// Separate from pos_accum because LargePostingBlockWriter uses pos_accum
+    /// for position delta accumulation concurrently with freq buffering.
+    alignas(16) UInt32 freq_accum[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+};
+
+using LargePostingListWriterStreamPtr = std::unique_ptr<LargePostingListWriterStream>;
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -96,6 +149,9 @@ protected:
     void fillSkipIndicesChecksums(MergeTreeDataPartChecksums & checksums);
     void finishSkipIndicesSerialization(bool sync);
 
+    void fillLargePostingChecksums(MergeTreeDataPartChecksums & checksums);
+    void finishLargePostingSerialization(bool sync);
+
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }
 
@@ -123,6 +179,11 @@ protected:
     static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
     const MergeTreeIndices skip_indices;
+
+    std::unordered_map<String, LargePostingListWriterStreamPtr> large_posting_streams;
+    std::unordered_map<String, LargePostingListWriterStreamPtr> position_streams;
+    std::unordered_map<String, LargePostingListWriterStreamPtr> lidx_streams;
+
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
 

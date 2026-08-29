@@ -2652,7 +2652,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         MergeTreeIndexGranulePtr granule;
         reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
-        auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
 
         auto may_be_true_on_range = [&](size_t mark_begin, size_t mark_end, auto && disjunction_result_fn) -> bool
         {
@@ -2662,7 +2661,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             if (row_begin == row_end)
                 return false;
 
-            granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
+            granule->setCurrentRange(RowsRange(row_begin, row_end - 1));
             return condition->mayBeTrueOnGranule(granule, disjunction_result_fn);
         };
 
