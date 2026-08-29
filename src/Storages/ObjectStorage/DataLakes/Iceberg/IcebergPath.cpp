@@ -11,6 +11,52 @@ extern const int BAD_ARGUMENTS;
 namespace DB::Iceberg
 {
 
+namespace
+{
+std::string_view trimTrailingSlashes(std::string_view str)
+{
+    while (!str.empty() && str.back() == '/')
+        str.remove_suffix(1);
+    return str;
+}
+}
+
+IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
+    const String & table_location, const String & queried_path, const String & metadata_file_key)
+{
+    static constexpr std::string_view metadata_dir = "/metadata/";
+
+    auto queried = trimTrailingSlashes(queried_path);
+    auto key = trimTrailingSlashes(metadata_file_key);
+
+    /// Only a document directly inside the table's own `metadata` directory names the table root.
+    auto metadata_dir_pos = key.rfind(metadata_dir);
+    if (metadata_dir_pos == std::string_view::npos
+        || key.find('/', metadata_dir_pos + metadata_dir.size()) != std::string_view::npos)
+        return {queried_path, RootRelation::Unknown};
+    auto candidate = key.substr(0, metadata_dir_pos);
+
+    if (candidate == queried)
+        return {queried_path, RootRelation::Same};
+
+    /// A component-aligned proper descendant; an empty queried path is the storage root.
+    const bool is_descendant = queried.empty()
+        ? !candidate.empty()
+        : candidate.size() > queried.size() && candidate.starts_with(queried) && candidate[queried.size()] == '/';
+    if (!is_descendant)
+        return {queried_path, RootRelation::Unknown};
+
+    /// Adopt only when the declared location denotes that same directory, whatever its spelling.
+    auto location = trimTrailingSlashes(table_location);
+    const bool location_agrees = location == candidate
+        || (location.size() > candidate.size() && location.ends_with(candidate)
+            && location[location.size() - candidate.size() - 1] == '/');
+    if (!location_agrees)
+        return {queried_path, RootRelation::Unknown};
+
+    return {String(candidate), RootRelation::AdoptedDescendant};
+}
+
 // This function is used to get the file path inside the directory which corresponds to Iceberg table from the full blob path which is written in manifest and metadata files.
 // For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
 // Common path should end with "<table_name>" or "<table_name>/".
