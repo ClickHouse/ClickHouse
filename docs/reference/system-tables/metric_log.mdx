@@ -291,6 +291,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied patch parts among all read tasks
 - `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied patch parts with Merge mode among all read tasks
 - `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied patch parts with Join mode among all read tasks
+- `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied patch parts with MergeOnKey mode (v2) among all read tasks
 - `ProfileEvent_PatchesReadRows` ([UInt64](/reference/data-types/int-uint)) — Total number of rows read from patch parts
 - `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Total number of uncompressed bytes read from patch parts
 - `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/reference/data-types/int-uint)) — Total number of rows added to hash tables when applying patch parts with Join mode
@@ -298,10 +299,12 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading patch parts
 - `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent building indexes for applying patch parts with Merge mode
 - `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent building indexes and hash tables for applying patch parts with Join mode
+- `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent inside applyPatchesMergeOnKey sort-key merge loops
 - `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent analyzing index of patch parts
 - `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/reference/data-types/int-uint)) — Total number of read tasks for which there was any mutation applied on fly
 - `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied mutations on-fly among all read tasks
 - `ProfileEvent_PatchesAcquireLockTries` ([UInt64](/reference/data-types/int-uint)) — Total number of tries to acquire lock for executing lightweight updates
+- `ProfileEvent_PatchesAcquireLockBadVersionRetries` ([UInt64](/reference/data-types/int-uint)) — Total number of retries while acquiring the lock for lightweight updates caused by a concurrent update committing first
 - `ProfileEvent_PatchesAcquireLockMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total number of microseconds spent to acquire lock for executing lightweight updates
 - `ProfileEvent_DiskObjectStorageWaitBlobRemovalMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting for pending blob removal after committing metadata transaction
 - `ProfileEvent_SchedulerIOReadRequests` ([UInt64](/reference/data-types/int-uint)) — Resource requests passed through scheduler for IO reads.
@@ -808,6 +811,8 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_CachedWriteBufferCacheWriteBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes written from source (remote fs, etc) to filesystem cache
 - `ProfileEvent_CachedWriteBufferCacheWriteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent writing data into filesystem cache
 - `ProfileEvent_CachedWriteBufferCacheWriteStopped` ([UInt64](/reference/data-types/int-uint)) — Number of times write-through caching was stopped (space reservation or the cache write failed, or a covering segment was being evicted), after which the write continues without populating the cache
+- `ProfileEvent_CachedWriteBufferCoveringSegmentShrunk` ([UInt64](/reference/data-types/int-uint)) — Number of times write-through caching shrunk a covering file segment which stayed behind the offset being written at (the ranges in between went to another distributed cache server), in order to continue caching in a new file segment
+- `ProfileEvent_CachedWriteBufferCoveringSegmentShrinkFailed` ([UInt64](/reference/data-types/int-uint)) — Number of times write-through caching had to stop because a covering file segment which stayed behind the offset being written at could not be shrunk (it is held by someone else, so the hole in it cannot be resolved) or was concurrently evicted
 - `ProfileEvent_FilesystemCacheLoadMetadataMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent loading filesystem cache metadata
 - `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from filesystem cache
 - `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/reference/data-types/int-uint)) — Number of created key directories
@@ -905,7 +910,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/reference/data-types/int-uint)) — How many staged records the adaptive aggregation merged away as duplicate keys at publish and at the seal.
 - `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/reference/data-types/int-uint)) — How many key bytes the adaptive aggregation staged for the merge-time drain.
 - `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/reference/data-types/int-uint)) — How many coalesced chunks the adaptive aggregation sealed from buffered staging batches.
-- `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation seal normalized column representations because the buffered batches disagreed at one argument position.
+- `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/reference/data-types/int-uint)) — How many staged argument columns the adaptive aggregation seal normalized from a wrapped representation (Const, Replicated, Sparse, LowCardinality) to the dense form the drain consumes.
 - `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/reference/data-types/int-uint)) — How many delayed records the adaptive aggregation drained into the shared table at merge time.
 - `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation drained staged records early because of memory pressure.
 - `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/reference/data-types/int-uint)) — How many staged records the adaptive aggregation drained early under memory pressure.
@@ -1172,6 +1177,15 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_DistrCacheSuccessfulRegistryUpdates` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache registry event. The number of successful server registry updates
 - `ProfileEvent_DistrCacheUnsuccessfulRegistryUpdates` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache registry event. The number of unsuccessful server registry updates
 - `ProfileEvent_DistrCacheReadBytesFromFallbackBuffer` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Bytes read from fallback buffer
+- `ProfileEvent_DistrCacheReadBytesSkippedOnSeek` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. In-flight bytes discarded on a forward seek to reuse the open stream
+- `ProfileEvent_DistrCacheSeekReRequests` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The number of times a seek requested a new read range on the same connection
+- `ProfileEvent_DistrCacheSeekCancelledRequests` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The number of times a seek cancelled the open request instead of reusing the stream
+- `ProfileEvent_DistrCacheSeekSkips` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The number of forward seeks which skipped the gap on the open stream
+- `ProfileEvent_DistrCacheSeekSkipDeclinedGapNotBuffered` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The number of forward seeks which could not skip because the gap was not buffered locally
+- `ProfileEvent_DistrCacheSeekBufferedBytesShortfall` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The number of bytes the locally buffered data fell short of the gap when a skip was declined
+- `ProfileEvent_DistrCacheSeekReRequestFirstPacketMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Time between requesting a new read range on the open stream because of a seek and receiving its first packet
+- `ProfileEvent_DistrCacheEstimatedInflightBytesOnSeek` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The estimated in-flight bytes at the seeks which considered discarding the connection (compare with DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)
+- `ProfileEvent_DistrCacheReadBytesUnconsumedOnEndRequest` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Bytes of the requested read range left unconsumed when the request was ended early
 - `ProfileEvent_DistrCacheOpenedConnections` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache connection event. The number of open connections to distributed cache
 - `ProfileEvent_DistrCacheReusedConnections` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache connection event. The number of reused connections to distributed cache
 - `ProfileEvent_DistrCacheStaleReconnections` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache connection event. The number of reconnections due to stale (peer-closed) pooled connections
@@ -1236,6 +1250,9 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Virtual parts update microseconds
 - `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeper` ([UInt64](/reference/data-types/int-uint)) — Virtual parts updates count from ZooKeeper
 - `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Virtual parts updates from ZooKeeper microseconds
+- `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperPartitionsFromCache` ([UInt64](/reference/data-types/int-uint)) — Number of partitions skipped during virtual parts discovery because their stat was up to date in the discovery cache
+- `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperPartitions` ([UInt64](/reference/data-types/int-uint)) — Number of partitions discovered from ZooKeeper during virtual parts discovery because their stat was not present or stale in the discovery cache
+- `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperFullyCached` ([UInt64](/reference/data-types/int-uint)) — Number of virtual parts discoveries where all partitions were used from the discovery cache and nothing was fetched from ZooKeeper
 - `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesPeerNotFound` ([UInt64](/reference/data-types/int-uint)) — Virtual updates from peer failed because no one found
 - `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromPeer` ([UInt64](/reference/data-types/int-uint)) — Virtual parts updates count from peer
 - `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromPeerMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Virtual parts updates from peer microseconds
@@ -1259,6 +1276,9 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_SharedMergeTreePartsKillerMicroseconds` ([UInt64](/reference/data-types/int-uint)) — How much time does parts killer main thread takes
 - `ProfileEvent_SharedMergeTreePartsKillerParts` ([UInt64](/reference/data-types/int-uint)) — How many parts has been scheduled by the killer
 - `ProfileEvent_SharedMergeTreePartsKillerPartsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — How many time does it take to remove parts (executed from multiple threads)
+- `ProfileEvent_SharedMergeTreeBlobsListPartsWritten` ([UInt64](/reference/data-types/int-uint)) — How many SharedMergeTree blob-list parts were written (one consolidated blobs.list node each)
+- `ProfileEvent_SharedMergeTreeBlobsListBlobsWritten` ([UInt64](/reference/data-types/int-uint)) — How many data blobs were recorded across SharedMergeTree blobs.list maps
+- `ProfileEvent_SharedMergeTreeBlobsListInlineFilesWritten` ([UInt64](/reference/data-types/int-uint)) — How many small files were stored inline in SharedMergeTree blobs.list maps instead of separate blobs
 - `ProfileEvent_SharedMergeTreeMergeSelectingTaskMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Merge selecting task microseconds for SMT
 - `ProfileEvent_SharedMergeTreeReplicaSetUpdateTaskRuns` ([UInt64](/reference/data-types/int-uint)) — Number of times updateReplicaSetTask has run
 - `ProfileEvent_SharedMergeTreeOptimizeAsync` ([UInt64](/reference/data-types/int-uint)) — Asynchronous OPTIMIZE queries executed
@@ -1278,14 +1298,17 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_SharedMergeTreeSelectPartsForCoordinatedFetchParts` ([UInt64](/reference/data-types/int-uint)) — Number of parts selected by selectPartsForCoordinatedFetch
 - `ProfileEvent_SharedMergeTreeSelectPartsForFullFetchMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time of selectPartsForFullFetch
 - `ProfileEvent_SharedMergeTreeSelectPartsForFullFetchParts` ([UInt64](/reference/data-types/int-uint)) — Number of parts selected by selectPartsForFullFetch
+- `ProfileEvent_SharedMergeTreeFetchDeduplicated` ([UInt64](/reference/data-types/int-uint)) — Number of part fetches deduplicated because the part was already being fetched or produced by another thread
 - `ProfileEvent_SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time of tryUpdateDiskMetadataCacheForPart in scheduleDataProcessingJob
 - `ProfileEvent_SharedMergeTreeLoadChecksumAndIndexesMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time of loadColumnsChecksumsIndexes only for SharedMergeTree
+- `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/reference/data-types/int-uint)) — How many data blobs were path-shared between SharedMergeTree blob-list parts (reference-count increments appended to commit multis)
 - `ProfileEvent_SharedMergeTreeSnapshotPartsCleanRequest` ([UInt64](/reference/data-types/int-uint)) — How many times SnapshotCleanerThread decides to clean a part
 - `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerParts` ([UInt64](/reference/data-types/int-uint)) — How long time SnapshotCleanerThread tries to clean a part
 - `ProfileEvent_SharedMergeTreeSnapshotPartsRemoved` ([UInt64](/reference/data-types/int-uint)) — How many times SnapshotCleanerThread successfully clean a part
 - `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerRuns` ([UInt64](/reference/data-types/int-uint)) — How many times SnapshotCleanerThread runs
 - `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerMicroseconds` ([UInt64](/reference/data-types/int-uint)) — How long time SnapshotCleanerThread has run
 - `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerPartsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — How long time SnapshotCleanerThread takes to clean parts
+- `ProfileEvent_SharedMergeTreeSnapshotDeadLocksReclaimed` ([UInt64](/reference/data-types/int-uint)) — How many Keeper nodes or subtrees of no longer live lightweight snapshots were reclaimed
 - `ProfileEvent_SharedMergeTreeDataPartsFetchAttempt` ([UInt64](/reference/data-types/int-uint)) — How many times we tried to fetch data parts
 - `ProfileEvent_SharedMergeTreeDataPartsFetchFromPeer` ([UInt64](/reference/data-types/int-uint)) — How many times we fetch data parts from peer
 - `ProfileEvent_SharedMergeTreeDataPartsFetchFromPeerMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Data parts fetch from peer microseconds
@@ -1491,6 +1514,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/reference/data-types/int-uint)) — Number of granules examined for read time pruning by JOIN Runtime Filters
 - `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/reference/data-types/int-uint)) — Number of granules pruned at read time by JOIN Runtime Filters
 - `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of post-processing steps after building the right JOIN side.
+- `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time transforming the right JOIN side payload into row-major format.
 - `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query.
 - `ProfileEvent_AIOutputTokens` ([UInt64](/reference/data-types/int-uint)) — Total completion tokens consumed across all AI function calls in the query.
 - `ProfileEvent_AIAPICalls` ([UInt64](/reference/data-types/int-uint)) — Number of HTTP requests dispatched to AI providers.
@@ -1500,6 +1524,8 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_StatelessWorkerProvided` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers provided to queries for distributed query execution.
 - `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time queries spent waiting for stateless workers to be provisioned.
 - `ProfileEvent_StatelessWorkerProvisioningWaits` ([UInt64](/reference/data-types/int-uint)) — Number of times a query had to wait for the stateless worker discovery service to provide workers.
+- `ProfileEvent_StatelessWorkerNotAccessible` ([UInt64](/reference/data-types/int-uint)) — Number of times a leased stateless worker was found not yet reachable and excluded from query allocation until it passes the accessibility check.
+- `ProfileEvent_StatelessWorkerTimeToAvailableMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time (summed across workers) between a leased stateless worker first appearing from the discovery service and it passing the accessibility check to become available for query execution.
 - `ProfileEvent_StatelessWorkerCreateLeaseRequests` ([UInt64](/reference/data-types/int-uint)) — Number of create_lease requests sent to the stateless worker discovery service to acquire workers.
 - `ProfileEvent_StatelessWorkerCreateLeaseMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent in create_lease requests to the stateless worker discovery service.
 - `ProfileEvent_StatelessWorkerCreateLeaseErrors` ([UInt64](/reference/data-types/int-uint)) — Number of failed create_lease requests to the stateless worker discovery service (any error or timeout).
@@ -1517,6 +1543,40 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_StatelessWorkerServerHeartbeatErrors` ([UInt64](/reference/data-types/int-uint)) — Number of failed heartbeats from stateless workers to the stateless worker discovery service (any error or timeout).
 - `ProfileEvent_StatelessWorkerServerTenantBindings` ([UInt64](/reference/data-types/int-uint)) — Number of times a stateless worker was assigned to a tenant to serve its queries.
 - `ProfileEvent_StatelessWorkerServerLeasesLost` ([UInt64](/reference/data-types/int-uint)) — Number of times a stateless worker's lease ended and it began awaiting shutdown.
+- `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseRequests` ([UInt64](/reference/data-types/int-uint)) — Number of create_lease requests handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseErrors` ([UInt64](/reference/data-types/int-uint)) — Number of create_lease requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling create_lease requests.
+- `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseRequests` ([UInt64](/reference/data-types/int-uint)) — Number of update_lease requests handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseErrors` ([UInt64](/reference/data-types/int-uint)) — Number of update_lease requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling update_lease requests.
+- `ProfileEvent_StatelessWorkerDiscoveryGetLeaseRequests` ([UInt64](/reference/data-types/int-uint)) — Number of get_lease requests handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryGetLeaseErrors` ([UInt64](/reference/data-types/int-uint)) — Number of get_lease requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryGetLeaseMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling get_lease requests.
+- `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerRequests` ([UInt64](/reference/data-types/int-uint)) — Number of create_worker requests handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerErrors` ([UInt64](/reference/data-types/int-uint)) — Number of create_worker requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling create_worker requests.
+- `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerRequests` ([UInt64](/reference/data-types/int-uint)) — Number of delete_worker requests handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerErrors` ([UInt64](/reference/data-types/int-uint)) — Number of delete_worker requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling delete_worker requests.
+- `ProfileEvent_StatelessWorkerDiscoveryGetWorkerRequests` ([UInt64](/reference/data-types/int-uint)) — Number of get_worker requests handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryGetWorkerErrors` ([UInt64](/reference/data-types/int-uint)) — Number of get_worker requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryGetWorkerMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling get_worker requests.
+- `ProfileEvent_StatelessWorkerDiscoveryHeartbeatRequests` ([UInt64](/reference/data-types/int-uint)) — Number of heartbeat requests handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryHeartbeatErrors` ([UInt64](/reference/data-types/int-uint)) — Number of heartbeat requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryHeartbeatMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling heartbeat requests.
+- `ProfileEvent_StatelessWorkerDiscoveryListWorkersRequests` ([UInt64](/reference/data-types/int-uint)) — Number of list_workers requests handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryListWorkersErrors` ([UInt64](/reference/data-types/int-uint)) — Number of list_workers requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryListWorkersMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling list_workers requests.
+- `ProfileEvent_StatelessWorkerDiscoveryTenantRequests` ([UInt64](/reference/data-types/int-uint)) — Number of tenant management requests (create, update, delete, get, or list tenant) handled by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryTenantErrors` ([UInt64](/reference/data-types/int-uint)) — Number of tenant management requests the stateless worker discovery service answered with an error.
+- `ProfileEvent_StatelessWorkerDiscoveryTenantMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time the stateless worker discovery service spent handling tenant management requests.
+- `ProfileEvent_StatelessWorkerDiscoveryInternalErrors` ([UInt64](/reference/data-types/int-uint)) — Number of requests the stateless worker discovery service failed to handle because of an internal error (an exception or a coordination-store failure), rather than rejecting an invalid request.
+- `ProfileEvent_StatelessWorkerDiscoveryWorkersLeased` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers newly leased to tenants by the stateless worker discovery service.
+- `ProfileEvent_StatelessWorkerDiscoveryWorkersUnavailable` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers that tenants requested but the stateless worker discovery service could not provide because no free workers were available or the tenant worker limit was reached.
+- `ProfileEvent_StatelessWorkerDiscoveryWorkersLeaseExpired` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers reclaimed by the stateless worker discovery service because their lease expired.
+- `ProfileEvent_StatelessWorkerDiscoveryWorkersHeartbeatExpired` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers reclaimed by the stateless worker discovery service because they stopped sending heartbeats.
+- `ProfileEvent_StatelessWorkerDiscoveryHeartbeatsRejected` ([UInt64](/reference/data-types/int-uint)) — Number of heartbeats the stateless worker discovery service rejected because the worker had already been evicted.
+- `ProfileEvent_StatelessWorkerDiscoveryKeeperTransactionRetries` ([UInt64](/reference/data-types/int-uint)) — Number of write transactions the stateless worker discovery service retried because its coordination store (Keeper) state was modified concurrently.
 - `CurrentMetric_Query` ([Int64](/reference/data-types/int-uint)) — Number of executing queries
 - `CurrentMetric_ASTFuzzerAccumulatedFragments` ([Int64](/reference/data-types/int-uint)) — Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.
 - `CurrentMetric_QueryNonInternal` ([Int64](/reference/data-types/int-uint)) — Number of executing non-internal queries (queries initiated by users, excluding internal queries from ClickHouse)
@@ -1741,6 +1801,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_IcebergCompactionSnapshots` ([Int64](/reference/data-types/int-uint)) — Number of iceberg compactions.
 - `CurrentMetric_IcebergCompactionMerge` ([Int64](/reference/data-types/int-uint)) — Number of executing background Iceberg compaction merges.
 - `CurrentMetric_IcebergCompactionSourceFiles` ([Int64](/reference/data-types/int-uint)) — Number of input source files (data files and position delete files) participating in currently executing Iceberg compaction merges.
+- `CurrentMetric_IcebergCompactionCleanupTasks` ([Int64](/reference/data-types/int-uint)) — Number of background tasks for removing data files superseded by Iceberg compaction, which are scheduled or still retained by Iceberg tables.
 - `CurrentMetric_ParallelWithQueryThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the threadpool for processing PARALLEL WITH queries.
 - `CurrentMetric_ParallelWithQueryActiveThreads` ([Int64](/reference/data-types/int-uint)) — Number of active threads in the threadpool for processing PARALLEL WITH queries.
 - `CurrentMetric_ParallelWithQueryScheduledThreads` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.
@@ -1960,6 +2021,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_SharedMergeTreeThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pools in internals of SharedMergeTree
 - `CurrentMetric_SharedMergeTreeThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pools in internals of SharedMergeTree running a task
 - `CurrentMetric_SharedMergeTreeThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active threads in the thread pools in internals of SharedMergeTree
+- `CurrentMetric_SharedMergeTreeBlobRefCounterNodes` ([Int64](/reference/data-types/int-uint)) — Number of blob reference-count nodes (one per data blob shared by 2+ blob-list parts) in the cluster-shared `_blob_manager/refcount` Keeper subtrees, measured periodically by the blob-manager stats task and summed over the server's Keeper-metadata disks.
 - `CurrentMetric_SharedMergeTreeFetch` ([Int64](/reference/data-types/int-uint)) — Number of fetches in progress
 - `CurrentMetric_SharedMergeTreeAssignedCurrentParts` ([Int64](/reference/data-types/int-uint)) — Number of parts locked by merge or mutation
 - `CurrentMetric_SharedMergeTreeOutdatedPartsInKeeper` ([Int64](/reference/data-types/int-uint)) — How many outdated part records stored in keeper
@@ -2044,6 +2106,10 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_StatelessWorkerInUse` ([Int64](/reference/data-types/int-uint)) — Number of stateless workers currently in use by running queries.
 - `CurrentMetric_StatelessWorkerIdle` ([Int64](/reference/data-types/int-uint)) — Number of stateless workers currently held by the server but not used by any running query.
 - `CurrentMetric_StatelessWorkerServerActiveTasks` ([Int64](/reference/data-types/int-uint)) — Number of query execution tasks currently active on a stateless worker (accepted from a tenant and not yet released).
+- `CurrentMetric_StatelessWorkerDiscoveryFreeWorkers` ([Int64](/reference/data-types/int-uint)) — Number of stateless workers that are registered and available to be leased, as tracked by the stateless worker discovery service.
+- `CurrentMetric_StatelessWorkerDiscoveryLeasedWorkers` ([Int64](/reference/data-types/int-uint)) — Number of stateless workers currently leased to tenants, as tracked by the stateless worker discovery service.
+- `CurrentMetric_StatelessWorkerDiscoveryDyingWorkers` ([Int64](/reference/data-types/int-uint)) — Number of stateless workers that have been evicted and are awaiting removal, as tracked by the stateless worker discovery service.
+- `CurrentMetric_StatelessWorkerDiscoveryTenants` ([Int64](/reference/data-types/int-uint)) — Number of tenants registered with the stateless worker discovery service.
 - `CurrentMetric_ExchangeServerThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the distributed exchange server handshake thread pool.
 - `CurrentMetric_ExchangeServerThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the distributed exchange server handshake thread pool running a task.
 - `CurrentMetric_ExchangeServerThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the distributed exchange server handshake thread pool.
