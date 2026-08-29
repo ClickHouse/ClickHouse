@@ -5,3 +5,5 @@ TLSHandshakeMicroseconds increased
 TLSServerHandshakes increased
 TLSServerHandshakeMicroseconds increased
 HTTPServerConnectionsErrors increased
+TLSServerHandshakeErrors increased
+TLSHandshakeErrors increased

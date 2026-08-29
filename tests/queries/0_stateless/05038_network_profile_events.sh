@@ -69,4 +69,23 @@ expect_increase TLSHandshakeMicroseconds https_request_to_self
 expect_increase TLSServerHandshakes https_request_to_self
 expect_increase TLSServerHandshakeMicroseconds https_request_to_self
 
+# A plaintext request to the secure port: the server cannot make sense of it as a `ClientHello`,
+# so its side of the handshake fails.
+function plaintext_request_to_https_port()
+{
+    printf 'GET / HTTP/1.1\r\n\r\n' \
+        | timeout 30 nc "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTPS}" > /dev/null
+}
+
+# A TLS handshake against the plain HTTP port: the peer answers with something that is not a
+# `ServerHello`, so the client side of the handshake fails.
+function https_request_to_plain_http_port()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DROP CONNECTIONS CACHE"
+    $CLICKHOUSE_CLIENT -q "SELECT * FROM url('https://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/', 'TSV', 'x UInt8') FORMAT Null" 2>/dev/null
+}
+
 expect_increase HTTPServerConnectionsErrors malformed_http_request
+
+expect_increase TLSServerHandshakeErrors plaintext_request_to_https_port
+expect_increase TLSHandshakeErrors https_request_to_plain_http_port

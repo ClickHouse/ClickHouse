@@ -377,12 +377,10 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 	int rc;
 	if (_needHandshake)
 	{
-		rc = completeHandshake();
-		if (rc == 1)
-			verifyPeerCertificate();
-		else if (rc == 0)
+		rc = completeHandshakeImpl(true);
+		if (rc == 0)
 			throw SSLConnectionUnexpectedlyClosedException();
-		else
+		else if (rc != 1)
 			return rc;
 	}
 
@@ -430,10 +428,8 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	int rc;
 	if (_needHandshake)
 	{
-		rc = completeHandshake();
-		if (rc == 1)
-			verifyPeerCertificate();
-		else
+		rc = completeHandshakeImpl(true);
+		if (rc != 1)
 			return rc;
 	}
 
@@ -472,6 +468,12 @@ int SecureSocketImpl::available() const
 
 int SecureSocketImpl::completeHandshake()
 {
+	return completeHandshakeImpl(false);
+}
+
+
+int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
+{
 	ScopedLock lock(*_mutex);
 	poco_assert (_pSocket->initialized());
 	poco_check_ptr (_pSSL);
@@ -479,37 +481,39 @@ int SecureSocketImpl::completeHandshake()
 	HandshakeProfileEventCounter handshakeCounter(SSL_is_server(_pSSL) != 0);
 
 	int rc;
-	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
-	do
+	try
 	{
-		RemainingTimeCounter counter(remaining_time);
-		rc = SSL_do_handshake(_pSSL);
-	}
-	while (mustRetry(rc, remaining_time));
-	if (rc <= 0)
-	{
-		try
+		Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+		do
+		{
+			RemainingTimeCounter counter(remaining_time);
+			rc = SSL_do_handshake(_pSSL);
+		}
+		/// `mustRetry` itself throws `Poco::TimeoutException` when a blocking socket runs out of time.
+		while (mustRetry(rc, remaining_time));
+		if (rc <= 0)
 		{
 			rc = handleError(rc);
+			if (rc < 0 && _pSocket->getBlocking())
+				throw Poco::TimeoutException("SSL handshake timed out");
+			/// A negative `rc` on a non-blocking socket means the handshake wants more data and will be
+			/// resumed by the next read or write, so it has neither succeeded nor failed yet. Zero means
+			/// the peer closed the connection in the middle of the handshake.
+			if (rc == 0)
+				handshakeCounter.failed();
+			return rc;
 		}
-		catch (...)
-		{
-			handshakeCounter.failed();
-			throw;
-		}
-		if (rc < 0 && _pSocket->getBlocking())
-		{
-			handshakeCounter.failed();
-			throw Poco::TimeoutException("SSL handshake timed out");
-		}
-		/// A negative `rc` on a non-blocking socket means the handshake wants more data and will be
-		/// resumed by the next read or write, so it has neither succeeded nor failed yet. Zero means
-		/// the peer closed the connection in the middle of the handshake.
-		if (rc == 0)
-			handshakeCounter.failed();
-		return rc;
+		_needHandshake = false;
+		/// The peer certificate is validated as a part of the handshake, so that an unacceptable
+		/// certificate is accounted as a handshake error rather than as a successful handshake.
+		if (verifyPeer)
+			verifyPeerCertificate();
 	}
-	_needHandshake = false;
+	catch (...)
+	{
+		handshakeCounter.failed();
+		throw;
+	}
 	handshakeCounter.succeeded();
 	return rc;
 }
