@@ -96,7 +96,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
 /// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
 /// or `WITH CUBE` can be shipped under `make_distributed_plan`.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 9;
+/// Version 10 adds the aggregate-tree frame threshold to `WindowStep`. The step throws on both sides
+/// below this version rather than let a peer misparse the stream or silently pick a threshold.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 10;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -105,6 +107,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_RE
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
+/// First query-plan serialization version whose "Window" step carries `min_frame_rows_for_aggregate_tree`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD = 10;
 /// First query-plan serialization version that knows the `enable_packed_string_keys_in_aggregation`
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.

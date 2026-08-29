@@ -65,6 +65,7 @@ public:
 
     /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
     bool hasStreamsFanOut() const { return streams_fan_out; }
+    UInt64 getMinFrameRowsForAggregateTree() const { return min_frame_rows_for_aggregate_tree; }
 
     QueryPlanStepPtr clone() const override;
 

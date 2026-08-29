@@ -956,7 +956,11 @@ static void tryPushWindowBelowSortedGather(QueryPlan::Node & node, const QueryPl
     /// exists to re-parallelize downstream work on a single node; in the distributed shape that
     /// parallelism comes from the buckets themselves.
     auto bucket_window = std::make_unique<WindowStep>(
-        sorting_node->step->getOutputHeader(), window_description, window_step->getWindowFunctions(), /*streams_fan_out_=*/false);
+        sorting_node->step->getOutputHeader(),
+        window_description,
+        window_step->getWindowFunctions(),
+        /*streams_fan_out_=*/false,
+        window_step->getMinFrameRowsForAggregateTree());
     bucket_window->setStepDescription(*window_step);
 
     /// Move the gather above the window; the children links already form the target chain.

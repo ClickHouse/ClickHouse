@@ -348,6 +348,14 @@ void WindowStep::serialize(Serialization & ctx) const
     serializeWindowFrame(window_description.frame, ctx.out);
 
     serializeWindowFunctions(window_functions, ctx.out);
+
+    /// The threshold decides between two algorithms whose results are not bit-identical for floating-point
+    /// or tie-breaking aggregates, so a peer must apply the initiator's value rather than its own default.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: serializing a WindowStep requires query plan serialization "
+            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD);
+    writeVarUInt(min_frame_rows_for_aggregate_tree, ctx.out);
 }
 
 QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
@@ -384,11 +392,19 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 
     window_description.window_functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front());
 
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: deserializing a WindowStep requires query plan serialization "
+            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD);
+    UInt64 min_frame_rows_for_aggregate_tree = 0;
+    readVarUInt(min_frame_rows_for_aggregate_tree, ctx.in);
+
     return std::make_unique<WindowStep>(
         ctx.input_headers.front(),
         window_description,
         window_description.window_functions,
-        streams_fan_out);
+        streams_fan_out,
+        min_frame_rows_for_aggregate_tree);
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);
