@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/replaceLegacyToTime.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
@@ -28,6 +29,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool use_legacy_to_time;
     extern const SettingsBool enable_lightweight_delete;
     extern const SettingsUInt64 lightweight_deletes_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -64,6 +66,12 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterDeleteQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
+
+    /// The spelling must be canonical before the query is enqueued for a Replicated database or
+    /// lowered into an UPDATE / ALTER text: the replaying host may not carry this session's settings.
+    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+        replaceLegacyToTime(*query_ptr);
+
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
