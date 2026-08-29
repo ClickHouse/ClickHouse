@@ -5258,7 +5258,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
-    ProfileEvents::increment(ProfileEvents::IndexMonotonicFunctionChainApplications);
+    /// An empty chain applies nothing, and `MergeTreeSetIndex::checkInRange` passes one for every `IN`.
+    if (!functions.empty())
+        ProfileEvents::increment(ProfileEvents::IndexMonotonicFunctionChainApplications);
 
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
@@ -5781,17 +5783,35 @@ private:
         std::optional<Range> result;
     };
 
-    /// A key that occurs once can never be reused, so it must not pay for an entry. Sorting once per
-    /// check keeps this off the per-atom path, where a condition with many chains would make it
-    /// quadratic.
+    /// `getKeyColumn` requires exactly one key column, which is also what reaches `apply`.
+    static bool isMemoizable(const KeyCondition::RPNElement & element)
+    {
+        return element.monotonic_functions_chain_identity && element.key_columns.size() == 1;
+    }
+
+    /// A key that occurs once can never be reused, so it must not pay for an entry. Fewer than two
+    /// memoizable atoms cannot repeat at all, which is worth settling before the keys are collected:
+    /// the collection costs a mapper call per RPN element and a sort, per hyperrectangle check.
     bool isRepeated(const Key & key)
     {
+        if (!can_repeat.has_value())
+        {
+            size_t memoizable = 0;
+            for (const auto & element : rpn)
+                if (isMemoizable(element) && ++memoizable == 2)
+                    break;
+            can_repeat = memoizable == 2;
+        }
+        if (!*can_repeat)
+            return false;
+
+        /// Sorting once per check keeps this off the per-atom path, where a condition with many chains
+        /// would make it quadratic.
         if (!sorted_keys.has_value())
         {
             sorted_keys.emplace();
-            /// `getKeyColumn` requires exactly one key column, which is also what reaches `apply`.
             for (const auto & element : rpn)
-                if (element.monotonic_functions_chain_identity && element.key_columns.size() == 1)
+                if (isMemoizable(element))
                     sorted_keys->emplace_back(memo_key_of_element(element), *element.monotonic_functions_chain_identity);
             std::sort(sorted_keys->begin(), sorted_keys->end());
         }
@@ -5803,6 +5823,7 @@ private:
     const KeyCondition::RPN & rpn;
     MemoKeyOfElement memo_key_of_element;
     absl::InlinedVector<Entry, 4> entries;
+    std::optional<bool> can_repeat;
     std::optional<absl::InlinedVector<Key, 8>> sorted_keys;
 };
 
