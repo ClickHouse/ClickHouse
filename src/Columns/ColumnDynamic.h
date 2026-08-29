@@ -444,6 +444,11 @@ public:
 
     static const DataTypePtr & getSharedVariantDataType();
 
+    /// The format settings of the binary encoding of a value as its type and value in binary format
+    /// (`SerializationDynamic::serializeBinary`). It is used for the values stored in the shared variant
+    /// of a `Dynamic` column and in the shared data of a `JSON` column.
+    static const FormatSettings & getBinaryEncodedValueFormatSettings();
+
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {
         return variant_info.variant_name_to_discriminator.at(getSharedVariantTypeName());

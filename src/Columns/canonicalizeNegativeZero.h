@@ -7,7 +7,7 @@ namespace DB
 {
 
 /** Replaces negative zeros with positive zeros in a floating point column,
-  * recursively for `Nullable`, `Array`, `Tuple` and `Map` columns.
+  * recursively for `Nullable`, `Array`, `Tuple`, `Map`, `Variant` and `Dynamic` columns.
   *
   * Negative zero is equal to positive zero by the rules of comparison, but has a different binary
   * representation, and hash tables compare floating point values bitwise - see `normalizeNegativeZero`.
