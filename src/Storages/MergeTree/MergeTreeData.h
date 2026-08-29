@@ -1025,6 +1025,16 @@ public:
         return outdated_data_parts_loading_finished.load(std::memory_order_relaxed);
     }
 
+    /// True only when the in-memory Outdated set is the whole Outdated set on disk.
+    /// `outdatedPartsLoadingFinished()` cannot answer that on its own: it reads `true` both when the
+    /// asynchronous load finished and when it was never scheduled (readonly disks / `table_readonly`),
+    /// and in the latter case the set is absent rather than empty.
+    bool outdatedPartsSetIsComplete() const
+    {
+        return outdatedPartsLoadingFinished()
+            && !outdated_data_parts_loading_skipped.load(std::memory_order_relaxed);
+    }
+
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
     /// Settle the staged bitmaps each part still owes, per part
@@ -2094,6 +2104,18 @@ protected:
     /// it is automatically finished.
     std::atomic_bool outdated_data_parts_loading_finished = true;
     std::atomic_bool unexpected_data_parts_loading_finished = true;
+
+    /// Set by `loadDataParts`; read through `outdatedPartsSetIsComplete()`.
+    std::atomic_bool outdated_data_parts_loading_skipped = false;
+    /// The writability `loadDataParts` decided for unique-key sidecar maintenance: false on static
+    /// storage, readonly disks, or `table_readonly`. Recorded rather than recomputed, so post-load
+    /// recovery cannot disagree with the load-time sweep. False until that decision is made.
+    bool uniqueKeyStorageIsWritable() const
+    {
+        return unique_key_storage_is_writable.load(std::memory_order_relaxed);
+    }
+
+    std::atomic_bool unique_key_storage_is_writable = false;
 
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedAndUnexpectedDataPartsLoadingTask();

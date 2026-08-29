@@ -11,6 +11,8 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
+#include <fmt/ranges.h>
+
 #include <algorithm>
 
 namespace ProfileEvents
@@ -140,9 +142,39 @@ MergeTreeBitmapStore::PartEntryPtr MergeTreeBitmapStore::findEntry(const MergeTr
 
 void MergeTreeBitmapStore::dropPart(const IMergeTreeDataPart & part)
 {
+    PartEntryPtr dropped;
     {
         std::lock_guard lock(entries_mutex);
-        entries.erase(part.info);
+        if (const auto it = entries.find(part.info); it != entries.end())
+        {
+            /// Held past the erase so the check below runs with `entries_mutex` released: nothing in
+            /// this file nests an entry lock inside it.
+            dropped = it->second;
+            entries.erase(it);
+        }
+    }
+
+    if (dropped)
+    {
+        std::lock_guard entry_lock(dropped->mutex);
+        /// Reaching here with bitmaps still owed means the settle guard in
+        /// `MergeTreeData::clearEmptyParts` missed this part. Its directory is already deleted by
+        /// this point (`clearPartsFromFilesystemImpl` runs before `removePartsFinally`), so warn
+        /// rather than throw -- the kills are unrecoverable either way, and the operator needs the
+        /// part's name.
+        if (!dropped->staged_for.empty())
+        {
+            Strings targets;
+            targets.reserve(dropped->staged_for.size());
+            for (const auto & target : dropped->staged_for)
+                targets.push_back(target.getPartNameV1());
+
+            LOG_WARNING(log,
+                "Part '{}' left the part set still owing staged delete bitmaps for {} target(s) "
+                "({}), and its directory is already removed, so the kills those bitmaps carried are "
+                "lost. Such a part should have been held back until its bitmaps settled",
+                partNameV1(part), targets.size(), fmt::join(targets, ", "));
+        }
     }
 
     if (cache)
@@ -196,9 +228,11 @@ MergeTreeBitmapStore::stagedVersions(const std::vector<MergeTreePartInfo> & owne
         const auto owner = findPart(owner_info);
         if (!owner)
         {
-            /// While the part set is still filling, an owner the asynchronous outdated load has not
-            /// reached yet is indistinguishable from one that is gone -- and every version it holds
-            /// is below the reader's snapshot either way, so waiting for it costs nothing.
+            /// Deliberately the weaker predicate, unlike `sweepOrphanTarget` below: skipping is
+            /// only safe while the load is still running, because it converges. A readonly table
+            /// never schedules that load, so `outdatedPartsSetIsComplete()` would stay false
+            /// forever and every unresolvable owner would be skipped silently -- dropping the kills
+            /// its staged bitmap holds from the read. Throwing is the right answer there.
             if (!data.outdatedPartsLoadingFinished())
                 continue;
 
@@ -404,8 +438,10 @@ MergeTreeBitmapStore::SettleOutcome MergeTreeBitmapStore::settleOneStagedFile(
 MergeTreeBitmapStore::SettleOutcome MergeTreeBitmapStore::sweepOrphanTarget(
     const IMergeTreeDataPart & owner, const MergeTreePartInfo & target)
 {
-    /// "Reclaimed" and "not loaded yet" are indistinguishable here, so only UNLINKING waits for the load
-    if (!data.outdatedPartsLoadingFinished())
+    /// "Reclaimed" and "not loaded yet" are indistinguishable here, so only UNLINKING waits for the
+    /// load -- including a readonly table, whose Outdated set is never scheduled and so never becomes
+    /// complete. Deferring forever is correct there: nothing may be unlinked from such a table.
+    if (!data.outdatedPartsSetIsComplete())
         return SettleOutcome::Deferred;
 
     removeStagedOwner(owner.info, target);

@@ -29,6 +29,7 @@
 #include <base/EnumReflection.h>
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <optional>
 #include <utility>
@@ -526,7 +527,8 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
 
 #if USE_ROCKSDB
     const Names & unique_key_column_names = metadata_snapshot->getUniqueKeyColumns();
-    const UInt64 max_encoded_size = storage.getContext()->getSettingsRef()[Setting::unique_key_max_encoded_size];
+    /// No cap, for the same reason as the load-time rebuild in `ensureValidDenseIndex`.
+    constexpr UInt64 max_encoded_size = std::numeric_limits<UInt64>::max();
 
     /// The merged part is still staged in its tmp dir, so its freshly-written SST is opened
     /// by local path. Bound checks against the merged row count run inside the probe target.

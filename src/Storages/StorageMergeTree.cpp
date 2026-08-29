@@ -236,7 +236,12 @@ StorageMergeTree::StorageMergeTree(
     /// After the stale-data guard above, because recovery is not read-only: it unlinks
     /// delete-bitmap sidecars, and a plain CREATE over an existing data directory must be
     /// rejected before that happens.
-    if (!isStaticStorage() && hasUniqueKey())
+    ///
+    /// Gated on `uniqueKeyStorageIsWritable()`, the same decision the load-time SST sweep uses: on
+    /// readonly storage `loadDataParts` leaves the Outdated set unloaded, so a staged bitmap's
+    /// target would look reclaimed and its sidecar would be unlinked from a table that promised not
+    /// to write.
+    if (hasUniqueKey() && uniqueKeyStorageIsWritable())
         uniqueKeyTxnManager().runRecovery(
             getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}));
 

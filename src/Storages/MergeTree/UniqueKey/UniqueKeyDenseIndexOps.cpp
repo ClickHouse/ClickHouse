@@ -51,7 +51,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 unique_key_max_encoded_size;
 }
 
 
@@ -180,7 +179,8 @@ void UniqueKeyDenseIndexOps::writeDenseIndexOnMerge(
         metadata_snapshot->getSortingKeyColumns(),
         metadata_snapshot->getSortingKeyReverseFlags(),
         /*permutation=*/nullptr,
-        data.getContext()->getSettingsRef()[Setting::unique_key_max_encoded_size],
+        /// No cap, for the same reason as the load-time rebuild in `ensureValidDenseIndex`.
+        /*max_encoded_size=*/std::numeric_limits<UInt64>::max(),
         data.getContext());
 }
 

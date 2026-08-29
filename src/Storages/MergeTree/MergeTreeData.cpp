@@ -3111,6 +3111,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// UK parts are practically unreachable — still fail closed, not skip.)
     MutableDataPartsVector active_uk_parts_to_rebuild;
     const bool uk_storage_is_writable = !is_static_storage && !all_disks_are_readonly && !is_table_readonly;
+    unique_key_storage_is_writable = uk_storage_is_writable;
     if (uk_storage_is_writable)
         unique_key_dense_index_ops->sweepOrphans(part_lock);
     {
@@ -3202,6 +3203,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     /// If all disks are readonly or the table is explicitly marked as readonly,
     /// it does not make sense to load outdated parts (we will not own them).
+    ///
+    /// Skipping the load leaves the Outdated set absent rather than empty, which
+    /// `outdated_data_parts_loading_finished` cannot express. Read through
+    /// `outdatedPartsSetIsComplete()`.
+    outdated_data_parts_loading_skipped = !unloaded_parts.empty() && (all_disks_are_readonly || is_table_readonly);
+
     if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
@@ -4643,7 +4650,7 @@ void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
     for (const auto & part : parts)
     {
         uniqueKeyTxnManager().bitmapStore().dropPart(*part);
-        LOG_TRACE(log, "Forgot the delete bitmaps of part {}", part->name);
+        LOG_TRACE(log, "Dropped the delete bitmaps of part {}", part->name);
     }
 }
 
