@@ -1408,8 +1408,18 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
     std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
+    /// Same split as `getMutationsStatus`: a part of a still-open transaction is only work for a
+    /// mutation of that same transaction, so it is kept aside with its tid rather than counted here.
+    std::vector<std::pair<Int64, TransactionID>> uncommitted_part_versions;
     for (const auto & part : data_parts)
+    {
+        if (part->version && !part->version->getInfo().isCreated())
+        {
+            uncommitted_part_versions.emplace_back(part->info.getDataVersion(), part->version->getInfo().creation_tid);
+            continue;
+        }
         part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
+    }
     std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
 
     std::map<std::string, MutationCommands> result;
@@ -1422,9 +1432,19 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
             part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
 
         size_t parts_to_do = versions_it - part_versions_with_names.begin();
-        /// A mutation above the lowest uncommitted NewPart block is unfinished even with no
-        /// visible parts left: that block can still commit a part in its scope.
-        if (parts_to_do > 0 || static_cast<Int64>(mutation_version) > lowest_uncommitted_insert_block)
+
+        /// A non-transactional mutation's scope is every lower block number, so an uncommitted one
+        /// can still commit a part into it; a transactional mutation only ever rewrites the parts
+        /// visible to its own snapshot, and its own transaction's parts are among them.
+        const bool scope_is_block_ordered = entry.tid.isNonTransactional();
+        for (const auto & [version, creation_tid] : uncommitted_part_versions)
+            if (version < static_cast<Int64>(mutation_version)
+                && (scope_is_block_ordered || creation_tid == entry.tid))
+                ++parts_to_do;
+
+        const bool waiting_for_lower_block
+            = scope_is_block_ordered && static_cast<Int64>(mutation_version) > lowest_uncommitted_insert_block;
+        if (parts_to_do > 0 || waiting_for_lower_block)
             result.emplace(entry.file_name, *entry.commands);
     }
     return result;
