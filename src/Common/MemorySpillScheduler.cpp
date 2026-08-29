@@ -114,7 +114,7 @@ bool MemorySpillScheduler::checkAndSpill(IProcessor * processor)
     if (!enable || !getHardLimit())
         return false;
 
-    if (processor == selectSpilledProcessor(processor, stats, false))
+    if (processor && processor == selectSpilledProcessor(processor, stats, false))
         processor->spillOnSize(stats.spillable_memory_bytes);
     return false;
 }
