@@ -54,7 +54,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Core/Settings.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
@@ -76,6 +76,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool explain_syntax_single_record;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
@@ -460,6 +461,7 @@ struct QueryPlanSettings
             {"column_structure", query_plan_options.column_structure},
             {"compact", query_plan_options.compact},
             {"pretty", query_plan_options.pretty},
+            {"estimates", query_plan_options.estimates},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -579,6 +581,7 @@ struct QuerySyntaxSettings
 {
     bool oneline = false;
     bool run_query_tree_passes = false;
+    bool single_record = false;
     Int64 query_tree_passes = -1;
 
     constexpr static char name[] = "SYNTAX";
@@ -586,7 +589,8 @@ struct QuerySyntaxSettings
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"oneline", oneline},
-        {"run_query_tree_passes", run_query_tree_passes}
+        {"run_query_tree_passes", run_query_tree_passes},
+        {"single_record", single_record}
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings =
@@ -596,7 +600,7 @@ struct QuerySyntaxSettings
 };
 
 template <typename Settings>
-ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool set_default_pretty_explain_settings = true)
+ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool default_flag = true)
 {
     ExplainSettings<Settings> settings;
 
@@ -605,12 +609,16 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool 
     /// we sometimes use EXPLAIN PLAN output for logging
     if constexpr (std::is_same_v<Settings, QueryPlanSettings> || std::is_same_v<Settings, QueryAnalyzeSettings>)
     {
-        if (set_default_pretty_explain_settings)
+        if (default_flag)
         {
             settings.query_plan_options.actions = true;
             settings.query_plan_options.compact = true;
             settings.query_plan_options.pretty  = true;
         }
+    }
+    else if constexpr (std::is_same_v<Settings, QuerySyntaxSettings>)
+    {
+        settings.single_record = default_flag;
     }
 
     if (!ast_settings)
@@ -866,7 +874,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
-    bool single_line = false;
+    /// When set, the whole buffer is emitted as a single record. Otherwise the buffer is split
+    /// on line feeds into one record per line (the default for tree-like PLAN/PIPELINE/AST output).
+    bool single_record = false;
     bool insert_buf = true;
 
     ContextPtr query_context = getContext();
@@ -907,7 +917,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::AnalyzedSyntax:
         {
-            auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
+            auto settings = checkAndGetSettings<QuerySyntaxSettings>(
+                ast.getSettings(), query_context->getSettingsRef()[Setting::explain_syntax_single_record]);
+            single_record = settings.single_record;
 
             /// Inline any parameterized view calls with their parameter-substituted inner queries,
             /// so EXPLAIN SYNTAX shows what the view actually expands to.
@@ -1022,7 +1034,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 plan_array->format(json_format_settings, format_context);
 
-                single_line = true;
+                single_record = true;
             }
             else
                 plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
@@ -1162,7 +1174,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(query_ast.get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
 
-            auto whatif_result = WhatIfIndexEstimator::run(query_ast, query_context, ast.getSettings());
+            auto whatif_result = estimateHypotheticalIndexes(query_ast, query_context, ast.getSettings());
             whatif_result.format(buf);
             break;
         }
@@ -1262,7 +1274,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!outer_thread_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
 
-            auto analyze_thread_group = std::make_shared<ThreadGroup>(outer_thread_group);
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
             analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
 
             watch.restart();
@@ -1295,7 +1307,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     buf.finalize();
     if (insert_buf)
     {
-        if (single_line)
+        if (single_record)
             res_columns[0]->insertData(buf.str().data(), buf.str().size());
         else
             fillColumn(*res_columns[0], buf.str());

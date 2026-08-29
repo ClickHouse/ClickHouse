@@ -12,8 +12,11 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
+
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -32,12 +35,31 @@ public:
     {
         boost::intrusive_ptr<ASTWatchQuery> res = make_intrusive<ASTWatchQuery>(*this);
         res->children.clear();
-        cloneOutputOptions(*res);
+        /// `limit_length` is not a child: the parser puts it into the member only. Do not leave it
+        /// shared with the source.
+        if (limit_length)
+            res->limit_length = limit_length->clone();
+        /// The parser adds the database/table children first and `ParserQueryWithOutput` appends
+        /// the output options last; reproduce that order so the clone has the same tree hash.
         cloneTableOptions(*res);
+        cloneOutputOptions(*res);
         return res;
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override
+    {
+        /// Neither `limit_length` nor `is_watch_events` is a child, so without hashing them
+        /// `WATCH t`, `WATCH t EVENTS` and `WATCH t LIMIT 5` would all hash the same.
+        hash_state.update(is_watch_events);
+        hash_state.update(limit_length != nullptr);
+        if (limit_length)
+            limit_length->updateTreeHash(hash_state, ignore_aliases);
+        ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
+    }
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

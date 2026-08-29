@@ -18,7 +18,7 @@ public:
 
     String getName() const override { return "WatermarkTransform"; }
 
-    ~WatermarkTransform() override;
+    void onFinish() override;
 
 protected:
     void transform(Chunk & chunk) override;
