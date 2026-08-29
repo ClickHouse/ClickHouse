@@ -58,6 +58,16 @@ answers the shape question only.
 A new surface has more entrypoints than the one the check was written for. For a table function
 that reads another ClickHouse object:
 
+- `ITableFunction::parseArguments` — **inspect this first**: `TableFunctionFactory::get` calls it
+  before *any* access check, so it is the earliest carrier and the easiest one to overlook, being
+  named as if it only parsed syntax. Argument parsing routinely does not stop at literals: it
+  resolves the storage ID (`Context::resolveStorageID`), fetches the table
+  (`DatabaseCatalog::instance().getTable`), casts it to an expected engine, and reads its metadata
+  to store a type name or a column type on the table-function object. Follow every helper it
+  delegates to — a storage's `getConfiguration` is a common one — and note that a `typeid_cast`
+  helper such as `storagePtrToTimeSeries` throws a message naming the table and its engine. Anything
+  resolved here leaks before the check that a later entrypoint performs, so a check added only to
+  `getActualTableStructure` or `read` does not cover it.
 - `ITableFunction::getActualTableStructure` — reached by `DESCRIBE table_function(...)`
   (`InterpreterDescribeQuery`), `CREATE TABLE ... AS table_function(...)`
   (`InterpreterCreateQuery`), and `ITableFunction::execute` when cached columns disagree.
@@ -65,7 +75,9 @@ that reads another ClickHouse object:
   *source* access (`READ ON MYSQL`, `READ ON S3`, …), derived from the storage engine name. A
   function that reads a ClickHouse table named in its arguments must check `SELECT` on that table
   itself, here — nothing in the framework does it.
-- `ITableFunction::executeImpl` — constructing the storage.
+- `ITableFunction::executeImpl` — constructing the storage. A function whose declared structure is a
+  fixed column list still resolves and validates the source table here, so do not conclude from a
+  static `getActualTableStructure` that nothing is derived before `read`.
 - `IStorage::read` — the read itself.
 - Anything that answers a question about the object without going through `read`: `totalRows`,
   `totalRowsByPartitionPredicate`, `totalBytes`, `totalBytesUncompressed`,
@@ -97,11 +109,29 @@ was written for proves nothing about the others; a check with no test is a **Maj
 ### Sibling surfaces
 
 Surfaces of one family are written from each other's template, so a defect in one is usually in all
-of them. Grep the family, say which ones you checked, and report the siblings that share the
-defect. As of this writing `mergeTreeIndex`, `mergeTreeTextIndex`, `mergeTreeProjection`, and the
-`timeSeries*` functions all derive their structure from a source table fetched through
-`DatabaseCatalog` in `getActualTableStructure` with no `SELECT` check there, while
-`StorageMergeTreeIndex::read` and `StorageMergeTreeTextIndex::read` do check.
+of them. Grep the family, say which ones you checked, and report the siblings that share the defect.
+Do not assume the family shares one carrier: locate the earliest resolution per function, because
+the entrypoint that leaks differs even between siblings, and a sweep that looks at
+`getActualTableStructure` alone will clear the ones that leak somewhere else. As of this writing,
+every function below reaches its source table through `DatabaseCatalog` with no `SELECT` check at
+that point, but in three different places:
+
+- `mergeTreeIndex` and `mergeTreeProjection` (`TableFunctionMergeTreeProjection`, in
+  `TableFunctionProjection.cpp`) — in `getActualTableStructure`, and it throws first:
+  `expected MergeTree table, got: {}` and `There is no projection {} in table {}` respectively.
+- `mergeTreeTextIndex` — **not** in `getActualTableStructure`, which is a fixed column list, but in
+  `executeImpl`, which throws `Got index '{}' of type '{}', expected 'text'` and
+  `expected MergeTree table, got: {}`.
+- `timeSeriesSamples` / `timeSeriesMetrics` / `timeSeriesTags` (`TableFunctionTimeSeriesTarget`) — in
+  `parseArguments`, which calls `getTargetTable` to store the target engine name, so the leak
+  precedes `getActualTableStructure` even though that derives columns from the source too.
+- `timeSeriesSelector` — in `parseArguments`, via `StorageTimeSeriesSelector::getConfiguration`; its
+  `getActualTableStructure` derives columns from the parsed configuration and touches no table.
+
+On the read side the family is split: `StorageMergeTreeIndex::read`,
+`StorageMergeTreeTextIndex::read` and `StorageMergeTreeAnalyzeIndexes::read` check `SELECT` on the
+source table, while `StorageFromMergeTreeProjection` and the `TimeSeries` storages have no such
+check on any path.
 
 ### Severity
 
