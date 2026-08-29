@@ -10,20 +10,66 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g'`"
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 
-# system.view_refreshes briefly reports the transient internal state 'Scheduling' between
-# state transitions of the refresh task. Use this helper for SELECTs that read the status
-# column: it retries until no row reports 'Scheduling'.
-query_no_scheduling() {
-    local out
+# Whole budget for one wait, both SIGKILL graces and the diagnostic dump included: `timeout -k`
+# waits its grace in addition to the primary duration, so the graces come out of the budget.
+WAIT_TOTAL_S=30
+WAIT_DUMP_S=8
+WAIT_KILL_S=2
+WAIT_POLL_S=$((WAIT_TOTAL_S - WAIT_DUMP_S - WAIT_KILL_S))
+
+wait_failed() {
+    echo "Wait failed for: $1"
+    echo "Expected: $2"
+    echo "Actual: $3"
+    echo "Outcome: $4"
+    # Bounded as well: reading system.view_refreshes takes the refresh task's mutex.
+    timeout -k "$WAIT_KILL_S" "$((WAIT_DUMP_S - WAIT_KILL_S))" $CLICKHOUSE_CLIENT -q \
+        "select * from system.view_refreshes where database = currentDatabase() format Vertical" \
+        || echo "view_refreshes dump failed or timed out"
+    exit 1
+}
+
+# Poll $1 until its output satisfies $2 ('==' or '!=' against $3, or 'no-scheduling', which
+# skips the transient internal state system.view_refreshes briefly reports between state
+# transitions), leaving the last output in $wait_result. Expiry reports and exits non-zero.
+wait_for() {
+    local query="$1" op="$2" value="$3" rc remaining reason
+    local poll_end=$((EPOCHSECONDS + WAIT_POLL_S + WAIT_KILL_S))
     while :
     do
-        out=$($CLICKHOUSE_CLIENT -q "$1")
-        if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then
-            echo "$out"
-            return
+        remaining=$((poll_end - EPOCHSECONDS - WAIT_KILL_S))
+        if ((remaining <= 0))
+        then
+            wait_failed "$query" "$op $value" "$wait_result" \
+                "budget exhausted, last poll returned normally"
         fi
-        sleep 0.2
+        # -k because a client ignoring SIGTERM would keep a bare `timeout` waiting forever.
+        wait_result=$(timeout -k "$WAIT_KILL_S" "$remaining" $CLICKHOUSE_CLIENT -q "$query")
+        # Not through a pipe: rc would then be xargs' status, not the client's.
+        rc=$?
+        if ((rc == 0))
+        then
+            case "$op" in
+                # xargs trims the string and turns \t and \n into spaces.
+                '==') [ "$(echo "$wait_result" | xargs)" == "$value" ] && return ;;
+                '!=') [ "$wait_result" != "$value" ] && return ;;
+                no-scheduling) grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$wait_result" || return ;;
+            esac
+        else
+            if ((rc == 124 || rc == 137))
+            then reason="poll query hit the remaining budget, killed with exit $rc"
+            else reason="client failed with exit $rc"
+            fi
+            wait_failed "$query" "$op $value" "$wait_result" "$reason"
+        fi
+        sleep 0.5
     done
+}
+
+# For SELECTs that read the status column.
+query_no_scheduling() {
+    wait_for "$1" no-scheduling ''
+    echo "$wait_result"
 }
 
 $CLICKHOUSE_CLIENT -q "create view refreshes as select * from system.view_refreshes where database = '$CLICKHOUSE_DATABASE' order by view"
@@ -38,29 +84,19 @@ $CLICKHOUSE_CLIENT -q "
         as select number as x from numbers(2) union all select rand64() as x;
     select '<1: created view>', exception, view from refreshes;
     show create rmv_a;"
-# Wait for any refresh. (xargs trims the string and turns \t and \n into spaces)
-while [ "`$CLICKHOUSE_CLIENT -q "select last_success_time is null from refreshes -- $LINENO" | xargs`" != '0' ]
-do
-    sleep 0.5
-done
+# Wait for any refresh.
+wait_for "select last_success_time is null from refreshes -- $LINENO" == '0'
 start_time="`$CLICKHOUSE_CLIENT -q "select reinterpret(now64(), 'Int64')"`"
 # Check table contents.
 $CLICKHOUSE_CLIENT -q "select '<2: refreshed>', count(), sum(x=0), sum(x=1) from rmv_a"
-# Wait for table contents to change.
-res1="`$CLICKHOUSE_CLIENT -q 'select * from rmv_a order by x format Values'`"
-while :
-do
-    res2="`$CLICKHOUSE_CLIENT -q 'select * from rmv_a order by x format Values -- $LINENO'`"
-    [ "$res2" == "$res1" ] || break
-    sleep 0.5
-done
+# Wait for table contents to change. All three sites emit the same query text, so each needs
+# its own line number to be identifiable.
+wait_for "select * from rmv_a order by x format Values -- $LINENO" != ''
+res1="$wait_result"
+wait_for "select * from rmv_a order by x format Values -- $LINENO" != "$res1"
+res2="$wait_result"
 # Wait for another change.
-while :
-do
-    res3="`$CLICKHOUSE_CLIENT -q 'select * from rmv_a order by x format Values -- $LINENO'`"
-    [ "$res3" == "$res2" ] || break
-    sleep 0.5
-done
+wait_for "select * from rmv_a order by x format Values -- $LINENO" != "$res2"
 # Check that the two changes were at least 1 second apart, in particular that we're not refreshing
 # like crazy. This is potentially flaky, but we need at least one test that uses non-mocked timer
 # to make sure the clock+timer code works at all. If it turns out flaky, increase refresh period above.
@@ -88,10 +124,7 @@ $CLICKHOUSE_CLIENT -q "show create rmv_a;"
 $CLICKHOUSE_CLIENT -q "
     select '<5: no refresh>', count() from rmv_a;
     system test view rmv_a set fake time '2052-02-03 04:05:06';"
-while [ "`$CLICKHOUSE_CLIENT -q "select last_success_time, status from refreshes -- $LINENO" | xargs`" != '2052-02-03 04:05:06 Scheduled' ]
-do
-    sleep 0.5
-done
+wait_for "select last_success_time, status from refreshes -- $LINENO" == '2052-02-03 04:05:06 Scheduled'
 $CLICKHOUSE_CLIENT -q "select '<6: refreshed>', * from rmv_a;"
 query_no_scheduling "select '<7: refreshed>', status, last_success_time, next_refresh_time from refreshes"
 
@@ -107,10 +140,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "select '<8: refreshed>', * from rmv_b;"
 query_no_scheduling "select '<9: refreshed>', view, status, next_refresh_time from refreshes"
 $CLICKHOUSE_CLIENT -q "system test view rmv_b set fake time '2054-01-24 23:22:21';"
-while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_b' -- $LINENO" | xargs`" != 'WaitingForDependencies' ]
-do
-    sleep 0.5
-done
+wait_for "select status from refreshes where view = 'rmv_b' -- $LINENO" == 'WaitingForDependencies'
 
 # Drop the source table, check that refresh fails and doesn't leave a temp table behind.
 $CLICKHOUSE_CLIENT -q "
@@ -127,10 +157,7 @@ query_no_scheduling "select '<10: creating>', view, status, next_refresh_time fr
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int16) engine Memory as select 2;
     system test view rmv_a set fake time '2054-01-01 00:00:01';"
-while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_b' -- $LINENO" | xargs`" != 'Scheduled' ]
-do
-    sleep 0.5
-done
+wait_for "select status from refreshes where view = 'rmv_b' -- $LINENO" == 'Scheduled'
 # Both tables should've refreshed.
 $CLICKHOUSE_CLIENT -q "
     select '<11: chain-refreshed rmv_a>', * from rmv_a;
@@ -142,10 +169,7 @@ $CLICKHOUSE_CLIENT -q "
     truncate src;
     insert into src values (3);
     system test view rmv_a set fake time '2060-02-02 02:02:02';"
-while [ "`$CLICKHOUSE_CLIENT -q "select next_refresh_time from refreshes where view = 'rmv_b' -- $LINENO" | xargs`" != '2062-01-01 00:00:00' ]
-do
-    sleep 0.5
-done
+wait_for "select next_refresh_time from refreshes where view = 'rmv_b' -- $LINENO" == '2062-01-01 00:00:00'
 $CLICKHOUSE_CLIENT -q "
     select '<15: chain-refreshed rmv_a>', * from rmv_a;
     select '<16: chain-refreshed rmv_b>', * from rmv_b;"
@@ -154,16 +178,10 @@ query_no_scheduling "select '<17: chain-refreshed>', view, status, next_refresh_
 # Get to WaitingForDependencies state and remove the depencency.
 $CLICKHOUSE_CLIENT -q "
     system test view rmv_b set fake time '2062-03-03 03:03:03'"
-while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_b' -- $LINENO" | xargs`" != 'WaitingForDependencies' ]
-do
-    sleep 0.5
-done
+wait_for "select status from refreshes where view = 'rmv_b' -- $LINENO" == 'WaitingForDependencies'
 $CLICKHOUSE_CLIENT -q "
     alter table rmv_b modify refresh every 2 year"
-while [ "`$CLICKHOUSE_CLIENT -q "select status, last_refresh_time from refreshes where view = 'rmv_b' -- $LINENO" | xargs`" != 'Scheduled 2062-03-03 03:03:03' ]
-do
-    sleep 0.5
-done
+wait_for "select status, last_refresh_time from refreshes where view = 'rmv_b' -- $LINENO" == 'Scheduled 2062-03-03 03:03:03'
 query_no_scheduling "select '<18: removed dependency>', view, status, last_success_time, last_refresh_time, next_refresh_time from refreshes where view = 'rmv_b'"
 $CLICKHOUSE_CLIENT -q "show create rmv_b;"
 
