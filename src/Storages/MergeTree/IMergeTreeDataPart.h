@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/UniqueLock.h>
+
 #include <atomic>
 #include <filesystem>
 #include <mutex>
@@ -609,6 +611,15 @@ public:
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
     bool areChecksumsLoaded() const { return !checksums.empty(); }
+
+    /// Whether this part's column and secondary index sizes are already computed.
+    /// Never triggers the lazy computation: that reads from the part storage, and callers
+    /// use this to decide whether reading is safe here.
+    bool areColumnAndSecondaryIndexSizesCalculated() const
+    {
+        UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
+        return are_columns_and_secondary_indices_sizes_calculated;
+    }
 
     void setBrokenReason(const String & message, int code) const;
 
