@@ -1546,6 +1546,13 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
             return std::nullopt;
         return Field(val);
     }
+    else if (field_datetime)
+    {
+        /// The cast to DateTime saturates, so out-of-range stats can't be used as bounds.
+        if (val > UInt64(UINT32_MAX))
+            return std::nullopt;
+        return Field(val);
+    }
     else if (field_decimal_scale.has_value())
     {
         switch (output_size.value_or(input_size))

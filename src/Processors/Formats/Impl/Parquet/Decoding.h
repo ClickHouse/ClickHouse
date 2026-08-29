@@ -210,6 +210,7 @@ struct IntConverter : public FixedSizeConverter
     std::optional<UInt32> field_decimal_scale; // Decimal{32,64}(scale)
     bool field_ipv4 = false; // IPv4
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
+    bool field_datetime = false; // DateTime; values outside [0, UINT32_MAX] don't survive the cast
     bool field_signed = true; // Int64, otherwise UInt64
     /// If not Ignore, it's a date column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
