@@ -175,13 +175,6 @@ private:
     size_t remote_jobs_count = 0;
     size_t local_jobs_count = 0;
 
-    /// Whether the jobs of local shards run their nested `INSERT` in this process even with
-    /// `prefer_localhost_replica = 0`. Set by `initWritingJobs` when this server is local for more
-    /// than one destination shard: routed over TCP, those sibling writes would become independent
-    /// queries into the same local table that cannot share `insert_start_gates`, so one of them
-    /// could count the parts another has just committed or race a non-parallel quorum insert.
-    bool write_local_shards_in_process = false;
-
     std::atomic<unsigned> finished_jobs_count{0};
 
     LoggerPtr log;

@@ -1304,19 +1304,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     /// insert is not started twice for one query.
     auto insert_start_gates = std::make_shared<InsertStartGates>();
 
-    /// The gates can only be shared by nested INSERTs running in this process. With
-    /// `prefer_localhost_replica = 0` a local shard is normally routed back to this server through
-    /// `RemoteQueryExecutor`, and each such write becomes an independent TCP `INSERT` with its own
-    /// gates, so two of them writing the same local table could still count each other's parts or
-    /// race a non-parallel quorum insert. Force the in-process path for local shards when this
-    /// server is local for more than one destination shard - the only topology where sibling writes
-    /// of one query converge on the same local table. With at most one local shard there is nothing
-    /// to converge with, and the setting keeps its meaning (route the write through the connection
-    /// pool, e.g. to balance across the shard's replicas).
-    size_t local_shards = 0;
-    for (const auto & shard_info : shards_info)
-        local_shards += shard_info.isLocal();
-    const bool write_local_shards_in_process = settings[Setting::prefer_localhost_replica] || local_shards >= 2;
+    /// The gates can only be shared by the nested INSERTs running in this process. With
+    /// `prefer_localhost_replica = 0` a local shard is deliberately routed back to this server
+    /// through `RemoteQueryExecutor`, and each such write is an independent query with its own
+    /// gates. That routing is not merely a scheduling hint - it is what runs the write through the
+    /// connection pool under the credentials supplied to the engine - so it is left alone here, and
+    /// the sharing of the checks simply does not extend across those independent queries.
 
     /// Strip the initiator-only settings (query-shaping/result-serialisation and the HTTP/path-only
     /// settings) so the per-shard `INSERT SELECT` forwarded by `RemoteQueryExecutor` does not carry
@@ -1333,7 +1326,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
-        if (shard_info.isLocal() && write_local_shards_in_process)
+        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
         {
             InterpreterInsertQuery interpreter(
                 new_query,

@@ -309,31 +309,19 @@ void DistributedSink::initWritingJobs(const Block & first_block, size_t start, s
     local_jobs_count = 0;
     per_shard_jobs.resize(shards_info.size());
 
-    /// With `prefer_localhost_replica = 0` a local shard is normally written over TCP like any
-    /// remote one, and each such write is an independent query with its own gates. When this server
-    /// is local for more than one destination shard, those sibling writes converge on the same
-    /// local table, so one of them could count the parts another has just committed (`Too many
-    /// parts`) or race a non-parallel quorum insert. Only an in-process nested `INSERT` can share
-    /// `insert_start_gates` and the sequential-quorum serialization, so force the local path for
-    /// local shards in that topology. With at most one local shard the setting keeps its meaning.
-    size_t local_shards_count = 0;
-    for (size_t shard_index : collections::range(start, end))
-        local_shards_count += shards_info[shard_index].isLocal();
-    write_local_shards_in_process = settings[Setting::prefer_localhost_replica] || local_shards_count >= 2;
-
     for (size_t shard_index : collections::range(start, end))
     {
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
 
-        /// If hasInternalReplication, than prefer local replica (if !write_local_shards_in_process)
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !write_local_shards_in_process)
+        /// If hasInternalReplication, than prefer local replica (if !prefer_localhost_replica)
+        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !settings[Setting::prefer_localhost_replica])
         {
             const auto & replicas = addresses_with_failovers[shard_index];
 
             for (size_t replica_index : collections::range(0, replicas.size()))
             {
-                if (!replicas[replica_index].is_local || !write_local_shards_in_process)
+                if (!replicas[replica_index].is_local || !settings[Setting::prefer_localhost_replica])
                 {
                     shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
                     ++remote_jobs_count;
@@ -344,7 +332,7 @@ void DistributedSink::initWritingJobs(const Block & first_block, size_t start, s
             }
         }
 
-        if (shard_info.isLocal() && write_local_shards_in_process)
+        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
         {
             shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
             ++local_jobs_count;
@@ -461,7 +449,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (job.skip)
             return;
 
-        if (!job.is_local_job || !write_local_shards_in_process)
+        if (!job.is_local_job || !settings[Setting::prefer_localhost_replica])
         {
             if (!job.executor)
             {
