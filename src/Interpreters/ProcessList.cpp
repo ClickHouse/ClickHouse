@@ -656,6 +656,28 @@ ProcessList::EntryPtr ProcessList::insert(
                             client_info.current_query_id, query_user->second);
         }
 
+        /// Re-check that this user has no query with our `query_id` any more.
+        ///
+        /// The `replace_running_query` stage above runs *before* the admission queue and the
+        /// secondary-limit waits, and every one of those waits releases `mutex`. So two replacements of
+        /// the same victim can both observe the victim gone, both leave the replacement stage, and then
+        /// both reach the registration below: the second `user_process_list.queries.emplace(...)` would
+        /// silently do nothing (the key already belongs to the first one) while the second query is still
+        /// linked into `processes`, and its `~ProcessListEntry` would then fail to find itself and call
+        /// `std::terminate`. Nothing between this check and the registration below releases `mutex`, so
+        /// checking here closes that window.
+        ///
+        /// Waiting for the winner to finish instead of throwing is deliberately not done: by this point we
+        /// may already hold an admission slot, and parking on it for up to `replace_running_query_max_wait_ms`
+        /// would hoard that slot — the very thing the early placement of the replacement wait avoids.
+        if (auto user_queries = user_to_queries.find(client_info.current_user);
+            user_queries != user_to_queries.end() && user_queries->second.queries.contains(client_info.current_query_id))
+        {
+            throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                            "Query with id = {} is already running.",
+                            client_info.current_query_id);
+        }
+
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
         if (user_process_list_it == user_to_queries.end())
         {

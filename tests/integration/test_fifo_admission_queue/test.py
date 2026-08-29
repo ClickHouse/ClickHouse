@@ -334,6 +334,122 @@ def test_replace_running_query_with_admission_queue(started_cluster):
     )
 
 
+def test_two_replacements_of_the_same_victim(started_cluster):
+    """
+    Two concurrent `replace_running_query` queries sharing one victim's `query_id` must not both
+    register.
+
+    The `replace_running_query` wait happens before a query takes an admission slot, and the
+    admission wait releases the `ProcessList` mutex. So both replacements can observe the victim
+    gone, both leave the replacement stage, and both queue for admission. If the second one is
+    admitted while the first is still running, it must be rejected with
+    `QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING` instead of silently failing to register and later
+    terminating the server in `~ProcessListEntry`.
+
+    With `max_concurrent_queries = 2`:
+
+    1. A blocker and the victim occupy both slots.
+    2. An unrelated query queues for admission, so that when the victim leaves, its slot is handed
+       to that query and the limit stays saturated.
+    3. Both replacements arrive, cancel the victim, and — once it is gone — queue for admission.
+    4. Killing the queued unrelated query admits the first replacement, which registers the shared
+       `query_id` and keeps running.
+    5. Killing the blocker admits the second replacement, which now finds the `query_id` taken.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_id = f"dup_blocker_{prefix}"
+    queued_id = f"dup_queued_{prefix}"
+    victim_id = f"dup_victim_{prefix}"
+
+    long_query_settings = {
+        "function_sleep_max_microseconds_per_block": 0,
+        "queue_max_wait_ms": 60000,
+    }
+
+    pool = Pool(4)
+
+    def run_and_swallow(query_id, settings):
+        def run():
+            try:
+                node.query(
+                    "SELECT sleep(30) FORMAT Null",
+                    settings=settings,
+                    query_id=query_id,
+                )
+            except Exception:
+                pass  # Expected: the query is killed or replaced.
+
+        return run
+
+    pool.apply_async(run_and_swallow(blocker_id, long_query_settings))
+    pool.apply_async(run_and_swallow(victim_id, long_query_settings))
+
+    wait_for_query_start(node, blocker_id)
+    wait_for_query_start(node, victim_id)
+
+    # Both slots are busy: this one waits in the admission queue and will inherit the victim's slot.
+    pool.apply_async(run_and_swallow(queued_id, long_query_settings))
+    wait_for_queue_length(node, 1)
+
+    replacement_results = [None, None]
+
+    def run_replacement(index):
+        def run():
+            try:
+                node.query(
+                    "SELECT sleep(30) FORMAT Null",
+                    settings={
+                        "function_sleep_max_microseconds_per_block": 0,
+                        "replace_running_query": 1,
+                        "replace_running_query_max_wait_ms": 60000,
+                        "queue_max_wait_ms": 60000,
+                    },
+                    query_id=victim_id,
+                )
+                replacement_results[index] = "OK"
+            except Exception as e:
+                replacement_results[index] = str(e)
+
+        return run
+
+    pool.apply_async(run_replacement(0))
+    pool.apply_async(run_replacement(1))
+
+    # The victim is cancelled by the replacements; its slot goes to the queued query (FIFO), so both
+    # replacements have to queue as well.
+    wait_for_queue_length(node, 2)
+
+    # Free one slot: the first replacement is admitted and registers the shared query_id.
+    node.query(f"KILL QUERY WHERE query_id = '{queued_id}' SYNC")
+    wait_for_query_start(node, victim_id)
+
+    # Free another slot: the second replacement is admitted while the first one still runs.
+    node.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC")
+
+    rejected = None
+    start = time.monotonic()
+    while time.monotonic() - start < 60:
+        rejected = [r for r in replacement_results if r and "QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING" in r]
+        if rejected:
+            break
+        time.sleep(0.1)
+
+    # Whichever replacement won the race is still sleeping; stop it so the pool can be joined.
+    node.query(f"KILL QUERY WHERE query_id = '{victim_id}' SYNC")
+    pool.close()
+    pool.join()
+
+    assert rejected, (
+        f"Expected one replacement to be rejected as a duplicate, got: {replacement_results}"
+    )
+    assert len(rejected) == 1, (
+        f"Expected exactly one replacement to be rejected, got: {replacement_results}"
+    )
+
+    # The server must still be alive and the query_id free again.
+    assert node.query("SELECT 1").strip() == "1"
+
+
 def test_no_slot_leak_on_timeout(started_cluster):
     """
     Verify that when a queued query times out, its slot is not leaked:
