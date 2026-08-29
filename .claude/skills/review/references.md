@@ -70,7 +70,13 @@ that reads another ClickHouse object:
   `getActualTableStructure` or `read` does not cover it.
 - `ITableFunction::getActualTableStructure` — reached by `DESCRIBE table_function(...)`
   (`InterpreterDescribeQuery`), `CREATE TABLE ... AS table_function(...)`
-  (`InterpreterCreateQuery`), and `ITableFunction::execute` when cached columns disagree.
+  (`InterpreterCreateQuery`), and `ITableFunction::execute`, which calls it to validate non-empty
+  cached columns against the actual structure:
+  `hasStaticStructure() && cached_columns == getActualTableStructure(...)`. The call is the
+  comparison operand, so for a static-structure function it runs on **every** `execute` that has
+  cached columns, whichever way the comparison then comes out — do not read it as an exceptional
+  path taken only on a mismatch. When the structure is not static, `execute` does not call it at
+  all: it returns a `StorageTableFunctionProxy` that resolves lazily through `executeImpl`.
   `ITableFunction::getActualTableStructureWithAccess` does **not** cover this: it checks only
   *source* access (`READ ON MYSQL`, `READ ON S3`, …), derived from the storage engine name. A
   function that reads a ClickHouse table named in its arguments must check `SELECT` on that table
