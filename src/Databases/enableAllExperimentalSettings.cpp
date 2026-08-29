@@ -79,8 +79,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_url_wildcard_from_index_pages", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
 
-    context->setSetting("allow_experimental_ai_functions", 1);
-
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
 }

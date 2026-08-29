@@ -4,6 +4,7 @@ import os
 import random
 import subprocess
 import zlib
+from collections.abc import Mapping
 from pathlib import Path
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
@@ -37,6 +38,32 @@ def stateless_memory_limit(source):
     (and the private `amd_ubsan` lane, an ASan+UBSan binary) lack that substring.
     """
     return 10 * 2**30 if any(san in source for san in SANITIZERS) else 5 * 2**30
+
+
+# Fraction of the job budget one stateful-prep statement may take. Derived from
+# the budget rather than fixed so it follows a retuned job timeout.
+STATEFUL_PREP_STEP_TIMEOUT_RATIO = 0.35
+
+
+def stateful_prep_step_timeout(info):
+    """Per-statement bound for `prepare_stateful_data`, in seconds.
+
+    None on a local run, which leaves the prep unbounded. `JOB_CONFIG` survives
+    serialization as a plain dict, so it is read as a mapping.
+    """
+    if info.is_local_run:
+        return None
+    job_config = info.job_config
+    job_timeout = (
+        job_config.get("timeout")
+        if isinstance(job_config, Mapping)
+        else getattr(job_config, "timeout", None)
+    )
+    if not isinstance(job_timeout, (int, float)) or job_timeout <= 0:
+        raise RuntimeError(
+            f"Cannot derive the stateful prep bound: job timeout is [{job_timeout!r}]"
+        )
+    return int(job_timeout * STATEFUL_PREP_STEP_TIMEOUT_RATIO)
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -1011,6 +1038,7 @@ def main():
                     build_type=(
                         build_types[0] if is_bugfix_validation else args.options
                     ),
+                    step_timeout=stateful_prep_step_timeout(info),
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -1231,6 +1259,7 @@ def main():
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
                             build_type=bugfix_bt,
+                            step_timeout=stateful_prep_step_timeout(info),
                         ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic

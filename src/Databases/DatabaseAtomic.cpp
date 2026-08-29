@@ -168,6 +168,8 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
+    ensurePopulated();
+
     // it is important to call the destructors of not_in_use without
     // locked mutex to avoid potential deadlock.
     DetachedTables not_in_use;
@@ -268,6 +270,10 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
+
+    ensurePopulated();
+    if (!inside_database)
+        other_db.ensurePopulated();
 
     if (!inside_database)
         other_db.createDirectories();

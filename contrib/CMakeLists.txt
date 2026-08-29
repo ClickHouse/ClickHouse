@@ -242,7 +242,9 @@ add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 
-add_contrib (google-benchmark-cmake google-benchmark)
+if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
+    add_contrib (google-benchmark-cmake google-benchmark)
+endif ()
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)

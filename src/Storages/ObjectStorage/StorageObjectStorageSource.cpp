@@ -70,7 +70,9 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -108,6 +110,30 @@ namespace ErrorCodes
 
 namespace
 {
+    DataTypePtr rowLineageColumnType()
+    {
+        return makeNullable(std::make_shared<DataTypeInt64>());
+    }
+
+    Names getMaterializedRowLineageColumns(
+        [[maybe_unused]] const ObjectInfo & object_info,
+        [[maybe_unused]] const ReadFromFormatInfo & read_from_format_info,
+        [[maybe_unused]] const String & format_name)
+    {
+        Names result;
+#if USE_AVRO
+        if (Poco::toLower(format_name) != "parquet" || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+            return result;
+
+        for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
+        {
+            if (read_from_format_info.requested_virtual_columns.contains(name))
+                result.emplace_back(name);
+        }
+#endif
+        return result;
+    }
+
     Map objectAttributesToMap(const ObjectAttributes & attributes)
     {
         Map result;
@@ -639,6 +665,32 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
+            ColumnPtr materialized_row_ids;
+            ColumnPtr materialized_last_updated_sequence_numbers;
+            /// Without an input format the chunk comes from the count-from-cache path, which reads no
+            /// file and therefore carries no row lineage columns.
+            if (const auto lineage_columns = reader.getInputFormat()
+                    ? getMaterializedRowLineageColumns(
+                          *object_info, read_from_format_info, object_info->getFileFormat().value_or(configuration->format))
+                    : Names{};
+                !lineage_columns.empty())
+            {
+                auto columns = chunk.detachColumns();
+                chassert(columns.size() >= lineage_columns.size());
+                const size_t first_lineage_column = columns.size() - lineage_columns.size();
+
+                for (size_t i = 0; i < lineage_columns.size(); ++i)
+                {
+                    if (lineage_columns[i] == "_row_id")
+                        materialized_row_ids = columns[first_lineage_column + i];
+                    else
+                        materialized_last_updated_sequence_numbers = columns[first_lineage_column + i];
+                }
+
+                columns.resize(first_lineage_column);
+                chunk.setColumns(std::move(columns), num_rows);
+            }
+
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema
             if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
@@ -652,9 +704,16 @@ Chunk StorageObjectStorageSource::generate()
             }
 
             const String * iceberg_metadata_file_path = nullptr;
+            std::optional<UInt64> last_updated_sequence_number;
+            std::optional<UInt64> first_row_id;
 #if USE_AVRO
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+            {
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
+                first_row_id = iceberg_info->info.first_row_id;
+                if (first_row_id.has_value())
+                    last_updated_sequence_number = iceberg_info->info.sequence_number;
+            }
 #endif
 
             std::optional<size_t> object_size;
@@ -680,6 +739,10 @@ Chunk StorageObjectStorageSource::generate()
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
+                    .last_updated_sequence_number = last_updated_sequence_number,
+                    .first_row_id = first_row_id,
+                    .materialized_row_ids = materialized_row_ids,
+                    .materialized_last_updated_sequence_numbers = materialized_last_updated_sequence_numbers,
                 },
                 read_context,
                 format_settings);
@@ -1031,6 +1094,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
 
+    Names row_lineage_columns;
+
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
         if (!schema_cache)
@@ -1096,6 +1161,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const auto format_name = object_info->getFileFormat().value_or(configuration->format);
         const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
+        row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
+
         CompressionMethod compression_method = {};
         if (input_format_does_not_read_file)
         {
@@ -1130,6 +1197,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             initial_header = sample_header;
             schema_changed = true;
+        }
+
+        for (const auto & column_name : row_lineage_columns)
+        {
+            if (!initial_header.has(column_name))
+                initial_header.insert({rowLineageColumnType()->createColumn(), rowLineageColumnType(), column_name});
         }
         std::vector<std::pair<String, Field>> identity_partition_columns;
 #if USE_AVRO
@@ -1418,6 +1491,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (schema_transform.has_value())
         {
+            for (const auto & column_name : row_lineage_columns)
+            {
+                const auto & input = schema_transform->addInput(column_name, rowLineageColumnType());
+                schema_transform->getOutputs().push_back(&input);
+            }
+
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(schema_transform.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
@@ -1503,9 +1582,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
+    NamesAndTypesList columns_to_extract = read_from_format_info.requested_columns;
+    for (const auto & column_name : row_lineage_columns)
+        columns_to_extract.emplace_back(column_name, rowLineageColumnType());
+
     builder.addSimpleTransform([&](const SharedHeader & header)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
+        return std::make_shared<ExtractColumnsTransform>(header, columns_to_extract);
     });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
