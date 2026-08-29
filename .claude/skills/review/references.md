@@ -164,10 +164,22 @@ on the source table in `StorageMergeTreeCodecBlockCounts::read` only. The review
 and questioned its column granularity; the author defended it as intentional, and the review
 stopped there. Meanwhile `TableFunctionMergeTreeCodecBlockCounts::getActualTableStructure` went
 straight to `DatabaseCatalog`, so `DESCRIBE mergeTreeCodecBlockCounts(db, t)` succeeded for a user
-with no privilege on `db.t`, and its `BAD_ARGUMENTS` message disclosed the table's engine. Neither
-path had a test. The fix is https://github.com/ClickHouse/ClickHouse/pull/116647, still open at the
-time of writing, so the structure path is unguarded in `master` — which is why the function appears
-in the sibling list above rather than as a closed case.
+with no privilege on `db.t`, and its `BAD_ARGUMENTS` message disclosed the table's engine.
+
+The test situation is worth stating precisely, because it is the evidence gap in its usual form. The
+function was not short of tests: ten `.sql` files, and both code paths were exercised —
+`04267_mergeTreeCodecBlockCounts_basic.sql` hits the non-`MergeTree` `BAD_ARGUMENTS` on the
+structure path, and `04509_mergeTreeCodecBlockCounts_row_policy.sql` asserts `ACCESS_DENIED` at read
+time. What none of them does is run as a user that lacks the grant: not one creates a user or grants
+anything, and not one issues a `DESCRIBE`. So the `checkAccess(AccessType::SELECT, …)` in `read` was
+itself untested — `04509` covers the row-policy branch beside it, which is a different guard — and
+nothing in the suite distinguished a check on one entrypoint from a check on all of them. The gap was
+never "no tests"; it was "no negative case", which is why the rule above asks for one per guarded
+entrypoint rather than for coverage of the paths.
+
+The fix is https://github.com/ClickHouse/ClickHouse/pull/116647, still open at the time of writing,
+so the structure path is unguarded in `master` — which is why the function appears in the sibling
+list above rather than as a closed case.
 
 ## Native protocol / native format spec sync {#spec-sync}
 
