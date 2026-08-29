@@ -31,7 +31,7 @@ public:
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
     bool trySuspendIncrease(ResourceAllocation & allocation) override;
-    void notifyRecoveryProgress(ResourceAllocation & allocation, UInt64 recovery_epoch = 0) override;
+    void notifyRecoveryProgress(ResourceAllocation & allocation, UInt64 recovery_epoch) override;
     void notifyUnusedCapacity(ResourceAllocation & allocation) override;
     void retrySuspendedIncreases() override;
     bool hasSuspendedIncrease() const override;
