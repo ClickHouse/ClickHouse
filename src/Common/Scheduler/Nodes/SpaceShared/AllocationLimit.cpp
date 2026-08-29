@@ -279,6 +279,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                 /// The child can then expose other work hidden behind running-query growth. Memory releases
                 /// retry the parked growth, so independent work can continue while pressure drains. If
                 /// nothing can make progress, the existing kill policy remains the fallback.
+                const bool retrying_suspended_owner = new_increase == suspended_growth;
                 bool suspended = false;
                 if (!suspended_growth)
                 {
@@ -307,12 +308,18 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
 
                 if (suspended)
                 {
-                    /// Wait until the changed eligibility has propagated through the child policy before
-                    /// interpreting a null increase as exhaustion of the suspension round.
-                    suspended_growth_retry_pending = true;
+                    /// A newly parked owner still has to disappear through the child policy before
+                    /// exhaustion is meaningful. When an existing owner resurfaces, that traversal
+                    /// has already completed; do not depend on a leaf self-activation that may be
+                    /// coalesced with the activation currently being processed.
+                    suspended_growth_retry_pending = !retrying_suspended_owner;
 
                     SCHED_DBG("{} -- suspending increase(allocated={}, increase_size={}, max={}, allocation={})",
                         getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id);
+
+                    if (retrying_suspended_owner
+                        && new_increase->allocation.memory_growth_suction_priority)
+                        processSuction();
                 }
                 else if (!suspended_growth)
                     selectAndKill(*new_increase);
