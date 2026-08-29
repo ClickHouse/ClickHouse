@@ -28,7 +28,13 @@ ParallelCompressedWriteBuffer::ParallelCompressedWriteBuffer(
     size_t buf_size_,
     size_t num_threads_,
     ThreadPool & pool_)
-    : WriteBuffer(nullptr, 0), out(out_), codec(codec_), buf_size(buf_size_), num_threads(num_threads_), pool(pool_)
+    /// A frame's size_decompressed is offset(), so buffer capacity is its upper bound.
+    : WriteBuffer(nullptr, 0)
+    , out(out_)
+    , codec(codec_)
+    , buf_size(codec_->capUncompressedFrameSize(buf_size_))
+    , num_threads(num_threads_)
+    , pool(pool_)
 {
     buffers.emplace_back(buf_size);
     current_buffer = buffers.begin();

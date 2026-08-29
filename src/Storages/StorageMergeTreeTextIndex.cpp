@@ -224,6 +224,7 @@ private:
                 auto idx_file = storage.readFile(sparse_file_name, read_settings, part->checksums.files.at(sparse_file_name).file_size);
 
                 CompressedReadBufferFromFile idx_buf(std::move(idx_file));
+                idx_buf.allowUnboundedDecompressedSize();
                 sparse_index = TextIndexSerialization::deserializeHeader(idx_buf).sparse_index;
 
                 if (sparse_index.empty())
@@ -246,6 +247,7 @@ private:
             auto dict_file = storage.readFile(dict_file_name, read_settings, part->checksums.files.at(dict_file_name).file_size);
 
             dictionary_buf = std::make_unique<CompressedReadBufferFromFile>(std::move(dict_file));
+            dictionary_buf->allowUnboundedDecompressedSize();
             current_part_name = part->name;
             return true;
         }

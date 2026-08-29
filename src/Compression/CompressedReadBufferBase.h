@@ -38,6 +38,9 @@ protected:
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     bool external_data;
 
+    /// Reject a header whose size_decompressed exceeds DBMS_MAX_COMPRESSED_SIZE.
+    bool bound_decompressed_size = true;
+
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
     ///
     /// If always_copy is true then even if the compressed block is already stored in compressed_in.buffer()
@@ -69,6 +72,15 @@ public:
     void disableChecksumming()
     {
         disable_checksum = true;
+    }
+
+    /** Accept a header declaring size_decompressed above DBMS_MAX_COMPRESSED_SIZE.
+      * Writers cap a frame at that value, so only data written before the cap can exceed it.
+      * Use at readers of such data; never where the bytes can come from a peer.
+      */
+    void allowUnboundedDecompressedSize()
+    {
+        bound_decompressed_size = false;
     }
 
     /// Some compressed read buffer can do useful seek operation

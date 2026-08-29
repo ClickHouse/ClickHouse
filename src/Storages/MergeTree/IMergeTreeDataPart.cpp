@@ -3561,7 +3561,11 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
     auto res = data_part_storage.readFile(file_name, read_settings, size_hint);
 
     if (isCompressedFromFileName(file_name))
-        return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+    {
+        auto compressed = std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+        compressed->allowUnboundedDecompressedSize();
+        return compressed;
+    }
 
     return res;
 }
@@ -3586,7 +3590,11 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & 
     if (auto res = data_part_storage.readFileIfExists(file_name, read_settings, size_hint))
     {
         if (isCompressedFromFileName(file_name))
-            return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+        {
+            auto compressed = std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+            compressed->allowUnboundedDecompressedSize();
+            return compressed;
+        }
 
         return res;
     }

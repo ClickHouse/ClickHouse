@@ -676,6 +676,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
                 throw;
         }
         CompressedReadBuffer compressed_in{*in};
+        compressed_in.allowUnboundedDecompressedSize();
         index.read(compressed_in);
     }
 
@@ -691,6 +692,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         auto in = backup->readFile(data_file_path);
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
+        compressed_in.allowUnboundedDecompressedSize();
         NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
 
         for (auto block = block_in.read(); !block.empty(); block = block_in.read())

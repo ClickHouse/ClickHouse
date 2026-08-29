@@ -182,7 +182,11 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     std::unique_ptr<ReadBuffer> marks_reader;
     bool marks_compressed = index_granularity_info_.mark_type.compressed;
     if (marks_compressed)
-        marks_reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    {
+        auto compressed_marks_reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+        compressed_marks_reader->allowUnboundedDecompressedSize();
+        marks_reader = std::move(compressed_marks_reader);
+    }
     else
         marks_reader = std::move(buffer);
 

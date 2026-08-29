@@ -19,6 +19,22 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    /// Resolved here rather than in the constructor body: the cap needs the codec, and the base
+    /// class initializer consumes buf_size before the body runs.
+    CompressionCodecPtr resolveCodec(CompressionCodecPtr codec)
+    {
+        return codec ? codec : CompressionCodecFactory::instance().getDefaultCodec();
+    }
+
+    /// A frame's size_decompressed is offset(), so buffer capacity is its upper bound.
+    size_t capBufferSize(const CompressionCodecPtr & codec, size_t buf_size)
+    {
+        return resolveCodec(codec)->capUncompressedFrameSize(buf_size);
+    }
+}
+
 void CompressedWriteBuffer::nextImpl()
 {
     if (!offset())
@@ -74,13 +90,15 @@ void CompressedWriteBuffer::finalizeImpl()
 
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
-    : BufferWithOwnMemory<WriteBuffer>(adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, buf_size))
+    /// The adaptive buffer grows from the initial size up to the max, so the initial allocation must
+    /// not exceed it (see WriteBufferFromFileDescriptor for details). Both bounds are capped by what
+    /// the codec can describe in a frame header.
+    : BufferWithOwnMemory<WriteBuffer>(
+        adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, capBufferSize(codec_, buf_size)))
     , out(out_)
-    , codec(std::move(codec_))
+    , codec(resolveCodec(std::move(codec_)))
 {
-    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buf_size);
-    if (!codec)
-        codec = CompressionCodecFactory::instance().getDefaultCodec();
+    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, capBufferSize(codec, buf_size));
 }
 
 void CompressedWriteBuffer::cancelImpl() noexcept
@@ -98,5 +116,13 @@ void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
 
     chassert(codec_);
     codec = std::move(codec_);
+
+    /// The capacity was sized for the previous codec, whose bound may be looser than this one's.
+    adaptive_buffer_max_size = codec->capUncompressedFrameSize(adaptive_buffer_max_size);
+    if (memory.size() > adaptive_buffer_max_size)
+    {
+        memory.resize(adaptive_buffer_max_size);
+        BufferBase::set(memory.data(), memory.size(), 0);
+    }
 }
 }

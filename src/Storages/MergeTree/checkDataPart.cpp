@@ -191,11 +191,18 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     IMergeTreeDataPart::Checksums checksums_data;
 
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
-    auto checksum_compressed_file = [&read_settings](const IDataPartStorage & data_part_storage_, const String & file_path)
+    /// allow_unbounded_decompressed_size states whether a writer that predates the frame size cap
+    /// could have produced this file; the caller knows, so this must accept whatever a read accepts.
+    auto checksum_compressed_file = [&read_settings](
+        const IDataPartStorage & data_part_storage_, const String & file_path, bool allow_unbounded_decompressed_size)
     {
         auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
+
+        if (allow_unbounded_decompressed_size)
+            uncompressing_buf.allowUnboundedDecompressedSize();
+
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
         uncompressed_hashing_buf.ignoreAll();
@@ -274,7 +281,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                             column.name, substream, data_part->name);
 
                     auto file_name = *stream_name + ".bin";
-                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                    checksums_data.files[file_name]
+                        = checksum_compressed_file(data_part_storage, file_name, /* allow_unbounded_decompressed_size */ true);
                 }
                 ++col_idx;
             }
@@ -306,7 +314,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                             column.name, data_part->name);
 
                     auto file_name = *stream_name + ".bin";
-                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                    checksums_data.files[file_name]
+                        = checksum_compressed_file(data_part_storage, file_name, /* allow_unbounded_decompressed_size */ true);
                 }, data);
             }
         }
@@ -351,7 +360,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 /// (all .bin files in MergeTree are compressed), compute both compressed and uncompressed checksums.
                 /// The .bin check is important for dynamic stream files that may not be visited
                 /// during enumerateStreams when columns_substreams.txt is absent.
-                checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                ///
+                /// Statistics use a fixed frame size, so their reader keeps the bound and this must too.
+                /// An unclassified name is left unbounded: that only forgoes hardening here, while
+                /// bounding a class a read accepts reports a good legacy part as broken.
+                const bool is_statistics
+                    = file_name.starts_with(STATS_FILE_PREFIX) && file_name.ends_with(STATS_FILE_SUFFIX);
+                checksums_data.files[file_name] = checksum_compressed_file(
+                    data_part_storage, file_name, /* allow_unbounded_decompressed_size */ !is_statistics);
             }
             else
             {

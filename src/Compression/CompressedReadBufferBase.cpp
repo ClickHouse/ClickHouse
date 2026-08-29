@@ -129,7 +129,8 @@ static void readHeaderAndGetCodecAndSize(
     size_t & size_decompressed,
     size_t & size_compressed_without_checksum,
     bool allow_different_codecs,
-    bool external_data)
+    bool external_data,
+    bool bound_decompressed_size)
 {
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
@@ -164,10 +165,21 @@ static void readHeaderAndGetCodecAndSize(
         throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "
                         "Most likely corrupted data.", size_compressed_without_checksum);
 
+    if (bound_decompressed_size && size_decompressed > DBMS_MAX_COMPRESSED_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_decompressed: {}. "
+                        "Most likely corrupted data.", size_decompressed);
+
     if (size_compressed_without_checksum < header_size)
         throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
             "the compressed data size ({}, this should include header size) is less than the header size ({})",
             size_compressed_without_checksum, static_cast<size_t>(header_size));
+
+    /// A codec that stores data verbatim has body length equal to the decompressed length.
+    if (codec->isNone() && size_compressed_without_checksum - header_size != size_decompressed)
+        throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
+            "the compressed data size without header ({}) does not match size_decompressed ({}) "
+            "for a codec that stores data uncompressed",
+            size_compressed_without_checksum - header_size, size_decompressed);
 }
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
@@ -197,7 +209,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
             size_decompressed,
             size_compressed_without_checksum,
             allow_different_codecs,
-            external_data);
+            external_data,
+            bound_decompressed_size);
         compressed_in->position() += size_header_plus_checksum;
     }
     else
@@ -219,7 +232,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
             size_decompressed,
             size_compressed_without_checksum,
             allow_different_codecs,
-            external_data);
+            external_data,
+            bound_decompressed_size);
     }
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();

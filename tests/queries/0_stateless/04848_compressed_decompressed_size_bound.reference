@@ -1,0 +1,36 @@
+-- a valid frame still executes (proves the arms below fail for the intended reason)
+1
+-- size_decompressed of 2 GiB is rejected from the header alone, before any allocation
+1
+-- the bound is inclusive: exactly 1 GiB is not rejected by it (it fails later, in decoding)
+0
+-- one byte above 1 GiB is rejected
+1
+-- the bound is reached before the header-size check, so before any allocation
+1
+-- a codec that stores data uncompressed must not lie about the uncompressed size
+1
+-- and neither may the other verbatim codec
+1
+-- a writer asked for a frame above the bound emits several frames within it
+frames above the bound: 0
+-- and its output round-trips
+1207959552
+-- the same holds for the parallel writer
+frames above the bound: 0
+-- a codec that does not compress expands the frame by the header alone, and still fits
+frames above the bound: 0
+-- and so does a compressing codec handed incompressible input
+frames above the bound: 0
+-- and it round-trips byte for byte
+incompressible input round-trips
+-- a reader of data an uncapped writer produced accepts an over-bound frame
+0
+-- and so does its seeking path
+0
+-- engines whose readers accept such frames keep working on ordinary data
+1000	100000
+1000	100000
+1000	100000
+1
+1
