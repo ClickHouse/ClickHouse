@@ -1,0 +1,12 @@
+read_in_order_not_scattered	1
+read_in_order_not_resorted	1
+unordered_is_scattered	1
+inner	1
+left	1
+right	1
+full	1
+full_use_nulls	1
+virtual_row_off	1
+virtual_row_on	1
+virtual_row_per_block_on	1
+rows_identical	1

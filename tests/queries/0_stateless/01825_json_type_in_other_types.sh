@@ -5,9 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `basic` is pinned because `with_buckets` reassembles a Map in bucket order, so `SELECT *`
-# would print the keys in a run-dependent order. `t_json_nested_buckets` below keeps
-# `with_buckets` covered for this column type using order-independent queries.
+# The test prints whole `Map` values, whose key order `with_buckets` serialization does not
+# preserve (keys are reassembled in hash-bucket order). Pin the serialization, which CI randomizes.
+# `t_json_nested_buckets` below keeps `with_buckets` covered for this column type using
+# order-independent queries.
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_json_nested;
 
@@ -17,7 +18,8 @@ ${CLICKHOUSE_CLIENT} -q "
         data Tuple(String, Map(String, Array(JSON)), JSON)
     )
     ENGINE = MergeTree ORDER BY id
-    SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic'" --enable_json_type 1
+    SETTINGS map_serialization_version = 'basic',
+             map_serialization_version_for_zero_level_parts = 'basic'" --enable_json_type 1
 
 cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_nested FORMAT JSONEachRow"
 {

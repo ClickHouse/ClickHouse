@@ -4,6 +4,7 @@
 #include <Interpreters/StorageID.h>
 #include <Core/UUID.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -39,6 +40,9 @@ struct ViewTarget
 
         /// The "metrics" table for a TimeSeries table, contains general information (metadata) about metrics.
         Metrics,
+
+        /// The optional "recent samples" table of a TimeSeries table: a TTL'd copy of the newest samples, preferred for short range reads.
+        RecentSamples,
     };
 
     explicit ViewTarget(Kind kind_);
@@ -124,6 +128,8 @@ public:
     String getID(char) const override { return "ViewTargets"; }
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     /// Formats information only about a specific target table.
     void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;

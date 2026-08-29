@@ -4,27 +4,33 @@ description: 'スキーマ管理のために ClickPipes をスキーマレジス
 slug: /integrations/clickpipes/kafka/schema-registries
 title: 'Kafka ClickPipe 向けスキーマレジストリ'
 doc_type: 'guide'
-keywords: ['スキーマレジストリ', 'kafka', 'clickpipes', 'avro', 'confluent']
+keywords: ['スキーマレジストリ', 'kafka', 'clickpipes', 'avro', 'confluent', 'aws glue', 'msk']
 integration:
    - support_level: 'core'
    - category: 'clickpipes'
 ---
 
-ClickPipes は、Avro および Protobuf でエンコードされたトピックをデコードするためのスキーマレジストリとの連携をサポートしています。
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickPipes は、Avro および Protobuf でエンコードされたレコード値と[構造化 Kafka キー](/ja/integrations/clickpipes/kafka/reference#structured-message-keys)をデコードするためのスキーマレジストリとの連携をサポートしています。
 
 <div id="supported-schema-registries">
-  ## Kafka ClickPipes でサポートされているレジストリ
+  ## Kafka ClickPipes でサポートされるスキーマレジストリ
 </div>
 
-Confluent スキーマレジストリと API 互換性のあるスキーマレジストリをサポートしています。これには以下が含まれます。
+Kafka ClickPipes は、2 種類のスキーマレジストリをサポートしています。
 
-* Confluent スキーマレジストリ
-* Redpanda Schema Registry
+* [Confluent 互換レジストリ](#confluent-compatible-registries): Confluent スキーマレジストリ自体や Redpanda Schema Registry など、Confluent スキーマレジストリと API 互換性のあるレジストリです。Avro と Protobuf をサポートします。
+* [AWS Glue Schema Registry](#aws-glue-schema-registry): 通常 Amazon MSK から取得される、AWS Glue SerDe でシリアライズされた Avro データ用です。
 
-ClickPipes は現在、AWS Glue Schema Registry または Azure Schema Registry をサポートしていません。これらのスキーマレジストリのサポートが必要な場合は、[当社のチームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
+ClickPipes は現在、Azure Schema Registry をサポートしていません。サポートが必要な場合は、[チームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="confluent-compatible-registries">
+  ## Confluent 互換レジストリ
+</div>
 
 <div id="schema-registry-configuration">
-  ## 設定
+  ### 設定
 </div>
 
 ClickPipes の設定でスキーマレジストリを統合するには、次のいずれかの方法を使用する必要があります。
@@ -35,12 +41,12 @@ ClickPipes の設定でスキーマレジストリを統合するには、次の
 3. スキーマレジストリのルート URL を指定します (例: `https://registry.example.com`)
 
 <div id="network-connectivity">
-  ## ネットワーク接続
+  ### ネットワーク接続
 </div>
 
 ClickPipes は、指定した URL を使用して HTTPS 経由でスキーマレジストリに接続します。スキーマレジストリをパブリックに公開しておく必要はありません。
 
-Kafka ブローカーに [reverse private endpoint](/ja/integrations/clickpipes/aws-privatelink) (AWS PrivateLink または GCP Private Service Connect) 経由でアクセスしている場合、スキーマレジストリでも同じプライベート接続を利用できます。ClickPipes は reverse private endpoint のプライベート DNS を使ってレジストリのホスト名を名前解決するため、ブローカーと同じくプライベート環境でホストされているレジストリであっても、そのホスト名が reverse private endpoint のプライベート IP アドレスに解決される限り到達できます (エンドポイントのプライベート DNS サポート、または [カスタムのプライベート DNS マッピング](/ja/integrations/clickpipes/aws-privatelink#custom-private-dns) を使用) 。
+Kafka ブローカーに [reverse private endpoint](/ja/integrations/clickpipes/networking/aws-privatelink) (AWS PrivateLink または GCP Private Service Connect) 経由でアクセスしている場合、スキーマレジストリでも同じプライベート接続を利用できます。ClickPipes は reverse private endpoint のプライベート DNS を使ってレジストリのホスト名を名前解決するため、ブローカーと同じくプライベート環境でホストされているレジストリであっても、そのホスト名が reverse private endpoint のプライベート IP アドレスに解決される限り到達できます (エンドポイントのプライベート DNS サポート、または [カスタムのプライベート DNS マッピング](/ja/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) を使用) 。
 
 次の点に注意してください。
 
@@ -48,22 +54,168 @@ Kafka ブローカーに [reverse private endpoint](/ja/integrations/clickpipes/
 * レジストリのホスト名がプライベートアドレスに解決される場合は、ClickPipe 用に選択された reverse private endpoint 経由で到達可能である必要があります。そうでないと、Setup 中の接続チェックは失敗します。
 
 <div id="how-schema-registries-work">
-  ## 仕組み
+  ### 仕組み
 </div>
 
 ClickPipes は、設定されたスキーマレジストリからスキーマを動的に取得して適用します。
 
-* メッセージにスキーマ ID が埋め込まれている場合は、それを使ってスキーマを取得します。
-* メッセージにスキーマ ID が埋め込まれていない場合は、ClickPipe の設定で指定されたスキーマ ID または subject 名を使ってスキーマを取得します。
-* メッセージに埋め込みのスキーマ ID がなく、かつ ClickPipe の設定でスキーマ ID も subject 名も指定されていない場合、スキーマは取得されず、ClickPipes のエラーテーブルに `SOURCE_SCHEMA_ERROR` が記録され、そのメッセージはスキップされます。
-* メッセージがスキーマに準拠していない場合、ClickPipes のエラーテーブルに `DATA_PARSING_ERROR` が記録され、そのメッセージはスキップされます。
+* レコード値にスキーマ ID が埋め込まれている場合は、それを使ってスキーマを取得します。
+* レコード値にスキーマ ID が埋め込まれていない場合は、ClickPipe の設定で指定されたスキーマ ID または subject 名を使ってスキーマを取得します。
+* レコード値に埋め込みのスキーマ ID がなく、かつ ClickPipe の設定でスキーマ ID も subject 名も指定されていない場合、スキーマは取得されず、ClickPipes のエラーテーブルに `SOURCE_SCHEMA_ERROR` が記録され、そのメッセージはスキップされます。
+* レコード値がスキーマに準拠していない場合、ClickPipes のエラーテーブルに `DATA_PARSING_ERROR` が記録され、そのメッセージはスキップされます。
 * Protobuf スキーマのみ: ClickPipes は、依存関係として定義された import 済みのスキーマを読み込みます。外部参照を含む Avro スキーマは、現時点ではサポートされていません。
+
+`_key.id` などのフィールドのマッピングが設定されている場合、ClickPipes は Kafka のキーに埋め込まれたスキーマ ID をレコード値とは独立して解決します。キーには異なるスキーマ ID を使用できますが、値と同じレジストリファミリーおよびシリアライゼーションフォーマットを使用する必要があります。解決されたキースキーマはキャッシュされ、スキーマ変更は自動的に検出されます。
+
+<div id="aws-glue-schema-registry">
+  ## AWS Glue Schema Registry
+</div>
+
+プロデューサーが AWS Glue SerDe を使用して Avro をシリアル化する場合 (たとえば、Amazon MSK トピックに対して `AWSKafkaAvroSerializer` を使用する場合) 、ClickPipes は AWS Glue Schema Registry からこれらのスキーマを直接解決できます。Glue は Confluent 互換レジストリとは異なるワイヤ形式と API を使用するため、個別に設定する必要があります。
+
+AWS Glue Schema Registry の設定は現在、ClickHouse Cloud console でのみ利用できます。ClickPipes API または Terraform プロバイダーではサポートされていません。
+
+<Note>
+  **Avro のみ。** AWS Glue レジストリは Avro フォーマットでのみサポートされています。Glue SerDe は JSON と Protobuf のフレーミングにも対応していますが、ClickPipes ではサポートされておらず、パイプの作成時に拒否されます。
+</Note>
+
+<div id="schema-registry-configuration">
+  ### 設定
+</div>
+
+ClickPipe 作成ウィザードの Kafka 接続ステップで **スキーマレジストリ** を有効にし、**レジストリタイプ** を **AWS Glue** に設定します。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="AWS Glue が選択されたスキーマレジストリパネル" size="lg" border />
+
+| フィールド       | 必須   | 説明                                                                              | 例                                                          |
+| ----------- | ---- | ------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| レジストリタイプ    | はい   | **AWS Glue** を選択します                                                             | `AWS Glue`                                                 |
+| AWS リージョン   | はい   | Glue レジストリが存在するリージョンです。レジストリのリージョンと完全に一致している必要があります。                            | `us-east-1`                                                |
+| レジストリ名      | はい   | Glue レジストリの名前です。別のレジストリに属するスキーマは拒否されるため、ClickPipes がスキーマバージョンを解決する際に入力ミスが判明します。 | `my-glue-registry`                                         |
+| IAM ロール ARN | 条件付き | レジストリへのアクセス専用のロールです。ブローカーで IAM 認証を使用している場合は任意ですが、それ以外の場合は必須です。                  | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
+
+設定するレジストリ URL はありません。Glue SerDe で生成された各レコードには、そのスキーマバージョンの ID が含まれます。ClickPipes は `glue:GetSchemaVersion` を使用してスキーマバージョンを解決し、異なるスキーマバージョンごとに API 呼び出しを 1 回行ってキャッシュします。スキーマ進化は自動的に処理されます。ストリームの途中でレコードが新しいスキーマバージョンに切り替わった場合は、最初に検出された時点で解決されます。
+
+<div id="glue-iam-setup">
+  ### IAM の設定
+</div>
+
+環境に合った方のオプションを使用してください。Amazon MSK では通常、オプション A を使用します。
+
+<div id="glue-iam-option-a">
+  #### オプション A: ブローカーの IAM ID を再利用する
+</div>
+
+Kafka ClickPipe がすでに IAM を使用して MSK に認証している場合、ClickPipes は同じ IAM ID を使用してレジストリを読み取ります。**IAM ロール ARN** フィールドは空のままにして、次のステートメントを ID の権限に追加します。
+
+* **IAM ロール:** MSK 用に設定されたロールの権限ポリシーにステートメントを追加します。
+* **IAM 認証情報:** アクセスキーに関連付けられた IAM プリンシパルの権限ポリシーにステートメントを追加します。
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ClickPipesGlueSchemaRegistryRead",
+      "Effect": "Allow",
+      "Action": ["glue:GetSchemaVersion"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+ロールベースの認証では、信頼ポリシーを変更する必要はありません。MSK 用に設定されている信頼関係が、このアクセスをすでにカバーしています。IAM 認証情報では、ロールの信頼ポリシーは使用しません。
+
+<div id="glue-iam-option-b">
+  #### オプション B: 専用のレジストリロールを使用する
+</div>
+
+ブローカーが IAM で認証されない場合 (SASL/SCRAM、SASL/PLAIN、mTLS) 、またはレジストリとブローカーが異なる AWS アカウントにある場合に使用します。
+
+<Note>
+  **AWS デプロイメントのみ。** このオプションはサービスの AWS IAM ロールを利用するため、AWS にデプロイされた ClickHouse Cloud サービスが必要です。サービスが GCP または Azure 上で稼働しており、ブローカーが IAM 認証を使用しない場合は、専用のレジストリロールを設定できません。
+</Note>
+
+<Steps>
+  <Step title="ClickHouse サービスの IAM ロール ARN を取得する" id="obtain-clickhouse-service-iam-role-arn">
+    サービスを開き、**Settings** タブを選択します。**Network security information** セクションまでスクロールし、`arn:aws:iam::123456789012:role/CH-S3-example-service-Role` 形式の ARN である **サービスロール ID (IAM)** の値をコピーします。以降、この値を `{ClickHouse_IAM_ARN}` と呼びます。AWS にデプロイされた各 ClickHouse サービスには固有のロールがあるため、この値はサービスごとに異なります。
+
+    <Image img="/images/cloud/security/secures3_arn.webp" alt="サービスロール ID（IAM）" size="lg" border />
+  </Step>
+
+  <Step title="レジストリ IAM ロールを作成する" id="create-registry-iam-role">
+    AWS アカウントに IAM ロールを作成します。ロール名は必ず `ClickHouseAccessRole-` で始める必要があります。
+
+    **信頼ポリシーを設定する**
+
+    `{ClickHouse_IAM_ARN}` を前のステップで取得した値に置き換えます。
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": "{ClickHouse_IAM_ARN}"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+
+    **アクセス許可ポリシーを設定する**
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "ClickPipesGlueSchemaRegistryRead",
+          "Effect": "Allow",
+          "Action": ["glue:GetSchemaVersion"],
+          "Resource": "*"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="ClickPipe を設定する" id="configure-clickpipe-registry-role">
+    新しいロールの ARN をウィザードの **IAM ロール ARN** フィールドに貼り付けます。
+  </Step>
+</Steps>
+
+<Note>
+  **IAM リソースのスコープ。** これらの例は、どちらも `"*"` に対する `glue:GetSchemaVersion` を許可する、[AWS のデシリアライザー向けドキュメント化されたポリシー](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html)と、その [`AWSGlueSchemaRegistryReadonlyAccess` マネージドポリシー](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html)に従っています。ClickPipes は、解決された各スキーマが設定した **レジストリ名** に一致するかを個別に確認し、他のレジストリのバージョンは拒否します。
+</Note>
+
+<div id="glue-troubleshooting">
+  ### トラブルシューティング
+</div>
+
+| エラー                                                                                          | 原因と対処法                                                                                                                                          |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | レジストリへのアクセスに使用している IAM アイデンティティに `glue:GetSchemaVersion` 権限がありません。ロールベースのアクセスの場合、ロールの信頼ポリシーにサービスのロール ID が指定されていない可能性もあります。上記の IAM 設定を再確認してください。 |
+| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | 信頼ポリシーに誤ったプリンシパルが指定されています。エラーには引き受けを試行した正確なロールが含まれています。その値を信頼ポリシーに使用してください。                                                                     |
+| `schema version … not found in Glue schema registry`                                         | レコードが、設定されているアカウントまたはリージョンに存在しないスキーマバージョンを参照しています。**AWS リージョン** がレジストリのリージョンと一致していることを確認してください。                                                 |
+| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | producer が、パイプで指定されているものとは異なるレジストリにスキーマを登録しています。**レジストリ名** を修正するか、producer が正しいレジストリを使用するよう設定してください。                                            |
+| `the AWS Glue schema registry only supports the Avro format`                                 | Glue パイプは Avro のみをサポートします。Glue SerDe 経由の JSON および Protobuf はサポートされていません。                                                                        |
+
+<div id="glue-limitations">
+  ### 制限事項
+</div>
+
+* Avro のみをサポートします。Glue SerDe 経由の JSON Schema および Protobuf はサポートされていません。
+* Kafka ログソースのみをサポートします。Kinesis ClickPipes では Glue registry を使用できません。
 
 <div id="schema-mapping">
   ## スキーママッピング
 </div>
 
-取得したスキーマと ClickHouse の宛先テーブルのマッピングには、次のルールが適用されます。
+次のルールは、Confluent 互換レジストリと AWS Glue Schema Registry の両方に適用されます。これらのルールは、取得した値のスキーマと ClickHouse の宛先テーブルのマッピングを規定し、`_key.` プレフィックスを持つ構造化キーからマッピングされたレコードまたはメッセージのフィールドにも適用されます。
 
 * スキーマに、ClickHouse の宛先マッピングに含まれていないフィールドがある場合、そのフィールドは無視されます。
 * スキーマに、ClickHouse の宛先マッピングで定義されているフィールドがない場合、ClickHouse のカラムには 0 や空文字列などの「ゼロ」値が設定されます。なお、`DEFAULT` 式はサポートされていません。
