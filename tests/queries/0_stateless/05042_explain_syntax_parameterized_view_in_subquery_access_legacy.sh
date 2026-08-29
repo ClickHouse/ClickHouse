@@ -70,22 +70,34 @@ run() {
 }
 
 # Every shape below must give the reader the same answer for `EXPLAIN` as for the real `SELECT`.
-# The five probes of a shape are independent, so they run concurrently: one probe on a loaded
-# debug-build server can take many seconds, and serially the total exceeded the time limit.
+# All the probes of all the shapes are independent, so every one of them runs concurrently and the
+# output is assembled in order afterwards: on a loaded server (the flaky check runs this test many
+# times at once) a single trivial probe was observed to take tens of seconds, so anything sequential
+# - even one wave of probes per shape - exceeded the 180 s limit.
+probe_root=$(mktemp -d "${CLICKHOUSE_TMP}/probes_XXXXXX")
+shape_labels=()
+
 check() {
     local label="$1"
     local query="$2"
-    echo "-- ${label}"
-    local dir
-    dir=$(mktemp -d "${CLICKHOUSE_TMP}/probes_XXXXXX")
+    local dir="${probe_root}/${#shape_labels[@]}"
+    shape_labels+=("${label}")
+    mkdir "${dir}"
     run "${reader}" "  reader SELECT"                "${query}" > "${dir}/1" &
     run "${reader}" "  reader EXPLAIN SYNTAX"        "EXPLAIN SYNTAX ${query}" > "${dir}/2" &
     run "${reader}" "  reader EXPLAIN AST optimize"  "EXPLAIN AST optimize = 1 ${query}" > "${dir}/3" &
     run "${full}"   "  full SELECT"                  "${query}" > "${dir}/4" &
     run "${full}"   "  full EXPLAIN SYNTAX"          "EXPLAIN SYNTAX ${query}" > "${dir}/5" &
+}
+
+print_results() {
     wait
-    cat "${dir}/1" "${dir}/2" "${dir}/3" "${dir}/4" "${dir}/5"
-    rm -r "${dir}"
+    local i
+    for ((i = 0; i < ${#shape_labels[@]}; i++)); do
+        echo "-- ${shape_labels[$i]}"
+        cat "${probe_root}/${i}/1" "${probe_root}/${i}/2" "${probe_root}/${i}/3" "${probe_root}/${i}/4" "${probe_root}/${i}/5"
+    done
+    rm -r "${probe_root}"
 }
 
 db="${CLICKHOUSE_DATABASE}"
@@ -122,6 +134,8 @@ check "SQL SECURITY DEFINER parameterized view inside an IN subquery" \
 
 check "No view at all, IN subquery over a granted table" \
     "SELECT p.y FROM ${db}.plain AS p WHERE p.y IN (SELECT y FROM ${db}.plain)"
+
+print_results
 
 ${CLICKHOUSE_CLIENT} --query "
 DROP VIEW ${CLICKHOUSE_DATABASE}.pv1;
