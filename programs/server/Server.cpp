@@ -4891,8 +4891,10 @@ void Server::updateServers(
             /// itself. That collision is validated once, when the handler factory is built, so a listener that
             /// exposes metrics must be rebuilt when the mode changes - both to re-validate its constant labels
             /// and to reject a combination that would otherwise start emitting duplicate labels. An `http`
-            /// listener is included because an `http_handlers` rule can serve the same protocol.
-            if ((is_prometheus || is_http)
+            /// listener is included because an `http_handlers` rule can serve the same protocol. A
+            /// keeper-metrics-only `prometheus` listener exposes no asynchronous metrics at all, so the form
+            /// cannot affect its labels, and a change of that mode itself is handled by the check above.
+            if ((is_non_keeper_prometheus || is_http)
                 && getAsynchronousMetricsKeyValuesMode(previous_config) != getAsynchronousMetricsKeyValuesMode(config))
             {
                 force_restart = true;
