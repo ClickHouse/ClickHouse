@@ -4,8 +4,8 @@ from praktika.utils import Utils
 from ci.defs.defs import (
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
+    LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -832,28 +832,28 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, parallel, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_wasm_parallel_{batch}"
+                    + f"_ft_old_s3_db_repl_parallel_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, sequential, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_wasm_sequential_{batch}"
+                    + f"_ft_old_s3_db_repl_sequential_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
@@ -906,7 +906,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, WasmEdge, parallel, {batch}/{total_batches}",
+                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -915,7 +915,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, WasmEdge, sequential, {batch}/{total_batches}",
+                parameter=f"amd_msan, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -1594,6 +1594,9 @@ class JobConfigs:
                 "./ci/jobs/scripts/docs",
                 "./utils/generate-async-metrics-docs",
                 "./utils/generate-system-tables-docs",
+                # The source of truth for the generated Open source changelog
+                # page, so a change to it alone must still run this job.
+                "./CHANGELOG.md",
             ],
             # These files are internal inputs or contributor documentation, not
             # pages published by Mintlify.
@@ -1728,6 +1731,32 @@ class JobConfigs:
         requires=[ArtifactNames.CH_ARM_RELEASE],
         run_in_docker="clickhouse/stateless-test",
         timeout=10800,
+    )
+    docs_examples_job = Job.Config(
+        name=JobNames.DOCS_EXAMPLES,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/docs_examples_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/docs_examples_job.py",
+                "./ci/jobs/scripts/server_cleanup.py",
+                "./tests/docs_examples/",
+                # The server of this job installs `programs/server/config.d` and
+                # `programs/server/users.d` dereferenced, and most of their entries are symlinks
+                # into `tests/config`, so the whole of it is an input of the job.
+                "./tests/config/",
+                "./programs/server/config.xml",
+                "./programs/server/config.d/",
+                "./programs/server/users.xml",
+                "./programs/server/users.d/",
+            ]
+            # The examples are extracted from server source registrations and validate server
+            # behavior, so every change that rebuilds the server must run this job too.
+            + build_digest_config.include_paths,
+        ),
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=3600,
     )
     sqlstorm_test_job = Job.Config(
         name=JobNames.SQL_STORM_TEST,
@@ -1932,7 +1961,7 @@ class JobConfigs:
 
     sign_macos_binary_jobs = Job.Config(
         name=JobNames.SIGN_MACOS,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.RELEASE_RUNNER,
         command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
         run_in_docker="clickhouse/utils+--network=host+root",
         timeout=3600,
