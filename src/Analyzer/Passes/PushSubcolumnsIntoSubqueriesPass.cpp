@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
@@ -91,6 +92,11 @@ struct LeafApplication
 {
     QueryNode * leaf = nullptr;
     QueryTreeNodePtr new_projection_node;
+    /// The existing identical projection node when the subcolumn projection is reused.
+    const IQueryTreeNode * reused_projection_node = nullptr;
+    /// True when the projection expression of the exported column unwraps through a
+    /// function-form carrier (see CandidateMatch::via_function_carrier).
+    bool via_function_carrier = false;
 };
 
 struct PushdownGroup
@@ -108,6 +114,10 @@ struct PushdownGroup
     DataTypePtr subcolumn_type;
     /// `tupleElement` requires additional storage capability and ambiguity checks.
     bool requires_tuple_element_guards = false;
+    /// True when at least one occurrence of the group is a function-form carrier rather than
+    /// a plain `getSubcolumn`. Such a group must not be rewritten into a direct subcolumn read
+    /// of a table with `FINAL`, mirroring the `FINAL` restriction of `FunctionToSubcolumnsPass`.
+    bool has_function_carrier = false;
     ContextPtr context;
     /// False if at least one occurrence cannot be replaced. All occurrences of the same
     /// subcolumn are replaced together or not at all: replacing only some of them could
@@ -153,6 +163,14 @@ struct QueryProcessingState
     bool query_has_aggregation = false;
     QueryTreeNodes group_by_keys;
 
+    /// `getSubcolumn` projection expressions synthesized for groups with function-form carrier
+    /// occurrences while processing the outer queries (shared across the whole pass run). When
+    /// such an expression is pushed further down at the next level, the new group inherits the
+    /// carrier origin, so the `FINAL` restriction is preserved through several levels of
+    /// subqueries. Keyed by node identity: the synthesized node itself becomes the projection
+    /// expression of the target and is matched again when the target is processed.
+    std::unordered_set<const IQueryTreeNode *> * synthesized_carrier_reads = nullptr;
+
     PushdownGroup * findGroup(const IQueryTreeNode * source, const String & column_name, const String & subcolumn_path)
     {
         for (auto & group : groups)
@@ -170,6 +188,11 @@ struct CandidateMatch
     DataTypePtr subcolumn_type;
     ReplacementKind replacement_kind = ReplacementKind::Direct;
     bool requires_tuple_element_guards = false;
+    /// True when the occurrence is a function-form carrier rather than a plain `getSubcolumn`
+    /// (a syntactic subcolumn access). `FunctionToSubcolumnsPass` deliberately refuses to rewrite
+    /// such functions into subcolumn reads under `FINAL`, and this pass must not allow the
+    /// subquery form of the same expression to tunnel around that restriction.
+    bool via_function_carrier = false;
 };
 
 /// Match a function that can be expressed as reading a subcolumn where the column comes from a query or union node.
@@ -258,9 +281,21 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
 
         const auto & map_type = assert_cast<const DataTypeMap &>(*column_node->getColumnType());
         const auto & key_type = map_type.getKeyType();
-        auto key_column = key_type->createColumn();
-        if (!key_column->tryInsert(constant_node->getValue()) || !function_node.getResultType()->equals(*map_type.getValueType()))
+        if (!function_node.getResultType()->equals(*map_type.getValueType()))
             return {};
+
+        auto key_column = key_type->createColumn();
+        if (!key_column->tryInsert(constant_node->getValue()))
+        {
+            /// A map with Enum keys can also be indexed by the name of the enum value,
+            /// so convert the name to the numeric value of the enum.
+            if (!isEnum(key_type) || constant_node->getValue().getType() != Field::Types::String)
+                return {};
+
+            Field enum_value = tryConvertFieldToType(constant_node->getValue(), *key_type);
+            if (enum_value.isNull() || !key_column->tryInsert(enum_value))
+                return {};
+        }
 
         WriteBufferFromOwnString buffer;
         key_type->getDefaultSerialization()->serializeText(*key_column, 0, buffer, FormatSettings());
@@ -430,7 +465,8 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         std::move(subcolumn_path),
         std::move(subcolumn_type),
         replacement_kind,
-        requires_tuple_element_guards};
+        requires_tuple_element_guards,
+        /*via_function_carrier=*/function_name != "getSubcolumn"};
 }
 
 bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
@@ -633,6 +669,7 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                             .column_type = match->column_node->getColumnType(),
                             .subcolumn_type = match->subcolumn_type,
                             .requires_tuple_element_guards = match->requires_tuple_element_guards,
+                            .has_function_carrier = false,
                             .context = getTargetContext(target_it->second),
                             .viable = true,
                             .occurrences = 0,
@@ -646,6 +683,11 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                     /// The column argument of the matched occurrence is visited below as a child
                     /// and counted in column_references; the occurrence counter compensates it.
                     ++group->occurrences;
+
+                    /// A plain `getSubcolumn` synthesized for a carrier group at the previous
+                    /// level carries the origin of that group.
+                    group->has_function_carrier = group->has_function_carrier || match->via_function_carrier
+                        || state.synthesized_carrier_reads->contains(function_node);
 
                     /// All occurrences must project the same subcolumn of the same column type.
                     /// Types can diverge e.g. when group_by_use_nulls wraps an occurrence used as a
@@ -693,7 +735,11 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
 /// Unwrap a chain of resolved subcolumn functions, composing their paths into `subcolumn_path`.
 /// A subcolumn read of another subcolumn read is a read of a deeper subcolumn of the same
 /// underlying column, so the paths compose (`a` + `b` -> `a.b`).
-QueryTreeNodePtr unwrapSubcolumnFunctions(QueryTreeNodePtr node, String & subcolumn_path)
+QueryTreeNodePtr unwrapSubcolumnFunctions(
+    QueryTreeNodePtr node,
+    String & subcolumn_path,
+    const std::unordered_set<const IQueryTreeNode *> * synthesized_carrier_reads = nullptr,
+    bool * via_function_carrier = nullptr)
 {
     while (const auto * function_node = node->as<FunctionNode>())
     {
@@ -703,6 +749,10 @@ QueryTreeNodePtr unwrapSubcolumnFunctions(QueryTreeNodePtr node, String & subcol
         /// a subcolumn read of its argument, so its path must not be prepended.
         if (!match || match->replacement_kind != ReplacementKind::Direct)
             return nullptr;
+
+        if (via_function_carrier)
+            *via_function_carrier = *via_function_carrier || match->via_function_carrier
+                || (synthesized_carrier_reads && synthesized_carrier_reads->contains(function_node));
 
         auto path_prefix = std::move(match->subcolumn_path);
         if (path_prefix.empty())
@@ -715,12 +765,19 @@ QueryTreeNodePtr unwrapSubcolumnFunctions(QueryTreeNodePtr node, String & subcol
     return node;
 }
 
-QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const QueryTreeNodePtr & inner_node, const ContextPtr & context)
+QueryTreeNodePtr buildSubcolumnProjectionNode(
+    const PushdownGroup & group,
+    const QueryTreeNodePtr & inner_node,
+    const ContextPtr & context,
+    const std::unordered_set<const IQueryTreeNode *> & synthesized_carrier_reads,
+    bool & via_function_carrier)
 {
+    via_function_carrier = group.has_function_carrier;
+
     /// The projection expression can itself be a subcolumn read left as a `getSubcolumn` function,
     /// e.g. when the subquery exports `json.a AS x` over a deeper subquery.
     String subcolumn_path = group.subcolumn_path;
-    QueryTreeNodePtr base_node = unwrapSubcolumnFunctions(inner_node, subcolumn_path);
+    QueryTreeNodePtr base_node = unwrapSubcolumnFunctions(inner_node, subcolumn_path, &synthesized_carrier_reads, &via_function_carrier);
     if (!base_node)
         return nullptr;
 
@@ -750,6 +807,21 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
+        /// For queries with FINAL, converting a function to a subcolumn may alter the special
+        /// merging algorithms and produce a wrong result, so `FunctionToSubcolumnsPass` refuses
+        /// such rewrites. A plain subcolumn access (`t.a`) over a table with FINAL is resolved
+        /// into a direct subcolumn read by the analyzer itself, so pushing it down preserves the
+        /// semantics of the equivalent direct query; a function-form carrier must not become a
+        /// direct subcolumn read that the equivalent direct query would refuse.
+        if (via_function_carrier)
+        {
+            bool has_final = table_node
+                ? (table_node->hasTableExpressionModifiers() && table_node->getTableExpressionModifiers()->hasFinal())
+                : (table_function_node->hasTableExpressionModifiers() && table_function_node->getTableExpressionModifiers()->hasFinal());
+            if (has_final)
+                return nullptr;
+        }
+
         /// Some storages expose subcolumns syntactically but opt out of rewriting reads of a column
         /// into direct reads of its subcolumns (e.g. StorageFile, StorageURL, StorageDistributed).
         if (!storage_snapshot->storage.supportsOptimizationToSubcolumns()
@@ -763,10 +835,17 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
 
         if (group.requires_tuple_element_guards)
         {
+            /// An unnamed tuple names its elements "1", "2", ..., and a source that serves
+            /// tuple elements by matching the flattened `<column>.<element>` against the real
+            /// field names of a file cannot resolve a bare ordinal; a positional hint must
+            /// keep reading the whole tuple (mirrors tupleElementNameIsOrdinalOnly of
+            /// `FunctionToSubcolumnsPass`). A source serving subcolumns from its own metadata
+            /// does have the ordinal subcolumn.
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner_column->getColumnType().get());
             if (!tuple_type
                 || tupleElementNameIsAmbiguousWhenFlattened(*tuple_type, subcolumn_path)
-                || sourceHasColumnCaseInsensitive(storage_snapshot, subcolumn_full_name))
+                || sourceHasColumnCaseInsensitive(storage_snapshot, subcolumn_full_name)
+                || (!tuple_type->hasExplicitNames() && !storage_snapshot->storage.supportsOptimizationToSubcolumns()))
                 return nullptr;
         }
 
@@ -871,13 +950,14 @@ bool collectLeafApplications(
     size_t column_index,
     std::optional<size_t> reuse_index,
     const String & new_column_name,
+    const std::unordered_set<const IQueryTreeNode *> & synthesized_carrier_reads,
     std::vector<LeafApplication> & applications)
 {
     if (auto * union_node = source->as<UnionNode>())
     {
         for (const auto & branch : union_node->getQueries().getNodes())
         {
-            if (!collectLeafApplications(group, branch, column_index, reuse_index, new_column_name, applications))
+            if (!collectLeafApplications(group, branch, column_index, reuse_index, new_column_name, synthesized_carrier_reads, applications))
                 return false;
         }
         return true;
@@ -896,7 +976,9 @@ bool collectLeafApplications(
     if (!projection_columns[column_index].type->equals(*group.column_type))
         return false;
 
-    auto new_projection_node = buildSubcolumnProjectionNode(group, projection_nodes[column_index], subquery.getContext());
+    bool via_function_carrier = false;
+    auto new_projection_node = buildSubcolumnProjectionNode(
+        group, projection_nodes[column_index], subquery.getContext(), synthesized_carrier_reads, via_function_carrier);
     if (!new_projection_node || !new_projection_node->getResultType()->equals(*group.subcolumn_type))
         return false;
 
@@ -907,7 +989,7 @@ bool collectLeafApplications(
             || !isSameSubcolumnProjection(projection_nodes[*reuse_index], new_projection_node))
             return false;
 
-        applications.push_back({&subquery, nullptr});
+        applications.push_back({&subquery, nullptr, projection_nodes[*reuse_index].get(), via_function_carrier});
         return true;
     }
 
@@ -918,7 +1000,7 @@ bool collectLeafApplications(
             return false;
     }
 
-    applications.push_back({&subquery, std::move(new_projection_node)});
+    applications.push_back({&subquery, std::move(new_projection_node), nullptr, via_function_carrier});
     return true;
 }
 
@@ -929,7 +1011,7 @@ bool collectLeafApplications(
 /// query can still fail here (e.g. a shadowing storage column in the subquery, or a branch-local
 /// collision in a UNION ALL leaf), and counting it as replaced would let a pushable sibling
 /// through while the whole parent column stays alive.
-bool validateGroup(PushdownGroup & group)
+bool validateGroup(PushdownGroup & group, const std::unordered_set<const IQueryTreeNode *> & synthesized_carrier_reads)
 {
     auto exported_columns = getExportedColumns(group.source);
 
@@ -962,7 +1044,7 @@ bool validateGroup(PushdownGroup & group)
     }
 
     std::vector<LeafApplication> applications;
-    if (!collectLeafApplications(group, group.source, *column_index, reuse_index, new_column_name, applications))
+    if (!collectLeafApplications(group, group.source, *column_index, reuse_index, new_column_name, synthesized_carrier_reads, applications))
         return false;
 
     group.applications = std::move(applications);
@@ -972,13 +1054,26 @@ bool validateGroup(PushdownGroup & group)
 
 /// Add the subcolumn to the target projection (for a union, to the projection of every leaf
 /// query of every branch, at the same position), as validated by validateGroup.
-void commitGroup(PushdownGroup & group)
+void commitGroup(PushdownGroup & group, std::unordered_set<const IQueryTreeNode *> & synthesized_carrier_reads)
 {
     for (auto & application : group.applications)
     {
+        /// A `getSubcolumn` projection pushed (or reused) for a group with a function-form
+        /// carrier occurrence inherits the carrier origin: when it is pushed further down at
+        /// the next level, the FINAL restriction must still apply. Direct table reads are
+        /// ColumnNode-s and are never matched again, so only function nodes are recorded.
+        bool carrier_origin = group.has_function_carrier || application.via_function_carrier;
+
         if (application.new_projection_node)
+        {
+            if (carrier_origin && application.new_projection_node->as<FunctionNode>())
+                synthesized_carrier_reads.insert(application.new_projection_node.get());
+
             application.leaf->addProjectionColumn(
                 std::move(application.new_projection_node), NameAndTypePair{group.new_column_name, group.subcolumn_type});
+        }
+        else if (carrier_origin && application.reused_projection_node && application.reused_projection_node->as<FunctionNode>())
+            synthesized_carrier_reads.insert(application.reused_projection_node);
     }
 
     group.applied = true;
@@ -1259,7 +1354,7 @@ void processQuery(
     std::unordered_map<const IQueryTreeNode *, std::unordered_set<String>> claimed_new_names;
     for (auto & group : state.groups)
     {
-        if (!group.viable || !validateGroup(group))
+        if (!group.viable || !validateGroup(group, *state.synthesized_carrier_reads))
             continue;
 
         /// Two distinct groups can produce the same new column name on the same target
@@ -1342,7 +1437,7 @@ void processQuery(
         if (references > replaced_references)
             continue;
 
-        commitGroup(group);
+        commitGroup(group, *state.synthesized_carrier_reads);
         any_group_applied = true;
     }
 
@@ -1484,6 +1579,10 @@ void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, C
     std::unordered_map<const IQueryTreeNode *, std::unordered_map<String, size_t>> replaced_references;
     std::unordered_set<const IQueryTreeNode *> processed;
 
+    /// See QueryProcessingState::synthesized_carrier_reads; shared across the whole run so that
+    /// the carrier origin survives pushdown through several levels of subqueries.
+    std::unordered_set<const IQueryTreeNode *> synthesized_carrier_reads;
+
     auto process_node = [&](const QueryTreeNodePtr & node)
     {
         if (!processed.emplace(node.get()).second)
@@ -1529,6 +1628,7 @@ void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, C
             pruned_exports = collectDeadExports(replaced_it->second, alive_references[node.get()], node.get());
 
         QueryProcessingState state;
+        state.synthesized_carrier_reads = &synthesized_carrier_reads;
         processQuery(*query_node, state, pruned_exports.empty() ? nullptr : &pruned_exports);
 
         for (const auto & [source, columns] : state.column_references)
