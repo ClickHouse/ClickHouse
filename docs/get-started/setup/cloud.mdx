@@ -1,14 +1,23 @@
 ---
 slug: /getting-started/quick-start/cloud
 sidebarTitle: 'Cloud'
-keywords: ['clickhouse', 'install', 'getting started', 'quick start']
+keywords: ['clickhouse', 'install', 'getting started', 'quick start', 'clickhousectl', 'CLI', 'automation', 'AI agents']
 title: 'ClickHouse Cloud quick start'
 description: 'Quick start guide for ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import CloudQuickstartCLI from "/snippets/quickstarts/_cloud_quickstart_cli.mdx";
 
+<Visibility for="agents">
+
+<CloudQuickstartCLI />
+
+</Visibility>
+
+<Visibility for="humans">
+<View title="Cloud UI">
 
 > The quickest and easiest way to get up and running with ClickHouse is to create a new
 service in [ClickHouse Cloud](https://console.clickhouse.cloud). In this quick start guide, we'll get you setup
@@ -181,7 +190,7 @@ SELECT * FROM helloworld.my_first_table
 ```
 
 ### Add data using the ClickHouse Client {#add-data-using-the-clickhouse-client}
-You can also connect to your ClickHouse Cloud service using a command-line tool named [**clickhouse client**](/concepts/features/interfaces/cli). Click `Connect` on the left menu to access these details. From the dialog select `Native` from the drop-down:
+You can also connect to your ClickHouse Cloud service using a command-line tool named [**clickhouse client**](/concepts/features/interfaces/client). Click `Connect` on the left menu to access these details. From the dialog select `Native` from the drop-down:
 
 <Image img="/images/_snippets/client_details.webp" size="lg" alt='clickhouse client connection details' border/>
 <br/>
@@ -302,3 +311,14 @@ See ["Setting IP filters"](/products/cloud/guides/security/connectivity/setting-
 - If your data is coming from an external source, view our [collection of integration guides](/integrations/home) for connecting to message queues, databases, pipelines and more
 - If you're using a UI/BI visualization tool, view the [user guides for connecting a UI to ClickHouse](/integrations/connectors/data-visualization/index)
 - The user guide on [primary keys](/guides/clickhouse/data-modelling/sparse-primary-indexes) is everything you need to know about primary keys and how to define them
+
+</View>
+
+<View title="CLI">
+
+You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
+
+<CloudQuickstartCLI />
+
+</View>
+</Visibility>
