@@ -29,8 +29,7 @@ echo '{
 # Requested-then-required: a caller that asks for containment gets a refusal, not a daemon.
 # BEGIN: cgroup containment
 if [ "${CI_DIND_REQUIRE_CGROUP_CONTAINMENT:-0}" = 1 ]; then
-    # `CI_DIND_CGROUP_ROOT` exists so ci/tests can run this block against a fake tree; production
-    # always takes the default.
+    # Overridable so this block can run against a fake tree; production takes the default.
     cg=${CI_DIND_CGROUP_ROOT:-/sys/fs/cgroup}
 
     refuse() {

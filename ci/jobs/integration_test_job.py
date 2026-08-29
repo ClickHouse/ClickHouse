@@ -167,12 +167,7 @@ def pytest_workers(mem_limit_gb: int, cpus: int, dist_each: bool) -> int:
 def planned_workers(
     args_workers: Optional[int], mem_limit_gb: int, cpus: int, dist_each: bool
 ) -> int:
-    """`--workers` when given, else the budget-derived plan. See `worker_plan`.
-
-    Separate from `main` so a test can pin the decision itself: which of the two memory figures
-    the count is derived from is the whole point of this change, and asserting `pytest_workers`
-    alone leaves the call site free to pass host memory again.
-    """
+    """`--workers` when given, else the budget-derived plan. See `worker_plan`."""
     if args_workers:
         return args_workers
     print("ncpu:", cpus)
@@ -393,9 +388,7 @@ def leaf_oom_report(
     An exhausted leaf is what an overrun looks like now that the leaves are capped, and it must
     not be swallowed: the killed container's client raises `Connection reset by peer`, which
     `_mark_infrastructure_errors` would relabel `SKIPPED`, so a run the cap killed could finish
-    green. Separate from `main` so a test can pin the wiring: the counters and the dmesg backstop
-    each have their own tests, but nothing there catches this block being removed, which would
-    silently restore the pre-fix condition.
+    green.
 
     Only looks when containment was requested: otherwise these paths are the HOST's cgroups.
 
@@ -1319,9 +1312,9 @@ def finalize_llvm_coverage_status(R: Result, has_error: bool) -> bool:
 
     A coverage shard must not block the pipeline on test failures, hence the `set_success`
     below. But a resource kill is not a test verdict: clearing `has_error` here would drop
-    the leaf-OOM `ERROR` and let a run the cap killed finish green, which is exactly what
-    this change exists to prevent. `force_ok_exit` is set for coverage jobs regardless, so
-    keeping the error only stops the job from *reporting* success.
+    the leaf-OOM `ERROR` and let a run the cap killed finish green. `force_ok_exit` is set
+    for coverage jobs regardless, so keeping the error only stops the job from *reporting*
+    success.
     """
     has_failure = False
     for r in R.results:
