@@ -1319,6 +1319,14 @@ struct CollectTablesData
     /// table, which is the safe direction for this hook.
     std::unordered_set<String> alias_names;
 
+    /// The database an unqualified table name is completed with while walking the children of a mutation
+    /// carrier (`UPDATE`, `ALTER`, and the rewritten forms of `DELETE`): their interpreters run
+    /// `AddDefaultDatabaseVisitor` with the *target table's* database over the predicates and expressions,
+    /// so `USE db1; UPDATE db2.dst SET x = 1 WHERE a IN (SELECT a FROM src)` reads `db2.src`, not `db1.src`
+    /// (see `mutationExpressionsDatabase`). Empty everywhere else, which keeps the session's current
+    /// database.
+    String default_database;
+
     void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
     {
         if (table.empty())
@@ -1328,9 +1336,16 @@ struct CollectTablesData
         if (database.empty() && active_ctes.contains(table))
             return;
 
-        StorageID storage_id = database.empty()
-            ? StorageID("", table)
-            : StorageID(database, table);
+        StorageID storage_id = StorageID("", table);
+        if (!database.empty())
+            storage_id = StorageID(database, table);
+        else if (!default_database.empty() && !context->tryResolveStorageID(storage_id, Context::ResolveExternal))
+        {
+            /// Inside a mutation carrier's expressions an unqualified name is completed with the target
+            /// table's database — except a name a session temporary table takes, which
+            /// `AddDefaultDatabaseVisitor` leaves unqualified so that the temporary table keeps it.
+            storage_id = StorageID(default_database, table);
+        }
 
         /// Note: this resolves only the names (e.g. substitutes the current database) — it does not check
         /// that the table exists in the catalog. Existence is checked by the existence preflight in
@@ -1808,6 +1823,29 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
 /// otherwise. Like the other preflights, they are best-effort, point-in-time checks that err toward
 /// suppressing randomization for a succeeding statement rather than reattaching a source of a failing one.
 
+/// SQL UDF substitution runs before a mutation carrier's interpreter reaches the tables its predicate and
+/// expressions name (`InterpreterUpdateQuery::execute`, `InterpreterAlterQuery::executeToTable`; the
+/// `DELETE` rewrites inherit it from the `UPDATE` / `ALTER ... UPDATE` statement they build). Run it on a
+/// clone to notice a substitution that fails on the way there, such as a recursive UDF in a predicate.
+bool udfSubstitutionFails(const IAST & ast, const ContextPtr & context)
+{
+    if (UserDefinedSQLFunctionFactory::instance().empty())
+        return false;
+
+    ASTPtr query = ast.clone();
+
+    try
+    {
+        UserDefinedSQLFunctionVisitor::visit(query, context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    return false;
+}
+
 /// Resolves the target of a mutation-carrying statement in the ordinary namespace, returning nullptr
 /// whenever the statement is going to stop on it or the probe would not be side-effect free (a database
 /// that does not support detaching tables performs remote work even in `isTableExist`/`tryGetTable`).
@@ -1866,6 +1904,9 @@ bool deleteQueryStopsBeforeSources(const ASTDeleteQuery & delete_query, const Co
 
     /// A predicate-less statement cannot be executed; nothing to predict for it.
     if (!delete_query.predicate)
+        return true;
+
+    if (udfSubstitutionFails(delete_query, context))
         return true;
 
     const auto table = tryResolveMutationTarget(delete_query.getDatabase(), delete_query.getTable(), context);
@@ -1959,7 +2000,14 @@ bool updateQueryStopsBeforeSources(const ASTUpdateQuery & update_query, const Co
     if (!update_query.cluster.empty())
         return true;
 
+    /// The very first check of `InterpreterUpdateQuery::execute`.
+    if (!context->getSettingsRef()[Setting::enable_lightweight_update])
+        return true;
+
     if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+        return true;
+
+    if (udfSubstitutionFails(update_query, context))
         return true;
 
     const auto table = tryResolveMutationTarget(update_query.getDatabase(), update_query.getTable(), context);
@@ -2046,6 +2094,9 @@ bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr 
     if (!carries_sources)
         return false;
 
+    if (udfSubstitutionFails(alter, context))
+        return true;
+
     /// `validateSegmentsCombination` rejects these combinations before any segment runs.
     if (!partition_commands.empty() && (has_plain_alter_or_execute || partition_command_runs != 1))
         return true;
@@ -2128,6 +2179,50 @@ bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr 
     }
 
     return false;
+}
+
+/// The database an unqualified table name inside a mutation carrier's predicates and expressions is
+/// completed with. `InterpreterUpdateQuery::execute` and `InterpreterAlterQuery::executeToTable` run
+/// `AddDefaultDatabaseVisitor` with the *target table's* database, so `USE db1; UPDATE db2.dst SET x = 1
+/// WHERE a IN (SELECT a FROM src)` reads `db2.src`. A `DELETE` inherits that qualification through the
+/// `UPDATE` / `ALTER ... UPDATE` statement it is rewritten into, while its heavy (`supportsDelete`) path
+/// hands the predicate to `MutationsInterpreter` unqualified and therefore keeps the session's current
+/// database. Returns an empty string whenever the session's current database applies.
+String mutationExpressionsDatabase(const IAST & ast, const ContextPtr & context)
+{
+    String database;
+    String table;
+
+    if (const auto * update_query = ast.as<ASTUpdateQuery>())
+    {
+        database = update_query->getDatabase();
+        table = update_query->getTable();
+    }
+    else if (const auto * alter_query = ast.as<ASTAlterQuery>())
+    {
+        if (alter_query->alter_object != ASTAlterQuery::AlterObjectType::TABLE)
+            return {};
+        database = alter_query->getDatabase();
+        table = alter_query->getTable();
+    }
+    else if (const auto * delete_query = ast.as<ASTDeleteQuery>())
+    {
+        const auto target = tryResolveMutationTarget(delete_query->getDatabase(), delete_query->getTable(), context);
+        if (!target || target->supportsDelete())
+            return {};
+        return target->getStorageID().getDatabaseName();
+    }
+    else
+    {
+        return {};
+    }
+
+    if (table.empty())
+        return {};
+
+    const auto resolved = context->tryResolveStorageID(
+        database.empty() ? StorageID("", table) : StorageID(database, table), Context::ResolveOrdinary);
+    return resolved ? resolved.getDatabaseName() : String{};
 }
 
 /// Dispatch for the mutation/partition carriers, used by the collector the same way
@@ -2440,6 +2535,19 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                         Context::ResolveOrdinary, AccessType::SELECT | AccessType::INSERT,
                         /* existence_required */ target.kind == ViewTarget::To && to_target_existence_required);
             }
+        }
+
+        /// The tables named inside a mutation carrier's predicates and expressions are resolved against the
+        /// target table's database rather than the session's current one, so walk this statement's children
+        /// with that database in effect (see `mutationExpressionsDatabase`).
+        if (const auto expressions_database = mutationExpressionsDatabase(*ast, data.context); !expressions_database.empty())
+        {
+            const auto saved_default_database = data.default_database;
+            data.default_database = expressions_database;
+            for (const auto & child : ast->children)
+                collectTablesInQuery(child, data, active_ctes);
+            data.default_database = saved_default_database;
+            return;
         }
     }
     else if (const auto * function = ast->as<ASTFunction>())

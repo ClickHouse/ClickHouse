@@ -1026,6 +1026,43 @@ check_if_detached "DELETE FROM t_reattach_mut_mt WHERE a IN (SELECT a FROM t_rea
 check_if_detached "ALTER TABLE t_reattach_mut_mt DELETE WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS mutations_sync = 1" "t_reattach_mut_src"
 check_if_detached "ALTER TABLE t_reattach_mut_mt REPLACE PARTITION ID 'all' FROM t_reattach_mut_src" "t_reattach_mut_src"
 
+# A lightweight `UPDATE` throws on `enable_lightweight_update = 0` as the very first thing its interpreter
+# does, and SQL UDF substitution runs before the predicate's tables are read in both the `UPDATE` and the
+# `ALTER` carriers. Neither rejection may detach the source.
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS enable_lightweight_update = 0" "SUPPORT_IS_DISABLED"
+
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS reattach_recursive_mut_udf"
+${CLICKHOUSE_CLIENT} -q "CREATE FUNCTION reattach_recursive_mut_udf AS x -> reattach_recursive_mut_udf(x)"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_mt UPDATE a = reattach_recursive_mut_udf(a) WHERE a IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
+check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_mt WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION reattach_recursive_mut_udf"
+
+# An unqualified table inside a mutation's predicate is resolved against the *target table's* database
+# (`AddDefaultDatabaseVisitor` in `InterpreterUpdateQuery` / `InterpreterAlterQuery`), not against the
+# session's current database. So the same-named table in the target's database is the one the statement
+# reads and randomizes, while the same-named table in the current database is untouched.
+MUT_DB="${CLICKHOUSE_DATABASE}_mut"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${MUT_DB}"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${MUT_DB}"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${MUT_DB}.t_reattach_mut_dst (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${MUT_DB}.t_reattach_mut_other (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_other (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_if_detached_impl "ALTER TABLE ${MUT_DB}.t_reattach_mut_dst DELETE WHERE a IN (SELECT a FROM t_reattach_mut_other) SETTINGS mutations_sync = 1" "t_reattach_mut_other"
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mut_other"; then
+    echo "FAIL (a table of the session database detached for a mutation reading the target's database)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE ${MUT_DB}.t_reattach_mut_other"; then
+    echo "FAIL (the source in the target's database was not detached)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_other"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${MUT_DB}"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_mt"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_src"
