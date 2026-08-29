@@ -10,15 +10,15 @@ FROM system.documentation
 WHERE type = 'System Table' AND name IN ('documentation', 'parts')
 ORDER BY name;
 
--- Documentation follows the attached system tables. In particular,
--- `transactions` is normally gated by a disabled server setting and absent.
-SELECT
-    name,
-    source,
-    description LIKE '%## Columns {#columns}%' AS has_columns
+-- Documentation rows follow the attached system tables, independently of
+-- which optional tables are enabled by the server configuration.
+SELECT count()
 FROM system.documentation
-WHERE type = 'System Table' AND name IN ('asynchronous_metrics', 'transactions')
-ORDER BY name;
+WHERE type = 'System Table'
+    AND name NOT IN (
+        SELECT name
+        FROM system.tables
+        WHERE database = 'system');
 
 -- Every attached table remains visible, including optional/private tables
 -- which rely on an ordinary metadata comment instead of section markers.

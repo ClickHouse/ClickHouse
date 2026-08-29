@@ -1,6 +1,6 @@
 documentation	src/Storages/System/StorageSystemDocumentation.cpp	1	1	1
 parts	src/Storages/System/StorageSystemParts.cpp	1	1	1
-asynchronous_metrics	src/Storages/System/StorageSystemAsynchronousMetrics.cpp	1
+0
 0
 0
 1	1
