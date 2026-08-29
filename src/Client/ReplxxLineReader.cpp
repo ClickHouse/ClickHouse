@@ -921,7 +921,6 @@ void ReplxxLineReader::openEditor(bool format_query)
     /// We need to clear till the end of screen *before*, to avoid extra new-line in case of multi-line queries
     rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
 
-    bool accepted_editor_result = false;
     try
     {
         String query = rx.get_state().text();
@@ -939,11 +938,7 @@ void ReplxxLineReader::openEditor(bool format_query)
         if (editor_exit_code == EXIT_SUCCESS)
         {
             const std::string & new_query = readFile(editor_file.getPath());
-            /// The edited query is a whole new line displayed at once - do not pop hints on it
-            /// (see historyNavigate).
-            suppress_hints_once = true;
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
-            accepted_editor_result = true;
         }
         else
         {
@@ -957,10 +952,19 @@ void ReplxxLineReader::openEditor(bool format_query)
         rx.print("\n");
     }
 
+    /// The repaint below displays the whole buffer at once on every return path - the edited
+    /// query, or the original one brought back when the editor exited unsuccessfully or the
+    /// round trip threw. All of them are programmatic displays, so none of them may pop hints
+    /// (see historyNavigate); otherwise the hints left over from before the editor was opened
+    /// would stay live and the next Down would navigate them instead of the history.
+    /// replxx caches the hints by the buffer text, which is unchanged unless the edited query was
+    /// accepted, so re-setting the state is what makes it ask the hint callback again (and get an
+    /// empty list) instead of redisplaying the stale cached ones.
+    rx.set_state(rx.get_state());
+    suppress_hints_once = true;
     rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
     rx.invoke(replxx::Replxx::ACTION::REPAINT, 0);
-    if (accepted_editor_result)
-        suppressHintsForDisplayedLine();
+    suppressHintsForDisplayedLine();
 
     if (bracketed_paste_enabled)
         enableBracketedPaste();
