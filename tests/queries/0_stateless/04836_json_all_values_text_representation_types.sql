@@ -63,6 +63,35 @@ SELECT count() FROM t_json_all_values_representation_types WHERE data.id IN (SEL
 SELECT count() FROM t_json_all_values_representation_types WHERE data.id IN (SELECT '42') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_json_all_values_representation_types WHERE data.id IN (SELECT '042') SETTINGS use_skip_indexes = 0;
 
+SET date_time_output_format = 'unix_timestamp';
+SET bool_true_representation = '1';
+
+SELECT count() FROM t_json_all_values_representation_types WHERE data.explicit_dt::String = '1577836800';
+SELECT count() FROM t_json_all_values_representation_types WHERE data.explicit_dt::String = '1577836800' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_all_values_representation_types WHERE data.flag::String = '1';
+SELECT count() FROM t_json_all_values_representation_types WHERE data.flag::String = '1' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_all_values_representation_types WHERE data.explicit_dt IN (SELECT '1577836800');
+SELECT count() FROM t_json_all_values_representation_types WHERE data.explicit_dt IN (SELECT '1577836800') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_all_values_representation_types WHERE data.flag IN (SELECT '1');
+SELECT count() FROM t_json_all_values_representation_types WHERE data.flag IN (SELECT '1') SETTINGS use_skip_indexes = 0;
+
+SELECT count() FROM
+(
+    EXPLAIN indexes = 1
+    SELECT count() FROM t_json_all_values_representation_types WHERE data.explicit_dt::String = '1577836800'
+)
+WHERE explain LIKE '%idx_values%';
+
+SELECT count() FROM
+(
+    EXPLAIN indexes = 1
+    SELECT count() FROM t_json_all_values_representation_types WHERE data.flag IN (SELECT '1')
+)
+WHERE explain LIKE '%idx_values%';
+
+SET date_time_output_format = 'simple';
+SET bool_true_representation = 'true';
+
 SELECT count() FROM
 (
     EXPLAIN indexes = 1

@@ -886,6 +886,25 @@ static bool hasStableJSONAllValuesSerialization(const DataTypePtr & type)
     return result;
 }
 
+static bool hasContextIndependentJSONAllValuesSerialization(const DataTypePtr & type)
+{
+    bool result = true;
+    auto check = [&](const IDataType & current_type)
+    {
+        const WhichDataType which(current_type);
+        if (current_type.getName() == "Bool"
+            || which.isDateTimeOrDateTime64()
+            || which.isTimeOrTime64()
+            || which.isDecimal()
+            || which.isInterval())
+            result = false;
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
 static bool hasKnownJSONAllValuesSerialization(const DataTypePtr & type)
 {
     bool result = true;
@@ -933,8 +952,10 @@ static bool matchesNodeToJSONAllValuesIndex(
 
             const auto result_type_without_wrappers = removeLowCardinalityAndNullable(result_type);
             const auto argument_type_without_wrappers = removeLowCardinalityAndNullable(argument_type);
-            return result_type_without_wrappers->getTypeId() == TypeIndex::String
-                || result_type_without_wrappers->getName() == argument_type_without_wrappers->getName();
+            if (result_type_without_wrappers->getTypeId() == TypeIndex::String)
+                return hasContextIndependentJSONAllValuesSerialization(argument_type);
+
+            return result_type_without_wrappers->getName() == argument_type_without_wrappers->getName();
         }
     }
 
@@ -1849,7 +1870,11 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         if (hasIndexForColumn(node.getColumnName()) || hasIndexForMapElementValue(node))
             return true;
 
-        return matchesNodeToJSONAllValuesIndex(node, header);
+        if (!matchesNodeToJSONAllValuesIndex(node, header))
+            return false;
+
+        const auto * node_dag = node.getDAGNode();
+        return node_dag && hasContextIndependentJSONAllValuesSerialization(node_dag->result_type);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
