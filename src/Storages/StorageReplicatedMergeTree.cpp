@@ -8619,13 +8619,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
 {
     auto statuses = queue.getMutationsStatus();
     if (statuses.empty())
-    {
-        /// The last mutation left the queue; its cached denominator (and everyone else's) is
-        /// not needed anymore and would otherwise survive until the next mutation or restart.
-        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-        mutation_initial_bytes.clear();
         return statuses;
-    }
 
     /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
     /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
@@ -8677,14 +8671,14 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         /// Only the parts that are on disk have a known size, so this is a lower bound when some
         /// of the remaining work has not reached this replica yet.
         status.bytes_to_do = bytes_to_do;
-        if (!remaining_size_known)
-            continue;
 
         /// The denominator is the byte weight each remaining part had when this replica first
         /// saw it in the mutation's scope (a lower bound if some parts were already rewritten by
         /// then), so finished parts keep their pre-mutation weight whatever size the rewrite left
         /// behind, and remaining work discovered later grows the denominator instead of clamping
-        /// it to the current remainder.
+        /// it to the current remainder. The parts whose size is known are accounted even while
+        /// others are still unsized: a part that finishes before a queued one is fetched must keep
+        /// its share, and only the ratio below can be deferred.
         UInt64 initial_bytes = 0;
         {
             std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
@@ -8697,22 +8691,19 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
             initial_bytes = stored.bytes;
         }
 
+        if (!remaining_size_known)
+            continue;
+
         status.progress = std::clamp(
             1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
                 / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
             0.0, 1.0);
     }
 
-    /// Denominators of mutations that are gone from the queue (finished and cleaned up, or
-    /// killed) are not needed anymore.
-    {
-        std::unordered_set<String> current_ids;
-        for (const auto & status : statuses)
-            current_ids.insert(status.id);
-        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-        std::erase_if(mutation_initial_bytes, [&](const auto & entry) { return !current_ids.contains(entry.first); });
-    }
-
+    /// Denominators are dropped by `dropMutationInitialBytes` on the queue transitions that remove
+    /// a mutation (finished and cleaned up, or killed). Pruning them from a reader's snapshot
+    /// instead would race: a reader holding an older snapshot would erase the denominator of a
+    /// mutation added since, and the next read would restart its progress from the remainder.
     return statuses;
 }
 
