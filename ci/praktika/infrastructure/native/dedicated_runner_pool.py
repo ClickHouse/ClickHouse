@@ -13,10 +13,9 @@ from .runner_pool import (
     _EC2_MESSAGES_STATEMENT,
     _SSM_MANAGED_INSTANCE_CORE_STATEMENT,
     _SSM_MESSAGES_STATEMENT,
-    _s3_prefix_resources,
+    _s3_statements,
     _secrets_manager_resource,
     _ssm_parameter_resource,
-    _unique,
 )
 
 
@@ -165,26 +164,12 @@ class DedicatedRunnerPool:
                 if name and name.strip()
             ]
         )
-        allowed_s3_resources = (
+        s3_readwrite_prefixes = (
             iam_scope.project_bucket_arns()
             if self.allow_all_s3_prefixes
-            else _unique(
-                [
-                    resource
-                    for prefix in self.allowed_s3_prefixes
-                    if prefix and prefix.strip()
-                    for resource in _s3_prefix_resources(prefix)
-                ]
-            )
+            else list(self.allowed_s3_prefixes)
         )
-        readonly_s3_resources = _unique(
-            [
-                resource
-                for prefix in self.allowed_s3_prefixes_readonly
-                if prefix and prefix.strip()
-                for resource in _s3_prefix_resources(prefix)
-            ]
-        )
+        s3_readonly_prefixes = list(self.allowed_s3_prefixes_readonly)
         # Unlike RunnerPool there is no AutoScalingSelfTerminate statement:
         # capacity is fixed, instances are never self-terminated via an ASG.
         runner_statements = [
@@ -208,41 +193,41 @@ class DedicatedRunnerPool:
                 _SSM_MESSAGES_STATEMENT,
                 _EC2_MESSAGES_STATEMENT,
             ] + runner_statements
-        if allowed_s3_resources:
-            runner_statements.append(
-                {
-                    "Sid": "AllowedS3ReadWrite",
-                    "Effect": "Allow",
-                    "Action": [
-                        "s3:GetObject",
-                        "s3:GetObjectTagging",
-                        "s3:HeadObject",
-                        "s3:ListBucket",
-                        "s3:GetBucketLocation",
-                        "s3:PutObject",
-                        "s3:PutObjectTagging",
-                        "s3:AbortMultipartUpload",
-                        "s3:ListBucketMultipartUploads",
-                        "s3:ListMultipartUploadParts",
-                    ],
-                    "Resource": allowed_s3_resources,
-                }
+        runner_statements.extend(
+            _s3_statements(
+                s3_readwrite_prefixes,
+                "AllowedS3ReadWrite",
+                object_actions=[
+                    "s3:GetObject",
+                    "s3:GetObjectTagging",
+                    "s3:HeadObject",
+                    "s3:PutObject",
+                    "s3:PutObjectTagging",
+                    "s3:AbortMultipartUpload",
+                    "s3:ListMultipartUploadParts",
+                ],
+                list_actions=[
+                    "s3:ListBucket",
+                    "s3:ListBucketMultipartUploads",
+                    "s3:GetBucketLocation",
+                ],
             )
-        if readonly_s3_resources:
-            runner_statements.append(
-                {
-                    "Sid": "AllowedS3ReadOnly",
-                    "Effect": "Allow",
-                    "Action": [
-                        "s3:GetObject",
-                        "s3:GetObjectTagging",
-                        "s3:HeadObject",
-                        "s3:ListBucket",
-                        "s3:GetBucketLocation",
-                    ],
-                    "Resource": readonly_s3_resources,
-                }
+        )
+        runner_statements.extend(
+            _s3_statements(
+                s3_readonly_prefixes,
+                "AllowedS3ReadOnly",
+                object_actions=[
+                    "s3:GetObject",
+                    "s3:GetObjectTagging",
+                    "s3:HeadObject",
+                ],
+                list_actions=[
+                    "s3:ListBucket",
+                    "s3:GetBucketLocation",
+                ],
             )
+        )
         if allowed_ssm_parameter_resources:
             runner_statements.append(
                 {

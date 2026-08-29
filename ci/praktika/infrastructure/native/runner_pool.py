@@ -110,32 +110,108 @@ def _secrets_manager_resource(name_or_arn: str) -> str:
     return f"arn:aws:secretsmanager:*:*:secret:{value}*"
 
 
-def _s3_prefix_resources(prefix_or_arn: str) -> List[str]:
-    value = prefix_or_arn.strip()
-    if value.startswith("arn:"):
-        return [value]
-    value = value.removeprefix("s3://").lstrip("/")
-    if not value:
-        return []
-    bucket, _, prefix = value.partition("/")
-    if not bucket:
-        return []
-    if not prefix:
-        return [f"arn:aws:s3:::{bucket}", f"arn:aws:s3:::{bucket}/*"]
-    prefix = prefix.strip("/")
-    return [
-        f"arn:aws:s3:::{bucket}",
-        f"arn:aws:s3:::{bucket}/{prefix}",
-        f"arn:aws:s3:::{bucket}/{prefix}/*",
-    ]
-
-
 def _unique(values: List[str]) -> List[str]:
     result = []
     for value in values:
         if value not in result:
             result.append(value)
     return result
+
+
+def _s3_grants(prefixes: List[str]):
+    """Split S3 prefixes into object-level resources and per-bucket list grants.
+
+    Returns ``(object_resources, bucket_conditions)`` where ``object_resources``
+    is the list of object ARNs (``bucket/key``) for object-level actions, and
+    ``bucket_conditions`` maps a bucket ARN to the set of ``s3:prefix`` values
+    that scope ``s3:ListBucket`` — or ``None`` when listing the whole bucket is
+    intended (a bucket-only allowance or an explicit bucket ARN).
+
+    ``s3:ListBucket`` is a bucket-level action: granting it on the bucket ARN
+    without an ``s3:prefix`` condition lets a pool scoped to ``bucket/PRs``
+    enumerate every key in the bucket (``REFs``, ``ccache``, ...). Deriving the
+    condition from the allowed key prefixes keeps listings prefix-scoped.
+    """
+    object_resources: List[str] = []
+    bucket_conditions: Dict[str, Any] = {}  # bucket ARN -> set of prefixes, or None
+
+    def _mark_unconstrained(bucket_arn):
+        bucket_conditions[bucket_arn] = None
+
+    def _add_prefix(bucket_arn, prefix):
+        existing = bucket_conditions.get(bucket_arn, set())
+        if existing is None:
+            return  # a bucket-wide grant already supersedes any prefix scope
+        existing = set(existing)
+        existing.update({prefix, f"{prefix}/*"})
+        bucket_conditions[bucket_arn] = existing
+
+    for raw in prefixes:
+        if not raw or not raw.strip():
+            continue
+        value = raw.strip()
+        if value.startswith("arn:"):
+            body = value.split(":::", 1)[1] if ":::" in value else ""
+            bucket, sep, key = body.partition("/")
+            if not bucket:
+                continue
+            bucket_arn = f"arn:aws:s3:::{bucket}"
+            if sep and key:
+                # Explicit object ARN: object access only, no bucket listing.
+                object_resources.append(value)
+            else:
+                # Explicit bucket ARN: full object access + unconstrained listing.
+                object_resources.append(f"{bucket_arn}/*")
+                _mark_unconstrained(bucket_arn)
+            continue
+        v = value.removeprefix("s3://").lstrip("/")
+        bucket, _, prefix = v.partition("/")
+        if not bucket:
+            continue
+        bucket_arn = f"arn:aws:s3:::{bucket}"
+        prefix = prefix.strip("/")
+        if not prefix:
+            object_resources.append(f"{bucket_arn}/*")
+            _mark_unconstrained(bucket_arn)
+        else:
+            object_resources.append(f"{bucket_arn}/{prefix}")
+            object_resources.append(f"{bucket_arn}/{prefix}/*")
+            _add_prefix(bucket_arn, prefix)
+    return _unique(object_resources), bucket_conditions
+
+
+def _s3_statements(prefixes, sid_base, object_actions, list_actions):
+    """Build split object-level and bucket-level (list) S3 policy statements.
+
+    Object actions are scoped to object ARNs; ``s3:ListBucket`` and the other
+    bucket-level actions are granted per bucket with an ``s3:prefix`` condition
+    when the allowance is prefix-scoped, so listings cannot escape the prefix.
+    """
+    object_resources, bucket_conditions = _s3_grants(prefixes)
+    statements = []
+    if object_resources:
+        statements.append(
+            {
+                "Sid": f"{sid_base}Objects",
+                "Effect": "Allow",
+                "Action": object_actions,
+                "Resource": object_resources,
+            }
+        )
+    for i, bucket_arn in enumerate(sorted(bucket_conditions)):
+        statement = {
+            "Sid": f"{sid_base}List{i}",
+            "Effect": "Allow",
+            "Action": list_actions,
+            "Resource": bucket_arn,
+        }
+        prefixes_cond = bucket_conditions[bucket_arn]
+        if prefixes_cond is not None:
+            statement["Condition"] = {
+                "StringLike": {"s3:prefix": sorted(prefixes_cond)}
+            }
+        statements.append(statement)
+    return statements
 
 
 @dataclass
@@ -285,26 +361,12 @@ class RunnerPool:
                     if name and name.strip()
                 ]
             )
-            allowed_s3_resources = (
+            s3_readwrite_prefixes = (
                 iam_scope.project_bucket_arns()
                 if self.allow_all_s3_prefixes
-                else _unique(
-                    [
-                        resource
-                        for prefix in self.allowed_s3_prefixes
-                        if prefix and prefix.strip()
-                        for resource in _s3_prefix_resources(prefix)
-                    ]
-                )
+                else list(self.allowed_s3_prefixes)
             )
-            readonly_s3_resources = _unique(
-                [
-                    resource
-                    for prefix in self.allowed_s3_prefixes_readonly
-                    if prefix and prefix.strip()
-                    for resource in _s3_prefix_resources(prefix)
-                ]
-            )
+            s3_readonly_prefixes = list(self.allowed_s3_prefixes_readonly)
             runner_statements = [
                 {
                     "Sid": "SQSReceiveDelete",
@@ -337,41 +399,41 @@ class RunnerPool:
                     _SSM_MESSAGES_STATEMENT,
                     _EC2_MESSAGES_STATEMENT,
                 ] + runner_statements
-            if allowed_s3_resources:
-                runner_statements.append(
-                    {
-                        "Sid": "AllowedS3ReadWrite",
-                        "Effect": "Allow",
-                        "Action": [
-                            "s3:GetObject",
-                            "s3:GetObjectTagging",
-                            "s3:HeadObject",
-                            "s3:ListBucket",
-                            "s3:GetBucketLocation",
-                            "s3:PutObject",
-                            "s3:PutObjectTagging",
-                            "s3:AbortMultipartUpload",
-                            "s3:ListBucketMultipartUploads",
-                            "s3:ListMultipartUploadParts",
-                        ],
-                        "Resource": allowed_s3_resources,
-                    }
+            runner_statements.extend(
+                _s3_statements(
+                    s3_readwrite_prefixes,
+                    "AllowedS3ReadWrite",
+                    object_actions=[
+                        "s3:GetObject",
+                        "s3:GetObjectTagging",
+                        "s3:HeadObject",
+                        "s3:PutObject",
+                        "s3:PutObjectTagging",
+                        "s3:AbortMultipartUpload",
+                        "s3:ListMultipartUploadParts",
+                    ],
+                    list_actions=[
+                        "s3:ListBucket",
+                        "s3:ListBucketMultipartUploads",
+                        "s3:GetBucketLocation",
+                    ],
                 )
-            if readonly_s3_resources:
-                runner_statements.append(
-                    {
-                        "Sid": "AllowedS3ReadOnly",
-                        "Effect": "Allow",
-                        "Action": [
-                            "s3:GetObject",
-                            "s3:GetObjectTagging",
-                            "s3:HeadObject",
-                            "s3:ListBucket",
-                            "s3:GetBucketLocation",
-                        ],
-                        "Resource": readonly_s3_resources,
-                    }
+            )
+            runner_statements.extend(
+                _s3_statements(
+                    s3_readonly_prefixes,
+                    "AllowedS3ReadOnly",
+                    object_actions=[
+                        "s3:GetObject",
+                        "s3:GetObjectTagging",
+                        "s3:HeadObject",
+                    ],
+                    list_actions=[
+                        "s3:ListBucket",
+                        "s3:GetBucketLocation",
+                    ],
                 )
+            )
             if allowed_ssm_parameter_resources:
                 runner_statements.append(
                     {

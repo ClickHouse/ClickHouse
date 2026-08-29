@@ -273,6 +273,27 @@ def _build_rerun_workflow(check_obj, payload, event_ts):
     return workflow, pr_number
 
 
+def _rerun_pr_is_internal(repo: str, pr_number: int) -> bool:
+    """Authoritatively decide whether a rerun's PR is same-repo (internal).
+
+    check_run/check_suite payloads do not carry the head repo's fork status, so
+    ``_build_rerun_workflow`` cannot tell an internal PR from an external one.
+    A rerun of a fork PR must never be enqueued on the ungated internal path, so
+    fetch the PR and fail closed (return ``False``) on any error rather than
+    defaulting to "internal".
+    """
+    try:
+        token = _get_github_token()
+        pr = _gh_api("GET", f"/repos/{repo}/pulls/{pr_number}", token)
+        return not _is_external_pr(pr, repo)
+    except Exception as e:
+        print(
+            f"  [warn] could not verify fork status of PR#{pr_number}, "
+            f"failing closed (treating as external): {e}"
+        )
+        return False
+
+
 _sqs_queue_url = None
 _sqs_client = None
 _s3_client = None
@@ -900,9 +921,14 @@ def lambda_handler(event, context):
                 state = _load_approval_state(workflow["repo"], pr_number)
                 if state and (state.get("workflow") or {}).get("external_pr"):
                     _handle_external_rerun(workflow, delivery_id, sender)
-                else:
+                elif _rerun_pr_is_internal(workflow["repo"], pr_number):
                     _enqueue(workflow, delivery_id)
                     print(f"RERUN (check_run): PR#{pr_number} sha={workflow['head_sha'][:12]}")
+                else:
+                    print(
+                        f"SKIP: check_run.rerequested — external/unverified PR#{pr_number} "
+                        f"without approval state, failing closed"
+                    )
             else:
                 print("SKIP: check_run.rerequested — no associated PR or sender not allowed")
         else:
@@ -918,9 +944,14 @@ def lambda_handler(event, context):
                 state = _load_approval_state(workflow["repo"], pr_number)
                 if state and (state.get("workflow") or {}).get("external_pr"):
                     _handle_external_rerun(workflow, delivery_id, sender)
-                else:
+                elif _rerun_pr_is_internal(workflow["repo"], pr_number):
                     _enqueue(workflow, delivery_id)
                     print(f"RERUN (check_suite): PR#{pr_number} sha={workflow['head_sha'][:12]}")
+                else:
+                    print(
+                        f"SKIP: check_suite.rerequested — external/unverified PR#{pr_number} "
+                        f"without approval state, failing closed"
+                    )
             else:
                 print("SKIP: check_suite.rerequested — no associated PR or sender not allowed")
         else:

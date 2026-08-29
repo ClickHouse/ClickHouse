@@ -963,17 +963,14 @@ class CloudInfrastructure:
             )
             for token_minter in self.github_token_minters:
                 token_minter.apply_defaults(default_repository=self.name)
-            default_allowed_repositories = []
-            for token_minter in self.github_token_minters:
-                for repo in token_minter.repositories:
-                    if repo not in default_allowed_repositories:
-                        default_allowed_repositories.append(repo)
-            if default_allowed_repositories:
-                for pool in self.orchestrator_pools:
-                    pool.ext.setdefault(
-                        "allowed_repositories",
-                        list(default_allowed_repositories),
-                    )
+            # Do NOT derive the webhook allow-list from the token minter's
+            # `repositories`: those are GitHub App installation repository *names*
+            # (e.g. "ClickHouse"), while the webhook Lambda matches against
+            # `payload["repository"]["full_name"]` (e.g. "ClickHouse/ClickHouse").
+            # Copying the short names verbatim would silently reject every real
+            # event. `ext["allowed_repositories"]` must be set explicitly with
+            # full names when a project wants to restrict the webhook; left unset
+            # it allows all repositories the App is installed on.
 
             # 1. Namespace all resources for this project.
             # 2. Materialize implicit child components from the high-level
