@@ -3,8 +3,6 @@ Aggregation in order (not admitted)
 Group-by limits in a dropping mode (not admitted)
 1
 break mode stayed on the baseline	1
-Sharded aggregation takes precedence
-1
 Serialized query plan carries the settings
 1
 Projection (merge-only step, not admitted)

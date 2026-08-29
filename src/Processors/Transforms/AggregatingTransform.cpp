@@ -1141,12 +1141,9 @@ void AggregatingTransform::onCancel() noexcept
 size_t AggregatingTransform::getGeneratingStepGroup() const
 {
     /// After consumption finishes, this transform generates the child processors that perform
-    /// the merge / final part of aggregation. Those children belong to the corresponding
-    /// generating stage, not to the AggregatingTransform's own (partial) aggregation stage,
-    /// which is why we map the current group to its generating counterpart here.
-    return AggregatingStep::AggregatingStage::PartialAggregation == static_cast<AggregatingStep::AggregatingStage>(getQueryPlanStepGroup())
-        ? static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation)
-        : static_cast<size_t>(AggregatingStep::AggregatingStage::AggregatingSharded);
+    /// the merge / final part of aggregation. Those children belong to the generating stage,
+    /// not to the AggregatingTransform's own (partial) aggregation stage.
+    return static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation);
 }
 
 IProcessor::Status AggregatingTransform::prepare()
