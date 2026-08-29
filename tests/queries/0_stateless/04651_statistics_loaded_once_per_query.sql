@@ -1,5 +1,9 @@
 -- Tags: no-random-merge-tree-settings, no-parallel-replicas
 
+-- The stress profile gives a fifth of its workers a random `compatibility` version, which rolls back
+-- whatever settings that version predates, among them the plan renderer that prints the join symbol
+-- asserted below and the join-order search this measures. Everything here is current-version planning.
+SET compatibility = '';
 SET allow_statistics = 1;
 SET enable_analyzer = 1;
 SET use_statistics = 1;
@@ -266,13 +270,15 @@ FROM
 -- Reuse is keyed on the table, not on part names alone: the two tables carry the same four part
 -- names and differ only in row count, so each relation must still report its own.
 -- `query_plan_optimize_join_order_randomize = 0` because a non-zero value replaces the estimates
--- printed here with random ones.
+-- printed here with random ones, and `query_plan_join_swap_table = 'false'` because a swap prints the
+-- two relations the other way round. Both are randomized by the test runner and the stress profile,
+-- so every join query measured here pins them.
 SELECT trimLeft(explain) FROM (
     EXPLAIN SELECT count() FROM t_stats_once_a AS a JOIN t_stats_once_b AS b ON a.k = b.k
     WHERE a.v >= 0 AND b.v >= 0
     SETTINGS use_statistics_cache = 1, query_plan_optimize_join_order_limit = 10,
         query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_algorithm = 'greedy',
-        ast_fuzzer_runs = 0
+        query_plan_join_swap_table = 'false', ast_fuzzer_runs = 0
 ) WHERE explain LIKE '%⋈%';
 
 -- The limit bounds how much is held, never what is estimated.
@@ -282,7 +288,7 @@ SELECT trimLeft(explain) FROM (
     SETTINGS use_statistics_cache = 1, statistics_cache_max_entries = 1,
         query_plan_optimize_join_order_limit = 10,
         query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_algorithm = 'greedy',
-        ast_fuzzer_runs = 0
+        query_plan_join_swap_table = 'false', ast_fuzzer_runs = 0
 ) WHERE explain LIKE '%⋈%';
 
 -- Reuse is keyed on which parts a branch reads, not on how many: two relations pruned to one
@@ -295,7 +301,7 @@ SELECT trimLeft(explain) FROM (
     WHERE pd_a.v >= 0 AND pd_b.v >= 0
     SETTINGS use_statistics_cache = 1, query_plan_optimize_join_order_limit = 10,
         query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_algorithm = 'greedy',
-        ast_fuzzer_runs = 0
+        query_plan_join_swap_table = 'false', ast_fuzzer_runs = 0
 ) WHERE explain LIKE '%⋈%';
 
 -- The same two partitions with reuse turned off, which is what pruning alone reports: a disagreement
@@ -306,7 +312,7 @@ SELECT trimLeft(explain) FROM (
     WHERE pn_a.v >= 0 AND pn_b.v >= 0
     SETTINGS use_statistics_cache = 0, query_plan_optimize_join_order_limit = 10,
         query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_algorithm = 'greedy',
-        ast_fuzzer_runs = 0
+        query_plan_join_swap_table = 'false', ast_fuzzer_runs = 0
 ) WHERE explain LIKE '%⋈%';
 
 -- Two relations over the same partition ask about the same parts, so one answers both.
@@ -316,7 +322,7 @@ SELECT trimLeft(explain) FROM (
     WHERE ps_a.v >= 0 AND ps_b.v >= 0
     SETTINGS use_statistics_cache = 1, query_plan_optimize_join_order_limit = 10,
         query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_algorithm = 'greedy',
-        ast_fuzzer_runs = 0
+        query_plan_join_swap_table = 'false', ast_fuzzer_runs = 0
 ) WHERE explain LIKE '%⋈%';
 
 -- The arms above assert what the join path estimates; these two assert that it consults the reuse at
@@ -326,6 +332,10 @@ SELECT trimLeft(explain) FROM (
 -- is pinned, and `join_algorithm` with it: the filter is attached only when the algorithm list names
 -- a hash-family algorithm. With either unpinned there are two callers and the ratio below is 2
 -- rather than 3.
+-- A throwing row limit makes join-order estimation analyze ranges without memoizing the result, so a
+-- caller that reads that memo falls back to the whole part set and asks about a second entry the
+-- ratio does not describe: `max_rows_to_read` and its leaf twin are pinned to the shipped default,
+-- which the test profile raises. With either set, one of the three asks about both partitions.
 -- The `EXPLAIN` is wrapped in a counting query, so no plan text reaches the output; `FORMAT Null` on
 -- its own does not suppress it.
 SELECT count() FROM (
@@ -334,8 +344,10 @@ SELECT count() FROM (
     WHERE ja_a.v >= 0 AND ja_b.v >= 0
 ) SETTINGS log_comment = '04651_join_same', use_statistics_cache = 1,
     enable_join_runtime_filters = 1, join_algorithm = 'hash',
+    max_rows_to_read = 0, max_rows_to_read_leaf = 0,
     query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0,
-    query_plan_optimize_join_order_algorithm = 'greedy', ast_fuzzer_runs = 0 FORMAT Null;
+    query_plan_optimize_join_order_algorithm = 'greedy', query_plan_join_swap_table = 'false',
+    ast_fuzzer_runs = 0 FORMAT Null;
 
 SELECT count() FROM (
     EXPLAIN SELECT count() FROM (SELECT k, v FROM t_stats_once_p WHERE part = 1) AS jn_a
@@ -343,8 +355,10 @@ SELECT count() FROM (
     WHERE jn_a.v >= 0 AND jn_b.v >= 0
 ) SETTINGS log_comment = '04651_join_same_nocache', use_statistics_cache = 0,
     enable_join_runtime_filters = 1, join_algorithm = 'hash',
+    max_rows_to_read = 0, max_rows_to_read_leaf = 0,
     query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0,
-    query_plan_optimize_join_order_algorithm = 'greedy', ast_fuzzer_runs = 0 FORMAT Null;
+    query_plan_optimize_join_order_algorithm = 'greedy', query_plan_join_swap_table = 'false',
+    ast_fuzzer_runs = 0 FORMAT Null;
 
 -- Nothing is estimated with statistics turned off, so this arm reads none and is what says the byte
 -- counts above are statistics rather than the plan text the two queries also produce.
@@ -354,8 +368,10 @@ SELECT count() FROM (
     WHERE jz_a.v >= 0 AND jz_b.v >= 0
 ) SETTINGS log_comment = '04651_join_same_nostat', use_statistics = 0,
     enable_join_runtime_filters = 1, join_algorithm = 'hash',
+    max_rows_to_read = 0, max_rows_to_read_leaf = 0,
     query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0,
-    query_plan_optimize_join_order_algorithm = 'greedy', ast_fuzzer_runs = 0 FORMAT Null;
+    query_plan_optimize_join_order_algorithm = 'greedy', query_plan_join_swap_table = 'false',
+    ast_fuzzer_runs = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 

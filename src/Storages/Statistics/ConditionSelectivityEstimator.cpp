@@ -548,7 +548,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 }
 
 ConditionSelectivityEstimator::ConditionSelectivityEstimator(PayloadPtr payload_, ContextPtr context_)
-    : WithContext(std::move(context_)), payload(std::move(payload_))
+    : WithContext(context_), payload(std::move(payload_))
 {
     chassert(payload);
 }
