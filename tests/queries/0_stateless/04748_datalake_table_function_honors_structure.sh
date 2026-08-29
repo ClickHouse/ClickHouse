@@ -196,8 +196,29 @@ CREATE TABLE ice22 (id Int64, data String) ENGINE = IcebergLocal('${ICE}22/', 'P
 INSERT INTO ice22 SELECT number, concat('r', toString(number)) FROM numbers(4);
 INSERT INTO ice22 SELECT number + 10, concat('r', toString(number + 10)) FROM numbers(4);
 SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}22/', 'Parquet', 'id String, data String') WHERE id < '4' ORDER BY id);
--- Declaring the lake's own type instead is the pair, and it still prunes: four rows, not eight.
+-- Declaring the lake's own type instead is the pair: the bound then means what the metadata means,
+-- so the answer is the four rows below 4 rather than all eight. Whether an entry was pruned to reach
+-- it is not observable here, and is left to the counter arm further down.
 SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}22/', 'Parquet', 'id Int64, data String') WHERE id < 4 ORDER BY id);
+SELECT '-- iceberg: a retyped filter column does not prune row groups by the file type on an evolved file';
+-- ice22 above is written under the current schema, where a file's own type is also the lake's
+-- current one. An unrelated ADD COLUMN makes this file schema-evolved instead, so the two part
+-- company: the reader still prunes row groups and pages from the query filter, and a declared String
+-- bound compared against the file's Int64 statistics discards the group holding every matching row.
+-- The ids are 10..13 so lexicographic and numeric order disagree against '4'; single-digit ids order
+-- alike and the arm could not fail.
+CREATE TABLE ice23 (id Int64, data String) ENGINE = IcebergLocal('${ICE}23/', 'Parquet');
+INSERT INTO ice23 SELECT number + 10, concat('r', toString(number + 10)) FROM numbers(4);
+ALTER TABLE ice23 ADD COLUMN extra Nullable(String);
+SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}23/', 'Parquet', 'id String, data String, extra Nullable(String)') WHERE id < '4' ORDER BY id);
+-- A legal promotion with no declaration at all is the contrast, and it must keep pruning. Rows 0..4
+-- are written required, then the column is relaxed to optional and 5 and NULL are added, so a bound
+-- of 4 can only prune the first file. Manifest pruning would reach that file first and leave the
+-- reader nothing to decide, so it is off here and the counter arm below reads the reader's own work.
+CREATE TABLE ice24 (id Int64, s String) ENGINE = IcebergLocal('${ICE}24/', 'Parquet');
+INSERT INTO ice24 SELECT number, concat('v', toString(number)) FROM numbers(5);
+ALTER TABLE ice24 MODIFY COLUMN id Nullable(Int64);
+INSERT INTO ice24 VALUES (5, 'five'), (NULL, 'none');
 SELECT '-- iceberg: a structure-bearing read does not keep the metadata sorting key';
 -- A sorted iceberg table: the metadata sorting key is resolved against the metadata schema, so it
 -- must not survive alongside a user-declared structure. An empty table counts as sorted, which is
@@ -246,6 +267,13 @@ ${CH} --query_id="${QID_STRUCT}" -q "SELECT id FROM icebergS3Cluster('test_clust
 QID_PRUNE="04748-prune-${CLICKHOUSE_DATABASE}"
 ${CH} --query_id="${QID_PRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}22/', 'Parquet', 'id Nullable(Int64), data String') WHERE id < 4" > /dev/null
 
+# Same for the reader's own row-group pruning on a schema-evolved file, which is likewise invisible in
+# the values: this read declares no structure, so a legal Iceberg promotion must not cost it. Manifest
+# pruning is off so that the file reaches the reader at all, and it is the reader's counter that
+# answers. Its own query id.
+QID_RGPRUNE="04748-rgprune-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_RGPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}24/', 'Parquet') WHERE id > 4 SETTINGS use_iceberg_partition_pruning = 0" > /dev/null
+
 batch <<SQL
 SET allow_experimental_insert_into_iceberg = 1;
 SYSTEM FLUSH LOGS processors_profile_log;
@@ -262,6 +290,8 @@ SELECT countIf(name = 'PartialSortingTransform') > 0 FROM system.processors_prof
 SELECT '-- iceberg: a declaration differing only in nullability still prunes manifest entries';
 SYSTEM FLUSH LOGS query_log;
 SELECT max(ProfileEvents['IcebergMinMaxIndexPrunedFiles']) > 0 FROM system.query_log WHERE query_id = '${QID_PRUNE}' AND type = 'QueryFinish';
+SELECT '-- iceberg: an undeclared read of a promoted column still prunes row groups';
+SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_RGPRUNE}' AND type = 'QueryFinish';
 SELECT '-- iceberg cluster: a worker keeps declared columns that the metadata does not have';
 -- Keeping the key and keeping the columns are two separate decisions: clearing the key must not
 -- also discard the declared columns, or the snapshot would overwrite them and a column that exists

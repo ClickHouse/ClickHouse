@@ -45,6 +45,8 @@ Code: 10
 -- iceberg: a retyped filter column does not prune manifest entries by the metadata type
 ['0','1','10','11','12','13','2','3']
 [0,1,2,3]
+-- iceberg: a retyped filter column does not prune row groups by the file type on an evolved file
+['10','11','12','13']
 -- iceberg: a structure-bearing read does not keep the metadata sorting key
 0
 1
@@ -62,6 +64,8 @@ Code: 10
 1
 1
 -- iceberg: a declaration differing only in nullability still prunes manifest entries
+1
+-- iceberg: an undeclared read of a promoted column still prunes row groups
 1
 -- iceberg cluster: a worker keeps declared columns that the metadata does not have
 2	2	Nullable(String)

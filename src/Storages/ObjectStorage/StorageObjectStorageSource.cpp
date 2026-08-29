@@ -261,6 +261,27 @@ static bool filtersReadRetypedColumns(
         || (prewhere_info && any_retyped(prewhere_info->prewhere_actions));
 }
 
+/// True when `dag` cannot be turned into pruning against this file's statistics. A bound is compared
+/// against the type the lake gives the column now (`current_types`), so one planned on another type
+/// can order values differently and discard data holding matching rows. A column the lake no longer
+/// types is unsafe only while the reader can still bind it, which is what `file_types` records; a name
+/// in neither reaches no statistics and so has no pruning to lose.
+static bool filterCannotPruneAgainst(const Block & current_types, const Block & file_types, const ActionsDAG & dag)
+{
+    for (const auto & required : dag.getRequiredColumns())
+    {
+        const auto & name = required.getNameInStorage();
+        if (const auto * current = current_types.findByName(name))
+        {
+            if (!current->type->equals(*required.getTypeInStorage()))
+                return true;
+        }
+        else if (file_types.has(name))
+            return true;
+    }
+    return false;
+}
+
 static ActionsDAG substituteIdentityPartitionColumns(
     const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
 {
@@ -1198,10 +1219,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto row_level_filter = format_filter_info->row_level_filter;
             auto prewhere_info = format_filter_info->prewhere_info;
             bool filters_substituted = false;
+            /// Non-null only for a schema-id mismatch, so a file that merely carries equality deletes
+            /// has none even though `schema_changed` holds for it.
+            const auto schema_transformer
+                = schema_changed ? configuration->getSchemaTransformer(context_, object_info) : nullptr;
+            const bool has_schema_transform = schema_transformer != nullptr;
             /// A filter evaluated inside the reader must see the identity-partitioned columns of this
             /// data file as the manifest defines them, because the file itself need not store them.
-            if (format_supports_prewhere && !identity_partition_columns.empty()
-                && (!schema_changed || configuration->getSchemaTransformer(context_, object_info) == nullptr))
+            if (format_supports_prewhere && !identity_partition_columns.empty() && !has_schema_transform)
             {
                 if (row_level_filter && readsIdentityPartitionColumn(row_level_filter->actions, identity_partition_columns))
                 {
@@ -1226,13 +1251,21 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 }
             }
 
-            const bool has_schema_transform
-                = schema_changed && configuration->getSchemaTransformer(context_, object_info) != nullptr;
-            /// Pruning built from this DAG compares against the reader's own types and runs before
-            /// anything downstream can correct them. The native ORC reader builds one without
-            /// supporting PREWHERE, so this does not test `format_supports_prewhere`.
-            const bool pruning_dag_retyped = schema_changed && !has_schema_transform
-                && filtersReadRetypedColumns(initial_header, format_filter_info->filter_actions_dag, nullptr, nullptr);
+            /// Pruning built from this DAG runs before anything downstream can correct types, so it is
+            /// measured against the type the lake gives a column now, never the one this file stored.
+            /// The two coincide for a file written under the current schema; where they do not, the
+            /// transform's outputs carry the current types. The native ORC reader builds such pruning
+            /// without supporting PREWHERE, so this does not test `format_supports_prewhere`.
+            Block current_lake_types = initial_header;
+            if (has_schema_transform)
+            {
+                Block transform_outputs;
+                for (const auto & column : schema_transformer->getResultColumns())
+                    transform_outputs.insertUnique({column.type->createColumn(), column.type, column.name});
+                current_lake_types = std::move(transform_outputs);
+            }
+            const bool pruning_dag_retyped = schema_changed && format_filter_info->filter_actions_dag
+                && filterCannotPruneAgainst(current_lake_types, initial_header, *format_filter_info->filter_actions_dag);
 
             if (schema_changed)
             {
@@ -1543,10 +1576,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (!header_after_transform.has(name_in_storage))
                     continue;
                 const auto & type_in_block = header_after_transform.getByName(name_in_storage).type;
-                /// A schema may declare a column required that an older file of the same table wrote
-                /// as optional, so the target keeps the column's own nullability: dropping the null map
-                /// would fail on such a row. That file is a schema-id mismatch, which the guard below
-                /// excludes, and there only the declaration can differ, so the plan's type is exact.
+                /// A file written under an older schema may hold a column as optional that the current
+                /// schema declares required, so its target keeps the column's own nullability: dropping
+                /// the null map would fail on such a row. A file written under the current schema
+                /// cannot disagree that way, and `filter_inputs_retyped` is set only for those.
                 auto type_to_align_to = filter_input.getTypeInStorage();
                 if (!filter_inputs_retyped && isNullableOrLowCardinalityNullable(type_in_block))
                     type_to_align_to = makeNullableOrLowCardinalityNullableSafe(type_to_align_to);
