@@ -62,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"exclude_materialize_statistics_on_insert", "", "", "New setting. Excludes provided columns from statistics materialization during INSERTs"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -1453,6 +1454,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
+            {"exclude_materialize_statistics_on_merge", "", "", "New setting. Excludes provided columns from statistics materialization during merges"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",

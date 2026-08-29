@@ -32,7 +32,6 @@
 #include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
 #include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/Statistics/Statistics.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
