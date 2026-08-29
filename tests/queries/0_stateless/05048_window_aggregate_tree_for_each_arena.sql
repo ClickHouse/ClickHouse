@@ -11,11 +11,11 @@ SELECT
     sum(cityHash64(s))
 FROM
 (
-    SELECT sumForEach(arr) OVER (ORDER BY number ROWS BETWEEN 1023 PRECEDING AND CURRENT ROW) AS s
+    SELECT sumForEach(arr) OVER (ORDER BY number ROWS BETWEEN 255 PRECEDING AND CURRENT ROW) AS s
     FROM
     (
         SELECT number, arrayMap(x -> (number * x) % 7, range(16)) AS arr
-        FROM numbers(100000)
+        FROM numbers(20000)
     )
 );
 
@@ -26,11 +26,11 @@ SELECT
     sum(cityHash64(s))
 FROM
 (
-    SELECT sumForEach(arr) OVER (ORDER BY number ROWS BETWEEN 1023 PRECEDING AND CURRENT ROW) AS s
+    SELECT sumForEach(arr) OVER (ORDER BY number ROWS BETWEEN 255 PRECEDING AND CURRENT ROW) AS s
     FROM
     (
         SELECT number, arrayMap(x -> (number * x) % 7, range(16)) AS arr
-        FROM numbers(100000)
+        FROM numbers(20000)
     )
 )
 SETTINGS min_window_frame_rows_for_aggregate_tree = 1000000000;
