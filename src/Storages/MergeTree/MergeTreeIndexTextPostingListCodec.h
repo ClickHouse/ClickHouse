@@ -275,8 +275,6 @@ private:
     std::vector<PostingList> segments;
     size_t rows_in_current_segment = 0;
     size_t total_row_ids = 0;
-    /// The last appended row id; valid only if `rows_in_current_segment` is not zero.
-    UInt32 last_row_id = 0;
 };
 
 /// A codec that applies no compression: a posting list segment is stored as
