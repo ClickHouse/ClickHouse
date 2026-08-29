@@ -54,6 +54,26 @@ EOF
 CLICKHOUSE_TEST_KEY_DIR="${SSH_HOME}/keys" run_client
 rm -r "${SSH_HOME}/.ssh/config" "${SSH_HOME}/keys"
 
+echo '--- A configured identity whose key file cannot be imported is skipped in favor of the next one'
+echo 'this is not a private key' > "${SSH_HOME}/.ssh/broken_id"
+chmod 600 "${SSH_HOME}/.ssh/broken_id"
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+IdentityFile ~/.ssh/broken_id
+IdentityFile ~/.ssh/id_ed25519
+EOF
+run_client
+
+echo '--- If none of the identities can be imported, the error lists them'
+mkdir "${SSH_HOME}/.ssh/saved"
+mv "${SSH_HOME}"/.ssh/id_* "${SSH_HOME}/.ssh/saved/"
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+IdentityFile ~/.ssh/broken_id
+EOF
+run_client | grep -o 'No usable SSH key found: none of these files contains a key that could be used: \$HOME/.ssh/broken_id'
+mv "${SSH_HOME}"/.ssh/saved/id_* "${SSH_HOME}/.ssh/"
+rmdir "${SSH_HOME}/.ssh/saved"
+rm "${SSH_HOME}/.ssh/config" "${SSH_HOME}/.ssh/broken_id"
+
 echo '--- A dead ssh-agent socket does not prevent an explicit key file from being used'
 SSH_AUTH_SOCK="${SSH_HOME}/missing-agent.sock" HOME="${SSH_HOME}" ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --ssh-key-file "${SSH_HOME}/.ssh/id_ed25519" \
     --query "SELECT currentUser() = '${USER_NAME}'" 2>&1 | sed "s|${SSH_HOME}|\$HOME|g"

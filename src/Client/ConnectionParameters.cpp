@@ -176,6 +176,9 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
         }
     }
 
+    /// The configured identities whose key file exists but could not be imported.
+    std::vector<String> unusable_identity_files;
+
     for (const String & identity_file : configuration.identity_files)
     {
         if (!agent_identities.empty())
@@ -197,8 +200,23 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
         if (!fs::is_regular_file(identity_file))
             continue;
 
+        /// A configured key file that exists but cannot be imported - unreadable, malformed, or encrypted
+        /// with a different passphrase - is not an available identity. `ssh` skips it and moves on to the
+        /// next configured identity, and so do we; the error is reported only if no identity can be used.
+        SSHKey key;
+        try
+        {
+            key = loadPrivateKey(identity_file, passphrase);
+        }
+        catch (const Exception & e)
+        {
+            fmt::print(stderr, "Cannot use the SSH key from {}: {}\n", identity_file, e.message());
+            unusable_identity_files.push_back(identity_file);
+            continue;
+        }
+
         fmt::print(stderr, "Using the SSH key from {}.\n", identity_file);
-        return loadPrivateKey(identity_file, passphrase);
+        return key;
     }
 
     /// None of the configured identities is available, but the agent may still hold a key that the server knows about.
@@ -208,6 +226,12 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
         fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", agent_identities.front().comment);
         return SSHKeyFactory::makeKeyFromSSHAgent(agent_identities.front().key_blob, agent_socket_path);
     }
+
+    if (!unusable_identity_files.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "No usable SSH key found: none of these files contains a key that could be used: {}. "
+            "Specify the key file with --ssh-key-file <path>, or add a key to the ssh-agent",
+            fmt::join(unusable_identity_files, ", "));
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "No SSH key found: none of these files exists: {}. "

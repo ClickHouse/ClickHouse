@@ -7,6 +7,12 @@ Using the SSH key from $HOME/.ssh/id_$USER.
 --- An IdentityFile with an environment variable; an entry with an unset variable is skipped
 Using the SSH key from $HOME/keys/work_id.
 1
+--- A configured identity whose key file cannot be imported is skipped in favor of the next one
+Cannot use the SSH key from $HOME/.ssh/broken_id: Can't import SSH private key from file $HOME/.ssh/broken_id
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- If none of the identities can be imported, the error lists them
+No usable SSH key found: none of these files contains a key that could be used: $HOME/.ssh/broken_id
 --- A dead ssh-agent socket does not prevent an explicit key file from being used
 1
 --- An unset IdentityAgent environment variable does not prevent an explicit key file from being used
