@@ -2410,7 +2410,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
     if (is_json_path_values && positions)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` does not support `positions = 1`");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` does not support `support_phrase_search = 1`");
 
     if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_phrase_search])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
