@@ -166,7 +166,7 @@ On a single node, execution lanes split data into independent ranges allowing co
 
 Query execution is further parallelized by:
 1. **SIMD vectorization**: operations on columnar data use [CPU SIMD instructions](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (e.g., [AVX512](https://en.wikipedia.org/wiki/AVX-512)), allowing batch processing of values.
-2. **Cluster-level parallelism**: in distributed setups, each node performs query processing locally. [Partial aggregation states](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) are streamed to the initiating node and merged. If the query's `GROUP BY` keys align with the sharding keys, merging can be [minimized or avoided entirely](/reference/settings/session-settings/distributed#distributed_group_by_no_merge).
+2. **Cluster-level parallelism**: in distributed setups, each node performs query processing locally. [Partial aggregation states](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) are streamed to the initiating node and merged. If the query's `GROUP BY` keys align with the sharding keys, merging can be [minimized or avoided entirely](/reference/settings/session-settings#distributed_group_by_no_merge).
 <br/>
 This model enables efficient scaling across cores and nodes, making ClickHouse well-suited for large-scale analytics. The use of *partial aggregation states* allows intermediate results from different threads and nodes to be merged without loss of accuracy.
 

@@ -61,25 +61,10 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     assert error == ""
     assert "1" == output.strip()
 
-    # Disable experimental and private preview settings. Beta settings are still allowed.
+    # Disable experimental and beta settings
     instance.replace_in_config(feature_tier_path, "1", "2")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "2" == get_current_tier_value(instance)
-
-    output, error = instance.query_and_get_answer_with_error(
-        query_with_experimental_setting
-    )
-    assert output == ""
-    assert "Changes to EXPERIMENTAL settings are disabled" in error
-
-    output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
-    assert error == ""
-    assert "1" == output.strip()
-
-    # Disable experimental, private preview and beta settings
-    instance.replace_in_config(feature_tier_path, "2", "3")
-    instance.query("SYSTEM RELOAD CONFIG")
-    assert "3" == get_current_tier_value(instance)
 
     output, error = instance.query_and_get_answer_with_error(
         query_with_experimental_setting
@@ -92,7 +77,7 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     assert "Changes to BETA settings are disabled" in error
 
     # Leave the server as it was
-    instance.replace_in_config(feature_tier_path, "3", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
 

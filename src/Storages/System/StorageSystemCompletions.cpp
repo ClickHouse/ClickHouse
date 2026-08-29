@@ -21,7 +21,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/CommonParsers.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemCompletions.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -96,10 +95,6 @@ static void fillDataWithTableColumns(
     for (const auto & column : columns)
     {
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
-            continue;
-
-        if (const auto * alias = table->as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
             continue;
 
         res_columns[0]->insert(column.name);
@@ -229,7 +224,7 @@ static void fillDataWithTableFunctions(MutableColumns & res_columns, const Conte
     for (const auto & function_name : table_functions)
     {
         auto properties = table_functions_factory.tryGetProperties(function_name);
-        if (non_readonly_allowed || (properties && properties->allow_readonly))
+        if ((non_readonly_allowed) || (properties && properties->allow_readonly))
         {
             res_columns[0]->insert(function_name);
             res_columns[1]->insert(TABLE_FUNCTION_CONTEXT);

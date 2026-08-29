@@ -6,8 +6,6 @@ title: 'ODBC 테이블 엔진'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge />
 
 ClickHouse가 [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity)를 통해 외부 데이터베이스에 연결할 수 있도록 합니다.
@@ -36,7 +34,7 @@ ENGINE = ODBC(datasource, external_database, external_table)
 
 * 컬럼 이름은 원본 테이블과 같아야 하지만, 일부 컬럼만 사용해도 되며 순서는 상관없습니다.
 * 컬럼 타입은 원본 테이블과 다를 수 있습니다. ClickHouse는 값을 ClickHouse 데이터 타입으로 [CAST](/ko/reference/functions/regular-functions/type-conversion-functions#CAST)하려고 시도합니다.
-* [external&#95;table&#95;functions&#95;use&#95;nulls](/ko/reference/settings/session-settings/external-table#external_table_functions_use_nulls) 설정은 널 허용 컬럼을 처리하는 방식을 정의합니다. 기본값은 1입니다. 값이 0이면 테이블 함수는 널 허용 컬럼을 생성하지 않고 NULL 대신 기본값을 삽입합니다. 이는 배열 내부의 NULL 값에도 적용됩니다.
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/ko/reference/settings/session-settings#external_table_functions_use_nulls) 설정은 널 허용 컬럼을 처리하는 방식을 정의합니다. 기본값은 1입니다. 값이 0이면 테이블 함수는 널 허용 컬럼을 생성하지 않고 NULL 대신 기본값을 삽입합니다. 이는 배열 내부의 NULL 값에도 적용됩니다.
 
 **엔진 매개변수**
 

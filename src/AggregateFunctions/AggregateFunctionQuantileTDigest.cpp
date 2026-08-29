@@ -57,9 +57,9 @@ Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a 
 
 Memory consumption is `log(n)`, where `n` is a number of values. The result depends on the order of running the query, and is nondeterministic.
 
-The performance of the function is lower than performance of [`quantile`](/reference/functions/aggregate-functions/quantile) or [`quantileTiming`](/reference/functions/aggregate-functions/quantileTiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
+The performance of the function is lower than performance of [`quantile`](/sql-reference/aggregate-functions/reference/quantile) or [`quantileTiming`](/sql-reference/aggregate-functions/reference/quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileTDigest(level)(expr)
@@ -79,7 +79,7 @@ SELECT quantileTDigest(number) FROM numbers(10);
         )",
         R"(
 ┌─quantileTDigest(number)─┐
-│                       4 │
+│                     4.5 │
 └─────────────────────────┘
         )"
     }
@@ -93,11 +93,11 @@ SELECT quantileTDigest(number) FROM numbers(10);
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
 
-This function is equivalent to [`quantileTDigest`](/reference/functions/aggregate-functions/quantileTDigest) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileTDigest`](/sql-reference/aggregate-functions/reference/quantiletdigest) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 Memory consumption is `log(n)`, where `n` is a number of values. The result depends on the order of running the query, and is nondeterministic.
 
-The performance of the function is lower than performance of [`quantiles`](/reference/functions/aggregate-functions/quantiles) or [`quantilesTiming`](/reference/functions/aggregate-functions/quantilesTiming). In terms of the ratio of State size to precision, this function is much better than `quantiles`.
+The performance of the function is lower than performance of [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles) or [`quantilesTiming`](/sql-reference/aggregate-functions/reference/quantilesTiming). In terms of the ratio of State size to precision, this function is much better than `quantiles`.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesTDigest(level1, level2, ...)(expr)
@@ -117,7 +117,7 @@ SELECT quantilesTDigest(0.25, 0.5, 0.75)(number) FROM numbers(100);
         )",
         R"(
 ┌─quantilesTDigest(0.25, 0.5, 0.75)(number)─┐
-│ [24,49,74]                                │
+│ [24.75,49.5,74.25]                        │
 └───────────────────────────────────────────┘
         )"
     }

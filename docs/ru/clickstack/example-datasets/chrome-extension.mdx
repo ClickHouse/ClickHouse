@@ -41,14 +41,18 @@ SDK встроен в расширение (~480 КБ), поэтому стра�
 </div>
 
 <Steps>
-  <Step title="Клонируйте репозиторий расширения" id="clone-extension">
+  <Step>
+    ### Клонируйте репозиторий расширения
+
     ```shell
     git clone https://github.com/kyreddie/hyperdx-chrome-extension
     cd hyperdx-chrome-extension
     ```
   </Step>
 
-  <Step title="Установите расширение" id="install-extension">
+  <Step>
+    ### Установите расширение
+
     1. Откройте Chrome и перейдите на `chrome://extensions`.
     2. Включите **Developer mode** (вверху справа).
     3. Нажмите **Load unpacked**.
@@ -57,7 +61,9 @@ SDK встроен в расширение (~480 КБ), поэтому стра�
     Расширение появится на панели инструментов как **HyperDX Browser Extension**.
   </Step>
 
-  <Step title="Запустите ClickStack" id="start-clickstack">
+  <Step>
+    ### Запустите ClickStack
+
     Если у вас уже есть конечная точка для ингестии в ClickStack или HyperDX, перейдите к разделу [Настройте расширение](#configure-extension).
 
     Для локального стека ClickStack запустите OpenTelemetry Collector. Замените `{{CLICKHOUSE_ENDPOINT}}` и `{{CLICKHOUSE_PASSWORD}}` своими сведениями о подключении к ClickHouse:
@@ -81,13 +87,17 @@ SDK встроен в расширение (~480 КБ), поэтому стра�
     Инструкции по полному локальному развертыванию с ClickHouse и интерфейсом HyperDX см. в разделе [Getting started with ClickStack](/ru/clickstack/getting-started/oss).
   </Step>
 
-  <Step title="Получите свой ключ API" id="get-api-key">
+  <Step>
+    ### Получите свой ключ API
+
     Для локального ClickStack ключ API может не понадобиться — оставьте это поле в расширении пустым, если отправляете telemetry в самоуправляемый коллектор на `http://localhost:4318`.
 
-    Для ингестии в ClickStack Cloud или HyperDX Cloud откройте HyperDX, перейдите в **Team Settings → API Keys** и скопируйте свой **ключ API для приёма данных API key**.
+    Для ингестии в ClickStack Cloud или HyperDX Cloud откройте HyperDX, перейдите в **Team Settings → API Keys** и скопируйте свой **Ingestion API Key**.
   </Step>
 
-  <Step title="Настройте расширение" id="configure-extension">
+  <Step>
+    ### Настройте расширение
+
     Нажмите значок **HyperDX Browser Extension** на панели инструментов Chrome и заполните настройки:
 
     | Поле                             | Пример для локального ClickStack      | Примечания                                                                                                         |
@@ -95,9 +105,9 @@ SDK встроен в расширение (~480 КБ), поэтому стра�
     | **Enable HyperDX Monitoring**    | On                                    | Основной переключатель инъекции                                                                                    |
     | **Service Name**                 | `my-frontend-app`                     | Обязательно — идентифицирует сервис в ClickStack                                                                   |
     | **API Key**                      | *(пусто)*                             | Обязательно для ингестии в Cloud; необязательно для некоторых самоуправляемых конфигураций                         |
-    | **URL коллектора**               | `http://localhost:4318`               | Конечная точка OTLP HTTP; для Cloud по умолчанию используется `https://in-otel.hyperdx.io`                         |
+    | **Collector URL**                | `http://localhost:4318`               | Конечная точка OTLP HTTP; для Cloud по умолчанию используется `https://in-otel.hyperdx.io`                         |
     | **Environment**                  | `development`                         | Необязательно — задаёт атрибут ресурса `deployment.environment`                                                    |
-    | **Trace Propagation Targets**    | `/api\\.myapp\\.domain/i, /localhost/i` | Необязательно — шаблоны регулярных выражений JavaScript, разделённые запятыми, для передачи заголовков трассировки |
+    | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | Необязательно — шаблоны регулярных выражений JavaScript, разделённые запятыми, для передачи заголовков трассировки |
     | **Only inject on matching URLs** | Off                                   | Включите, чтобы ограничить список инструментируемых сайтов                                                         |
     | **Capture console logs**         | Off                                   | Включите, чтобы пересылать вывод консоли браузера                                                                  |
     | **Advanced network capture**     | Off                                   | Включите для подробного захвата сетевых запросов                                                                   |
@@ -109,13 +119,17 @@ SDK встроен в расширение (~480 КБ), поэтому стра�
     На снимке экрана выше показана типичная локальная конфигурация: мониторинг включён, имя сервиса задано, коллектор направлен на `http://localhost:4318`, а передача трассировки ограничена URL API и localhost.
   </Step>
 
-  <Step title="Откройте сайт и создайте сеанс" id="browse-site">
+  <Step>
+    ### Откройте сайт и создайте сеанс
+
     Откройте в Chrome любой веб-сайт или локальное приложение — например, [http://localhost:3000](http://localhost:3000) для frontend-сервера разработки.
 
     Взаимодействуйте со страницей как обычно: переходите по ссылкам, отправляйте формы, вызывайте ошибки и переключайтесь между представлениями. Если конфигурация указана корректно, расширение автоматически внедряет Browser SDK при каждой загрузке страницы.
   </Step>
 
-  <Step title="Просмотрите воспроизведение сеанса" id="view-session-replay">
+  <Step>
+    ### Просмотрите воспроизведение сеанса
+
     Вернитесь в HyperDX по адресу [http://localhost:8080](http://localhost:8080) и выберите **Client Sessions** на левой боковой панели.
 
     Вы должны увидеть свой сеанс в списке с его длительностью и количеством событий. Нажмите кнопку ▶️, чтобы воспроизвести его.

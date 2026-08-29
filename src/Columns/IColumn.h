@@ -3,7 +3,6 @@
 #include <string_view>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
-#include <base/types.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray_fwd.h>
@@ -35,7 +34,6 @@ class IDataType;
 class Block;
 class ReadBuffer;
 struct StoredBlock;
-class RowDataStore;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -89,21 +87,6 @@ struct ColumnsWithRowNumbers
     /// `columns` and `row_numbers` must have same size
     VectorWithMemoryTracking<const StoredBlock *> columns;
     VectorWithMemoryTracking<UInt32> row_numbers;
-    /// Whether `columns` contains any nullptr entry.
-    bool has_defaults = false;
-};
-
-struct RowStorePointers
-{
-    /// Either `ptrs` or `base_ptr` should be used.
-    /// Pre-resolved pointers into `RowDataStore` rows, one entry per output row.
-    /// A nullptr entry is interpreted as a default value.
-    VectorWithMemoryTracking<const char *> ptrs;
-    /// Whether `ptrs` contains any nullptr entry.
-    bool has_defaults = false;
-    /// A contiguous run of rows: row `i` is `base_ptr + i * row_length`.
-    const char * base_ptr = nullptr;
-    size_t row_length = 0;
 };
 
 /// Helper throw functions so Column headers don't need to include Exception.h.
@@ -384,25 +367,6 @@ public:
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    /// Append byte-comparable encoding of row n to `out`.
-    /// memcmp on the output preserves the same ordering as compareAt.
-    virtual void serializeAsComparable(size_t n, String & out) const;
-
-    /// Batch serialize rows: append the encoding of row `src` (where
-    /// `src = permutation ? (*permutation)[r] : r`) to `out[r]`. `out` is
-    /// grown to `num_rows` if needed; existing contents are preserved.
-    /// When `null_map` is non-null, rows with `null_map[src]` set are skipped.
-    ///
-    /// Precondition: `num_rows <= size()`; `permutation` (if non-null) has
-    /// `num_rows` entries each < `size()`; `null_map` (if non-null) has at
-    /// least `size()` elements. The caller must validate; no bounds checking.
-    using Permutation = IColumnPermutation;
-    virtual void batchSerializeAsComparable(
-        size_t num_rows,
-        VectorWithMemoryTracking<String> & out,
-        const Permutation * permutation,
-        const UInt8 * null_map) const;
-
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
     virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
@@ -426,8 +390,8 @@ public:
     /// Per-row weak hash kernel. Writes a 32-bit CRC32C-based hash for each row in
     /// [row_begin, row_end) into the caller-provided buffer `hash_out` (which must hold at
     /// least row_end - row_begin entries). It's a fast weak hash, mainly needed to scatter
-    /// data between threads (`grace_hash` joins, parallel-window partitioning, hash-join
-    /// scatter).
+    /// data between threads (sharded aggregation, `grace_hash` joins, parallel-window
+    /// partitioning, hash-join scatter).
     ///
     /// `h(row)` denotes the finalized per-row hash. With `initial == true` the buffer is
     /// overwritten with it; with `initial == false` the buffer is combined with it via
@@ -478,6 +442,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
+    using Permutation = IColumnPermutation;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
@@ -505,22 +470,14 @@ public:
     }
 #endif
 
-    /** Compares (*this)[n] and rhs[m] like compareAt, additionally reporting how far the run of
-      * lesser values on the lesser side extends. Returns 0 if the values are equal; -N if rows
-      * [n, n + N) of *this are all less than rhs[m]; +N if rows [m, m + N) of rhs are all less
-      * than (*this)[n]. N >= 1 and the runs are maximal.
+    /** Compares and returns inequal track. It extends compareAt() to return how many values are not equal.
+      * Returns -N if current N left values are less then the right comparing value.
+      * Returns N if current N right values are less then the left comparing value.
+      * Returns 0 if current left and right values are equal.
       *
-      * PRECONDITION: the tail of the lesser column (starting at n, respectively m) is sorted
-      * ascending consistently with compareAt under the same nan_direction_hint; the run end is
-      * found by galloping (findEqualRangeEndAssumeSorted), which relies on it.
-      *
-      * The main reason for the function is to fuse the comparison and the run search into one
-      * virtual call. IColumnHelper implements it for all concrete columns with devirtualized
-      * compareAt probes; ColumnVector, ColumnDecimal and ColumnFixedString specialize it to probe
-      * raw data with the per-call setup (data pointers, the Decimal scale dispatch) hoisted out
-      * of the run search.
+      * The main reason for the function is compareAt() devirtualization.
       */
-    [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
+    [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
 
     /** Returns the end (exclusive) of the run of values equal to the value at `begin`, i.e. the smallest
       * r in (begin, end] with compareAt(r, begin, ...) != 0, or `end` if all values in [begin, end) equal
@@ -799,24 +756,12 @@ public:
         const IColumn * const * block_columns,
         const ColumnReplicated * const * block_replicated);
 
-    /// Fills column values from row-store referenced by a RowRefList.
-    virtual void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map);
-
-    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores)
-    {
-        fillFromRowRefsWithRowStore(type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, /*null_map=*/ nullptr);
-    }
-
     /// Fills column values from list of blocks and row numbers
+    /// A nullptr in the list is interpreted as a default value
     virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
-    /// Fills column values from pre-resolved row-store pointers.
-    virtual void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map);
-
-    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
-    {
-        fillFromRowStorePtrs(type, row_store_ptrs, field_offset, field_size, begin, count, /*null_map=*/ nullptr);
-    }
+    /// Same as above but assumes every entry in the list is non-null
+    virtual void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -1071,9 +1016,6 @@ private:
     /// Devirtualize compareAt.
     bool hasEqualValues() const override;
 
-    /// Devirtualize compareAt.
-    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-
     /// Devirtualize isDefaultAt.
     double getRatioOfDefaultRows(double sample_ratio) const override;
 
@@ -1102,14 +1044,12 @@ private:
         const IColumn * const * block_columns,
         const ColumnReplicated * const * block_replicated) override;
 
-    /// Fills column values from row-store referenced by a RowRefList
-    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map) override;
-
     /// Fills column values from list of columns and row numbers
+    /// A nullptr in the list is interpreted as a default value
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
-    /// Fills column values from pre-resolved row-store pointers
-    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
+    /// Same as above but assumes every entry in the list is non-null
+    void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;

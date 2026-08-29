@@ -452,7 +452,7 @@ def test_check_database(started_cluster):
         node.query(
             "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-
+    
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -939,10 +939,7 @@ def test_optimize_manifest_with_catalog(started_cluster):
         ["snapshots"],
         ["metadata-log"],
         ["snapshot-log"],
-        # `refs` is likewise optional (an object, not an array): e.g. empty-table metadata
-        # created by external engines may omit it entirely.
-        ["refs"],
-        ["refs", "snapshots", "metadata-log", "snapshot-log"],
+        ["snapshots", "metadata-log", "snapshot-log"],
     ],
 )
 def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
@@ -1082,66 +1079,6 @@ def test_select_manifest_without_sequence_number(started_cluster, rewrite_manife
 
     assert num_rows == int(node.query(f"SELECT count() FROM (SELECT * FROM {table_ref})"))
     assert num_rows == int(node.query(f"SELECT count() FROM {table_ref} WHERE symbol = 'kek'"))
-
-
-@pytest.mark.parametrize("rewrite_manifest_list", [False, True])
-def test_select_manifest_without_snapshot_id(started_cluster, rewrite_manifest_list):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_manifest_without_snapshot_id_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-    create_table(catalog, root_namespace, table_name)
-
-    num_rows = 10
-    table = catalog.load_table(f"{root_namespace}.{table_name}")
-    table.append(pa.Table.from_pylist([generate_record() for _ in range(num_rows)]))
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-
-    assert num_rows == int(node.query(f"SELECT count() FROM (SELECT * FROM {table_ref})"))
-
-    snapshot = catalog.load_table(f"{root_namespace}.{table_name}").current_snapshot()
-    manifests = snapshot.manifests(table.io)
-    assert len(manifests) > 0
-
-    for manifest in manifests:
-        _rewrite_s3_avro_without_fields(
-            started_cluster.minio_client,
-            manifest.manifest_path,
-            ["snapshot_id", "sequence_number", "file_sequence_number"],
-            {"data_file": ["content"]},
-        )
-
-    if rewrite_manifest_list:
-        _rewrite_s3_avro_without_fields(
-            started_cluster.minio_client,
-            snapshot.manifest_list,
-            ["sequence_number", "min_sequence_number", "content"],
-        )
-
-    node.query("SYSTEM DROP ICEBERG METADATA CACHE")
-
-    assert num_rows == int(node.query(f"SELECT count() FROM (SELECT * FROM {table_ref})"))
-    assert num_rows == int(node.query(f"SELECT count() FROM {table_ref} WHERE symbol = 'kek'"))
-    files_of_table = (
-        f"FROM system.iceberg_files WHERE database = '{CATALOG_NAME}' "
-        f"AND table = '{root_namespace}.{table_name}' "
-        "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
-    )
-    assert str(snapshot.snapshot_id) == node.query(
-        f"SELECT DISTINCT snapshot_id {files_of_table}"
-    ).strip()
-    # The data sequence number is inherited from the manifest list, which this run may have
-    # stripped of its own sequence number; then there is nothing to inherit and 0 is correct.
-    expected_sequence_number = 0 if rewrite_manifest_list else snapshot.sequence_number
-    assert str(expected_sequence_number) == node.query(
-        f"SELECT DISTINCT sequence_number {files_of_table}"
-    ).strip()
 
 
 def test_create(started_cluster):
@@ -1543,17 +1480,6 @@ def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster
                 f"AND create_table_query = '' AND engine_full = '' AND as_select = '' {settings}"
             )
             assert int(result.strip()) >= 1, f"create_table_query default, require={require}"
-
-            ## SHOW CREATE TABLE is served by InterpreterShowCreateQuery, a different code path
-            ## from the system.tables column filler above. It answers from catalog metadata and
-            ## must not fail because the storage object cannot be opened.
-            result = node.query(
-                f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` {settings}"
-            )
-            assert table_name in result, f"SHOW CREATE TABLE, require={require}"
-            assert (
-                "Injected metadata resolution failure" not in result
-            ), f"SHOW CREATE TABLE leaked the resolution error, require={require}"
     finally:
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
 
@@ -2117,81 +2043,6 @@ def test_alter_database_settings_onelake_persistence(started_cluster):
     )
     assert new_token in engine_full_with_secrets
     assert old_token not in engine_full_with_secrets
-
-    node.query(f"DROP DATABASE {db_name}")
-
-
-def test_alter_database_settings_onelake_refresh_token(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    db_name = f"onelake_refresh_token_{uuid.uuid4().hex}"
-    old_token = f"refresh_token_{uuid.uuid4().hex}"
-    new_token = f"refresh_token_{uuid.uuid4().hex}"
-
-    error = node.query_and_get_error(
-        f"""
-        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
-        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_refresh_token = '{old_token}'
-        """,
-        settings={"allow_database_iceberg": 1},
-    )
-    assert "BAD_ARGUMENTS" in error
-
-    error = node.query_and_get_error(
-        f"""
-        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
-        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', oauth_server_use_request_body = 0
-        """,
-        settings={"allow_database_iceberg": 1},
-    )
-    assert "BAD_ARGUMENTS" in error
-    assert "oauth_server_use_request_body" in error
-
-    # In refresh-token mode the catalog access token is reused for Azure storage,
-    # so a non-storage auth_scope is rejected at CREATE time.
-    error = node.query_and_get_error(
-        f"""
-        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
-        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', auth_scope = 'api://my-catalog/.default'
-        """,
-        settings={"allow_database_iceberg": 1},
-    )
-    assert "BAD_ARGUMENTS" in error
-    assert "auth_scope" in error
-
-    node.query(
-        f"""
-        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
-        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}'
-        """
-    )
-
-    node.query(
-        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_refresh_token = '{new_token}'"
-    )
-
-    error = node.query_and_get_error(
-        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = 'token'"
-    )
-    assert "BAD_ARGUMENTS" in error
-
-    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
-    assert new_token not in show_result
-    assert "[HIDDEN]" in show_result
-
-    node.restart_clickhouse()
-
-    engine_full_with_secrets = node.query(
-        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
-        settings={"format_display_secrets_in_show_and_select": 1},
-    )
-    assert new_token in engine_full_with_secrets
-    assert old_token not in engine_full_with_secrets
-
-    engine_full = node.query(
-        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
-    )
-    assert new_token not in engine_full
 
     node.query(f"DROP DATABASE {db_name}")
 

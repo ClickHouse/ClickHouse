@@ -29,7 +29,7 @@ estimateCompressionRatio([codec, block_size_bytes])(column)
 **Параметры**
 
 * `codec` — Строка, содержащая кодек сжатия или несколько кодеков, разделённых запятыми. [`String`](/ru/reference/data-types/string)
-* `block_size_bytes` — Размер блока сжатых данных. Это аналогично одновременной установке [`max_compress_block_size`](/ru/reference/settings/merge-tree-settings/max#max_compress_block_size) и [`min_compress_block_size`](/ru/reference/settings/merge-tree-settings/min#min_compress_block_size). Значение по умолчанию — 1 MiB (1048576 байт). Максимально допустимое значение — 256 MiB (268435456 байт). [`UInt64`](/ru/reference/data-types/int-uint)
+* `block_size_bytes` — Размер блока сжатых данных. Это аналогично одновременной установке [`max_compress_block_size`](/ru/reference/settings/merge-tree-settings#max_compress_block_size) и [`min_compress_block_size`](/ru/reference/settings/merge-tree-settings#min_compress_block_size). Значение по умолчанию — 1 MiB (1048576 байт). Максимально допустимое значение — 256 MiB (268435456 байт). [`UInt64`](/ru/reference/data-types/int-uint)
 
 **Аргументы**
 

@@ -11,11 +11,11 @@ doc_type: 'referência'
   ## Descrição
 </div>
 
-Contém informações sobre mensagens recebidas por um engine de streaming e que apresentaram erros de conversão. Atualmente implementado para Kafka e RabbitMQ.
+Contém informações sobre mensagens recebidas por um engine de streaming e que apresentaram erros de parsing. Atualmente implementado para Kafka e RabbitMQ.
 
 O logging é habilitado ao especificar `dead_letter_queue` na configuração `handle_error_mode` específica do engine.
 
-O intervalo de flush dos dados é definido no parâmetro `flush_interval_milliseconds` da seção de configurações do servidor [dead&#95;letter&#95;queue](/pt-BR/reference/settings/server-settings/settings/other#dead_letter_queue). Para forçar o flush, use a consulta [SYSTEM FLUSH LOGS](/pt-BR/reference/statements/system#flush-logs).
+O intervalo de flush dos dados é definido no parâmetro `flush_interval_milliseconds` da seção de configurações do servidor [dead&#95;letter&#95;queue](/pt-BR/reference/settings/server-settings/settings#dead_letter_queue). Para forçar o flush, use a consulta [SYSTEM FLUSH LOGS](/pt-BR/reference/statements/system#flush-logs).
 
 O ClickHouse não exclui dados da tabela automaticamente. Consulte a [Introdução](/pt-BR/reference/system-tables/overview#system-tables-introduction) para mais detalhes.
 

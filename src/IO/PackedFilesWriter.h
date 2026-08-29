@@ -15,9 +15,7 @@ namespace DB
   * format into one data file (archive). Like the "tar" format
   * or similar, but much simpler. It buffers in memory all files
   * and writes them into one archive at @finalize method.
-  * Before finalization all data is stored RAM. @finalize streams
-  * the archive into the provided buffer, so it does not need
-  * a second copy of the whole archive in memory.
+  * Before finalization all data is stored RAM.
   * Each file is written continuously to avoid fragmentation
   * and large number of seeks while reading from remote filesystem.
   *
@@ -36,6 +34,7 @@ class PackedFilesWriter
 {
 public:
     using OutBufferPtr = std::unique_ptr<WriteBufferFromFileBase>;
+    using CommitDataFunc = std::function<void(String serialized_data, const WriteSettings & settings, bool need_sync)>;
 
     /// Creates memory buffer for the data of file
     /// and returns fake WriteBufferFromFileBase.
@@ -57,40 +56,15 @@ public:
     bool isWritten(const String & name) const { return written_files.contains(name); }
     bool hasModifiedFiles() const { return !written_files.empty() || !metadata_changes.empty(); }
 
-    /// Everything @finalize needs to know in advance: the order of the files in the archive,
-    /// their index, and whether the archive has to be fsynced.
-    struct FinalizePlan
-    {
-        PackedFilesIO::Index index;
-        Strings ordered_file_names;
-        UInt8 version = 0;
-        /// fsync the whole archive if any of its files was requested to be fsynced.
-        bool need_sync = false;
-    };
-
-    /// Validates the queued metadata changes, chooses the order of the files in the archive and
-    /// calculates their index. This is the only phase of finalization that can throw, and it does
-    /// not write anything, so a caller that streams the archive into a freshly opened destination
-    /// file can open that file after this succeeded and never leave a truncated archive behind.
+    /// Calculates index for written files.
+    /// Dumps index and contents of files
+    /// into the provided output write buffer.
+    /// Returns calculated index of written files.
     /// The caller can provide files order hint to optimize the order of files in the archive. The files listed in the hint
     /// Will be written first in the archive in the specified order, and the rest of the files will be written after them.
-    FinalizePlan prepareFinalize(const Strings & files_order_hint, UInt8 version) const;
-
-    /// Dumps the index and the contents of the files into the provided output write buffer
-    /// according to @plan.
-    void finalize(WriteBuffer & out, const FinalizePlan & plan) const;
-
-    /// Convenience overload of the two calls above for callers that write into a buffer which is
-    /// already open - for example, into a region of a larger file - where a throwing preparation
-    /// cannot damage a destination file. Use @prepareFinalize when the destination file is opened
-    /// for the archive itself.
+    PackedFilesIO::Index finalize(CommitDataFunc commit_func, const Strings & files_order_hint, UInt8 version);
     /// Returns a pair of (packed files index, need to fsync the archive)
-    std::pair<PackedFilesIO::Index, bool> finalize(WriteBuffer & out, const Strings & files_order_hint, UInt8 version) const;
-
-    /// Settings of the files written into the archive. The archive is a single file on disk,
-    /// so the settings of its members apply to it. The caller needs them to create the
-    /// destination buffer before @finalize starts writing into it.
-    WriteSettings getWriteSettings() const { return write_settings.value_or(WriteSettings{}); }
+    std::pair<PackedFilesIO::Index, bool> finalize(WriteBuffer & out, const Strings & files_order_hint, UInt8 version);
 
     /// Applies changes of files metadata both to the @written_files and @index.
     void applyMetadataChanges(PackedFilesIO::Index & index);

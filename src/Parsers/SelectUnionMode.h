@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -20,7 +19,6 @@ enum class SelectUnionMode : uint8_t
 };
 
 const char * toString(SelectUnionMode mode);
-SelectUnionMode parseSelectUnionMode(const std::string & str);
 
 using SelectUnionModes = std::vector<SelectUnionMode>;
 using SelectUnionModesSet = std::unordered_set<SelectUnionMode>;

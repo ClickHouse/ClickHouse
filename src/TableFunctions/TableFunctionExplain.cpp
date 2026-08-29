@@ -109,12 +109,8 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     {
         const Settings & settings = context->getSettingsRef();
 
-        /// parse_only_internals_ = true - we don't want to parse `SET` keyword.
-        /// shorthand_syntax_ = false - `EXPLAIN` settings are read as numbers by
-        /// `InterpreterExplainQuery::checkAndGetSettings`, with no schema to check a bare
-        /// `SETTINGS name` against, so the shorthand must be rejected here exactly as
-        /// `ParserExplainQuery` rejects it for `EXPLAIN` itself.
-        ParserSetQuery settings_parser(/* parse_only_internals_ = */ true, /* shorthand_syntax_ = */ false);
+        /// parse_only_internals_ = true - we don't want to parse `SET` keyword
+        ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
         ASTPtr settings_ast = parseQuery(
             settings_parser, settings_str, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         explain_query->setSettings(std::move(settings_ast));
@@ -214,14 +210,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Example:
                 [example:1]
                 )",
-            .examples={
-                {"1",
-                 "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'",
-                 R"(
-┌─explain──────┐
-│     Asterisk │
-└──────────────┘
-)"}},
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         });
 }

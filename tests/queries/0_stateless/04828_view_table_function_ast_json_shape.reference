@@ -1,7 +1,0 @@
-1
-1
-view(SELECT 1)
-view(1, 2)
-1
-SELECT * FROM view(SELECT 1)
-1

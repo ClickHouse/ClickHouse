@@ -100,8 +100,7 @@ namespace Net
             PROTO_SSLV3 = 0x02,
             PROTO_TLSV1 = 0x04,
             PROTO_TLSV1_1 = 0x08,
-            PROTO_TLSV1_2 = 0x10,
-            PROTO_TLSV1_3 = 0x20
+            PROTO_TLSV1_2 = 0x10
         };
 
         struct NetSSL_API CAPaths

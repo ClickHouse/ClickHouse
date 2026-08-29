@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/components/Image.jsx";
 
-import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge/>
 
@@ -21,7 +21,7 @@ In this guide we'll show an integration with ClickHouse.
 We will use JupySQL to run queries on top of ClickHouse.
 Once the data is loaded, we'll visualize it via SQL plotting.
 
-The integration between JupySQL and ClickHouse is made possible by the use of the clickhouse_sqlalchemy library. This library allows for easy communication between the two systems, and enables you to connect to ClickHouse and pass the SQL dialect. Once connected, you can run SQL queries directly from the ClickHouse native UI, or from the Jupyter notebook directly.
+The integration between JupySQL and ClickHouse is made possible by the use of the clickhouse_sqlalchemy library. This library allows for easy communication between the two systems, and enables you to connect to ClickHouse and pass the SQL dialect. Once connected, you can run SQL queries directly from the Clickhouse native UI, or from the Jupyter notebook directly.
 
 ```python
 # Install required packages
@@ -39,7 +39,7 @@ from sklearn_evaluation import plot
 %config SqlMagic.autocommit=False
 ```
 
-**You'd need to make sure your ClickHouse is up and reachable for the next stages. You can use either the local or the cloud version.**
+**You'd need to make sure your Clickhouse is up and reachable for the next stages. You can use either the local or the cloud version.**
 
 **Note:** you will need to adjust the connection string according to the instance type you're trying to connect to (url, user, password). In the example below we've used a local instance. To learn more about it, check out [this guide](/get-started/setup/install).
 

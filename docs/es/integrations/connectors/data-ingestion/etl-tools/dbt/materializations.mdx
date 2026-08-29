@@ -7,7 +7,7 @@ title: 'Materializaciones'
 doc_type: 'guide'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -202,16 +202,7 @@ Puede añadir [índices de omisión de datos](/es/concepts/features/performance/
   ### Proyecciones
 </div>
 
-Puede añadir [proyecciones](/es/concepts/features/projections/projections) a las materializaciones `table` y `distributed_table` mediante la configuración `projections`. Cada entrada de proyección requiere una clave `query` o una `index` (no ambas).
-
-**Nota**: En las tablas distribuidas, la proyección se aplica a las tablas `_local`, no a la tabla proxy distribuida.
-**Nota**: Especificar tanto `query` como `index` en la misma entrada de proyección genera un error de compilación.
-
-<div id="query-projections">
-  #### Proyecciones de consultas
-</div>
-
-Use `query` para definir una consulta de proyección completa:
+Puede añadir [proyecciones](/es/concepts/features/projections/projections) a las materializaciones `table` y `distributed_table` mediante la configuración `projections`:
 
 ```sql
 {{ config(
@@ -225,42 +216,7 @@ Use `query` para definir una consulta de proyección completa:
 ) }}
 ```
 
-<div id="index-projections">
-  #### Proyecciones de índices
-</div>
-
-Use `index` como una abreviatura sintáctica para las [proyecciones de índices](https://clickhouse.com/blog/clickhouse-release-25-06#index-projections) ligeras que utilizan la columna virtual `_part_offset`. Pase un único nombre de columna o una lista de columnas según las que se desee ordenar:
-
-```sql
-{{ config(
-       materialized='table',
-       projections=[
-           {
-               'name': 'proj_by_age',
-               'index': 'age'
-           }
-       ]
-) }}
-```
-
-```sql
-{{ config(
-       materialized='table',
-       projections=[
-           {
-               'name': 'proj_by_dept_age',
-               'index': ['department', 'age']
-           }
-       ]
-) }}
-```
-
-dbt-clickhouse genera automáticamente DDL adecuado para cada versión:
-
-| Versión de ClickHouse | SQL generado                                                    |
-| --------------------- | --------------------------------------------------------------- |
-| 26.1+                 | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
-| 25.8 – 26.0           | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
+**Nota**: En las tablas distribuidas, la proyección se aplica a las tablas `_local`, no a la tabla proxy distribuida.
 
 <div id="materialization-incremental">
   ## Materialización: incremental
