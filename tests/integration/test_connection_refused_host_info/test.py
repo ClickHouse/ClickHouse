@@ -95,14 +95,12 @@ def test_connect_timeout_names_the_dialled_address(started_cluster):
     # alone would pass either way.
     peer_ip = cluster.get_instance_ip("peer")
 
-    # The default six SYN retries take over two minutes to give up. One is a few seconds, and the
-    # kernel has to lose this race for the deferred branch to be the one that reports: the client
-    # timeout below is deliberately far longer, or Poco's own poll deadline reports instead.
-    node.exec_in_container(
-        ["sysctl", "-w", "net.ipv4.tcp_syn_retries=1"],
-        privileged=True,
-        user="root",
-    )
+    # The kernel has to lose this race for the deferred branch to be the one that reports, and it
+    # cannot be hurried: /proc/sys is read-only in these containers (they get NET_ADMIN, not
+    # --privileged), so `sysctl -w net.ipv4.tcp_syn_retries=...` is silently ignored. At the default
+    # six retries the kernel gives up at roughly 1+2+4+...+64 = 127s, so the client timeout below is
+    # set well beyond that. Without the margin ClickHouse's own deadline reports first, and the case
+    # passes while never reaching the code it covers.
 
     with PartitionManager() as pm:
         # DROP rather than REJECT: a rejection would arrive as an RST and take the refused path.
@@ -114,7 +112,7 @@ def test_connect_timeout_names_the_dialled_address(started_cluster):
             # SocketImpl::connect branch produces the same text -- so on those machines this would
             # pass without ever reaching the helper it is meant to cover.
             "async_socket_for_remote = 1, async_query_sending_for_remote = 1, "
-            "connect_timeout_with_failover_ms = 60000, connections_with_failover_max_tries = 1"
+            "connect_timeout_with_failover_ms = 300000, connections_with_failover_max_tries = 1"
         )
 
     assert "connect timed out" in error, f"expected the deferred-timeout text in: {error}"
