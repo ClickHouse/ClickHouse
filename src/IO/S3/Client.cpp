@@ -768,7 +768,14 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (Poco::URI(initial_endpoint).getHost() == "s3.amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
-        client_configuration.remote_host_filter.checkURL(new_uri->uri);
+        Poco::URI retry_uri = new_uri->uri;
+        if (new_uri->is_virtual_hosted_style)
+        {
+            Poco::URI endpoint_uri(new_uri->endpoint);
+            endpoint_uri.setHost(std::string(bucket.c_str(), bucket.size()) + "." + endpoint_uri.getHost());
+            retry_uri.setAuthority(endpoint_uri.getAuthority());
+        }
+        client_configuration.remote_host_filter.checkURL(retry_uri);
 
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI

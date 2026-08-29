@@ -9,7 +9,8 @@
 # UNACCEPTABLE_URL before connecting. If the redirect were followed, the rewritten
 # request would land on /forbidden_hit and flip the "followed" flag -- which the test
 # asserts never happens. The `cache` and `head` buckets redirect to an allow-listed alias;
-# `virtual` redirects to a disallowed bucket host whose normalized endpoint is allow-listed.
+# `virtual` allow-lists the attacker-provided host but not the different bucket host
+# that the AWS SDK constructs for the retry.
 import socket
 
 from bottle import request, response, route, run
@@ -21,6 +22,7 @@ REDIRECT_TARGET = OWN_IP + ":8080"
 ALLOWED_REDIRECT_TARGET = "redirected:8080"
 UNREACHABLE_REDIRECT_TARGET = "unreachable:8081"
 VIRTUAL_HOSTED_REDIRECT_TARGET = "bucket.s3.resolver:8080"
+VIRTUAL_HOSTED_RETRY_TARGET = "virtual.s3.resolver:8080"
 
 followed_redirect = {"hit": False}
 initial_requests = {"cache": 0, "network": 0}
@@ -47,6 +49,10 @@ def get_initial_requests(bucket):
 @route("/<_bucket>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
 @route("/<_bucket>/<_path:path>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
 def server(_bucket, _path=""):
+    if request.urlparts.netloc == VIRTUAL_HOSTED_RETRY_TARGET:
+        followed_redirect["hit"] = True
+        return "followed"
+
     if request.urlparts.netloc == ALLOWED_REDIRECT_TARGET:
         if _bucket == "head" and _path:
             response.set_header("ETag", '"etag"')

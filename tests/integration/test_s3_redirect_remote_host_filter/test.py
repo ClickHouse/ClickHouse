@@ -65,6 +65,12 @@ def cluster():
         cluster.instances["node"].append_hosts(
             "unreachable", cluster.get_instance_ip("resolver")
         )
+        cluster.instances["node"].append_hosts(
+            "bucket.s3.resolver", cluster.get_instance_ip("resolver")
+        )
+        cluster.instances["node"].append_hosts(
+            "virtual.s3.resolver", cluster.get_instance_ip("resolver")
+        )
         run_endpoint(cluster)
 
         yield cluster
@@ -92,8 +98,9 @@ def _initial_requests(cluster, bucket):
 def test_301_redirect_target_is_host_filtered(cluster, bucket):
     node = cluster.instances["node"]
 
-    # The endpoint is allow-listed, but its redirect target is not. For the virtual-hosted
-    # case, only the normalized service endpoint is allow-listed, not the bucket host.
+    # The endpoint is allow-listed, but the host used by the retry is not. For the
+    # virtual-hosted case, the attacker-controlled redirect host is allow-listed while
+    # the AWS SDK rebuilds the actual retry host from the original request bucket.
     # NOSIGN keeps the request anonymous so it reaches the redirect rather than being refused by the
     # server-managed S3 credential restriction (this test is about the host filter, not credentials).
     error = node.query_and_get_error(
