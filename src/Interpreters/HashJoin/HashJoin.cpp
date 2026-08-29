@@ -940,11 +940,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         doDebugAsserts();
         data->columns.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
         auto * stored_columns = &data->columns.back();
-        size_t data_allocated_bytes = 0;
+        size_t data_allocated_bytes = stored_columns->allocatedBytes();
         try
         {
             stored_columns->block_no = data->stored_columns_index->add(stored_columns);
-            data_allocated_bytes = stored_columns->allocatedBytes();
             data->allocated_size += data_allocated_bytes;
             /// `data->columns`, `data->allocated_size` and `data->rows_to_join` describe the same set of stored blocks.
             data->rows_to_join += rows;
