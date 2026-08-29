@@ -139,10 +139,13 @@ public:
         void flush(const PostingListBuildContext & context);
     };
 
-    PostingListBuilder() = default;
+    /// A filtered entry holds no postings and is skipped by `build`.
+    /// See the IN/NOT IN fast path in the postprocessor.
+    struct Filtered
+    {
+    };
 
-    struct FilteredTag {};
-    explicit PostingListBuilder(FilteredTag) { std::get<Inline>(state).size = filtered_flag; }
+    PostingListBuilder() = default;
 
     /// The builder is constructed with the first value of a token.
     /// With positions enabled it starts in the `Large` state right away.
@@ -155,7 +158,9 @@ public:
 
     bool hasLarge() const { return std::holds_alternative<Large>(state); }
     bool hasInline() const { return std::holds_alternative<Inline>(state); }
-    bool isFiltered() const;
+
+    void markFiltered() { state = Filtered{}; }
+    bool isFiltered() const { return std::holds_alternative<Filtered>(state); }
 
     Large & getLarge() { return std::get<Large>(state); }
     Inline & getInline() { return std::get<Inline>(state); }
@@ -165,8 +170,7 @@ public:
     size_t memoryUsageBytes() const;
 
 private:
-    static constexpr UInt8 filtered_flag = 0xFF;
-    std::variant<Inline, Large> state;
+    std::variant<Inline, Large, Filtered> state;
 };
 
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;

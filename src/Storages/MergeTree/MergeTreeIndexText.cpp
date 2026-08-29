@@ -1544,12 +1544,6 @@ void PostingListBuilder::add(UInt32 value, UInt32 position, const PostingListBui
     large.values.push_back(value);
 }
 
-bool PostingListBuilder::isFiltered() const
-{
-    const auto * inline_state = std::get_if<Inline>(&state);
-    return inline_state && inline_state->size == filtered_flag;
-}
-
 PositionListBuilder * PostingListBuilder::getPositions()
 {
     auto * large = std::get_if<Large>(&state);
@@ -1634,7 +1628,7 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 
         tokens_map.emplace(key, it, inserted);
         chassert(inserted);
-        new (&it->getMapped()) PostingListBuilder(PostingListBuilder::FilteredTag{});
+        it->getMapped().markFiltered();
     }
 }
 
@@ -1663,7 +1657,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
             {
                 if (postprocessor_drop_filter->tokens.contains(token))
                 {
-                    new (&it->getMapped()) PostingListBuilder(PostingListBuilder::FilteredTag{});
+                    it->getMapped().markFiltered();
                     return;
                 }
             }
