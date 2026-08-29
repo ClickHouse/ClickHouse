@@ -647,7 +647,7 @@ TEST_F(DistributedQueryTest, ExecuteCollectsAllFinishedStagesInOneCall)
 
         bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
         {
-            observed_timeouts.push_back(timeout_ms.value());
+            observations.emplace_back(stage_name, timeout_ms.value());
             return finished.contains(stage_name);
         }
 
@@ -660,7 +660,7 @@ TEST_F(DistributedQueryTest, ExecuteCollectsAllFinishedStagesInOneCall)
         size_t queued() const { return running_stages.size(); }
 
         std::unordered_set<String> finished;
-        std::vector<UInt64> observed_timeouts;
+        std::vector<std::pair<String, UInt64>> observations;
     };
 
     /// Bound by reference into the executor, so it outlives every probe below.
@@ -673,12 +673,13 @@ TEST_F(DistributedQueryTest, ExecuteCollectsAllFinishedStagesInOneCall)
 
         ASSERT_FALSE(probe.execute(/*poll_timeout_ms=*/ 100));
         ASSERT_EQ(probe.queued(), 1u);
-        ASSERT_EQ(probe.observed_timeouts, (std::vector<UInt64>{100, 0, 0}));
+        ASSERT_EQ(probe.observations, (std::vector<std::pair<String, UInt64>>{{"a", 100}, {"b", 0}, {"c", 0}}));
 
         probe.finished.insert("c");
-        probe.observed_timeouts.clear();
+        probe.observations.clear();
         ASSERT_TRUE(probe.execute(/*poll_timeout_ms=*/ 100));
         ASSERT_EQ(probe.queued(), 0u);
+        ASSERT_EQ(probe.observations, (std::vector<std::pair<String, UInt64>>{{"c", 100}}));
     }
 
     {
@@ -689,6 +690,7 @@ TEST_F(DistributedQueryTest, ExecuteCollectsAllFinishedStagesInOneCall)
         /// A finished stage behind an unfinished one stays queued.
         ASSERT_FALSE(probe.execute(/*poll_timeout_ms=*/ 0));
         ASSERT_EQ(probe.queued(), 2u);
+        ASSERT_EQ(probe.observations, (std::vector<std::pair<String, UInt64>>{{"x", 0}}));
     }
 }
 
