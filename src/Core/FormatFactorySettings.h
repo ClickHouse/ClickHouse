@@ -1700,10 +1700,10 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 )", 0) \
     DECLARE(Bool, input_format_protobuf_datetime64_legacy_seconds, false, R"(
 When enabled, numeric Protobuf fields mapped to `DateTime64` are interpreted as Unix seconds
-(for backward compatibility with pre-26.8 writers). Integer fields are whole seconds; `float`/`double`
+(for backward compatibility with pre-26.9 writers). Integer fields are whole seconds; `float`/`double`
 fields keep fractional seconds. When disabled (default), they are interpreted as scaled `DateTime64`
 ticks matching the column precision, preserving subseconds for integer schemas.
-Enable it (or `SET compatibility = '26.7'`) to restore the pre-26.8 reader.
+Enable it (or `SET compatibility = '26.8'`) to restore the pre-26.9 reader.
 )", 0) \
     DECLARE(Bool, output_format_protobuf_datetime64_legacy_seconds, false, R"(
 When enabled, numeric Protobuf fields mapped from `DateTime64` are written as Unix seconds
