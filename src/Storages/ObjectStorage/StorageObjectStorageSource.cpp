@@ -580,7 +580,7 @@ Chunk StorageObjectStorageSource::generate()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .storage_id = storage_snapshot->storage.getStorageID(),
+                    .storage_id = storage_id,
                     .size = object_size,
                     .filename = &filename,
                     /// Report an unknown modification time (e.g. a web object whose HTTP response has no
