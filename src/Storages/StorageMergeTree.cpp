@@ -44,7 +44,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
@@ -62,6 +62,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -1194,9 +1195,8 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
         update_lock->sync_lock = std::unique_lock(lightweight_updates_sync.sync_mutex, std::defer_lock);
-        bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
-        if (!res)
+        if (!lightweight_updates_sync.lockSyncMutex(local_context, update_lock->sync_lock, timeout_ms))
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightweight update with sync mode", timeout_ms);
 
         LOG_TRACE(log, "Got lock for lightweight update in sync mode");
@@ -1207,7 +1207,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
         auto affected_columns = getUpdateAffectedColumns(commands, local_context);
-        lightweight_updates_sync.lockColumns(affected_columns, timeout_ms);
+        lightweight_updates_sync.lockColumns(local_context, affected_columns, timeout_ms);
 
         update_lock->affected_columns = std::move(affected_columns);
         update_lock->lightweight_updates_sync = &lightweight_updates_sync;
@@ -1631,7 +1631,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
         });
 
-    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, lock);
+    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock);
     auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
@@ -3178,7 +3178,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         IDataPartStorage::ClonePartParams clone_params
         {
             .txn = local_context->getCurrentTransaction(),
-            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
+            .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
         };
         if (replace)
         {
@@ -3374,7 +3374,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         {
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
-            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
+            .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
