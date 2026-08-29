@@ -2,6 +2,8 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
+#include <filesystem>
 #include <IO/ReadPipeline.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -330,6 +332,12 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
+    /// The encrypted root is its own subpath of the wrapped disk, so a nested mount there is not
+    /// covered by the wrapped disk's own check (see #18794). Probe it only when it really is a
+    /// local directory - a wrapped object storage can hand back a remote prefix instead.
+    std::error_code ec;
+    if (std::filesystem::is_directory(disk_absolute_path, ec))
+        warnIfAffectedByExt4CorruptionKernelBug(disk_absolute_path, fmt::format("the path of encrypted disk '{}'", encrypted_name));
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
@@ -341,6 +349,12 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
+    /// The encrypted root is its own subpath of the wrapped disk, so a nested mount there is not
+    /// covered by the wrapped disk's own check (see #18794). Probe it only when it really is a
+    /// local directory - a wrapped object storage can hand back a remote prefix instead.
+    std::error_code ec;
+    if (std::filesystem::is_directory(disk_absolute_path, ec))
+        warnIfAffectedByExt4CorruptionKernelBug(disk_absolute_path, fmt::format("the path of encrypted disk '{}'", encrypted_name));
 }
 
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
