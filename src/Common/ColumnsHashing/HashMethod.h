@@ -716,24 +716,47 @@ public:
 
     bool ALWAYS_INLINE isEnabled() const { return !columns.empty(); }
 
-    /// Enabled when every key column serializes to the bytes it hashes.
+    /// Enabled when every key column serializes to the bytes it hashes, and at least one of them
+    /// is of variable width.
     void prepare(const ColumnRawPtrs & key_columns)
     {
+        bool has_variable_size_column = false;
         for (const auto * column : key_columns)
+        {
             if (!column->serializedValueMatchesHashStream())
                 return;
+            has_variable_size_column |= !column->valuesHaveFixedSize();
+        }
+
+        /// A row of fixed-width values is already hashed in one call per column over a piece the
+        /// hash can take whole, so laying it out first only adds a copy. What the layout is for is
+        /// a row that reaches the hash as a length, then characters, then a terminator, per column.
+        if (!has_variable_size_column)
+            return;
 
         columns = key_columns;
+
+        /// A fixed-width column serializes to `sizeOfValueIfFixed` bytes in every row, so its size
+        /// is worth having up front rather than asking for it a row at a time.
+        fixed_sizes.resize(columns.size());
+        for (size_t i = 0; i < columns.size(); ++i)
+            fixed_sizes[i] = columns[i]->isFixedAndContiguous() ? columns[i]->sizeOfValueIfFixed() : 0;
     }
 
     UInt128 hash(size_t row) const
     {
         size_t row_size = 0;
-        for (const auto * column : columns)
+        for (size_t i = 0; i < columns.size(); ++i)
         {
+            if (fixed_sizes[i] != 0)
+            {
+                row_size += fixed_sizes[i];
+                continue;
+            }
+
             /// A column that does not know its serialized size up front cannot be laid out. The
             /// hash of the row is the same whichever way it is computed.
-            auto column_size = column->getSerializedValueSize(row, &serialization_settings);
+            auto column_size = columns[i]->getSerializedValueSize(row, &serialization_settings);
             if (!column_size)
                 return hash128(row, columns.size(), columns);
             row_size += *column_size;
@@ -757,6 +780,9 @@ public:
 
 private:
     ColumnRawPtrs columns;
+    /// Per column, the width every one of its rows serializes to, or zero when that has to be
+    /// asked for a row at a time.
+    std::vector<size_t> fixed_sizes;
     mutable PODArray<char> buffer;
 };
 

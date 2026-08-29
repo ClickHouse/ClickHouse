@@ -78,8 +78,6 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
-    /// Both go to the nested array of key-value pairs.
-    bool serializedValueMatchesHashStream() const override { return nested->serializedValueMatchesHashStream(); }
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
