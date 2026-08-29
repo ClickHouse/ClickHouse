@@ -4,10 +4,23 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LIMIT_EXCEEDED;
+}
+
+void checkScatterConnectionLimit(size_t num_partitions, size_t num_streams)
+{
+    if (num_partitions * num_streams > scatter_connection_count_limit)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded: {} partitions X {} streams, limit {}, try to reduce `max_threads` value",
+            num_partitions, num_streams, scatter_connection_count_limit);
+}
 
 void scatterByPartition(QueryPipelineBuilder & pipeline, size_t num_partitions, const ColumnNumbers & key_columns, const DataTypes & hash_cast_types)
 {

@@ -8,11 +8,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
 #include <Processors/ResizeProcessor.h>
 
+#include <numeric>
 
 namespace DB
 {
@@ -130,6 +132,12 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         return pipeline;
     }
 
+    size_t num_partitions = isPartitioned() ? max_threads : 1;
+    /// Partitioning is an optimization: with a huge `max_threads` reduce the partition count instead
+    /// of failing on the scatter connection limit. Any partition count keeps the output streams disjoint.
+    for (const auto & cur_pipeline : pipelines)
+        num_partitions = std::min(num_partitions, std::max<size_t>(1, scatter_connection_count_limit / cur_pipeline->getNumStreams()));
+
     for (auto & cur_pipeline : pipelines)
     {
         /// The check must be strict about constness (blocksHaveEqualStructure, not
@@ -158,14 +166,51 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
             processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
 
-        /// For the case of union.
-        cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(getOutputHeader(), cur_pipeline->getNumStreams(), 1));
+        QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
+        if (num_partitions == 1)
+        {
+            cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(getOutputHeader(), cur_pipeline->getNumStreams(), 1));
+        }
+        else
+        {
+            /// Both branches have the identical header (types and constness) after the conversion
+            /// above, so equal rows hash equally and land in the same partition on both sides. Each
+            /// partition is then an independent, exact set operation on its subset of rows.
+            ColumnNumbers key_columns(getOutputHeader()->columns());
+            std::iota(key_columns.begin(), key_columns.end(), 0);
+            scatterByPartition(*cur_pipeline, num_partitions, key_columns);
+        }
+        auto added_processors = collector.detachProcessors();
+        processors.insert(processors.end(), added_processors.begin(), added_processors.end());
     }
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
-    auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
-    processors.push_back(transform);
-    pipeline->addTransform(std::move(transform));
+
+    if (num_partitions == 1)
+    {
+        auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
+        processors.push_back(transform);
+        pipeline->addTransform(std::move(transform));
+        return pipeline;
+    }
+
+    /// The united ports are [left_0 .. left_{N-1}, right_0 .. right_{N-1}]: pair partition i of both sides.
+    QueryPipelineProcessorsCollector collector(*pipeline, this);
+    pipeline->transform([&](OutputPortRawPtrs ports)
+    {
+        chassert(ports.size() == 2 * num_partitions);
+        Processors result;
+        for (size_t i = 0; i < num_partitions; ++i)
+        {
+            auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
+            connect(*ports[i], transform->getInputs().front());
+            connect(*ports[num_partitions + i], transform->getInputs().back());
+            result.push_back(std::move(transform));
+        }
+        return result;
+    });
+    auto added_processors = collector.detachProcessors();
+    processors.insert(processors.end(), added_processors.begin(), added_processors.end());
 
     return pipeline;
 }

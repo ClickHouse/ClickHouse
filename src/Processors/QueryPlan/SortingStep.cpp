@@ -115,7 +115,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
-    extern const int LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -320,17 +319,6 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
     prefix_description = std::move(prefix_description_);
     use_buffering = use_buffering_;
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
-}
-
-/// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
-/// (threads * streams) connections in the pipeline. Bound this by a sane value so that a large
-/// `max_threads` cannot explode the port/processor count.
-static void checkScatterConnectionLimit(size_t threads, size_t streams)
-{
-    const size_t connection_count_limit = 1000000;
-    if (threads * streams > connection_count_limit)
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
-            threads, streams, connection_count_limit);
 }
 
 Names SortingStep::getPartitionByColumnNames() const

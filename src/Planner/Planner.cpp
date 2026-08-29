@@ -2406,7 +2406,8 @@ void Planner::buildPlanForUnionNode()
 
         /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
         /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
-        /// already narrow their output to one stream, so a preliminary step there is pure overhead.
+        /// output streams are hash-disjoint by all columns (or a single stream with one thread), so the
+        /// final DISTINCT already runs per stream without merging and a preliminary step is pure overhead.
         const bool add_pre_distinct = union_mode == SelectUnionMode::UNION_DISTINCT && preliminaryDistinctIsUseful(max_threads);
 
         if (add_pre_distinct)

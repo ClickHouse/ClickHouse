@@ -1,5 +1,8 @@
 SET enable_analyzer = 1;
 
+-- The output order of INTERSECT/EXCEPT depends on the number of threads.
+SET max_threads = 1;
+
 -- { echo }
 select 1 intersect select 1;
 select 2 intersect select 1;

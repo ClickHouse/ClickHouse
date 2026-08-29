@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -65,6 +66,19 @@ static StreamDisjointnessProperty applyStreamDisjointness(
             return {partition_key.expression->getActionsDAG().clone(), partition_key.column_names, std::nullopt, reading};
         }
         return {};
+    }
+
+    if (const auto * intersect_or_except = typeid_cast<const IntersectOrExceptStep *>(step))
+    {
+        /// With more than one thread the step hash-scatters both branches by the whole row and runs one
+        /// transform per partition, so every output stream holds a disjoint set of row values. The
+        /// partitioning expression is the identity over all output columns.
+        if (!intersect_or_except->isPartitioned())
+            return {};
+
+        const auto & columns = step->getOutputHeader()->getColumnsWithTypeAndName();
+        /// `column_actions` must be set, otherwise partitionDeterminedByKeys rejects the property.
+        return {ActionsDAG(columns), step->getOutputHeader()->getNames(), ActionsDAG(columns), nullptr};
     }
 
     /// Skip multi-child steps (joins, unions, ...) as they do not pass the disjointness property
