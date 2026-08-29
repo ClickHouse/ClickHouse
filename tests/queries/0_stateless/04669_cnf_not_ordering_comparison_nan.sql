@@ -62,6 +62,25 @@ SET optimize_using_constraints = 1;
 SELECT count() FROM t_04669_taut WHERE x >= 65.5 OR x < 65.5;
 DROP TABLE t_04669_taut;
 
+-- "atom OR NOT atom" is not a tautology for a nullable predicate: the NULL row makes
+-- both sides NULL and must stay filtered out. For a non-nullable predicate the
+-- elimination is kept (the WHERE disappears from the plan).
+SELECT 'nullable tautology';
+DROP TABLE IF EXISTS t_04669_nulltaut;
+CREATE TABLE t_04669_nulltaut (x Nullable(Float64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_04669_nulltaut VALUES (nan), (1), (100), (NULL);
+SET optimize_using_constraints = 1;
+SELECT count() FROM t_04669_nulltaut WHERE x < 65.5 OR NOT (x < 65.5);
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_04669_nulltaut WHERE x < 65.5 OR NOT (x < 65.5)) WHERE explain LIKE '%WHERE%';
+DROP TABLE t_04669_nulltaut;
+
+DROP TABLE IF EXISTS t_04669_nonnulltaut;
+CREATE TABLE t_04669_nonnulltaut (x Float64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_04669_nonnulltaut VALUES (nan), (1), (100);
+SELECT count() FROM t_04669_nonnulltaut WHERE x < 65.5 OR NOT (x < 65.5);
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_04669_nonnulltaut WHERE x < 65.5 OR NOT (x < 65.5)) WHERE explain LIKE '%WHERE%';
+DROP TABLE t_04669_nonnulltaut;
+
 -- A constraint with a negated ordering comparison over a Float column stays a negated
 -- atom and must be skipped by the comparison graph instead of being folded into the
 -- opposite comparison.
