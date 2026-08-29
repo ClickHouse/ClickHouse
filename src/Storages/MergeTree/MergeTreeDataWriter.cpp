@@ -95,6 +95,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool fsync_after_insert;
+    extern const MergeTreeSettingsBool fsync_after_insert_each_part;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
@@ -1085,11 +1086,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         }
     }
 
+    /// With fsync_after_insert_each_part = 0 the part is not synced here: the INSERT syncs all the
+    /// parts it wrote in one batch when it finishes, see MergeTreeData::fsyncPartsAfterInsert().
+    const bool sync_this_part = (*data_settings)[MergeTreeSetting::fsync_after_insert]
+        && (*data_settings)[MergeTreeSetting::fsync_after_insert_each_part];
+
     out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         gathered_data,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+        sync_this_part);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});

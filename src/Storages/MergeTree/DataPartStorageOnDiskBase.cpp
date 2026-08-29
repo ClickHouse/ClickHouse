@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
@@ -56,6 +57,18 @@ namespace
         }
         /// Children are synced first; this guard fsyncs `dir_path` itself on destruction.
         SyncGuardPtr guard = disk.getDirectorySyncGuard(dir_path);
+    }
+
+    /// Collect the paths of every regular file below `dir_path`, recursively.
+    void collectFilesRecursively(IDisk & disk, const std::string & dir_path, std::vector<std::string> & paths)
+    {
+        for (auto it = disk.iterateDirectory(dir_path); it->isValid(); it->next())
+        {
+            if (disk.existsDirectory(it->path()))
+                collectFilesRecursively(disk, it->path(), paths);
+            else
+                paths.push_back(it->path());
+        }
     }
 }
 
@@ -1100,6 +1113,23 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
 {
     return volume->getDisk()->getDirectorySyncGuard(fs::path(root_path) / part_dir);
+}
+
+void DataPartStorageOnDiskBase::syncFiles() const
+{
+    auto disk = volume->getDisk();
+
+    /// On object storage a finalized file is already durable, and IDisk::syncFile() is a no-op
+    /// there - do not even walk the directory.
+    if (disk->isRemote())
+        return;
+
+    /// The real files on disk, not the part's logical file list: for a packed part the whole part
+    /// lives in a single archive, and it is that archive which has to be synced.
+    std::vector<std::string> paths;
+    collectFilesRecursively(*disk, fs::path(root_path) / part_dir, paths);
+
+    parallelSyncFiles(*disk, paths);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(const String & txn_file_name, WriteMode mode) const

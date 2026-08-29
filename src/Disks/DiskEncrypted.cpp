@@ -495,6 +495,12 @@ SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const
     return delegate->getDirectorySyncGuard(wrapped_path);
 }
 
+void DiskEncrypted::syncFile(const String & path) const
+{
+    auto wrapped_path = wrappedPath(path);
+    delegate->syncFile(wrapped_path);
+}
+
 std::unordered_map<String, String> DiskEncrypted::getSerializedMetadata(const std::vector<String> & paths) const
 {
     std::vector<String> wrapped_paths;

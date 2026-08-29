@@ -293,6 +293,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsBool fsync_after_insert;
+    extern const MergeTreeSettingsBool fsync_after_insert_each_part;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_delay_insert;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_throw_insert;
@@ -7793,6 +7794,44 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         until->tryWait(delay_milliseconds);
     else
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
+}
+
+bool MergeTreeData::shouldFsyncPartsAfterInsert() const
+{
+    const auto settings = getSettings();
+    return (*settings)[MergeTreeSetting::fsync_after_insert]
+        && !(*settings)[MergeTreeSetting::fsync_after_insert_each_part];
+}
+
+void MergeTreeData::fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts) const
+{
+    if (committed_parts.empty() || !shouldFsyncPartsAfterInsert())
+        return;
+
+    /// A part committed earlier by this same query may already have been merged into a wider part
+    /// while the query was still running. Syncing the active part that covers it instead of the
+    /// part itself is what makes the inserted data durable with the fewest files touched: many
+    /// committed parts map to one covering part, and the covered ones are outdated and about to be
+    /// removed anyway. Holding the covering parts alive over the fsync also keeps their files from
+    /// being removed by a merge that finishes in the meantime.
+    DataPartsVector parts_to_sync;
+    {
+        auto lock = readLockParts();
+
+        std::unordered_set<String> seen_part_names;
+        for (const auto & part_info : committed_parts)
+        {
+            auto covering_part = getActiveContainingPart(part_info, DataPartState::Active, lock);
+            /// No covering part means the data is already gone (dropped partition, TRUNCATE, ...),
+            /// so there is nothing to make durable.
+            if (covering_part && seen_part_names.emplace(covering_part->name).second)
+                parts_to_sync.push_back(std::move(covering_part));
+        }
+    }
+
+    /// Outside the parts lock: an fsync of a whole part is far too slow to hold it for.
+    for (const auto & part : parts_to_sync)
+        part->getDataPartStorage().syncFiles();
 }
 
 void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
