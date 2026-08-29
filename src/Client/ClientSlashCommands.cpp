@@ -17,7 +17,10 @@ std::span<const ClientSlashCommand> clientSlashCommands()
     static constexpr ClientSlashCommand commands[]
     {
         {"/clear", false},
+        {"/dialect", true},
         {"/help", true},
+        {"/lang", true},
+        {"/language", true},
         {"/man", true},
     };
     return commands;

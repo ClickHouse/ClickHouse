@@ -182,6 +182,7 @@ The client runs a few `/`-prefixed commands itself instead of sending them to th
 |-------------------------------|--------------------------------------------------------------|
 | `/help <name>`, `/man <name>` | Show the documentation of `<name>`, the same as `help` above  |
 | `/clear`                      | Clear the terminal                                           |
+| `/dialect <name>`, `/lang <name>`, `/language <name>` | Switch the SQL dialect, or print the current one when entered without an argument (see [below](#switching-the-sql-dialect)) |
 
 Typing `/` at the beginning of the input lists the commands as [hints](#command-line-options-formatting), and typing more of a name narrows the list down; `Tab` completes the command being typed, which is also how the commands are completed when the hints are disabled. A `/` submitted on its own is not a command: as in Oracle SQL\*Plus, it repeats the last input. A misspelled command name is reported as such, with the commands it may have meant, instead of being run as a query:
 

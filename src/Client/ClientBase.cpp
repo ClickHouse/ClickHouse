@@ -3806,6 +3806,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Without an argument, prints the current dialect.
     /// Interactive only: a noninteractive script gets the whole input parsed as SQL, and the dialect
     /// for it is selected with the `--dialect` option or a `SET dialect = ...` statement.
+    /// The commands are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
     if (is_interactive)
     {
         for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
