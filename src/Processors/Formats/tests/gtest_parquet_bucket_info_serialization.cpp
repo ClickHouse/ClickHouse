@@ -8,8 +8,13 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Core/ProtocolDefines.h>
+#include <Common/Exception.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Formats/registerFormats.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <cstring>
+#include <mutex>
 
 using namespace DB;
 
@@ -30,6 +35,44 @@ String serializeBucket(const std::vector<size_t> & row_group_ids, size_t file_nu
         info.serialize(out, protocol_version);
     }
     return str;
+}
+
+/// The newest protocol version that predates the Parquet bucket fields, and the version an old
+/// worker in a mixed-version cluster would report. It already carries `read_source_index`, so a
+/// response serialized for it exercises the fields that follow the bucket payload.
+constexpr auto OLD_WORKER_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING;
+
+/// `ClusterFunctionReadTaskResponse::deserialize` resolves the bucket payload through
+/// `FormatFactory`, and decodes the (empty) data-lake `ActionsDAG` against the global context.
+void prepareResponseEnvironment()
+{
+    static std::once_flag flag;
+    std::call_once(flag, []
+    {
+        getContext();
+        registerFormats();
+    });
+}
+
+String serializeResponse(const ClusterFunctionReadTaskResponse & response, size_t protocol_version)
+{
+    String str;
+    {
+        WriteBufferFromString out(str);
+        response.serialize(out, protocol_version);
+    }
+    return str;
+}
+
+ClusterFunctionReadTaskResponse makeResponse(const std::shared_ptr<ParquetFileBucketInfo> & bucket)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "data.parquet";
+    response.file_bucket_info = bucket;
+    /// A field that is written after the bucket payload: it only decodes correctly if the bucket
+    /// payload left the stream aligned.
+    response.read_source_index = 3;
+    return response;
 }
 
 }
@@ -320,6 +363,72 @@ TEST(ParquetFileBucketInfoSerialization, FooterDigestCoversStatisticsAndKeyValue
     different_kv.key_value_metadata[0].__set_value("generation B");
     different_kv.__isset.key_value_metadata = true;
     EXPECT_NE(computeParquetFooterDigest(different_kv), digest);
+}
+
+/// A whole-file bucket is stripped from a task sent to a worker that is too old to carry the bucket
+/// fields, instead of failing the query: reading the plain path once returns exactly the same rows.
+/// The response must still decode, and every field written after the bucket payload must stay
+/// aligned - hence the `read_source_index` at the tail.
+TEST(ClusterFunctionReadTaskResponseSerialization, WholeFileBucketStrippedForOldWorker)
+{
+    prepareResponseEnvironment();
+
+    auto bucket = std::make_shared<ParquetFileBucketInfo>(std::vector<size_t>{0, 1, 2}, /*file_num_row_groups=*/3);
+    bucket->footer_digest = 0xdeadbeef;
+    const auto response = makeResponse(bucket);
+
+    const String str = serializeResponse(response, OLD_WORKER_VERSION);
+
+    ClusterFunctionReadTaskResponse restored;
+    ReadBufferFromMemory in(str);
+    restored.deserialize(in);
+
+    ASSERT_TRUE(in.eof());
+    EXPECT_EQ(restored.path, "data.parquet");
+    EXPECT_EQ(restored.file_bucket_info, nullptr);
+    ASSERT_TRUE(restored.read_source_index.has_value());
+    EXPECT_EQ(*restored.read_source_index, 3u);
+}
+
+/// A bucket that is a strict subset of the file must never be stripped - the worker would read the
+/// whole file for every bucket task and duplicate rows - so the task fails closed instead.
+TEST(ClusterFunctionReadTaskResponseSerialization, PartialBucketFailsClosedForOldWorker)
+{
+    prepareResponseEnvironment();
+
+    auto bucket = std::make_shared<ParquetFileBucketInfo>(std::vector<size_t>{0, 2}, /*file_num_row_groups=*/3);
+    const auto response = makeResponse(bucket);
+
+    EXPECT_THROW(serializeResponse(response, OLD_WORKER_VERSION), DB::Exception);
+}
+
+/// A worker on the current protocol receives the bucket as it is, with the fields that drive the
+/// fail-close overwrite guard, and the fields after it still round-trip.
+TEST(ClusterFunctionReadTaskResponseSerialization, CurrentVersionRoundTripsBucket)
+{
+    prepareResponseEnvironment();
+
+    const std::vector<size_t> row_group_ids = {0, 2};
+    auto bucket = std::make_shared<ParquetFileBucketInfo>(row_group_ids, /*file_num_row_groups=*/3);
+    bucket->footer_digest = 0xdeadbeef;
+    const auto response = makeResponse(bucket);
+
+    const String str = serializeResponse(response, NEW_VERSION);
+
+    ClusterFunctionReadTaskResponse restored;
+    ReadBufferFromMemory in(str);
+    restored.deserialize(in);
+
+    ASSERT_TRUE(in.eof());
+    EXPECT_EQ(restored.path, "data.parquet");
+    ASSERT_NE(restored.file_bucket_info, nullptr);
+    const auto restored_bucket = std::dynamic_pointer_cast<ParquetFileBucketInfo>(restored.file_bucket_info);
+    ASSERT_NE(restored_bucket, nullptr);
+    EXPECT_EQ(restored_bucket->row_group_ids, row_group_ids);
+    EXPECT_EQ(restored_bucket->file_num_row_groups, 3u);
+    EXPECT_EQ(restored_bucket->footer_digest, 0xdeadbeefu);
+    ASSERT_TRUE(restored.read_source_index.has_value());
+    EXPECT_EQ(*restored.read_source_index, 3u);
 }
 
 #endif
