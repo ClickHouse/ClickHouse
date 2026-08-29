@@ -6,6 +6,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Common/Exception.h>
+#include <Common/RemoteHostFilter.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <IO/WriteBufferFromFileBase.h>
 
@@ -74,10 +75,12 @@ const Poco::Util::AbstractConfiguration & unreachableConfig()
 /// is what makes it observable here; reaching any later statement requires a live NameNode.
 std::unique_ptr<HDFSObjectStorage> makeUnreachableStorage()
 {
+    static const DB::RemoteHostFilter remote_host_filter;
     return std::make_unique<HDFSObjectStorage>(
         "hdfs://localhost:1/data/",
         std::make_unique<DB::HDFSObjectStorageSettings>(/*min_bytes_for_seek_=*/ 1024, /*replication_=*/ 1),
         unreachableConfig(),
+        remote_host_filter,
         /*lazy_initialize=*/ true);
 }
 
