@@ -105,20 +105,12 @@ namespace MergeTreeSetting
 namespace
 {
 
-/// The entry a settings list already holds for this setting, under whichever of its names it was
-/// written with: a `MergeTree` setting can have two, and both name one setting.
-SettingsChanges::iterator findStoredSetting(SettingsChanges & settings, const String & name)
+/// Whether the two names name one setting: a `MergeTree` setting can have two names.
+bool isSameSetting(const String & left, const String & right)
 {
-    auto resolved_name = MergeTreeSettings::hasBuiltin(name) ? MergeTreeSettings::resolveName(name) : std::string_view(name);
-    return std::find_if(
-        settings.begin(),
-        settings.end(),
-        [&](const SettingChange & change)
-        {
-            auto resolved_change_name
-                = MergeTreeSettings::hasBuiltin(change.name) ? MergeTreeSettings::resolveName(change.name) : std::string_view(change.name);
-            return resolved_change_name == resolved_name;
-        });
+    auto resolve = [](const String & name)
+    { return MergeTreeSettings::hasBuiltin(name) ? MergeTreeSettings::resolveName(name) : std::string_view(name); };
+    return resolve(left) == resolve(right);
 }
 
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
@@ -1183,17 +1175,22 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
-            auto it = findStoredSetting(settings_from_storage, change.name);
+            auto same_setting = [&change](const SettingChange & c) { return isSameSetting(c.name, change.name); };
+            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
 
-            if (it != settings_from_storage.end())
+            if (it == settings_from_storage.end())
             {
-                /// The statement states the setting under a name of its own choosing, which need not be the
-                /// one the definition was written with. It is still the same setting, so it keeps one entry.
-                it->name = change.name;
-                it->value = change.value;
-            }
-            else
                 settings_from_storage.push_back(change);
+                continue;
+            }
+
+            /// The statement states the setting under a name of its own choosing, which need not be the one
+            /// the definition was written with. It is still one setting, so it is left holding one entry:
+            /// a definition can state a setting under each of its names, and the last of them is in effect.
+            it->name = change.name;
+            it->value = change.value;
+            settings_from_storage.erase(
+                std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
         MergeTreeSettings effective_settings;
@@ -1231,11 +1228,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & setting_name : settings_resets)
         {
-            auto it = findStoredSetting(settings_from_storage, setting_name);
+            auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+            auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
 
             if (it != settings_from_storage.end())
             {
-                settings_from_storage.erase(it);
+                settings_from_storage.erase(it, settings_from_storage.end());
             }
             else
             {

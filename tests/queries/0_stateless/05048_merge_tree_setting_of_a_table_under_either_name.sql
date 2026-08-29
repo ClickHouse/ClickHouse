@@ -23,5 +23,20 @@ SELECT * FROM v_stored_setting;
 ALTER TABLE t_either_name RESET SETTING enable_block_number_column;
 SELECT * FROM v_stored_setting;
 
+-- A definition can state the setting under each of its names, and the last of them is in effect.
+-- Writing it then leaves one entry behind, and resetting it leaves none.
+DROP TABLE t_either_name;
+CREATE TABLE t_either_name (a UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS allow_experimental_block_number_column = 1, enable_block_number_column = 0;
+SELECT * FROM v_stored_setting;
+ALTER TABLE t_either_name MODIFY SETTING enable_block_number_column = 1;
+SELECT * FROM v_stored_setting;
+
+DROP TABLE t_either_name;
+CREATE TABLE t_either_name (a UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS allow_experimental_block_number_column = 1, enable_block_number_column = 0;
+ALTER TABLE t_either_name RESET SETTING allow_experimental_block_number_column;
+SELECT * FROM v_stored_setting;
+
 DROP VIEW v_stored_setting;
 DROP TABLE t_either_name;
