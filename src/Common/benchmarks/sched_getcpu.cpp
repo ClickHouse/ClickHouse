@@ -36,8 +36,8 @@ extern "C"
 {
     /// The rseq area location of the libc registration, exported by glibc >= 2.35.
     /// Weak so the binary links against libcs without them; the address is then null.
-    extern const ptrdiff_t __rseq_offset __attribute__((weak));
-    extern const unsigned int __rseq_size __attribute__((weak));
+    extern const ptrdiff_t __rseq_offset __attribute__((weak)); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+    extern const unsigned int __rseq_size __attribute__((weak)); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 }
 #pragma clang diagnostic pop
 
@@ -67,7 +67,7 @@ bool rseqUsable()
 
 void BM_sched_getcpu_current(benchmark::State & state)
 {
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
         benchmark::DoNotOptimize(sched_getcpu());
 }
 BENCHMARK(BM_sched_getcpu_current);
@@ -79,7 +79,7 @@ void BM_sched_getcpu_rseq(benchmark::State & state)
         state.SkipWithError("rseq is not registered by libc or its cpu_id is not initialized");
         return;
     }
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
         benchmark::DoNotOptimize(rseqCurrentCPU());
 }
 BENCHMARK(BM_sched_getcpu_rseq);
@@ -96,7 +96,7 @@ void BM_sched_getcpu_vsyscall(benchmark::State & state)
         return;
     }
     unsigned cpu = 0;
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         fn(&cpu, nullptr, nullptr);
         benchmark::DoNotOptimize(cpu);
@@ -107,7 +107,7 @@ BENCHMARK(BM_sched_getcpu_vsyscall);
 void BM_sched_getcpu_syscall(benchmark::State & state)
 {
     unsigned cpu = 0;
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         syscall(SYS_getcpu, &cpu, nullptr, nullptr);
         benchmark::DoNotOptimize(cpu);
