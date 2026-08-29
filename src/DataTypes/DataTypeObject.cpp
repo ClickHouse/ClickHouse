@@ -352,10 +352,17 @@ void replaceJSONTypeNameIfNeeded(String & type_name, const String & nested_json_
     auto pos = type_name.find("JSON");
     while (pos != String::npos)
     {
+        size_t continue_from = pos + 4;
         /// Replace only if we don't already have parameters in JSON type declaration.
         if (pos + 4 == type_name.size() || type_name[pos + 4] != '(')
+        {
             type_name.replace(pos, 4, nested_json_type_name);
-        pos = type_name.find("JSON", pos + 4);
+            /// Resume past the replacement rather than inside it: the nested type name can carry a
+            /// projected subpath typed as a bare `JSON`, and rescanning would substitute into the
+            /// text just inserted, then into that substitution, without bound.
+            continue_from = pos + nested_json_type_name.size();
+        }
+        pos = type_name.find("JSON", continue_from);
     }
 }
 
