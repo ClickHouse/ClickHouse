@@ -1520,7 +1520,9 @@ void PostingListBuilder::add(UInt32 value, UInt32 position, const PostingListBui
             return;
         }
 
-        state.emplace<Large>(inline_state->values, inline_state->size, value);
+        auto inline_values = std::move(inline_state->values);
+        size_t inline_size = inline_state->size;
+        state.emplace<Large>(std::move(inline_values), inline_size, value);
         return;
     }
 
