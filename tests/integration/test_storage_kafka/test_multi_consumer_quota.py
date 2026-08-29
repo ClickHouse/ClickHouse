@@ -104,24 +104,28 @@ def wait_for_quota_logs(instance, table_name, num_consumers, num_replicas,
     )
 
 
-def wait_for_consumer_assignments(instance, table, acceptable, timeout=240):
+def wait_for_consumer_assignments(instance, table, node_quota, max_per_consumer,
+                                  max_total, min_busy, timeout=240):
     """
-    Poll `system.kafka_consumers` until this table's consumers report one of the
-    `acceptable` multisets of assignment sizes (sorted ascending).
+    Poll `system.kafka_consumers` until this table's consumers hold a distribution that
+    satisfies the enforcement bounds, then return the sorted per-consumer counts.
 
-    This verifies the quota was actually *enforced*, not merely computed: the log
-    assertions above read what the code decided, this reads what it holds.
+    This checks the quota was *enforced*, not merely computed -- the log assertions above
+    read what the code decided, this reads what it holds.
 
-    The timeout is deliberately generous. Unlike the log assertions, this waits for
-    the distribution to CONVERGE. A replica that registers first sees
-    active_replicas=1, takes the whole node_quota, and only sheds the surplus on a
-    later refresh round (LOCKS_REFRESH_POLLS polls apart). Under asan/ubsan that has
-    been observed to take well over 90s -- see the 9/3-instead-of-6/6 failure in the
-    flaky check on ef41915a.
+    Bounds rather than an exact multiset, deliberately. `assignments` merges permanent AND
+    temporary locks (KeeperHandlingConsumer::getStat), and the split across a node's
+    consumers keeps moving after the node's total has settled: a consumer holding a
+    temporary lock blocks a starved sibling until it releases on its next refresh round.
+    An exact multiset is therefore only true at a quiet instant -- [1,2,3] was observed on
+    arm_binary for a node_quota of 6, i.e. the right total with an unsettled split.
 
-    NOTE: `assignments` merges permanent AND temporary locks (see
-    KeeperHandlingConsumer::getStat), so any case with `P mod R != 0` must also
-    accept the extra partition a consumer may hold transiently.
+    What must hold, and does hold immediately:
+      * the node holds its own share and no more (plus any floating leftover partitions);
+      * no single consumer holds more than its share plus one temporary lock;
+      * the share is spread over `min_busy` consumers -- this is what rules out "one
+        consumer keeps all of that replica's assignments", the regression the per-consumer
+        check exists to catch.
     """
     start = time.time()
     last = None
@@ -134,12 +138,15 @@ def wait_for_consumer_assignments(instance, table, acceptable, timeout=240):
         last = raw
         if raw:
             counts = ast.literal_eval(raw)
-            if counts in acceptable:
+            if counts and node_quota <= sum(counts) <= max_total \
+                    and max(counts) <= max_per_consumer \
+                    and sum(1 for c in counts if c > 0) >= min_busy:
                 return counts
         time.sleep(2)
     pytest.fail(
-        f"Per-consumer assignments for {table} never matched any of {acceptable}; "
-        f"last seen: {last}"
+        f"Per-consumer assignments for {table} never satisfied "
+        f"{node_quota} <= sum <= {max_total}, max <= {max_per_consumer}, "
+        f">= {min_busy} consumers busy; last seen: {last}"
     )
 
 
@@ -164,23 +171,18 @@ def wait_for_shard_partitions(instance, table, timeout=120):
 
 
 @pytest.mark.parametrize(
-    "num_partitions, num_replicas, num_consumers, expected_node_quota, "
-    "acceptable_consumer_counts, case",
+    "num_partitions, num_replicas, num_consumers, expected_node_quota, case",
     [
-        (12, 2, 3, 6, [[2, 2, 2]],
-         "even split: node_quota 6, per-consumer 2/2/2"),
-        ( 4, 2, 3, 2, [[0, 1, 1]],
-         "P < R*N: the max(...,1) clamp must be per node; third consumer idles"),
-        ( 7, 2, 3, 3, [[1, 1, 1], [1, 1, 2]],
-         "P mod R != 0: node_quota 3, per-consumer 1/1/1 (+1 if holding the float)"),
-        ( 6, 3, 1, 2, [[2]],
-         "N=1: formula reduces to the pre-existing one"),
+        (12, 2, 3, 6, "even split: node_quota 6, per-consumer 2/2/2"),
+        ( 4, 2, 3, 2, "P < R*N: the max(...,1) clamp must be per node; third consumer idles"),
+        ( 7, 2, 3, 3, "P mod R != 0: node_quota 3, per-consumer 1/1/1"),
+        ( 6, 3, 1, 2, "N=1: formula reduces to the pre-existing one"),
     ],
     ids=["even", "small_topic", "remainder", "single_consumer"],
 )
 def test_permanent_lock_quota(
     kafka_cluster, num_partitions, num_replicas, num_consumers,
-    expected_node_quota, acceptable_consumer_counts, case,
+    expected_node_quota, case,
 ):
     """
     Verify that the per-consumer permanent-lock quota is computed correctly:
@@ -253,12 +255,23 @@ def test_permanent_lock_quota(
                 )
 
             # End-to-end: the quota was not just computed, it was enforced.
+            # A consumer may hold its own share plus at most one temporary lock; the node
+            # may hold its share plus the partitions left over by integer division.
+            share = -(-expected_node_quota // num_consumers)   # ceil
             counts = wait_for_consumer_assignments(
-                instance, table, acceptable_consumer_counts
+                instance, table,
+                node_quota=expected_node_quota,
+                max_per_consumer=share + 1,
+                max_total=expected_node_quota + num_partitions % num_replicas,
+                min_busy=min(num_consumers, expected_node_quota),
             )
-            assert counts in acceptable_consumer_counts, (
-                f"[{case}] {replica} per-consumer assignments {counts}, "
-                f"expected one of {acceptable_consumer_counts}"
+            assert max(counts) <= share + 1, (
+                f"[{case}] {replica} per-consumer assignments {counts}: one consumer holds "
+                f"more than its share ({share}) plus a temporary lock"
+            )
+            assert sum(1 for c in counts if c > 0) >= min(num_consumers, expected_node_quota), (
+                f"[{case}] {replica} per-consumer assignments {counts}: the node's share is "
+                f"not spread across its consumers"
             )
 
 
