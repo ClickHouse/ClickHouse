@@ -16,6 +16,13 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_PATH = os.path.join(
     SCRIPT_DIR, "./_instances/node/configs/config.d/storage_conf.xml"
 )
+BLOCKED_REMOTE_HOST_CONFIG = """
+<clickhouse>
+    <remote_url_allow_hosts>
+        <host>blocked.invalid</host>
+    </remote_url_allow_hosts>
+</clickhouse>
+"""
 
 
 if is_arm():
@@ -194,20 +201,35 @@ def test_remote_host_filter_reload_does_not_block_configured_disk(cluster):
     node = cluster.instances["node"]
     node.query("INSERT INTO hdfs_test VALUES ('2020-01-03', 1, 'data')")
 
-    blocked_config = """
-<clickhouse>
-    <remote_url_allow_hosts>
-        <host>blocked.invalid</host>
-    </remote_url_allow_hosts>
-</clickhouse>
-"""
     with node.with_replace_config(
         "/etc/clickhouse-server/config.d/remote_host_filter.xml",
-        blocked_config,
+        BLOCKED_REMOTE_HOST_CONFIG,
         reload_before=True,
         reload_after=True,
     ):
         assert node.query("SELECT data FROM hdfs_test") == "data\n"
+
+
+def test_remote_host_filter_reload_blocks_sql_storage(cluster):
+    node = cluster.instances["node"]
+    node.query(
+        """
+        CREATE TABLE hdfs_test (data String)
+        ENGINE = HDFS('hdfs://hdfs1:9000/clickhouse/remote_host_filter.tsv', 'TSV')
+        """
+    )
+    node.query("INSERT INTO hdfs_test VALUES ('data')")
+    assert node.query("SELECT data FROM hdfs_test") == "data\n"
+
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/remote_host_filter.xml",
+        BLOCKED_REMOTE_HOST_CONFIG,
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert "UNACCEPTABLE_URL" in node.query_and_get_error(
+            "SELECT data FROM hdfs_test"
+        )
 
 
 def test_alter_table_columns(cluster):
