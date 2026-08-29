@@ -145,3 +145,42 @@ def test_transient_error_during_split_keeps_files(started_cluster):
 
     node1.query("system flush distributed dist")
     assert int(node1.query("select count() from dist")) == 4
+
+
+def test_broken_file_during_split_removes_sent_files(started_cluster):
+    drop_tables()
+    for _, node in cluster.instances.items():
+        node.query("create table data (key Int, value Int) engine=MergeTree order by key")
+
+    node1.query(
+        """
+            create table dist as data engine=Distributed(test_cluster, currentDatabase(), data, key)
+                settings background_insert_batch=1, background_insert_split_batch_on_failure=1;
+            system stop distributed sends dist;
+        """
+    )
+    for value in (1, 2):
+        node1.query(
+            f"insert into dist values (1, {value})",
+            settings={"distributed_foreground_insert": 0},
+        )
+
+    queue_path = node1.query(
+        "select data_path from system.distribution_queue where table='dist' and data_files=2"
+    ).strip()
+    files = node1.exec_in_container(
+        ["bash", "-c", f"ls -1 {queue_path}/*.bin | sort -V"]
+    ).strip().splitlines()
+    assert len(files) == 2
+    file_size = int(node1.exec_in_container(["stat", "-c", "%s", files[-1]]))
+    node1.exec_in_container(["truncate", "-s", str(file_size - 10), files[-1]])
+
+    node1.query("system start distributed sends dist")
+    node1.query("system flush distributed dist")
+
+    assert int(node1.query("select count() from dist")) == 1
+    assert int(
+        node1.query(
+            "select sum(data_files) from system.distribution_queue where table='dist'"
+        )
+    ) == 0

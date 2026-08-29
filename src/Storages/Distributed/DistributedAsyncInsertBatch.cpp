@@ -312,6 +312,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & settings_changes)
 {
     size_t broken_files = 0;
+    std::vector<std::string> sent_files;
 
     for (const auto & file : files)
     {
@@ -344,6 +345,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
 
             writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
             remote.onFinish();
+            sent_files.push_back(file);
         }
         catch (Exception & e)
         {
@@ -359,8 +361,14 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
     }
 
     if (broken_files)
+    {
+        auto dir_sync_guard = parent.getDirectorySyncGuard(parent.relative_path);
+        for (const auto & file : sent_files)
+            parent.markAsSend(file);
+
         throw Exception(ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES,
             "Failed to send {} files", broken_files);
+    }
 }
 
 }
