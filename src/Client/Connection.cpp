@@ -254,8 +254,7 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                 /// Name the dialled address, like `SocketImpl::connect` does on its own deferred
                 /// path: this loop walks several resolved addresses, so a bare error loses the
                 /// one that actually failed.
-                if (auto err = socket->impl()->socketError())
-                    socket->impl()->error(err, it->toString()); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
+                socket->impl()->throwSocketError(it->toString());
 
                 socket->setBlocking(true);
             }
