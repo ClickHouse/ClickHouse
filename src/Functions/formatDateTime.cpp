@@ -940,6 +940,11 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// A LowCardinality dictionary always contains the default value, and the empty string is not a
+    /// valid time zone: executing on the dictionary as is would throw for a time zone column that
+    /// never holds an empty string. Ask for a minimal dictionary of the values actually referenced.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
