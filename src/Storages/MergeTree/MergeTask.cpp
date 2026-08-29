@@ -2411,8 +2411,11 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     if (global_ctx->preserved_group_by_ttl)
     {
         global_ctx->new_data_part->ttl_infos.group_by_ttl = *global_ctx->preserved_group_by_ttl;
-        for (const auto & [name, info] : global_ctx->new_data_part->ttl_infos.group_by_ttl)
-            global_ctx->new_data_part->ttl_infos.updatePartMinMaxTTL(info);
+        /// The recalculation step already folded its throwaway GROUP BY values into the part's
+        /// min/max, and `updatePartMinMaxTTL` only accumulates - and skips finished entries
+        /// outright - so the bounds must be rebuilt rather than added to, or the part stays
+        /// selectable on a value no map holds any more.
+        global_ctx->new_data_part->ttl_infos.recalculatePartMinMaxTTL();
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)

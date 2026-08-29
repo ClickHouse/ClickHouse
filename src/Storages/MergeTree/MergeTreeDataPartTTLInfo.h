@@ -64,6 +64,11 @@ struct MergeTreeDataPartTTLInfos
     /// Has any TTLs which are not calculated on completely expired parts.
     bool hasAnyNonFinishedTTLs() const;
 
+    /// Recomputes `part_min_ttl` / `part_max_ttl` from the current maps. `updatePartMinMaxTTL` only
+    /// accumulates, so a caller that replaces a map after the bounds were taken needs this to drop
+    /// what the replaced entries had contributed.
+    void recalculatePartMinMaxTTL();
+
     void updatePartMinMaxTTL(const MergeTreeDataPartTTLInfo & ttl_info)
     {
         if (ttl_info.finished())
