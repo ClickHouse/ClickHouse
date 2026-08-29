@@ -201,7 +201,7 @@ public:
     void check(ContextPtr context) override
     {
         if (ready_object_storage)
-            StorageObjectStorageConfiguration::check(context);
+            this->checkFormat();
         else
             BaseStorageConfiguration::check(context);
     }
