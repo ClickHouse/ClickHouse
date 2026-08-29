@@ -541,7 +541,9 @@ struct MarkovModelParameters
         if (order > max_order)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must not exceed {}, got {}", order_name, max_order, order);
 
-        if (frequency_desaturate < 0.0 || frequency_desaturate > 1.0)
+        /// NaN compares false with both bounds and would also silently skip the `> 0` application
+        /// branch, so non-finite values have to be rejected explicitly to enforce the [0, 1] contract.
+        if (!std::isfinite(frequency_desaturate) || frequency_desaturate < 0.0 || frequency_desaturate > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must be in the range [0, 1]", frequency_desaturate_name);
     }
 };

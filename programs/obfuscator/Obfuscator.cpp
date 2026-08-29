@@ -356,16 +356,29 @@ try
         PushingPipelineExecutor out_executor(out_pipeline);
 
         Block block;
-        out_executor.start();
+        bool output_started = false;
         while (in_executor.pull(block))
         {
+            if (!block.rows())
+                continue;
+
             Columns columns = obfuscator.generate(block.getColumns());
+
+            /// Start the output only once the pass has produced a row: a failing pass over empty
+            /// input must not emit format framing (a prefix/suffix of `JSON`, `XML`, `Pretty`, ...)
+            /// that would look like a valid empty result before the exception below - the
+            /// fail-closed contract requires the output to stay untouched.
+            if (!output_started)
+            {
+                out_executor.start();
+                output_started = true;
+            }
+
             out_executor.push(header.cloneWithColumns(columns));
             processed_rows += block.rows();
             if (!silent)
                 std::cerr << "Processed " << processed_rows << " rows\n";
         }
-        out_executor.finish();
 
         /// Fail closed: if a full generation pass produced no rows (e.g. the input is empty while
         /// an explicit --limit was given), throw instead of rebuilding the input pipeline forever.
@@ -374,6 +387,8 @@ try
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot generate {} rows: a full generation pass over the input produced no rows (the input is empty)",
                 limit);
+
+        out_executor.finish();
 
         obfuscator.updateSeed();
         rewind_needed = true;
