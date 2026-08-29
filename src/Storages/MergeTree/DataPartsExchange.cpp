@@ -549,7 +549,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                   /// cancellation of the fetch (e.g. on server shutdown): the underlying read blocks
                   /// until a whole buffer is received, and the callback runs between the refills.
                   .withBufSize(read_settings.remote_fs_settings.buffer_size)
-                  .withDelayInit(false)
+                  /// Delay the request until the shutdown cancellation callback below is installed:
+                  /// with eager initialization the constructor would perform the first blocking read
+                  /// before `setNextCallback` can run.
+                  .withDelayInit(true)
                   .create(creds);
 
     /// Make the shutdown cancellation (`ReplicatedFetchList::cancelAll`) effective from the very
@@ -563,6 +566,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         if (replicated_fetch_list.isAllCancelled())
             throw Exception(ErrorCodes::ABORTED, "Fetching of part {} was cancelled", part_name);
     });
+
+    /// Send the request and read the first chunk of the response body. `nextImpl` runs the callback
+    /// before the connection and each blocking refill, so the whole transfer is cancellable.
+    /// The response is needed just below for the cookies.
+    in->next();
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
     String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
