@@ -22,6 +22,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
@@ -1638,6 +1639,20 @@ namespace
             LOG_INFO(log, "Query cancelled");
             cancelled = true;
             result.set_cancelled(true);
+
+            /// A client-initiated gRPC cancel (`QueryInfo.cancel`) is a hard user cancellation.
+            /// Surface it through the query status so soft-timeout-aware transforms (e.g.
+            /// `DistinctTransform`) can distinguish it from an executor-side break-mode timeout,
+            /// which would otherwise be misclassified and keep a committed prefix instead of
+            /// aborting. `KILL QUERY` and the native TCP `Cancel` packet already set
+            /// `CANCELLED_BY_USER` the same way; without it, `getCancelReason()` stays `UNDEFINED`
+            /// after a soft timeout has latched and a real user cancel gets treated as a soft
+            /// timeout. No exception is passed (unlike TCP): the gRPC protocol reports the cancel
+            /// through the `cancelled` result flag, not through a query error.
+            if (query_context)
+                if (auto process_list_element = query_context->getProcessListElementSafe())
+                    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER);
+
             return true;
         }
 
