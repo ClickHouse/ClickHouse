@@ -760,7 +760,7 @@ struct ManualAllocation : public ResourceAllocation
 
     void recoveryCheckpoint()
     {
-        queue.notifyRecoveryProgress(*this);
+        queue.notifyRecoveryProgress(*this, 0);
     }
 
     void runOnNextPressure(std::function<void()> callback)
@@ -4621,7 +4621,7 @@ TEST(SchedulerSpaceShared, RealReservationsGiveEveryBlockedGraphARecoveryPassBef
         {
             heavy_recovery_exception_code = e.code();
         }
-        catch (...)
+        catch (...) // Ok: report unexpected exceptions to the main test thread
         {
             heavy_recovery_exception_code = -1;
         }
@@ -4682,7 +4682,7 @@ TEST(SchedulerSpaceShared, RealReservationsGiveEveryBlockedGraphARecoveryPassBef
         {
             small_exception_code = e.code();
         }
-        catch (...)
+        catch (...) // Ok: report unexpected exceptions to the main test thread
         {
             small_exception_code = -1;
         }
@@ -4751,7 +4751,7 @@ TEST(SchedulerSpaceShared, RealReservationsGiveEveryBlockedGraphARecoveryPassBef
         {
             heavy_exception_code = e.code();
         }
-        catch (...)
+        catch (...) // Ok: report unexpected exceptions to the main test thread
         {
             heavy_exception_code = -1;
         }
@@ -4820,7 +4820,7 @@ TEST(SchedulerSpaceShared, RealReservationsGiveEveryBlockedGraphARecoveryPassBef
         {
             small_retry_exception_code = e.code();
         }
-        catch (...)
+        catch (...) // Ok: report unexpected exceptions to the main test thread
         {
             small_retry_exception_code = -1;
         }
