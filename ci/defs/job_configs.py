@@ -217,6 +217,9 @@ class JobConfigs:
                 # must run this job instead of reusing a cached result.
                 "./tests/config/install.sh",
                 "./tests/integration/helpers/cluster.py",
+                # The documentation-review concurrency guard reads this workflow, which is
+                # outside ./ci, so a change to it must run this job.
+                "./.github/workflows/team_review_requests.yml",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],

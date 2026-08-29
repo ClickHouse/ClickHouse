@@ -7,7 +7,8 @@ on:
 
 concurrency:
   group: documentation-team-review-requests-${{ github.event_name }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
