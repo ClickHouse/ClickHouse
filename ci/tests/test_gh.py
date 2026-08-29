@@ -439,3 +439,62 @@ def test_request_team_reviews_fails_when_lookup_fails(monkeypatch):
         assert False, "Should have raised when requested reviewers are unavailable"
     except RuntimeError as e:
         assert "Failed to retrieve team review requests" in str(e)
+
+
+# --- GH.merge_pr --------------------------------------------------------------
+
+
+def _capture_merge_command(monkeypatch):
+    """Stub the command runner and return the dict the command lands in."""
+    captured = {}
+
+    def fake_do_command(cmd, *_args, **_kwargs):
+        captured["cmd"] = cmd
+        return True
+
+    monkeypatch.setattr(GH, "do_command_with_retries", staticmethod(fake_do_command))
+    return captured
+
+
+def test_an_admin_merge_does_not_ask_gh_to_delete_the_branch(monkeypatch):
+    """`gh` refuses `--delete-branch` whenever the base branch has a merge queue
+    enabled, and refuses it next to `--admin` too, even though `--admin` is what
+    bypasses that queue. Asking for both fails the merge itself: that is how the
+    revert of #109710 was pushed and opened as #116566 and then left unmerged."""
+    captured = _capture_merge_command(monkeypatch)
+
+    assert GH.merge_pr(pr=116566, repo="ClickHouse/ClickHouse", admin=True)
+
+    assert "--delete-branch" not in captured["cmd"]
+    assert " -d" not in captured["cmd"]
+    assert "--admin" in captured["cmd"]
+    assert "--merge" in captured["cmd"]
+
+
+def test_an_admin_merge_asked_to_keep_the_branch_is_unchanged(monkeypatch):
+    captured = _capture_merge_command(monkeypatch)
+
+    assert GH.merge_pr(
+        pr=116566, repo="ClickHouse/ClickHouse", admin=True, keep_branch=True
+    )
+
+    assert "--delete-branch" not in captured["cmd"]
+
+
+def test_an_ordinary_merge_still_deletes_the_branch(monkeypatch):
+    """The queued path is untouched: there `gh` waits for the merge to happen,
+    so it is GitHub that deletes the branch and the flag is accepted."""
+    captured = _capture_merge_command(monkeypatch)
+
+    assert GH.merge_pr(pr=116566, repo="ClickHouse/ClickHouse")
+
+    assert "--delete-branch" in captured["cmd"]
+    assert "--admin" not in captured["cmd"]
+
+
+def test_a_merge_asked_to_keep_the_branch_keeps_it(monkeypatch):
+    captured = _capture_merge_command(monkeypatch)
+
+    assert GH.merge_pr(pr=116566, repo="ClickHouse/ClickHouse", keep_branch=True)
+
+    assert "--delete-branch" not in captured["cmd"]
