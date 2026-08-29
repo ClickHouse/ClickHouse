@@ -1,7 +1,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -15,7 +14,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -24,7 +22,6 @@
 #include <Poco/Net/NetException.h>
 #include <Common/DNSResolver.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/config_version.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
@@ -124,30 +121,7 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         version = SETTINGS_IN_ZK_VERSION;
 
     if (version >= SETTINGS_IN_ZK_VERSION)
-    {
         settings.emplace(context->getSettingsRef().changes());
-
-        /// These settings are interpreted only at the initiator: they shape the final query
-        /// (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`, `additional_result_filter`),
-        /// shape how data is parsed from / serialised to the client (`format`, `input_format`,
-        /// `output_format`, `default_format`, `compression`), select the initiator's default database
-        /// (`database`, the equivalent of `USE`), or drive the HTTP query-construction / path routing on
-        /// the initiator only (`http_allow_database_as_path`, `http_allow_table_as_file`,
-        /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`,
-        /// `implicit_table_at_top_level`). Forwarding them to the hosts that pick up this DDL entry is at
-        /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
-        /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
-        /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
-        /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. Strip them here,
-        /// mirroring `ClusterProxy::stripInitiatorOnlySettings`.
-        static constexpr std::array initiator_only_settings = {
-            "database", "select", "order", "sort", "filter", "additional_result_filter",
-            "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
-            "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
-        for (const auto * name : initiator_only_settings)
-            settings->removeSetting(name);
-    }
 }
 
 String DDLLogEntry::toString() const
@@ -319,16 +293,6 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setDDLOrOnClusterInternal(true);
 
-    /// This host (re-)initiates the DDL query, so any distributed sub-query spawned during its
-    /// execution (e.g. the `SELECT` of a `CREATE TABLE ... AS SELECT` reading a `Distributed` table)
-    /// treats this host as the initiator. Fill the client version with this server's version;
-    /// otherwise it stays 0.0.0 and remote shards apply legacy version compatibility downgrades -
-    /// in particular disabling the analyzer for supposedly pre-23.3 initiators (see `TCPHandler`).
-    /// That makes the initiator and the shards use different query interpreters, so column names
-    /// diverge (identifier `__table1.x` vs result name `x`) and distributed execution fails with
-    /// `NOT_FOUND_COLUMN_IN_BLOCK`.
-    query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
-
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
     if (preserve_user && !entry.initiator_user.empty())
     {
@@ -363,21 +327,6 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
         auto settings_changes = *entry.settings;
         query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
-
-        /// `BACKUP`/`RESTORE ON CLUSTER` runs a per-host continuation on every replica through this DDL
-        /// queue, and those hosts derive their S3 credentials from `s3_allow_server_credentials_in_user_queries`.
-        /// The initiator's value travels in the entry, but the clamp above silently drops it on a host whose
-        /// (default, no-user) profile pins the setting `readonly`, so an on-cluster backup started by a trusted
-        /// profile fails. The initiator has already opened the same backup destination under its own, properly
-        /// constrained, settings, so honor its decision here rather than re-clamping it. Restricted to backup
-        /// and restore because they are the only on-cluster operations whose worker side re-resolves S3
-        /// credentials from the session setting; every other DDL keeps the strict clamp. An untrusted initiator
-        /// cannot smuggle a `1` in: its own `readonly` constraint keeps the entry value at `0`.
-        if (query && query->as<ASTBackupQuery>())
-        {
-            if (const auto * value = entry.settings->tryGet("s3_allow_server_credentials_in_user_queries"))
-                query_context->setSetting("s3_allow_server_credentials_in_user_queries", *value);
-        }
     }
 
     return query_context;
