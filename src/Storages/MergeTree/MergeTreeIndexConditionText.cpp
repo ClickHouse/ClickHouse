@@ -868,12 +868,12 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
 
 static bool hasStableJSONAllValuesSerialization(const DataTypePtr & type)
 {
-    /// `Time`, `Time64`, and implicit `DateTime` time zones use `session_timezone`,
+    /// `Time` and implicit `DateTime` time zones use `session_timezone`,
     /// which can differ between index creation and query execution.
     bool result = true;
     auto check = [&](const IDataType & current_type)
     {
-        if (WhichDataType(current_type).isTimeOrTime64())
+        if (WhichDataType(current_type).isTime())
             result = false;
         else if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&current_type))
             result &= date_time->hasExplicitTimeZone();
@@ -894,7 +894,7 @@ static bool hasContextIndependentJSONAllValuesSerialization(const DataTypePtr & 
         const WhichDataType which(current_type);
         if (current_type.getName() == "Bool"
             || which.isDateTimeOrDateTime64()
-            || which.isTimeOrTime64()
+            || which.isTime()
             || which.isDecimal()
             || which.isInterval())
             result = false;
