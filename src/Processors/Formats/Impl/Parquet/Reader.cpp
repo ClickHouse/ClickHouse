@@ -2230,6 +2230,10 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
         });
     int64_t num_rows = row_group.meta->num_rows;
 
+    /// A column chunk covers all rows of its row group, so the first page starts at row 0.
+    if (locations.front().first_row_index != 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid offset index: first page starts at row {}, expected 0", locations.front().first_row_index);
+
     int64_t prev_offset = meta.data_page_offset;
     int64_t prev_row_index = -1;
     for (const auto & loc : locations)
@@ -2601,7 +2605,7 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
         if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, *row_idx, column, column_info))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Page doesn't contain requested row");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Page doesn't contain requested row");
         found_page = true;
     }
 
@@ -3162,15 +3166,20 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
         if (page.is_dictionary_encoded)
         {
-            if (!page.indices_column)
-                page.indices_column = ColumnUInt32::create();
-            auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
-            auto & data = indices_column_uint32.getData();
-            chassert(data.empty());
             chassert(!filter);
-            page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
-            column.dictionary.index(indices_column_uint32, *subchunk.column);
-            data.clear();
+            /// Fused decode-and-gather; falls back to materializing the indexes as a column when
+            /// the decoder or the dictionary mode does not support the fusion.
+            if (!page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            {
+                if (!page.indices_column)
+                    page.indices_column = ColumnUInt32::create();
+                auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
+                auto & data = indices_column_uint32.getData();
+                chassert(data.empty());
+                page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
+                column.dictionary.index(indices_column_uint32, *subchunk.column);
+                data.clear();
+            }
         }
         else
         {
