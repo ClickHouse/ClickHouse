@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstring>
+
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
@@ -17,6 +19,7 @@
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 using namespace DB;
@@ -139,31 +142,50 @@ TEST(NativeStringSizeStream, WireLayout)
     }
 }
 
-TEST(NativeStringSizeStream, CorruptedOffsetStream)
+/// Writes a two-row `String` column at the offsets revision and replaces its offset pair with
+/// `first` and `second`, then reads the result back and returns the error code of the rejection.
+static int deserializeWithCorruptedOffsets(UInt64 first, UInt64 second)
 {
     Block block;
     addColumn(block, "s", "String", {Field("abcdefgh"), Field("ijklmnop")});
     auto data = writeToString(block, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
 
-    /// The column tail is [UInt64 offset, UInt64 offset, 16 bytes of data]. Rewrite the offsets to
-    /// [0xfffffffffffffff0, 0x20]: the first offset points far past the data and the pair is not
-    /// monotonic, so the reader must reject the stream instead of building an inconsistent column.
-    ASSERT_EQ(data.substr(data.size() - 16), "abcdefghijklmnop");
-    const char corrupted_offsets[] = "\xf0\xff\xff\xff\xff\xff\xff\xff"
-                                     "\x20\x00\x00\x00\x00\x00\x00\x00";
-    data.replace(data.size() - 32, 16, corrupted_offsets, 16);
+    /// The column tail is [UInt64 offset, UInt64 offset, 16 bytes of data].
+    EXPECT_EQ(data.substr(data.size() - 16), "abcdefghijklmnop");
+    char corrupted_offsets[16];
+    memcpy(corrupted_offsets, &first, sizeof(first));
+    memcpy(corrupted_offsets + sizeof(first), &second, sizeof(second));
+    data.replace(data.size() - 32, 16, corrupted_offsets, sizeof(corrupted_offsets));
 
     ReadBufferFromString in(data);
     NativeReader reader(in, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
     try
     {
         reader.read();
-        FAIL() << "expected INCORRECT_DATA for a corrupted offset stream";
     }
     catch (const Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+        return e.code();
     }
+    return 0;
+}
+
+TEST(NativeStringSizeStream, CorruptedOffsetStream)
+{
+    /// The offsets come from untrusted input, and the difference between two consecutive ones is
+    /// the size of a string, so it must be both non-negative and within `MAX_STRING_SIZE`.
+
+    /// A non-monotonic pair: the second string would have a negative size.
+    ASSERT_EQ(deserializeWithCorruptedOffsets(8, 4), ErrorCodes::INCORRECT_DATA);
+
+    /// An offset far past the data: the first string alone is above `MAX_STRING_SIZE`. This is
+    /// reported before the pair is found to be non-monotonic, because the sizes are validated in
+    /// order.
+    ASSERT_EQ(deserializeWithCorruptedOffsets(0xfffffffffffffff0ULL, 0x20), ErrorCodes::TOO_LARGE_STRING_SIZE);
+
+    /// A monotonic pair whose difference is still above `MAX_STRING_SIZE`.
+    ASSERT_EQ(
+        deserializeWithCorruptedOffsets(8, 8 + SerializationString::MAX_STRING_SIZE + 1), ErrorCodes::TOO_LARGE_STRING_SIZE);
 }
 
 TEST(NativeStringSizeStream, RoundTripFlattenedDynamic)
