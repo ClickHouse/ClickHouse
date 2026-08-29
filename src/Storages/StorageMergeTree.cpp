@@ -3239,13 +3239,21 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             auto data_parts_lock = lockParts();
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
+            /// The new parts are committed first and the destination partition is removed only afterwards,
+            /// through `removePartsInRangeFromWorkingSet`, so the parts being replaced are not covered by any
+            /// of the new parts and the per-part check of the 'max_table_size_*' limits cannot see them.
+            /// Check the limits for the operation as a whole instead.
+            throwIfTableSizeLimitsExceededForReplacement(
+                data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
+
             /** It is important that obtaining new block number and adding that block to parts set is done atomically.
               * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
               */
             for (auto part : dst_parts)
             {
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
-                renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
+                renameTempPartAndReplaceUnlocked(
+                    part, transaction, data_parts_lock, /*rename_in_transaction=*/ false, /*check_table_size_limits=*/ false);
             }
             /// Populate transaction
             transaction.commit(data_parts_lock);
