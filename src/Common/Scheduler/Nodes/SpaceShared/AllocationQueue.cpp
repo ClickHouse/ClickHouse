@@ -320,22 +320,27 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     // exempt so a never-admitted query can still select itself and fail its own increase cleanly (the
     // self-kill path handled by `AllocationLimit`).
     //
-    // Rank the remaining candidates by (holds memory, memory_eviction_score, fair_key, unique_id),
-    // highest first. Preferring an allocation that actually holds memory (`allocated > 0`) keeps an
-    // admitted allocation that shrank back to zero from being evicted while a real holder exists (killing
-    // it would free nothing), yet still lets such an allocation be the victim when it is the only
-    // candidate — so a lower-precedence workload holding only a shrunk allocation cannot block a
-    // higher-precedence one. Then `memory_eviction_score` (the per-query setting, 0 by default) decides,
-    // falling back to the largest `fair_key`; at the default score everywhere this is the largest holder,
-    // matching the previous behaviour.
+    // Rank the remaining candidates by (frees memory, memory_eviction_score, fair_key, unique_id), highest
+    // first. `frees memory` deprioritizes a third party that holds nothing (an admitted allocation shrunk
+    // back to zero): a real holder is evicted first, yet such an allocation stays evictable when it is the
+    // only candidate, so a lower-precedence workload holding only a shrunk allocation cannot block a
+    // higher-precedence one. The requester is always treated as freeing memory — abandoning its own request
+    // relieves the pressure even when it currently holds nothing — so it never sinks below a third-party
+    // holder on the `allocated` component alone. `memory_eviction_score` (the per-query setting, 0 by
+    // default) then decides, falling back to the largest `fair_key`; at the default score everywhere the
+    // victim is the largest reservation, matching the previous behaviour, including a zero-byte requester
+    // self-killing its own oversized grow.
+    auto rankKey = [&killer](const ResourceAllocation & a)
+    {
+        const bool frees_memory = a.allocated > 0 || &a == &killer.allocation;
+        return std::make_tuple(frees_memory, a.memory_eviction_score, a.fair_key, a.unique_id);
+    };
     ResourceAllocation * victim_ptr = nullptr;
     for (ResourceAllocation & candidate : running_allocations)
     {
         if (!candidate.admitted && &candidate != &killer.allocation)
             continue;
-        if (!victim_ptr
-            || std::make_tuple(candidate.allocated > 0, candidate.memory_eviction_score, candidate.fair_key, candidate.unique_id)
-             > std::make_tuple(victim_ptr->allocated > 0, victim_ptr->memory_eviction_score, victim_ptr->fair_key, victim_ptr->unique_id))
+        if (!victim_ptr || rankKey(candidate) > rankKey(*victim_ptr))
             victim_ptr = &candidate;
     }
     if (!victim_ptr)

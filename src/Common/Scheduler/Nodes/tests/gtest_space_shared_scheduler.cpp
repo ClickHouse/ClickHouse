@@ -809,3 +809,52 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreImpossibleGrowSelfKills)
     ASSERT_EQ(killer.killCount(), 1u) << "A requester whose grow exceeds the limit must self-kill";
     EXPECT_EQ(peer.killCount(), 0u) << "A peer must not be evicted for a grow that can never fit";
 }
+
+
+/// A zero-byte requester (`reserve_memory = 0`, not yet admitted) with the higher score must self-kill in
+/// preference to a lower-scored peer that holds memory. The requester holds nothing, but abandoning its own
+/// request relieves the pressure, so `allocated > 0` must not outrank it — otherwise the score contract
+/// ("higher score is evicted first") would be broken for a first grow.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreZeroByteRequesterSelfKillsOverLowerScoredHolder)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation peer(queue, "peer", 5000, /* memory_eviction_score = */ 0);    // holds memory, low score
+    ManualAllocation killer(queue, "killer", 0, /* memory_eviction_score = */ 100); // reserve_memory = 0, high score
+
+    killer.increaseAsync(6000); // 5000 + 6000 = 11000 > 10000; 6000 alone fits, so a peer eviction could satisfy it
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (killer.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(killer.killCount(), 1u) << "The higher-scored zero-byte requester must self-kill";
+    EXPECT_EQ(peer.killCount(), 0u) << "A lower-scored holder must not be evicted ahead of a higher-scored requester";
+}
+
+
+/// With the setting left at the default (0) everywhere, victim selection must still match the legacy
+/// largest-reservation policy even when the largest reservation is a zero-byte requester's own pending grow:
+/// the requester self-kills rather than evicting a smaller peer that holds memory.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreDefaultZeroByteRequesterSelfKillsLikeLegacy)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation peer(queue, "peer", 5000, /* memory_eviction_score = */ 0);
+    ManualAllocation killer(queue, "killer", 0, /* memory_eviction_score = */ 0); // reserve_memory = 0, default score
+
+    killer.increaseAsync(6000); // the requester's pending grow (6000) is the largest reservation in the queue
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (killer.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(killer.killCount(), 1u) << "At the default score the largest reservation (the requester's grow) must self-kill";
+    EXPECT_EQ(peer.killCount(), 0u) << "The smaller peer holding memory must survive, matching the legacy policy";
+}
