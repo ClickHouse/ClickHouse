@@ -1195,10 +1195,13 @@ def fetch_prev_master_result(link):
 
     Returns `(FETCH_OK, body)` for an existing object, `(FETCH_MISSING, None)`
     when the object does not exist, and `(FETCH_ERROR, None)` for a transport
-    failure. The distinction matters: a missing object just means this commit
-    is a merged side-branch commit that never ran the job, while a timeout or
-    a TLS error says nothing about the commit, and silently treating it as a
-    miss would compare the current run against an older baseline."""
+    failure. The distinction matters: a missing object usually means the commit
+    never ran this job (see `classify_missing_prev_master_run`), while a timeout
+    or a TLS error says nothing about the commit, and silently treating it as a
+    miss would compare the current run against an older baseline.
+
+    Note that the bucket denies `s3:ListBucket`, so S3 answers `403` instead of
+    `404` for a key that does not exist - both codes mean "missing" here."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         body_file = Path(tmp_dir) / "result.json"
         http_code = Shell.get_output(
@@ -1218,32 +1221,108 @@ def fetch_prev_master_result(link):
         return FETCH_OK, body_file.read_text(encoding="utf-8")
 
 
+# Why one commit's missing `result_*.json` is skipped and another one's stops
+# the walk. `MASTER_RUN_NEVER_SCHEDULED` means this job provably never started
+# at that commit, so the commit carries no measurement to miss and the walk may
+# continue to an older one. `MASTER_RUN_INCOMPLETE` means it did start (or was
+# scheduled) and simply has no result to read: continuing past it would compute
+# the delta across that commit's changes too, which is exactly the stale-baseline
+# attribution the delta gate exists to avoid.
+MASTER_RUN_NEVER_SCHEDULED = "never_scheduled"
+MASTER_RUN_INCOMPLETE = "incomplete"
+
+# The workflow-level praktika report of a master run, which lists every job of
+# that run with its status. `check_ci.py` reads the same object.
+MASTER_WORKFLOW_RESULT_FILE = "result_masterci.json"
+
+
+def classify_missing_prev_master_run(job_name, sha):
+    """Tell whether this job was ever scheduled at master commit `sha`, given
+    that its `result_*.json` is missing there.
+
+    A missing result is the common case rather than an anomaly, and it is not a
+    symptom of a broken run:
+
+      * `MasterCI` is a push-triggered workflow, and master commits land
+        seconds apart, so a single push event covers a batch of commits and the
+        workflow runs on the head of the batch only. The other commits of the
+        batch have no `MasterCI` run at all, hence no report object either.
+      * `MasterCI` sets `enable_job_filtering_by_changes`, so even when it does
+        run, a commit that touches nothing the perf job depends on gets it
+        `SKIPPED` ("Not affected by the changed files and not required").
+
+    Both are `MASTER_RUN_NEVER_SCHEDULED`: no measurement was taken and none
+    ever will be, so the walk has to look further back or the delta gate would
+    be unusable on the majority of master runs.
+
+    Everything else is `MASTER_RUN_INCOMPLETE`: the job is `PENDING`/`RUNNING`
+    and its result is still to come, it was `DROPPED`, it reached a terminal
+    status without publishing a result, or the report itself cannot be fetched
+    or parsed. Those all stop the walk, and the caller falls back to the
+    absolute gate for this one run - the next master run finds this run's own
+    result and gets its delta back."""
+    link = (
+        "https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/"
+        f"{sha}/{MASTER_WORKFLOW_RESULT_FILE}"
+    )
+    state, out = fetch_prev_master_result(link)
+    if state == FETCH_MISSING:
+        print(f"INFO: master commit {sha} has no {MASTER_WORKFLOW_RESULT_FILE}")
+        return MASTER_RUN_NEVER_SCHEDULED
+    if state == FETCH_ERROR:
+        print(f"WARNING: failed to fetch the master workflow report [{link}]")
+        return MASTER_RUN_INCOMPLETE
+    try:
+        jobs = json.loads(out).get("results") or []
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow report [{link}]")
+        return MASTER_RUN_INCOMPLETE
+    for job in jobs:
+        if not isinstance(job, dict) or job.get("name") != job_name:
+            continue
+        status = job.get("status")
+        if status == Result.Status.SKIPPED:
+            print(f"INFO: [{job_name}] was skipped at master commit {sha}")
+            return MASTER_RUN_NEVER_SCHEDULED
+        print(
+            f"WARNING: [{job_name}] at master commit {sha} is {status} but "
+            "published no result"
+        )
+        return MASTER_RUN_INCOMPLETE
+    # The job is absent from the report: this master run did not schedule it.
+    print(f"INFO: [{job_name}] is not part of the master run of {sha}")
+    return MASTER_RUN_NEVER_SCHEDULED
+
+
 def find_prev_master_slower_count(job_name, commits, release_base_sha):
     """Find the "slower" query count reported by the most recent valid run of
     this job on a predecessor master commit. Returns (count, sha), or
     (None, None) when no usable previous run is found and the caller has to
-    fall back to the absolute gate. Runs that produced no report are skipped:
-    they say nothing about the commit.
+    fall back to the absolute gate.
 
     The walk stops - rather than skipping to an older commit - as soon as a
     predecessor is found whose result cannot be used as a baseline: a
     transport failure, a malformed body, a non-summary message (errors,
-    sentinels like "No status in report."), or a run measured against a
-    different release baseline. Skipping such a commit would silently compare
+    sentinels like "No status in report."), a run measured against a different
+    release baseline, or a run that was scheduled but has no result yet
+    (`MASTER_RUN_INCOMPLETE`). Skipping such a commit would silently compare
     the current run against an older one, so red would no longer blame the
     commit that introduced the regression.
 
     `commits` on master runs is `master_track_commits_sha`, the first-parent
-    chain of master recorded by the `store_data` hook, so every entry is a
-    commit that had (or should have had) its own master run. The walk has no
-    cutoff anyway: a commit whose run produced no report says nothing and is
-    skipped, and truncating the list could exhaust it before reaching the
-    previous actual master run."""
+    chain of master recorded by the `store_data` hook. A missing result on that
+    chain is not by itself a sign of a broken predecessor - most master commits
+    never run this job at all - so each missing result is classified by
+    `classify_missing_prev_master_run` and only a provably never-scheduled one
+    is skipped. The walk has no cutoff: truncating the list could exhaust it
+    before reaching the previous run that did measure this job."""
     result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
     for sha in commits:
         link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
         state, out = fetch_prev_master_result(link)
         if state == FETCH_MISSING:
+            if classify_missing_prev_master_run(job_name, sha) == MASTER_RUN_INCOMPLETE:
+                return None, None
             continue
         if state == FETCH_ERROR:
             return None, None

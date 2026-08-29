@@ -10,10 +10,15 @@ tests pin:
   * only a genuine `report.py` summary can serve as a baseline - sentinels
     ("No status in report.") and runs with errors must not silently become
     the left side of the delta;
-  * a missing artifact means "this merged side-branch commit never ran the
-    job" and is skipped, while a transport failure says nothing about the
-    commit and must stop the walk (otherwise the delta is computed against an
-    older run and red stops blaming the introducing commit);
+  * a transport failure says nothing about the commit and must stop the walk
+    (otherwise the delta is computed against an older run and red stops
+    blaming the introducing commit);
+  * a missing artifact is skipped only when the job provably never started at
+    that commit - no `MasterCI` run for it (a push event covers a batch of
+    commits and the workflow runs on the head only), or the job `SKIPPED` by
+    change filtering. A predecessor whose job was scheduled but has no result
+    yet (`PENDING`/`RUNNING`, `DROPPED`, or a lost artifact) stops the walk
+    too;
   * a predecessor measured against a different release baseline (a release
     cut moved it) is not comparable either.
 
@@ -32,6 +37,8 @@ from ci.jobs.performance_tests import (
     FETCH_ERROR,
     FETCH_MISSING,
     FETCH_OK,
+    MASTER_RUN_INCOMPLETE,
+    MASTER_RUN_NEVER_SCHEDULED,
     format_release_base_marker,
     is_perf_summary_message,
     parse_release_base,
@@ -40,6 +47,25 @@ from ci.jobs.performance_tests import (
 
 BASE = "aabbccddeeff00112233445566778899"
 OTHER_BASE = "99887766554433221100ffeeddccbbaa"
+
+# The name the fake `Utils.normalize_string` maps the job name to, i.e. the
+# `result_*.json` the walk asks for. Anything else is the workflow report.
+JOB_RESULT_FILE = "result_job.json"
+
+# The predecessor's own `MasterCI` report says the job was filtered out there,
+# so that commit holds no measurement and the walk may look further back.
+SKIPPED_JOB = json.dumps(
+    {
+        "results": [
+            {"name": "Job", "status": "SKIPPED"},
+            {"name": "Other", "status": "OK"},
+        ]
+    }
+)
+
+# The predecessor's job is still running: its result is yet to be published, so
+# the walk must not step over the commit.
+RUNNING_JOB = json.dumps({"results": [{"name": "Job", "status": "RUNNING"}]})
 
 
 def _result(message):
@@ -52,15 +78,27 @@ def _summary(slower, base=BASE):
     )
 
 
-def _find(monkeypatch, commits, responses, release_base_sha=BASE):
-    """Run the predecessor lookup with a canned response per sha."""
+def _find(
+    monkeypatch, commits, responses, workflow_reports=None, release_base_sha=BASE
+):
+    """Run the predecessor lookup against canned S3 objects.
+
+    `responses` holds the per-sha `result_<job>.json`, `workflow_reports` the
+    per-sha `result_masterci.json` consulted when the former is missing; a sha
+    absent from `workflow_reports` models a commit with no `MasterCI` run."""
+    workflow_reports = workflow_reports or {}
     monkeypatch.setattr(
         m.Utils, "normalize_string", staticmethod(lambda s: "job"), raising=False
     )
 
     def fake_fetch(link):
-        sha = link.split("/")[-2]
-        return responses[sha]
+        sha, file_name = link.split("/")[-2:]
+        if file_name == JOB_RESULT_FILE:
+            return responses[sha]
+        assert file_name == m.MASTER_WORKFLOW_RESULT_FILE, file_name
+        if sha not in workflow_reports:
+            return FETCH_MISSING, None
+        return FETCH_OK, workflow_reports[sha]
 
     monkeypatch.setattr(m, "fetch_prev_master_result", fake_fetch)
     return m.find_prev_master_slower_count("Job", commits, release_base_sha)
@@ -96,15 +134,103 @@ def test_release_base_marker_roundtrip():
     assert parse_release_base("18 slower") is None
 
 
-def test_previous_run_is_found_across_side_branch_commits(monkeypatch):
-    commits = ["side1", "side2", "master1", "master2"]
+def test_previous_run_is_found_across_commits_that_never_ran_the_job(monkeypatch):
+    # `never_ran` had no `MasterCI` run at all (it was not the head of its push
+    # batch), `filtered` had one that skipped the job by change filtering.
+    commits = ["never_ran", "filtered", "master1", "master2"]
     responses = {
-        "side1": (FETCH_MISSING, None),
-        "side2": (FETCH_MISSING, None),
+        "never_ran": (FETCH_MISSING, None),
+        "filtered": (FETCH_MISSING, None),
         "master1": (FETCH_OK, _result(_summary(7))),
         "master2": (FETCH_OK, _result(_summary(99))),
     }
-    assert _find(monkeypatch, commits, responses) == (7, "master1")
+    workflow_reports = {"filtered": SKIPPED_JOB}
+    assert _find(monkeypatch, commits, responses, workflow_reports) == (7, "master1")
+
+
+def test_a_missing_immediate_predecessor_that_is_still_running_stops_the_walk(
+    monkeypatch,
+):
+    # The regression this pins: on a first-parent chain, a missing result can
+    # mean "the predecessor's run has not published it yet". Stepping over such
+    # a commit would compute the delta against `older_master`, so red would
+    # blame the current commit for a regression `prev_master` introduced.
+    commits = ["prev_master", "older_master"]
+    responses = {
+        "prev_master": (FETCH_MISSING, None),
+        "older_master": (FETCH_OK, _result(_summary(7))),
+    }
+    workflow_reports = {"prev_master": RUNNING_JOB}
+    assert _find(monkeypatch, commits, responses, workflow_reports) == (None, None)
+
+
+def test_a_missing_result_of_a_finished_predecessor_stops_the_walk(monkeypatch):
+    # The job reached a terminal status without publishing a result (it failed
+    # before the upload, or lost the artifact) - not comparable either.
+    commits = ["prev_master", "older_master"]
+    responses = {
+        "prev_master": (FETCH_MISSING, None),
+        "older_master": (FETCH_OK, _result(_summary(7))),
+    }
+    for status in ("OK", "FAIL", "ERROR", "DROPPED", "PENDING", None):
+        report = json.dumps({"results": [{"name": "Job", "status": status}]})
+        assert _find(monkeypatch, commits, responses, {"prev_master": report}) == (
+            None,
+            None,
+        ), status
+
+
+def test_an_unreadable_predecessor_workflow_report_stops_the_walk(monkeypatch):
+    commits = ["prev_master", "older_master"]
+    responses = {
+        "prev_master": (FETCH_MISSING, None),
+        "older_master": (FETCH_OK, _result(_summary(7))),
+    }
+    assert _find(monkeypatch, commits, responses, {"prev_master": "{not json"}) == (
+        None,
+        None,
+    )
+
+
+def test_missing_run_classification(monkeypatch):
+    def respond(state, body=None):
+        monkeypatch.setattr(
+            m, "fetch_prev_master_result", lambda link: (state, body), raising=True
+        )
+
+    # No `MasterCI` report for the commit: it never ran the workflow.
+    respond(FETCH_MISSING)
+    assert m.classify_missing_prev_master_run("Job", "sha") == (
+        MASTER_RUN_NEVER_SCHEDULED
+    )
+
+    # The report cannot be fetched - fail closed.
+    respond(FETCH_ERROR)
+    assert m.classify_missing_prev_master_run("Job", "sha") == MASTER_RUN_INCOMPLETE
+
+    respond(FETCH_OK, SKIPPED_JOB)
+    assert m.classify_missing_prev_master_run("Job", "sha") == (
+        MASTER_RUN_NEVER_SCHEDULED
+    )
+
+    respond(FETCH_OK, RUNNING_JOB)
+    assert m.classify_missing_prev_master_run("Job", "sha") == MASTER_RUN_INCOMPLETE
+
+    # The job is not part of that master run: it was not scheduled there.
+    respond(FETCH_OK, json.dumps({"results": [{"name": "Other", "status": "OK"}]}))
+    assert m.classify_missing_prev_master_run("Job", "sha") == (
+        MASTER_RUN_NEVER_SCHEDULED
+    )
+
+    # A report without a job list at all, and a malformed job entry.
+    respond(FETCH_OK, json.dumps({}))
+    assert m.classify_missing_prev_master_run("Job", "sha") == (
+        MASTER_RUN_NEVER_SCHEDULED
+    )
+    respond(FETCH_OK, json.dumps({"results": ["Job"]}))
+    assert m.classify_missing_prev_master_run("Job", "sha") == (
+        MASTER_RUN_NEVER_SCHEDULED
+    )
 
 
 def test_transport_failure_stops_the_walk(monkeypatch):
