@@ -5,6 +5,8 @@ A patch applied on read	1	u
 A patch applied on read	2	b
 B patch applied on merge	1	u
 B patch applied on merge	2	b
+B patch on read too	1	u
+B patch on read too	2	b
 C duplicate sorting key	1	b
 C duplicate sorting key	1	u
 D v1 patch format	1	u

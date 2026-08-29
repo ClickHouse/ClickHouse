@@ -41,12 +41,13 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
 INSERT INTO t_bi_b VALUES (1, 'a');
 INSERT INTO t_bi_b VALUES (2, 'b');
 ALTER TABLE t_bi_b MODIFY SETTING enable_block_number_column = 0;
-OPTIMIZE TABLE t_bi_b FINAL;
+OPTIMIZE TABLE t_bi_b FINAL SETTINGS optimize_throw_if_noop = 1;
 ALTER TABLE t_bi_b MODIFY SETTING enable_block_number_column = 1;
 
 UPDATE t_bi_b SET v = 'u' WHERE id = 1;
-OPTIMIZE TABLE t_bi_b FINAL;
-SELECT 'B patch applied on merge', id, v FROM t_bi_b ORDER BY id;
+OPTIMIZE TABLE t_bi_b FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'B patch applied on merge', id, v FROM t_bi_b ORDER BY id SETTINGS apply_patch_parts = 0;
+SELECT 'B patch on read too', id, v FROM t_bi_b ORDER BY id SETTINGS apply_patch_parts = 1;
 
 -- C: a non-empty sorting key that does not separate the two rows, so the sorting-key prefix of the
 -- v2 patch identity cannot substitute for `_block_number`.
@@ -58,7 +59,7 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
 INSERT INTO t_bi_c VALUES (1, 'a');
 INSERT INTO t_bi_c VALUES (1, 'b');
 ALTER TABLE t_bi_c MODIFY SETTING enable_block_number_column = 0;
-OPTIMIZE TABLE t_bi_c FINAL;
+OPTIMIZE TABLE t_bi_c FINAL SETTINGS optimize_throw_if_noop = 1;
 ALTER TABLE t_bi_c MODIFY SETTING enable_block_number_column = 1;
 
 UPDATE t_bi_c SET v = 'u' WHERE v = 'a';
@@ -75,11 +76,11 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
 INSERT INTO t_bi_d VALUES (1, 'a');
 INSERT INTO t_bi_d VALUES (2, 'b');
 ALTER TABLE t_bi_d MODIFY SETTING enable_block_number_column = 0;
-OPTIMIZE TABLE t_bi_d FINAL;
+OPTIMIZE TABLE t_bi_d FINAL SETTINGS optimize_throw_if_noop = 1;
 ALTER TABLE t_bi_d MODIFY SETTING enable_block_number_column = 1;
 
 UPDATE t_bi_d SET v = 'u' WHERE id = 1;
-OPTIMIZE TABLE t_bi_d FINAL;
+OPTIMIZE TABLE t_bi_d FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'D v1 patch format', id, v FROM t_bi_d ORDER BY id;
 
 -- E, F: the same two fixtures without the toggle. Both columns are materialized throughout, so the
@@ -117,7 +118,7 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
 INSERT INTO t_bi_g VALUES (1, 'a');
 INSERT INTO t_bi_g VALUES (2, 'b');
 ALTER TABLE t_bi_g MODIFY SETTING enable_block_number_column = 0;
-OPTIMIZE TABLE t_bi_g FINAL;
+OPTIMIZE TABLE t_bi_g FINAL SETTINGS optimize_throw_if_noop = 1;
 ALTER TABLE t_bi_g MODIFY SETTING enable_block_number_column = 1;
 
 UPDATE t_bi_g SET v = 'u' WHERE id = 1;
