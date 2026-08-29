@@ -1,0 +1,23 @@
+-- SELECT on the alias only: EXPLAIN must be denied exactly as the real SELECT
+  SELECT column: ACCESS_DENIED
+  EXPLAIN QUERY TREE column: ACCESS_DENIED
+  EXPLAIN SYNTAX column: ACCESS_DENIED
+  SELECT count(): ACCESS_DENIED
+  EXPLAIN QUERY TREE count(): ACCESS_DENIED
+  EXPLAIN SYNTAX count(): ACCESS_DENIED
+-- Column grant on the target: the granted column and the trivial count become allowed
+  SELECT column: OK
+  EXPLAIN QUERY TREE column: OK
+  EXPLAIN SYNTAX column: OK
+  SELECT count(): OK
+  EXPLAIN QUERY TREE count(): OK
+  EXPLAIN SYNTAX count(): OK
+  SELECT ungranted column: ACCESS_DENIED
+  EXPLAIN QUERY TREE ungranted column: ACCESS_DENIED
+-- Full grant on the target: everything is allowed
+  SELECT column: OK
+  EXPLAIN QUERY TREE column: OK
+  EXPLAIN SYNTAX column: OK
+  SELECT count(): OK
+  EXPLAIN QUERY TREE count(): OK
+  EXPLAIN SYNTAX count(): OK

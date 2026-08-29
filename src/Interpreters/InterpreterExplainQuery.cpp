@@ -80,6 +80,7 @@
 #include <Planner/Utils.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -1203,6 +1204,7 @@ bool checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         /// Columns selected from this specific table instance, so a base table referenced both directly
         /// and through an inlined view is checked with the right column set in each scope.
         auto column_names = collectSelectedColumnsForTableExpression(query_tree, *node, storage_id, scope_context);
+        const auto * alias = storage->as<StorageAlias>();
         if (!column_names.empty())
         {
             /// In case of cross-replication we don't know what database is used for the table on the
@@ -1210,6 +1212,12 @@ bool checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
             /// (`PlannerJoinTree::checkAccessRights` only guards this branch with `hasDatabase`).
             if (storage_id.hasDatabase())
                 scope_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+            /// An `Alias` table also requires `SELECT` on the same columns of its target table. Real
+            /// execution enforces that in `StorageAlias::read` when the plan is built, which `EXPLAIN
+            /// QUERY TREE` never reaches, so reproduce it here through the same helper `read` uses.
+            if (alias)
+                alias->getTargetTable(StorageAlias::TargetAccess{scope_context, AccessType::SELECT, column_names});
         }
         else
         {
@@ -1217,11 +1225,14 @@ bool checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
             /// This fallback runs even for empty-database table nodes: the planner enforces it unconditionally, and
             /// `ContextAccess` resolves an empty database name to the current database, so skipping it here (as the
             /// early `hasDatabase` guard used to) would let `count()`-style queries bypass the check.
+            /// An `Alias` column counts as accessible only when the same column of its target table is also
+            /// granted, exactly as the planner's `checkAccessRights` does.
             auto access = scope_context->getAccess();
             bool has_accessible_column = false;
             for (const auto & column : storage_snapshot->metadata->getColumns())
             {
-                if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+                if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                    && (!alias || alias->isTargetTableGranted(scope_context, AccessType::SELECT, column.name)))
                 {
                     has_accessible_column = true;
                     break;
