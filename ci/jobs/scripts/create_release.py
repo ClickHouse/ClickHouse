@@ -164,8 +164,9 @@ class ReleaseProgress:
 
 
 class ReleaseContextManager:
-    def __init__(self, release_progress):
+    def __init__(self, release_progress, commit_sha=None):
         self.release_progress = release_progress
+        self.commit_sha = commit_sha
         self.release_info = None
 
     def __enter__(self):
@@ -173,7 +174,7 @@ class ReleaseContextManager:
             self.release_info = ReleaseInfo(
                 release_branch="NA",
                 release_type="NA",
-                commit_sha=args.ref,
+                commit_sha=self.commit_sha,
                 release_tag="NA",
                 version="NA",
                 codename="NA",
@@ -237,7 +238,12 @@ class ReleaseInfo:
         return self
 
     def prepare(
-        self, commit_ref: str, release_type: str, dry_run: bool = False
+        self,
+        commit_ref: str,
+        release_type: str,
+        dry_run: bool = False,
+        skip_repo: bool = False,
+        skip_docker: bool = False,
     ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
@@ -353,9 +359,18 @@ class ReleaseInfo:
                     f"superseded release, or there is a bug in the release/versioning logic"
                 )
         self.release_type = release_type
+        # skip-repo/skip-docker only re-publish an existing release; against a ref that resolves to a new (untagged) release they must not proceed.
+        assert not (not self.is_tag_pushed and (skip_repo or skip_docker)), (
+            "skip-repo/skip-docker re-publish an existing release and must be run "
+            "against its release tag (recovery); the given ref resolves to a new "
+            "release. Pass the release tag as the ref."
+        )
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
+        # A recovery finds the tag already published — nothing to do.
+        if self.is_tag_pushed:
+            return
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
@@ -383,6 +398,9 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
+        # A recovery/rerun of an already-tagged release re-runs nothing here.
+        if self.is_tag_pushed:
+            return
         version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
@@ -421,6 +439,13 @@ class ReleaseInfo:
         )
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
+        # A superseded (late) recovery must not rewrite the branch version backwards.
+        if self.release_type == "patch" and self.is_bump_landed:
+            print(
+                f"Branch {self.release_branch} already advanced past this release "
+                f"(late recovery) — skipping version bump"
+            )
+            return
         with checkout(self.commit_sha):
             version = CHVersion.get_current_version()
             if self.release_type == "patch":
@@ -907,7 +932,9 @@ if __name__ == "__main__":
         _ssh_agent.print_keys()
 
     if args.prepare_release_info:
-        with ReleaseContextManager(release_progress=ReleaseProgress.STARTED) as release_info:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
             assert (
                 args.ref and args.release_type
             ), "--ref and --release-type must be provided with --prepare-release-info"
