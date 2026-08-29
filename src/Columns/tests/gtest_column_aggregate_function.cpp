@@ -68,3 +68,39 @@ TEST(ColumnAggregateFunction, EnsureOwnershipExceptionLeavesCorruptedState)
     /// Previously leads to a crash
     view_column->insertDefault();
 }
+
+/// `insert` accepts a field whose state type is spelled differently but describes the same state,
+/// which is what lets a `LowCardinality` argument survive the round trip through `getDefault`.
+/// It must not accept a state of a different serialization version: version 0 is not printed in a
+/// type name, so a legacy state is spelled exactly like an unversioned one, and resolving that
+/// absent version to the function's default would let a version 0 payload be read as version 1.
+TEST(ColumnAggregateFunction, InsertRejectsStateOfAnotherVersion)
+{
+    tryRegisterAggregateFunctions();
+
+    using namespace DB;
+
+    /// `groupBitmap` is versioned: its default version is 1.
+    AggregateFunctionFactory & factory = AggregateFunctionFactory::instance();
+    DataTypes argument_types = {std::make_shared<DataTypeUInt32>()};
+    Array params;
+    AggregateFunctionProperties properties;
+    auto aggregate_function = factory.get("groupBitmap", NullsAction::EMPTY, argument_types, params, properties);
+
+    auto column_v1 = ColumnAggregateFunction::create(aggregate_function, 1);
+    auto column_v0 = ColumnAggregateFunction::create(aggregate_function, 0);
+
+    /// A version 1 column prints its version, a version 0 column does not.
+    AggregateFunctionStateData state_v1;
+    state_v1.name = "AggregateFunction(1, groupBitmap, UInt32)";
+
+    AggregateFunctionStateData state_v0;
+    state_v0.name = "AggregateFunction(groupBitmap, UInt32)";
+
+    /// The version is checked before the payload is touched, so the states may stay empty.
+    EXPECT_THROW(column_v1->insert(Field(state_v0)), Exception);
+    EXPECT_THROW(column_v0->insert(Field(state_v1)), Exception);
+
+    EXPECT_FALSE(column_v1->tryInsert(Field(state_v0)));
+    EXPECT_FALSE(column_v0->tryInsert(Field(state_v1)));
+}
