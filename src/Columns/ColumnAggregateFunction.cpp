@@ -659,8 +659,13 @@ bool ColumnAggregateFunction::hasCompatibleStateType(const String & field_type_n
         = std::make_shared<DataTypeAggregateFunction>(func, func->getArgumentTypes(), func->getParameters(), version);
 
     /// `equals` compares normalized state types and deliberately ignores the serialization version,
-    /// while the states of different versions are not interchangeable. Compare it separately.
-    if (field_state_type->getVersion() != this_state_type->getVersion())
+    /// while states of different versions are not interchangeable, so compare it separately.
+    /// Both printers omit the version when it is 0, and neither ever omits a non-zero one, so a name
+    /// without a version means version 0. Resolving it to the function's *default* instead would let a
+    /// legacy version 0 state be accepted into a column of the current version and read with the wrong
+    /// layout.
+    const size_t field_version = field_state_type->getVersionIfExplicit().value_or(0);
+    if (field_version != version.value_or(0))
         return false;
 
     return field_state_type->equals(*this_state_type);
