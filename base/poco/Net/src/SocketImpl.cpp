@@ -964,6 +964,10 @@ int SocketImpl::socketError()
 void SocketImpl::throwSocketError(const std::string& arg)
 {
 	int err = socketError();
+	/// Same translation as connect()'s deferred branch: `error` is the one case in its switch that
+	/// drops `arg` for POCO_ETIMEDOUT, which would lose the endpoint exactly on a timeout.
+	if (err == POCO_ETIMEDOUT)
+		throw Poco::TimeoutException("connect timed out", arg, err);
 	if (err != 0) error(err, arg);
 }
 
