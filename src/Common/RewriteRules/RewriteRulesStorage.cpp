@@ -612,7 +612,7 @@ std::unique_ptr<RewriteRulesStorage> RewriteRulesStorage::create(const ContextPt
             std::filesystem::path(context_->getPath()) / "query_rules");
 
         LOG_TRACE(getLogger("RewriteRulesStorage"),
-                  "Using local storage for named collections at path: {}", path);
+                  "Using local storage for rewrite rules at path: {}", path);
 
         auto local_storage = std::make_unique<RewriteRulesStorage::LocalStorage>(context_, path);
 
@@ -623,7 +623,7 @@ std::unique_ptr<RewriteRulesStorage> RewriteRulesStorage::create(const ContextPt
         const auto path = config.getString(rewrite_rules_storage_config_path + ".path");
 
         LOG_TRACE(getLogger("RewriteRulesStorage"),
-                  "Using zookeeper storage for named collections at path: {}", path);
+                  "Using ZooKeeper storage for rewrite rules at path: {}", path);
 
         auto zk_storage = std::make_unique<RewriteRulesStorage::ZooKeeperStorage>(context_, path);
 
