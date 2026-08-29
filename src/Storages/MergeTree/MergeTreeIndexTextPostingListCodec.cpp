@@ -32,10 +32,11 @@ SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type blo
     : block_codec(createPostingListBlockCodec(block_codec_type_))
 {
     compressed_data.reserve(BLOCK_SIZE);
-    current_segment.reserve(BLOCK_SIZE);
+    block_values.reserve(BLOCK_SIZE);
 }
 
-/// Previous appends must not have left a partial block in the open segment
+/// Previous appends must not have left a partial block in the open segment.
+/// (see the contract in `IPostingListEncoder::append_granularity`).
 void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids, size_t segment_size)
 {
     chassert(!row_ids.empty());
@@ -43,45 +44,33 @@ void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids, size_t s
 
     total_row_ids += row_ids.size();
 
-    while (!row_ids.empty())
+    /// Split the input into segments of `segment_size` row ids, and each segment into blocks of BLOCK_SIZE.
+    for (size_t pos = 0; pos < row_ids.size();)
     {
         if (row_ids_in_current_segment == 0)
         {
-            segment_descriptors.emplace_back();
-            segment_descriptors.back().row_id_begin = row_ids.front();
-            segment_descriptors.back().compressed_data_offset = compressed_data.size();
+            auto & descriptor = segment_descriptors.emplace_back();
+            descriptor.row_id_begin = row_ids[pos];
+            descriptor.compressed_data_offset = compressed_data.size();
             segment_block_metas.emplace_back();
-
-            /// The first row id of a segment is encoded as a zero delta; the base value
-            /// is written into the segment header (`first_row_id`) on serialization.
-            prev_row_id = row_ids.front();
+            prev_row_id = row_ids[pos];
         }
 
-        auto chunk = row_ids.first(std::min(segment_size - row_ids_in_current_segment, row_ids.size()));
-        row_ids = row_ids.subspan(chunk.size());
-        row_ids_in_current_segment += chunk.size();
+        const size_t rows_in_chunk = std::min(segment_size - row_ids_in_current_segment, row_ids.size() - pos);
 
-        for (size_t offset = 0; offset < chunk.size(); offset += BLOCK_SIZE)
+        for (size_t offset = 0; offset < rows_in_chunk; offset += BLOCK_SIZE)
         {
-            auto block = chunk.subspan(offset, std::min(BLOCK_SIZE, chunk.size() - offset));
-
-            /// Compute deltas into the scratch buffer. The first element written by
-            /// adjacent_difference is the value itself, so adjust it to the delta from
-            /// the last row id of the previous block (zero for the first block of a segment).
-            current_segment.resize(block.size());
-            std::adjacent_difference(block.begin(), block.end(), current_segment.begin());
-            current_segment[0] = block.front() - prev_row_id;
-            prev_row_id = block.back();
-
-            encodeBlock(current_segment);
+            const size_t block_size = std::min(BLOCK_SIZE, rows_in_chunk - offset);
+            encodeBlock(row_ids.subspan(pos + offset, block_size));
         }
 
-        /// Seal the full segment: the next chunk (or call) starts a new one.
+        pos += rows_in_chunk;
+        row_ids_in_current_segment += rows_in_chunk;
+
+        /// Seal the full segment: the next chunk (or the next call) starts a new one.
         if (row_ids_in_current_segment == segment_size)
             row_ids_in_current_segment = 0;
     }
-
-    current_segment.clear();
 }
 
 SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentData(ReadBuffer & in, PaddedPODArray<char> & buffer)
@@ -105,17 +94,17 @@ void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings, 
     const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
     const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
 
-    current_segment.resize(BLOCK_SIZE);
+    block_values.resize(BLOCK_SIZE);
 
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(segment_data.payload, std::span(current_segment.data(), BLOCK_SIZE));
-        postings.addMany(BLOCK_SIZE, current_segment.data());
+        decodeBlock(segment_data.payload, std::span(block_values.data(), BLOCK_SIZE));
+        postings.addMany(BLOCK_SIZE, block_values.data());
     }
     if (tail_size)
     {
-        decodeBlock(segment_data.payload, std::span(current_segment.data(), tail_size));
-        postings.addMany(tail_size, current_segment.data());
+        decodeBlock(segment_data.payload, std::span(block_values.data(), tail_size));
+        postings.addMany(tail_size, block_values.data());
     }
 }
 
@@ -149,15 +138,15 @@ void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo
         info.offsets.emplace_back(out.count());
         info.ranges.emplace_back(descriptor.row_id_begin, descriptor.row_id_end);
 
+        const auto & block_metas = segment_block_metas[seg_idx].metas;
         Header header(descriptor.compressed_data_size, descriptor.cardinality, descriptor.row_id_begin);
+
         header.write(out, block_codec->type());
         out.write(compressed_data.data() + descriptor.compressed_data_offset, descriptor.compressed_data_size);
 
         /// Index Section: append per-block metadata after segment payload.
-        /// This allows PostingListCursor to binary-search for blocks without
-        /// decoding the entire segment. The cursor reads header + payload + Index Section
-        /// sequentially, so no offset storage is needed in the dictionary.
-        const auto & block_metas = segment_block_metas[seg_idx].metas;
+        /// This allows PostingListCursor to binary-search for blocks without decoding the entire segment.
+        /// The cursor reads header + payload + Index Section sequentially, so no offset storage is needed in the dictionary.
         writeVarUInt(block_metas.size(), out);
 
         for (const auto & meta : block_metas)
@@ -168,23 +157,29 @@ void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo
     }
 }
 
-void SegmentedPostingListCodec::encodeBlock(std::span<uint32_t> segment)
+void SegmentedPostingListCodec::encodeBlock(std::span<const UInt32> block_row_ids)
 {
     chassert(block_codec);
+    chassert(!block_row_ids.empty() && block_row_ids.size() <= BLOCK_SIZE);
+
+    /// Compute the deltas into the scratch buffer.
+    /// The first element written by `adjacent_difference` is the value itself,
+    /// so adjust it to the delta from the last row id of the previous block.
+    block_values.resize(block_row_ids.size());
+    std::adjacent_difference(block_row_ids.begin(), block_row_ids.end(), block_values.begin());
+    block_values[0] = block_row_ids.front() - prev_row_id;
+    prev_row_id = block_row_ids.back();
+
     auto & segment_descriptor = segment_descriptors.back();
-    segment_descriptor.cardinality += segment.size();
-    segment_descriptor.row_id_end = prev_row_id;
+    segment_descriptor.cardinality += block_row_ids.size();
+    segment_descriptor.row_id_end = block_row_ids.back();
 
     /// Record packed block metadata for V2 Index Section.
-    /// relative_offset is relative to the segment's compressed_data_offset.
-    auto & block_metas = segment_block_metas.back().metas;
-    block_metas.push_back(
-    {
-        prev_row_id,
-        compressed_data.size() - segment_descriptor.compressed_data_offset
-    });
+    auto & block_meta = segment_block_metas.back().metas.emplace_back();
+    block_meta.last_row_id = block_row_ids.back();
+    block_meta.relative_offset = compressed_data.size() - segment_descriptor.compressed_data_offset;
 
-    block_codec->encodeBlock(segment, compressed_data);
+    block_codec->encodeBlock(block_values, compressed_data);
 
     segment_descriptor.compressed_data_size = compressed_data.size() - segment_descriptor.compressed_data_offset;
 }
@@ -267,6 +262,8 @@ void PostingListEncoderNone::finishSegment()
 
 void PostingListEncoderNone::finalize(WriteBuffer & out, TokenPostingsInfo & info)
 {
+    using enum PostingsSerialization::Flags;
+
     if (rows_in_current_segment != 0)
         finishSegment();
 
@@ -288,7 +285,7 @@ void PostingListEncoderNone::finalize(WriteBuffer & out, TokenPostingsInfo & inf
     }
 
     if (info.offsets.size() == 1)
-        info.header |= PostingsSerialization::Flags::SingleBlock;
+        info.header |= SingleBlock;
 }
 
 size_t PostingListEncoderNone::memoryUsageBytes() const

@@ -107,8 +107,10 @@ class SegmentedPostingListCodec
     /// Per-block metadata collected during encoding for V2 Index Section.
     struct PackedBlockMeta
     {
-        uint32_t last_row_id;       /// Last row_id in this packed block
-        uint64_t relative_offset;   /// Offset within segment payload (from segment data start)
+        /// Last row_id in this packed block
+        uint32_t last_row_id;
+        /// Offset within segment payload (from segment data start)
+        uint64_t relative_offset;
     };
 
     /// Per-segment list of packed block metadata.
@@ -146,7 +148,7 @@ public:
             block_metas_bytes += segment.metas.capacity() * sizeof(PackedBlockMeta);
 
         return compressed_data.capacity()
-            + current_segment.capacity() * sizeof(uint32_t)
+            + block_values.capacity() * sizeof(UInt32)
             + segment_descriptors.capacity() * sizeof(SegmentDescriptor)
             + segment_block_metas.capacity() * sizeof(SegmentBlockMetas)
             + block_metas_bytes;
@@ -171,22 +173,21 @@ private:
     /// - ranges: [row_begin, row_end] row range for each segment
     void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
 
-    /// Encode one block of delta values and append it to `compressed_data`.
+    /// Encodes one block of up to BLOCK_SIZE row ids as deltas and appends it to `compressed_data`.
     ///
     /// Block layout:
-    ///   [1 byte bits][payload]
+    ///   [1 byte bits][row ids payload]
     ///
     /// - bits: max bit-width among deltas in this block
-    /// - payload: Codec::encode(...) bitpacked bytes
+    /// - row ids payload: Codec::encode(...) bitpacked bytes
     ///
-    /// Also updates current segment metadata (count, max, payload size).
-    void encodeBlock(std::span<uint32_t> segment);
+    /// Also updates current segment metadata (cardinality, payload size).
+    void encodeBlock(std::span<const UInt32> block_row_ids);
 
-    /// Decode one compressed block of `out.size()` row ids into `out` and reconstruct absolute row ids.
+    /// Decodes one compressed block of `out.size()` row ids into `out` and reconstructs absolute row ids.
     ///
-    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills
-    ///   `out` with delta values
-    /// - inclusive_scan converts deltas -> row ids using `prev_row_id` as initial prefix
+    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills `out` with delta values
+    /// - inclusive_scan converts deltas to row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
     void decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out);
 
@@ -199,8 +200,8 @@ private:
     uint32_t prev_row_id = 0;
     /// Number of row ids in the open segment.
     size_t row_ids_in_current_segment = 0;
-    /// Scratch buffer for deltas of the block being encoded (also reused as the decode buffer)
-    std::vector<uint32_t> current_segment;
+    /// Scratch buffer for one block: the deltas being encoded, or the row ids being decoded
+    std::vector<UInt32> block_values;
     /// Each segment has an in-memory descriptor
     std::vector<SegmentDescriptor> segment_descriptors;
     /// Per-segment packed block metadata for V2 Index Section
