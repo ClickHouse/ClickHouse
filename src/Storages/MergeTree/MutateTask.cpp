@@ -3800,9 +3800,10 @@ bool MutateTask::prepare()
     );
     auto context_for_reading = Context::createCopy(ctx->context);
 
-    /// Allow mutations to work when force_index_by_date or force_primary_key is on.
+    /// Allow mutations to work when force_index_by_date, force_primary_key or force_data_skipping_indices is on.
     context_for_reading->setSetting("force_index_by_date", false);
     context_for_reading->setSetting("force_primary_key", false);
+    context_for_reading->resetSettingsToDefaultValue({"force_data_skipping_indices"});
     context_for_reading->setSetting("apply_mutations_on_fly", false);
     /// Skip using large sets in KeyCondition
     context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
