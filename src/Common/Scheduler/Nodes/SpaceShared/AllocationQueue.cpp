@@ -295,8 +295,6 @@ void AllocationQueue::approveDecrease()
 
 ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
-    UNUSED(limit);
-
     // It is important not to kill allocation due to pending allocation in the same queue
     if (killer.kind == IncreaseRequest::Kind::Pending && &killer.allocation.queue == this)
         return nullptr;
@@ -304,6 +302,14 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     std::lock_guard lock(mutex);
     if (running_allocations.empty())
         return nullptr;
+
+    // If the requester's own reservation already exceeds the workload limit, no eviction of another
+    // allocation can make it admissible; evicting a peer would just lose that query for nothing while the
+    // requester still has to give up. Select the requester itself so a single impossible grow does not
+    // also take a higher-scored peer down with it. `fair_key` is the requester's allocated size plus its
+    // pending increase, so `fair_key > limit` means it cannot fit even with the whole workload freed.
+    if (&killer.allocation.queue == this && killer.allocation.fair_key > limit)
+        return &killer.allocation;
 
     // Choose the eviction victim among the running allocations.
     //

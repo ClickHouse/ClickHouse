@@ -783,3 +783,29 @@ TEST(SchedulerSpaceShared, MemoryEvictionScorePrefersMemoryHolderOverShrunkZero)
     killer.waitSynced();
     EXPECT_EQ(killer.size(), 3000);
 }
+
+
+/// When the requester's own grow already exceeds the workload limit, no eviction of a peer can make it
+/// fit, so evicting a higher-scored peer would lose that query for nothing (and the requester would still
+/// have to give up). The requester must be the self-victim; the peer stays untouched.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreImpossibleGrowSelfKills)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // `peer` holds a little memory and has the highest score; `killer` holds more and asks for a grow that
+    // alone exceeds the 10000 limit.
+    ManualAllocation peer(queue, "peer", 1000, /* memory_eviction_score = */ 100);
+    ManualAllocation killer(queue, "killer", 8000, /* memory_eviction_score = */ 0);
+
+    killer.increaseAsync(3000); // 8000 + 3000 = 11000 > 10000: the requester alone exceeds the limit
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (killer.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(killer.killCount(), 1u) << "A requester whose grow exceeds the limit must self-kill";
+    EXPECT_EQ(peer.killCount(), 0u) << "A peer must not be evicted for a grow that can never fit";
+}
