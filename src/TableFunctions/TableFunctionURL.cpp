@@ -443,7 +443,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context).first;
+                context,
+                globCaller()).first;
         }
         else
         {
@@ -452,7 +453,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context);
+                context,
+                globCaller());
         }
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(

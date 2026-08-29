@@ -50,6 +50,8 @@ protected:
 
     const char * getStorageEngineName() const override { return "URLCluster"; }
     const char * getNonClusteredStorageEngineName() const override { return "URL"; }
+
+    RemoteDescriptionCaller globCaller() const override { return urlCaller(TABLE_FUNCTION_URL_CLUSTER_CALLER); }
 };
 
 }
