@@ -1002,10 +1002,10 @@ def test_lc_null_keys_break_then_client_cancel(started_cluster):
     `distinct_transform_null_pause`, committing a 2-slice prefix), lets the pre-latched `buildLowCardinalityMask`
     resume and pause on `distinct_transform_lc_pause`, sends a real client `Cancel` (SIGINT to the
     framework-managed `clickhouse-client` process, which delivers a Cancel packet on the query's own TCP
-    connection), and asserts the query is cancelled ("Query was cancelled") rather than silently downgraded to a
-    soft timeout. The downstream abort (hard-cancel check firing at the next boundary) is what makes the
-    cancellation take effect before the scan resumes; without the fix the query would instead be kept alive as a
-    soft timeout.
+    connection), and asserts the query ends with a clean cancel (EOF, no exception text) and records
+    `cancel_reason = CANCELLED_BY_USER`, rather than being silently downgraded to a soft timeout. The downstream
+    abort (hard-cancel check firing at the next boundary) is what makes the cancellation take effect before the
+    scan resumes; without the fix the query would instead be kept alive as a soft timeout.
     """
     node1.query(
         "CREATE TABLE IF NOT EXISTS null_keys_mt_lc (k LowCardinality(Nullable(UInt64))) "
@@ -1085,7 +1085,9 @@ def test_lc_null_keys_break_then_client_cancel(started_cluster):
         ## it was misclassified as a soft timeout and the resumed `buildLowCardinalityMask` kept rescanning the
         ## committed prefix instead of aborting. The fix makes `TCPHandler::processCancel` propagate
         ## `CANCELLED_BY_USER`, so a client Cancel is honored as a hard cancellation and the query is aborted
-        ## (the client receives "Query was cancelled") rather than silently downgraded to a soft timeout.
+        ## rather than silently downgraded to a soft timeout. The abort is reported with
+        ## `QUERY_WAS_CANCELLED_BY_CLIENT` (735), which is the clean-cancel code: the server sends EOF instead of
+        ## an exception packet, so the client sees no error output (the pre-propagation client contract).
         ## The client is the framework-managed `clickhouse-client` subprocess we spawned via `get_query_request`,
         ## so `req.process.pid` is its exact PID; SIGINT makes the client deliver a Cancel packet on the query's
         ## own connection. We resume the paused scan and let the server honor the Cancel: the observable contract
@@ -1103,7 +1105,12 @@ def test_lc_null_keys_break_then_client_cancel(started_cluster):
     assert not query_thread.is_alive(), "client-canceled query did not terminate within 60 s"
     if thread_error[0] is not None:
         raise thread_error[0]
-    assert "Query was cancelled" in query_error[0], f"expected client Cancel to cancel the query, got: {query_error[0]}"
+
+    ## The server reports a client `Cancel` with `QUERY_WAS_CANCELLED_BY_CLIENT` (735), which is the clean-cancel
+    ## code: no exception packet is sent, so the client exits with code 0 and empty stderr. This is exactly the
+    ## pre-propagation client contract, so make sure the fix did not leak a raw `QUERY_WAS_CANCELLED` (394) to the
+    ## client (which would print an error and exit with code 138).
+    assert query_error[0] == "", f"client Cancel must be a clean cancel with no error output, got: {query_error[0]!r}"
 
     ## The cancel_reason the server records is the real discriminator: a TCP `Cancel` does not set it by
     ## itself, so without the fix it stays `UNDEFINED` and the query is silently downgraded to a soft timeout;

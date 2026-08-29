@@ -3131,8 +3131,15 @@ void TCPHandler::processCancel(QueryState & state)
     /// status so soft-timeout-aware transforms (e.g. `DistinctTransform`) can distinguish it from an
     /// executor-side break-mode timeout, which would otherwise be misclassified and keep a committed
     /// prefix instead of aborting. `KILL QUERY` already sets `CANCELLED_BY_USER` the same way.
+    /// The `QUERY_WAS_CANCELLED_BY_CLIENT` exception passed to `cancelQuery` keeps the clean-cancel
+    /// protocol: the executor failures are reported with this code, so the server sends EOF instead of
+    /// an exception packet and the client exits with code 0 on Ctrl+C.
     if (state.query_context)
-        state.query_context->killCurrentQuery();
+        if (auto process_list_element = state.query_context->getProcessListElementSafe())
+            process_list_element->cancelQuery(
+                CancelReason::CANCELLED_BY_USER,
+                std::make_exception_ptr(
+                    Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.")));
 
     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
