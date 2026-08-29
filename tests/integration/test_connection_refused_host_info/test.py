@@ -108,8 +108,13 @@ def test_connect_timeout_names_the_dialled_address(started_cluster):
         # DROP rather than REJECT: a rejection would arrive as an RST and take the refused path.
         pm.partition_instances(node, peer, port=9000)
         error = node.query_and_get_error(
-            f"SELECT * FROM remote('{peer_ip}:9000', system, one) "
-            "SETTINGS connect_timeout_with_failover_ms = 60000, connections_with_failover_max_tries = 1"
+            f"SELECT * FROM remote('{peer_ip}:9000', system, one) SETTINGS "
+            # Pinned, not left at the default: applySettingsQuirks turns async_socket_for_remote
+            # off on some kernels unless it was explicitly changed, and the synchronous
+            # SocketImpl::connect branch produces the same text -- so on those machines this would
+            # pass without ever reaching the helper it is meant to cover.
+            "async_socket_for_remote = 1, async_query_sending_for_remote = 1, "
+            "connect_timeout_with_failover_ms = 60000, connections_with_failover_max_tries = 1"
         )
 
     assert "connect timed out" in error, f"expected the deferred-timeout text in: {error}"
