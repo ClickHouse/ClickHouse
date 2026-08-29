@@ -53,6 +53,13 @@ public:
         AlignedBuffer state;
         bool created = false;
 
+        /// Applying the function to a single value yields exactly that value,
+        /// so a one-row group can be copied with insertFrom instead of going through the state.
+        bool single_value_is_identity = false;
+
+        /// First row of the current group, kept until a second row arrives or the group is finished.
+        const IColumn * first_row_column = nullptr;
+
         SimpleAggregateDescription(
             AggregateFunctionPtr function_, size_t column_number_,
             DataTypePtr nested_type_, DataTypePtr real_type_);
@@ -140,6 +147,8 @@ private:
         ColumnsDefinition & def;
 
         bool is_group_started = false;
+        size_t current_group_rows = 0;
+        size_t first_row_index = 0;
 
         /// Initialize aggregate descriptions with columns.
         void initAggregateDescription();
