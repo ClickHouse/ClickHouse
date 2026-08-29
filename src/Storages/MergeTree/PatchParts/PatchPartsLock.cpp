@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 #include <Common/ZooKeeper/ZooKeeperPathUtils.h>
+#include <Common/timespanFromSeconds.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Analyzer/Utils.h>
@@ -89,7 +90,9 @@ bool waitInterruptibly(const ContextPtr & context, const Stopwatch & watch, Int6
 
 void waitInterruptibly(const ContextPtr & context, Poco::Event & event, const Stopwatch & watch, Int64 timeout_ms)
 {
-    waitInterruptibly(context, watch, timeout_ms, [&](Int64 chunk_ms) { return event.tryWait(chunk_ms); });
+    /// `chunk_ms` is non-negative here: `waitInterruptibly` clamps it to the remaining time, which
+    /// is positive inside the loop.
+    waitInterruptibly(context, watch, timeout_ms, [&](Int64 chunk_ms) { return event.tryWait(toPocoMilliseconds(static_cast<UInt64>(chunk_ms))); });
 }
 
 zkutil::EphemeralNodeHolderPtr getLockForSyncMode(

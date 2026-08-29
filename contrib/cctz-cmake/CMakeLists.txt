@@ -23,6 +23,10 @@ if (OS_WINDOWS)
     # drop the default rather than the override; `DateLUTImpl.cpp` supplies the two other things
     # this file defines.
     list (REMOVE_ITEM SRCS "${LIBRARY_DIR}/src/zone_info_source.cc")
+
+    # `time_zone_lookup.cc` calls `GetWindowsLocalTimeZone` when `_WIN32` is defined. The file
+    # defining it is Windows-only and self-contained (it loads `icu.dll` dynamically).
+    list (APPEND SRCS "${LIBRARY_DIR}/src/time_zone_name_win.cc")
 endif ()
 
 add_library (_cctz ${SRCS})
