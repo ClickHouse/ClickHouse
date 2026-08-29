@@ -796,7 +796,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_vertical_recompress;"
 # exercising the change, and which algorithm chooseMergeAlgorithm picks here is not stable across
 # CI build flavors (pinning every one of its documented inputs at table level did not make it so).
 # The vertical path reproduces deterministically on a local server, where an unfixed build aborts
-# this merge with NOT_FOUND_COLUMN_IN_BLOCK.
+# this merge with NOT_FOUND_COLUMN_IN_BLOCK. The regression for it is
+# tests/integration/test_ttl_vertical_merge_recompress, where the server config is fixed and the
+# merge algorithm is asserted, so it cannot pass on the horizontal path.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT any(recompression_ttl_info.max[1]) > now()
     FROM system.parts
