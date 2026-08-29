@@ -85,7 +85,12 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node", main_configs=["configs/config.d/storage_conf.xml"], with_hdfs=True
+            "node",
+            main_configs=[
+                "configs/config.d/storage_conf.xml",
+                "configs/config.d/remote_host_filter.xml",
+            ],
+            with_hdfs=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
@@ -182,6 +187,27 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
     assert (
         node.query("SELECT count(*) FROM hdfs_test where id = 1 FORMAT Values") == "(2)"
     )
+
+
+def test_remote_host_filter_reload(cluster):
+    create_table(cluster, "hdfs_test")
+    node = cluster.instances["node"]
+    node.query("INSERT INTO hdfs_test VALUES ('2020-01-03', 1, 'data')")
+
+    blocked_config = """
+<clickhouse>
+    <remote_url_allow_hosts>
+        <host>blocked.invalid</host>
+    </remote_url_allow_hosts>
+</clickhouse>
+"""
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/remote_host_filter.xml",
+        blocked_config,
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert "UNACCEPTABLE_URL" in node.query_and_get_error("SELECT * FROM hdfs_test")
 
 
 def test_alter_table_columns(cluster):

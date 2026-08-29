@@ -56,7 +56,7 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
     const auto & settings = context->getSettingsRef();
     auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(settings[Setting::remote_read_min_bytes_for_seek], settings[Setting::hdfs_replication]);
     return std::make_shared<HDFSObjectStorage>(
-        url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
+        url, std::move(hdfs_settings), context->getConfigRef(), context->getRemoteHostFilter(), /* lazy_initialize */true);
 }
 
 StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const

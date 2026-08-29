@@ -61,6 +61,8 @@ ObjectMetadata HDFSObjectStorage::makeObjectMetadata(Int64 last_modified, Int64 
 
 void HDFSObjectStorage::initializeHDFSFS() const
 {
+    remote_host_filter.checkURL(Poco::URI(url_without_path));
+
     if (initialized)
         return;
 

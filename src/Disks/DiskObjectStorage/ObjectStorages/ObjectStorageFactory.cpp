@@ -172,7 +172,8 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
 
-            return std::make_shared<HDFSObjectStorage>(uri, std::move(settings), config, /* lazy_initialize */false, name);
+            return std::make_shared<HDFSObjectStorage>(
+                uri, std::move(settings), config, context->getRemoteHostFilter(), /* lazy_initialize */false, name);
         });
 }
 #endif
