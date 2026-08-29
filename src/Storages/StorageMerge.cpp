@@ -1337,11 +1337,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             if (child.plan.isInitialized())
             {
-                addVirtualColumns(child, common_processed_stage, table);
-
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                /// This also produces the Merge-level `_database`/`_table` virtual columns, in the middle of the
+                /// chain - see `addVirtualColumns` for why their place in it is fixed.
+                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, table, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1789,49 +1789,64 @@ void ReadFromMerge::addVirtualColumns(
     if (processed_stage > QueryProcessingStage::FetchColumns)
         return;
 
+    if (!has_database_virtual_column && !has_table_virtual_column)
+        return;
+
     const auto & database_name = std::get<0>(storage_with_lock);
     const auto & table_name = std::get<3>(storage_with_lock);
 
-    const auto & header = child.plan.getCurrentHeader();
-    const bool add_database = has_database_virtual_column && !header->has("_database");
-    const bool add_table = has_table_virtual_column && !header->has("_table");
-    if (!add_database && !add_table)
-        return;
-
     /// The names are the ones the child was selected by, matching the pruning in
-    /// `getSelectedTables`; the child stream does not carry these columns because they are
-    /// excluded from the columns requested from it (see `filterTablesAndCreateChildrenPlans`).
+    /// `getSelectedTables`.
+    ///
+    /// A child column of the same name never reaches the result. The Merge never requests
+    /// `_database`/`_table` from a child (see `filterTablesAndCreateChildrenPlans`), so a child
+    /// column of that name is in the stream only because some other path asked for it:
+    ///  - the substitute for a read of nothing but virtual columns, which
+    ///    `ExpressionActions::getSmallestColumn` can pick a physical `_table` for;
+    ///  - a column a row policy filter needs (`RowPolicyData::extendNames`);
+    ///  - the child's own `_table` behind one of its `ALIAS` columns.
+    /// All three are transient, and none of them holds the value the Merge must report, so the
+    /// constant replaces such a column instead of yielding to it. This is why this step runs after
+    /// the child's `ALIAS` expressions and its row policy filter - both are evaluated against the
+    /// child's own columns, so the child's value has to survive until they have run - and before the
+    /// conversion to the common header, which is where the value becomes visible.
     ///
     /// Each constant is inserted at the position its column has in `all_column_names`, not
     /// appended: a child column whose execution name differs from the common header (e.g. the
     /// analyzer-qualified names a `Distributed` child produces) is matched by POSITION in
     /// `convertAndFilterSourceStream`, so the other columns must keep the slots they have in
     /// the common header.
+    const auto & header = child.plan.getCurrentHeader();
     ActionsDAG adding_columns_dag(header->getColumnsWithTypeAndName());
     const auto inputs = adding_columns_dag.getOutputs(); /// the inputs, in the header's order
     ActionsDAG::NodeRawConstPtrs new_outputs;
     new_outputs.reserve(inputs.size() + 2);
 
-    auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     size_t next_input = 0;
+    /// The next column of the child that keeps its own name in the result.
+    const auto take_child_column = [&]() -> const ActionsDAG::Node *
+    {
+        while (next_input < inputs.size() && producedByMerge(inputs[next_input]->result_name))
+            ++next_input;
+        return next_input < inputs.size() ? inputs[next_input++] : nullptr;
+    };
+
+    auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     for (const auto & column_name : all_column_names)
     {
-        if ((column_name == "_database" && add_database) || (column_name == "_table" && add_table))
+        if (producedByMerge(column_name))
         {
             const auto & value = column_name == "_database" ? database_name : table_name;
             new_outputs.push_back(&adding_columns_dag.addColumn(lc_string_type->createColumnConst(0, value), lc_string_type, column_name));
         }
-        else if (next_input < inputs.size())
-        {
-            new_outputs.push_back(inputs[next_input]);
-            ++next_input;
-        }
+        else if (const auto * child_column = take_child_column())
+            new_outputs.push_back(child_column);
     }
     /// Anything beyond `all_column_names` (the substitute for an all-virtual read, the columns a
     /// row policy filter needs) stays behind the common columns, where the name-based matching
     /// handles it.
-    for (; next_input < inputs.size(); ++next_input)
-        new_outputs.push_back(inputs[next_input]);
+    while (const auto * child_column = take_child_column())
+        new_outputs.push_back(child_column);
     adding_columns_dag.getOutputs() = std::move(new_outputs);
 
     auto expression_step = std::make_unique<ExpressionStep>(header, std::move(adding_columns_dag));
@@ -2246,11 +2261,12 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const Block & header,
     SelectQueryInfo & modified_query_info,
     const StorageSnapshotPtr & snapshot,
+    const StorageWithLockAndName & storage_with_lock,
     const Aliases & aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     ChildPlan & child,
-    bool is_smallest_column_requested)
+    bool is_smallest_column_requested) const
 {
     auto before_block_header = child.plan.getCurrentHeader();
 
@@ -2302,6 +2318,10 @@ void ReadFromMerge::convertAndFilterSourceStream(
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
     if (row_policy_data_opt)
         row_policy_data_opt->addFilterTransform(child.plan);
+
+    /// Everything that reads the child's own columns has run by now, so the Merge-level
+    /// `_database`/`_table` virtual columns can take over a child column of the same name.
+    addVirtualColumns(child, common_processed_stage, storage_with_lock);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,

@@ -316,20 +316,28 @@ private:
         ChildPlan & child,
         QueryProcessingStage::Enum processed_stage) const;
 
+    /// Whether the Merge produces this virtual column itself instead of reading it from a child.
+    bool producedByMerge(const std::string & column_name) const
+    {
+        return (has_database_virtual_column && column_name == "_database")
+            || (has_table_virtual_column && column_name == "_table");
+    }
+
     void addVirtualColumns(
         ChildPlan & child,
         QueryProcessingStage::Enum processed_stage,
         const StorageWithLockAndName & storage_with_lock) const;
 
-    static void convertAndFilterSourceStream(
+    void convertAndFilterSourceStream(
         const Block & header,
         SelectQueryInfo & modified_query_info,
         const StorageSnapshotPtr & snapshot,
+        const StorageWithLockAndName & storage_with_lock,
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
         ChildPlan & child,
-        bool is_smallest_column_requested);
+        bool is_smallest_column_requested) const;
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
