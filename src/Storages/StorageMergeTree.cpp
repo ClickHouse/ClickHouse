@@ -4132,6 +4132,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     /// Atomically add new parts and remove old ones
     try
     {
+        /// Declared outside the `data_parts_lock` scope: the deduplication log of the retired
+        /// parts is dropped after the lock is released (see below).
+        DataPartsVector covered_parts;
         {
             /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
             ///  and we should be able to rollback already added (Precomitted) parts
@@ -4160,7 +4163,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// comment where they are created) into the same transaction, so the retirement is
             /// published under the same fence — and undone together with the cloned parts if the
             /// lease goes stale in the middle of the batch.
-            DataPartsVector covered_parts;
             for (auto & part : new_empty_covering_parts)
             {
                 auto covered_by_one_part = renameTempPartAndReplaceUnlocked(part, data_parts_lock, transaction, /*rename_in_transaction=*/ true);
@@ -4216,12 +4218,21 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                     /// coverage-based retirements (see `renameAndCommitEmptyParts`).
                     for (const auto & part : covered_parts)
                         part->remove_time.store(0, std::memory_order_relaxed);
-                    dropDeduplicationLogParts(covered_parts);
                 }
                 else
                     removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
             }
         }
+
+        /// Retire the block ids of the covered parts in the deduplication log, like every other
+        /// coverage-based retirement (see `renameAndCommitEmptyParts` and `movePartitionToTable`).
+        /// This must happen after `data_parts_lock` is released: on a storage error
+        /// `dropDeduplicationLogParts` fails closed by relinquishing leadership, which
+        /// synchronously drains the background merge and mutation executors, and a task that
+        /// already reached its publish phase needs the very same `lockParts()` critical section to
+        /// finish — draining it while holding the lock would deadlock.
+        if (replace && leader_election_ptr)
+            dropDeduplicationLogParts(covered_parts);
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
