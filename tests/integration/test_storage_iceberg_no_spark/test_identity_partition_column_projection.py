@@ -634,3 +634,65 @@ def test_identity_partition_column_renamed_after_write(started_cluster_iceberg_n
         ).strip()
         == "1\n3"
     )
+
+
+def test_identity_partition_decimal_column_written_by_clickhouse(
+    started_cluster_iceberg_no_spark,
+):
+    """A decimal identity partition value lives in the manifest as an Avro `fixed` holding the
+    two's-complement unscaled value. Reading it back must reconstruct the decimal, so that the
+    value projected for a data file that does not store the partition column is exact."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    bucket = started_cluster_iceberg_no_spark.minio_bucket
+    table_name = "test_identity_partition_decimal_ch_" + get_uuid_str()
+
+    create_iceberg_table(
+        "s3",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(id Int64, small Decimal(7, 2), wide Decimal(38, 10))",
+        format_version=2,
+        partition_by="(small, wide)",
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        f"(1, 1.50, 9999999999999999999999999999.9999999999), "
+        f"(2, -3.25, -1.0000000001)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    prefix = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
+    data_files = [
+        object.object_name
+        for object in started_cluster_iceberg_no_spark.minio_client.list_objects(
+            bucket, prefix, recursive=True
+        )
+        if object.object_name.endswith(".parquet")
+    ]
+    assert len(data_files) == 2
+    for key in data_files:
+        for column in ["small", "wide"]:
+            drop_column_from_data_file(
+                started_cluster_iceberg_no_spark, f"s3://{bucket}/{key}", column
+            )
+
+    table_function = get_creation_expression(
+        "s3", table_name, started_cluster_iceberg_no_spark, table_function=True
+    )
+    assert (
+        instance.query(
+            f"SELECT id, small, wide FROM {table_function} ORDER BY id",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        ).strip()
+        == "1\t1.50\t9999999999999999999999999999.9999999999\n"
+        "2\t-3.25\t-1.0000000001"
+    )
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id FROM {table_function} WHERE small < 0 ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "2"
+        ), move_to_prewhere
