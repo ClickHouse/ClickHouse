@@ -147,6 +147,39 @@ def test_transient_error_during_split_keeps_files(started_cluster):
     assert int(node1.query("select count() from dist")) == 4
 
 
+def test_transient_error_after_sent_file_keeps_only_unsent_file(started_cluster):
+    create_tables(
+        background_insert_batch=1, background_insert_split_batch_on_failure=1
+    )
+    insert_settings = {
+        "distributed_foreground_insert": 0,
+        "max_memory_usage": "20Mi",
+        "max_untracked_memory": "0",
+    }
+    for offset, limit in ((0, 100_000), (100_000, 2_000_000)):
+        node1.query(
+            f"insert into dist select 1, number from system.numbers limit {limit} offset {offset}",
+            settings=insert_settings,
+        )
+
+    node1.query("system start distributed sends dist")
+    with pytest.raises(
+        QueryRuntimeException,
+        match=r"DB::Exception: Received from.*Query memory limit exceeded",
+    ):
+        node1.query("system flush distributed dist")
+
+    assert int(
+        node1.query(
+            "select sum(data_files) from system.distribution_queue where table='dist'"
+        )
+    ) == 1
+    assert int(node1.query("select sum(uniq_values) from dist_data")) == 100_000
+
+    node1.query("system flush distributed dist settings max_memory_usage='1Gi'")
+    assert int(node1.query("select sum(uniq_values) from dist_data")) == 2_100_000
+
+
 def test_broken_file_during_split_removes_sent_files(started_cluster):
     drop_tables()
     for _, node in cluster.instances.items():
