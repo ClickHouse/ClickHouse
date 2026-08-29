@@ -907,3 +907,37 @@ done
 echo "$rows_where_left"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_rows_where;"
 
+
+# Case 17: the recalculation step honours a rows-WHERE predicate
+#
+# TTLUpdateInfoAlgorithm folds every row into the recorded min/max and never
+# evaluates `where_expression`. With TTL merges stopped the recalculation step
+# is the only thing that repopulates that family, so an unfiltered fold records
+# a bound belonging to a row the rule can never delete, and the part looks due
+# for a TTL merge that would find nothing to drop.
+# -------------------------------------------------------------------
+echo "-- Case 17: the recalculation step honours a rows-WHERE predicate"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_rows_where_predicate (id UInt64, ts DateTime, flag UInt8)
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL ts + INTERVAL 50 YEAR DELETE WHERE flag = 1
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+    -- The oldest ts belongs to a flag = 0 row, which this rule can never delete, so it must not
+    -- become the bound. Inserted before merges are stopped: STOP TTL MERGES blocks inserts here.
+    INSERT INTO t_ttl_rows_where_predicate VALUES (1, '2000-01-01 00:00:00', 0), (3, '2030-01-01 00:00:00', 1);
+    INSERT INTO t_ttl_rows_where_predicate VALUES (2, '2020-01-01 00:00:00', 1);
+
+    SYSTEM STOP TTL MERGES t_ttl_rows_where_predicate;
+    OPTIMIZE TABLE t_ttl_rows_where_predicate FINAL;
+"
+
+# 2070 is the oldest flag = 1 row's TTL; folding the flag = 0 row in would give 2050.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT rows_where_ttl_info.min[1] = toDateTime('2020-01-01 00:00:00') + INTERVAL 50 YEAR
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_rows_where_predicate' AND active;
+"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_rows_where_predicate;"
