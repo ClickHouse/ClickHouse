@@ -554,6 +554,7 @@ StorageURLSource::StorageURLSource(
         });
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+        pipeline->disableProfileEventUpdate();
         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
         ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
