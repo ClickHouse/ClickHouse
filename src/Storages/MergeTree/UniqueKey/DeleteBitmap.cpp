@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <type_traits>
+#include <vector>
 
 namespace DB
 {
@@ -262,7 +264,23 @@ namespace
     template <class Vector>
     void toVectorAny(const roaring::Roaring64Map & r, Vector & out)
     {
-        r.toUint64Array(out.data());
+        using T = typename Vector::value_type;
+        static_assert(sizeof(T) == sizeof(uint64_t));
+
+        /// `IColumn::Permutation` holds `size_t`, which is a *distinct type* from `uint64_t`
+        /// wherever `uint64_t` is `unsigned long long` -- macOS and wasm -- even though both are
+        /// 64 bits wide. Writing straight into `out.data()` compiles only where the two coincide.
+        if constexpr (std::is_same_v<T, uint64_t>)
+        {
+            r.toUint64Array(out.data());
+        }
+        else
+        {
+            std::vector<uint64_t> wide(out.size());
+            r.toUint64Array(wide.data());
+            for (size_t i = 0; i < wide.size(); ++i)
+                out[i] = wide[i];
+        }
     }
 }
 
