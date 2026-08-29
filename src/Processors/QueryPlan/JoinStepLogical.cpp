@@ -1248,6 +1248,7 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
     /// one clause - `FullSortingMergeJoin::isSupported` rejects both.
     Names left_keys;
     Names right_keys;
+    std::optional<std::pair<String, String>> asof_key;
     for (const auto & condition : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
@@ -1274,8 +1275,26 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
             return false;
         if (!lhs.getType()->equals(*rhs.getType()))
             return false;
+        if (is_asof_inequality)
+        {
+            /// Physicalization rejects a second inequality (`ASOF join does not support multiple
+            /// inequality predicates in JOIN ON expression`), so there is no order to predict.
+            if (asof_key)
+                return false;
+            asof_key.emplace(lhs.getColumnName(), rhs.getColumnName());
+            continue;
+        }
         left_keys.push_back(lhs.getColumnName());
         right_keys.push_back(rhs.getColumnName());
+    }
+
+    /// The `ASOF` inequality key is appended to the clause only after every equality key of it
+    /// (`addJoinPredicatesToTableJoin` runs first, the `ASOF` block afterwards), so the merge-join
+    /// sort description ends with it no matter where the inequality was written in `ON`.
+    if (asof_key)
+    {
+        left_keys.push_back(asof_key->first);
+        right_keys.push_back(asof_key->second);
     }
 
     inputs_can_be_read_in_join_key_order
