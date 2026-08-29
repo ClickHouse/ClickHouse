@@ -660,7 +660,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             {
                 deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             }
-
         }
         else
         {
