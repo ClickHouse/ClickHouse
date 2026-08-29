@@ -41,7 +41,7 @@ MAX_FAILS_BEFORE_DROP = 5
 MAX_FLAKY_CHECK_MODULES = 10
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
-mem_gb = round(Utils.physical_memory() // (1024**3), 1)
+mem_gb = round(Utils.memory_limit() // (1024**3), 1)
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
@@ -935,19 +935,24 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # each executing all modules independently with their own isolated Docker cluster
     # (ClickHouseCluster appends PYTEST_XDIST_WORKER to project_name for isolation).
 
+    # --dist=each (flaky/targeted checks) makes every worker run all modules,
+    # so budget more memory per worker than the module-splitting loadfile runs.
+    mem_per_worker = (
+        MAX_MEM_PER_WORKER_DIST_EACH
+        if is_flaky_check or is_targeted_check
+        else MAX_MEM_PER_WORKER
+    )
     if args.workers:
         workers = args.workers
     else:
-        # --dist=each (flaky/targeted checks) makes every worker run all modules,
-        # so budget more memory per worker than the module-splitting loadfile runs.
-        mem_per_worker = (
-            MAX_MEM_PER_WORKER_DIST_EACH
-            if is_flaky_check or is_targeted_check
-            else MAX_MEM_PER_WORKER
-        )
         print("ncpu:", ncpu)
         print("mem_gb:", mem_gb)
         workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // mem_per_worker) or 1
+
+    assert workers <= max(1, mem_gb // mem_per_worker), (
+        f"{workers} workers x {mem_per_worker}GB do not fit the enforced limit, "
+        f"got {mem_gb}GB"
+    )
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
     clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
