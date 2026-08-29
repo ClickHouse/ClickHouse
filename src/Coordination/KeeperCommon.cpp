@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
@@ -251,6 +252,87 @@ void KeeperNodeStats::increaseSeqNum()
 {
     chassert(!isEphemeral() && !isTTL());
     ++ephemeral_or_seq_num_or_ttl;
+}
+
+bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
+{
+    if (request->getOpNum() == Coordination::OpNum::Create
+        || request->getOpNum() == Coordination::OpNum::Create2
+        || request->getOpNum() == Coordination::OpNum::CreateContainer
+        || request->getOpNum() == Coordination::OpNum::CreateTTL
+        || request->getOpNum() == Coordination::OpNum::CreateIfNotExists)
+    {
+        return true;
+    }
+
+    if (request->getOpNum() == Coordination::OpNum::Set)
+    {
+        /// A Set cannot allocate a znode: the node must already exist, otherwise the request fails
+        /// with ZNONODE and stores nothing. With empty data the amount of *stored* data can only
+        /// shrink, so refusing it buys nothing - and it is how a client re-registers its session
+        /// (ZooKeeper::initSession), so refusing it prevents recovery from the very condition that
+        /// triggered the refusal.
+        ///
+        /// "Can only shrink" is about the committed state. Preprocessing an admitted Set still copies
+        /// the node's current payload once into `UpdateNodeDataDelta::old_data`, so an empty Set over a
+        /// large node does allocate transiently before commit frees it. That is deliberate: this is
+        /// best-effort load shedding, and the alternative - refusing the write - keeps sessions from
+        /// re-registering for as long as the memory event lasts.
+        const auto & set_req = dynamic_cast<const Coordination::ZooKeeperSetRequest &>(*request);
+        return !set_req.data.empty();
+    }
+
+    if (request->getOpNum() == Coordination::OpNum::Multi)
+    {
+        Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
+        /// Add up sizes of create/set requests, subtract sizes of remove requests.
+        /// This doesn't really make sense because we're interested in memory usage of znodes, not requests.
+        /// But we don't know znode sizes at this point (is the Remove removing a small or big znode?),
+        /// so can't do much better here. Maybe it would make sense to move this check to preprocessRequest,
+        /// where we have access to the znode states.
+        Int64 memory_delta = 0;
+        for (const auto & sub_req : multi_req.requests)
+        {
+            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_req);
+            switch (sub_zk_request->getOpNum())
+            {
+                case Coordination::OpNum::Create:
+                case Coordination::OpNum::Create2:
+                case Coordination::OpNum::CreateContainer:
+                case Coordination::OpNum::CreateTTL:
+                case Coordination::OpNum::CreateIfNotExists: {
+                    Coordination::ZooKeeperCreateRequest & create_req
+                        = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
+                    memory_delta += create_req.bytesSize();
+                    break;
+                }
+                case Coordination::OpNum::Set: {
+                    Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
+                    /// Only the data can grow the stored size; the path already exists.
+                    memory_delta += set_req.data.size();
+                    break;
+                }
+                case Coordination::OpNum::Remove:
+                case Coordination::OpNum::TryRemove: {
+                    Coordination::ZooKeeperRemoveRequest & remove_req
+                        = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
+                    memory_delta -= remove_req.bytesSize();
+                    break;
+                }
+                case Coordination::OpNum::RemoveRecursive: {
+                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
+                        = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
+                    memory_delta -= remove_req.bytesSize();
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        return memory_delta > 0;
+    }
+
+    return false;
 }
 
 }

@@ -170,7 +170,7 @@ SELECT
         )",
         R"(
 ┌─seconds─┬─days─┬─months─┐
-│ 5       │ 3    │ 2      │
+│       5 │    3 │      2 │
 └─────────┴──────┴────────┘
         )"},
         {"Use intervals in date arithmetic", R"(

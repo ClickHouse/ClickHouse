@@ -49,6 +49,18 @@ enum class ToStartOfIntervalOverload
     Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
 };
 
+/// Clamps a rounded timestamp into a narrowing result type instead of wrapping, so that the result stays
+/// monotonic over the whole argument range. Only DateTime64 arguments round outside Date and DateTime; the
+/// out-of-range rounding of the other argument types is defined in DateLUTImpl, so they pass saturate = false.
+template <bool saturate, typename FieldType>
+FieldType saturatingResultCast(Int64 value)
+{
+    if constexpr (saturate && (std::is_same_v<FieldType, UInt16> || std::is_same_v<FieldType, UInt32>))
+        return static_cast<FieldType>(std::clamp<Int64>(value, 0, static_cast<Int64>(std::numeric_limits<FieldType>::max())));
+    else
+        return static_cast<FieldType>(value);
+}
+
 class FunctionToStartOfInterval final : public IFunction
 {
 private:
@@ -231,7 +243,7 @@ private:
     /// timestamp (see the `*IntervalModularDivisor` methods of `DateLUTImpl`). The generic loop pays a
     /// hardware division by the run-time divisor for every row; a precomputed libdivide divider turns it
     /// into multiplication and shifts and lets the DateTime loop vectorize (about 5 times faster).
-    template <IntervalKind::Kind unit, typename TimeColumnType, typename ResultContainer>
+    template <IntervalKind::Kind unit, typename TimeColumnType, bool saturate, typename ResultContainer>
     static bool tryExecuteArithmeticRounding(
         const typename TimeColumnType::Container & time_data,
         ResultContainer & result_data,
@@ -282,7 +294,7 @@ private:
                 /// A one-second interval never consults the LUT, so it needs no range check.
 #pragma clang loop vectorize(disable)
                 for (size_t i = 0; i != size; ++i)
-                    result_data[i] = static_cast<ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
                 return true;
             }
             const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
@@ -294,7 +306,7 @@ private:
                 /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
                 if (unlikely(!DateLUTImpl::isTimeInLUTRange(t)))
                 {
-                    result_data[i] = static_cast<ResultFieldType>(
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
                         ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
                     continue;
                 }
@@ -302,7 +314,7 @@ private:
                 const Int64 res = t >= 0
                     ? rounded_towards_zero
                     : DateLUTImpl::roundDownNegativeToMultiple(t, rounded_towards_zero, divisor);
-                result_data[i] = static_cast<ResultFieldType>(res);
+                result_data[i] = saturatingResultCast<saturate, ResultFieldType>(res);
             }
         }
         return true;
@@ -385,15 +397,18 @@ private:
         }
         else // Overload: Default
         {
+            constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>;
+
             if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
                 && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))
             {
-                if (tryExecuteArithmeticRounding<unit, TimeColumnType>(time_data, result_data, num_units, time_zone, scale_multiplier))
+                if (tryExecuteArithmeticRounding<unit, TimeColumnType, saturate>(time_data, result_data, num_units, time_zone, scale_multiplier))
                     return result_col;
             }
 
             for (size_t i = 0; i != size; ++i)
-                result_data[i] = static_cast<typename ResultDataType::FieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+                result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(
+                    ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
         }
 
         return result_col;
@@ -676,17 +691,17 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
             )",
             R"(
-┌─toStartOfInt⋯alMonth(1))─┐
-│               2023-01-01 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
+│                                                               2023-01-01 │
+└──────────────────────────────────────────────────────────────────────────┘
             )"},
             {"Using origin point", R"(
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
             )",
             R"(
-┌─toStartOfInt⋯14:35:30'))─┐
-│      2023-01-01 14:44:30 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-01 14:45:00'), toIntervalMinute(1), toDateTime('2023-01-01 14:35:30'))─┐
+│                                                                                          2023-01-01 14:44:30 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
             )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};

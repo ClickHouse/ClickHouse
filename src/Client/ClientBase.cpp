@@ -3,6 +3,7 @@
 
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/ClientSlashCommands.h>
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
@@ -93,6 +94,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFile.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
@@ -134,6 +136,10 @@ namespace Setting
     extern const SettingsBool async_insert;
     extern const SettingsBool send_table_structure_on_insert_with_inline_data;
     extern const SettingsDialect dialect;
+    extern const SettingsString format;
+    extern const SettingsString output_format;
+    extern const SettingsString input_format;
+    extern const SettingsString default_format;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -971,6 +977,10 @@ try
         select_into_file = false;
         select_into_file_and_stdout = false;
         String current_format = default_output_format;
+        bool has_format_clause = false;
+        /// True when the output format was derived from an `INTO OUTFILE` file extension; like an explicit
+        /// format, it must not be overridden by the `default_format` setting fallback below.
+        bool outfile_format_from_extension = false;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -1035,6 +1045,7 @@ try
             }
             if (query_with_output->format_ast != nullptr)
             {
+                has_format_clause = true;
                 if (has_vertical_output_suffix)
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
                 const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
@@ -1048,8 +1059,33 @@ try
             {
                 auto format_name = FormatFactory::instance().tryGetFormatFromFileName(out_file);
                 if (format_name)
+                {
                     current_format = *format_name;
+                    outfile_format_from_extension = true;
+                }
             }
+        }
+
+        /// Mirror the server-side output-format precedence (`resolveOutputFormatName`): an explicit
+        /// `output_format` / `format` setting wins over the query `FORMAT` clause, and a
+        /// `default_format` setting is the fallback when the query has neither a `FORMAT` clause nor
+        /// an override. Without this, these settings (set via an in-query `SETTINGS` clause) were
+        /// ignored by the native client, which formatted from its own `default_output_format`.
+        {
+            const auto & format_settings_ref = client_context->getSettingsRef();
+            if (!format_settings_ref[Setting::output_format].value.empty())
+                current_format = format_settings_ref[Setting::output_format];
+            else if (!format_settings_ref[Setting::format].value.empty())
+                current_format = format_settings_ref[Setting::format];
+            /// ... only when the client itself was not given an explicit output format. `--output-format`,
+            /// `--format` and `--vertical` all set `is_default_format = false` (the last via
+            /// `default_output_format = "Vertical"`), and such an explicit choice must win over the
+            /// `default_format` *setting* — e.g. the display default the local client now seeds as a
+            /// setting. Without this guard, `clickhouse-local --vertical` is silently overridden by that
+            /// setting and prints TSV instead of Vertical.
+            else if (is_default_format && !has_format_clause && !outfile_format_from_extension
+                && !format_settings_ref[Setting::default_format].value.empty())
+                current_format = format_settings_ref[Setting::default_format];
         }
 
         if (has_vertical_output_suffix)
@@ -1221,6 +1257,32 @@ bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
 {
+    /// `format` / `output_format` / `input_format` may have been set in the client config file
+    /// (or a named connection) rather than passed on the command line. Mirror the configured
+    /// values into `cmd_settings` so the corresponding settings ship with every query the client
+    /// runs, matching the `--format`/`-f` CLI behavior.
+    /// The mirrored values must reach not only `cmd_settings` (which ships with each query) but also the
+    /// already-created `global_context` / `client_context`: this method runs from `processConfig`, after
+    /// `processOptions` has copied `cmd_settings` into those contexts, and the native client's INSERT
+    /// readers consult `client_context`'s `input_format` when parsing client-side data. Without applying
+    /// to the live contexts a config / named-connection `input-format=CSV` would be ignored, while the
+    /// equivalent `--input-format CSV` (which is on `cmd_settings` before the contexts are created) works.
+    auto mirror_format_setting = [&](const char * config_key, std::string_view setting_name)
+    {
+        if (getClientConfiguration().has(config_key) && !cmd_settings->isChanged(setting_name))
+        {
+            const String value = getClientConfiguration().getString(config_key);
+            cmd_settings->set(setting_name, value);
+            if (global_context)
+                global_context->setSetting(setting_name, value);
+            if (client_context)
+                client_context->setSetting(setting_name, value);
+        }
+    };
+    mirror_format_setting("format", mappedFormatOptionSetting());
+    mirror_format_setting("output-format", "output_format");
+    mirror_format_setting("input-format", "input_format");
+
     if (getClientConfiguration().has("output-format"))
     {
         default_output_format = getClientConfiguration().getString("output-format");
@@ -1240,7 +1302,13 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     {
         std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdout_fd);
         if (format_from_file_name)
+        {
             default_output_format = *format_from_file_name;
+            /// A format autodetected from the output file (e.g. stdout redirected to `x.jsonl.gz`) is an
+            /// explicit format choice, like `--output-format`; the `default_format` setting must not
+            /// override it in the per-query resolution below.
+            is_default_format = false;
+        }
         else
             default_output_format = "TSV";
     }
@@ -2425,6 +2493,12 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         String current_format = parsed_insert_query->format;
         if (current_format.empty())
             current_format = FormatFactory::instance().getFormatFromFileName(in_file);
+        /// `input_format` / `format` settings override the FORMAT for input (mirrors
+        /// `getSourceFromASTInsertQuery`).
+        if (const auto & s = client_context->getSettingsRef(); !s[Setting::input_format].value.empty())
+            current_format = s[Setting::input_format];
+        else if (!s[Setting::format].value.empty())
+            current_format = s[Setting::format];
 
         /// Create temporary storage file, to support globs and parallel reading
         /// StorageFile doesn't support ephemeral/materialized/alias columns.
@@ -2541,6 +2615,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     }
 
     const Settings & settings = client_context->getSettingsRef();
+
+    /// `input_format` / `format` settings override the FORMAT for input (mirrors
+    /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
+    /// `SETTINGS input_format = ...` take effect on the native client's INSERT-with-data path.
+    if (!settings[Setting::input_format].value.empty())
+        current_format = settings[Setting::input_format];
+    else if (!settings[Setting::format].value.empty())
+        current_format = settings[Setting::format];
 
     /// Setting value from cmd arg overrides one from config.
     size_t insert_format_max_block_size_rows = settings[Setting::max_insert_block_size].changed
@@ -2903,7 +2985,12 @@ void ClientBase::processParsedSingleQuery(
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
         {
-            if (input_function && insert->format.empty())
+            /// The reader format for `input()` can come from the query `FORMAT` clause or from the
+            /// `input_format` / `format` settings (mirrors `getSourceFromASTInsertQuery`); only reject
+            /// when none of them is set.
+            if (input_function && insert->format.empty()
+                && client_context->getSettingsRef()[Setting::input_format].value.empty()
+                && client_context->getSettingsRef()[Setting::format].value.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
 
             processInsertQuery(query, parsed_query);
@@ -2958,6 +3045,16 @@ void ClientBase::processParsedSingleQuery(
             getClientConfiguration().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
+            /// `database` can also travel as a per-query setting (e.g. when `--database` or a
+            /// config/named-connection database was mirrored into the settings packet that ships with
+            /// every query). Keep it in sync with the interactive `USE`; otherwise the stale value
+            /// would keep being sent and override the database just selected. Only update it when it
+            /// was actually set, so we don't introduce a sticky `database` setting for clients that
+            /// rely solely on the connection's default database.
+            if (cmd_settings->isChanged("database"))
+                cmd_settings->set("database", new_database);
+            if (client_context->getSettingsRef().isChanged("database"))
+                client_context->setSetting("database", new_database);
         }
     }
 
@@ -3590,6 +3687,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
     /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
     /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    /// The `/`-form is also offered by the completion of the line editor - keep the `/`-commands
+    /// dispatched here in sync with `clientSlashCommands`.
     if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
         && (is_interactive || supportsLocalMetaCommands()))
     {
@@ -3662,6 +3761,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Interactive `help`/`man` command (in all of the forms `help`, `/help`, `man`, `/man`): render the
     /// embedded documentation for a word from `system.documentation`. Gated like the other meta-commands,
     /// so that batch `clickhouse-client` still parses a query starting with `help`/`man` as SQL.
+    /// The `/`-forms are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
     if (is_interactive || supportsLocalMetaCommands())
     {
         for (const std::string_view prefix : {"help", "/help", "man", "/man"})
@@ -3721,6 +3822,15 @@ bool ClientBase::processQueryText(const String & text)
         return true;
     }
 #endif
+
+    /// A mistake in the name of a `/`-command would otherwise be parsed as SQL and reported as a
+    /// syntax error at the `/`, which tells the user nothing about the command they meant. Gated
+    /// like the commands themselves, so batch `clickhouse-client` still treats the input as SQL.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
+    }
 
     if (query_fuzzer_runs)
     {
@@ -4264,12 +4374,12 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
 
-        ("format,f", po::value<std::string>(), "Default input and output format. In clickhouse-client only the default output format.")
+        ("format,f", po::value<std::string>(), "Default input and output format (maps to the generic `format` setting). In clickhouse-client only the default output format (maps to `output_format`). Use --input-format / --output-format to set only one direction.")
         ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
-        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
+        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight (hints need color). The suggestion hints also need the suggestions, so --disable_suggestion turns those off, while the client's /-commands are a static list and stay hinted. Disable with --hints 0.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -4323,7 +4433,15 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("query_id"))
         getClientConfiguration().setString("query_id", options["query_id"].as<std::string>());
     if (options.contains("database"))
-        getClientConfiguration().setString("database", options["database"].as<std::string>());
+    {
+        const auto & db = options["database"].as<std::string>();
+        getClientConfiguration().setString("database", db);
+        /// Mirror the value into the `database` setting so it's also sent with every query
+        /// (this is what `?database=` does over HTTP). `Settings::addToProgramOptions` skips
+        /// registering the `database` setting as its own CLI option because the client-side
+        /// `--database,d` declaration above already owns that name; this is the bridge.
+        cmd_settings->set("database", db);
+    }
     if (options.contains("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
     if (options.contains("queries-file"))
@@ -4337,9 +4455,26 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.contains("format"))
-        getClientConfiguration().setString("format", options["format"].as<std::string>());
+    {
+        const auto & fmt = options["format"].as<std::string>();
+        getClientConfiguration().setString("format", fmt);
+        /// Mirror to the corresponding setting (same rationale as `--database` above):
+        /// the bidirectional `format` in `clickhouse-local`, the output-only `output_format`
+        /// in `clickhouse-client` (see `mappedFormatOptionSetting`).
+        cmd_settings->set(mappedFormatOptionSetting(), fmt);
+    }
     if (options.contains("output-format"))
-        getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
+    {
+        const auto & fmt = options["output-format"].as<std::string>();
+        getClientConfiguration().setString("output-format", fmt);
+        cmd_settings->set("output_format", fmt);
+    }
+    if (options.contains("input-format"))
+    {
+        const auto & fmt = options["input-format"].as<std::string>();
+        getClientConfiguration().setString("input-format", fmt);
+        cmd_settings->set("input_format", fmt);
+    }
     if (options.contains("vertical"))
         getClientConfiguration().setBool("vertical", true);
     if (options.contains("stacktrace"))
@@ -4588,7 +4723,25 @@ void ClientBase::runInteractive()
     if (load_suggestions)
     {
         /// Load suggestion data from the server.
-        if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+        if (isEmbeeddedClient())
+        {
+            /// The embedded client runs inside the server process, and its session was authenticated
+            /// externally, e.g. by an SSH key, so a separate connection for loading suggestions cannot
+            /// be created: there are no credentials to authenticate it with. (A `LocalConnection`
+            /// created from a bare context would try the `default` user with an empty password.)
+            /// Load suggestions synchronously through the main connection: it is idle at this point,
+            /// and the embedded client always waits for suggestions to load anyway.
+            /// This is a query exchange on the shared connection. Keep the same
+            /// resynchronization discipline as the fallback below, because `load`
+            /// reports failures rather than propagating them.
+            if (connection_needs_resynchronization)
+                resynchronizeConnectionAfterError();
+            connection_needs_resynchronization = true;
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
+            if (suggest->lastExchangeEndedInSync())
+                connection_needs_resynchronization = false;
+        }
+        else if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
             suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
         else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::SERVER)
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
@@ -4667,12 +4820,14 @@ void ClientBase::runInteractive()
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
-        /// Hints need color, so they are enabled only together with highlighting.
-        /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
-        /// turns off autocompletion entirely, including the hints.
+        /// Hints need color, so they are enabled only together with highlighting. Client slash
+        /// commands have a static list and can therefore remain hinted when suggestions are off.
         .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
-            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
-            && !getClientConfiguration().getBool("disable_suggestion", false),
+            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
+        .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
+        /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
+        /// `processQueryText`, so offer them here.
+        .enable_slash_commands = true,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
@@ -4796,7 +4951,7 @@ void ClientBase::runInteractive()
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
             if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }
