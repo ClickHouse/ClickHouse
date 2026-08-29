@@ -1164,6 +1164,122 @@ def test_lc_null_keys_break_then_client_cancel(started_cluster):
     )
 
 
+def test_lc_null_keys_break_then_client_disconnect(started_cluster):
+    """A client that drops the connection (no `Cancel` packet, just EOF) after a BREAK-mode soft timeout has
+    latched must be honored as a hard cancellation, not misclassified as a soft timeout.
+
+    Unlike a `Cancel` packet (tested above), a disconnect does not arrive as a packet at all:
+    `TCPHandler::receivePacketsExpectCancel` sees `in->isCanceled()/eof()` and throws `ABORTED`, and the query
+    loop only calls `executor.cancel()`. Before the fix that left `QueryStatus::cancel_reason == UNDEFINED`, so
+    `isCancelledBySoftTimeout()` returned true (`UNDEFINED` reason + latched break timeout) and the resumed
+    pre-latched scan kept running as a harmless soft timeout even though the client was already gone. The fix
+    propagates the disconnect through `cancelQuery(CancelReason::CANCELLED_BY_USER)`, so the hard-cancel check
+    (`isCancelled() && !isCancelledBySoftTimeout()`) fires and the query aborts. This test reproduces the exact
+    latched-timeout scenario and proves the disconnect is recorded: it latches the break timeout in the prepass
+    (via `distinct_transform_null_pause`), lets the pre-latched `buildLowCardinalityMask` pause on
+    `distinct_transform_lc_pause`, kills the framework-managed client (SIGKILL, so no `Cancel` packet is sent),
+    resumes the scan, and asserts the terminated query recorded `cancel_reason = CANCELLED_BY_USER` in
+    `system.query_log` (staying `UNDEFINED` without the fix).
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt_lc (k LowCardinality(Nullable(UInt64))) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+        "SETTINGS allow_suspicious_low_cardinality_types=1"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(0) FROM numbers(1000000)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(1) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(2) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+     WHERE number IN (SELECT k FROM null_keys_mt_lc)
+     FORMAT Null
+     SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+              max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+
+    thread_error = [None]
+    query_error = [None]
+
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+
+    req = node1.get_query_request(
+        query,
+        settings={"interactive_delay": 0},
+        query_id=query_id,
+    )
+
+    def execute_query():
+        try:
+            _, error = req.get_answer_and_error()
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        wait_failpoint(NULL_FAULT_NAME)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+        second_pause_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE")
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=15)
+        if not done:
+            assert False, "prepass did not reach the second boundary: prefix path not exercised"
+        second_pause_future.result()
+        time.sleep(6)  # past the 5s deadline -> break timeout latches upstream
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        wait_failpoint(LC_FAULT_NAME)
+
+        ## Kill the client outright (SIGKILL, not SIGINT: no `Cancel` packet is delivered, the server only
+        ## sees the connection drop as EOF). The paused scan is then resumed; on its next boundary the
+        ## hard-cancel check must fire and the query must abort instead of being kept alive as a soft timeout.
+        ## The client is already dead, so there is no clean-cancel contract to observe on the wire; the
+        ## server-side `cancel_reason` in `system.query_log` is the discriminator.
+        os.kill(req.process.pid, signal.SIGKILL)
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "disconnected query did not terminate within 60 s"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+
+    ## The discriminator is the recorded cancel_reason: a TCP disconnect does not set it by itself, so
+    ## without the fix it stays `UNDEFINED` and the resumed scan is silently downgraded to a soft timeout;
+    ## the fix makes `TCPHandler::receivePacketsExpectCancel` propagate `CANCELLED_BY_USER` before throwing
+    ## `ABORTED`, so the hard-cancel check aborts the query.
+    node1.query("SYSTEM FLUSH LOGS")
+    cancel_reason = node1.query(
+        f"SELECT cancel_reason FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = 'ExceptionWhileProcessing' "
+        f"FORMAT TSV"
+    ).strip()
+    assert cancel_reason == "CANCELLED_BY_USER", (
+        f"expected client disconnect to set cancel_reason='CANCELLED_BY_USER', got: {cancel_reason!r}"
+    )
+
+
 def test_mixed_null_keys_break_prefix(started_cluster):
     """Break-mode soft timeout must preserve the committed source-row prefix across *multiple* nullable-key
     prepasses: when the timeout latches inside the first prepass, the remaining `LowCardinality(Nullable(...))`

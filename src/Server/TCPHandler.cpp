@@ -3157,7 +3157,24 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
         try
         {
             if (in->isCanceled() || in->eof())
+            {
+                /// A client that dropped the connection is a hard user cancellation, not a
+                /// break-mode soft timeout. Record it on the query status (as `KILL QUERY`, the
+                /// TCP `Cancel` packet and the gRPC cancel now do) so soft-timeout-aware transforms
+                /// (`DistinctTransform`) abort at the next boundary instead of keeping on rescanning
+                /// the committed prefix after the client is gone. The `ABORTED` exception is passed
+                /// to `cancelQuery` so pipeline workers surface the same disconnect error instead of
+                /// a generic `QUERY_WAS_CANCELLED`; we still throw it below so the query is finalized
+                /// as an aborted query with the disconnect logged.
+                if (state.query_context)
+                    if (auto process_list_element = state.query_context->getProcessListElementSafe())
+                        process_list_element->cancelQuery(
+                            CancelReason::CANCELLED_BY_USER,
+                            std::make_exception_ptr(
+                                Exception(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.")));
+
                 throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
+            }
 
             UInt64 packet_type = 0;
             readVarUInt(packet_type, *in);
