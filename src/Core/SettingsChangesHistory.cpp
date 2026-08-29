@@ -44,9 +44,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"enable_aggregation_top_k_threshold_merge", false, true, "New setting to control the top-K threshold merge (Fagin's Threshold Algorithm) of parallel aggregation results in `GROUP BY keys ORDER BY <aggregate> LIMIT N` queries."},
-        });
-        addSettingsChanges(settings_changes_history, "26.9",
-        {
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"enable_sharding_aggregator", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."},
