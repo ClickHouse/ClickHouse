@@ -1,0 +1,3 @@
+declared payload too large: rejected
+user name without a terminator: rejected
+well-formed handshake: authenticated

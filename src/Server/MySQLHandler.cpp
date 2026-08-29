@@ -91,10 +91,20 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int OPENSSL_ERROR;
     extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
 static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
+
+/** The handshake response is read before the client is authenticated, so its size has to be bounded.
+  * The fields it carries are a user name, a database name, an authentication plugin name and an
+  * authentication response, so this is generous: a real client sends a few hundred bytes.
+  * Without a bound, a peer can make the server grow memory while sending a response that never ends:
+  * `MySQLPacketPayloadReadBuffer` follows a chain of maximum-size (16 MiB) packets as one logical
+  * message, and the fields inside the response are read up to a terminator.
+  */
+static const size_t MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE = 64 * 1024;
 
 static bool checkShouldReplaceQuery(const String & query, const String & prefix)
 {
@@ -729,6 +739,11 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     }
     else
     {
+        if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+                payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
@@ -1056,7 +1071,15 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
-    packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+
+    /// Reading HandshakeResponse from the secure socket. The plaintext path bounds the response by
+    /// its declared payload size before reading it; here the framing is handled by the packet
+    /// endpoint, so bound the read itself instead.
+    LimitReadBuffer limited_in(*in, {.read_no_more = PACKET_HEADER_SIZE + MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE,
+                                     .expect_eof = true,
+                                     .excetion_hint = "too long MySQL handshake response."});
+    MySQLProtocol::PacketEndpoint limited_endpoint(limited_in, *out, sequence_id);
+    limited_endpoint.receivePacket(packet);
 }
 
 #endif
