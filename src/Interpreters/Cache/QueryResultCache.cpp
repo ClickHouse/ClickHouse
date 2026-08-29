@@ -11,6 +11,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
@@ -246,7 +247,9 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, bool seed_is_empty
     ///  - `ASTQueryWithOutput::settings_ast` - the top-level query, including the form after `FORMAT`;
     ///  - `ASTSelectQuery::settings()` - a plain `SELECT`;
     ///  - the *last* arm of a `UNION` - in every nested position the parser leaves a trailing
-    ///    union-level clause there instead of filling `settings_ast`.
+    ///    union-level clause there instead of filling `settings_ast`. After
+    ///    `SelectIntersectExceptQueryVisitor` has normalized the arms, the same carrier is the last
+    ///    operand of an `ASTSelectIntersectExceptQuery`.
     if (const auto * query_with_output = node->as<ASTQueryWithOutput>())
         applyObfuscateSeedChanges(query_with_output->settings_ast, seed_is_empty);
 
@@ -256,6 +259,16 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, bool seed_is_empty
         if (!arms.empty())
             if (const auto * last_arm = arms.back()->as<ASTSelectQuery>())
                 applyObfuscateSeedChanges(last_arm->settings(), seed_is_empty);
+    }
+
+    /// Check the intersect/except node before the plain-select check: it inherits `ASTSelectQuery`,
+    /// but its query-level clause lives on its last operand, not on the node itself.
+    if (const auto * intersect_except = node->as<ASTSelectIntersectExceptQuery>())
+    {
+        const auto & operands = intersect_except->children;
+        if (!operands.empty())
+            if (const auto * last_operand = operands.back()->as<ASTSelectQuery>())
+                applyObfuscateSeedChanges(last_operand->settings(), seed_is_empty);
     }
 
     if (const auto * select = node->as<ASTSelectQuery>())

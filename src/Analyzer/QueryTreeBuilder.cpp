@@ -338,19 +338,42 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION type is not initialized");
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), union_mode);
+    /// Exactly as for a `UNION` (see `buildSelectWithUnionExpression`), a trailing `SETTINGS` clause
+    /// of a nested `INTERSECT` / `EXCEPT` is query-level: `ParserSelectQuery` leaves it on the last
+    /// operand's `ASTSelectQuery`, and it must shape the whole set operation. Apply it to the
+    /// context every operand is built from and persist it on the `UnionNode` so that it survives
+    /// cloning and query-tree comparison (the last operand's `QueryNode` keeps the clause for the
+    /// AST round-trip, so `UnionNode::toASTImpl` must not write it back).
+    auto updated_context = Context::createCopy(context);
+    SettingsChanges settings_changes;
+    std::vector<String> default_settings;
+    NameToNameVector query_parameters;
+
+    if (auto * last_select = select_lists.back()->as<ASTSelectQuery>())
+    {
+        if (auto * set_query = last_select->settings() ? last_select->settings()->as<ASTSetQuery>() : nullptr)
+            applyQueryLevelSettings(*set_query, updated_context, settings_changes, default_settings, query_parameters);
+    }
+
+    auto union_node = std::make_shared<UnionNode>(
+        std::move(updated_context),
+        union_mode,
+        std::move(settings_changes),
+        std::move(default_settings),
+        std::move(query_parameters));
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_intersect_except_query);
 
+    auto union_context = union_node->getContext();
     size_t select_lists_size = select_lists.size();
 
     for (size_t i = 0; i < select_lists_size; ++i)
     {
         auto & select_list_node = select_lists[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, union_context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
