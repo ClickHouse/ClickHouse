@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -39,6 +40,31 @@ struct Match
 };
 }
 
+/// How `match` evaluates the pattern. Everything except `General` is a comparison against a literal, without re2.
+enum class RegexpMatchKind : uint8_t
+{
+    General,   /// The re2 engine is required.
+    Substring, /// The whole pattern is a literal: matches iff the literal occurs anywhere (same as `is_trivial`).
+    Exact,     /// `^literal$`: matches iff the subject is equal to the literal.
+    Prefix,    /// `^literal`: matches iff the subject starts with the literal.
+    Suffix,    /// `literal$`: matches iff the subject ends with the literal.
+};
+
+inline bool isAnchoredLiteralMatchKind(RegexpMatchKind kind)
+{
+    /// A switch instead of a boolean expression, so that a new enum value cannot be silently ignored here.
+    switch (kind)
+    {
+        case RegexpMatchKind::Exact:
+        case RegexpMatchKind::Prefix:
+        case RegexpMatchKind::Suffix:
+            return true;
+        case RegexpMatchKind::General:
+        case RegexpMatchKind::Substring:
+            return false;
+    }
+}
+
 struct RegexpAnalysisResult
 {
     std::string required_substring;
@@ -46,6 +72,9 @@ struct RegexpAnalysisResult
     bool has_capture = false;
     bool required_substring_is_prefix = false;
     std::vector<std::string> alternatives;
+
+    /// For an anchored kind, `required_substring` is the whole literal, and it must occur at exactly one offset.
+    RegexpMatchKind match_kind = RegexpMatchKind::General;
 };
 
 class OptimizedRegularExpression
@@ -123,12 +152,20 @@ public:
     /// a string contains the string literal(s). If not, we can tell this string can never match the regexp.
     static RegexpAnalysisResult analyze(std::string_view regexp_);
 
+    RegexpMatchKind getMatchKind() const { return match_kind; }
+
 private:
+    bool isAnchoredLiteral() const { return isAnchoredLiteralMatchKind(match_kind); }
+
+    /// Compares the subject against `required_substring` at the only offset where it can occur.
+    bool matchAnchoredLiteral(const char * subject, size_t subject_size, size_t & match_offset) const;
+
     std::string required_substring;
     bool is_trivial;
     bool has_capture{};
     bool required_substring_is_prefix;
     bool is_case_insensitive;
+    RegexpMatchKind match_kind;
     std::unique_ptr<CaseSensitiveStringSearcher> case_sensitive_substring_searcher;
     std::unique_ptr<ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
     std::unique_ptr<re2::RE2> re2;

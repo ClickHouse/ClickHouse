@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1066254",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1078296",
       "email": "support@clickhouse.com"
     }
   },
@@ -39,7 +39,7 @@
       "name": "Backup"
     },
     {
-      "name": "OpenAPI"
+      "name": "API keys"
     },
     {
       "name": "Prometheus"
@@ -1356,6 +1356,131 @@
             "position": "after"
           }
         ]
+      }
+    },
+    "/v1/organizations/{organizationId}/serviceProfiles": {
+      "get": {
+        "summary": "List available service profiles",
+        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure. The list is empty when the organization tier does not include custom hardware profiles.",
+        "operationId": "serviceProfilesList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization to list available profiles for.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region_id",
+            "description": "Region to list profiles for, e.g. us-east-1.",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "byoc_id",
+            "description": "ID of the BYOC infrastructure to list profiles for. BYOC profiles are only returned when this is set.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceProfile"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-mint": {
+          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure. The list is empty when the organization tier does not include custom hardware profiles."
+        }
       }
     },
     "/v1/organizations/{organizationId}/services": {
@@ -5470,7 +5595,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Returns a list of all keys in the organization."
@@ -5581,7 +5706,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Creates new API key."
@@ -5695,7 +5820,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Returns a single key details."
@@ -5816,7 +5941,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Updates API key properties."
@@ -5925,7 +6050,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Deletes API key. Only a key not used to authenticate the active request can be deleted."
@@ -7205,7 +7330,7 @@
     "/v1/organizations/{organizationId}/activeBalances": {
       "get": {
         "summary": "Get organization active prepaid balances",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the active prepaid credit balances for the organization, each with its own balance ID and remaining credits, along with the total remaining credits across all active balances. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first, and the returned page is capped at `limit` (default and maximum 100). When `totalCount` exceeds the number of returned balances, page with `limit`/`offset` to retrieve them all. `totalRemainingPrepaidCredits` always covers every active balance, not just the returned page.",
+        "description": "DEPRECATED. Use the `/v1/organizations/{organizationId}/creditBalances` endpoint instead. <br /><br /> Returns the active prepaid credit balances for the organization, each with its own balance ID and remaining credits, along with the total remaining credits across all active balances. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first, and the returned page is capped at `limit` (default and maximum 100). When `totalCount` exceeds the number of returned balances, page with `limit`/`offset` to retrieve them all. `totalRemainingPrepaidCredits` always covers every active balance, not just the returned page.",
         "operationId": "activeBalancesGet",
         "parameters": [
           {
@@ -7260,6 +7385,108 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/ActiveBalances"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/creditBalances": {
+      "get": {
+        "summary": "Get organization active credit balances",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the active credit balances for the organization, each with its own balance ID, type and remaining credits, along with the total remaining credits across all of them. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first. The list is always present and is empty when the organization has no active balances.",
+        "operationId": "creditBalancesGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/CreditBalances"
                     }
                   }
                 }
@@ -19720,16 +19947,8 @@
             "type": "boolean"
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE organization tiers.",
-            "type": "string",
-            "enum": [
-              "v1-default",
-              "v1-highmem-xs",
-              "v1-highmem-s",
-              "v1-highmem-m",
-              "v1-highmem-l",
-              "v1-highmem-xl"
-            ]
+            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "type": "string"
           },
           "transparentDataEncryptionKeyId": {
             "description": "The ID of the Transparent Data Encryption key used for the service. This is only available if hasTransparentDataEncryption is true.",
@@ -22370,6 +22589,11 @@
             "description": "Custom partitioning column used for parallel snapshotting. Must be an indexed column of an integer, date, datetime or timestamp type. Unrelated to ClickHouse partitioning.",
             "type": "string",
             "example": "id"
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": "string",
+            "example": "toYYYYMM(created_at)"
           }
         },
         "required": [
@@ -22424,6 +22648,14 @@
               "null"
             ],
             "example": "id"
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "toYYYYMM(created_at)"
           }
         },
         "required": [
@@ -23105,7 +23337,7 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "uri": {
-            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...). Embedded credentials are redacted from API responses, so the returned value can differ from what was submitted.",
+            "description": "MongoDB connection URI (mongodb:// or mongodb+srv://). Credentials are redacted in responses; a masked value is never saved as a credential, so a real credential equal to [REDACTED] cannot be set. To change the connection, send the full URI with real credentials; omit this field or resend the redacted value to leave it unchanged.",
             "type": [
               "string",
               "null"
@@ -31254,6 +31486,22 @@
           "adjustable"
         ]
       },
+      "ServiceProfile": {
+        "properties": {
+          "profile": {
+            "description": "Profile name to pass as `profile` when creating a service (e.g. 'v1-standard-byoc-4').",
+            "type": "string"
+          },
+          "cpuCores": {
+            "description": "Number of vCPUs per replica.",
+            "type": "number"
+          },
+          "memoryGi": {
+            "description": "Memory per replica in GiB. When creating a BYOC service with this profile, minReplicaMemoryGb and maxReplicaMemoryGb must both equal this value.",
+            "type": "number"
+          }
+        }
+      },
       "ActiveBalance": {
         "properties": {
           "id": {
@@ -31296,6 +31544,60 @@
             "description": "List of active prepaid balances for the organization.",
             "items": {
               "$ref": "#/components/schemas/ActiveBalance"
+            }
+          }
+        }
+      },
+      "CreditBalance": {
+        "properties": {
+          "id": {
+            "description": "Unique ID of the balance.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "description": "Type of the balance.",
+            "type": "string",
+            "enum": [
+              "prepaid",
+              "trial"
+            ]
+          },
+          "remainingCredits": {
+            "description": "Remaining credits available on this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "totalAmount": {
+            "description": "Total credits granted on this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "amountSpent": {
+            "description": "Credits spent from this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "startDate": {
+            "description": "Date the balance became active. ISO-8601, based on the UTC timezone.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "expirationDate": {
+            "description": "Date the balance expires. ISO-8601, based on the UTC timezone.",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CreditBalances": {
+        "properties": {
+          "totalRemainingCredits": {
+            "description": "Total remaining credits across all active balances, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "balances": {
+            "type": "array",
+            "description": "List of active balances for the organization. Empty when the organization has none.",
+            "items": {
+              "$ref": "#/components/schemas/CreditBalance"
             }
           }
         }
@@ -33103,16 +33405,8 @@
             }
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE organization tiers.",
-            "type": "string",
-            "enum": [
-              "v1-default",
-              "v1-highmem-xs",
-              "v1-highmem-s",
-              "v1-highmem-m",
-              "v1-highmem-l",
-              "v1-highmem-xl"
-            ]
+            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "type": "string"
           },
           "complianceType": {
             "description": "Type of regulatory compliance for service.",
@@ -33478,16 +33772,8 @@
             "type": "boolean"
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE organization tiers.",
-            "type": "string",
-            "enum": [
-              "v1-default",
-              "v1-highmem-xs",
-              "v1-highmem-s",
-              "v1-highmem-m",
-              "v1-highmem-l",
-              "v1-highmem-xl"
-            ]
+            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "type": "string"
           },
           "transparentDataEncryptionKeyId": {
             "description": "The ID of the Transparent Data Encryption key used for the service. This is only available if hasTransparentDataEncryption is true.",
@@ -34120,6 +34406,11 @@
                 "default": false,
                 "type": "boolean"
               },
+              "deterministic": {
+                "description": "Marks the UDF as deterministic so ClickHouse can reuse cached query results. Only set this when the UDF always returns the same result for the same arguments.",
+                "default": false,
+                "type": "boolean"
+              },
               "format": {
                 "default": "TabSeparated",
                 "type": "string"
@@ -34251,6 +34542,11 @@
                 ]
               },
               "sendChunkHeader": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deterministic": {
+                "description": "Marks the UDF as deterministic so ClickHouse can reuse cached query results. Only set this when the UDF always returns the same result for the same arguments.",
                 "default": false,
                 "type": "boolean"
               },
@@ -34387,6 +34683,11 @@
                 "default": false,
                 "type": "boolean"
               },
+              "deterministic": {
+                "description": "Marks the UDF as deterministic so ClickHouse can reuse cached query results. Only set this when the UDF always returns the same result for the same arguments.",
+                "default": false,
+                "type": "boolean"
+              },
               "format": {
                 "default": "TabSeparated",
                 "type": "string"
@@ -34516,6 +34817,11 @@
                 "default": false,
                 "type": "boolean"
               },
+              "deterministic": {
+                "description": "Marks the UDF as deterministic so ClickHouse can reuse cached query results. Only set this when the UDF always returns the same result for the same arguments.",
+                "default": false,
+                "type": "boolean"
+              },
               "format": {
                 "default": "TabSeparated",
                 "type": "string"
@@ -34562,6 +34868,48 @@
           }
         ],
         "type": "object"
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "totalRecords": {
+            "description": "Total number of records available.",
+            "type": "integer"
+          },
+          "currentCursor": {
+            "description": "Cursor for the current page. Null for the first page.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextCursor": {
+            "description": "Cursor for the next page. Null if there are no more results.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "description": "Maximum number of records returned per page.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalRecords",
+          "currentCursor",
+          "nextCursor",
+          "limit"
+        ],
+        "additionalProperties": false
       },
       "UdfAttachment": {
         "type": "object",
@@ -34618,48 +34966,6 @@
         "required": [
           "items",
           "pagination"
-        ],
-        "additionalProperties": false
-      },
-      "Pagination": {
-        "type": "object",
-        "properties": {
-          "totalRecords": {
-            "description": "Total number of records available.",
-            "type": "integer"
-          },
-          "currentCursor": {
-            "description": "Cursor for the current page. Null for the first page.",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "nextCursor": {
-            "description": "Cursor for the next page. Null if there are no more results.",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "limit": {
-            "description": "Maximum number of records returned per page.",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "totalRecords",
-          "currentCursor",
-          "nextCursor",
-          "limit"
         ],
         "additionalProperties": false
       },
@@ -34791,6 +35097,10 @@
             "description": "Whether ClickHouse sends a row-count chunk header.",
             "type": "boolean"
           },
+          "deterministic": {
+            "description": "Whether ClickHouse may reuse cached query results for this UDF.",
+            "type": "boolean"
+          },
           "format": {
             "description": "Input and output format used by the UDF command.",
             "type": "string"
@@ -34849,6 +35159,7 @@
           "maxCommandExecutionTime",
           "memoryLimitMib",
           "sendChunkHeader",
+          "deterministic",
           "format",
           "sandboxType",
           "sandboxVersion",
@@ -34952,9 +35263,9 @@
       ]
     },
     {
-      "name": "OpenAPI",
+      "name": "API keys",
       "tags": [
-        "OpenAPI"
+        "API keys"
       ]
     },
     {

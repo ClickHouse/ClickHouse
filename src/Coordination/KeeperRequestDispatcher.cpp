@@ -15,6 +15,7 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
+#include <Common/saturatedWaitDuration.h>
 #include <base/sleep.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
@@ -253,7 +254,7 @@ void KeeperRequestDispatcher::shutdownRequests()
         uint64_t timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
         bool sent = false;
         auto start_time = std::chrono::steady_clock::now();
-        auto temp_stream = server->raft_instance->open_client_req_stream(timeout_ms);
+        auto temp_stream = server->raft_instance->open_client_req_stream(saturatedWaitMillisecondsCountNonZero(timeout_ms));
         if (temp_stream)
         {
             std::vector<nuraft::ptr<nuraft::buffer>> entries;
@@ -274,7 +275,7 @@ void KeeperRequestDispatcher::shutdownRequests()
             ///       to be committed, there to get error code).
             ///       If shutdown Close is made reliable, remove retries in
             ///       test_session_close_shutdown.
-            while (!temp_stream->is_idle() && std::chrono::steady_clock::now() - start_time < std::chrono::milliseconds(timeout_ms))
+            while (!temp_stream->is_idle() && std::chrono::steady_clock::now() - start_time < saturatedWaitMilliseconds(timeout_ms))
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
             sent = temp_stream->is_idle();
@@ -344,7 +345,8 @@ bool KeeperRequestDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
             if (try_push())
                 break;
 
-            std::chrono::milliseconds operation_timeout(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+            std::chrono::milliseconds operation_timeout = saturatedWaitMilliseconds(
+                keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
             if (std::chrono::steady_clock::now() - start_time > operation_timeout)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
         }
@@ -417,7 +419,7 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
             if (try_push())
                 break;
 
-            if (std::chrono::steady_clock::now() - start_time > std::chrono::milliseconds(
+            if (std::chrono::steady_clock::now() - start_time > saturatedWaitMilliseconds(
                     keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
             {
                 /// Just drop responses on the floor, I guess. The client will eventually time out
@@ -513,17 +515,17 @@ void KeeperRequestDispatcher::recreateStreamWithBackoff()
     while (!shutting_down.load())
     {
         auto slept = std::chrono::steady_clock::now() - sleep_start;
-        if (slept >= std::chrono::milliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+        if (slept >= saturatedWaitMilliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
             break;
 
         auto is_delaying_reconnect = [&]
         {
-            return current_stream_is_suspect.load() && slept < std::chrono::milliseconds(
+            return current_stream_is_suspect.load() && slept < saturatedWaitMilliseconds(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::stream_suspect_retry_delay_ms].totalMilliseconds());
         };
         auto is_waiting_for_in_flight_requests = [&]
         {
-            return head_idx.load() < tail_idx.load() && slept < std::chrono::milliseconds(
+            return head_idx.load() < tail_idx.load() && slept < saturatedWaitMilliseconds(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::stream_in_flight_drain_timeout_ms].totalMilliseconds());
         };
         if (server->isLeaderAlive() && !is_delaying_reconnect() && !is_waiting_for_in_flight_requests())
@@ -566,8 +568,8 @@ void KeeperRequestDispatcher::recreateStreamWithBackoff()
 
     current_stream_is_suspect.store(true);
     /// May return nullptr.
-    stream = server->raft_instance->open_client_req_stream(
-        keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+    stream = server->raft_instance->open_client_req_stream(saturatedWaitMillisecondsCountNonZero(
+        keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()));
 
     if (stream)
         LOG_INFO(log, "Created append stream");
@@ -606,11 +608,11 @@ void KeeperRequestDispatcher::dispatchThread()
             /// In particular, we can get stuck if there's a bug that breaks stream guarantees
             /// (causes reordering or gaps) as our commit callback only checks completion of the request
             /// at the head of the queue.
-            if (now > last_stuck_check_time + std::chrono::milliseconds(operation_timeout_ms))
+            if (now > last_stuck_check_time + saturatedWaitMilliseconds(operation_timeout_ms))
             {
                 last_stuck_check_time = now;
                 size_t idx = head_idx.load();
-                if (tail_idx.load() > idx && now > in_flight_batches[idx % in_flight_batches.size()].start_time + std::chrono::milliseconds(operation_timeout_ms * 10))
+                if (tail_idx.load() > idx && now > in_flight_batches[idx % in_flight_batches.size()].start_time + saturatedWaitMilliseconds(operation_timeout_ms * 10))
                 {
                     if (server->isLeaderAlive())
                         LOG_ERROR(log, "Detected stuck or reordered requests. Dropping. This may indicate a bug.");

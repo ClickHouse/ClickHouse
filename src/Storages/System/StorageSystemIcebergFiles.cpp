@@ -123,12 +123,14 @@ protected:
         MutableColumnPtr col_column_sizes = make_int32_int64_map();
         MutableColumnPtr col_value_counts = make_int32_int64_map();
         MutableColumnPtr col_equality_ids = ColumnArray::create(ColumnInt32::create());
+        MutableColumnPtr col_first_row_id = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
 
         std::vector<IColumn *> col_ptrs{
             col_database.get(), col_table.get(), col_snapshot_id.get(), col_content.get(),
             col_file_path.get(), col_file_format.get(), col_record_count.get(), col_file_size_in_bytes.get(),
             col_partition.get(), col_schema_id.get(), col_sequence_number.get(), col_sort_order_id.get(),
-            col_null_value_counts.get(), col_column_sizes.get(), col_value_counts.get(), col_equality_ids.get()};
+            col_null_value_counts.get(), col_column_sizes.get(), col_value_counts.get(), col_equality_ids.get(),
+            col_first_row_id.get()};
 
         size_t num_rows = 0;
 
@@ -191,6 +193,11 @@ protected:
                     for (auto id : file.equality_ids)
                         equality_ids_array.push_back(id);
                     col_equality_ids->insert(equality_ids_array);
+
+                    if (file.first_row_id.has_value())
+                        col_first_row_id->insert(*file.first_row_id);
+                    else
+                        col_first_row_id->insertDefault();
 
                     ++num_rows;
                 }
@@ -327,7 +334,8 @@ protected:
             std::move(col_database), std::move(col_table), std::move(col_snapshot_id), std::move(col_content),
             std::move(col_file_path), std::move(col_file_format), std::move(col_record_count), std::move(col_file_size_in_bytes),
             std::move(col_partition), std::move(col_schema_id), std::move(col_sequence_number), std::move(col_sort_order_id),
-            std::move(col_null_value_counts), std::move(col_column_sizes), std::move(col_value_counts), std::move(col_equality_ids)};
+            std::move(col_null_value_counts), std::move(col_column_sizes), std::move(col_value_counts), std::move(col_equality_ids),
+            std::move(col_first_row_id)};
 
         return Chunk(std::move(columns), num_rows);
     }
@@ -458,6 +466,7 @@ StorageSystemIcebergFiles::StorageSystemIcebergFiles(const StorageID & table_id_
         {"column_sizes", std::make_shared<DataTypeMap>(std::make_shared<DataTypeInt32>(), std::make_shared<DataTypeInt64>()), "Per-column on-disk size in bytes (column id -> bytes)."},
         {"value_counts", std::make_shared<DataTypeMap>(std::make_shared<DataTypeInt32>(), std::make_shared<DataTypeInt64>()), "Per-column total value count (column id -> count)."},
         {"equality_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>()), "Equality field IDs for equality delete files (empty for non-equality-delete files)."},
+        {"first_row_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Row lineage `_row_id` assigned to the first row of the file, with inheritance from the manifest list resolved (NULL before format v3)."},
     });
     setInMemoryMetadata(storage_metadata);
 }

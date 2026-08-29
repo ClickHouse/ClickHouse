@@ -175,10 +175,42 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
 }
 
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
+void validateSystemUserQueryLog(ContextPtr context, const IDatabase & system_database)
+{
+    if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
+        return;
+
+    /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
+    /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
+    /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
+    if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The `query_log.table` server setting cannot be set to `user_query_log`: "
+            "the query log table is always created in the `system` database, where `system.user_query_log` "
+            "shows the query log records of the current user. "
+            "Rename the query log table or set `query_log.enable_user_query_log` to 0");
+
+    /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
+    if (system_database.isTableExist("user_query_log", context))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+            "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
+            "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
+}
+
+void attachSystemTableOne(ContextPtr context, IDatabase & system_database)
+{
+    attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
+}
+
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, bool has_keeper_server)
+{
+    attachSystemTableOne(context, system_database);
+    attachSystemTablesServerExceptOne(context, system_database, has_zookeeper, has_keeper_server);
+}
+
+void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
-    attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true, "number");
     attachNoDescription<StorageSystemPrimes>(context, system_database, "primes", "Generates all prime numbers, starting from 2, in sorted order.", "prime");
@@ -345,24 +377,10 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
     }
 
+    validateSystemUserQueryLog(context, system_database);
+
     if (context->getConfigRef().getBool("query_log.enable_user_query_log", true))
     {
-        /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
-        /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
-        /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
-        if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The `query_log.table` server setting cannot be set to `user_query_log`: "
-                "the query log table is always created in the `system` database, where `system.user_query_log` "
-                "shows the query log records of the current user. "
-                "Rename the query log table or set `query_log.enable_user_query_log` to 0");
-
-        /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
-        if (system_database.isTableExist("user_query_log", context))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
-                "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
-
         attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
             "Contains the query log records of the current user: rows of the query log table (`system.query_log` by default) "
             "whose initiating user is the current user. Unlike the query log table itself, it can be read without any grants. "

@@ -21,6 +21,7 @@ namespace DB
 
 class Block;
 class ColumnReplicated;
+class RowDataStore;
 struct StoredBlock;
 
 /// Thrown by the RowRef constructor when a block or row number does not fit in its 32-bit field.
@@ -449,6 +450,9 @@ public:
     /// Raw pointer for hot decode loops. Must not be called before the build phase is finished.
     const StoredBlock * const * blocksData() const { return blocks.data(); }
 
+    /// Per-block row store base pointers (block_no -> RowDataStore*). A block without a row store stores nullptr.
+    const RowDataStore * const * rowStoresData() const { return row_stores.data(); }
+
     /// Number of registered blocks. Must not be called before the build phase is finished.
     size_t size() const { return blocks.size(); }
 
@@ -464,10 +468,12 @@ public:
 
     /// Resolve the emit table for the given saved-block column `positions` (the output columns of one
     /// probe), building any not-yet-built positions for the current generation (and dropping the whole
-    /// table first if the blocks changed). Fills `out_columns[k]`/`out_replicated[k]` with the per-block
-    /// base pointers for `positions[k]` (stable for as long as the generation does not change, which a
-    /// StorageJoin read lock or a normal join's build-then-probe guarantees for the caller's lifetime).
-    /// Holds `mutex` for the duration; called once per probe batch, never in the per-row loop.
+    /// table first if the blocks changed). `out_columns`/`out_replicated` are sized to `saved_columns_count`
+    /// and indexed by stored-block column position: `out_columns[pos]` holds the per-block base pointers for
+    /// each requested `pos`; positions not in `positions` stay null. Pointers are stable for as long as the
+    /// generation does not change, which a StorageJoin read lock or a normal join's build-then-probe guarantees
+    /// for the caller's lifetime. Holds `mutex` for the duration; called once per probe batch, never in the
+    /// per-row loop.
     void resolveEmitColumns(
         size_t saved_columns_count,
         const std::vector<size_t> & positions,
@@ -483,6 +489,8 @@ private:
     /// One entry per stored block (data-proportional): use the throwing memory tracker so a huge build
     /// fails the query at the limit instead of letting the process get OOM-killed.
     VectorWithMemoryTracking<const StoredBlock *> blocks;
+    /// The per-block row store (or nullptr).
+    VectorWithMemoryTracking<const RowDataStore *> row_stores;
 
     /// Built by `resolveEmitColumns`; indexed by saved-block position, nullptr for not-yet-requested ones.
     std::vector<std::unique_ptr<EmitColumn>> emit_columns;
