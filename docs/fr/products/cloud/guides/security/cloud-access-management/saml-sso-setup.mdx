@@ -15,7 +15,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePl
 
 ClickHouse Cloud prend en charge l’authentification unique (SSO) via Security Assertion Markup Language (SAML). Cela vous permet de vous connecter en toute sécurité à votre organisation ClickHouse Cloud en vous authentifiant auprès de votre fournisseur d’identité (IdP).
 
-Nous prenons en charge le SSO initié par le fournisseur de services, plusieurs organisations utilisant des connexions distinctes, ainsi que le provisionnement juste à temps. Nous prenons également en charge le [provisionnement SCIM](/fr/products/cloud/guides/security/cloud-access-management/scim-setup) en avant-première privée, avec prise en charge d’Okta. Nous ne prenons pas encore en charge le mappage des attributs.
+Nous prenons en charge le SSO initié par le fournisseur de services, plusieurs organisations utilisant des connexions distinctes, ainsi que le provisionnement juste à temps. Nous prenons également en charge le provisionnement SCIM avec [Okta](/fr/products/cloud/guides/security/cloud-access-management/scim-setup) et [Microsoft Entra ID](/fr/products/cloud/guides/security/cloud-access-management/scim-setup-entra). Nous ne prenons pas encore en charge le mappage des attributs.
 
 Les clients qui activent les intégrations SAML peuvent également définir le rôle par défaut qui sera attribué aux nouveaux utilisateurs et ajuster les paramètres d’expiration de session.
 
@@ -364,5 +364,5 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
 </div>
 
 * [Manage cloud users](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — gérez les autorisations et limitez l’accès aux seules connexions SAML.
-* [SCIM provisioning](/fr/products/cloud/guides/security/cloud-access-management/scim-setup) — automatisez le provisionnement des utilisateurs et des groupes (avant-première privée).
+* provisionnement SCIM — automatisez le provisionnement des utilisateurs et des groupes avec [Okta](/fr/products/cloud/guides/security/cloud-access-management/scim-setup) ou [Microsoft Entra ID](/fr/products/cloud/guides/security/cloud-access-management/scim-setup-entra).
 * [Console roles and permissions](/fr/products/cloud/reference/security/console-roles) — les rôles que vous pouvez attribuer comme rôle SAML par défaut.

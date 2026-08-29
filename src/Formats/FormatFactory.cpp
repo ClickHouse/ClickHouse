@@ -149,6 +149,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.hive_text.collection_items_delimiter = settings[Setting::input_format_hive_text_collection_items_delimiter];
     format_settings.hive_text.map_keys_delimiter = settings[Setting::input_format_hive_text_map_keys_delimiter];
     format_settings.hive_text.allow_variable_number_of_columns = settings[Setting::input_format_hive_text_allow_variable_number_of_columns];
+    format_settings.hive_text.rows_delimiter = settings[Setting::format_hive_text_rows_delimiter];
     format_settings.custom.escaping_rule = settings[Setting::format_custom_escaping_rule];
     format_settings.custom.field_delimiter = settings[Setting::format_custom_field_delimiter];
     format_settings.custom.result_after_delimiter = settings[Setting::format_custom_result_after_delimiter];
@@ -172,6 +173,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
     format_settings.input_allow_errors_num = settings[Setting::input_format_allow_errors_num];
     format_settings.input_allow_errors_ratio = settings[Setting::input_format_allow_errors_ratio];
+    format_settings.json_max_string_column_growth_step = settings[Setting::input_format_json_max_string_column_growth_step];
     format_settings.json.max_depth = settings[Setting::input_format_json_max_depth];
     format_settings.json.array_of_rows = settings[Setting::output_format_json_array_of_rows];
     format_settings.json.escape_forward_slashes = settings[Setting::output_format_json_escape_forward_slashes];
@@ -210,6 +212,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
     format_settings.json.read_map_as_array_of_tuples = settings[Setting::input_format_json_map_as_array_of_tuples];
     format_settings.json.json_type_escape_dots_in_keys = settings[Setting::json_type_escape_dots_in_keys];
+    format_settings.json.max_row_size_for_json_each_row = settings[Setting::input_format_json_max_object_size];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -235,6 +238,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
+    format_settings.parquet.output_wide_integer_as_decimal = settings[Setting::output_format_parquet_wide_integer_as_decimal];
     format_settings.parquet.output_datetime_as_uint32 = settings[Setting::output_format_parquet_datetime_as_uint32];
     format_settings.parquet.output_date_as_uint16 = settings[Setting::output_format_parquet_date_as_uint16];
     format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];
@@ -411,6 +415,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.image.width = settings[Setting::output_format_image_width];
     format_settings.image.height = settings[Setting::output_format_image_height];
     format_settings.image.terminal_mode = settings[Setting::output_format_image_terminal_mode];
+    format_settings.image.time_multiplier_seconds = settings[Setting::output_format_image_time_multiplier_seconds];
+    format_settings.image.time_divisor_seconds = settings[Setting::output_format_image_time_divisor_seconds];
+    format_settings.image.streaming_animation = settings[Setting::output_format_image_streaming_animation];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
@@ -1119,6 +1126,22 @@ void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
     target = false;
 }
 
+void FormatFactory::markOutputFormatMayProduceRawBytes(const String & name)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as producing raw bytes", name);
+    target = true;
+}
+
+void FormatFactory::registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Raw bytes checker for format {} is already registered", name);
+    target = std::move(checker);
+}
+
 void FormatFactory::setContentType(const String & name, const String & content_type)
 {
     getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
@@ -1209,6 +1232,14 @@ bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
 {
     const auto & target = getCreators(name);
     return target.is_tty_friendly;
+}
+
+bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const
+{
+    const auto & target = getCreators(name);
+    if (target.may_produce_raw_bytes)
+        return true;
+    return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings, header);
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const

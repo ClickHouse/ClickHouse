@@ -40,6 +40,16 @@ static constexpr auto DEFAULT_BLOCK_SIZE
 static constexpr auto DEFAULT_INSERT_BLOCK_SIZE
     = 1048449; /// 1048576 - PADDING_FOR_SIMD - (PADDING_FOR_SIMD - 1) bytes padding that we usually have in arrays
 
+/// Defaults and the 4 KiB floor for the experimental `ReaderExecutor` window, block, and
+/// connection tunables (`use_reader_executor`). The `reader_executor_*` settings, their
+/// `ReadSettings` mapping, the validation, and the executor `Options` share these constants.
+/// One definition stops the values from drifting apart.
+static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 4 * 1_MiB;
+static constexpr size_t DEFAULT_READER_EXECUTOR_BLOCK_SIZE = 1_MiB;
+static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
+static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
+static constexpr size_t MIN_READER_EXECUTOR_SIZE = 4_KiB;
+
 static constexpr auto SHOW_CHARS_ON_SYNTAX_ERROR = ptrdiff_t(160);
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.

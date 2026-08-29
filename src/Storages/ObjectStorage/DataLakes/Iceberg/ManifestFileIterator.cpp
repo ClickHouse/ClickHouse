@@ -17,7 +17,9 @@
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
@@ -48,6 +50,55 @@ using namespace DB;
 
 namespace
 {
+    /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
+    /// using the minimum number of bytes for the value
+    /// Our decimal binary representation is little endian
+    /// so we cannot reuse our default code for parsing it.
+    ///
+    /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
+    /// are stored rounded, without fractional part. What is more strange
+    /// the integer part is rounded mathematically correctly according to fractional part.
+    /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
+    /// I've checked two implementations: Spark and Amazon Athena and both of them
+    /// do this.
+    ///
+    /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
+    /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
+    /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
+    /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
+    ///
+    /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
+    /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
+    /// but at least it doesn't lead to incorrect results.
+    template <typename DecimalType>
+    std::optional<DB::Field> deserializeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound)
+    {
+        using NativeType = typename DecimalType::NativeType;
+        using UnsignedType = make_unsigned_t<NativeType>;
+
+        if (str.size() > sizeof(NativeType))
+            return std::nullopt;
+
+        /// Accumulate into the unsigned counterpart, pre-filled with the sign bits,
+        /// so that the sign extension comes out of the shifts themselves.
+        UnsignedType unscaled = (str[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
+        for (const auto byte : str)
+            unscaled = (unscaled << 8) | static_cast<UInt8>(byte);
+
+        NativeType unscaled_value = static_cast<NativeType>(unscaled);
+
+        if (scale)
+        {
+            NativeType scaler = lower_bound ? -10 : 10;
+            for (UInt32 i = 1; i < scale; ++i)
+                scaler *= 10;
+
+            unscaled_value += scaler;
+        }
+
+        return DB::DecimalField<DecimalType>(unscaled_value, scale);
+    }
+
     /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
     /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
     std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
@@ -56,62 +107,19 @@ namespace
         auto column = non_nullable_type->createColumn();
         if (DB::WhichDataType(non_nullable_type).isDecimal())
         {
-            /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
-            /// using the minimum number of bytes for the value
-            /// Our decimal binary representation is little endian
-            /// so we cannot reuse our default code for parsing it.
-            int64_t unscaled_value = 0;
-
-            // Convert from big-endian to signed int
-            for (const auto byte : str)
-                unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
-
-            /// Add sign
-            if (str[0] & 0x80)
-            {
-                int64_t sign_extension = -1;
-                sign_extension <<= (str.size() * 8);
-                unscaled_value |= sign_extension;
-            }
-
-            /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
-            /// are stored rounded, without fractional part. What is more strange
-            /// the integer part is rounded mathematically correctly according to fractional part.
-            /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
-            /// I've checked two implementations: Spark and Amazon Athena and both of them
-            /// do this.
-            ///
-            /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
-            /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
-            /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
-            /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
-            ///
-            /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
-            /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
-            /// but at least it doesn't lead to incorrect results.
-            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
-            {
-                int64_t scaler = lower_bound ? -10 : 10;
-                while (--scale)
-                    scaler *= 10;
-
-                unscaled_value += scaler;
-            }
-
-            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
-            {
-                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
-                return result;
-            }
-            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
-            {
-                DB::DecimalField<DB::Decimal64> result(unscaled_value, decimal_type->getScale());
-                return result;
-            }
-            else
-            {
+            if (str.empty())
                 return std::nullopt;
-            }
+
+            const UInt32 scale = DB::getDecimalScale(*non_nullable_type);
+            if (DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
+                return deserializeDecimalBound<DB::Decimal32>(str, scale, lower_bound);
+            if (DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
+                return deserializeDecimalBound<DB::Decimal64>(str, scale, lower_bound);
+            if (DB::checkDecimal<DB::Decimal128>(*non_nullable_type))
+                return deserializeDecimalBound<DB::Decimal128>(str, scale, lower_bound);
+            if (DB::checkDecimal<DB::Decimal256>(*non_nullable_type))
+                return deserializeDecimalBound<DB::Decimal256>(str, scale, lower_bound);
+            return std::nullopt;
         }
         else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
         {
@@ -128,6 +136,79 @@ namespace
         }
     }
 
+}
+
+namespace
+{
+    std::optional<DB::Range> getMaterializedRowLineageRange(const ParsedManifestFileEntry & parsed_entry, Int32 field_id)
+    {
+        auto bounds = parsed_entry.value_bounds.find(field_id);
+        if (bounds == parsed_entry.value_bounds.end())
+            return std::nullopt;
+
+        auto column_info = parsed_entry.columns_infos.find(field_id);
+        if (column_info == parsed_entry.columns_infos.end() || !column_info->second.nulls_count.has_value()
+            || *column_info->second.nulls_count != 0)
+            return std::nullopt;
+
+        String left_str;
+        String right_str;
+        if (!bounds->second.first.tryGet(left_str) || !bounds->second.second.tryGet(right_str))
+            return std::nullopt;
+
+        auto type = std::make_shared<DB::DataTypeUInt64>();
+        auto left = deserializeFieldFromBinaryRepr(left_str, type, true);
+        auto right = deserializeFieldFromBinaryRepr(right_str, type, false);
+        if (!left || !right)
+            return std::nullopt;
+
+        return DB::Range(*left, true, *right, true);
+    }
+
+    bool isColumnPresenceKnown(const ParsedManifestFileEntry & parsed_entry)
+    {
+        for (const auto & [field_id, column_info] : parsed_entry.columns_infos)
+            if (column_info.bytes_size.has_value())
+                return true;
+        return false;
+    }
+
+    void addRowLineageHyperrectangles(std::unordered_map<Int32, DB::Range> & hyperrectangles, const ProcessedManifestFileEntry & entry)
+    {
+        const auto & parsed_entry = *entry.parsed_entry;
+        if (!entry.first_row_id.has_value() || parsed_entry.record_count <= 0 || entry.sequence_number < 0)
+            return;
+
+        const UInt64 inherited_sequence_number = static_cast<UInt64>(entry.sequence_number);
+        const UInt64 last_inherited_row_id = *entry.first_row_id + static_cast<UInt64>(parsed_entry.record_count) - 1;
+        const bool column_presence_is_known = isColumnPresenceKnown(parsed_entry);
+        const bool row_ids_are_readable = Poco::toUpper(parsed_entry.file_format) != "ORC";
+
+        for (const auto field_id : {row_id_field_id, last_updated_sequence_number_field_id})
+        {
+            const bool is_row_id = field_id == row_id_field_id;
+            if (is_row_id && !row_ids_are_readable)
+                continue;
+            const UInt64 inherited_lower_bound = is_row_id ? *entry.first_row_id : inherited_sequence_number;
+            const UInt64 inherited_upper_bound = is_row_id ? last_inherited_row_id : inherited_sequence_number;
+
+            if (!parsed_entry.columns_infos.contains(field_id))
+            {
+                if (column_presence_is_known)
+                {
+                    hyperrectangles.emplace(field_id, DB::Range(inherited_lower_bound, true, inherited_upper_bound, true));
+                    continue;
+                }
+            }
+            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id))
+            {
+                hyperrectangles.emplace(field_id, *range);
+                continue;
+            }
+
+            hyperrectangles.emplace(field_id, DB::Range(UInt64(0), true, inherited_upper_bound, true));
+        }
+    }
 }
 
 const std::vector<ProcessedManifestFileEntryPtr> &
@@ -157,6 +238,28 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
             return false;
     }
     /// Empty manifest (no data files) is considered sorted by definition
+    return true;
+}
+
+bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const
+{
+    /// Equality deletes force reading all physical columns of the data files they apply to
+    /// (see IcebergMetadata::getInitialSchemaByPath), so the pruned main read is impossible.
+    if (!equality_delete_files->empty())
+        return false;
+
+    for (const auto & file : *data_files)
+    {
+        /// Only the Parquet reader provides physical row numbers (ChunkInfoRowNumbers)
+        /// for the main read and positional re-reads (FormatFilterInfo::rows_to_read)
+        /// for the lazy read.
+        if (Poco::toUpper(file->parsed_entry->file_format) != "PARQUET")
+            return false;
+
+        /// Schema evolution forces reading all physical columns as well.
+        if (file->resolved_schema_id != table_schema_id)
+            return false;
+    }
     return true;
 }
 
@@ -226,13 +329,14 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
+    std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
 {
     insertRowToLogTable(
         context_,
-        manifest_file_deserializer_->getMetadataContent(),
+        [&] { return manifest_file_deserializer_->getMetadataContent(); },
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         path_resolver_.getTableRoot(),
         path_to_manifest_file_,
@@ -296,7 +400,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             continue;
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
         auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
-        partition_spec_vec.emplace_back(source_id, transform_name, partition_name);
+        partition_spec_vec.emplace_back(source_id, transform_name, partition_name, static_cast<Int32>(i));
         auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
@@ -325,6 +429,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         schema_processor,
         inherited_sequence_number_,
         inherited_snapshot_id_,
+        inherited_first_row_id_,
         context_,
         manifest_schema_id,
         std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec)),
@@ -342,6 +447,7 @@ ManifestFileIterator::ManifestFileIterator(
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
+    std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
@@ -367,6 +473,21 @@ ManifestFileIterator::ManifestFileIterator(
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
 {
+    if (!inherited_first_row_id_.has_value())
+        return;
+
+    entry_first_row_ids.resize(total_rows);
+    UInt64 next_row_id = *inherited_first_row_id_;
+    for (size_t row_index = 0; row_index < total_rows; ++row_index)
+    {
+        const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
+        if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status != ManifestEntryStatus::ADDED
+            || parsed_entry->parsed_first_row_id.has_value())
+            continue;
+
+        entry_first_row_ids[row_index] = next_row_id;
+        next_row_id += static_cast<UInt64>(parsed_entry->record_count);
+    }
 }
 
 ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
@@ -384,7 +505,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         insertRowToLogTable(
             context,
-            manifest_file_deserializer->getContent(row_index),
+            [&] { return manifest_file_deserializer->getContent(row_index); },
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             path_resolver.getTableRoot(),
             path_to_manifest_file,
@@ -453,6 +574,11 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
         parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
 
+    if (parsed_entry->parsed_first_row_id.has_value())
+        entry->first_row_id = parsed_entry->parsed_first_row_id;
+    else if (!entry_first_row_ids.empty())
+        entry->first_row_id = entry_first_row_ids[row_index];
+
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
     if (filter_dag)
@@ -490,6 +616,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }
+
+            addRowLineageHyperrectangles(hyperrectangles, *entry);
         }
 
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
@@ -497,7 +625,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
     insertRowToLogTable(
         context,
-        manifest_file_deserializer->getContent(row_index),
+        [&] { return manifest_file_deserializer->getContent(row_index); },
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
         path_resolver.getTableRoot(),
         path_to_manifest_file,

@@ -2,14 +2,14 @@
 title: 'ClickHouse に接続する'
 slug: /cloud/reference/byoc/connect
 sidebarTitle: 'ClickHouse に接続する'
-keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'ClickHouse への接続', 'ロードバランサー', 'privatelink']
-description: 'パブリック、プライベート、または PrivateLink エンドポイント経由で BYOC の ClickHouse サービスに接続します'
+keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'ClickHouse への接続', 'ロードバランサー', 'privatelink', 'Private Service Connect', 'Azure プライベートリンク']
+description: 'パブリックまたはプライベートロードバランサー、あるいはプライベート エンドポイント（PrivateLink、Private Service Connect、Private Link）経由で BYOC の ClickHouse サービスに接続します'
 doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-このページでは、BYOC で ClickHouse サービスに接続するさまざまな方法について説明します。セキュリティ要件やネットワーク要件に応じて、パブリックロードバランサー、プライベートロードバランサー、または PrivateLink/Private Service Connect エンドポイントを選択できます。
+このページでは、BYOC で ClickHouse サービスに接続するさまざまな方法について説明します。セキュリティ要件やネットワーク要件に応じて、パブリックロードバランサー、プライベートロードバランサー、またはプライベート エンドポイント (AWS PrivateLink、GCP Private Service Connect、Azure プライベートリンク) を選択できます。
 
 <div id="connection-via">
   ## コンソールで接続パスを選択する
@@ -20,14 +20,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 BYOC サービスでは、**Connect** ダイアログに **Connection via** ドロップダウンがあります。これを使って、サービスへの接続方法を選択します。
 
 * **パブリックロードバランサー** — インターネット向けのエンドポイント。
-* **プライベートロードバランサー** — VPC ピアリング または接続済みネットワーク経由で到達する内部エンドポイント。ご利用のインフラストラクチャで [private load balancer](#private-load-balancer) が有効な場合にのみ表示されます。
-* **PrivateLink** (AWS) / **Private Service Connect** (GCP) — クラウドプロバイダーのプライベートエンドポイントのホスト名。[PrivateLink or Private Service Connect](#privatelink-or-private-service-connect) が有効な場合にのみ表示されます。
+* **プライベートロードバランサー** — VPC ピアリング または接続済みネットワーク経由で到達する内部エンドポイント。ご利用のインフラストラクチャで [プライベートロードバランサー](#private-load-balancer) が有効な場合にのみ表示されます。
+* **PrivateLink** (AWS) / **Private Service Connect** (GCP) / **プライベートリンク** (Azure) — クラウドプロバイダーのプライベートエンドポイントのホスト名。[プライベート エンドポイント](#privatelink-or-private-service-connect) が有効な場合にのみ表示されます。
 
-パスを選択すると、ダイアログ内のすべての接続例でホスト名が更新されます。対象は HTTPS (`curl`) コマンド、ネイティブクライアント、JDBC、MySQL、および各言語の client スニペット (Python、Node.js、Java、Go、C#) です。これにより、ホスト名を手動で編集しなくても、必要なパスに対応したそのまま使えるコマンドをコピーできます。
+パスを選択すると、ダイアログ内のすべての接続例でホスト名が更新されます。対象は HTTPS (`curl`) コマンド、ネイティブクライアント、JDBC、および各言語の client スニペット (Python、Node.js、Java、Go、C#) です。これにより、ホスト名を手動で編集しなくても、必要なパスに対応したそのまま使えるコマンドをコピーできます。
 
-ドロップダウンには、ご利用のインフラストラクチャで有効なパスのみが表示され、リストはダイアログを開くたびに更新されます。新たに有効化した private load balancer や PrivateLink endpoint は、次回 **Connect** を開いたときに表示され、反映待ちはありません。利用可能なパスが 1 つだけの場合、ドロップダウンは無効状態で表示され、そのエンドポイントが選択された状態になります。
+ドロップダウンには、ご利用のインフラストラクチャで有効なパスのみが表示され、リストはダイアログを開くたびに更新されます。新たに有効化した プライベートロードバランサー や PrivateLink endpoint は、次回 **Connect** を開いたときに表示され、反映待ちはありません。利用可能なパスが 1 つだけの場合、ドロップダウンは無効状態で表示され、そのエンドポイントが選択された状態になります。
 
-<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Connection via ドロップダウンが展開され、public load balancer、private load balancer、PrivateLink の各パスが表示されている Connect ダイアログ" background="black" />
+<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Connection via ドロップダウンが展開され、パブリックロードバランサー、プライベートロードバランサー、PrivateLink の各パスが表示されている Connect ダイアログ" background="black" />
 
 <div id="public-load-balancer">
   ## パブリックロードバランサー
@@ -59,6 +59,8 @@ BYOC サービスでは、**Connect** ダイアログに **Connection via** ド�
 sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
 ```
 
+`aws` セグメントはクラウドプロバイダーを表します。GCP または Azure にデプロイする場合は、それぞれ `gcp` または `azure` になります。
+
 <div id="public-ip-filtering">
   ### IP フィルタリング
 </div>
@@ -71,33 +73,33 @@ IP フィルタリングの詳細については、[IP Access List ドキュメ�
   ## プライベートロードバランサー
 </div>
 
-プライベートロードバランサーは、ClickHouse サービスへの内部アクセスを提供するもので、接続されたネットワーク内 (例: ピア接続された VPC) からのみアクセスできます。これは、顧客管理 VPC を使用する場合のデフォルト構成です。
+プライベートロードバランサーは、ClickHouse サービスへの内部アクセスを提供するもので、接続されたネットワーク内 (例: ピア接続された VPC/VNet) からのみアクセスできます。これは、顧客管理 VPC を使用する場合のデフォルト構成です。
 
-<div id="public-load-balancer-overview">
+<div id="private-load-balancer-overview">
   ### 概要
 </div>
 
 * **アクセス**: プライベートネットワークのインフラストラクチャ内からのみアクセスできます
-* **ユースケース**: 同じクラウド環境で稼働するアプリケーションや、VPC ピアリング で接続されたアプリケーションに最適です
+* **ユースケース**: 同じクラウド環境で稼働するアプリケーションや、VPC/VNet ピアリングで接続されたアプリケーションに最適です
 * **セキュリティ**: トラフィックはプライベートネットワーク内にとどまり、パブリックインターネットには公開されません
 
 <div id="connecting-via-private-load-balancer">
-  ### プライベート ロードバランサー経由で接続する
+  ### プライベートロードバランサー経由で接続する
 </div>
 
 プライベート エンドポイントを使用して接続するには、次の手順を実行します。
 
-1. **プライベート ロードバランサーを有効にする** (まだ有効になっていない場合) 。デプロイメントで[プライベート ロードバランサーを有効にする](/ja/products/bring-your-own-cloud/configuration/configurations#load-balancers)必要がある場合は、ClickHouse Support にお問い合わせください。
+1. ClickHouse Cloud コンソールで、BYOC インフラストラクチャの **プライベートロードバランサーを有効にする** (まだ有効になっていない場合) 。詳細については、[Load Balancers](/ja/products/bring-your-own-cloud/configuration/configurations#load-balancers)を参照してください。
 2. **ネットワーク接続を確認する**:
-   * VPC ピアリング の場合: VPC ピアリング のセットアップを完了します ([Private Networking Setup](/ja/products/bring-your-own-cloud/onboarding/network)を参照)
-   * その他のプライベート ネットワークの場合: BYOC VPC に到達できるようにルーティングが構成されていることを確認します
+   * VPC/VNet ピアリングの場合: ピアリングのセットアップを完了します ([Private Networking Setup](/ja/products/bring-your-own-cloud/onboarding/network)を参照)
+   * その他のプライベート ネットワークの場合: BYOC VPC/VNet に到達できるようにルーティングが構成されていることを確認します
 3. **プライベート エンドポイントを確認する**:
    プライベート エンドポイントは、サービスの「Connect」セクションにある ClickHouse Cloud コンソール で確認できます。プライベート エンドポイントはパブリック エンドポイントと同じフォーマットですが、サービス ID の部分に `-private` という接尾辞が追加されます。例:
 
    * **パブリック エンドポイント**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
    * **プライベート エンドポイント**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
 
-   `-private` の hostname を手作業で組み立てる代わりに、**Connect** ダイアログの **Connection via** dropdown で **Private load balancer** を選択すると、エンドポイントとそのまま使える接続コマンドを直接コピーできます。
+   `-private` の ホスト名 を手作業で組み立てる代わりに、**Connect** ダイアログの **Connection via** dropdown で **プライベートロードバランサー** を選択すると、エンドポイントとそのまま使える接続コマンドを直接コピーできます。
 
 <div id="private-ip-filtering">
   ### IPフィルタリング
@@ -114,10 +116,10 @@ AWS へのデプロイでは、プライベートロードバランサーのセ�
 詳細については、[Private Load Balancer Security Group configuration](/ja/products/bring-your-own-cloud/configuration/configurations#private-load-balancer-security-group) を参照してください。
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink または Private Service Connect
+  ## PrivateLink、Private Service Connect、または Private Link
 </div>
 
-AWS PrivateLink と GCP Private Service Connect は、最も安全性の高い接続オプションであり、VPCピアリングやインターネットゲートウェイを使わずに ClickHouse サービスへプライベートにアクセスできます。
+AWS PrivateLink、GCP Private Service Connect、Azure プライベートリンク は、最も安全性の高い接続オプションであり、VPC/VNet ピアリングやインターネットゲートウェイを使わずに ClickHouse サービスへプライベートにアクセスできます。
 
 <div id="public-load-balancer-overview">
   ### 概要
@@ -132,35 +134,39 @@ AWS PrivateLink と GCP Private Service Connect は、最も安全性の高い�
   * セキュリティとコンプライアンス体制の強化
 
 <div id="connecting-via-privatelink">
-  ### PrivateLink/Private Service Connect 経由で接続する
+  ### プライベート エンドポイント経由で接続する
 </div>
 
-PrivateLink または Private Service Connect のセットアップを完了してください ([Private Networking Setup](/ja/products/bring-your-own-cloud/onboarding/network) を参照) 。設定が完了すると、PrivateLink 専用のエンドポイント形式を使用して ClickHouseサービスに接続できます。PrivateLink エンドポイントには、VPC エンドポイント経由でルーティングされることを示す `vpce` サブドメインが含まれます。VPC 内の DNS 名前解決により、トラフィックは自動的に PrivateLink エンドポイント経由でルーティングされます。
+PrivateLink、Private Service Connect、または プライベートリンク のセットアップを完了します ([Private Networking Setup](/ja/products/bring-your-own-cloud/onboarding/network)を参照) 。設定後は、専用のプライベート エンドポイント ホスト名 を使用して ClickHouse サービス に接続できます。DNS の動作は クラウドプロバイダー によって異なります。AWS では、エンドポイントで **Private DNS names** を有効にすると、VPC 内の DNS 解決によってトラフィックが自動的にそのエンドポイント経由でルーティングされます。GCP Private Service Connect では、ユーザー側でワイルドカード DNS レコードを作成する必要があります。詳細は [GCP setup guide](/ja/products/bring-your-own-cloud/onboarding/network-gcp) を参照してください。Azure プライベートリンク でも同様に、VNet にリンクされたワイルドカード レコードを含む Private DNS zone が必要です。詳細は [Azure setup guide](/ja/products/bring-your-own-cloud/onboarding/network-azure) を参照してください。
 
-PrivateLink エンドポイントの形式はパブリックエンドポイントと似ていますが、service サブドメインと BYOC インフラストラクチャのサブドメインの間に `vpce` サブドメインが入ります。たとえば、次のとおりです。
+プライベート エンドポイント ホスト名 は public endpoint に似ていますが、service subdomain と BYOC infrastructure subdomain の間にクラウド固有の label が追加されます。AWS では `vpce`、GCP では `p`、Azure では `privatelink` です。例:
 
-* **パブリックエンドポイント**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
-* **PrivateLink エンドポイント**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **Public endpoint (AWS)&#x20;**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **PrivateLink endpoint (AWS)&#x20;**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **Private Service Connect endpoint (GCP)&#x20;**: `h5ju65kv87.p.mhp0y4dmph.us-central1.gcp.clickhouse-byoc.com`
+* **プライベートリンク endpoint (Azure)&#x20;**: `h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
 
-エンドポイントの設定が完了し、許可リスト への追加も済んだら、**Connect** ダイアログの **Connection via** ドロップダウンから **PrivateLink** (GCP では **Private Service Connect**) を選択すると、プライベートエンドポイントの接続情報を直接コピーできます。
+エンドポイントを設定して 許可リスト に追加したら、**Connect** ダイアログの **Connection via** dropdown で **PrivateLink** (GCP では **Private Service Connect**、Azure では **プライベートリンク**) を選択すると、プライベート エンドポイントの connection details を直接コピーできます。
 
 <div id="endpoint-id-allowlist">
-  ### Endpoint ID 許可リスト
+  ### Endpoint ID の許可リスト
 </div>
 
-PrivateLink または Private Service Connect を使用するには、クライアント接続の Endpoint ID を各 ClickHouseサービスごとに明示的に許可する必要があります。ClickHouse Support に連絡し、サービスの許可リストに追加できるよう、Endpoint ID を共有してください。
+PrivateLink、Private Service Connect、またはプライベートリンクを使用するには、クライアント接続の Endpoint ID を各 ClickHouse サービスで明示的に許可する必要があります。ClickHouse Cloud コンソールで許可リストを管理できます。サービスの Settings ページを開き、**プライベート エンドポイントを設定**をクリックして、クラウドプロバイダーのエンドポイント識別子を入力します。
 
-詳細なセットアップ手順については、[Private Networking Setup guide](/ja/products/bring-your-own-cloud/onboarding/network) を参照してください。
+* **AWS**: VPC Endpoint ID ([AWS セットアップガイド](/ja/products/bring-your-own-cloud/onboarding/network-aws#setup-privatelink)を参照)
+* **GCP**: PSC Connection ID ([GCP セットアップガイド](/ja/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc)を参照)
+* **Azure**: Private Endpoint Resource ID ([Azure セットアップガイド](/ja/products/bring-your-own-cloud/onboarding/network-azure#setup-privatelink)を参照)
 
 <div id="choosing-connection-method">
   ## 適切な接続方式の選択
 </div>
 
-| 接続方式                                    | セキュリティレベル          | ネットワーク要件                 | ユースケース                  |
-| --------------------------------------- | ------------------ | ------------------------ | ----------------------- |
-| **パブリックロードバランサー**                       | 中 (IP フィルタリング使用時)  | インターネット接続                | さまざまな場所にいるアプリケーション/ユーザー |
-| **プライベートロードバランサー**                      | 高                  | VPC ピアリングまたはプライベートネットワーク | 同一クラウド環境内のアプリケーション      |
-| **PrivateLink/Private Service Connect** | 最高                 | クラウドプロバイダー管理のサービス        | 最大限の分離が必要なエンタープライズ導入    |
+| 接続方式                                              | セキュリティレベル         | ネットワーク要件                 | ユースケース                  |
+| ------------------------------------------------- | ----------------- | ------------------------ | ----------------------- |
+| **パブリックロードバランサー**                                 | 中 (IP フィルタリング使用時) | インターネット接続                | さまざまな場所にいるアプリケーション/ユーザー |
+| **プライベートロードバランサー**                                | 高                 | VPC ピアリングまたはプライベートネットワーク | 同一クラウド環境内のアプリケーション      |
+| **PrivateLink/Private Service Connect/プライベートリンク** | 最高                | クラウドプロバイダー管理のサービス        | 最大限の分離が必要なエンタープライズ導入    |
 
 <div id="troubleshooting">
   ## 接続問題のトラブルシューティング
@@ -170,8 +176,8 @@ PrivateLink または Private Service Connect を使用するには、クライ�
 
 1. **エンドポイントの到達可能性を確認**: 正しいエンドポイント (パブリックまたはプライベート) を使用していることを確認します
 2. **IP フィルタを確認**: パブリックロードバランサーでは、ご利用の IP アドレスが許可リストに含まれていることを確認します
-3. **ネットワーク接続を確認**: プライベート接続では、VPC ピアリング または PrivateLink が正しく設定されていることを確認します
+3. **ネットワーク接続を確認**: プライベート接続では、VPC/VNet ピアリングまたはプライベート エンドポイントが正しく設定されていることを確認します
 4. **セキュリティグループを確認**: プライベートロードバランサーでは、セキュリティグループのルールで送信元ネットワークからのトラフィックが許可されていることを確認します
-5. **セキュリティグループを確認**: PrivateLink または Private Service Connect では、Endpoint ID が ClickHouse service の許可リストに追加されていることを確認します
+5. **エンドポイントの許可リストを確認**: PrivateLink、Private Service Connect、またはプライベートリンクでは、Endpoint ID が ClickHouse サービス の許可リストに追加されていることを確認します
 6. **認証を確認**: 正しい認証情報 (ユーザー名とパスワード) を使用していることを確認します
 7. **サポートに連絡**: 問題が解決しない場合は、ClickHouse Support に連絡してください
