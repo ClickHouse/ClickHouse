@@ -1,4 +1,5 @@
 SET enable_json_type = 1;
+SET enable_analyzer = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
 SET text_index_hint_max_selectivity = 1;
