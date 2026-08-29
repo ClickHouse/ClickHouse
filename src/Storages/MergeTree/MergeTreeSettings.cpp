@@ -2016,7 +2016,7 @@ Disable DETACH PARTITION query for zero copy replication.
 Disable FETCH PARTITION query for zero copy replication.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_block_number_column, false, R"(
-Enable persisting column _block_number for each row. It is also persisted when `enable_block_offset_column` is enabled, because `_block_offset` is an offset within its own insert block and the two columns form a single row identity.
+Enable persisting column `_block_number` for each row. On merges it is also persisted when `enable_block_offset_column` is enabled, because `_block_offset` is an offset within its own insert block and the two columns form a single row identity.
 )", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
 Persists virtual columns `_block_offset` and `_block_number` on merges. `_block_offset` is an offset within its own insert block, so it is not a row identity without `_block_number` and both are persisted together.
