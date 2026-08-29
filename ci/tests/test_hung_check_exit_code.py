@@ -841,6 +841,7 @@ def _probe_calls(stop_testing, worker, hung_check=True):
     saved = (
         _runner.check_server_liveness,
         _runner.print_c_stacktraces,
+        _runner.print_sql_stacktraces,
         _runner.probed_server_process,
     )
 
@@ -850,6 +851,7 @@ def _probe_calls(stop_testing, worker, hung_check=True):
 
     _runner.check_server_liveness = counting_probe
     _runner.print_c_stacktraces = lambda *a, **k: None
+    _runner.print_sql_stacktraces = lambda *a, **k: None
     # The stub args carry no `http_port`, and the machine running the tests may
     # keep a real server on the default one. These arms are about whether the
     # probe runs at all, so the process evidence reads "gone": a failed probe
@@ -863,6 +865,7 @@ def _probe_calls(stop_testing, worker, hung_check=True):
         (
             _runner.check_server_liveness,
             _runner.print_c_stacktraces,
+            _runner.print_sql_stacktraces,
             _runner.probed_server_process,
         ) = saved
     return len(calls), exit_code
@@ -908,6 +911,7 @@ def _parent_probe_carrier_with_a_competitor(competitor_code):
     saved = (
         _runner.check_server_liveness,
         _runner.print_c_stacktraces,
+        _runner.print_sql_stacktraces,
         _runner.try_claim_stop_cause,
         _runner.probed_server_process,
     )
@@ -928,7 +932,9 @@ def _parent_probe_carrier_with_a_competitor(competitor_code):
         collected.append(1)
 
     _runner.check_server_liveness = lambda *a, **k: False
-    _runner.print_c_stacktraces = fake_collect
+    # On the first collector called, so the window observed is the whole one.
+    _runner.print_sql_stacktraces = fake_collect
+    _runner.print_c_stacktraces = lambda *a, **k: None
     _runner.try_claim_stop_cause = capturing_claim
     # "Gone" evidence keeps the failed probe on the immediate-abort path (see
     # `_probe_calls`), which is where the claim-before-collect ordering lives.
@@ -943,6 +949,7 @@ def _parent_probe_carrier_with_a_competitor(competitor_code):
         (
             _runner.check_server_liveness,
             _runner.print_c_stacktraces,
+            _runner.print_sql_stacktraces,
             _runner.try_claim_stop_cause,
             _runner.probed_server_process,
         ) = saved
@@ -1043,8 +1050,15 @@ def _drive_abort_site_with_a_competitor(
         if stop_tests_calls is not None:
             stop_tests_calls.append(1)
 
-    saved = (_runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase)
-    _runner.print_c_stacktraces = fake_collect
+    saved = (
+        _runner.print_c_stacktraces,
+        _runner.print_sql_stacktraces,
+        _runner.stop_tests,
+        _runner.TestCase,
+    )
+    # On the first collector called, so the window observed is the whole one.
+    _runner.print_sql_stacktraces = fake_collect
+    _runner.print_c_stacktraces = lambda *a, **k: None
     _runner.stop_tests = record_stop_tests
     _runner.TestCase = FakeCase
     thread = (
@@ -1075,7 +1089,12 @@ def _drive_abort_site_with_a_competitor(
     except _runner.StopTesting:
         pass
     finally:
-        _runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase = saved
+        (
+            _runner.print_c_stacktraces,
+            _runner.print_sql_stacktraces,
+            _runner.stop_tests,
+            _runner.TestCase,
+        ) = saved
         if thread:
             thread.join(timeout=handshake_timeout + 5)
     assert collection_started.is_set(), "the collection window did not open"
@@ -1221,11 +1240,15 @@ if os.environ.get("STUB_HEALTH_CHECK_RAISES") == "1":
     def _boom(self, suite, case_name):
         raise RuntimeError("stub: health check send failed")
     ns["TestCase"].send_test_name_failed = _boom
-# lldb over every server process blocks up to 30s each and the collection itself
-# is not what these tests assert, so it is replaced by a marker they can observe.
+# lldb over every server process blocks up to 30s each, and the SQL dump needs a
+# live server, so neither collection is what these tests assert: both are replaced
+# by markers they can observe.
 def _stub_stacktraces(*a, **k):
     print("stub: print_c_stacktraces")
 ns["print_c_stacktraces"] = _stub_stacktraces
+def _stub_sql_stacktraces(*a, **k):
+    print("stub: print_sql_stacktraces")
+ns["print_sql_stacktraces"] = _stub_sql_stacktraces
 # Prints one line per claim attempt, granted or not. The "Global time limit reached"
 # banner sits inside the granted branch, so without this an attempt that was made and
 # refused is indistinguishable from one that was never made.
@@ -1316,6 +1339,9 @@ def test_hung_check_collects_stacktraces_before_stopping(tmp_path):
     proc = _run_runner(tmp_path, ["--hung-check"], stub_liveness_fails=True)
     _assert_exit_code(proc, HUNG_CHECK_EXIT_CODE)
     assert "stub: print_c_stacktraces" in proc.stdout
+    # The SQL dump is the only source of query_id per stuck thread, and the probe
+    # that failed here was HTTP while this dump goes over TCP.
+    assert "stub: print_sql_stacktraces" in proc.stdout
 
 
 def test_parallel_worker_probe_failure_exits_with_the_hung_check_code(tmp_path):
