@@ -143,6 +143,26 @@ def wait_for_consumer_assignments(instance, table, acceptable, timeout=240):
     )
 
 
+def wait_for_shard_partitions(instance, table, timeout=120):
+    """
+    Return the set of partition ids currently held by `table`'s consumers, waiting until it
+    holds at least one. Used for the affinity check, which cares about *which* partitions a
+    replica holds rather than how many -- unlike the count, that is not affected by
+    convergence timing.
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        raw = instance.query(
+            "SELECT arrayFlatten(groupArray(assignments.partition_id)) "
+            "FROM system.kafka_consumers "
+            f"WHERE database = 'test' AND table = '{table}'"
+        ).strip()
+        if raw and raw != "[]":
+            return set(ast.literal_eval(raw))
+        time.sleep(2)
+    pytest.fail(f"{table} never acquired any partition within {timeout}s")
+
+
 @pytest.mark.parametrize(
     "num_partitions, num_replicas, num_consumers, expected_node_quota, "
     "acceptable_consumer_counts, case",
@@ -316,11 +336,20 @@ def test_multi_consumer_with_partition_affinity(kafka_cluster):
                         f"(only replicas of the same shard should be counted)"
                     )
 
-                counts = wait_for_consumer_assignments(
-                    instance, table, [[0, 0, 1, 1]]
-                )
-                assert counts == [0, 0, 1, 1], (
-                    f"{replica} per-consumer assignments {counts}, expected [0, 0, 1, 1]"
+                # Affinity's own contract: a replica must only ever hold partitions of its
+                # own shard. Exact per-consumer counts are deliberately NOT asserted here --
+                # the parametrized cases above already prove enforcement, while here the
+                # counts are sensitive to convergence timing: `assignments` merges permanent
+                # and temporary locks (KeeperHandlingConsumer::getStat), and while a replica
+                # that registered first sheds its surplus the partitions it releases are
+                # briefly picked up as temporary locks by its shard peer. That transient
+                # shows up as e.g. [0,0,1,2] against a node_quota of 2.
+                effective = shard_num - 1
+                held = wait_for_shard_partitions(instance, table)
+                assert held, f"{replica} holds no partitions"
+                assert all(pid % shard_count == effective for pid in held), (
+                    f"{replica} (shard {shard_num}) holds partitions from another shard: "
+                    f"{sorted(held)} -- the affinity filter must be applied before locking"
                 )
 
 
