@@ -255,12 +255,6 @@ public:
         return compartment->getMemory(ptr, size);
     }
 
-    WasmPtr reallocBuffer(WasmPtr handle, WasmSizeT new_size) const override
-    {
-        return compartment->invoke<WasmPtr>(
-            "clickhouse_reallocate_buffer", {handle, new_size}, stop_token);
-    }
-
 private:
     WasmCompartment * compartment;
     StopToken stop_token;
