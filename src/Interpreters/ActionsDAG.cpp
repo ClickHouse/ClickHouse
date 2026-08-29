@@ -3,6 +3,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1232,11 +1233,46 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         {
             try
             {
+                /// Do not fold when an argument's type differs from the type this node was resolved
+                /// for. The comparison is exact, not wrapper-stripped: `isNullable` derives its value
+                /// from the argument type alone, so a wrapper-only difference would give a wrong value
+                /// with an unchanged result type.
+                bool argument_types_drifted = false;
+                const auto & expected_argument_types = node->function_base->getArgumentTypes();
+                if (expected_argument_types.size() == arguments.size())
+                {
+                    for (size_t i = 0; i < arguments.size(); ++i)
+                    {
+                        if (!arguments[i].type || !expected_argument_types[i])
+                            continue;
+                        if (!arguments[i].type->equals(*expected_argument_types[i]))
+                        {
+                            argument_types_drifted = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (argument_types_drifted)
+                {
+                    /// An empty column of the declared type keeps header computation going; with one row
+                    /// the column stays null, because callers read any non-null output as definitive.
+                    /// `DataTypeFunction` (a captured lambda) is the one type here that cannot be
+                    /// instantiated - it inherits `IDataTypeDummy::createColumn`, which throws
+                    /// `NOT_IMPLEMENTED` - so it is left null too. (`DataTypeNothing` and `DataTypeSet`
+                    /// share that base but do override `createColumn`.)
+                    if (input_rows_count == 0 && !typeid_cast<const DataTypeFunction *>(res_column.type.get()))
+                        res_column.column = res_column.type->createColumn();
+                    break;
+                }
+
                 if (only_constant_arguments)
                     res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
                 else
                     res_column.column = node->function_base->getConstantResultForNonConstArguments(arguments, res_column.type);
 
+                /// Arguments did not drift (checked above), so a result-type mismatch here is a genuine
+                /// function contract violation rather than an EXCHANGE TABLES race.
                 if (res_column.column && !columnMatchesType(*res_column.column, *res_column.type))
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -1263,6 +1299,14 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             auto key = arguments.at(0);
+
+            /// Carry the ACTUAL nested type, as the `ALIAS` case below does and as
+            /// `ExpressionActions::executeAction` does here: the declared `result_type` is stale, and
+            /// keeping it would hide the difference from the `FUNCTION` check above. Runs before the
+            /// early exits, which leave the column null but still hand the TYPE to the parent.
+            if (const auto & key_array_type = getArrayJoinDataType(key.type))
+                res_column.type = key_array_type->getNestedType();
+
             if (!key.column)
                 break;
 
@@ -1300,7 +1344,13 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
         case ActionsDAG::ActionType::ALIAS:
         {
+            /// Carry the argument's ACTUAL type, not just its column, as
+            /// `ExpressionActions::executeAction` does: an alias never changes a value, so copying a
+            /// drifted column under the stale declared type would hide the difference from the
+            /// `FUNCTION` check above and a function behind the alias would still be executed on it.
             res_column.column = arguments.at(0).column;
+            if (arguments.at(0).type)
+                res_column.type = arguments.at(0).type;
             break;
         }
 
