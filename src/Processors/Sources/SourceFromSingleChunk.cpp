@@ -9,7 +9,9 @@ SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader header, Chunk chunk_) 
 {
 }
 
-SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader data) : ISource(data), chunk(data->getColumns(), data->rows())
+SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader data, bool enable_auto_progress)
+    : ISource(data, enable_auto_progress)
+    , chunk(data->getColumns(), data->rows())
 {
     const auto & sample = getPort().getHeader();
     bool has_aggregate_functions = false;
