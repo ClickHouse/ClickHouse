@@ -19,32 +19,24 @@ class ReadBuffer;
 class WriteBuffer;
 using PostingList = roaring::Roaring;
 
-/// IPostingListEncoder accumulates a posting list encoded into the codec's
-/// in-memory form and serializes it at the end.
-///
-/// During the text index build, row ids of each token are collected as raw values into
-/// a vector, and the vector is flushed here every time it reaches `append_granularity`.
-/// The accumulator splits the appended row ids into segments of the segment size
-/// (`posting_list_block_size` row ids); therefore all segments, except possibly the
-/// last one, contain exactly the segment size of row ids.
+/// Incrementally encodes the posting list of a single token during the text index build.
+/// Sorted row ids arrive in batches via `append`, are split into fixed-size segments and
+/// encoded right away; `finalize` writes the buffered encoded segments to the output.
 class IPostingListEncoder
 {
 public:
-    /// Every `append`, except the final one before `finalize`, must contain a multiple
-    /// of this many row ids. It guarantees that codecs encoding fixed-size blocks
-    /// (bitpacking) never produce a partial block in the middle of a segment.
+    /// Every `append`, except the final one before `finalize`,
+    /// must contain a multiple of this many row ids.
     static constexpr size_t append_granularity = 128;
 
     virtual ~IPostingListEncoder() = default;
 
-    /// Encodes a batch of sorted unique row ids (increasing across calls) into the
-    /// codec's in-memory form, appending to the open segment. Each time the open
-    /// segment reaches `segment_size` row ids, it is sealed and a new one is started.
+    /// Encodes a batch of sorted unique row ids (increasing across calls), appending to the open segment.
+    /// Each time the open segment reaches `segment_size` row ids, it is sealed and a new one is started.
     virtual void append(std::span<const UInt32> row_ids, size_t segment_size) = 0;
 
-    /// Seals the last segment and writes all accumulated segments to `out`, filling
-    /// per-segment metadata (offsets, ranges) and header flags in `info`.
-    /// Must be called exactly once, after all calls to `append`.
+    /// Seals the last segment and writes all accumulated segments to `out`.
+    /// Fills per-segment metadata (offsets, ranges) and header flags in `info`.
     virtual void finalize(WriteBuffer & out, TokenPostingsInfo & info) = 0;
 
     /// Total number of row ids accumulated so far.
@@ -54,7 +46,7 @@ public:
     virtual size_t memoryUsageBytes() const = 0;
 };
 
-/// IPostingListCodec is an interface for compressing text index posting lists.
+/// IPostingListCodec is an interface for serializing/deserializing text index posting lists.
 class IPostingListCodec
 {
 public:
@@ -87,7 +79,6 @@ public:
     virtual void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const = 0;
 
     /// The same, but appends the decoded row ids to a plain array.
-    /// Used in merges of text indexes to avoid materializing a roaring bitmap.
     virtual void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const = 0;
 private:
     Type type{};

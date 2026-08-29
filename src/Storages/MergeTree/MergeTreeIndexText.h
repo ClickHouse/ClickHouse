@@ -129,14 +129,13 @@ public:
 
         /// Raw row ids of the current (possibly incomplete) segment.
         PODArray<UInt32, 64> values;
-        /// Full segments encoded into the codec's in-memory form. Created lazily on the first
-        /// flush: tokens whose posting lists end up raw or embedded never need an encoder.
+        /// Full segments encoded by the codec. Created lazily on the first flush.
         std::unique_ptr<IPostingListEncoder> encoder;
         /// Positions of the token for phrase search. Null unless positions are enabled.
         std::unique_ptr<PositionListBuilder> positions;
 
         /// Flushes all buffered row ids into the encoder and clears the buffer.
-        /// The caller controls the flush size (see `IPostingListEncoder::append_granularity`).
+        /// The caller should control the flush size.
         void flush(const PostingListBuildContext & context);
     };
 
@@ -170,10 +169,6 @@ private:
     std::variant<Inline, Large> state;
 };
 
-/// `PostingListBuilder` is the mapped value of a `StringHashMap`, which relocates its cells with raw
-/// `memcpy` on rehash/resize. `Large` holds only pointers to the heap, so memcpy-relocation of a cell
-/// is safe (the relocated-from cell is abandoned without a destructor call); the map still runs the real
-/// destructor on each surviving cell when it is destroyed.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
 
 /// A token paired with its posting/position builder views.
@@ -337,8 +332,6 @@ struct TextIndexSerialization
         FrontCodedStrings = 1
     };
 
-    /// Serializes the postings collected by the builder (and the token's positions, when
-    /// `positions_stream` is set) along with the token info into the dictionary stream.
     static void serializePostingsAndTokenInfo(
         PostingListBuilder && postings,
         const PostingListBuildContext & context,

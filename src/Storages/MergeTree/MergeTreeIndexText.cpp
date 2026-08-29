@@ -974,9 +974,6 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
         }
     }
 
-    /// Serialize position data if phrase query support is enabled. The position metadata is recorded on
-    /// `info` (and so written by `serializeTokenInfo` right after header+cardinality, before any posting
-    /// data) regardless of which posting-list layout is chosen below; the entries go to the `.pos` stream.
     if (positions_stream)
     {
         chassert(positions);
