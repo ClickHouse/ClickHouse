@@ -266,6 +266,20 @@ INSERT INTO i_u64 SELECT number, number + 100 FROM numbers(0, 1000);
 INSERT INTO i_u64 SELECT number, number + 100 FROM numbers(1000, 1000);
 INSERT INTO i_u64 SELECT number, number + 100 FROM numbers(2000, 1000);
 
+-- Three dictionaries under one wrapper: nullable, plain, and float. `w` holds the wrapper constant,
+-- so nothing the arms below show for `v` or `f` is explainable by the wrapper alone. In `v` and `f`
+-- the NULL and the NaN sit in the dictionary rather than at the root, which is where a root-only
+-- test for either property stops looking.
+CREATE TABLE i_lc (id UInt64, v LowCardinality(Nullable(UInt64)), w LowCardinality(UInt64), f LowCardinality(Float64),
+                   INDEX idx_v v TYPE minmax GRANULARITY 1, INDEX idx_w w TYPE minmax GRANULARITY 1,
+                   INDEX idx_f f TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES i_lc;
+INSERT INTO i_lc SELECT number, toLowCardinality(toNullable(number + 100)), toLowCardinality(number + 100), toLowCardinality(toFloat64(number + 100)) FROM numbers(0, 1000);
+INSERT INTO i_lc SELECT number, toLowCardinality(toNullable(number + 100)), toLowCardinality(number + 100), toLowCardinality(toFloat64(number + 100)) FROM numbers(1000, 1000);
+INSERT INTO i_lc SELECT number, if(number % 100 = 0, CAST(NULL, 'LowCardinality(Nullable(UInt64))'), toLowCardinality(toNullable(number + 100))), toLowCardinality(number + 100), if(number % 100 = 0, toLowCardinality(nan), toLowCardinality(toFloat64(number + 100))) FROM numbers(2000, 1000);
+
 -- The fixture only bites with more than one part.
 SELECT 'parts', min(c) > 1 FROM (SELECT count() AS c FROM system.parts WHERE database = currentDatabase() AND active GROUP BY table);
 -- The JSON fixture must really carry NaN, not a null that formats the same way.
@@ -366,6 +380,13 @@ SELECT 'skip1 OFF', v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use
 SELECT 'skip0 ON ', v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 0;
 SELECT 'skip0 OFF', v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
+-- getExtremes reports neither the NULL nor the NaN that a NULLS FIRST answer has to return first, so
+-- a dictionary holding either must not reach this path.
+SELECT 'lcn ANF ON ', v FROM i_lc ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1;
+SELECT 'lcn ANF OFF', v FROM i_lc ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'lcfd ANF ON ', f FROM i_lc ORDER BY f ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1;
+SELECT 'lcfd ANF OFF', f FROM i_lc ORDER BY f ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+
 -- ==================== controls: these already agreed, and must keep agreeing ====================
 
 -- nulls_direction is 1, which is what the generic comparison already assumes.
@@ -432,6 +453,12 @@ SELECT 'pres off master', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 
 -- still does. Without this the results above could be explained by the comparison change alone.
 SELECT 'skipidx f64', count() FROM (EXPLAIN indexes = 1 SELECT v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
 SELECT 'skipidx u64', count() > 0 FROM (EXPLAIN indexes = 1 SELECT v FROM i_u64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
+-- A nullable or float dictionary is rejected while the same wrapper over a plain integer one is not,
+-- so each rejection is attributable to the dictionary and not to LowCardinality. These two are the
+-- only carriers here whose disqualifying property is out of reach of a root-only test.
+SELECT 'skipidx lcn', count() FROM (EXPLAIN indexes = 1 SELECT v FROM i_lc ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
+SELECT 'skipidx lcfd', count() FROM (EXPLAIN indexes = 1 SELECT f FROM i_lc ORDER BY f ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
+SELECT 'skipidx lcw', count() > 0 FROM (EXPLAIN indexes = 1 SELECT w FROM i_lc ORDER BY w ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
 
 -- ==================== the general path still rejects rows ====================
 -- The arms above compare answers, so a filter that accepted every row would keep all of them
