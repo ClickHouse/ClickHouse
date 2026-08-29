@@ -681,10 +681,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             ctx->force_ttl = true;
         }
 
-        /// The rows-WHERE entries are dropped only when something will rebuild them: the TTL step
-        /// on the ordinary path, or the recalculation step on the blocked one. That step is skipped
-        /// for tables with a GROUP BY TTL (it would leave that family unfinished), and clearing
-        /// without a rebuild would leave the merged part with no rows-WHERE bound at all.
+        /// The rows-WHERE entries are dropped only because something will rebuild them: the TTL step
+        /// on the ordinary path, or the recalculation step on the blocked one. Both run for every
+        /// patched merge on a table with TTL, GROUP BY tables included - only that family's rebuilt
+        /// values are thrown away below. Clearing without a rebuild would leave the merged part with
+        /// no rows-WHERE bound at all.
         global_ctx->new_data_part->ttl_infos.rows_where_ttl.clear();
 
         /// The MOVE and RECOMPRESS maps are the only record the background mover and the
@@ -3593,10 +3594,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         /// TTL removal is blocked but the merge carries patches: the merged part still must not
         /// keep pre-patch infos, or a later TTLDrop can drop rows a patch un-expired.
-        /// Tables with a GROUP BY TTL are left out: this step rebuilds every family through
-        /// `TTLUpdateInfoAlgorithm`, which never sets `ttl_finished`, so an already-expired
-        /// GROUP BY entry would come back unfinished and the part would be reselected for TTL
-        /// forever - the shape 04501 pins. That family keeps its pre-patch entry instead.
+        /// This runs for GROUP BY tables too, but its GROUP BY output is discarded: the step
+        /// rebuilds every family through `TTLUpdateInfoAlgorithm`, which never sets `ttl_finished`,
+        /// so an already-expired GROUP BY entry would come back unfinished and the part would be
+        /// reselected for TTL forever - the shape 04501 pins. `preserved_group_by_ttl` is snapshotted
+        /// before the merge and put back in `finalizeProjectionsAndWholeMerge`.
         auto ttl_calc_step = std::make_unique<TTLCalcStep>(
             merge_parts_query_plan.getCurrentHeader(),
             global_ctx->context,

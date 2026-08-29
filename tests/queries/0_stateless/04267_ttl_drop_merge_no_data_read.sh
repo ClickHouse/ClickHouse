@@ -998,3 +998,59 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_min;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_min;"
+
+# -------------------------------------------------------------------
+# Case 19: a blocked patched merge keeps its GROUP BY TTL entry
+#
+# The recalculation step Case 18 relies on runs for GROUP BY tables too, but it
+# rebuilds that family through TTLUpdateInfoAlgorithm, which never sets
+# ttl_finished - an already-expired entry would come back unfinished and the
+# part would be reselected for TTL forever, the shape 04501 pins. The pre-patch
+# entry is snapshotted and put back instead, so a patch moving rows into the
+# future must not widen the GROUP BY bound.
+# -------------------------------------------------------------------
+echo "-- Case 19: blocked patched merge keeps its GROUP BY TTL entry"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_group_by
+    (
+        id UInt64,
+        event_time DateTime,
+        value UInt64
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY GROUP BY id SET value = max(value)
+    SETTINGS
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_group_by;
+
+    -- Every row is already past its GROUP BY deadline when the part is written.
+    INSERT INTO t_ttl_patch_group_by SELECT number, now() - INTERVAL 2 DAY, number FROM numbers(100);
+
+    -- A lightweight update moves 10 of them well into the future.
+    UPDATE t_ttl_patch_group_by SET event_time = now() + INTERVAL 5 DAY WHERE id < 10
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM STOP TTL MERGES t_ttl_patch_group_by;
+    SYSTEM START MERGES t_ttl_patch_group_by;
+    OPTIMIZE TABLE t_ttl_patch_group_by FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by;"
+
+# Rebuilt from the patched values the bound would sit 6 days out; carried across it stays expired.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT max(group_by_ttl_info.max[1]) < now()
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by' AND active AND rows = 100;
+"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by;"

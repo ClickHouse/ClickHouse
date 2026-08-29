@@ -49,3 +49,6 @@ RegularMerge	0	200
 -- Case 18: blocked patched merge pulls part_min_ttl into the past
 100
 1
+-- Case 19: blocked patched merge keeps its GROUP BY TTL entry
+100
+1
