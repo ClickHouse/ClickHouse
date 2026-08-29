@@ -20,6 +20,11 @@ namespace DB::FailPoints
     extern const char column_aggregate_function_ensureOwnership_exception[];
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 TEST(ColumnAggregateFunction, EnsureOwnershipExceptionLeavesCorruptedState)
 {
     tryRegisterAggregateFunctions();
@@ -87,20 +92,54 @@ TEST(ColumnAggregateFunction, InsertRejectsStateOfAnotherVersion)
     AggregateFunctionProperties properties;
     auto aggregate_function = factory.get("groupBitmap", NullsAction::EMPTY, argument_types, params, properties);
 
-    auto column_v1 = ColumnAggregateFunction::create(aggregate_function, 1);
-    auto column_v0 = ColumnAggregateFunction::create(aggregate_function, 0);
+    auto values = ColumnUInt32::create();
+    values->insert(Field(UInt64(42)));
+    const IColumn * value_columns[1] = {values.get()};
 
-    /// A version 1 column prints its version, a version 0 column does not.
-    AggregateFunctionStateData state_v1;
-    state_v1.name = "AggregateFunction(1, groupBitmap, UInt32)";
+    Arena arena;
 
-    AggregateFunctionStateData state_v0;
-    state_v0.name = "AggregateFunction(groupBitmap, UInt32)";
+    /// Build a real, non-empty state for a given version. `operator[]` then spells the field the way
+    /// that version prints it and carries a payload serialized at that version, so the only thing that
+    /// can reject it on the other column is the version check itself - not a failure to read the bytes.
+    auto make_column = [&](size_t version)
+    {
+        auto column = ColumnAggregateFunction::create(aggregate_function, version);
+        column->insertDefault();
+        aggregate_function->add(column->getData()[0], value_columns, 0, &arena);
+        return column;
+    };
 
-    /// The version is checked before the payload is touched, so the states may stay empty.
-    EXPECT_THROW(column_v1->insert(Field(state_v0)), Exception);
-    EXPECT_THROW(column_v0->insert(Field(state_v1)), Exception);
+    auto column_v0 = make_column(0);
+    auto column_v1 = make_column(1);
 
-    EXPECT_FALSE(column_v1->tryInsert(Field(state_v0)));
-    EXPECT_FALSE(column_v0->tryInsert(Field(state_v1)));
+    const Field field_v0 = (*column_v0)[0];
+    const Field field_v1 = (*column_v1)[0];
+
+    ASSERT_FALSE(field_v0.safeGet<AggregateFunctionStateData>().data.empty());
+    ASSERT_FALSE(field_v1.safeGet<AggregateFunctionStateData>().data.empty());
+
+    auto expect_rejected = [](ColumnAggregateFunction & column, const Field & field)
+    {
+        try
+        {
+            column.insert(field);
+            FAIL() << "expected the state to be rejected";
+        }
+        catch (const Exception & e)
+        {
+            /// Specifically the type check in `insert`, not a failure while reading the payload.
+            EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+    };
+
+    expect_rejected(*column_v1, field_v0);
+    expect_rejected(*column_v0, field_v1);
+
+    EXPECT_FALSE(column_v1->tryInsert(field_v0));
+    EXPECT_FALSE(column_v0->tryInsert(field_v1));
+
+    /// A state of the column's own version is still accepted, so the guard rejects the version
+    /// rather than everything that reaches the slow path.
+    EXPECT_NO_THROW(column_v1->insert(field_v1));
+    EXPECT_NO_THROW(column_v0->insert(field_v0));
 }
