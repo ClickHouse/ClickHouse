@@ -1,9 +1,10 @@
 #include <Interpreters/convertColumnToType.h>
 
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
+#include <Core/AccurateComparison.h>
+#include <Core/callOnTypeIndex.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
@@ -29,20 +30,17 @@ namespace ErrorCodes
 namespace
 {
 
-/// Column-native conversion for the cases where CAST provably matches `convertFieldToType`:
-/// plain native-numeric-to-native-numeric, in the default AND `strict` modes. `castColumnAccurateOrNull`
-/// uses the same accurate numeric conversion (`accurate::convertNumeric`) as `convertFieldToType`'s
-/// default path (out-of-range / inexact-narrowing -> NULL). For native numbers `strict` and default
-/// agree with it too: `strict` only rejects additional cases for types that are already excluded here -
-/// `Bool` (10 is not a valid `Bool`) and `Decimal` (scale reduction; `castColumnAccurateOrNull` would
-/// round, so it must NOT be used for strict Decimal - and it isn't, `Decimal` is not a native number).
-/// The strict native-number equivalence is pinned by `gtest_convert_column_to_type`. Returns:
+/// Column-native conversion for plain native-numeric-to-native-numeric values: the same
+/// `accurate::convertNumeric` (strict: out-of-range / inexact narrowing -> not representable) that
+/// `convertFieldToType` applies, evaluated directly on the scalar instead of through a CAST function -
+/// building and executing a CAST per single-row conversion dominated callers such as the `IN` set
+/// builder, which converts every literal of the right-hand side separately. The equivalence with
+/// `convertFieldToType` (default and `strict` modes) is pinned by `gtest_convert_column_to_type`. Returns:
 ///   - the converted size-1 column of `to` on success,
 ///   - a null `ColumnPtr{}` when not representable,
 ///   - std::nullopt when this fast path does not apply (caller falls back to the `Field` path).
-/// Excluded: `convert_inexact_floats` mode (allows rounding, so `castColumnAccurateOrNull` differs),
-/// `Bool` (clamp/validity semantics), and anything non-native-numeric
-/// (Decimal/Date/Enum/String/wide-int/wrappers/composite).
+/// Excluded: `convert_inexact_floats` mode (allows rounding), `Bool` (clamp/validity semantics), and
+/// anything non-native-numeric (Decimal/Date/Enum/String/wide-int/wrappers/composite).
 std::optional<ColumnPtr> tryConvertNumericColumnNative(
     const IColumn & value,
     const DataTypePtr & from,
@@ -53,19 +51,27 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
         return std::nullopt;
     if (!isNativeNumber(from) || !isNativeNumber(to) || isBool(from) || isBool(to))
         return std::nullopt;
-    /// `strict` is intentionally not a parameter: for native numbers it is equivalent to the default
-    /// accurate path (both reject non-representable values), so this fast path serves strict too.
 
-    ColumnWithTypeAndName arg{value.getPtr(), from, ""};
-    ColumnPtr casted = castColumnAccurateOrNull(arg, to);
-    /// `ExecutableFunctionCast` uses the default implementation for constants, so a `ColumnConst`
-    /// argument yields a `ColumnConst` result. Callers already pass a full column, but unwrap here too
-    /// so the `assert_cast` below is correct regardless of the argument's constness.
-    casted = casted->convertToFullColumnIfConst();
-    const auto & nullable = assert_cast<const ColumnNullable &>(*casted);
-    if (nullable.isNullAt(0))
-        return ColumnPtr{};
-    return nullable.getNestedColumnPtr();
+    ColumnPtr result;
+    auto convert = [&](const auto & types)
+    {
+        using Types = std::decay_t<decltype(types)>;
+        using From = typename Types::LeftType;
+        using To = typename Types::RightType;
+
+        To converted{};
+        if (accurate::convertNumeric<From, To, true>(assert_cast<const ColumnVector<From> &>(value).getData()[0], converted))
+        {
+            auto column = ColumnVector<To>::create();
+            column->insertValue(converted);
+            result = std::move(column);
+        }
+        return true;
+    };
+
+    if (!callOnBasicTypes<true, true, false, false>(from->getTypeId(), to->getTypeId(), convert))
+        return std::nullopt;
+    return result;
 }
 
 /// `IColumn::get` reconstructs a `Field` using the storage column's `NearestFieldType`, which does not
