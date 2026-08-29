@@ -481,6 +481,9 @@ void SerializationAggregateFunction::serializeTextEscaped(
 
 void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// The escaped-string and raw-field reads below consume the field up to an unescaped '\t' or '\n', so the
+    /// formats that combine the `Escaped` rule with other field delimiters (`Template`, `CustomSeparated`) reject
+    /// an `AggregateFunction` field up front, like a `String` one: see `checkSupportedDelimiterAfterField`.
     if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
     {
         String s;
