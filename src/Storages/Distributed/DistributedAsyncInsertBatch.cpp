@@ -347,13 +347,14 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
         }
         catch (Exception & e)
         {
-            trace_context->root_span.addAttribute(std::current_exception());
+            if (trace_context)
+                trace_context->root_span.addAttribute(std::current_exception());
 
-            if (isDistributedSendBroken(e.code(), e.isRemoteException()))
-            {
-                parent.markAsBroken(file);
-                ++broken_files;
-            }
+            if (!isDistributedSendBroken(e.code(), e.isRemoteException()))
+                throw;
+
+            parent.markAsBroken(file);
+            ++broken_files;
         }
     }
 

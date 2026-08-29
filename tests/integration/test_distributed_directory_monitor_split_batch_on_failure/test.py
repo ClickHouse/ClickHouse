@@ -103,3 +103,45 @@ def test_distributed_background_insert_split_batch_on_failure_ON(started_cluster
             )
         node1.query("system flush distributed dist")
         assert int(node1.query("select count() from dist_data")) == 100000
+
+
+def test_transient_error_during_split_keeps_files(started_cluster):
+    drop_tables()
+    for _, node in cluster.instances.items():
+        node.query(
+            """
+                create table data (key Int, value Int) engine=MergeTree order by key
+                    settings parts_to_throw_insert=1;
+                insert into data values (0, 0);
+            """
+        )
+
+    node1.query(
+        """
+            create table dist as data engine=Distributed(test_cluster, currentDatabase(), data, key)
+                settings background_insert_batch=1, background_insert_split_batch_on_failure=1;
+            system stop distributed sends dist;
+        """
+    )
+    for value in (1, 2):
+        node1.query(
+            f"insert into dist values (1, {value})",
+            settings={"distributed_foreground_insert": 0},
+        )
+
+    node1.query("system start distributed sends dist")
+    with pytest.raises(QueryRuntimeException, match="TOO_MANY_PARTS"):
+        node1.query("system flush distributed dist")
+
+    assert int(
+        node1.query(
+            "select sum(data_files) from system.distribution_queue where table='dist'"
+        )
+    ) == 2
+    assert int(node1.query("select count() from dist")) == 2
+
+    for _, node in cluster.instances.items():
+        node.query("alter table data modify setting parts_to_throw_insert=100")
+
+    node1.query("system flush distributed dist")
+    assert int(node1.query("select count() from dist")) == 4
