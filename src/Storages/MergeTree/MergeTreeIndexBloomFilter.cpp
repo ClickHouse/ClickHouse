@@ -545,6 +545,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
+/// True when converting the constant to the element type yields the exact bytes the index holds, so
+/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
+static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
+{
+    if (!value_type)
+        return false;
+
+    auto value = removeLowCardinalityAndNullable(value_type);
+    auto element = removeLowCardinalityAndNullable(nested_type);
+
+    if (isFloat(value) || isFloat(element))
+        return false;
+
+    return (isInteger(value) && isInteger(element)) || value->equals(*element);
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -695,7 +711,35 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return true;
     }
 
-    return false;
+    /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
+    /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
+    if (function_name != "in" && function_name != "globalIn")
+        return false;
+    if (!column)
+        return false;
+
+    auto array_join_argument = key_node.getArrayJoinArgument();
+    if (!array_join_argument)
+        return false;
+
+    auto array_column_name = array_join_argument->getColumnName();
+    if (!header.has(array_column_name))
+        return false;
+
+    size_t position = header.getPositionByName(array_column_name);
+    const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
+    if (!array_type)
+        return false;
+
+    const auto & array_nested_type = array_type->getNestedType();
+    if (!bloomFilterHashDomainMatches(type, array_nested_type))
+        return false;
+
+    const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+    out.predicate.emplace_back(
+        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
+    out.function = RPNElement::FUNCTION_HAS_ANY;
+    return true;
 }
 
 
@@ -810,6 +854,32 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const RPNBuilderTreeNode * parent)
 {
     auto key_column_name = key_node.getColumnName();
+
+    /// `arrayJoin(col) = const` needs an element equal to the constant, same as `has(col, const)`.
+    /// `notEquals` is not derivable: a granule holding the constant still yields differing rows.
+    if (function_name == "equals")
+    {
+        if (auto array_join_argument = key_node.getArrayJoinArgument())
+        {
+            auto array_column_name = array_join_argument->getColumnName();
+            if (header.has(array_column_name))
+            {
+                size_t position = header.getPositionByName(array_column_name);
+                const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
+                if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
+                {
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    if (converted_field.isNull())
+                        return false;
+
+                    out.function = RPNElement::FUNCTION_HAS;
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                    return true;
+                }
+            }
+        }
+    }
 
     if (header.has(key_column_name))
     {
