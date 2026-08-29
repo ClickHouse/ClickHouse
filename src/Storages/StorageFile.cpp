@@ -364,6 +364,32 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
     return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
+/// Splits `path` at its last `..`, resolves the head (up to and including that `..`) physically and
+/// appends the tail as written: a `..` resolves against the target of a preceding symlink, while a
+/// symlink in the tail must stay unresolved to stay reachable. `ec` is set only if resolving fails.
+fs::path resolveDotDotForContainmentCheck(const fs::path & path, std::error_code & ec)
+{
+    fs::path head;
+    fs::path tail;
+    for (const auto & component : path)
+    {
+        tail /= component;
+        if (component == "..")
+        {
+            head /= tail;
+            tail.clear();
+        }
+    }
+
+    if (head.empty())
+        return path;
+
+    head = fs::weakly_canonical(head, ec);
+    if (ec)
+        return {};
+    return tail.empty() ? head : head / tail;
+}
+
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 void checkCreationIsAllowed(
     ContextPtr context_global,
@@ -384,6 +410,22 @@ void checkCreationIsAllowed(
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
+}
+
+/// Use this instead of checkCreationIsAllowed for a path that can still carry a `..`.
+void checkCreationIsAllowedResolvingDotDot(
+    ContextPtr context_global,
+    const std::string & db_dir_path,
+    const std::string & path,
+    bool can_be_directory)
+{
+    std::error_code ec;
+    const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
+    if (ec)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot check whether file `{}` is inside `{}`: {}",
+            path, db_dir_path, ec.message());
+
+    checkCreationIsAllowed(context_global, db_dir_path, checked_path, can_be_directory);
 }
 
 /// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
@@ -462,7 +504,10 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
 
     for (const auto & path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
+    {
+        /// Brace expansion runs after the normalization above, so a matched path can still carry a `..`.
+        checkCreationIsAllowedResolvingDotDot(context, user_files_absolute_path, path, can_be_directory);
+    }
 
     return paths;
 }
@@ -1479,7 +1524,7 @@ String StorageFileSource::FilesIterator::next()
             return {};
 
         /// The read task may come from a client impersonating an initiator server, so validate the path.
-        checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
+        checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
 
         return task->path;
     }
@@ -1563,20 +1608,9 @@ void StorageFileSource::beforeDestroy()
                 String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
                 file_path.replace_filename(new_filename);
 
-                // Checking access rights. A `..` is resolved through any preceding symlink first,
-                // because the check folds it lexically while the rename below does not, and the
-                // two would otherwise disagree about where the file lands. Paths without `..`
-                // are passed as written, so a symlink out of `user_files` still works.
-                auto checked_path = file_path;
-                for (const auto & component : file_path)
-                {
-                    if (component == "..")
-                    {
-                        checked_path = fs::weakly_canonical(file_path.parent_path()) / file_path.filename();
-                        break;
-                    }
-                }
-                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), checked_path, true);
+                // Checking access rights. The path is the one the rename will operate on, so a `..` in
+                // it must be resolved and not folded lexically.
+                checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), file_path.string(), true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
@@ -1624,6 +1658,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
     });
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    pipeline->disableProfileEventUpdate();
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
     return true;
 }
@@ -1745,6 +1780,7 @@ Chunk StorageFileSource::generate()
                 if (storage->format_name == "Distributed")
                 {
                     pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                    pipeline->disableProfileEventUpdate();
                     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                     continue;
                 }
@@ -1954,6 +1990,7 @@ Chunk StorageFileSource::generate()
             });
 
             pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+            pipeline->disableProfileEventUpdate();
             reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
             ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -2574,6 +2611,7 @@ public:
                 });
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                pipeline->disableProfileEventUpdate();
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
                 ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -2840,10 +2878,12 @@ public:
     {
         std::string filepath = partition_strategy->getPathForWrite(path, partition_id);
 
-        fs::create_directories(fs::path(filepath).parent_path());
-
+        /// A partition id is data-derived and may contain `..`, so both checks have to precede the
+        /// first filesystem side effect.
         validatePartitionKey(filepath, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
+        checkCreationIsAllowedResolvingDotDot(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
+
+        fs::create_directories(fs::path(filepath).parent_path());
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
@@ -3230,7 +3270,7 @@ SELECT * FROM file_engine_table
 
 ## Usage in ClickHouse-local {#usage-in-clickhouse-local}
 
-In [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension (`gz`, `br` or `xz`).
+In [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension. The supported values are `none` (no compression), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2`, and `snappy`. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 
 **Example:**
 
