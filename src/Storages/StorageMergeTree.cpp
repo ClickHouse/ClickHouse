@@ -1499,7 +1499,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 continue;
 
             const bool committed = !data_part->version || data_part->version->getInfo().isCreated();
-            bool in_scope;
+            bool in_scope = false;
             if (scope_is_block_ordered)
             {
                 if (!committed)
