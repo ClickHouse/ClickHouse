@@ -35,11 +35,12 @@ StoragePtr tryGetLiveTableByUUID(const StorageID & dependency)
     /// The UUID identifies the table the entry was registered for, with one exception:
     /// `CREATE TABLE ... UUID` can reuse the UUID of a failed create under a different table name. The
     /// two cases are told apart by the name the live table's own dependencies are recorded under - the
-    /// name is updated when the entries are registered, not when the table is renamed:
-    /// - the table was renamed after the registration: no entry carries its current name, so the entries
-    ///   under the UUID, stale names and all, are its own;
-    /// - the UUID was reused: the committed table registered its own entries under its current name, and
-    ///   an entry that carries another name belongs to the create that failed.
+    /// name is set at the registration and follows the table across `RENAME` (`renameDependencies`):
+    /// - an entry that carries another name while the live table has entries under its current name
+    ///   belongs to a create that failed - it is left to the stale-entry cleanup;
+    /// - when the live table has no entry under its current name (its names went stale without being
+    ///   re-keyed - an `EXCHANGE` or a `RENAME DATABASE` - or it registered no dependency at all), the
+    ///   entries under the UUID are treated as its own, which can only refuse the drop, never allow it.
     const auto live_table_id = table->getStorageID();
     if (live_table_id.database_name != dependency.database_name || live_table_id.table_name != dependency.table_name)
     {

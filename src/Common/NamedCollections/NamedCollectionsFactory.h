@@ -106,7 +106,11 @@ public:
     /// everything under the entry's UUID could remove the live dependency of an in-flight
     /// `CREATE TABLE ... UUID` that reuses the UUID under a different table name.
     void removeDependency(const String & collection_name, const StorageID & table_id);
-    void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
+    /// Follows a `RENAME TABLE`: moves the entries recorded under the exact old name to the new one.
+    /// An `EXCHANGE` calls this once per direction and must pass `exchange = true`, which restricts the
+    /// move to the entries without a UUID: re-keying UUID entries by name would apply the second call
+    /// to the entries the first one just moved.
+    void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool exchange);
     /// A `RENAME TABLE` that moves a table between an `Ordinary` and an `Atomic` database changes the
     /// identity the dependency is keyed by: the move into `Atomic` assigns a fresh UUID to the table and
     /// the move out of it drops the UUID, while the rename interpreter only knows the names. Re-key the

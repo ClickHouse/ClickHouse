@@ -201,9 +201,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
             }
 
-            NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
+            NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id, exchange_tables);
             if (exchange_tables)
-                NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id);
+                NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id, exchange_tables);
 
             /// The name -> storage mapping just changed. Drop the affected names from this query's
             /// per-query storage cache so the query's own subsequent lookups resolve to the current
