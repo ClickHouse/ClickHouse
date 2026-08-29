@@ -45,7 +45,7 @@ public:
 
     /// Query-thread recovery checkpoint after parked growth was allowed to run releasing work.
     /// Implementations must only schedule a retry; they must not synchronously traverse parents.
-    virtual void notifyRecoveryProgress(ResourceAllocation & allocation, UInt64 recovery_epoch = 0) = 0;
+    virtual void notifyRecoveryProgress(ResourceAllocation & allocation, UInt64 recovery_epoch) = 0;
 
     /// Reports that an allocation is using less than its already-approved capacity. The capacity
     /// remains local while uncontended; this notification only asks scheduler limits to re-evaluate
