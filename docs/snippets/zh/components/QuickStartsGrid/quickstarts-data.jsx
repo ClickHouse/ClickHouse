@@ -101,7 +101,7 @@ export const quickStartsData = [
   },
   {
     "id": "obtain-your-cloud-connection-details",
-    "title": "获取您的 Cloud 连接详情",
+    "title": "获取您的 Cloud 连接信息",
     "description": "了解如何查找 ClickHouse Cloud 服务的主机名、端口和凭据，以便从外部客户端、命令行客户端 和应用程序进行连接。",
     "href": "/zh/get-started/quickstarts/obtain-your-cloud-connection-details",
     "useCases": [
