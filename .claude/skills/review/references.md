@@ -155,11 +155,19 @@ read while every function resolves its source table before that, in one of three
   the database and table the user named" has nothing to read, and must work from the resolved
   storage's own `StorageID` instead. Both are registered `allow_readonly`, so the
   `CREATE_TEMPORARY_TABLE` check in `execute` does not fire for them either.
-- `parseArguments` — `timeSeriesSamples` / `timeSeriesMetrics` / `timeSeriesTags`
-  (`TableFunctionTimeSeriesTarget`), which calls `getTargetTable` to store the target engine name,
-  so the leak precedes `getActualTableStructure` even though that derives columns from the source
-  too; and `timeSeriesSelector`, via `StorageTimeSeriesSelector::getConfiguration`, whose
+- `parseArguments` — `timeSeriesSamples` (aliased `timeSeriesData`) / `timeSeriesMetrics` /
+  `timeSeriesTags` (`TableFunctionTimeSeriesTarget`), which calls `getTargetTable` to store the
+  target engine name, so the leak precedes `getActualTableStructure` even though that derives
+  columns from the source too; `timeSeriesSelector`, via
+  `StorageTimeSeriesSelector::getConfiguration`; and `prometheusQuery` / `prometheusQueryRange`, via
+  `StoragePrometheusQuery::getConfiguration`. For all three of the latter,
   `getActualTableStructure` derives columns from the parsed configuration and touches no table.
+
+  `prometheusQuery` is the reason the registration rule above matters. It is registered in
+  `TableFunctionTimeSeries.cpp`, immediately beside the `timeSeries*` functions, from a class that
+  resolves its source through the same `getConfiguration` pattern — but it does not share the name
+  stem, so a family sweep driven by grepping `timeSeries` misses both variants entirely. Family
+  membership is defined by the shape of the code, not by the prefix of the name.
 
 The read side has three outcomes, not two, and the third is the one worth learning.
 
@@ -168,15 +176,18 @@ The read side has three outcomes, not two, and the third is the one worth learni
    `StorageFromMergeTreeProjection` (which also applies row policies), and `readImpl` in
    `StorageMergeTreeAnalyzeIndexes`. Each names the source table explicitly in its own
    `context->checkAccess(AccessType::SELECT, …)`.
-2. **Inherits the check by delegating.** `timeSeriesSelector`: `StorageTimeSeriesSelector::readImpl`
-   builds inner `SELECT` ASTs whose `FROM` is an `ASTTableIdentifier` for the tags and samples
-   tables and runs them through `InterpreterSelectQueryAnalyzer`. Those are ordinary `TableNode`s,
-   so they take the `if (table_node)` branch of `PlannerJoinTree`'s `checkAccessRights` and get a
-   real column-aware `SELECT` check on the *target* tables — without the storage containing a
-   `checkAccess` call of its own. Grep alone would score this surface as unguarded. What it still
-   never checks is `SELECT` on the *source* `TimeSeries` table named in the arguments.
-3. **Loses the check by returning a real storage.** `timeSeriesSamples` / `timeSeriesMetrics` /
-   `timeSeriesTags`: `executeImpl` returns the target table's own storage rather than a wrapper, so
+2. **Inherits the check by delegating.** `timeSeriesSelector`, and equally `prometheusQuery` /
+   `prometheusQueryRange`: `StorageTimeSeriesSelector::readImpl` and
+   `StoragePrometheusQuery::readImpl` build inner `SELECT` ASTs whose `FROM` is an
+   `ASTTableIdentifier` for the tags and samples tables and run them through
+   `InterpreterSelectQueryAnalyzer`. Those are ordinary `TableNode`s, so they take the
+   `if (table_node)` branch of `PlannerJoinTree`'s `checkAccessRights` and get a real column-aware
+   `SELECT` check on the *target* tables — without either storage containing a `checkAccess` call of
+   its own. Grep alone would score these surfaces as unguarded. What they still never check is
+   `SELECT` on the *source* `TimeSeries` table named in the arguments.
+3. **Loses the check by returning a real storage.** `timeSeriesSamples` (and its alias
+   `timeSeriesData`) / `timeSeriesMetrics` / `timeSeriesTags`: `executeImpl` returns the target
+   table's own storage rather than a wrapper, so
    there is no inner query to inherit a check from, and the outer node is a `TableFunctionNode` —
    which both planners deliberately exclude ("we do not check access rights for table functions
    because they have been already checked in `ITableFunction::execute`", `PlannerJoinTree.cpp`, and
