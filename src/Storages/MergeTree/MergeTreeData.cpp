@@ -7853,7 +7853,7 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     /// If the part has no metadata_version.txt (very old parts), the fallback in
     /// loadColumnsChecksumsIndexes will use the table's current version with a special flag.
 
-    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", {BlockNumberColumn::name, BlockOffsetColumn::name}, getContext()->getWriteSettings());
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
@@ -7875,6 +7875,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
 
     column_sizes.clear();
     secondary_index_sizes.clear();
+    primary_index_size = {};
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
@@ -7891,6 +7892,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
 
     column_sizes.clear();
     secondary_index_sizes.clear();
+    primary_index_size = {};
 
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
 
@@ -7919,12 +7921,30 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
+/// A part whose sizes are not computed yet cannot be accounted for without reading them from its
+/// storage. Callers hold the parts lock, and `Transaction::commit` calls them from inside a
+/// NOEXCEPT_SCOPE, where a read that fails to schedule a thread would terminate the server. So drop
+/// the aggregates instead and let the next reader rebuild them from the active parts.
+void MergeTreeData::invalidateColumnAndSecondaryIndexSizesUnlocked() const
+{
+    column_sizes.clear();
+    secondary_index_sizes.clear();
+    primary_index_size = {};
+    are_columns_and_secondary_indices_sizes_calculated = false;
+}
+
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
     /// If sizes are calculated lazily, don't add part contribution. All sizes from all active parts will be calculated later.
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
+
+    if (!part->areColumnAndSecondaryIndexSizesCalculated())
+    {
+        invalidateColumnAndSecondaryIndexSizesUnlocked();
+        return;
+    }
 
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 }
@@ -8016,6 +8036,12 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
+    if (!part->areColumnAndSecondaryIndexSizesCalculated())
+    {
+        invalidateColumnAndSecondaryIndexSizesUnlocked();
+        return;
+    }
+
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
@@ -8035,12 +8061,11 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 
-    const auto metadata_ptr = getInMemoryMetadataPtr(getContext(), false);
     for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
     {
-        if (!part->hasSecondaryIndex(secondary_index_name, metadata_ptr))
-            continue;
-
+        /// No `hasSecondaryIndex` check: it resolves the index file through the part storage, which
+        /// reads on packed storage, and `getSecondaryIndexSize` already returns an empty size for an
+        /// index the part does not have, so subtracting it is a no-op.
         IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
@@ -8918,7 +8943,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
-        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", {BlockNumberColumn::name, BlockOffsetColumn::name}, getContext()->getWriteSettings());
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
         /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
         /// (older backup, or one taken before UK). Build it here so the part is
