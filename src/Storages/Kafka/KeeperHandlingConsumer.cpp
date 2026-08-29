@@ -130,11 +130,6 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperHandlingConsumer requires a valid ZooKeeper instance");
 }
 
-void KeeperHandlingConsumer::setNumConsumers(size_t actual_num_consumers)
-{
-    num_consumers.store(std::max<size_t>(actual_num_consumers, 1), std::memory_order_relaxed);
-}
-
 bool KeeperHandlingConsumer::needsNewKeeper() const
 {
     return keeper->expired();
@@ -457,7 +452,7 @@ void KeeperHandlingConsumer::updatePermanentLocksLocked(
         can_lock_partitions,
         node_quota,
         active_replica_count,
-        num_consumers.load(std::memory_order_relaxed),
+        num_consumers,
         idx);
 
     if (can_lock_partitions == permanent_locks.size())
@@ -501,10 +496,9 @@ void KeeperHandlingConsumer::updatePermanentLocksLocked(
 
 size_t KeeperHandlingConsumer::computeConsumerQuota(size_t node_quota) const
 {
-    const size_t consumers_on_node = num_consumers.load(std::memory_order_relaxed);
-    if (consumers_on_node <= 1)
+    if (num_consumers <= 1)
         return node_quota;
-    return node_quota / consumers_on_node + (idx < node_quota % consumers_on_node ? 1 : 0);
+    return node_quota / num_consumers + (idx < node_quota % num_consumers ? 1 : 0);
 }
 
 void KeeperHandlingConsumer::rollbackToCommittedOffsets()
