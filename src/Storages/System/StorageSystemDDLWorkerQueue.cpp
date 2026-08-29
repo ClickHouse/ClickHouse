@@ -17,8 +17,6 @@
 #include <Parsers/parseQuery.h>
 
 
-
-
 namespace DB
 {
 namespace Setting
