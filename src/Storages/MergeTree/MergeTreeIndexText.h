@@ -147,6 +147,9 @@ public:
 
     PostingListBuilder() = default;
 
+    /// Constructs the builder directly in the `Filtered` state.
+    explicit PostingListBuilder(Filtered) : state(Filtered{}) {}
+
     /// The builder is constructed with the first value of a token.
     /// With positions enabled it starts in the `Large` state right away.
     PostingListBuilder(UInt32 first_value, UInt32 first_position, const PostingListBuildContext & context);
@@ -158,8 +161,6 @@ public:
 
     bool hasLarge() const { return std::holds_alternative<Large>(state); }
     bool hasInline() const { return std::holds_alternative<Inline>(state); }
-
-    void markFiltered() { state = Filtered{}; }
     bool isFiltered() const { return std::holds_alternative<Filtered>(state); }
 
     Large & getLarge() { return std::get<Large>(state); }
