@@ -167,6 +167,8 @@ void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline,
 {
     auto sample_block = getOutputHeader();
 
+    storage->checkAccessRights(context);
+
     if (filter && dagHasUnbuiltSubquerySet(*filter))
     {
         /// `CreatingSetsStep` holds back every output of this pipeline until it has filled the sets, so

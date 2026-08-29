@@ -33,6 +33,11 @@ protected:
         return {};
     }
 
+    /// Access checks that must reject the query even when no row is ever read. `fillData` is not the
+    /// place for them: it can run lazily, and a consumer that closes the read port before asking for
+    /// a chunk (`LIMIT 0`) never enters it.
+    virtual void checkAccessRights(ContextPtr /*context*/) const {}
+
     virtual bool supportsColumnsMask() const { return false; }
 
     friend class ReadFromSystemOneBlock;
