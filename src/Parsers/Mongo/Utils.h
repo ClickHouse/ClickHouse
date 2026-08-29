@@ -7,6 +7,7 @@
 
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -84,6 +85,25 @@ findField(const rapidjson::Value & value, const std::string & key, rapidjson::Do
 
 rapidjson::Value
 parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array = true);
+
+
+/** The pattern of the matcher below: the column of the field `path` and the columns of every field
+  * under it.
+  */
+std::string fieldSubtreePattern(const std::string & path);
+
+/** `COLUMNS('^<path>(\.|$)')` - the field itself and the fields below it.
+  *
+  * A nested document of a table that was created in ClickHouse is a set of columns whose names are
+  * the dotted paths of its fields, and a read answers with the document those columns are rebuilt
+  * into. So a projection of a field is a projection of its whole subtree: `{"profile": 1}` asks for
+  * `profile` and for every `profile.<...>` there is, the way Mongo answers with the whole
+  * subdocument.
+  */
+ASTPtr makeFieldSubtreeMatcher(const std::string & path);
+
+/// The field a matcher built by `makeFieldSubtreeMatcher` selects the subtree of, if it is one.
+std::optional<std::string> fieldOfSubtreeMatcher(const IAST & node);
 
 
 class MongoQueryKeyNameExtractor

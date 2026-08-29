@@ -3,8 +3,9 @@
 --
 -- The queries below are, in order: `$unset` of one field and of several; `$sortByCount`;
 -- `$sample`, counted rather than listed because it picks at random; `$unwind`, which is an
--- `ARRAY JOIN` and so drops a document whose array is empty unless asked to keep it, with and
--- without the index of the element; a `$match` before an `$unwind`, which filters the documents
+-- `ARRAY JOIN` and so drops a document whose array is empty unless asked to keep it - and a
+-- document kept that way answers with no element rather than with the default value of one - with
+-- and without the index of the element; a `$match` before an `$unwind`, which filters the documents
 -- and not the elements; a `$match` after one, which filters the elements; `$replaceRoot` and
 -- `$replaceWith`; and the stages that are not supported.
 --

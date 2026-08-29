@@ -16,7 +16,7 @@ view	1
 1	click	green
 1	click	red
 2	view	green
-3	click	
+3	click	\N
 4	click	blue
 1	click	red	0
 1	click	green	1

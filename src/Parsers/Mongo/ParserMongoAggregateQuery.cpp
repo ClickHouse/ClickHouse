@@ -73,10 +73,15 @@ ASTPtr makeAsterisk(const std::vector<std::string> & excluded)
         return asterisk;
 
     /// The transformer is not strict on purpose: a `$set` that introduces a new field must not
-    /// fail because the source has no column of that name yet.
+    /// fail because the source has no column of that name yet. It matches by pattern, so that a
+    /// field takes the fields below it with it: the nested document of a table is a set of columns
+    /// whose names are the dotted paths of its fields, and a stage that removes or replaces a field
+    /// removes or replaces the whole subdocument it names.
     auto except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
+    String pattern;
     for (const auto & name : excluded)
-        except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
+        pattern += (pattern.empty() ? "" : "|") + fieldSubtreePattern(name);
+    except_transformer->setPattern(std::move(pattern));
 
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     transformers->children.push_back(std::move(except_transformer));
@@ -326,8 +331,11 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
         if (is_flag)
         {
             const bool included = value.IsBool() ? value.GetBool() : value.GetDouble() != 0;
+            /// A kept field is kept with the fields below it: the nested document of a table is a
+            /// set of columns whose names are the dotted paths of its fields, so `{"profile": 1}`
+            /// keeps `profile` and every `profile.<...>` there is.
             if (included)
-                fields.push_back({name, make_intrusive<ASTIdentifier>(name)});
+                fields.push_back({name, makeFieldSubtreeMatcher(name)});
             else
                 excluded.push_back(std::move(name));
             continue;
@@ -362,7 +370,14 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
     else
     {
         for (auto & field : fields)
-            select_list->children.push_back(withAlias(field.expression, field.name));
+        {
+            /// A matcher of a subtree keeps the names of the columns it selects, and carries no
+            /// alias: it stands for however many columns the subdocument holds.
+            if (fieldOfSubtreeMatcher(*field.expression))
+                select_list->children.push_back(field.expression);
+            else
+                select_list->children.push_back(withAlias(field.expression, field.name));
+        }
     }
 
     chain.select_list = std::move(select_list);
@@ -572,8 +587,20 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     if (chain.where || !chain.onlyFiltered() || chain.array_join)
         chain.wrap();
 
+    /** The element of a preserved row is not the element of an array: a `LEFT ARRAY JOIN` of an
+      * empty array produces the default value of the element type, while Mongo keeps the document
+      * with the field empty. So the element is joined under a name of its own - which keeps the
+      * array itself readable next to it - and the field is answered as `NULL` for the rows the
+      * array of which holds nothing, rather than as a value no document ever held.
+      */
+    static constexpr std::string_view unwound_element = "__mongo_unwound";
+    static constexpr std::string_view unwound_index = "__mongo_unwound_index";
+
     auto expressions = make_intrusive<ASTExpressionList>();
-    expressions->children.push_back(make_intrusive<ASTIdentifier>(path));
+    if (preserve_empty)
+        expressions->children.push_back(withAlias(make_intrusive<ASTIdentifier>(path), std::string(unwound_element)));
+    else
+        expressions->children.push_back(make_intrusive<ASTIdentifier>(path));
 
     if (!index_name.empty())
     {
@@ -585,7 +612,7 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
             "arrayMap",
             makeASTFunction("lambda", std::move(parameters), std::move(body)),
             makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path)));
-        expressions->children.push_back(withAlias(std::move(indexes), index_name));
+        expressions->children.push_back(withAlias(std::move(indexes), preserve_empty ? std::string(unwound_index) : index_name));
     }
 
     auto unwind = make_intrusive<ASTArrayJoin>();
@@ -597,7 +624,29 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
 
     chain.array_join = std::move(unwind);
 
-    if (!index_name.empty())
+    if (preserve_empty)
+    {
+        /** The field takes the place of the array it was unwound from, and a row that was kept
+          * although its array held nothing answers with no value at all.
+          */
+        auto select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(makeAsterisk({path}));
+
+        auto preserved = [&](const std::string & name)
+        {
+            return makeASTFunction(
+                "if",
+                makeASTFunction("empty", make_intrusive<ASTIdentifier>(path)),
+                makeLiteral(Field()),
+                make_intrusive<ASTIdentifier>(name));
+        };
+
+        select_list->children.push_back(withAlias(preserved(std::string(unwound_element)), path));
+        if (!index_name.empty())
+            select_list->children.push_back(withAlias(preserved(std::string(unwound_index)), index_name));
+        chain.select_list = std::move(select_list);
+    }
+    else if (!index_name.empty())
     {
         /// A `*` does not expand to the columns an `ARRAY JOIN` introduces, so the index has to be
         /// named in the list of the select that produces it.

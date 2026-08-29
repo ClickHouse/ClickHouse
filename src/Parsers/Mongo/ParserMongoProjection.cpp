@@ -43,8 +43,11 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
         if (it->value.IsBool() || it->value.IsNumber())
         {
             const bool included = it->value.IsBool() ? it->value.GetBool() : it->value.GetDouble() != 0;
+            /// A field of a document is answered together with the fields below it: the nested
+            /// document of a table is a set of columns whose names are the dotted paths of its
+            /// fields, so `{"profile": 1}` asks for `profile` and for every `profile.<...>`.
             if (included)
-                result->children.push_back(make_intrusive<ASTIdentifier>(name));
+                result->children.push_back(makeFieldSubtreeMatcher(name));
             else
                 excluded.push_back(std::move(name));
             continue;
@@ -78,10 +81,13 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
         auto asterisk = make_intrusive<ASTAsterisk>();
 
         /// The transformer is not strict on purpose: excluding a field the collection does not
-        /// have is not an error in Mongo.
+        /// have is not an error in Mongo. It matches by pattern, so that an excluded field takes
+        /// the fields below it with it, the way an included one brings them along.
         auto except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
+        String pattern;
         for (const auto & name : excluded)
-            except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
+            pattern += (pattern.empty() ? "" : "|") + fieldSubtreePattern(name);
+        except_transformer->setPattern(std::move(pattern));
 
         auto transformers = make_intrusive<ASTColumnsTransformerList>();
         transformers->children.push_back(std::move(except_transformer));

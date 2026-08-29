@@ -5,6 +5,7 @@
 #include <string>
 
 #include <Common/StringUtils.h>
+#include <Parsers/ASTColumnsMatcher.h>
 
 namespace DB
 {
@@ -299,6 +300,63 @@ rapidjson::Value parseData(const char * begin, const char * end, rapidjson::Docu
     return copyValue(document, allocator);
 }
 
+namespace
+{
+
+/// Every character that is not a letter, a digit or an underscore is taken literally in the pattern.
+std::string quoteForPattern(const std::string & text)
+{
+    std::string result;
+    for (const char c : text)
+    {
+        if (!isWordCharASCII(c))
+            result.push_back('\\');
+        result.push_back(c);
+    }
+    return result;
+}
+
+std::string unquoteFromPattern(const std::string & pattern)
+{
+    std::string result;
+    for (size_t i = 0; i < pattern.size(); ++i)
+    {
+        if (pattern[i] == '\\' && i + 1 < pattern.size())
+            ++i;
+        result.push_back(pattern[i]);
+    }
+    return result;
+}
+
+constexpr std::string_view SUBTREE_PATTERN_SUFFIX = R"((\.|$))";
+
+}
+
+std::string fieldSubtreePattern(const std::string & path)
+{
+    return "^" + quoteForPattern(path) + std::string(SUBTREE_PATTERN_SUFFIX);
+}
+
+ASTPtr makeFieldSubtreeMatcher(const std::string & path)
+{
+    auto matcher = make_intrusive<ASTColumnsRegexpMatcher>();
+    matcher->setPattern(fieldSubtreePattern(path));
+    return matcher;
+}
+
+std::optional<std::string> fieldOfSubtreeMatcher(const IAST & node)
+{
+    const auto * matcher = node.as<ASTColumnsRegexpMatcher>();
+    if (!matcher)
+        return std::nullopt;
+
+    const auto & pattern = matcher->getPattern();
+    if (!pattern.starts_with("^") || !pattern.ends_with(SUBTREE_PATTERN_SUFFIX))
+        return std::nullopt;
+
+    return unquoteFromPattern(pattern.substr(1, pattern.size() - 1 - SUBTREE_PATTERN_SUFFIX.size()));
+}
+
 std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begin, const char * end)
 {
     size_t size_str = end - begin;
@@ -307,8 +365,50 @@ std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begi
     if (size_str < pattern.size() + 1)
         return std::nullopt;
 
+    /** The suffix is looked for outside of the arguments of the suffixes that come before it: the
+      * argument of a `.sort(...)` is a document, and a field of a document is free to be named
+      * `limit` or to be a dotted path that ends in one, so `db.t.find({}).sort({"profile.limit": 1})`
+      * holds the text `.limit` inside an argument while asking for no limit at all. A string literal
+      * is skipped for the same reason.
+      */
+    size_t depth = 0;
     for (size_t i = 0; i + pattern.size() < size_str; ++i)
     {
+        const char c = begin[i];
+
+        if (c == '"' || c == '\'')
+        {
+            const char quote = c;
+            ++i;
+            while (i < size_str && begin[i] != quote)
+            {
+                if (begin[i] == '\\' && i + 1 < size_str)
+                    ++i;
+                ++i;
+            }
+            /// An unterminated literal ends the search: the text that follows it is inside it.
+            if (i >= size_str)
+                return std::nullopt;
+            continue;
+        }
+
+        if (c == '(' || c == '[' || c == '{')
+        {
+            ++depth;
+            continue;
+        }
+
+        if (c == ')' || c == ']' || c == '}')
+        {
+            if (depth == 0)
+                return std::nullopt;
+            --depth;
+            continue;
+        }
+
+        if (depth != 0)
+            continue;
+
         bool match = true;
         for (size_t j = 0; j < pattern.size(); ++j)
         {

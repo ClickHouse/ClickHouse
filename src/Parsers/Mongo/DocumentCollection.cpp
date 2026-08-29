@@ -15,6 +15,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/Mongo/Utils.h>
 
 namespace DB
 {
@@ -234,6 +235,29 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
     /// A subquery reads what the select inside it produces, and that select is rewritten on its own.
     if (node->as<ASTSubquery>() || node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>())
         return;
+
+    /** A projection of a field asks for the columns of its whole subtree, which a document has none
+      * of: every field of it is a path of the one document column, and the path of a field is the
+      * path of its subtree as well.
+      */
+    if (auto field = fieldOfSubtreeMatcher(*node))
+    {
+        /// A name the query binds itself is a column of the result of the select below, not a field.
+        if (bound.contains(*field))
+            return;
+
+        if (*field == OBJECT_ID_COLUMN)
+        {
+            node = make_intrusive<ASTIdentifier>(String(OBJECT_ID_COLUMN));
+            return;
+        }
+
+        ASTIdentifier identifier(*field);
+        node = makeDocumentPath(identifier);
+        if (keep_name_as_alias)
+            node->setAlias(*field);
+        return;
+    }
 
     if (const auto * identifier = node->as<ASTIdentifier>())
     {

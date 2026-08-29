@@ -776,13 +776,29 @@ def test_unwind_and_the_other_stages(started_cluster):
         for d in collection.aggregate(
             [{"$unwind": {"path": "$tags", "preserveNullAndEmptyArrays": True}}, {"$sort": {"id": 1, "tags": 1}}]
         )
-    ] == [(1, "green"), (1, "red"), (2, "")]
+    ] == [(1, "green"), (1, "red"), (2, None)]
     assert [
         d["position"]
         for d in collection.aggregate(
             [{"$unwind": {"path": "$tags", "includeArrayIndex": "position"}}, {"$sort": {"position": 1}}]
         )
     ] == [0, 1]
+    # A document kept although its array held nothing has no element and no position of one.
+    assert [
+        (d["id"], d["tags"], d["position"])
+        for d in collection.aggregate(
+            [
+                {
+                    "$unwind": {
+                        "path": "$tags",
+                        "preserveNullAndEmptyArrays": True,
+                        "includeArrayIndex": "position",
+                    }
+                },
+                {"$sort": {"id": 1, "tags": 1}},
+            ]
+        )
+    ] == [(1, "green", 1), (1, "red", 0), (2, None, None)]
 
     assert list(collection.aggregate([{"$unwind": "$tags"}, {"$sortByCount": "$tags"}])) == [
         {"_id": "green", "count": 1},
@@ -2318,6 +2334,77 @@ def test_a_read_command_option_that_is_not_implemented_is_an_error(started_clust
     ) == ["a", "b"]
 
     collection.drop()
+
+
+def test_read_concern_levels(started_cluster):
+    """A read here sees everything that was written to the table, which is what `local`, `available`
+    and `majority` ask for, so those are answered as a read without one. A `snapshot` and a
+    `linearizable` read ask for a guarantee across the whole cluster that nothing gives here, and
+    are refused rather than answered by a read of a different contract."""
+    database = make_client()["db"]
+    collection = database["read_concern"]
+    collection.drop()
+    collection.insert_many([{"id": 1}, {"id": 2}])
+
+    for level in ["local", "available", "majority"]:
+        assert (
+            database.command(
+                {"count": "read_concern", "query": {}, "readConcern": {"level": level}}
+            )["n"]
+            == 2
+        )
+        assert sorted(
+            document["id"]
+            for document in database.command(
+                {"find": "read_concern", "filter": {}, "readConcern": {"level": level}}
+            )["cursor"]["firstBatch"]
+        ) == [1, 2]
+
+    for level in ["snapshot", "linearizable"]:
+        for command in [
+            {"find": "read_concern", "filter": {}, "readConcern": {"level": level}},
+            {"count": "read_concern", "query": {}, "readConcern": {"level": level}},
+            {
+                "aggregate": "read_concern",
+                "pipeline": [],
+                "cursor": {},
+                "readConcern": {"level": level},
+            },
+        ]:
+            with pytest.raises(pymongo.errors.OperationFailure):
+                database.command(command)
+
+    collection.drop()
+
+
+def test_a_projection_of_a_field_takes_the_fields_below_it(started_cluster):
+    """A nested document of a table created in ClickHouse is a set of columns whose names are the
+    dotted paths of its fields, and a reply rebuilds the document out of them. So a projection of
+    the field they belong to is a projection of all of them, the way MongoDB answers with the whole
+    subdocument, and an exclusion of it removes all of them."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.subtree", password="123")
+    node.query(
+        "CREATE TABLE db.subtree (id Int64, `profile.name` String, `profile.age` Int64, other String) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+
+    collection = make_client()["db"]["subtree"]
+    collection.insert_one(
+        {"id": 1, "profile": {"name": "alpha", "age": 30}, "other": "x"}
+    )
+
+    assert list(collection.find({}, {"profile": 1})) == [
+        {"profile": {"name": "alpha", "age": 30}}
+    ]
+    assert list(collection.find({}, {"profile": 0})) == [{"id": 1, "other": "x"}]
+    assert list(collection.aggregate([{"$unset": "profile"}])) == [
+        {"id": 1, "other": "x"}
+    ]
+
+    node.query("DROP TABLE db.subtree", password="123")
 
 
 def test_a_write_command_option_that_is_not_implemented_is_an_error(started_cluster):
