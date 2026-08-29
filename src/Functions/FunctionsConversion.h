@@ -3813,8 +3813,10 @@ public:
 
             if (isTime64<Name, ToDataType>(arguments))
                 res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
+            else if (to_datetime64 || scale != 0)
+                res = std::make_shared<DataTypeDateTime64>(scale, timezone);
             else
-                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
+                res = std::make_shared<DataTypeDateTime>(timezone);
         }
         else
         {
@@ -4029,7 +4031,7 @@ public:
                 if (arguments.size() > 1)
                     scale = extractToDecimalScale(arguments[1]);
 
-                if (scale == 0)
+                if (!to_datetime64 && scale == 0)
                 {
                     result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
                 }
