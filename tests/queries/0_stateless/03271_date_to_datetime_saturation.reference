@@ -260,6 +260,18 @@ SELECT count() FROM testbe WHERE toUnixTimestamp(d) > 777600;
 1
 SELECT count() FROM testbe WHERE toUnixTimestamp(identity(d)) > 777600;
 1
+-- A `Date32` key range that spans a whole safe window must keep pruning at both of its edges. A
+-- `Date32` bound is signed, so it reaches a different comparison than a `Date` bound.
+drop table if exists testw32a;
+create table testw32a (d Date32) engine MergeTree order by d settings index_granularity = 4, auto_statistics_types = '';
+insert into testw32a select toDate32(1 + intDiv(number * 49708, 15)) from numbers(16);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM testw32a WHERE toDateTime32(d) > toDateTime(1728000000) AND toDateTime32(d) < toDateTime(2592000000)) WHERE explain ILIKE '%Granules: 2/4%';
+1
+drop table if exists testw32b;
+create table testw32b (d Date32) engine MergeTree order by d settings index_granularity = 4, auto_statistics_types = '';
+insert into testw32b select toDate32(intDiv(number * 49710, 15)) from numbers(16);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM testw32b WHERE toUnixTimestamp(d) > 1728000000 AND toUnixTimestamp(d) < 2592000000) WHERE explain ILIKE '%Granules: 2/4%';
+1
 -- The rescaling is reached through a wrapped source type too, where a rule about integer width
 -- claims monotonicity for any day number. `Nullable` reaches the range analysis, which strips
 -- only `LowCardinality`; `LowCardinality` reaches the read-in-order consumers, which strip neither.
