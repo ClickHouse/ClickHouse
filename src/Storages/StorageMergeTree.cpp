@@ -2404,14 +2404,14 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
     std::optional<DataPartsVector> parts_for_visibility;
 
     size_t done_count = 0;
-    for (auto it = current_mutations_by_version.begin(); it != current_mutations_by_version.end(); ++it)
+    for (auto & [mutation_version, entry] : current_mutations_by_version)
     {
-        auto & entry = it->second;
-
         if (entry.tid.isNonTransactional())
         {
-            /// Ordered by version, so once one falls outside the bound, so does every later one.
-            if (done_below == std::numeric_limits<Int64>::max() || static_cast<Int64>(it->first) > done_below)
+            /// `max()` means nothing bounds completion - no uncommitted block and no part left -
+            /// so every ordinary entry is done. Otherwise the map is ordered by version, so once
+            /// one falls outside the bound, so does every later one.
+            if (done_below != std::numeric_limits<Int64>::max() && static_cast<Int64>(mutation_version) > done_below)
                 break;
         }
         else
@@ -2424,7 +2424,7 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
             if (!parts_for_visibility)
                 parts_for_visibility = getDataPartsVectorForInternalUsage();
 
-            const auto version = static_cast<Int64>(it->first);
+            const auto version = static_cast<Int64>(mutation_version);
             const bool visible_part_left = std::any_of(
                 parts_for_visibility->begin(), parts_for_visibility->end(), [&](const auto & part)
                 {
@@ -2450,7 +2450,7 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         /// was not observed. A mutation in the attributed range can be `is_done` already if a
         /// concurrent unattributed pass flipped it right after the event, so check `finish_time`
         /// itself rather than stamping under the `is_done` flip above.
-        if (!entry.finish_time && it->first >= first_just_completed_version)
+        if (!entry.finish_time && mutation_version >= first_just_completed_version)
             entry.finish_time = now;
 
         ++done_count;
