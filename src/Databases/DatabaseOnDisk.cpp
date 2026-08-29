@@ -263,7 +263,9 @@ void DatabaseOnDisk::createTable(
 
     waitDatabaseStarted();
 
-    checkTablesLimit();
+    /// DDL dictionaries do not count toward the `max_tables` limit.
+    if (!table->isDictionary())
+        checkTablesLimit();
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
@@ -500,7 +502,8 @@ void DatabaseOnDisk::renameTable(
     /// limit too, but at that point a failed cross-database rename cannot be rolled back safely.
     /// However, keep the check after the source table is resolved and validated, so that a full
     /// destination does not mask `UNKNOWN_TABLE` and other source-side errors.
-    if (this != &to_database)
+    /// DDL dictionaries do not count toward the `max_tables` limit.
+    if (this != &to_database && !table->isDictionary())
     {
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
         {
@@ -1032,6 +1035,15 @@ void DatabaseOnDisk::checkTablesLimitUnlocked() const
         return;
 
     size_t current_tables = tables.size();
+
+    /// The limit applies to tables only. DDL dictionaries live in the same map but do not count.
+    /// Iterate only when the total is at the limit: the table count never exceeds the total.
+    if (current_tables >= limit)
+    {
+        for (const auto & name_and_storage : tables)
+            if (name_and_storage.second->isDictionary())
+                --current_tables;
+    }
 
     /// NOTE: The check is best-effort.
     /// NOTE: `getDatabaseName` would take `mutex` again and deadlock, so read the name directly.

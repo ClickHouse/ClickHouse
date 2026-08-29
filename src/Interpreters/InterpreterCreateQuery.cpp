@@ -2488,6 +2488,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (!internal && is_initial_query && !is_predefined_database)
         throwIfTooManyEntities(create);
 
+    /// Check the per-database `max_tables` limit before constructing the storage: the storage
+    /// constructor can already create data on disk, which would be left behind if the quota
+    /// rejected the table only inside `database->createTable`. The check there still guards
+    /// the race window between this preflight and the actual attach.
+    /// DDL dictionaries do not count toward the limit.
+    if (!create.is_dictionary)
+        if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+            database_on_disk->checkTablesLimit();
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)

@@ -1508,8 +1508,10 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
                 table_id.getNameForLogs());
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
-        if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
-            database_on_disk->checkTablesLimit();
+        /// DDL dictionaries do not count toward the limit.
+        if (!(it_dropped_table->table && it_dropped_table->table->isDictionary()))
+            if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
+                database_on_disk->checkTablesLimit();
 
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         table_metadata_path = getPathForMetadata(it_dropped_table->table_id);

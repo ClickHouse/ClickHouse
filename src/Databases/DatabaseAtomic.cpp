@@ -371,8 +371,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     /// Check the destination `max_tables` quota only after the source table has been resolved
     /// and validated, so that a full destination does not mask `UNKNOWN_TABLE` and other
-    /// source-side errors. An exchange does not change the number of tables.
-    if (!inside_database && !exchange)
+    /// source-side errors. An exchange does not change the number of tables, and DDL
+    /// dictionaries do not count toward the limit.
+    if (!inside_database && !exchange && !table->isDictionary())
         other_db.checkTablesLimitUnlocked();
 
     /// Table renaming actually begins here
@@ -1012,7 +1013,7 @@ Lowering the limit below the current number of tables does not drop any tables. 
 
 `CREATE OR REPLACE TABLE` briefly creates the replacement under a temporary name before swapping it in, so replacing a table while the database is exactly at `max_tables` fails with `TOO_MANY_TABLES` even though the final table count would not grow. Moving a table into the database with `RENAME TABLE` is also subject to the limit.
 
-A materialized view created without a `TO` clause has a hidden inner table that counts toward the limit as a table of its own. The check is best-effort under concurrency.
+A materialized view created without a `TO` clause has a hidden inner table that counts toward the limit as a table of its own. Dictionaries created with `CREATE DICTIONARY` do not count toward the limit and are not restricted by it. The check is best-effort under concurrency.
 
 The setting is available for the on-disk database engines that keep their tables in memory and their metadata in local `.sql` files: `Atomic` and `Ordinary`. It is not supported by the `Replicated` engine.
 

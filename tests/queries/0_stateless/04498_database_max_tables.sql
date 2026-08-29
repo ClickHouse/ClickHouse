@@ -109,6 +109,21 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.b; -- { serverError TOO_MANY_TAB
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
+-- Dictionaries do not count toward the limit and are not restricted by it.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS max_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dict_source (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict (x UInt64) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE 'dict_source')) LIFETIME(0) LAYOUT(FLAT());
+-- The dictionary neither consumes a table slot nor is blocked by the exhausted limit.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dt2 (x UInt32) ENGINE = MergeTree ORDER BY x; -- { serverError TOO_MANY_TABLES }
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
+-- Renaming a dictionary into a full database is not blocked by the limit either.
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic SETTINGS max_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.occupies_slot (x UInt32) ENGINE = MergeTree ORDER BY x;
+RENAME DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict TO {CLICKHOUSE_DATABASE_2:Identifier}.dict;
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 'dict';
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
 -- The limit is enforced by the Ordinary engine as well, and its setting can be altered too.
 SET allow_deprecated_database_ordinary = 1;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary SETTINGS max_tables = 1;
@@ -117,11 +132,10 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.o2 (x UInt32) ENGINE = MergeTree
 ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = 5;
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT extract(engine_full, 'max_tables\\s*=\\s*(\\d+)') FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
--- A rejected CREATE leaves a data directory behind on Ordinary, so drop the database recursively.
-SET force_remove_data_recursively_on_drop = 1;
+-- A quota-rejected CREATE must not leave any on-disk state behind: the limit is checked before
+-- the storage is constructed, so this DROP works without `force_remove_data_recursively_on_drop`.
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-SET force_remove_data_recursively_on_drop = 0;
 
 -- A full target must reject all cross-database rename paths before detaching the source table.
 -- Both databases are per-test unique, so the test stays runnable in parallel with itself.
