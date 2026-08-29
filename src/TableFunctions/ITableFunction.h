@@ -83,29 +83,13 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
-    /// The name of the named collection the table function arguments were resolved from, or an empty
-    /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
-    /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
-    /// blocked while the table exists, matching the behavior of table engines that resolve named
-    /// collections (see `tryGetNamedCollectionWithOverrides`). Transient uses of the table function in a
-    /// query do not register anything.
-    virtual String getUsedNamedCollectionName() const { return {}; }
-
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
     virtual void setPartitionBy(const ASTPtr &) {}
 
     /// Create storage according to the query.
-    /// `check_create_temporary_table` is passed as false by database engines that resolve their
-    /// tables through a table function (e.g. the `URL` database): the table is referenced in the
-    /// query by an identifier and governed by the grants on the database, so the
-    /// `CREATE TEMPORARY TABLE` privilege required for a table function call written in a query
-    /// does not apply.
-    /// `check_source_access` is passed as false by callers that cannot know the direction of the
-    /// access yet (the `URL` database resolves a table before knowing whether it is the source or
-    /// the target of the query) and therefore run their own source access checks around the call.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true, bool check_source_access = true) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
     /// Returns actual table structure after enforcing source access checks.
     /// Use this instead of getActualTableStructure() from outside execute().
@@ -114,22 +98,10 @@ public:
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
-    /// The URI of the function for permission checking. Can be an empty string if not applicable.
-    /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
-    virtual const String & getFunctionURI() const
-    {
-        static const String empty;
-        return empty;
-    }
-
     virtual ~ITableFunction() = default;
 
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
-
-    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
-    /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
-    virtual bool isClusterFunction() const { return false; }
 
 private:
     virtual StoragePtr executeImpl(
@@ -139,12 +111,21 @@ private:
     /// This name is registered in the storage factory and used
     /// to check privileges.
     virtual const char * getStorageEngineName() const = 0;
+    virtual bool isClusterFunction() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
 
 protected:
+    /// The URI of function for permission checking. Can be empty string if not applicable.
+    /// For example for url('https://foo.bar') URI would be 'https://foo.bar'.
+    virtual const String & getFunctionURI() const
+    {
+        static const String empty;
+        return empty;
+    }
+
     String getFunctionURINormalized() const;
 };
 

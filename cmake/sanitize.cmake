@@ -4,26 +4,7 @@
 # - `thread` (TSan)
 # - `undefined` (UBSan)
 # - "" (no sanitizing)
-#
-# The legal values are strings, so this must be a STRING cache variable, not `option`:
-# `option` creates a BOOL, and when the user does not pass -DSANITIZE=... its empty default
-# is normalized to `OFF` in the cache. Code testing `SANITIZE STREQUAL ""` then takes the
-# "sanitizer enabled" branch in every default-configured build. Existing build directories
-# keep the stale `SANITIZE:BOOL=OFF` cache entry, so consumers must test truthiness
-# (`if (SANITIZE)`), which is false for both `OFF` and the empty string, instead of
-# comparing against the empty string.
-set (SANITIZE "" CACHE STRING "Enable one of the code sanitizers")
-
-# `set(... CACHE ...)` does not retag an entry that already exists, so a build directory
-# configured while SANITIZE was still an `option` keeps a BOOL-typed entry, and `ccmake` /
-# `cmake-gui` keep presenting it as a checkbox whose only writable values are ON/OFF.
-# Retag it in place: a stale `OFF` stays falsy and keeps meaning "no sanitizer", while the
-# STRING type lets the user type a real sanitizer name.
-get_property (sanitize_cache_type CACHE SANITIZE PROPERTY TYPE)
-if (sanitize_cache_type STREQUAL "BOOL")
-    set_property (CACHE SANITIZE PROPERTY TYPE STRING)
-endif()
-unset (sanitize_cache_type)
+option (SANITIZE "Enable one of the code sanitizers" "")
 
 ## -fno-omit-frame-pointer is required: the query profiler relies on frame-pointer-based
 ## stack unwinding under sanitizer builds (via abseil's GetStackTrace in StackTrace.cpp).
@@ -165,14 +146,7 @@ if (WITH_COVERAGE)
     message (STATUS "Enabled instrumentation for code coverage")
 
     # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
-    # -runtime-counter-relocation makes counter updates go through a bias variable,
-    # which is what lets the profile runtime memory-map the counters straight into
-    # the .profraw file ("continuous mode", the %c pattern in LLVM_PROFILE_FILE).
-    # The file is then valid at every instant, so a process killed with SIGKILL
-    # (integration tests do this on purpose) leaves an intact profile instead of a
-    # half-written one that crashes llvm-profdata later. Without %c at runtime the
-    # flag is inert (the bias stays zero).
-    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping -mllvm -runtime-counter-relocation)
+    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 
     if (WITH_COVERAGE_DEPTH)
@@ -218,15 +192,3 @@ endif()
 # bundled path here ensures it takes precedence without disrupting #include_next chains (which
 # libcxx relies on to reach the compiler's own stddef.h, stdarg.h, etc.).
 include_directories (SYSTEM "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
-
-# Control-Flow Integrity (CFI) requires ThinLTO (-flto=thin) and -fwhole-program-vtables.
-# These are already enabled for release builds (ENABLE_THINLTO=ON). Do NOT combine with SANITIZE=
-# because SANITIZE disables ThinLTO. Use this option standalone with a release build type.
-option (ENABLE_CFI "Enable Clang Control-Flow Integrity sanitizer (requires ENABLE_THINLTO)" OFF)
-
-if (ENABLE_CFI)
-    if (SANITIZE)
-        message (FATAL_ERROR "ENABLE_CFI is incompatible with SANITIZE: ThinLTO must be enabled for CFI and is disabled by sanitizer builds")
-    endif()
-    message (STATUS "Enabled Control-Flow Integrity (CFI) sanitizer: cfi-vcall, cfi-derived-cast")
-endif()

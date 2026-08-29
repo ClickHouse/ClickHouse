@@ -5,7 +5,6 @@
 
 #include <compare>
 #include <optional>
-#include <unordered_set>
 
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -18,7 +17,6 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Poco/JSON/Parser.h>
-#include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
@@ -49,55 +47,6 @@ using namespace DB;
 
 namespace
 {
-    /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
-    /// using the minimum number of bytes for the value
-    /// Our decimal binary representation is little endian
-    /// so we cannot reuse our default code for parsing it.
-    ///
-    /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
-    /// are stored rounded, without fractional part. What is more strange
-    /// the integer part is rounded mathematically correctly according to fractional part.
-    /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
-    /// I've checked two implementations: Spark and Amazon Athena and both of them
-    /// do this.
-    ///
-    /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
-    /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
-    /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
-    /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
-    ///
-    /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
-    /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
-    /// but at least it doesn't lead to incorrect results.
-    template <typename DecimalType>
-    std::optional<DB::Field> deserializeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound)
-    {
-        using NativeType = typename DecimalType::NativeType;
-        using UnsignedType = make_unsigned_t<NativeType>;
-
-        if (str.size() > sizeof(NativeType))
-            return std::nullopt;
-
-        /// Accumulate into the unsigned counterpart, pre-filled with the sign bits,
-        /// so that the sign extension comes out of the shifts themselves.
-        UnsignedType unscaled = (str[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
-        for (const auto byte : str)
-            unscaled = (unscaled << 8) | static_cast<UInt8>(byte);
-
-        NativeType unscaled_value = static_cast<NativeType>(unscaled);
-
-        if (scale)
-        {
-            NativeType scaler = lower_bound ? -10 : 10;
-            for (UInt32 i = 1; i < scale; ++i)
-                scaler *= 10;
-
-            unscaled_value += scaler;
-        }
-
-        return DB::DecimalField<DecimalType>(unscaled_value, scale);
-    }
-
     /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
     /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
     std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
@@ -106,19 +55,62 @@ namespace
         auto column = non_nullable_type->createColumn();
         if (DB::WhichDataType(non_nullable_type).isDecimal())
         {
-            if (str.empty())
-                return std::nullopt;
+            /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
+            /// using the minimum number of bytes for the value
+            /// Our decimal binary representation is little endian
+            /// so we cannot reuse our default code for parsing it.
+            int64_t unscaled_value = 0;
 
-            const UInt32 scale = DB::getDecimalScale(*non_nullable_type);
-            if (DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal32>(str, scale, lower_bound);
-            if (DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal64>(str, scale, lower_bound);
-            if (DB::checkDecimal<DB::Decimal128>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal128>(str, scale, lower_bound);
-            if (DB::checkDecimal<DB::Decimal256>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal256>(str, scale, lower_bound);
-            return std::nullopt;
+            // Convert from big-endian to signed int
+            for (const auto byte : str)
+                unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
+
+            /// Add sign
+            if (str[0] & 0x80)
+            {
+                int64_t sign_extension = -1;
+                sign_extension <<= (str.size() * 8);
+                unscaled_value |= sign_extension;
+            }
+
+            /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
+            /// are stored rounded, without fractional part. What is more strange
+            /// the integer part is rounded mathematically correctly according to fractional part.
+            /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
+            /// I've checked two implementations: Spark and Amazon Athena and both of them
+            /// do this.
+            ///
+            /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
+            /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
+            /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
+            /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
+            ///
+            /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
+            /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
+            /// but at least it doesn't lead to incorrect results.
+            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
+            {
+                int64_t scaler = lower_bound ? -10 : 10;
+                while (--scale)
+                    scaler *= 10;
+
+                unscaled_value += scaler;
+            }
+
+            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
+            {
+                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
+                return result;
+            }
+            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
+            {
+                DB::DecimalField<DB::Decimal64> result(unscaled_value, decimal_type->getScale());
+                return result;
+            }
+            else
+            {
+                return std::nullopt;
+            }
         }
         else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
         {
@@ -167,43 +159,24 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
     return true;
 }
 
-bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const
+std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
-    /// Equality deletes force reading all physical columns of the data files they apply to
-    /// (see IcebergMetadata::getInitialSchemaByPath), so the pruned main read is impossible.
-    if (!equality_delete_files->empty())
-        return false;
-
-    for (const auto & file : *data_files)
-    {
-        /// Only the Parquet reader provides physical row numbers (ChunkInfoRowNumbers)
-        /// for the main read and positional re-reads (FormatFilterInfo::rows_to_read)
-        /// for the lazy read.
-        if (Poco::toUpper(file->parsed_entry->file_format) != "PARQUET")
-            return false;
-
-        /// Schema evolution forces reading all physical columns as well.
-        if (file->resolved_schema_id != table_schema_id)
-            return false;
-    }
-    return true;
-}
-
-std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
-{
-    UInt64 result = 0;
-    /// `record_count` is a required file-level field in all format versions, so the sum is
-    /// exact: no fallback to optional per-column statistics is needed. The field is parsed
-    /// as a raw Int64 though, so a corrupted manifest file may carry a negative value; it
-    /// is reported as "count unavailable" rather than summed (a negative contribution would
-    /// silently produce a wrong -- or, after the conversion to size_t, absurdly huge --
-    /// count) and rather than rejected (the count is only an optimization, a malformed
-    /// value must not make the table unreadable).
+    Int64 result = 0;
     for (const auto & file : getFilesWithoutDeleted(content))
     {
-        if (file->parsed_entry->record_count < 0)
+        /// Have at least one column with rows count
+        bool found = false;
+        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
+        {
+            if (column_info.rows_count.has_value())
+            {
+                result += *column_info.rows_count;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
             return std::nullopt;
-        result += static_cast<UInt64>(file->parsed_entry->record_count);
     }
     return result;
 }
@@ -261,7 +234,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 {
     insertRowToLogTable(
         context_,
-        [&] { return manifest_file_deserializer_->getMetadataContent(); },
+        manifest_file_deserializer_->getMetadataContent(),
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         path_resolver_.getTableRoot(),
         path_to_manifest_file_,
@@ -280,6 +253,10 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
+    if (manifest_format_version > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
+
     Poco::JSON::Parser parser;
 
     auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec");
@@ -290,7 +267,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     DB::NamesAndTypesList partition_columns_description;
-    std::unordered_set<String> partition_columns_seen;
     auto partition_key_ast = make_intrusive<ASTFunction>();
     partition_key_ast->name = "tuple";
     partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
@@ -325,18 +301,14 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             continue;
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
         auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
-        partition_spec_vec.emplace_back(source_id, transform_name, partition_name, static_cast<Int32>(i));
+        partition_spec_vec.emplace_back(source_id, transform_name, partition_name);
         auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;
 
         partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
-        /// One source column may back several partition fields (e.g. hours(ts) and identity ts).
-        /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
-        /// against these input columns, which must contain each source column at most once.
-        if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
+        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
     std::optional<DB::KeyDescription> partition_key_description;
@@ -413,7 +385,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         insertRowToLogTable(
             context,
-            [&] { return manifest_file_deserializer->getContent(row_index); },
+            manifest_file_deserializer->getContent(row_index),
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             path_resolver.getTableRoot(),
             path_to_manifest_file,
@@ -526,7 +498,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
     insertRowToLogTable(
         context,
-        [&] { return manifest_file_deserializer->getContent(row_index); },
+        manifest_file_deserializer->getContent(row_index),
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
         path_resolver.getTableRoot(),
         path_to_manifest_file,

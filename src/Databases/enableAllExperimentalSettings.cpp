@@ -1,7 +1,6 @@
-#include <Compression/CompressionFactory.h>
-#include <Core/Field.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/Context.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -15,8 +14,6 @@ namespace DB
 void enableAllExperimentalSettings(ContextMutablePtr context)
 {
     context->setSetting("allow_experimental_codecs", 1);
-    for (const auto & name : CompressionCodecFactory::instance().getGateSettingNames())
-        context->setSetting(name, 1);
     context->setSetting("allow_experimental_window_view", 1);
     context->setSetting("allow_experimental_funnel_functions", 1);
     context->setSetting("allow_experimental_nlp_functions", 1);
@@ -40,7 +37,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_suspicious_types_in_group_by", 1);
     context->setSetting("allow_suspicious_types_in_order_by", 1);
     context->setSetting("allow_suspicious_indices", 1);
-    context->setSetting("allow_minmax_index_for_json", 1);
     context->setSetting("allow_suspicious_codecs", 1);
     context->setSetting("allow_hyperscan", 1);
     context->setSetting("allow_simdjson", 1);
@@ -57,9 +53,8 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_database_unity_catalog", 1);
     context->setSetting("allow_database_glue_catalog", 1);
     context->setSetting("allow_database_iceberg", 1);
-    context->setSetting("allow_delta_kernel_rs", 1);
+    context->setSetting("allow_experimental_delta_kernel_rs", 1);
     context->setSetting("allow_experimental_ytsaurus_table_function", 1);
-    context->setSetting("allow_experimental_eval_table_function", 1);
     context->setSetting("allow_experimental_ytsaurus_table_engine", 1);
     context->setSetting("allow_experimental_ytsaurus_dictionary_source", 1);
     context->setSetting("allow_experimental_time_series_aggregate_functions", 1);
@@ -76,7 +71,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_database_paimon_rest_catalog", 1);
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);
-    context->setSetting("allow_experimental_url_wildcard_from_index_pages", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
 
     context->setSetting("allow_experimental_ai_functions", 1);
