@@ -153,10 +153,10 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
     )
     insert_settings = {
         "distributed_foreground_insert": 0,
-        "max_memory_usage": "20Mi",
+        "max_memory_usage": "10Mi",
         "max_untracked_memory": "0",
     }
-    for offset, limit in ((0, 100_000), (100_000, 2_000_000), (2_100_000, 100_000)):
+    for offset, limit in ((0, 1), (1, 1_000_000), (1_000_001, 100_000)):
         node1.query(
             f"insert into dist select 1, number from system.numbers limit {limit} offset {offset}",
             settings=insert_settings,
@@ -182,14 +182,14 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
             "select sum(data_files) from system.distribution_queue where table='dist'"
         )
     ) == 2
-    assert int(node1.query("select sum(uniq_values) from dist_data")) == 100_000
-    # C is still pending; `current_batch.txt` must contain failed B without sent A.
+    assert int(node1.query("select sum(uniq_values) from dist_data")) == 1
+    # `current_batch.txt` must preserve failed B followed by unsent C without sent A.
     assert node1.exec_in_container(
         ["cat", f"{queue_path}/current_batch.txt"]
-    ).splitlines() == [files[1].rsplit("/", 1)[-1][:-4]]
+    ).splitlines() == [file.rsplit("/", 1)[-1][:-4] for file in files[1:]]
 
     node1.query("system flush distributed dist settings max_memory_usage='1Gi'")
-    assert int(node1.query("select sum(uniq_values) from dist_data")) == 2_200_000
+    assert int(node1.query("select sum(uniq_values) from dist_data")) == 1_100_001
 
 
 def test_broken_file_during_split_removes_sent_files(started_cluster):
