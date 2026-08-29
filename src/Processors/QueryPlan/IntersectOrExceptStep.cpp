@@ -133,8 +133,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
     }
 
     size_t num_partitions = isPartitioned() ? max_threads : 1;
-    /// Partitioning is an optimization: with a huge `max_threads` reduce the partition count instead
-    /// of failing on the scatter connection limit. Any partition count keeps the output streams disjoint.
+    /// Cap the partition count by the scatter connection limit instead of failing on a huge `max_threads`.
     for (const auto & cur_pipeline : pipelines)
         num_partitions = std::min(num_partitions, std::max<size_t>(1, scatter_connection_count_limit / cur_pipeline->getNumStreams()));
 
@@ -173,9 +172,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         }
         else
         {
-            /// Both branches have the identical header (types and constness) after the conversion
-            /// above, so equal rows hash equally and land in the same partition on both sides. Each
-            /// partition is then an independent, exact set operation on its subset of rows.
+            /// Both inputs have the same header after the conversion above, so equal rows land in the same partition.
             ColumnNumbers key_columns(getOutputHeader()->columns());
             std::iota(key_columns.begin(), key_columns.end(), 0);
             scatterByPartition(*cur_pipeline, num_partitions, key_columns);
@@ -194,7 +191,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         return pipeline;
     }
 
-    /// The united ports are [left_0 .. left_{N-1}, right_0 .. right_{N-1}]: pair partition i of both sides.
+    /// United ports are [left_0 .. left_{N-1}, right_0 .. right_{N-1}].
     QueryPipelineProcessorsCollector collector(*pipeline, this);
     pipeline->transform([&](OutputPortRawPtrs ports)
     {

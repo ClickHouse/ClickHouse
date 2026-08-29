@@ -70,14 +70,11 @@ static StreamDisjointnessProperty applyStreamDisjointness(
 
     if (const auto * intersect_or_except = typeid_cast<const IntersectOrExceptStep *>(step))
     {
-        /// With more than one thread the step hash-scatters both branches by the whole row and runs one
-        /// transform per partition, so every output stream holds a disjoint set of row values. The
-        /// partitioning expression is the identity over all output columns.
         if (!intersect_or_except->isPartitioned())
             return {};
 
+        /// The partitioning expression is the identity over all output columns.
         const auto & columns = step->getOutputHeader()->getColumnsWithTypeAndName();
-        /// `column_actions` must be set, otherwise partitionDeterminedByKeys rejects the property.
         return {ActionsDAG(columns), step->getOutputHeader()->getNames(), ActionsDAG(columns), nullptr};
     }
 

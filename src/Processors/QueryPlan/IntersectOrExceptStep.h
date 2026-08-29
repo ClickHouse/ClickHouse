@@ -22,8 +22,7 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    /// Whether both inputs are hash-scattered by the whole row into `max_threads` partitions that are
-    /// processed independently, which makes the output streams disjoint by all columns.
+    /// Both inputs are hash-scattered by the whole row, so the output streams are disjoint by all columns.
     bool isPartitioned() const { return max_threads > 1; }
 
 private:
