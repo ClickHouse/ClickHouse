@@ -1029,6 +1029,13 @@ def test_lc_null_keys_break_then_client_cancel(started_cluster):
     thread_error = [None]
     query_error = [None]
 
+    ## Arm both failpoints BEFORE spawning the client: the prepass pauses on `null_pause`, and the
+    ## pre-latched `buildLowCardinalityMask` (which runs after the prepass breaks) must already find `lc_pause`
+    ## armed when it reaches its first 4096-row boundary. Enabling them first removes the race where the
+    ## query could reach or pass the synchronization points before the failpoints existed.
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+
     ## `get_query_request` spawns the framework-managed `clickhouse-client` subprocess and returns the
     ## `CommandRequest` whose `.process` is the live `Popen`; we keep it so we can signal the exact client
     ## (delivering a real TCP Cancel) without hunting for its PID.
@@ -1047,12 +1054,6 @@ def test_lc_null_keys_break_then_client_cancel(started_cluster):
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-
-    ## Arm both failpoints up front: the prepass pauses on `null_pause`, and the pre-latched
-    ## `buildLowCardinalityMask` (which runs after the prepass breaks) must already find `lc_pause`
-    ## armed when it reaches its first 4096-row boundary.
-    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
-    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
 
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
