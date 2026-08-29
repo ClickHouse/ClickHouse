@@ -547,6 +547,10 @@ The number of followers of ClickHouse Keeper.
 
 1 if ClickHouse Keeper is in a standalone mode, 0 otherwise.
 
+### KeeperKeyArenaSize {#keeperkeyarenasize}
+
+The size in bytes of the memory arena for keys in ClickHouse Keeper.
+
 ### KeeperLastCommittedLogIdx {#keeperlastcommittedlogidx}
 
 Index of the last committed log in ClickHouse Keeper.
@@ -1076,10 +1080,6 @@ Sum of merge operations in the queue (still to be applied) across Replicated tab
 ### ReplicasSumQueueSize {#replicassumqueuesize}
 
 Sum queue size (in the number of operations like get, merge) across Replicated tables.
-
-### Silk*counter_name* {#silkcounter_name}
-
-Value of the eponymous low-level counter of the silk fiber runtime, accumulated since the fiber scheduler initialization. Counters with Time in the name are in nanoseconds.
 
 ### TCPRejectedConnections {#tcprejectedconnections}
 

@@ -1378,6 +1378,23 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
+    auto emplace = [&](size_t row)
+    {
+        // For some methods we simply don't have a set counterpart, so a map method is used.
+        // Thus we have to set a `mapped` even though nothing reads it. Only the row that creates the
+        // cell has to: for a key that is already there the cell holds the same sentinel, and writing it
+        // again is a store into a random place of the table on every row.
+        if constexpr (State::has_mapped)
+        {
+            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
+            if (emplace_result.isInserted())
+                emplace_result.setMapped(place);
+            return emplace_result;
+        }
+        else
+            return state.emplaceKey(method.data, row, *aggregates_pool);
+    };
+
     auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result)
     {
         if constexpr (top_k)
@@ -1392,31 +1409,9 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         }
     };
 
-    /// Returns nothing and is force-inlined on purpose: a variant of this that returned the emplace
-    /// result was compiled into an out-of-line call per row for the string methods, and the call is
-    /// what the loop's speed is made of - it costs more than the work it wraps.
-    auto process_row = [&](size_t row) ALWAYS_INLINE
-    {
-        // For some methods we simply don't have a set counterpart, so a map method is used.
-        // Thus we have to set a `mapped` even though nothing reads it. Only the row that creates the
-        // cell has to: for a key that is already there the cell holds the same sentinel, and writing it
-        // again is a store into a random place of the table on every row.
-        if constexpr (State::has_mapped)
-        {
-            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
-            if (emplace_result.isInserted())
-                emplace_result.setMapped(place);
-            heap_push(row, emplace_result);
-        }
-        else
-        {
-            heap_push(row, state.emplaceKey(method.data, row, *aggregates_pool));
-        }
-    };
-
     if (all_keys_are_const)
     {
-        process_row(0);
+        heap_push(0, emplace(0));
         return;
     }
 
@@ -1455,7 +1450,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
             }
         }
 
-        process_row(i);
+        heap_push(i, emplace(i));
 
         if constexpr (top_k)
         {
@@ -2056,7 +2051,7 @@ void Aggregator::addBatchSinglePlace(
     if (inst->offsets)
         inst->batch_that->addBatchSinglePlace(
             inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-            inst->offsets[static_cast<ssize_t>(row_end) - 1],
+            inst->offsets[row_end - 1],
             place,
             inst->batch_arguments,
             arena);
@@ -2094,7 +2089,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
         if (inst->offsets)
             inst->batch_that->addBatchSinglePlace(
                 inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-                inst->offsets[static_cast<ssize_t>(row_end) - 1],
+                inst->offsets[row_end - 1],
                 res + inst->state_offset,
                 inst->batch_arguments,
                 data_variants.aggregates_pool);

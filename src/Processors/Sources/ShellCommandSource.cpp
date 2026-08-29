@@ -865,7 +865,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
                 return std::make_unique<ShellCommandHolder>(std::move(func));
             },
-            configuration.max_command_execution_time_seconds * 1000);
+            configuration.max_command_execution_time_seconds * 10000);
 
         /// Pool wait is frozen here on both the success and the timeout-failure
         /// paths so that `PoolWaitMicroseconds` always records contention for a

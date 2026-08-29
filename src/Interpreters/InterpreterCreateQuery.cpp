@@ -37,14 +37,12 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -152,7 +150,6 @@ namespace Setting
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
-    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ServerSetting
@@ -201,66 +198,6 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
-
-namespace
-{
-
-void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
-{
-    if (auto * function = ast->as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
-        function->name = "toTimeWithFixedDate";
-
-    for (auto & child : ast->children)
-        replaceLegacyToTimeInCreateQuery(child);
-
-    /// A TTL element keeps these outside `children`, so they need the same walk `FunctionNameNormalizer`
-    /// gives them: a GROUP BY key rewritten inconsistently with the primary key stops being its prefix.
-    if (auto * ttl_element = ast->as<ASTTTLElement>())
-    {
-        for (auto & group_by_key : ttl_element->group_by_key)
-            replaceLegacyToTimeInCreateQuery(group_by_key);
-        for (auto & group_by_assignment : ttl_element->group_by_assignments)
-            replaceLegacyToTimeInCreateQuery(group_by_assignment);
-    }
-}
-
-/// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
-/// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
-/// engine with a function body. Key expressions live in several places (storage, a view's inner
-/// engine, a projection's own `ORDER BY`), so the walk covers the query rather than a list of slots.
-void substituteUserDefinedFunctionsOutsideEngines(ASTPtr & ast, const ContextPtr & context)
-{
-    for (auto & child : ast->children)
-    {
-        if (!child)
-            continue;
-
-        const auto * storage = ast->as<ASTStorage>();
-        if (storage && child.get() == storage->engine)
-            continue;
-
-        const IAST * old_ptr = child.get();
-        substituteUserDefinedFunctionsOutsideEngines(child, context);
-        if (child.get() != old_ptr)
-            ast->updatePointerToChild(old_ptr, child);
-    }
-
-    if (ast->as<ASTFunction>() && !ast->as<ASTStorage>())
-    {
-        ASTPtr expression = ast;
-        UserDefinedSQLFunctionVisitor::visit(expression, context);
-        ast = expression;
-    }
-}
-
-void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & context)
-{
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        substituteUserDefinedFunctionsOutsideEngines(query, context);
-    replaceLegacyToTimeInCreateQuery(query);
-}
-
-}
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -1968,38 +1905,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
-    /// The definition persisted below must not depend on the session setting, because reloads and
-    /// replicas re-derive the key type from the stored text. This must happen after normalization:
-    /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
-    /// definition (short attach, metadata load, backup restore) already records its spelling.
-    if (!create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
-        && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-    {
-        replaceLegacyToTimeInCreateQuery(query_ptr);
-
-        /// `properties` was derived before the rewrite, and the live table below is built from it while
-        /// the metadata written to disk comes from the rewritten query. `CREATE TABLE ... AS src` copies
-        /// the source column expressions verbatim, so without re-deriving them a `DEFAULT`, `MATERIALIZED`,
-        /// `ALIAS` or column `TTL` mentioning `toTime` would keep the source spelling in memory while the
-        /// metadata records `toTimeWithFixedDate`, and the same insert would produce different values
-        /// before and after a reload.
-        if (create.columns_list && create.columns_list->columns)
-        {
-            const bool check_defaults_over_virtual_columns
-                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
-            properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
-        }
-
-        /// Constraints need the same treatment: `MergeTree` reparses them from the rewritten AST, but most
-        /// engines take `properties.constraints` verbatim, so a `CHECK` or `ASSUME` mentioning `toTime`
-        /// would be enforced with the session spelling in memory and with `toTimeWithFixedDate` after a
-        /// reload, accepting and rejecting the same row on the two sides of a restart.
-        if (create.columns_list)
-            properties.constraints
-                = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
-    }
-
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();
     // In case of an ON CLUSTER query, the database may not be present on the initiator node
@@ -3535,7 +3440,7 @@ BlockIO InterpreterCreateQuery::execute()
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
 
-        auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
+        auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
@@ -3543,32 +3448,6 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
-
-            /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
-            /// so a worker there would resolve `toTime` with its own default.
-            if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
-                && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-            {
-                /// The source definition of `AS` is materialized on the worker, so the initiator cannot
-                /// rewrite it here. Starting with `SETTINGS_IN_ZK_VERSION` the entry carries the query
-                /// settings, hence the worker sees `use_legacy_to_time` and materializes exactly what a
-                /// local `CREATE` would; only `OLDEST_VERSION` drops the setting. `CLONE AS` stays rejected
-                /// for every version of this branch, because the worker-side rewrite skips clones on
-                /// purpose (a re-spelled key would make the partition copy see a different structure), so
-                /// carrying the setting does not make the stored spelling unambiguous.
-                if (!create.as_table.empty()
-                    && (create.is_clone_as || on_cluster_version == DDLLogEntry::OLDEST_VERSION))
-                {
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "CREATE TABLE ... {} ON CLUSTER with distributed_ddl_entry_format_version = {} "
-                        "and use_legacy_to_time = 1 is not supported",
-                        create.is_clone_as ? "CLONE AS" : "AS",
-                        on_cluster_version);
-                }
-
-                normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
-            }
 
             return executeQueryOnCluster(create);
         }
@@ -3765,11 +3644,6 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
-
-    /// Must precede every side effect below: neither the transaction metadata removal nor the
-    /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.
-    if (to_replicated)
-        DatabaseOrdinary::checkReplicaPathIsSafe(create, getContext());
 
     /// Ensure the old detached table instance is destroyed before we remove
     /// transaction metadata files. Otherwise the old table's parts still hold

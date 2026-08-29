@@ -56,7 +56,6 @@
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCodingIP.h>
@@ -3486,19 +3485,6 @@ public:
         return Monotonic::get(type, left, right);
     }
 
-    bool hasInformationAboutPreimage() const override
-    {
-        return std::is_same_v<ToDataType, DataTypeDate>;
-    }
-
-    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
-    {
-        if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
-            return Monotonic::getPreimage(type, point);
-
-        return IFunction::getPreimage(type, point);
-    }
-
 private:
     const FunctionConvertSettings settings;
 
@@ -3813,10 +3799,8 @@ public:
 
             if (isTime64<Name, ToDataType>(arguments))
                 res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
-            else if (to_datetime64 || scale != 0)
-                res = std::make_shared<DataTypeDateTime64>(scale, timezone);
             else
-                res = std::make_shared<DataTypeDateTime>(timezone);
+                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
         {
@@ -4031,7 +4015,7 @@ public:
                 if (arguments.size() > 1)
                     scale = extractToDecimalScale(arguments[1]);
 
-                if (!to_datetime64 && scale == 0)
+                if (scale == 0)
                 {
                     result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
                 }
@@ -4352,13 +4336,6 @@ template <typename T>
 struct ToDateMonotonicity
 {
     static bool has() { return true; }
-
-    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
-    {
-        /// The helper only accepts `DateTime`: with `date_time_overflow_behavior=ignore` a
-        /// `DateTime64` or `Date32` source can wrap and have several disjoint preimages.
-        return getPreimageForDateRounding(type, point, DateRoundingInterval::Day);
-    }
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {

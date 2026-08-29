@@ -17,7 +17,6 @@
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
@@ -138,79 +137,6 @@ namespace
 
 }
 
-namespace
-{
-    std::optional<DB::Range> getMaterializedRowLineageRange(const ParsedManifestFileEntry & parsed_entry, Int32 field_id)
-    {
-        auto bounds = parsed_entry.value_bounds.find(field_id);
-        if (bounds == parsed_entry.value_bounds.end())
-            return std::nullopt;
-
-        auto column_info = parsed_entry.columns_infos.find(field_id);
-        if (column_info == parsed_entry.columns_infos.end() || !column_info->second.nulls_count.has_value()
-            || *column_info->second.nulls_count != 0)
-            return std::nullopt;
-
-        String left_str;
-        String right_str;
-        if (!bounds->second.first.tryGet(left_str) || !bounds->second.second.tryGet(right_str))
-            return std::nullopt;
-
-        auto type = std::make_shared<DB::DataTypeUInt64>();
-        auto left = deserializeFieldFromBinaryRepr(left_str, type, true);
-        auto right = deserializeFieldFromBinaryRepr(right_str, type, false);
-        if (!left || !right)
-            return std::nullopt;
-
-        return DB::Range(*left, true, *right, true);
-    }
-
-    bool isColumnPresenceKnown(const ParsedManifestFileEntry & parsed_entry)
-    {
-        for (const auto & [field_id, column_info] : parsed_entry.columns_infos)
-            if (column_info.bytes_size.has_value())
-                return true;
-        return false;
-    }
-
-    void addRowLineageHyperrectangles(std::unordered_map<Int32, DB::Range> & hyperrectangles, const ProcessedManifestFileEntry & entry)
-    {
-        const auto & parsed_entry = *entry.parsed_entry;
-        if (!entry.first_row_id.has_value() || parsed_entry.record_count <= 0 || entry.sequence_number < 0)
-            return;
-
-        const UInt64 inherited_sequence_number = static_cast<UInt64>(entry.sequence_number);
-        const UInt64 last_inherited_row_id = *entry.first_row_id + static_cast<UInt64>(parsed_entry.record_count) - 1;
-        const bool column_presence_is_known = isColumnPresenceKnown(parsed_entry);
-        const bool row_ids_are_readable = Poco::toUpper(parsed_entry.file_format) != "ORC";
-
-        for (const auto field_id : {row_id_field_id, last_updated_sequence_number_field_id})
-        {
-            const bool is_row_id = field_id == row_id_field_id;
-            if (is_row_id && !row_ids_are_readable)
-                continue;
-            const UInt64 inherited_lower_bound = is_row_id ? *entry.first_row_id : inherited_sequence_number;
-            const UInt64 inherited_upper_bound = is_row_id ? last_inherited_row_id : inherited_sequence_number;
-
-            if (!parsed_entry.columns_infos.contains(field_id))
-            {
-                if (column_presence_is_known)
-                {
-                    hyperrectangles.emplace(field_id, DB::Range(inherited_lower_bound, true, inherited_upper_bound, true));
-                    continue;
-                }
-            }
-            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id))
-            {
-                hyperrectangles.emplace(field_id, *range);
-                continue;
-            }
-
-            hyperrectangles.emplace(field_id, DB::Range(UInt64(0), true, inherited_upper_bound, true));
-        }
-    }
-}
-
 const std::vector<ProcessedManifestFileEntryPtr> &
 ManifestFileIterator::ManifestFileEntriesHandle::getFilesWithoutDeleted(FileContentType content_type) const
 {
@@ -329,7 +255,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
-    std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
@@ -429,7 +354,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         schema_processor,
         inherited_sequence_number_,
         inherited_snapshot_id_,
-        inherited_first_row_id_,
         context_,
         manifest_schema_id,
         std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec)),
@@ -447,7 +371,6 @@ ManifestFileIterator::ManifestFileIterator(
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
-    std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
@@ -473,21 +396,6 @@ ManifestFileIterator::ManifestFileIterator(
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
 {
-    if (!inherited_first_row_id_.has_value())
-        return;
-
-    entry_first_row_ids.resize(total_rows);
-    UInt64 next_row_id = *inherited_first_row_id_;
-    for (size_t row_index = 0; row_index < total_rows; ++row_index)
-    {
-        const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
-        if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status != ManifestEntryStatus::ADDED
-            || parsed_entry->parsed_first_row_id.has_value())
-            continue;
-
-        entry_first_row_ids[row_index] = next_row_id;
-        next_row_id += static_cast<UInt64>(parsed_entry->record_count);
-    }
 }
 
 ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
@@ -574,11 +482,6 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
         parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
 
-    if (parsed_entry->parsed_first_row_id.has_value())
-        entry->first_row_id = parsed_entry->parsed_first_row_id;
-    else if (!entry_first_row_ids.empty())
-        entry->first_row_id = entry_first_row_ids[row_index];
-
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
     if (filter_dag)
@@ -616,8 +519,6 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }
-
-            addRowLineageHyperrectangles(hyperrectangles, *entry);
         }
 
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
