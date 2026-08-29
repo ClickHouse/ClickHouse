@@ -44,7 +44,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"query_plan_use_row_wrappers", false, true, "New setting toggling the query-plan optimization that routes column reads through a covering `Row(...)` wrapper column."},
-            {"query_plan_read_in_order_through_spilling_join", false, true, "New setting that lets reading in order propagate through a hash join with an automatic spill threshold, by pinning that join in memory so the order it promised is preserved. previous_value=false so `compatibility` with versions before 26.9 restores the pre-existing conservative behavior, where such a join is never used for reading in order but is always free to spill."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
