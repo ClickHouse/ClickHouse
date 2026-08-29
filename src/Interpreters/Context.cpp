@@ -67,6 +67,7 @@
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
@@ -1913,6 +1914,9 @@ catch (...)
 
 static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
 {
+    /// The disk itself is an internal helper and does not probe its own root, but the path is a
+    /// real local write location, so it is checked here under a name an operator recognises.
+    warnIfAffectedByExt4CorruptionKernelBug(path, "the temporary storage path");
     auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
     VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     return volume;
