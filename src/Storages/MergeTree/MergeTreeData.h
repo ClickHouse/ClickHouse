@@ -228,6 +228,15 @@ public:
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
 
+    /// Marker written by `FREEZE` into the snapshot's table directory of a `leader_election`
+    /// table. `SYSTEM UNFREEZE` only receives an on-disk path, so when the table `UUID` cannot be
+    /// resolved to a loaded table on this node (it was dropped locally, or never attached here),
+    /// this marker is the only evidence that the snapshot belongs to shared storage owned by a
+    /// lease. Its presence makes `SYSTEM UNFREEZE` fail closed instead of deleting a snapshot that
+    /// another node's leader owns. The name deliberately contains no underscore, so it is never
+    /// mistaken for a `<partition id>_<...>` part directory while unfreezing.
+    constexpr static auto LEADER_ELECTION_SNAPSHOT_MARKER_FILE_NAME = "leader-election.txt";
+
     /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
     struct DataPartStateAndInfo
     {

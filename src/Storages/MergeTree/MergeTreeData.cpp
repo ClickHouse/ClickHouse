@@ -10145,6 +10145,17 @@ void MergeTreeData::optimizeDryRun(
     ContextPtr local_context)
 {
     /// DRY RUN PARTS executes a real merge task, bypassing StorageMergeTree::optimize's guard.
+    /// `InterpreterOptimizeQuery` calls this directly, so neither `assertNotReadonly` nor the
+    /// admission-epoch fence of a regular `OPTIMIZE` runs. The merge writes a temporary part on
+    /// the table's disks and commits its storage transaction there — for a `leader_election`
+    /// table those disks are shared, so a follower (or a leader that lost and reacquired the
+    /// lease mid-command) would write into shared storage outside the admitted epoch. There is no
+    /// node-local scratch path for it yet, so fail closed and reject the command outright.
+    if ((*getSettings())[MergeTreeSetting::leader_election])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE ... DRY RUN is not supported under `leader_election`: it would write a temporary "
+                        "merged part into shared storage outside the leadership fence. Use a regular OPTIMIZE on the leader.");
+
     if (metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
@@ -12001,6 +12012,27 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     }
     String backup_path = fs::path(shadow_path) / backup_name / "";
 
+    if ((*settings)[MergeTreeSetting::leader_election])
+    {
+        /// `SYSTEM UNFREEZE` gets only a path and resolves the table `UUID` back to a loaded
+        /// table to fence the removal. That resolution fails when the table was dropped locally,
+        /// so mark the snapshot as owned by a lease: without the table there is no lease to check
+        /// and the removal must be refused instead of deleting shared data owned by another node.
+        for (const auto & disk : getStoragePolicy()->getDisks())
+        {
+            if (disk->isReadOnly() || disk->isWriteOnce())
+                continue;
+
+            assertWritableLeaderAtEpoch(admission_epoch);
+
+            const String marker_path = fs::path(backup_path) / relative_data_path / LEADER_ELECTION_SNAPSHOT_MARKER_FILE_NAME;
+            disk->createDirectories(fs::path(marker_path).parent_path());
+            auto out = disk->writeFile(marker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, local_context->getWriteSettings());
+            writeString(getStorageID().getNameForLogs(), *out);
+            writeChar('\n', *out);
+            out->finalize();
+        }
+    }
 
     ThreadPool pool(
         CurrentMetrics::FreezePartThreads,
