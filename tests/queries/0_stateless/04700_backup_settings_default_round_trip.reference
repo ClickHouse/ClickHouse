@@ -70,6 +70,14 @@ SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS BASE_BA
 BACKUP TABLE t TO Disk(\'d\', \'b\')
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS foo = DEFAULT, CLUSTER_HOST_IDS = DEFAULT$$);
 BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS foo = DEFAULT
+-- A JSON AST carries the two fields and the settings independently, and nothing there resolves a name that
+-- addresses a field, so it is refused: printing it would emit a `<field> = ..., <field> = DEFAULT` pair
+-- whose own text reparses without the field.
+SELECT formatQueryFromJSON('{"type":"BackupQuery","kind":"BACKUP","backup_name":{"type":"Function","name":"Disk","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"d"}},{"type":"Literal","value":{"field_type":"String","value":"b"}}]},"no_empty_args":true,"kind":"BACKUP_NAME"},"base_backup_name":{"type":"Function","name":"Disk","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"d"}},{"type":"Literal","value":{"field_type":"String","value":"base"}}]},"no_empty_args":true,"kind":"BACKUP_NAME"},"settings":{"type":"SetQuery","default_settings":["base_backup"]},"elements":[{"type":"TABLE","table_name":"t","new_table_name":"t"}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"BackupQuery","kind":"BACKUP","backup_name":{"type":"Function","name":"Disk","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"d"}},{"type":"Literal","value":{"field_type":"String","value":"b"}}]},"no_empty_args":true,"kind":"BACKUP_NAME"},"settings":{"type":"SetQuery","default_settings":["cluster_host_ids"]},"elements":[{"type":"TABLE","table_name":"t","new_table_name":"t"}]}'); -- { serverError BAD_ARGUMENTS }
+-- Control: an ordinary core name in the same carrier is still accepted there.
+SELECT formatQueryFromJSON('{"type":"BackupQuery","kind":"BACKUP","backup_name":{"type":"Function","name":"Disk","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"d"}},{"type":"Literal","value":{"field_type":"String","value":"b"}}]},"no_empty_args":true,"kind":"BACKUP_NAME"},"settings":{"type":"SetQuery","default_settings":["max_threads"]},"elements":[{"type":"TABLE","table_name":"t","new_table_name":"t"}]}');
+BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS max_threads = DEFAULT
 -- A backup-specific DEFAULT is reprinted as written; it is the resolved `changes` entry that the Backups
 -- layer drops, and this query has none. Formatting it must be idempotent either way.
 SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = DEFAULT$$)) = formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = DEFAULT$$) AS stable;
