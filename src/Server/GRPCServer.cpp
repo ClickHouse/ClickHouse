@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
 }
@@ -1478,7 +1479,12 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
+        bool is_clean_cancel = exception.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
+
+        if (is_clean_cancel)
+            LOG_INFO(log, "Query was cancelled by the client, finalizing cleanly");
+        else
+            LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
 
         if (responder && !responder_finished)
         {
@@ -1496,7 +1502,17 @@ namespace
 
             try
             {
-                sendException(exception);
+                if (is_clean_cancel)
+                {
+                    /// A client-initiated cancel is reported through the `cancelled` result flag,
+                    /// mirroring the TCP protocol, where `QUERY_WAS_CANCELLED_BY_CLIENT` ends the
+                    /// session with EOF instead of an exception packet. Do not send an exception
+                    /// payload, so the gRPC wire contract observed on a plain cancel is preserved.
+                    result.set_cancelled(true);
+                    sendResult();
+                }
+                else
+                    sendException(exception);
             }
             catch (...)
             {
@@ -1647,11 +1663,15 @@ namespace
             /// aborting. `KILL QUERY` and the native TCP `Cancel` packet already set
             /// `CANCELLED_BY_USER` the same way; without it, `getCancelReason()` stays `UNDEFINED`
             /// after a soft timeout has latched and a real user cancel gets treated as a soft
-            /// timeout. No exception is passed (unlike TCP): the gRPC protocol reports the cancel
-            /// through the `cancelled` result flag, not through a query error.
+            /// timeout. The `QUERY_WAS_CANCELLED_BY_CLIENT` exception is passed the same way TCP
+            /// does: `Call::onException` recognizes this code and turns it back into a clean
+            /// `cancelled` completion, preserving the gRPC wire contract (no exception payload).
             if (query_context)
                 if (auto process_list_element = query_context->getProcessListElementSafe())
-                    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER);
+                    process_list_element->cancelQuery(
+                        CancelReason::CANCELLED_BY_USER,
+                        std::make_exception_ptr(
+                            Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
 
             return true;
         }

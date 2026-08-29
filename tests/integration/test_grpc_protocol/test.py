@@ -696,6 +696,9 @@ def test_cancel_while_processing_input():
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQueryWithStreamInput(send_query_info())
     assert result.cancelled == True
+    # The wire contract on a client cancel: the query completes flagged as cancelled
+    # without an exception payload (a plain cancel must not surface as a query error).
+    assert not result.HasField("exception"), f"cancel surfaced as an exception: {result.exception}"
 
 
 def test_cancel_while_generating_output():
@@ -710,6 +713,9 @@ def test_cancel_while_generating_output():
     results = list(stub.ExecuteQueryWithStreamIO(send_query_info()))
     assert len(results) >= 1
     assert results[-1].cancelled == True
+    # The wire contract on a client cancel: the query completes flagged as cancelled
+    # without an exception payload (a plain cancel must not surface as a query error).
+    assert not results[-1].HasField("exception"), f"cancel surfaced as an exception: {results[-1].exception}"
     output = b""
     for result in results:
         output += result.output
@@ -720,6 +726,26 @@ def test_cancel_while_generating_output():
     full_output = b"".join(b"%d\t0\n" % i for i in range(10))
     assert full_output.startswith(output), f"output not a prefix of full result: {output!r}"
     assert len(output) < len(full_output), "cancel did not interrupt: got the full result"
+
+
+def test_cancel_while_distinct_transform_output():
+    # A `DISTINCT` query that is already producing (committed prefix) when the client cancels.
+    # The cancel must be classified as hard (`CANCELLED_BY_USER` on the query status), so the
+    # `DistinctTransform` aborts instead of treating the cancel as a break-style soft timeout
+    # and keeping the committed prefix; and, per the gRPC wire contract, the final response must
+    # be flagged `cancelled` with no exception payload.
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="SELECT DISTINCT number % 2, sleep(0.2) FROM numbers(20) SETTINGS max_block_size=2"
+        )
+        time.sleep(0.5)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    results = list(stub.ExecuteQueryWithStreamIO(send_query_info()))
+    assert len(results) >= 1
+    assert results[-1].cancelled == True
+    assert not results[-1].HasField("exception"), f"cancel surfaced as an exception: {results[-1].exception}"
 
 
 def test_compressed_output():
