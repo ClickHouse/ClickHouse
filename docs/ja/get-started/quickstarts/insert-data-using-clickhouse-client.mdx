@@ -1,5 +1,6 @@
 ---
 sidebarTitle: 'clickhouse-client を使ってデータを挿入する'
+searchable: true
 title: 'clickhouse-client を使って ClickHouse Cloud にデータを挿入する'
 useCases: ['All']
 products: ['Cloud']
@@ -14,7 +15,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">リアルタイムアナリティクス</Badge>
+  <Badge size="lg" color="blue">リアルタイム分析</Badge>
   <Badge size="lg" color="blue">データウェアハウジング</Badge>
   <Badge size="lg" color="blue">オブザーバビリティ</Badge>
   <Badge size="lg" color="blue">AI/ML</Badge>
@@ -41,9 +42,7 @@ clickhouse-client をインストールし、サンプルデータセットを�
 最後には、clickhouse-client を使ってローカルファイルを ClickHouse Cloud に読み込む方法を理解できるようになります。このワークフローは、CSV、Parquet、JSON、その他多くのフォーマットに対応しています。
 
 <Steps titleSize="h3">
-  <Step>
-    ### clickhouse-client をインストールする
-
+  <Step title="clickhouse-client をインストールする" id="install-clickhouse-client">
     `clickhouse-client` は、ClickHouse に接続するための公式 CLI です。ClickHouse バイナリに含まれています。
 
     ユニバーサルインストーラーを使用してインストールします。
@@ -61,9 +60,7 @@ clickhouse-client をインストールし、サンプルデータセットを�
     ClickHouse のバージョン番号が表示されれば、`clickhouse-client` を使用する準備が整っていることを確認できます。
   </Step>
 
-  <Step>
-    ### サンプルのCSVファイルを準備する
-
+  <Step title="サンプルのCSVファイルを準備する" id="prepare-a-sample-csv-file">
     このクイックスタートだけで完了できるよう、小さなサンプルのCSVファイルを作成します。ターミナルで次を実行してください。
 
     ```bash
@@ -83,9 +80,7 @@ clickhouse-client をインストールし、サンプルデータセットを�
     ```
   </Step>
 
-  <Step>
-    ### Cloud サービスに接続する
-
+  <Step title="Cloud サービスに接続する" id="connect-to-your-cloud-service">
     以下のコマンドは、[Cloud 接続の詳細を取得する](/ja/get-started/quickstarts/obtain-your-cloud-connection-details) quickstart で説明されているとおり、`CLICKHOUSE_HOST`、`CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD` を環境変数として export 済みであることを前提としています。まだ設定していない場合は、これらを実際の値に直接置き換えることもできます。
 
     Cloud サービスに対して簡単なクエリを実行し、接続を確認します。
@@ -107,9 +102,7 @@ clickhouse-client をインストールし、サンプルデータセットを�
     </Note>
   </Step>
 
-  <Step>
-    ### ターゲットテーブルを作成してデータを挿入する
-
+  <Step title="ターゲットテーブルを作成してデータを挿入する" id="create-a-target-table-and-insert-data">
     まず、データの受け取り先となるテーブルを Cloud サービス上に作成します。
 
     ```bash
@@ -147,9 +140,7 @@ clickhouse-client をインストールし、サンプルデータセットを�
     `clickhouse-client` は、CSV ファイルの内容を Cloud サービスに直接送信します。`CSVWithNames` フォーマットは、先頭行にカラムヘッダーが含まれていることを ClickHouse に伝えます。
   </Step>
 
-  <Step>
-    ### データが挿入されたことを確認する
-
+  <Step title="データが挿入されたことを確認する" id="verify-the-data-was-inserted">
     行が取り込まれていることを確認するため、Cloud サービスにクエリを実行します：
 
     ```bash
@@ -180,7 +171,9 @@ clickhouse-client をインストールし、サンプルデータセットを�
   </Step>
 </Steps>
 
-## 次のステップ
+<div id="next-steps">
+  ## 次のステップ
+</div>
 
 このクイックスタートでは、`clickhouse-client` をインストールし、ClickHouse Cloud サービスに接続して、ローカルのCSVファイルからCloudへデータをストリーミングしました。この方法は、Parquet、JSON、そのほか多数のフォーマットでも同様に使用できます。
 

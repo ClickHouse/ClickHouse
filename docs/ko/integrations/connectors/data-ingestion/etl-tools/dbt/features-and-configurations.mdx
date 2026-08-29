@@ -7,7 +7,7 @@ title: '기능 및 구성'
 doc_type: 'guide'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -33,11 +33,12 @@ your_profile_name:
       port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings 
       user: [default] # User for all database operations
       password: [<empty string>] # Password for the user
-      cluster: [<empty string>] # If set, certain DDL/table operations will be executed with the `ON CLUSTER` clause using this cluster. 분산 머티리얼라이제이션 require this setting to work. See the following ClickHouse 클러스터 section for more details.
+      cluster: [<empty string>] # If set, certain DDL/table operations will be executed with the `ON CLUSTER` clause using this cluster. Distributed materializations require this setting to work. See the following ClickHouse Cluster section for more details.
       verify: [True] # Validate TLS certificate if using TLS/SSL
       secure: [False] # Use TLS (native protocol) or HTTPS (http protocol)
       client_cert: [null] # Path to a TLS client certificate in .pem format
       client_cert_key: [null] # Path to the private key for the TLS client certificate
+      server_host_name: [null] # Override the TLS SNI and hostname verification target. Useful when connecting via a DNS alias (e.g. an internal CNAME or AWS PrivateLink endpoint) where the TLS certificate is issued for a different hostname than the one used in `host`.
       retries: [1] # Number of times to retry a "retriable" database exception (such as a 503 'Service Unavailable' error)
       compression: [<empty string>] # Use gzip compression if truthy (http), or compression type for a native connection
       connect_timeout: [10] # Timeout in seconds to establish a connection to ClickHouse
@@ -45,14 +46,14 @@ your_profile_name:
       cluster_mode: [False] # Use specific settings designed to improve operation on Replicated databases (recommended for ClickHouse Cloud)
       use_lw_deletes: [False] # Use the strategy `delete+insert` as the default incremental strategy.
       check_exchange: [True] # Validate that clickhouse support the atomic EXCHANGE TABLES command.  (Not needed for most ClickHouse versions)
-      local_suffix: [_local] # Table suffix of local tables on shards for 분산 머티리얼라이제이션.
-      local_db_prefix: [<empty string>] # Database prefix of local tables on shards for 분산 머티리얼라이제이션. If empty, it uses the same database as the distributed table.
+      local_suffix: [_local] # Table suffix of local tables on shards for distributed materializations.
+      local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
       allow_automatic_deduplication: [False] # Enable ClickHouse automatic deduplication for Replicated tables
       tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
-      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection.
+      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection. Note: disabling connection reuse adds a new TCP/TLS handshake per model, which increases total `dbt run` wall time (typically ~200-500 ms per model). Combine with `threads > 1` for the best balance between distribution and throughput.
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
       database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
-      threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [쓰기 후 읽기 일관성](#read-after-write-consistency) section.
+      threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
       
       # Native (clickhouse-driver) connection settings
       sync_request_timeout: [5] # Timeout for server ping
@@ -136,8 +137,8 @@ table 및 incremental 머티리얼라이제이션에서 비복제 엔진을 사�
 
 dbt는 삽입 후 읽기 일관성 모델에 의존합니다. 모든 작업이 항상 동일한 레플리카로 전달된다고 보장할 수 없다면, 이 모델은 레플리카가 2개 이상인 ClickHouse 클러스터와 호환되지 않습니다. 일반적인 dbt 사용 중에는 문제가 드러나지 않을 수도 있지만, 클러스터 구성에 따라 이러한 보장을 확보할 수 있는 몇 가지 전략이 있습니다:
 
-* ClickHouse Cloud 클러스터를 사용하는 경우, 프로필의 `custom_settings` 속성에 `select_sequential_consistency: 1`만 설정하면 됩니다. 이 설정에 대한 자세한 내용은 [여기](/ko/reference/settings/session-settings#select_sequential_consistency)에서 확인할 수 있습니다.
-* 자체 호스팅 클러스터를 사용하는 경우, 모든 dbt 요청이 동일한 ClickHouse 레플리카로 전송되도록 하십시오. 상단에 로드 밸런서가 있다면, 항상 동일한 레플리카에 연결될 수 있도록 `replica aware routing`/`sticky sessions` 메커니즘을 사용해 보십시오. ClickHouse Cloud 이외의 클러스터에서 `select_sequential_consistency = 1` 설정을 추가하는 것은 [권장되지 않습니다](/ko/reference/settings/session-settings#select_sequential_consistency).
+* ClickHouse Cloud 클러스터를 사용하는 경우, 프로필의 `custom_settings` 속성에 `select_sequential_consistency: 1`만 설정하면 됩니다. 이 설정에 대한 자세한 내용은 [여기](/ko/reference/settings/session-settings/other#select_sequential_consistency)에서 확인할 수 있습니다.
+* 자체 호스팅 클러스터를 사용하는 경우, 모든 dbt 요청이 동일한 ClickHouse 레플리카로 전송되도록 하십시오. 상단에 로드 밸런서가 있다면, 항상 동일한 레플리카에 연결될 수 있도록 `replica aware routing`/`sticky sessions` 메커니즘을 사용해 보십시오. ClickHouse Cloud 이외의 클러스터에서 `select_sequential_consistency = 1` 설정을 추가하는 것은 [권장되지 않습니다](/ko/reference/settings/session-settings/other#select_sequential_consistency).
 
 <div id="additional-clickhouse-macros">
   ## ClickHouse 추가 매크로
@@ -175,16 +176,16 @@ dbt는 삽입 후 읽기 일관성 모델에 의존합니다. 모든 작업이 �
 S3 테이블 함수의 매개변수를 채우는 데 사용되는 다음
 키를 포함할 수 있습니다:
 
-| Argument Name                     | 설명                                                                                                                                                 |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| bucket                            | 버킷 기준 URL입니다. 예: `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`. 프로토콜이 지정되지 않으면 `https://`를 사용하는 것으로 간주합니다.                  |
-| path                              | 테이블 쿼리에 사용할 S3 경로입니다. 예: `/trips_4.gz`. S3 와일드카드를 지원합니다.                                                                                           |
-| fmt                               | 참조된 S3 객체에 대해 예상되는 ClickHouse 입력 형식(예: `TSV` 또는 `CSVWithNames`)입니다.                                                                                |
-| structure                         | 버킷의 데이터 컬럼 구조로, `['id UInt32', 'date DateTime', 'value String']`와 같은 이름/데이터 유형 쌍 목록입니다. 지정하지 않으면 ClickHouse가 구조를 추론합니다.                            |
-| aws&#95;access&#95;key&#95;id     | S3 액세스 키 ID입니다.                                                                                                                                    |
-| aws&#95;secret&#95;access&#95;key | S3 시크릿 키입니다.                                                                                                                                       |
-| role&#95;arn                      | S3 객체에 안전하게 액세스하는 데 사용할 ClickhouseAccess IAM role의 ARN입니다. 자세한 내용은 이 [문서](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오. |
-| compression                       | S3 객체에 사용되는 압축 방식입니다. 지정하지 않으면 ClickHouse가 파일 이름을 기준으로 압축 방식을 판단하려고 시도합니다.                                                                         |
+| Argument Name                     | 설명                                                                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| bucket                            | 버킷 기준 URL입니다. 예: `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`. 프로토콜이 지정되지 않으면 `https://`를 사용하는 것으로 간주합니다. |
+| path                              | 테이블 쿼리에 사용할 S3 경로입니다. 예: `/trips_4.gz`. S3 와일드카드를 지원합니다.                                                                          |
+| fmt                               | 참조된 S3 객체에 대해 예상되는 ClickHouse 입력 형식(예: `TSV` 또는 `CSVWithNames`)입니다.                                                               |
+| structure                         | 버킷의 데이터 컬럼 구조로, `['id UInt32', 'date DateTime', 'value String']`와 같은 이름/데이터 유형 쌍 목록입니다. 지정하지 않으면 ClickHouse가 구조를 추론합니다.           |
+| aws&#95;access&#95;key&#95;id     | S3 액세스 키 ID입니다.                                                                                                                   |
+| aws&#95;secret&#95;access&#95;key | S3 시크릿 키입니다.                                                                                                                      |
+| role&#95;arn                      | 안전한 S3 액세스를 위해 생성된 IAM role의 ARN입니다. 자세한 내용은 이 [문서](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오.      |
+| compression                       | S3 객체에 사용되는 압축 방식입니다. 지정하지 않으면 ClickHouse가 파일 이름을 기준으로 압축 방식을 판단하려고 시도합니다.                                                        |
 
 이 매크로의 사용 예시는
 [S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)을

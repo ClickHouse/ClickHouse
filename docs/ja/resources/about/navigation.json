@@ -1,0 +1,14 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouseについて",
+      "pages": [
+        "ja/resources/about/index",
+        "ja/resources/about/adopters",
+        "ja/resources/about/support"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-about.svg",
+  "item": "概要"
+}

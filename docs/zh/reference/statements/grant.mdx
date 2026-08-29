@@ -6,7 +6,7 @@ title: 'GRANT 语句'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 * 向 ClickHouse 用户账户或角色授予 [特权](#privileges)。
 * 向用户账户或其他角色分配角色。
@@ -191,6 +191,7 @@ ClickHouse 的特权层级如下所示：
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -267,6 +268,7 @@ ClickHouse 的特权层级如下所示：
   * `SHOW FILESYSTEM CACHES`
   * [`数据源`](#sources)
     * `AZURE`
+    * `BIGQUERY`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -284,6 +286,9 @@ ClickHouse 的特权层级如下所示：
     * `SQLITE`
     * `URL`
   * [`SYSTEM`](#system)
+    * `SYSTEM BACKGROUND`
+      * `SYSTEM STREAMING ENGINES`
+      * `SYSTEM VIEWS`
     * `SYSTEM CLEANUP`
     * `SYSTEM DROP CACHE`
       * `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -300,7 +305,6 @@ ClickHouse 的特权层级如下所示：
       * `SYSTEM DROP S3 CLIENT CACHE`
       * `SYSTEM DROP SCHEMA CACHE`
       * `SYSTEM DROP UNCOMPRESSED CACHE`
-    * `SYSTEM DROP PRIMARY INDEX CACHE`
     * `SYSTEM DROP REPLICA`
     * `SYSTEM FAILPOINT`
     * `SYSTEM FETCHES`
@@ -308,8 +312,6 @@ ClickHouse 的特权层级如下所示：
       * `SYSTEM FLUSH ASYNC INSERT QUEUE`
       * `SYSTEM FLUSH LOGS`
     * `SYSTEM JEMALLOC`
-    * `SYSTEM KILL QUERY`
-    * `SYSTEM KILL TRANSACTION`
     * `SYSTEM LISTEN`
     * `SYSTEM LOAD PRIMARY KEY`
     * `SYSTEM MERGES`
@@ -318,6 +320,7 @@ ClickHouse 的特权层级如下所示：
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -342,7 +345,6 @@ ClickHouse 的特权层级如下所示：
     * `SYSTEM TTL MERGES`
     * `SYSTEM UNFREEZE`
     * `SYSTEM UNLOAD PRIMARY KEY`
-    * `SYSTEM VIEWS`
     * `SYSTEM VIRTUAL PARTS UPDATE`
     * `SYSTEM WAIT LOADING PARTS`
   * [`表引擎`](#table-engine)
@@ -353,7 +355,7 @@ ClickHouse 的特权层级如下所示：
 此层级的处理方式示例如下：
 
 * `ALTER` 特权包含所有其他 `ALTER*` 特权。
-* `ALTER CONSTRAINT` 包含 `ALTER ADD CONSTRAINT` 和 `ALTER DROP CONSTRAINT` 特权。
+* `ALTER CONSTRAINT` 包含 `ALTER ADD CONSTRAINT`、`ALTER DROP CONSTRAINT` 和 `ALTER MODIFY CONSTRAINT` 特权。
 
 特权可在不同级别应用。了解某个级别后，就能判断该特权可使用的语法。
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`。级别：`GROUP`。别名：`CONSTRAINT`
   * `ALTER ADD CONSTRAINT`。级别：`TABLE`。别名：`ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`。级别：`TABLE`。别名：`DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`。级别：`TABLE`。别名：`MODIFY CONSTRAINT`
   * `ALTER TTL`。级别：`TABLE`。别名：`ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`。级别：`TABLE`。别名：`MATERIALIZE TTL`
   * `ALTER SETTINGS`。级别：`TABLE`。别名：`ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 此层级按如下方式处理：
 
 * `ALTER` 特权包含所有其他 `ALTER*` 特权。
-* `ALTER CONSTRAINT` 包含 `ALTER ADD CONSTRAINT` 和 `ALTER DROP CONSTRAINT` 特权。
+* `ALTER CONSTRAINT` 包含 `ALTER ADD CONSTRAINT`、`ALTER DROP CONSTRAINT` 和 `ALTER MODIFY CONSTRAINT` 特权。
 
 **注意**
 
@@ -628,7 +631,7 @@ GRANT CLUSTER ON *.* TO <username>
     * `SYSTEM DROP UNCOMPRESSED CACHE`。级别：`GLOBAL`。别名：`SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`。级别：`GROUP`
     * `SYSTEM RELOAD CONFIG`。级别：`GLOBAL`。别名：`RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`。级别：`GLOBAL`。别名：`SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`。级别：`GLOBAL`。别名：`SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`。级别：`GLOBAL`。别名：`RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`。级别：`TABLE`。别名：`SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`。级别：`TABLE`。别名：`SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -640,9 +643,14 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM REPLICATION QUEUES`。级别：`TABLE`。别名：`SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   * `SYSTEM SYNC REPLICA`。级别：`TABLE`。别名：`SYNC REPLICA`
   * `SYSTEM RESTART REPLICA`。级别：`TABLE`。别名：`RESTART REPLICA`
+  * `SYSTEM BACKGROUND`。级别：`GROUP`
+    * `SYSTEM STREAMING ENGINES`。级别：`TABLE`
+    * `SYSTEM VIEWS`。级别：`VIEW`。别名：`SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   * `SYSTEM FLUSH`。级别：`GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`。级别：`TABLE`。别名：`FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`。级别：`GLOBAL`。别名：`FLUSH LOGS`
+
+`SYSTEM UNLOAD DICTIONARY` 和 `SYSTEM UNLOAD DICTIONARIES` 命令复用了 `SYSTEM RELOAD DICTIONARY` 特权，因此拥有 `SYSTEM RELOAD DICTIONARY` 的用户也可以卸载字典。
 
 `SYSTEM RELOAD DICTIONARY ON *.*` 特权会隐式授予 `SYSTEM RELOAD EMBEDDED DICTIONARIES` 特权。
 
@@ -670,6 +678,7 @@ GRANT CLUSTER ON *.* TO <username>
 可用参数：
 
 * `AZURE`
+* `BIGQUERY`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -776,9 +785,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`。别名：`dictHas`、`dictGetHierarchy`、`dictIsIn`
+* `dictGet`。别名：`dictHas`、`dictGetHierarchy`、`dictGetRoot`、`dictGetChildren`、`dictGetDescendants`、`dictIsIn`
 
-允许用户执行 [dictGet](/zh/reference/functions/regular-functions/ext-dict-functions#dictGet)、[dictHas](/zh/reference/functions/regular-functions/ext-dict-functions#dictHas)、[dictGetHierarchy](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) 和 [dictIsIn](/zh/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 函数。
+允许用户执行 [dictGet](/zh/reference/functions/regular-functions/ext-dict-functions#dictGet)、[dictHas](/zh/reference/functions/regular-functions/ext-dict-functions#dictHas)、[dictGetHierarchy](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy)、[dictGetRoot](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetRoot)、[dictGetChildren](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetChildren)、[dictGetDescendants](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants) 和 [dictIsIn](/zh/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 函数。
 
 权限级别：`DICTIONARY`。
 
@@ -792,9 +801,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 </div>
 
 如果同时启用
-[`display_secrets_in_show_and_select` 服务器设置](/zh/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+[`display_secrets_in_show_and_select` 服务器设置](/zh/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 和
-[`format_display_secrets_in_show_and_select` 格式设置](/zh/reference/settings/formats#format_display_secrets_in_show_and_select)，
+[`format_display_secrets_in_show_and_select` 格式设置](/zh/reference/settings/formats/format#format_display_secrets_in_show_and_select)，
 则允许用户在 `SHOW` 和 `SELECT` 查询中查看 secrets。
 
 <div id="named-collection-admin">
@@ -822,6 +831,8 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 <div id="table-engine">
   ### 表引擎
 </div>
+
+<CloudNotSupportedBadge />
 
 允许在创建表时使用指定的表引擎。适用于[表引擎](/zh/reference/engines/table-engines/index)。
 

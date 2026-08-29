@@ -16,7 +16,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 挿入された行の自動 upsert
 </div>
 
-[ReplacingMergeTree table engine](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) では、非効率な `ALTER` や `DELETE` ステートメントを使わなくても、同じ行の複数のコピーを挿入し、そのうち 1 つを最新バージョンとして示すことで、更新操作を適用できます。これに対し、バックグラウンドプロセスが同じ行の古いバージョンを非同期に削除し、不変な insert を使って更新操作を効率的に再現します。
+[ReplacingMergeTree テーブルエンジン](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) では、非効率な `ALTER` や `DELETE` ステートメントを使わなくても、同じ行の複数のコピーを挿入し、そのうち 1 つを最新バージョンとして示すことで、更新操作を適用できます。これに対し、バックグラウンドプロセスが同じ行の古いバージョンを非同期に削除し、不変な insert を使って更新操作を効率的に再現します。
 これは、テーブルエンジンが重複行を識別できることに依存しています。これは、一意性の判定に `ORDER BY` 句を使うことで実現されます。つまり、2 つの行が `ORDER BY` で指定されたカラムに対して同じ値を持つ場合、それらは重複と見なされます。テーブル定義時に指定する `version` カラムにより、2 つの行が重複と識別された場合に最新バージョンの行を保持できます。つまり、version の値が最も大きい行が保持されます。
 このプロセスを以下の例で示します。ここでは、行は A カラム (このテーブルの `ORDER BY`) によって一意に識別されます。これらの行は 2 つの batches として挿入され、その結果、ディスク上に 2 つのパーツが作成されたと仮定します。その後、非同期のバックグラウンドプロセスで、これらのパーツがマージされます。
 
@@ -57,7 +57,7 @@ SYSTEM SYNC REPLICA table
   ## プライマリ/重複排除キーの選択
 </div>
 
-前述のとおり、ReplacingMergeTree では、さらに重要な制約を満たす必要があります。`ORDER BY` のカラムの値は、変更をまたいでも行を一意に識別できなければなりません。そのため、Postgres のようなトランザクションデータベースから移行する場合は、元の Postgres の主キーを ClickHouse の `ORDER BY` 句に含める必要があります。
+前述のとおり、ReplacingMergeTree では、さらに重要な制約を満たす必要があります。`ORDER BY` のカラムの値は、変更をまたいでも行を一意に識別できなければなりません。そのため、Postgres のようなトランザクション型データベースから移行する場合は、元の Postgres の主キーを ClickHouse の `ORDER BY` 句に含める必要があります。
 
 ClickHouse の利用者であれば、テーブルの `ORDER BY` 句に含めるカラムを選び、[クエリパフォーマンスを最適化する](/ja/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)ことには慣れているでしょう。一般に、これらのカラムは [よく実行されるクエリに基づいて選択し、カーディナリティの低い順に並べる](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales)べきです。重要なのは、ReplacingMergeTree では追加の制約があることです。つまり、これらのカラムは不変でなければなりません。たとえば Postgres からレプリケーションする場合は、基になる Postgres のデータで変化しないカラムだけをこの句に追加してください。他のカラムは変更されてもかまいませんが、これらのカラムは行を一意に識別するため、常に同じ値である必要があります。
 分析ワークロードでは、通常、Postgres の主キーはあまり役に立ちません。特定の 1 行を対象にしたルックアップを行うことはほとんどないためです。カラムはカーディナリティの低い順に並べることを推奨しており、さらに [ORDER BY の前方にあるカラムに一致する条件のほうが通常は高速](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently) であることから、Postgres の主キーは `ORDER BY` の末尾に追加するべきです (分析上の価値がある場合を除きます) 。Postgres で複数のカラムが主キーを構成している場合は、カーディナリティとクエリ上の有用性を考慮しつつ、それらを `ORDER BY` に追加する必要があります。また、`MATERIALIZED` カラムで値を連結して、一意の主キーを生成する方法も検討できます。

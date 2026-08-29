@@ -6,10 +6,6 @@ tags: ['性能与优化']
 keywords: ['可用线程']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <div id="increasing-the-number-of-threads-in-clickhouse">
   ## 增加 ClickHouse 中的线程数
 </div>
@@ -34,4 +30,4 @@ ClickHouse 使用**全局线程池**中的线程来处理查询，并执行合�
 <max_thread_pool_free_size>2000</max_thread_pool_free_size>
 ```
 
-请参阅[文档](/zh/reference/settings/server-settings/settings#max_thread_pool_size)，了解上述设置以及其他会影响全局线程池的设置的更多信息。
+请参阅[文档](/zh/reference/settings/server-settings/settings/max-thread#max_thread_pool_size)，了解上述设置以及其他会影响全局线程池的设置的更多信息。

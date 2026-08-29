@@ -6,8 +6,8 @@ title: 'CREATE DICTIONARY'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import CloudSupportedBadge from "/snippets/ko/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudSupportedBadge } from "/snippets/ko/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
 
 딕셔너리는 다양한 종류의 참조 목록에 유용한 매핑(`key -> attributes`)입니다.
 ClickHouse는 딕셔너리를 다루기 위한 특수 함수를 지원하며, 이러한 함수는 쿼리에서 사용할 수 있습니다. 참조 테이블과 `JOIN`을 사용하는 것보다 함수를 사용해 딕셔너리를 활용하는 편이 더 쉽고 효율적입니다.
@@ -78,12 +78,12 @@ COMMENT 'Comment'
 <clickhouse>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
-    <!--선택적 요소. 대체값이 포함된 파일 이름-->
-    <include_from>/etc/metrika.xml</include_from>
+    <!--Optional element. File name with substitutions-->
+    <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 
     <dictionary>
-        <!-- 딕셔너리 구성. -->
-        <!-- 설정 파일에는 딕셔너리 섹션을 원하는 만큼 포함할 수 있습니다. -->
+        <!-- Dictionary configuration. -->
+        <!-- There can be any number of dictionary sections in a configuration file. -->
     </dictionary>
 
 </clickhouse>

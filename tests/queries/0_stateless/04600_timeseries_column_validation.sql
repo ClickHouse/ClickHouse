@@ -50,7 +50,9 @@ DROP TABLE ts_valid;
 -- extracting the `SAMPLES INNER COLUMNS` block from the stored definition.
 CREATE TABLE ts_override (time_series Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries;
 SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'ts_override' AND name = 'time_series';
-SELECT extract(create_table_query, 'SAMPLES INNER COLUMNS \(([^)]*)\)') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_override';
+-- The lazy `(.*?)` anchored at `SAMPLES INNER ENGINE` (instead of `[^)]*`) is needed because the
+-- auto-created columns carry `CODEC(...)` clauses with nested parentheses.
+SELECT extract(create_table_query, 'SAMPLES INNER COLUMNS \((.*?)\) SAMPLES INNER ENGINE') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_override';
 DROP TABLE ts_override;
 
 -- Extra outer columns other than `time_series` (e.g. `metric_name`, `tags`) are NOT rejected: the outer

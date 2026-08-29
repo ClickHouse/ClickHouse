@@ -341,7 +341,7 @@ INSERT INTO default.trips_all
     )
 ```
 
-Les insertions se feront sur le nœud initiateur. Cela signifie que, même si les lectures auront lieu sur chaque nœud, les lignes résultantes seront acheminées vers l’initiateur pour y être distribuées. Dans les scénarios à haut débit, cela peut constituer un goulot d’étranglement. Pour y remédier, définissez le paramètre [parallel&#95;distributed&#95;insert&#95;select](/fr/reference/settings/session-settings#parallel_distributed_insert_select) pour la fonction `s3cluster`.
+Les insertions se feront sur le nœud initiateur. Cela signifie que, même si les lectures auront lieu sur chaque nœud, les lignes résultantes seront acheminées vers l’initiateur pour y être distribuées. Dans les scénarios à haut débit, cela peut constituer un goulot d’étranglement. Pour y remédier, définissez le paramètre [parallel&#95;distributed&#95;insert&#95;select](/fr/reference/settings/session-settings/parallel#parallel_distributed_insert_select) pour la fonction `s3cluster`.
 
 <div id="s3-table-engines">
   ## Moteurs de table S3
@@ -725,7 +725,7 @@ La réplication avec des disques S3 peut être assurée à l’aide du moteur de
 
 Les notes suivantes portent sur l’implémentation des interactions entre S3 et ClickHouse. Bien qu’elles soient généralement fournies à titre informatif, elles peuvent aider les lecteurs lors de l’[optimisation des performances](#s3-optimizing-performance) :
 
-* Par défaut, le nombre maximal de threads de traitement des requêtes utilisés par une étape quelconque du pipeline de traitement des requêtes est égal au nombre de cœurs. Certaines étapes se parallélisent mieux que d’autres, cette valeur constitue donc une limite supérieure. Plusieurs étapes d’une requête peuvent s’exécuter en même temps, puisque les données sont lues en flux depuis le disque. Le nombre exact de threads utilisés pour une requête peut donc dépasser cette valeur. Modifiez ce paramètre via le réglage [max&#95;threads](/fr/reference/settings/session-settings#max_threads).
+* Par défaut, le nombre maximal de threads de traitement des requêtes utilisés par une étape quelconque du pipeline de traitement des requêtes est égal au nombre de cœurs. Certaines étapes se parallélisent mieux que d’autres, cette valeur constitue donc une limite supérieure. Plusieurs étapes d’une requête peuvent s’exécuter en même temps, puisque les données sont lues en flux depuis le disque. Le nombre exact de threads utilisés pour une requête peut donc dépasser cette valeur. Modifiez ce paramètre via le réglage [max&#95;threads](/fr/reference/settings/session-settings/max-threads#max_threads).
 * Les lectures sur S3 sont asynchrones par défaut. Ce comportement est déterminé par le réglage `remote_filesystem_read_method`, défini par défaut sur la valeur `threadpool`. Lors du traitement d’une requête, ClickHouse lit les granules par bandes. Chacune de ces bandes peut contenir de nombreuses colonnes. Un thread lit les colonnes de ses granules une par une. Au lieu de procéder ainsi de manière synchrone, une prélecture est lancée pour toutes les colonnes avant d’attendre les données. Cela offre des gains de performances importants par rapport à une attente synchrone sur chaque colonne. Dans la plupart des cas, vous n’aurez pas besoin de modifier ce réglage ; voir [Optimisation des performances](#s3-optimizing-performance).
 * Les écritures sont effectuées en parallèle, avec un maximum de 100 threads concurrents d’écriture de fichiers. `max_insert_delayed_streams_for_parallel_write`, dont la valeur par défaut est 1000, contrôle le nombre de blobs S3 écrits en parallèle. Comme un tampon est nécessaire pour chaque fichier en cours d’écriture (~1MB), cela limite effectivement la consommation mémoire d’un INSERT. Il peut être pertinent de réduire cette valeur lorsque la mémoire du serveur est limitée.
 
@@ -1259,11 +1259,11 @@ Lorsque vous avez ajouté la [configuration du cluster](#define-a-cluster), un s
   ```
 
 <Note>
-  Vous pouvez personnaliser le chemin ZooKeeper `'clickhouse/tables/{uuid}/{shard}` affiché ci-dessus en définissant `default_replica_path` et `default_replica_name`. La documentation est disponible [ici](/fr/reference/settings/server-settings/settings#default_replica_path).
+  Vous pouvez personnaliser le chemin ZooKeeper `'clickhouse/tables/{uuid}/{shard}` affiché ci-dessus en définissant `default_replica_path` et `default_replica_name`. La documentation est disponible [ici](/fr/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
 <div id="testing-1">
-  ### Tests
+  ### test
 </div>
 
 Ces tests permettront de vérifier que les données sont bien répliquées entre les deux serveurs et qu&#39;elles sont stockées dans les buckets S3, et non sur le disque local.

@@ -34,6 +34,10 @@ ClickHouse에서 처리되는 데이터는 일반적으로 ClickHouse 서버가 
 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 및 [`Log`](/ko/reference/engines/table-engines/log-family/log)
 계열 테이블 엔진은 각각 `s3`, `azure_blob_storage`, `hdfs`(지원되지 않음) 타입의 디스크를 사용해 데이터를 `S3`, `AzureBlobStorage`, `HDFS`(지원되지 않음)에 저장할 수 있습니다.
 
+<Note>
+  `s3` 디스크 유형은 Alibaba Cloud Object Storage Service와 같은 S3-compatible 객체 스토리지 제공업체와도 사용할 수 있습니다. `endpoint`는 해당 제공업체의 S3-compatible endpoint로 구성하고, 제공업체별 compatibility 요구 사항도 고려하십시오.
+</Note>
+
 디스크를 구성하려면 다음이 필요합니다.
 
 1. `type` 섹션: 값은 `s3`, `azure_blob_storage`, `hdfs`(지원되지 않음), `local_blob_storage`, `web` 중 하나여야 합니다.
@@ -1098,7 +1102,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | 원격 디스크의 데이터를 읽으려 할 때의 최대 대기 시간     | `10000`초 |
 | `remote_fs_read_backoff_max_tries`  | 백오프를 사용해 읽기를 시도하는 최대 횟수            | `5`      |
 
-쿼리가 `DB:Exception Unreachable URL` 예외와 함께 실패하면 다음 설정을 조정해 볼 수 있습니다: [http&#95;connection&#95;timeout](/ko/reference/settings/session-settings#http_connection_timeout), [http&#95;receive&#95;timeout](/ko/reference/settings/session-settings#http_receive_timeout), [keep&#95;alive&#95;timeout](/ko/reference/settings/server-settings/settings#keep_alive_timeout).
+쿼리가 `DB:Exception Unreachable URL` 예외와 함께 실패하면 다음 설정을 조정해 볼 수 있습니다: [http&#95;connection&#95;timeout](/ko/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/ko/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/ko/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
 업로드할 파일을 가져오려면 다음을 실행하십시오:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path`는 쿼리 `SELECT data_paths FROM system.tables WHERE name = 'table_name'`로 확인할 수 있습니다).

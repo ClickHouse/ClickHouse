@@ -73,7 +73,7 @@ Connectez-vous à votre instance Postgres en tant qu’administrateur et exécut
    CREATE USER clickpipes_user PASSWORD 'some-password';
    ```
 
-2. Accordez à l’utilisateur créé à l’étape précédente un accès en lecture seule au niveau du schéma. L’exemple suivant montre les permissions pour le schéma `public`. Répétez ces commandes pour chaque schéma contenant des tables que vous souhaitez répliquer :
+2. Accordez à l’utilisateur créé à l’étape précédente un accès en lecture seule au niveau du schéma. L’exemple suivant montre les permissions pour le schéma `public`. Répétez ces commandes pour chaque schéma contenant des tables que vous souhaitez répliquer:
 
    ```sql
    GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
@@ -105,7 +105,7 @@ Connectez-vous à votre instance Postgres en tant qu’administrateur et exécut
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publication `clickpipes` contiendra l’ensemble des événements de modification générés par les tables spécifiées, et sera ensuite utilisée pour ingérer le flux de réplication.
+La publication `clickpipes` définit l’ensemble des tables dont les événements de modification seront transmis à ClickPipes. Nous déconseillons d’utiliser `FOR ALL TABLES`, sauf si vous avez l’intention de répliquer toutes les tables, car inclure des tables inutiles augmente le trafic WAL de Postgres vers ClickPipes et réduit l’efficacité globale de la réplication.
 
 <div id="enabling-connections-in-pg_hbaconf-to-the-clickpipes-user">
   ## Autoriser les connexions dans pg_hba.conf pour l’utilisateur ClickPipes

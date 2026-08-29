@@ -100,6 +100,9 @@ void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
 
+Int64 getCurrentQueryMemoryUsage();
+Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
+
 /// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
                        const Block & block_right, const String & condition_name_right);
@@ -141,6 +144,11 @@ IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
+
+constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
+{
+    return isRightOrFull(kind) && strictness != JoinStrictness::Asof && strictness != JoinStrictness::Semi;
+}
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
