@@ -81,16 +81,40 @@ echo -n 'D kept     '
 ${CLICKHOUSE_CLIENT} $NC -q "
     SELECT groupArray(x) FROM (SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t3') ORDER BY x)"
 
-# Writing to a table whose root had to be derived is refused: everything scoped to the queried
-# path would reach the sibling tables under it.
+# Every operation scoped to the queried path would reach the sibling tables under it, so all of
+# them are refused while the table root had to be derived. One arm per refusing site.
 ${CLICKHOUSE_CLIENT} $NC -q "
     DROP TABLE IF EXISTS t1_deep_05048;
     CREATE TABLE t1_deep_05048 ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t1')
     SETTINGS iceberg_metadata_file_path = 'sub/metadata/v2.metadata.json';
 "
-echo -n 'E refused  '
+echo -n 'E insert   '
 ${CLICKHOUSE_CLIENT} $NC --allow_experimental_insert_into_iceberg 1 -q "
     INSERT INTO t1_deep_05048 VALUES (9, 'z')" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
+
+echo -n 'F alter    '
+${CLICKHOUSE_CLIENT} $NC -q "
+    ALTER TABLE t1_deep_05048 ADD COLUMN y UInt8" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
+
+echo -n 'G mutation '
+${CLICKHOUSE_CLIENT} $NC -q "
+    ALTER TABLE t1_deep_05048 DELETE WHERE x = 1" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
+
+echo -n 'H optimize '
+${CLICKHOUSE_CLIENT} $NC -q "
+    OPTIMIZE TABLE t1_deep_05048" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
+
+echo -n 'I manifest '
+${CLICKHOUSE_CLIENT} $NC -q "
+    OPTIMIZE TABLE t1_deep_05048 MANIFEST" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
+
+echo -n 'J expire   '
+${CLICKHOUSE_CLIENT} $NC --allow_experimental_insert_into_iceberg 1 --allow_experimental_expire_snapshots 1 -q "
+    ALTER TABLE t1_deep_05048 EXECUTE expire_snapshots()" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
+
+echo -n 'K orphans  '
+${CLICKHOUSE_CLIENT} $NC --allow_experimental_insert_into_iceberg 1 --allow_iceberg_remove_orphan_files 1 -q "
+    ALTER TABLE t1_deep_05048 EXECUTE remove_orphan_files()" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
 
 # t4: the document is deeper, but `location` still names the queried path, so the two sources
 # disagree and the table root must NOT be derived. Reads and writes stay as they are.
@@ -107,7 +131,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT * FROM s3(s3_conn, filename='${DIR}/t4/metadata/v2.metadata.json', structure='line String', format='LineAsString')
 "
 
-echo -n 'G kept     '
+echo -n 'L kept     '
 ${CLICKHOUSE_CLIENT} $NC -q "
     SELECT groupArray(x) FROM (
         SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t4',
@@ -118,7 +142,7 @@ ${CLICKHOUSE_CLIENT} $NC -q "
     CREATE TABLE t4_arch_05048 ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t4')
     SETTINGS iceberg_metadata_file_path = 'archive/metadata/v2.metadata.json';
 "
-echo -n 'G write    '
+echo -n 'M write    '
 if ${CLICKHOUSE_CLIENT} $NC --allow_experimental_insert_into_iceberg 1 -q "
     INSERT INTO t4_arch_05048 VALUES (99, 'ok')" > /dev/null 2>&1
 then

@@ -46,11 +46,18 @@ IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
     if (!is_descendant)
         return {queried_path, RootRelation::Unknown};
 
+    auto strip_leading_slash = [](std::string_view str) { return str.starts_with('/') ? str.substr(1) : str; };
+
     /// Adopt only when the declared location denotes that same directory, whatever its spelling.
-    auto location = trimTrailingSlashes(table_location);
-    const bool location_agrees = location == candidate
-        || (location.size() > candidate.size() && location.ends_with(candidate)
-            && location[location.size() - candidate.size() - 1] == '/');
+    /// A leading slash is outside the comparison: the storage path may be absolute while `location`
+    /// carries a URI authority, whose last character then sits where a separator would be.
+    auto location = strip_leading_slash(trimTrailingSlashes(table_location));
+    auto tail = strip_leading_slash(candidate);
+    if (tail.empty())
+        return {queried_path, RootRelation::Unknown};
+    const bool location_agrees = location == tail
+        || (location.size() > tail.size() && location.ends_with(tail)
+            && location[location.size() - tail.size() - 1] == '/');
     if (!location_agrees)
         return {queried_path, RootRelation::Unknown};
 
