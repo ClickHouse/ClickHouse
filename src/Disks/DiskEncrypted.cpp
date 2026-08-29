@@ -339,8 +339,16 @@ namespace
             if (metadata_storage && metadata_storage->getType() == MetadataStorageType::Local)
                 warnIfAffectedByExt4CorruptionKernelBug(
                     (std::filesystem::path(metadata_storage->getPath()) / disk_path).string(), description);
+
+            /// `isRemote()` above is the disk's, and a DiskObjectStorage reports it whatever its backend
+            /// is. A local object storage resolves blob keys under its key prefix on this host, so with
+            /// plain metadata that prefix, not the metadata root, is where the encrypted data lands.
+            auto object_storage = delegate.getObjectStorage();
+            if (object_storage && !object_storage->isRemote())
+                warnIfAffectedByExt4CorruptionKernelBug(
+                    (std::filesystem::path(object_storage->getCommonKeyPrefix()) / disk_path).string(), description);
         }
-        catch (...) /// Ok: a delegate without a metadata storage simply has no local root to check. // NOLINT(bugprone-empty-catch)
+        catch (...) /// Ok: a delegate with neither of those simply has no local root to check. // NOLINT(bugprone-empty-catch)
         {
         }
     }
