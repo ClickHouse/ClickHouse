@@ -46,6 +46,20 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
 
+    /// `executeImpl` below rejects `Point`, `LineString`, `MultiLineString` and `MultiPoint` at ANY
+    /// argument position with `ILLEGAL_TYPE_OF_ARGUMENT`, and a WKB-encoded `String` payload
+    /// (reported under the kind name `String`, see `constGeoKindName` in `Common/GeoBbox.h`) with
+    /// `BAD_ARGUMENTS`. It rejects them only while EXECUTING -- `getReturnTypeImpl` returns `UInt8`
+    /// without inspecting the arguments -- and nothing evaluates the predicate before granule
+    /// selection, because `ActionsDAG::updateHeader` dry-runs a function only when every argument is
+    /// constant. So `spatial_bbox` and GeoParquet pruning must fail closed for these kinds: pruning
+    /// every disjoint granule away would answer `0` instead of raising.
+    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const override
+    {
+        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString"
+            || kind_name == "MultiPoint" || kind_name == "String";
+    }
+
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
