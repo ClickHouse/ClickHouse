@@ -314,17 +314,18 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
     size_t broken_files = 0;
     std::vector<std::string> sent_files;
 
-    auto finalize_processed_files = [&]
+    auto finalize_processed_files = [&] -> bool
     {
         /// Every completed iteration sent or quarantined one file, so these entries form a prefix.
         const size_t processed_files = sent_files.size() + broken_files;
         if (!processed_files)
-            return;
+            return false;
 
         auto dir_sync_guard = parent.getDirectorySyncGuard(parent.relative_path);
         for (const auto & file : sent_files)
             parent.markAsSend(file);
         files.erase(files.begin(), files.begin() + processed_files);
+        return true;
     };
 
     try
@@ -377,7 +378,8 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
     }
     catch (...)
     {
-        finalize_processed_files();
+        if (finalize_processed_files())
+            serialize();
         throw;
     }
 
