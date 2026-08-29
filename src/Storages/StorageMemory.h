@@ -38,14 +38,15 @@ public:
 
     String getName() const override { return "Memory"; }
 
-    size_t getSize() const { return data.get()->size(); }
+    size_t getSize() const { return data.get()->blocks.size(); }
 
     /// Snapshot for StorageMemory contains current set of blocks
     /// at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
         std::shared_ptr<const Blocks> blocks;
-        size_t rows_approx = 0;
+        /// The exact number of rows in `blocks`.
+        size_t rows = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -75,8 +76,9 @@ public:
     /// `compress = true` this skips decompression of the remaining columns.
     bool supportsPrewhere() const override { return true; }
 
-    /// Only the table's own columns: virtual columns (e.g. `_table`) are materialized outside
-    /// the reading source, so the in-source filter cannot read them.
+    /// Only the table's own stored columns whose values every block really contains: virtual
+    /// columns (e.g. `_table`) are materialized outside the reading source, and a column with a
+    /// `DEFAULT` expression can be missing from the blocks written before `ALTER ... ADD COLUMN`.
     std::optional<NameSet> supportedPrewhereColumns() const override;
     bool supportedPrewhereColumnsIncludeSubcolumns() const override { return true; }
 
@@ -85,8 +87,9 @@ public:
     /// their columns. Also shown in `system.columns`.
     ColumnSizeByName getColumnSizes() const override;
 
-    /// `totalRows` is exact (maintained under the write mutex), so `SELECT count() FROM table`
-    /// is served from metadata.
+    /// `totalRows` is the exact row count of a committed state of the table (the counter is
+    /// published together with the blocks it describes), so `SELECT count() FROM table` is served
+    /// from metadata.
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
@@ -162,17 +165,26 @@ private:
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
+    /// The blocks of the table together with the exact number of rows and bytes in them.
+    /// The counters are a part of the same object, so they are published atomically with the
+    /// blocks they describe: a reader never observes a row count that does not correspond to
+    /// any state the table really had, and `SELECT count()` served from `totalRows` (the trivial
+    /// count optimization) is always the exact number of rows of one of the committed states.
+    struct BlocksWithCounts
+    {
+        Blocks blocks;
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
-    MultiVersion<Blocks> data;
+    MultiVersion<BlocksWithCounts> data;
 
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
     MaterializedCTEWeakPtr materialized_cte;
-
-    std::atomic<size_t> total_size_bytes = 0;
-    std::atomic<size_t> total_size_rows = 0;
 
     std::unique_ptr<MemorySettings> memory_settings;
 

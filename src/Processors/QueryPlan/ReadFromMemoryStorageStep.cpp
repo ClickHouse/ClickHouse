@@ -466,7 +466,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             nullptr /* parallel execution index */,
             [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = assert_cast<const StorageMemory &>(*my_storage).data.get();
+                auto current = assert_cast<const StorageMemory &>(*my_storage).data.get();
+                data_to_initialize = std::shared_ptr<const Blocks>(current, &current->blocks);
             },
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
             source_filter,
@@ -484,7 +485,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
         auto source = std::make_shared<MemorySource>(
             physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header);
         if (stream == 0)
-            source->addTotalRowsApprox(snapshot_data.rows_approx);
+            source->addTotalRowsApprox(snapshot_data.rows);
         pipes.emplace_back(std::move(source));
     }
     return Pipe::unitePipes(std::move(pipes));
