@@ -4979,16 +4979,20 @@ void Server::updateServers(
                 LOG_TRACE(log, "<prometheus.keeper_metrics_only> had been changed, will reload {}", server->getDescription());
             }
             /// `asynchronous_metrics_key_values_mode` decides whether the keys of the key-value asynchronous
-            /// metrics are written as Prometheus labels (`device="sda"`) or mangled into the metric name, and
-            /// therefore whether a constant label such as `device` collides with a label the endpoint writes
-            /// itself. That collision is validated once, when the handler factory is built, so a listener that
-            /// exposes metrics must be rebuilt when the mode changes - both to re-validate its constant labels
-            /// and to reject a combination that would otherwise start emitting duplicate labels. An `http`
-            /// listener is included because an `http_handlers` rule can serve the same protocol. A
-            /// keeper-metrics-only `prometheus` listener exposes no asynchronous metrics at all, so the form
-            /// cannot affect its labels, and a change of that mode itself is handled by the check above.
-            if ((is_non_keeper_prometheus || is_http)
-                && getAsynchronousMetricsKeyValuesMode(previous_config) != getAsynchronousMetricsKeyValuesMode(config))
+            /// metrics are written as Prometheus labels (`device="sda"`) or mangled into the metric name. A
+            /// listener that exposes metrics is built with the constant labels and the form of its
+            /// configuration, and neither is re-read while it runs, so it has to be rebuilt for the new form
+            /// to be published with a label set that matches it. Only listeners that can actually serve the
+            /// metrics protocol are rebuilt: a keeper-metrics-only `prometheus` listener exposes no
+            /// asynchronous metrics at all, and an HTTP listener does so only through a rule with a
+            /// `prometheus` handler type or through the default `/metrics` route - a change of the mode must
+            /// not stop the HTTP interface of a server that only answers queries over it. The old and the new
+            /// handler set are both consulted, because a rule may have just been added or removed.
+            if (getAsynchronousMetricsKeyValuesMode(previous_config) != getAsynchronousMetricsKeyValuesMode(config)
+                && (is_non_keeper_prometheus
+                    || (is_http
+                        && (httpHandlersCanExposePrometheusMetrics(previous_config, previous_handlers_key)
+                            || httpHandlersCanExposePrometheusMetrics(config, handlers_key)))))
             {
                 force_restart = true;
                 LOG_TRACE(log, "<asynchronous_metrics_key_values_mode> had been changed, will reload {}", server->getDescription());

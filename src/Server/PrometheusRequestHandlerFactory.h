@@ -119,6 +119,13 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     const AsynchronousMetrics & asynchronous_metrics,
     const std::optional<String> & default_session_user = {});
 
+/// Whether an HTTP listener serving the rules of the `<http_handlers>`-style section `http_handlers_key`
+/// can expose the Prometheus metrics protocol: through a rule with a `prometheus` handler type, or
+/// through the default `/metrics` route registered from the `prometheus` section.
+bool httpHandlersCanExposePrometheusMetrics(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & http_handlers_key);
+
 /// Checks the constant labels of every Prometheus metrics endpoint of `config` against the labels that
 /// endpoint would write itself, including the asynchronous metric key labels, which are only written
 /// when `asynchronous_metrics_key_values_mode` publishes the key-value form. Throws

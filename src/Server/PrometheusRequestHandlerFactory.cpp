@@ -421,6 +421,34 @@ HTTPRequestHandlerFactoryPtr createKeeperPrometheusHandlerFactory(
 }
 
 
+bool httpHandlersCanExposePrometheusMetrics(const Poco::Util::AbstractConfiguration & config, const String & http_handlers_key)
+{
+    /// The default `/metrics` route is registered from the `prometheus` section, and only when that
+    /// section is not served on a port of its own and does not describe its own handlers
+    /// (mirrors `createPrometheusHandlerFactoryForHTTPRuleDefaults`).
+    const bool defaults_expose_prometheus
+        = config.has("prometheus") && !config.getInt("prometheus.port", 0) && !config.has("prometheus.handlers");
+
+    /// Without a section of its own, the listener serves the default handler set.
+    if (!config.has(http_handlers_key))
+        return defaults_expose_prometheus;
+
+    Strings keys;
+    config.keys(http_handlers_key, keys);
+
+    bool has_defaults = false;
+    for (const String & key : keys)
+    {
+        if (key == "defaults")
+            has_defaults = true;
+        else if (config.getString(http_handlers_key + "." + key + ".handler.type", "").starts_with("prometheus"))
+            return true;
+    }
+
+    return has_defaults && defaults_expose_prometheus;
+}
+
+
 void validatePrometheusConstantLabels(const Poco::Util::AbstractConfiguration & config, const Strings & http_handlers_keys)
 {
     const auto async_metrics_mode = getAsynchronousMetricsKeyValuesMode(config);
