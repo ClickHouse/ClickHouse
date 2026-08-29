@@ -128,10 +128,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     };
     /// The credential fields the native GCS backend reads (see gcsSettings.cpp / getGCSClient).
     /// `service_account_key_file` is tracked separately above, since it is rejected even as a literal.
+    /// `google_adc_token_uri` belongs to this set even though it carries no secret: it decides *where* the
+    /// refresh token is POSTed, so a server-side value would redirect the SQL-supplied credential to an
+    /// endpoint the query never named.
     auto is_gcs_credential_field = [](const std::string & k)
     {
-        return k == "service_account_key" || k == "access_token"
-            || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token";
+        return k == "service_account_key" || k == "access_token" || k == "google_adc_client_id"
+            || k == "google_adc_client_secret" || k == "google_adc_refresh_token" || k == "google_adc_token_uri";
     };
 
     for (const auto & arg : disk_args)
@@ -301,10 +304,11 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "A dynamic GCS disk created from user SQL may not supply a credential field (`service_account_key`, "
-            "`access_token`, or `google_adc_*`) indirectly via `from_env`/`from_zk`: the placeholder resolves on "
-            "the server, so the disk would authenticate with server-managed auth material (this also applies when "
-            "the backend type is supplied indirectly). Provide the credential as a literal value, or configure "
-            "the disk in the server configuration instead.");
+            "`access_token`, or `google_adc_*`, including the `google_adc_token_uri` the refresh token is sent "
+            "to) indirectly via `from_env`/`from_zk`: the placeholder resolves on the server, so the disk would "
+            "authenticate with server-managed auth material, or present its credential to a server-chosen "
+            "endpoint (this also applies when the backend type is supplied indirectly). Provide the value as a "
+            "literal, or configure the disk in the server configuration instead.");
 
     /// Match the table-function/engine restriction for a dynamic native GCS disk. Without an explicit
     /// native credential or `NOSIGN`, the client falls back to ADC and can borrow the server identity.
@@ -591,8 +595,13 @@ bool resolvedGCSBackendIsRestricted(
         return false;
 
     auto vouched = [&](const String & field) { return resolvedGCSCredentialIsVouchedFor(config, prefix, is_root, info, field); };
-    const bool vouched_adc
-        = vouched("google_adc_client_id") && vouched("google_adc_client_secret") && vouched("google_adc_refresh_token");
+    /// The token endpoint is optional -- absent, the SDK's own Google endpoint is used -- but when the resolved
+    /// configuration does carry one, the SQL definition must have vouched for it too: an endpoint the query never
+    /// named would receive the refresh token the query did supply.
+    const bool token_uri_is_own
+        = config.getString(key("google_adc_token_uri"), "").empty() || vouched("google_adc_token_uri");
+    const bool vouched_adc = vouched("google_adc_client_id") && vouched("google_adc_client_secret")
+        && vouched("google_adc_refresh_token") && token_uri_is_own;
     return !vouched("service_account_key") && !vouched("access_token") && !vouched_adc;
 }
 
@@ -716,14 +725,16 @@ void validateResolvedGCSDiskCredentials(
 
         const bool has_foreign_credential_field = resolved_is_foreign("service_account_key")
             || resolved_is_foreign("access_token") || resolved_is_foreign("google_adc_client_id")
-            || resolved_is_foreign("google_adc_client_secret") || resolved_is_foreign("google_adc_refresh_token");
+            || resolved_is_foreign("google_adc_client_secret") || resolved_is_foreign("google_adc_refresh_token")
+            || resolved_is_foreign("google_adc_token_uri");
         if (has_foreign_credential_field)
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "A dynamic GCS disk created from user SQL may not take credential fields (`service_account_key`, "
-                "`access_token`, or `google_adc_*`) from an included configuration, which could resolve "
-                "server-managed auth material. Provide the credentials as literal values in the SQL definition, "
-                "or configure the disk in the server configuration instead.");
+                "`access_token`, or `google_adc_*`, including the `google_adc_token_uri` the refresh token is "
+                "sent to) from an included configuration, which could resolve server-managed auth material or "
+                "redirect the token exchange to a server-chosen endpoint. Provide the values as literals in the "
+                "SQL definition, or configure the disk in the server configuration instead.");
 
         Poco::Util::AbstractConfiguration::Keys backend_keys;
         config.keys(prefix.empty() ? "" : prefix.substr(0, prefix.size() - 1), backend_keys);
