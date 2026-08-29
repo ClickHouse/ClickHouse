@@ -24,10 +24,10 @@
 -- is therefore a correctness smoke test of the same code path (the Decimal64 branch uses the
 -- identical mulStepWrapping via the same FOR_EACH_INTERVAL_KIND macro, so it is protected by
 -- construction), not an overflow trigger.
-SELECT toDateTime(arrayJoin([toUInt32(0), toUInt32(4294967295)])) AS d ORDER BY d WITH FILL STEP INTERVAL 2147483648 SECOND STALENESS INTERVAL 1 SECOND SETTINGS session_timezone = 'UTC'; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT toDateTime(arrayJoin([toUInt32(0), toUInt32(4294967295)])) AS d ORDER BY d WITH FILL STEP INTERVAL 536870912 MINUTE STALENESS INTERVAL 1 SECOND SETTINGS session_timezone = 'UTC'; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT toDateTime(arrayJoin([toUInt32(0), toUInt32(4294967295)])) AS d ORDER BY d WITH FILL STEP INTERVAL 134217728 HOUR STALENESS INTERVAL 1 SECOND SETTINGS session_timezone = 'UTC'; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT toDate(arrayJoin([toUInt16(0), toUInt16(65535)])) AS d ORDER BY d WITH FILL STEP INTERVAL 32768 WEEK STALENESS INTERVAL 1 DAY SETTINGS session_timezone = 'UTC'; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT toDateTime(arrayJoin([toUInt32(0), toUInt32(4294967295)])) AS d ORDER BY d WITH FILL STEP INTERVAL 2147483648 SECOND STALENESS INTERVAL 1 SECOND SETTINGS session_timezone = 'UTC';
+SELECT toDateTime(arrayJoin([toUInt32(0), toUInt32(4294967295)])) AS d ORDER BY d WITH FILL STEP INTERVAL 536870912 MINUTE STALENESS INTERVAL 1 SECOND SETTINGS session_timezone = 'UTC';
+SELECT toDateTime(arrayJoin([toUInt32(0), toUInt32(4294967295)])) AS d ORDER BY d WITH FILL STEP INTERVAL 134217728 HOUR STALENESS INTERVAL 1 SECOND SETTINGS session_timezone = 'UTC';
+SELECT toDate(arrayJoin([toUInt16(0), toUInt16(65535)])) AS d ORDER BY d WITH FILL STEP INTERVAL 32768 WEEK STALENESS INTERVAL 1 DAY SETTINGS session_timezone = 'UTC';
 SELECT toDateTime64(arrayJoin([toDateTime64('1970-01-01 00:00:00', 0), toDateTime64('2262-01-01 00:00:00', 0)]), 0) AS d ORDER BY d WITH FILL STEP INTERVAL 2147483648 SECOND STALENESS INTERVAL 1 SECOND SETTINGS session_timezone = 'UTC';
 -- The WITH FILL step functions delegate to the interval Add##NAME##sImpl helpers, some of which do a
 -- further signed multiply/addition on the delta: AddWeeksImpl on DateTime64/Time64 (delta * 7),

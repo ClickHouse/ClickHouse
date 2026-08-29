@@ -46,8 +46,14 @@ SELECT 'STALENESS caps the sequence before TO, so the TO bound is not rejected';
 SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1025 STALENESS 20);
 SELECT count(), min(x), max(x) FROM (SELECT toInt8(-5) AS x ORDER BY x DESC WITH FILL TO -300 STALENESS -20);
 SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1000 STEP 3 STALENESS 21);
--- The effective bound is derived at runtime from the previous input row. It must not wrap in the column type,
--- otherwise `findBorder` selects the wrapped bound and suppresses the rows between the two input values.
+-- The border by itself is not validated: a border past the range of the column type is fine when TO caps the
+-- fill inside the range before any value the column cannot hold is generated.
+SELECT groupArray(x) FROM (SELECT toUInt8(250) AS x ORDER BY x ASC WITH FILL TO 255 STALENESS 20);
+-- A no-op STALENESS 0 border equals the anchor value and simply generates nothing.
+SELECT groupArray(x) FROM (SELECT toUInt8(250) AS x ORDER BY x ASC WITH FILL STALENESS 0);
+-- The effective bound is derived at runtime from the previous input row. When it exceeds the range of the
+-- column type, the fill towards it reaches values the column cannot hold, and the per-generated-value check
+-- rejects the query before a wrapped bound could suppress the rows between the two input values.
 SELECT groupArray(x) FROM (SELECT arrayJoin([toUInt8(250), toUInt8(255)]) AS x ORDER BY x ASC WITH FILL STALENESS 20) SETTINGS max_block_size = 1; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
 SELECT 'an INTERVAL step can never reach a TO out of range in the fill direction, so such a TO is rejected';
@@ -204,15 +210,17 @@ SELECT groupArray(x) FROM (SELECT toUInt8(11) AS x ORDER BY x ASC WITH FILL TO 2
 SELECT x FROM (SELECT toInt8(126) AS x ORDER BY x ASC WITH FILL TO 130 STEP 3) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT groupArray(x) FROM (SELECT toInt8(127) AS x ORDER BY x ASC WITH FILL TO 130 STEP 3);
 
-SELECT 'a STALENESS border out of range of the column type is rejected';
+SELECT 'a fill towards a STALENESS border out of range of the column type is rejected';
 
 -- STALENESS moves the effective bound to a fixed distance past the last data row, so the bound is known only at
--- execution time as well. Its own range is checked exactly like that of a bound known up front - including the
--- calendar window of Date32 and DateTime64, where the values between the calendar and the storage boundary all
--- serialize as the clamped boundary date (without the check the query below returns 9999-12-31 23:59:59 nine
--- times in a row).
+-- execution time as well. The border itself is not validated - the fill is rejected by the same
+-- per-generated-value check as everywhere else, once it reaches a value out of range of the column type -
+-- including the calendar window of Date32 and DateTime64, where the values between the calendar and the storage
+-- boundary all serialize as the clamped boundary date (without the check the first query below returns
+-- 9999-12-31 23:59:59 nine times in a row).
 SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL STALENESS 10) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT d FROM (SELECT toDate32(2932896) AS d ORDER BY d ASC WITH FILL STALENESS 10) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT x FROM (SELECT toUInt8(250) AS x ORDER BY x ASC WITH FILL STALENESS 20) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 -- A border that lands exactly on the last representable time point is fine.
 SELECT count(), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:49', 0, 'UTC') AS t ORDER BY t ASC WITH FILL STALENESS 10);
 SELECT count(), max(t) FROM (SELECT toDateTime64('2020-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL STALENESS 10);
@@ -253,6 +261,9 @@ SELECT 'NaN and infinity in a float fill column stay accepted';
 SELECT a, b FROM (SELECT 1 AS a, nan AS b UNION ALL SELECT 3, 100.) ORDER BY a WITH FILL, b WITH FILL TO 3 STEP 1;
 SELECT a, b FROM (SELECT 1 AS a, inf AS b UNION ALL SELECT 3, 100.) ORDER BY a WITH FILL, b WITH FILL TO 3 STEP 1;
 SELECT b FROM (SELECT 0. AS b UNION ALL SELECT nan UNION ALL SELECT 5.) ORDER BY b WITH FILL STALENESS 2;
+-- A staleness border the step arithmetic fails to advance (1e300 + 1 == 1e300 in the float precision) simply
+-- generates nothing, as on any stagnated border, instead of rejecting the query.
+SELECT x FROM (SELECT 1e300 AS x) ORDER BY x WITH FILL STALENESS 1;
 -- A NaN border itself (here as a literal TO) generates nothing instead of filling until the step stagnates
 -- in the float precision.
 SELECT b FROM (SELECT 5. AS b) ORDER BY b WITH FILL TO nan STEP 1;

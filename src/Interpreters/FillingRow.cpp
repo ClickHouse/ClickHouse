@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/Operators.h>
 #include <Interpreters/FillingRow.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/Logger.h>
@@ -86,14 +85,14 @@ bool fillValueWithinCalendarRange(const Field & value, const IDataType & type)
 
 bool fillValueFitsColumnType(const Field & value, const IDataType & type)
 {
-    /// Only integers wrap around. Float values saturate, and they are inexact for a narrower column type anyway,
-    /// so an exact-representability check would reject ordinary queries. Decimal conversion throws on overflow.
-    WhichDataType which(type);
-    if (!isInteger(type) && !which.isDate() && !which.isDate32() && !which.isDateTime() && !which.isDateTime64())
+    const auto [min, max] = fillRepresentableRangeOfColumnType(type);
+
+    /// Null bounds - a type whose every value is representable (or saturates instead of wrapping around,
+    /// like Float and Decimal), nothing to check.
+    if (min.isNull())
         return true;
 
-    /// `convertFieldToType` returns Null for a value that is out of range of the target storage type.
-    return !convertFieldToType(value, type).isNull() && fillValueWithinCalendarRange(value, type);
+    return !accurateLess(value, min) && !accurateLess(max, value);
 }
 
 std::pair<Field, Field> fillRepresentableRangeOfColumnType(const IDataType & type)
@@ -529,38 +528,13 @@ void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size
 
         if (!descr.fill_staleness.isNull())
         {
+            /// The border itself needs no validation here: `findBorder` may discard it for a closer TO,
+            /// a border that does not advance the base value (a stagnated step, or NaN, which `accurateLess`
+            /// orders greatest so a NaN border is handled in `next`) simply generates nothing, and a border
+            /// past the range of the column type only matters if the sequence actually reaches values the
+            /// column cannot hold - which `checkGeneratedValueFitsColumnType` rejects per generated value.
             Field staleness_border = (*base_row[i])[row_ind];
             descr.staleness_step_func(staleness_border, 1);
-
-            /// A staleness step cannot advance NaN - keep the border as is (a NaN border makes
-            /// `isConstraintsSatisfied` false, so filling just stops) instead of rejecting the query.
-            /// An infinite border is not exempted: it makes the fill towards it never terminate,
-            /// so failing the advance check below is the right outcome for it.
-            if (staleness_border.isNaN())
-            {
-                constraints[i] = findBorder(descr.fill_to, staleness_border, getDirection(i));
-                continue;
-            }
-
-            if (!descr.fill_representable_min.isNull()
-                && (accurateLess(staleness_border, descr.fill_representable_min)
-                    || accurateLess(descr.fill_representable_max, staleness_border)))
-                throw Exception(
-                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "WITH FILL STALENESS border {} of the ORDER BY column {} does not fit the column type {}",
-                    applyVisitor(FieldVisitorToString(), staleness_border),
-                    sort_description[i].column_name,
-                    descr.fill_column_type->getName());
-
-            if (!less((*base_row[i])[row_ind], staleness_border, getDirection(i)))
-                throw Exception(
-                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "WITH FILL STALENESS border {} of the ORDER BY column {} does not advance the value {} "
-                    "in the sorting direction",
-                    applyVisitor(FieldVisitorToString(), staleness_border),
-                    sort_description[i].column_name,
-                    applyVisitor(FieldVisitorToString(), (*base_row[i])[row_ind]));
-
             constraints[i] = findBorder(descr.fill_to, staleness_border, getDirection(i));
         }
     }

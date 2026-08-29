@@ -15,6 +15,8 @@ STALENESS caps the sequence before TO, so the TO bound is not rejected
 20	5	24
 20	-24	-5
 7	5	23
+[250,251,252,253,254]
+[250]
 an INTERVAL step can never reach a TO out of range in the fill direction, so such a TO is rejected
 1	2020-01-01	2020-01-01
 1	2020-01-01	2020-01-01
@@ -44,7 +46,7 @@ a step that wraps before the next data row is rejected
 a generated value out of range of the column type is rejected at runtime
 [11,14,17,20,23,26,29,32,35,38,41,44,47,50,53,56,59,62,65,68,71,74,77,80,83,86,89,92,95,98,101,104,107,110,113,116,119,122,125,128,131,134,137,140,143,146,149,152,155,158,161,164,167,170,173,176,179,182,185,188,191,194,197,200,203,206,209,212,215,218,221,224,227,230,233,236,239,242,245,248,251,254]
 [127]
-a STALENESS border out of range of the column type is rejected
+a fill towards a STALENESS border out of range of the column type is rejected
 10	9999-12-31 23:59:58
 10	2020-01-01 00:00:09
 in-range filling is unchanged
@@ -69,6 +71,7 @@ NaN and infinity in a float fill column stay accepted
 1
 5
 nan
+1e300
 5
 the runtime check covers a trailing fill column as well
 162	254
