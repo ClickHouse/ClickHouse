@@ -1,4 +1,6 @@
--- Tags: no-fasttest, no-ordinary-database, no-old-analyzer
+-- Tags: no-fasttest, no-ordinary-database, no-old-analyzer, no-parallel-replicas
+-- no-parallel-replicas: the test asserts that the no-rescoring optimization applies, and with
+-- parallel replicas the optimization is disabled.
 -- The no-rescoring vector search rewrite used to move the distance expression to the end of the
 -- `ExpressionStep` output header. Steps created above the `Sorting` before that rewrite runs (the
 -- local top-N `Limit` and the exchanges of a distributed plan) kept the original column order, and
@@ -36,6 +38,23 @@ SETTINGS vector_search_with_rescoring = 0,
     distributed_plan_default_shuffle_join_bucket_count = 3,
     distributed_plan_max_rows_to_broadcast = 0,
     enable_parallel_replicas = 0,
+    query_plan_optimize_lazy_materialization = 0, -- keeps the plan shape stable
     max_rows_to_group_by = 0; -- the test runner may randomize it, and `make_distributed_plan` rejects aggregation with it
+
+-- The query above only proves that the plan builds. It would stay green if the no-rescoring rewrite
+-- stopped applying to this query shape altogether, so pin the plan shape as well: sorting by
+-- `sqrt(_distance)` is what the rewrite produces (rescoring sorts by the distance function instead).
+-- The rewrite runs before the plan is split into fragments, so the non-distributed plan of the same
+-- query shape is where it can be observed; `make_distributed_plan` is pinned to `0` because the
+-- `distributed plan` CI job turns it on and `EXPLAIN` inside a subquery cannot run there.
+SELECT count() FROM
+(
+    EXPLAIN SELECT id FROM tab_dist_header
+    ORDER BY L2Distance(vec, [0., 2.]) ASC
+    LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0, make_distributed_plan = 0
+)
+WHERE explain LIKE '%Sort description: sqrt(_distance)%'
+SETTINGS make_distributed_plan = 0;
 
 DROP TABLE tab_dist_header;
