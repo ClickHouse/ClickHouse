@@ -160,6 +160,7 @@ public:
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
             query_pipeline = QueryPipeline(std::move(pipe));
             query_pipeline.addResources(std::move(resources));
+            query_pipeline.disableProfileEventUpdate();
             executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
         }
         loop = true;
