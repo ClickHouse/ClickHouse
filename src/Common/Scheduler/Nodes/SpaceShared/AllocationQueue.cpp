@@ -305,18 +305,26 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Select the eviction victim by (memory_eviction_score, fair_key, unique_id), highest first: the
-    // per-query `memory_eviction_score` (0 by default) is the primary key, so a higher-scored reservation
-    // is evicted first, and equal scores fall back to the largest `fair_key`. With the default score
-    // everywhere the victim is simply the reservation with the largest `fair_key`.
-    // running_allocations is non-empty here (checked above), so the first element is a valid initial victim.
-    ResourceAllocation * victim_ptr = &*running_allocations.begin();
+    // Select the eviction victim by (memory_eviction_score, fair_key, unique_id), highest first, but only
+    // among allocations that currently hold memory (allocated > 0): the per-query `memory_eviction_score`
+    // (0 by default) is the primary key, then the largest `fair_key`. A never-admitted zero-byte allocation
+    // (e.g. `reserve_memory = 0` before its first non-zero sync) frees nothing when killed and is removed
+    // via the local path in `processActivation` that never propagates a decrease to the parent limit, so
+    // choosing it would leave the over-limit increase blocked; a high `memory_eviction_score` on such an
+    // allocation must not let it outrank one that actually holds the reservation. With the default score
+    // everywhere this is the largest-`fair_key` allocation, matching the previous behaviour.
+    ResourceAllocation * victim_ptr = nullptr;
     for (ResourceAllocation & candidate : running_allocations)
     {
-        if (std::tie(candidate.memory_eviction_score, candidate.fair_key, candidate.unique_id)
-          > std::tie(victim_ptr->memory_eviction_score, victim_ptr->fair_key, victim_ptr->unique_id))
+        if (candidate.allocated <= 0)
+            continue;
+        if (!victim_ptr
+            || std::tie(candidate.memory_eviction_score, candidate.fair_key, candidate.unique_id)
+             > std::tie(victim_ptr->memory_eviction_score, victim_ptr->fair_key, victim_ptr->unique_id))
             victim_ptr = &candidate;
     }
+    if (!victim_ptr)
+        return nullptr; // No allocation is holding memory to reclaim in this queue.
     ResourceAllocation & victim = *victim_ptr;
 
     // If this is the least common ancestor of killer and victim - add details

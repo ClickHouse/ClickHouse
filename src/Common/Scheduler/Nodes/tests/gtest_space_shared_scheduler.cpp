@@ -714,3 +714,38 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreEqualEvictsLargestFirst)
     killer.waitSynced();
     EXPECT_EQ(killer.size(), 11000);
 }
+
+
+/// A high `memory_eviction_score` on a zero-byte, never-admitted allocation (e.g. `reserve_memory = 0`)
+/// must not make it the eviction victim over an allocation that actually holds memory: killing it frees
+/// nothing and cannot unblock the over-limit increase, so `selectAllocationToKill` skips candidates with
+/// no allocated memory even when they carry a higher score.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreSkipsZeroByteVictim)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // `holder` is the only allocation actually holding memory; `zero_hi` is a never-admitted zero-byte
+    // allocation with the highest score. `killer` then grows past the limit to trigger an eviction.
+    auto holder = std::make_unique<ManualAllocation>(queue, "holder", 8000, /* memory_eviction_score = */ 0);
+    ManualAllocation zero_hi(queue, "zero_hi", 0, /* memory_eviction_score = */ 100);
+    ManualAllocation killer(queue, "killer", 1000, /* memory_eviction_score = */ 0);
+
+    killer.increaseAsync(2000); // 8000 + 3000 > 10000 -> triggers an eviction
+
+    // The memory-holding `holder` must be the victim, not the higher-scored zero-byte `zero_hi`.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (holder->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(holder->killCount(), 1u) << "The memory-holding allocation must be evicted, not the zero-byte one";
+    EXPECT_EQ(zero_hi.killCount(), 0u);
+    EXPECT_EQ(killer.killCount(), 0u);
+
+    // Releasing the holder frees real memory, so the increase completes — no deadlock on a no-op kill.
+    holder.reset();
+    killer.waitSynced();
+    EXPECT_EQ(killer.size(), 3000);
+}
