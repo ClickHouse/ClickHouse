@@ -34,6 +34,7 @@ def cluster():
             ],
             dictionaries=[
                 "configs/dictionaries/config_dict_using_collection.xml",
+                "configs/dictionaries/config_dict_in_database.xml",
             ],
             stay_alive=True,
         )
@@ -1454,5 +1455,47 @@ def test_drop_while_used_by_config_defined_dictionary(cluster):
     # dependency check removes the collection.
     node.query(
         "DROP NAMED COLLECTION config_dict_collection",
+        settings={"check_named_collection_dependencies": 0},
+    )
+
+
+def test_drop_while_used_by_database_qualified_config_dictionary(cluster):
+    """A dictionary defined in the configuration files can set a root `<database>`, which
+    `StorageID::fromDictionaryConfig` copies into the dependency, and `ExternalDictionariesLoader`
+    keys the dictionary by the qualified `db.name`. Such a dictionary still never appears in
+    `DatabaseCatalog`, so the stale-dependency cleanup of `DROP NAMED COLLECTION` must consult the
+    loader by the qualified name instead of pruning the entry as a leftover of a failed `CREATE`.
+    The dictionary `config_dict_db.config_dict_in_database` is defined in
+    `configs/dictionaries/config_dict_in_database.xml`."""
+    node = cluster.instances["node"]
+
+    node.query("DROP NAMED COLLECTION IF EXISTS config_dict_db_collection")
+    node.query(
+        "CREATE NAMED COLLECTION config_dict_db_collection AS "
+        "uri = 'mongodb://mongo-is-not-running:27017/db?serverSelectionTimeoutMS=1000&connectTimeoutMS=1000', "
+        "collection = 'c'"
+    )
+
+    # The load registers the dependency and then fails to connect, which does not matter here.
+    node.query_and_get_error(
+        "SYSTEM RELOAD DICTIONARY 'config_dict_db.config_dict_in_database'"
+    )
+
+    # Two attempts: the first one must not prune the dependency and let the second one through.
+    for _ in range(2):
+        assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+            "DROP NAMED COLLECTION config_dict_db_collection"
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM system.named_collections WHERE name = 'config_dict_db_collection'"
+            ).strip()
+            == "1"
+        )
+
+    # The dictionary definition stays in the configuration files, so only a drop that skips the
+    # dependency check removes the collection.
+    node.query(
+        "DROP NAMED COLLECTION config_dict_db_collection",
         settings={"check_named_collection_dependencies": 0},
     )

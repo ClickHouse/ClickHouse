@@ -114,20 +114,25 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                     continue;
                 }
 
-                /// A dependency with an empty database name belongs to a dictionary defined in the
-                /// configuration files. It is not created through DDL and never appears in
-                /// `DatabaseCatalog`: it lives in `ExternalDictionariesLoader` for as long as its
-                /// definition stays in the configuration, and every (re)load of it resolves the
-                /// collection again. Consult the loader instead of the catalog, and prune the entry
-                /// only when the definition is gone.
+                /// A dictionary defined in the configuration files is not created through DDL and
+                /// never appears in `DatabaseCatalog`: it lives in `ExternalDictionariesLoader` for
+                /// as long as its definition stays in the configuration, and every (re)load of it
+                /// resolves the collection again. Its dependency is recorded under the identifier
+                /// from the definition (`StorageID::fromDictionaryConfig`), which is also how the
+                /// loader keys it: `db.name` when the definition sets a `<database>` and the bare
+                /// name otherwise. Consult the loader before the catalog, and, for an entry that can
+                /// belong to nothing else (no table has an empty database name), prune it only when
+                /// the definition is gone.
+                const auto dictionary_name
+                    = dep.database_name.empty() ? dep.table_name : dep.database_name + "." + dep.table_name;
+                if (current_context->getExternalDictionariesLoader().has(dictionary_name))
+                {
+                    dependent_names.push_back(fmt::format("dictionary `{}`", dictionary_name));
+                    continue;
+                }
+
                 if (dep.database_name.empty())
                 {
-                    if (current_context->getExternalDictionariesLoader().has(dep.table_name))
-                    {
-                        dependent_names.push_back(fmt::format("dictionary `{}`", dep.table_name));
-                        continue;
-                    }
-
                     NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
                     continue;
                 }
