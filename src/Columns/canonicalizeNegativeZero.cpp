@@ -12,6 +12,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Core/TypeId.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -309,26 +310,25 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column)
 
 size_t rawFloatValueWidth(const IColumn & column)
 {
-    const IColumn * nested = &column;
-
-    /// A value of an array of fixed size values is represented as the sequence of the values.
-    while (const auto * column_array = typeid_cast<const ColumnArray *>(nested))
-        nested = &column_array->getData();
-
-    /// A value of a `LowCardinality` column is represented as the value in its dictionary.
-    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(nested))
-        nested = column_low_cardinality->getDictionary().getNestedColumn().get();
-
-    if (typeid_cast<const ColumnFloat64 *>(nested))
-        return sizeof(Float64);
-
-    if (typeid_cast<const ColumnFloat32 *>(nested))
-        return sizeof(Float32);
-
-    if (typeid_cast<const ColumnBFloat16 *>(nested))
-        return sizeof(BFloat16);
-
-    return 0;
+    /// This is called for every row on the paths that key on the raw bytes of a value,
+    /// so it is a single virtual call and a jump table in the common case.
+    switch (column.getDataType())
+    {
+        case TypeIndex::Float64:
+            return sizeof(Float64);
+        case TypeIndex::Float32:
+            return sizeof(Float32);
+        case TypeIndex::BFloat16:
+            return sizeof(BFloat16);
+        /// A value of an array of fixed size values is represented as the sequence of the values.
+        case TypeIndex::Array:
+            return rawFloatValueWidth(assert_cast<const ColumnArray &>(column).getData());
+        /// A value of a `LowCardinality` column is represented as the value in its dictionary.
+        case TypeIndex::LowCardinality:
+            return rawFloatValueWidth(*assert_cast<const ColumnLowCardinality &>(column).getDictionary().getNestedColumn());
+        default:
+            return 0;
+    }
 }
 
 void canonicalizeNegativeZeroInRawValue(std::string_view value, size_t width, char * res)
