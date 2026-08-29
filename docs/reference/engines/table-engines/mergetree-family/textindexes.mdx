@@ -530,11 +530,11 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
-| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
+| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `jsonPathValues`⁴ | yes⁴ |
+| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `jsonPathValues`⁴ | yes⁴ |
+| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹, `jsonPathValues`⁴ | yes¹⁴ |
+| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹, `jsonPathValues`⁴ | yes¹⁴ |
+| [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes²⁴ (`lower`/`upper` only) | `splitByNonAlpha`, `array`², `jsonPathValues`⁴ | no²⁴ |
 | [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
@@ -551,6 +551,8 @@ There is no fallback to using the index as a hint: if the setting is disabled or
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
 ³ `hasPhrase` on a `splitByRegexp` text index does **not** support a postprocessor: the combination is rejected with an exception, because the postprocessor row-level rewrite assumes whitespace-splitting `splitByNonAlpha`-style tokens. Without a postprocessor, `splitByRegexp` is fully supported by `hasPhrase`.
+
+⁴ `jsonPathValues` supports the marked functions on direct `JSON` subcolumns, but does not support a preprocessor or postprocessor.
 
 **Experimental: Support phrase search argument (optional)**.
 
@@ -1235,7 +1237,7 @@ Prefixes that fit in the limit use ordered dictionary lookups and can use direct
 
 Empty scalar and array strings and null array elements are not indexed, so predicates that search for them read the source column. Map entries with an empty value are retained because the entry token also represents key existence; keyed equality with an empty value is still not optimized because missing keys produce the same default empty String.
 
-`jsonPathValues` accepts exactly one direct `JSON` column and does not support a preprocessor, postprocessor, or `positions = 1`. Its dictionary tokens are an implementation detail and should not be parsed by queries.
+`jsonPathValues` accepts exactly one direct `JSON` column and does not support a preprocessor, postprocessor, or `support_phrase_search = 1`. Its dictionary tokens are an implementation detail and should not be parsed by queries.
 
 `IN` operator:
 
@@ -1451,7 +1453,8 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-This optimization supports only functions `like` and `ilike`.
+For the generic string tokenizers, this optimization supports only functions `like` and `ilike`.
+For `jsonPathValues`, `use_text_index_like_evaluation_by_dictionary_scan` also enables `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`; `startsWith` uses an ordered prefix lookup instead. `text_index_like_min_pattern_length` applies to all of these `jsonPathValues` pattern predicates.
 
 ### Trivial count queries {#count-queries-perf}
 
