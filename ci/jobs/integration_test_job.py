@@ -480,6 +480,28 @@ def report_late_leaf_ooms(
     return rows
 
 
+def print_oom_lines(dmesg: str, caveat: str = "") -> None:
+    """Print the kernel's memory-kill lines, whichever scope each one happened in.
+
+    Read without attribution: the point is to say whether the kernel killed anything at all,
+    which the leaf counters cannot answer for a kill in a descendant. Unattributable is not the
+    same as absent, so no result row is derived from it here - `leaf_oom_report` owns that, on a
+    buffer it can scope. An empty buffer is a third outcome and not "no kill", so it says so.
+
+    `caveat` rides on the header, so a reader cannot take the kills for this run's when the
+    buffer holds more than this run. `OOM_DMESG_MARKERS` are `str`: a bytes caller decodes.
+    """
+    if not dmesg:
+        print("WARNING: no dmesg available, so a kernel kill can neither be shown nor ruled out")
+        return
+    if oom_lines := [l for l in dmesg.splitlines() if any(m in l for m in OOM_DMESG_MARKERS)]:
+        print(f"Kernel memory kills in dmesg{caveat}:")
+        for line in oom_lines:
+            print(f"  {line}")
+    else:
+        print("No kernel memory kill in dmesg")
+
+
 def print_timeout_diagnostics(env, cgroup_root=DIND_CGROUP_ROOT) -> None:
     """Print what a run killed by the time budget was doing, to stdout.
 
@@ -489,21 +511,10 @@ def print_timeout_diagnostics(env, cgroup_root=DIND_CGROUP_ROOT) -> None:
     on job 95139621296, where the archive got 13.3 s. The job LOG is the one channel that is kept
     regardless, so the small diagnostics go there and go first.
 
-    dmesg is read without clearing or attribution: only the OOM lines are printed, and the point
-    is to say whether the kernel killed anything at all, which the leaf counters cannot answer for
-    a kill in a descendant. Unattributable is not the same as absent, so no result row is derived
-    from it here - `leaf_oom_report` owns that, on a buffer it can scope.
+    dmesg is read here rather than reused: this path runs before the end-of-run dump.
     """
     print_leaf_peak_usage(env, cgroup_root=cgroup_root)
-    if not (dmesg := Shell.get_output("dmesg -T", verbose=True)):
-        print("WARNING: no dmesg available, so a kernel kill can neither be shown nor ruled out")
-        return
-    if oom_lines := [l for l in dmesg.splitlines() if any(m in l for m in OOM_DMESG_MARKERS)]:
-        print("Kernel memory kills in dmesg:")
-        for line in oom_lines:
-            print(f"  {line}")
-    else:
-        print("No kernel memory kill in dmesg")
+    print_oom_lines(Shell.get_output("dmesg -T", verbose=True))
 
 
 ncpu = Utils.cpu_count()
@@ -2090,11 +2101,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # container's client raises `Connection reset by peer`, `_mark_infrastructure_errors` relabels
     # that `SKIPPED`, and `SKIPPED` is a successful status.
     dmesg = b""
+    # Whether the file exists, which an empty buffer does not answer: a successful dump can
+    # legitimately be empty, and only this path creates the file.
+    dmesg_dumped = False
     if not info.is_local_run:
         print("Dumping dmesg")
         # Not `strict`: raising here would skip the report this dump feeds, so a run whose dmesg
         # is unreadable would lose the counter-based reports too, which do not need dmesg at all.
         if Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True):
+            dmesg_dumped = True
             with open("./ci/tmp/dmesg.log", "rb") as dmesg_file:
                 dmesg = dmesg_file.read()
         else:
@@ -2148,8 +2163,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     Result(name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.FAIL)
                 )
 
-        if attach_dmesg:
-            attached_files.append("./ci/tmp/dmesg.log")
+        # Every failure, not only the two the verdicts above can attribute: on cgroup v1 a kill
+        # inside a test container is charged to that container's own cgroup, so no verdict here
+        # sees one and the dump is its only record.
+        if attach_dmesg or has_error or any(not r.is_ok() for r in test_results):
+            uncleared = " (buffer not cleared for this run, so a kill may be a previous job's)"
+            print_oom_lines(
+                dmesg.decode(errors="replace"), caveat="" if dmesg_cleared else uncleared
+            )
+            if dmesg_dumped:
+                attached_files.append("./ci/tmp/dmesg.log")
 
     # For targeted, flaky checks, and bugfix validation, the synthetic "Timeout"
     # result must not be propagated as a top-level `FAIL`: for targeted checks a
