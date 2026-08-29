@@ -118,7 +118,7 @@ void TimerDescriptor::drain() const
     poll_fd.fd = timer_fd;
     poll_fd.events = POLLIN;
 
-    int poll_res;
+    int poll_res = 0;
     do
     {
         poll_res = ::poll(&poll_fd, 1, /* timeout_ms= */ 0);
