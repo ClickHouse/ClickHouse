@@ -903,16 +903,22 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client --receive_timeout=30 -q "SELECT count() FROM system.processes where elapsed > 300" '
         output = (
-            check_output(query, shell=True, stderr=STDOUT, timeout=30)
+            check_output(
+                make_query_command(
+                    "SELECT count() FROM system.processes where elapsed > 300"
+                ),
+                shell=True,
+                stderr=STDOUT,
+                timeout=30,
+            )
             .decode("utf-8")
             .strip()
         )
         if int(output) == 0:
             return False
-    except:
-        pass
+    except Exception as ex:
+        logging.error("Failed to check for long running queries: %s", str(ex))
     return True
 
 
@@ -1018,11 +1024,6 @@ def run_stress_test(args: argparse.Namespace) -> None:
                     # NOTE: memory_profiler_step should be also adjusted, because:
                     #
                     #     untracked_memory_limit = min(settings.max_untracked_memory, settings.memory_profiler_step)
-                    #
-                    # NOTE: that if there will be queries with GROUP BY, this trick
-                    # will not work due to CurrentMemoryTracker::check() from
-                    # Aggregator code.
-                    # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
                     "--client-option",
                     "max_untracked_memory=1Gi",
                     "max_memory_usage_for_user=0",
