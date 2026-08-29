@@ -21,6 +21,13 @@ public:
         size_t num_ranges_to_choose = 100;
     };
 
+    TrivialMergeSelector() = default;
+
+    explicit TrivialMergeSelector(const Settings & settings_)
+        : settings(settings_)
+    {
+    }
+
     PartsRanges select(
         const PartsRanges & parts_ranges,
         const MergeConstraints & merge_constraints,

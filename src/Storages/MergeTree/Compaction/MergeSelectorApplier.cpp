@@ -204,8 +204,16 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
             selector = std::make_shared<SimpleMergeSelector>(fillSimpleStochasticSettings(ctx));
             break;
         case MergeSelectorAlgorithm::TRIVIAL:
-            selector = std::make_shared<TrivialMergeSelector>();
+        {
+            /// The trivial selector merges a fixed number of parts and ignores the configured
+            /// `max_parts_to_merge_at_once`, but the memory-derived cap must reach it too: otherwise a
+            /// small server would keep selecting the same too-wide merge of a very wide table forever.
+            TrivialMergeSelector::Settings trivial_merge_settings;
+            if (const size_t affordable = getAffordablePartsToMergeAtOnce(ctx))
+                trivial_merge_settings.num_parts_to_merge = std::min(trivial_merge_settings.num_parts_to_merge, affordable);
+            selector = std::make_shared<TrivialMergeSelector>(trivial_merge_settings);
             break;
+        }
         case MergeSelectorAlgorithm::MANUAL:
             selector = std::make_shared<ManualMergeSelector>(ctx.storage_id);
             break;
