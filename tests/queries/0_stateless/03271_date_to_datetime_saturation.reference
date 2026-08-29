@@ -111,7 +111,7 @@ SELECT count() FROM test WHERE stamp <= toDate(NULL) SETTINGS force_primary_key 
 0
 SELECT count() FROM test WHERE identity(stamp) <= toDate(NULL);
 0
--- Conversions of a Date/Date32 day number to 32-bit seconds are monotonic only inside a bounded
+-- Conversions of a `Date`/`Date32` day number to 32-bit seconds are monotonic only inside a bounded
 -- window of day numbers, so key, statistics and read-in-order analysis must not assume order
 -- outside it. `identity` hides the column from analysis and gives the unpruned answer.
 drop table test;
@@ -136,7 +136,7 @@ SELECT count() FROM test WHERE toUnixTimestamp(identity(d)) > 1604620800;
 -- The same wrapping range on the statistics surface, which has no primary key to prune on.
 drop table if exists test_stat;
 create table test_stat (d Date STATISTICS(basic), v Int64) engine MergeTree order by tuple() settings auto_statistics_types = '';
--- Statistics are built by the insert, and the runner randomizes that setting off in some runs.
+-- The insert builds the statistics; the runner randomizes `materialize_statistics_on_insert` off.
 insert into test_stat select toDate('2020-01-01') + number * 40, number from numbers(1300) SETTINGS materialize_statistics_on_insert = 1;
 -- The statistics of this part are readable, so the two counts below compare a pruner that ran
 -- against one that cannot. The probe is a range the part really excludes, since the wrapping
@@ -147,8 +147,8 @@ SELECT count() FROM test_stat WHERE toDateTime32(d) > toDateTime('2020-11-06 00:
 779
 SELECT count() FROM test_stat WHERE toDateTime32(identity(d)) > toDateTime('2020-11-06 00:00:00') SETTINGS use_statistics_for_part_pruning = 1;
 779
--- A Date32 day number above the window, and one above the window of the plain rescaling that
--- toUnixTimestamp applies.
+-- A `Date32` day number above the window, and one above the window of the plain rescaling that
+-- `toUnixTimestamp` applies.
 drop table if exists test32;
 create table test32 (d Date32, v Int64) engine MergeTree order by d settings index_granularity = 8, auto_statistics_types = '';
 insert into test32 select toDate32('2000-01-01') + number * 400, number from numbers(210);
@@ -160,9 +160,9 @@ SELECT count() FROM test32 WHERE toUnixTimestamp(d) > 2524608000;
 91
 SELECT count() FROM test32 WHERE toUnixTimestamp(identity(d)) > 2524608000;
 91
--- A Date32 range that reaches day 0 wraps at the bottom in a timezone ahead of UTC, in every
+-- A `Date32` range that reaches day 0 wraps at the bottom in a timezone ahead of UTC, in every
 -- overflow behaviour, because the day number is inspected before the timezone is applied. There
--- the false claim let an exactly continuous key range answer count() without reading the rows,
+-- the false claim let an exactly continuous key range answer `count` without reading the rows,
 -- which needs the implicit projection this file disabled above.
 drop table if exists test32z;
 create table test32z (d Date32, v Int64) engine MergeTree order by d settings auto_statistics_types = '';
@@ -175,7 +175,7 @@ SELECT count() FROM test32z WHERE toDateTime32(d) > toDateTime('1970-01-10 12:00
 31
 SELECT count() FROM test32z WHERE toDateTime32(identity(d)) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_implicit_projections = 1, date_time_overflow_behavior = 'saturate';
 31
--- A Date day number reaches the saturated lookup table, which is never negative, so day 0 stays
+-- A `Date` day number reaches the saturated lookup table, which is never negative, so day 0 stays
 -- inside the window and keeps pruning in the same timezone.
 drop table if exists testz;
 create table testz (d Date, v Int64) engine MergeTree order by d settings index_granularity = 8, auto_statistics_types = '';
@@ -188,7 +188,7 @@ SELECT count() FROM testz WHERE toDateTime32(identity(d)) > toDateTime('1970-01-
 30
 -- Reading in the order of the sorting key requires order preservation over the whole column, which
 -- these conversions do not have. The first row of an ascending order must be the minimum.
--- optimize_read_in_order is pinned because the test runner randomizes it.
+-- `optimize_read_in_order` is pinned because the test runner randomizes it.
 drop table if exists testo;
 create table testo (d Date) engine MergeTree order by d settings auto_statistics_types = '';
 insert into testo select toDate('2100-01-01') + number * 500 from numbers(12);
@@ -204,12 +204,12 @@ SELECT (SELECT toUnixTimestamp(d) FROM testo ORDER BY toUnixTimestamp(d) LIMIT 1
 -- order at every data range, in-window rows included.
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1, pretty = 0 SELECT toDateTime32(d) FROM testo ORDER BY toDateTime32(d) LIMIT 1 SETTINGS optimize_read_in_order = 1) WHERE explain like '%ReadType: Default%';
 1
--- toUInt32 reads the day number unscaled, so it keeps order over the whole column.
+-- `toUInt32` reads the day number unscaled, so it keeps order over the whole column.
 SELECT (SELECT toUInt32(d) FROM testo ORDER BY toUInt32(d) LIMIT 1) = (SELECT min(toUInt32(d)) FROM testo) SETTINGS optimize_read_in_order = 1;
 1
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1, pretty = 0 SELECT toUInt32(d) FROM testo ORDER BY toUInt32(d) LIMIT 1 SETTINGS optimize_read_in_order = 1) WHERE explain like '%ReadType: InOrder%';
 1
--- Day numbers wholly inside the window must still prune granules and still read in order.
+-- Day numbers wholly inside the window must still prune granules and still be ordered correctly.
 drop table if exists testw;
 create table testw (d Date, v Int64) engine MergeTree order by d settings index_granularity = 8, auto_statistics_types = '';
 insert into testw select toDate('2000-01-01') + number * 10, number from numbers(392);
@@ -221,9 +221,37 @@ SELECT (SELECT toDateTime(d) FROM testw ORDER BY toDateTime(d) LIMIT 1) = (SELEC
 1
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1, pretty = 0 SELECT toDateTime(d) FROM testw ORDER BY toDateTime(d) LIMIT 1 SETTINGS optimize_read_in_order = 1) WHERE explain like '%ReadType: Default%';
 1
+-- The window edges are exact: the last day number whose seconds still fit must keep pruning, and
+-- the first one that does not must not be pruned. The `DateTime` half pins `America/Hermosillo`,
+-- the zone the bound is derived from, because in UTC the first unsafe day still fits and the arm
+-- would be vacuous. `toUnixTimestamp` rescales with no timezone term, so its edge is one higher.
+drop table if exists testba;
+create table testba (d Date) engine MergeTree order by d settings index_granularity = 4, auto_statistics_types = '';
+insert into testba select toDate(49702) + number from numbers(8);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM testba WHERE toDateTime32(d) > toDateTime(4294900000) SETTINGS session_timezone = 'America/Hermosillo') WHERE explain ILIKE '%Granules: 0/2%';
+1
+drop table if exists testbb;
+create table testbb (d Date) engine MergeTree order by d settings auto_statistics_types = '';
+insert into testbb select toDate(49709) + number from numbers(2);
+SELECT count() FROM testbb WHERE toDateTime32(d) > toDateTime(4000000000) SETTINGS session_timezone = 'America/Hermosillo';
+1
+SELECT count() FROM testbb WHERE toDateTime32(identity(d)) > toDateTime(4000000000) SETTINGS session_timezone = 'America/Hermosillo';
+1
+drop table if exists testbc;
+create table testbc (d Date) engine MergeTree order by d settings index_granularity = 4, auto_statistics_types = '';
+insert into testbc select toDate(49703) + number from numbers(8);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM testbc WHERE toUnixTimestamp(d) > 4294950000) WHERE explain ILIKE '%Granules: 0/2%';
+1
+drop table if exists testbd;
+create table testbd (d Date) engine MergeTree order by d settings auto_statistics_types = '';
+insert into testbd select toDate(49710) + number from numbers(2);
+SELECT count() FROM testbd WHERE toUnixTimestamp(d) > 4000000000;
+1
+SELECT count() FROM testbd WHERE toUnixTimestamp(identity(d)) > 4000000000;
+1
 -- The rescaling is reached through a wrapped source type too, where a rule about integer width
--- claims monotonicity for any day number. Nullable reaches the range analysis, which strips only
--- LowCardinality; LowCardinality reaches the read-in-order consumers, which strip neither.
+-- claims monotonicity for any day number. `Nullable` reaches the range analysis, which strips
+-- only `LowCardinality`; `LowCardinality` reaches the read-in-order consumers, which strip neither.
 drop table if exists testn;
 create table testn (d Nullable(Date), v Int64) engine MergeTree order by d settings allow_nullable_key = 1, auto_statistics_types = '';
 insert into testn select toDate('2020-01-01') + number * 40, number from numbers(1300);
@@ -236,6 +264,12 @@ drop table if exists testl;
 create table testl (d LowCardinality(Date)) engine MergeTree order by d settings auto_statistics_types = '';
 insert into testl select toDate('2100-01-01') + number * 500 from numbers(12);
 SELECT (SELECT toUnixTimestamp(d) FROM testl ORDER BY toUnixTimestamp(d) LIMIT 1) = (SELECT min(toUnixTimestamp(d)) FROM testl) SETTINGS optimize_read_in_order = 1;
+1
+SELECT (SELECT toDateTime32(d) FROM testl ORDER BY toDateTime32(d) LIMIT 1) = (SELECT min(toDateTime32(d)) FROM testl) SETTINGS optimize_read_in_order = 1;
+1
+-- The control is plan-level: withdrawing read-in-order still returns correctly ordered rows, so
+-- only the plan text can show a strip that refuses `LowCardinality` sources wholesale.
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1, pretty = 0 SELECT toUInt32(d) FROM testl ORDER BY toUInt32(d) LIMIT 1 SETTINGS optimize_read_in_order = 1) WHERE explain like '%ReadType: InOrder%';
 1
 -- When the sorting key wraps the column, the constant of a predicate over the raw column is pushed
 -- through the chain and compared against a wrapped key, so a part holding matching rows is skipped.
