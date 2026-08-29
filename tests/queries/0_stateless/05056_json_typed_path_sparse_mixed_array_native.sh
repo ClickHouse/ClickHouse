@@ -27,7 +27,8 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT dumpColumnStructure(arr) LIKE '%Sparse%' FROM ${table} LIMIT 1"
 
-# Materializing the unsupported typed JSON path must not densify its sparse sibling.
+# The `Native` wire format has no recursive serialization metadata for arrays, so all
+# sparse array elements are materialized together with the unsupported typed JSON path.
 ${CLICKHOUSE_CLIENT} --query "SELECT arr FROM ${table} ORDER BY id FORMAT Native" \
     | ${CLICKHOUSE_LOCAL} --input-format Native --query \
         "SELECT dumpColumnStructure(arr) LIKE '%Sparse%', arr.a, arr.o.x FROM table LIMIT 2"
