@@ -1886,11 +1886,19 @@ template <typename Storage>
 void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
     const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    storage.removeFileIfExists(path);
 
     if (columns.empty())
+    {
+        storage.removeFileIfExists(path);
         return;
+    }
 
+    /// Do not remove the file before rewriting it: `WriteMode::Rewrite` already replaces it and retires
+    /// the previous blobs. On metadata storages with deterministic object keys (`plain`,
+    /// `plain_rewritable`) the removal and the write address the very same object, so when both are
+    /// queued in one transaction - as they are when this runs under a part-storage transaction - the
+    /// removal executes after the blob has been uploaded and deletes it, leaving the part with metadata
+    /// that points at a missing object.
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);
     out->finalize();
