@@ -3,6 +3,10 @@
 -- when the build-side key was LowCardinality(Nullable(...)) with real NULLs and the filter overflowed the
 -- exact-values set into the bloom filter. A small join_runtime_filter_exact_values_limit forces that overflow.
 
+-- The 150-row side becomes the probe side when the join tables are swapped, and then the randomized
+-- `join_runtime_filter_min_probe_rows` would skip the runtime filter and the repro would not be exercised.
+SET join_runtime_filter_min_probe_rows = 0;
+
 DROP TABLE IF EXISTS b_lcn;
 DROP TABLE IF EXISTS s_lcn;
 

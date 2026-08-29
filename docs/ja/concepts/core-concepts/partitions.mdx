@@ -44,7 +44,7 @@ PARTITION BY toStartOfMonth(date);
   ### ディスク上の構造
 </div>
 
-テーブルに行のセットが挿入されるたびに、挿入されたすべての行を含む単一のデータパーツを ([少なくとも](/ja/reference/settings/session-settings#max_insert_block_size)) 1 つ作成するのではなく ([こちら](/ja/concepts/core-concepts/parts)で説明しているとおり) 、ClickHouse は、挿入された行の中で一意な各パーティションキーの値ごとに、新しいデータパーツを 1 つ作成します。
+テーブルに行のセットが挿入されるたびに、挿入されたすべての行を含む単一のデータパーツを ([少なくとも](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)) 1 つ作成するのではなく ([こちら](/ja/concepts/core-concepts/parts)で説明しているとおり) 、ClickHouse は、挿入された行の中で一意な各パーティションキーの値ごとに、新しいデータパーツを 1 つ作成します。
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="INSERT の処理" />
 
@@ -217,7 +217,7 @@ WHERE date >= '2020-12-01'
 Peak memory usage: 2.73 MiB.
 ```
 
-つまり、ClickHouse がクエリ結果の算出にあたり、1 granule ([8192](/ja/reference/settings/merge-tree-settings#index_granularity) 行からなる block) を 6 ミリ秒でスキャンして処理したことを意味します。
+つまり、ClickHouse がクエリ結果の算出にあたり、1 granule ([8192](/ja/reference/settings/merge-tree-settings/index-granularity#index_granularity) 行からなる block) を 6 ミリ秒でスキャンして処理したことを意味します。
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### パーティション化は主にデータ管理のための機能です
