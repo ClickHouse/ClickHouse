@@ -1027,6 +1027,10 @@ public:
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
+    /// Settle the staged bitmaps each part still owes, per part
+    /// Returns the parts that settled, so a caller cannot remove those parts not settled.
+    DataPartsVector trySettleStagedBitmaps(const DataPartsVector & parts);
+
     /// Announce a part's directory to the bitmap store, which indexes the sidecars in it.
     void loadUniqueKeyBitmaps(const DataPartPtr & part);
 

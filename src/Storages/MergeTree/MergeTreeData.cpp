@@ -4584,12 +4584,55 @@ UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
     return *unique_key_txn_manager;
 }
 
+DataPartsVector MergeTreeData::trySettleStagedBitmaps(const DataPartsVector & parts)
+{
+    if (parts.empty() || !unique_key_txn_manager)
+        return parts;
+
+    const String table_name = getStorageID().getNameForLogs();
+
+    DataPartsVector settled;
+    settled.reserve(parts.size());
+    for (const auto & part : parts)
+    {
+        try
+        {
+            if (const auto report = uniqueKeyTxnManager().settleStagedBitmaps(*part); report.anyOutstanding())
+            {
+                LOG_WARNING(log,
+                    "Not removing part {} of table {} yet: {} staged delete bitmap(s) could not be settled "
+                    "({} deferred, {} failed{})",
+                    part->name, table_name, report.deferred + report.failed,
+                    report.deferred, report.failed,
+                    report.owner_unresolved ? ", and an owner is no longer in the part set" : "");
+                continue;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log,
+                fmt::format("Settle part {} of table {} staged delete bitmaps failed",
+                    part->name, table_name));
+            continue;
+        }
+
+        LOG_TRACE(log, "Settled the staged delete bitmaps of part {} of table {}", part->name, table_name);
+        settled.push_back(part);
+    }
+
+    LOG_TRACE(log, "Settled {} of {} part(s) of table {}", settled.size(), parts.size(), table_name);
+    return settled;
+}
+
 void MergeTreeData::loadUniqueKeyBitmaps(const DataPartPtr & part)
 {
     if (!unique_key_txn_manager)
         return;
 
-    uniqueKeyTxnManager().bitmapStore().loadPart(part->info, part->getDataPartStorage());
+    const auto versions = uniqueKeyTxnManager().bitmapStore().loadPart(part->info, part->getDataPartStorage());
+
+    LOG_TRACE(log, "Indexed {} delete bitmap version(s) of part {}: {}",
+        versions.size(), part->name, fmt::join(versions, ", "));
 }
 
 void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
@@ -4598,7 +4641,10 @@ void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
         return;
 
     for (const auto & part : parts)
+    {
         uniqueKeyTxnManager().bitmapStore().dropPart(*part);
+        LOG_TRACE(log, "Forgot the delete bitmaps of part {}", part->name);
+    }
 }
 
 size_t MergeTreeData::clearEmptyParts()
@@ -4631,6 +4677,22 @@ size_t MergeTreeData::clearEmptyParts()
 
             parts_names_to_drop.emplace_back(part->name);
         }
+    }
+
+    /// For unique-key table, unsettled part cannot be dropped
+    if (hasUniqueKey())
+    {
+        DataPartsVector parts_to_settle;
+        parts_to_settle.reserve(parts_names_to_drop.size());
+        for (const auto & name : parts_names_to_drop)
+            if (auto part = getPartIfExists(name, {DataPartState::Active}))
+                parts_to_settle.push_back(std::move(part));
+
+        NameSet settled;
+        for (const auto & part : trySettleStagedBitmaps(parts_to_settle))
+            settled.insert(part->name);
+
+        std::erase_if(parts_names_to_drop, [&](const String & name) { return !settled.contains(name); });
     }
 
     for (auto & name : parts_names_to_drop)

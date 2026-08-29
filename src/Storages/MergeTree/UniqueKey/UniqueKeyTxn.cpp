@@ -114,20 +114,34 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
     std::optional<MergeTreePartInfo> registered_owner;
     CSN csn = INVALID_CSN;
 
+    const std::string_view kind = write.writeKind();
+    const String partition_id = write.partitionId();
+
     try
     {
-        PartitionWriteGuard write_guard(partitionLock(write.partitionId()));
+        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): waiting for the partition guard, tid {}",
+            kind, partition_id, txn->tid);
+
+        PartitionWriteGuard write_guard(partitionLock(partition_id));
 
         staged = write.stage(write_guard);
         if (!staged)
         {
+            LOG_TRACE(log, "UNIQUE KEY {} (partition {}): staged nothing, rolling back tid {}",
+                kind, partition_id, txn->tid);
             rollbackTransaction(txn);
             return INVALID_CSN;
         }
 
+        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): staged bitmaps for {} target(s)",
+            kind, partition_id, staged->targets.size());
+
         /// Must precede the commit, which moves the transaction to `CommittingCSN`: `addNewPart`
         /// rejects a transaction already there. The part is Active but not yet visible.
         const IMergeTreeDataPart & owner = write.publish(write_guard, txn, *staged);
+
+        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): published part {}, not yet visible",
+            kind, partition_id, owner.name);
 
         /// Before the commit point, so the moment this part becomes visible its staged bitmaps
         /// are already discoverable from their targets.
@@ -137,6 +151,9 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         /// Commit point
         csn = TransactionLog::instance().commitTransaction(txn, /*throw_on_unknown_status=*/true);
 
+        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): committed part {} at csn {}",
+            kind, partition_id, owner.name, csn);
+
         bool defer_settle = false;
         fiu_do_on(FailPoints::unique_key_defer_bitmap_settle, { defer_settle = true; });
 
@@ -144,6 +161,9 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         {
             /// TODO(unique-key): move the settle out of the write lock
             const auto report = bitmapStore().settleStagedBitmaps(owner.info, staged->targets, csn);
+            LOG_TRACE(log, "UNIQUE KEY {} (partition {}): settled {} of {} staged bitmap(s) of part {} at csn {}",
+                kind, partition_id, staged->targets.size() - report.deferred - report.failed,
+                staged->targets.size(), owner.name, csn);
             if (report.anyOutstanding())
                 LOG_WARNING(log,
                     "Staged bitmaps of part {} are not fully settled at csn {} ({} deferred, {} "
@@ -154,6 +174,8 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
     }
     catch (...)
     {
+        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): threw at csn {}, rolling back tid {}",
+            kind, partition_id, csn, txn->tid);
         rollbackTransaction(txn);
 
         if (registered_owner && txn && txn->getState() == MergeTreeTransaction::ROLLED_BACK)

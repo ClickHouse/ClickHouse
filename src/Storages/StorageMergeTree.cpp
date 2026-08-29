@@ -50,6 +50,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
@@ -231,6 +232,13 @@ StorageMergeTree::StorageMergeTree(
                         "it was unclean DROP table or manual intervention. "
                         "You must either clear directory by hand or use ATTACH TABLE instead "
                         "of CREATE TABLE if you need to use those parts");
+
+    /// After the stale-data guard above, because recovery is not read-only: it unlinks
+    /// delete-bitmap sidecars, and a plain CREATE over an existing data directory must be
+    /// rejected before that happens.
+    if (!isStaticStorage() && hasUniqueKey())
+        uniqueKeyTxnManager().runRecovery(
+            getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}));
 
     increment.set(getMaxBlockNumber());
 

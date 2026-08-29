@@ -10,6 +10,7 @@
 #include <mutex>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace DB
@@ -51,6 +52,10 @@ public:
 
     /// The partition this write publishes into
     virtual String partitionId() const = 0;
+
+    /// Names this write in the log. Every line the commit protocol emits is keyed by it and the
+    /// partition, so one grep replays a whole commit.
+    virtual std::string_view writeKind() const = 0;
 
     /// Put everything on disk inside the part this write will publish
     virtual std::optional<StagedWrite> stage(const PartitionWriteGuard & guard) = 0;
