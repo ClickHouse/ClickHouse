@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/UniqueLock.h>
+
 #include <atomic>
 #include <filesystem>
 #include <functional>
@@ -470,6 +472,7 @@ public:
 
     NameSet invalidated_system_columns;
     bool isSystemColumnInvalidated(const String & column_name) const;
+    static NameSet getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info);
     static void writeInvalidatedSystemColumns(WriteBuffer & out, const NameSet & columns);
     static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
     static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
@@ -631,6 +634,15 @@ public:
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
     bool areChecksumsLoaded() const { return !checksums.empty(); }
+
+    /// Whether this part's column and secondary index sizes are already computed.
+    /// Never triggers the lazy computation: that reads from the part storage, and callers
+    /// use this to decide whether reading is safe here.
+    bool areColumnAndSecondaryIndexSizesCalculated() const
+    {
+        UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
+        return are_columns_and_secondary_indices_sizes_calculated;
+    }
 
     void setBrokenReason(const String & message, int code) const;
 

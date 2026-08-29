@@ -1847,9 +1847,21 @@ bool IMergeTreeDataPart::isSystemColumnInvalidated(const String & column_name) c
     return invalidated_system_columns.contains(column_name);
 }
 
+NameSet IMergeTreeDataPart::getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info)
+{
+    if (part_info.isPatch())
+        return {};
+
+    return {BlockNumberColumn::name, BlockOffsetColumn::name};
+}
+
 void IMergeTreeDataPart::loadInvalidatedSystemColumns()
 {
     if (parent_part)
+        return;
+
+    /// Patch parts must never have invalidated system columns: _block_number and _block_offset are their payload.
+    if (info.isPatch())
         return;
 
     if (auto file_buf = readFileIfExists(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
