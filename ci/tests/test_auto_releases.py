@@ -265,3 +265,11 @@ def test_find_release_candidate_errors_without_release_tag(monkeypatch):
     sha, reason, status = m._find_release_candidate("25.8")
     assert sha == "" and "no release tag" in reason
     assert status == m.Result.Status.ERROR
+
+
+def test_release_branches_order_by_version():
+    """Release branches must sort by numeric version, not lexically (`25.9` before `25.10`)."""
+    m = _job_module()
+    assert sorted(
+        ["25.10", "25.9", "26.3", "26.10"], key=m._branch_version_key
+    ) == ["25.9", "25.10", "26.3", "26.10"]
