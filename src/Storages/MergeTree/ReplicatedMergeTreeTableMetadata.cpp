@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -33,25 +32,11 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
-/// User-written parentheses around individual key elements (e.g. `PRIMARY KEY (col)`) are
-/// syntactically meaningless in stored metadata. Strip them so the canonical form matches
-/// what `KeyDescription::parse` produces when reading metadata back from ZooKeeper.
-static void stripArtificialParens(IAST & ast)
-{
-    ast.setParenthesized(false);
-    if (auto * list = ast.as<ASTExpressionList>())
-        for (auto & child : list->children)
-            if (child)
-                child->setParenthesized(false);
-}
-
 static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    auto cloned = ast->clone();
-    stripArtificialParens(*cloned);
-    return cloned->formatWithSecretsOneLine();
+    return ast->formatIgnoringRedundantParentheses();
 }
 
 static String formattedASTNormalized(const ASTPtr & ast)
@@ -60,8 +45,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
-    stripArtificialParens(*ast_normalized);
-    return ast_normalized->formatWithSecretsOneLine();
+    return ast_normalized->formatIgnoringRedundantParentheses();
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
@@ -434,7 +418,7 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, virtuals, context, true);
     // Strict checking of suspicious TTL is not needed here
     String parsed_zk_ttl_table = formattedAST(
-        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
+        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, TTLValidationMode::Attach).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table, strict_check, logger);
@@ -593,7 +577,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 ParserTTLExpressionList parser;
                 auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
             }
             else /// TTL was removed
             {
@@ -606,7 +590,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     new_metadata.column_ttls_by_name.clear();
     for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
         new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
 
@@ -675,7 +659,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
 
     if (!projections_changed)
     {

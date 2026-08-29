@@ -62,10 +62,15 @@ ALTER TABLE test3 ON CLUSTER test_shard_localhost ADD COLUMN valid_column_2 Stri
 INSERT INTO test3(str, column_with_codec) VALUES ('test3', 'test32');
 SELECT str, column_with_alias, valid_column_1, valid_column_2 FROM test3;
 
-DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier} ENGINE = Replicated('/clickhouse/03224_invalid_alter/{database}_replicated', 'shard1', 'replica1') FORMAT Null;
+-- ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op.
+DROP TABLE test3 SETTINGS ignore_drop_queries_probability = 0;
 
-CREATE TABLE test4
+-- {CLICKHOUSE_DATABASE} must not be re-engined: with --database it is shared by every test in
+-- the client. {CLICKHOUSE_DATABASE_2} is shared too, so both DROPs are required.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Replicated('/clickhouse/03224_invalid_alter/{database}_replicated', 'shard1', 'replica1') FORMAT Null;
+
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4
 (
     str String,
     column_with_codec String CODEC(ZSTD),
@@ -75,10 +80,16 @@ ENGINE = ReplicatedMergeTree()
 ORDER BY tuple()
 FORMAT Null;
 
-ALTER TABLE test4 ADD COLUMN invalid_column String MATERIALIZED concat(str, 'b' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
-ALTER TABLE test4 ADD COLUMN invalid_column String DEFAULT concat(str, 'b' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
-ALTER TABLE test4 MODIFY COLUMN column_with_codec String ALIAS str FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError BAD_ARGUMENTS }
-ALTER TABLE test4 ADD COLUMN valid_column_1 String DEFAULT concat(str, 'a' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw';
-ALTER TABLE test4 ADD COLUMN valid_column_2 String MATERIALIZED concat(str, 'c' AS c) FORMAT Null SETTINGS distributed_ddl_output_mode='throw';
-INSERT INTO test4(str, column_with_codec) VALUES ('test4', 'test42');
-SELECT str, column_with_alias, valid_column_1, valid_column_2 FROM test4;
+ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 ADD COLUMN invalid_column String MATERIALIZED concat(str, 'b' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 ADD COLUMN invalid_column String DEFAULT concat(str, 'b' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 MODIFY COLUMN column_with_codec String ALIAS str FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 ADD COLUMN valid_column_1 String DEFAULT concat(str, 'a' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw';
+ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 ADD COLUMN valid_column_2 String MATERIALIZED concat(str, 'c' AS c) FORMAT Null SETTINGS distributed_ddl_output_mode='throw';
+INSERT INTO {CLICKHOUSE_DATABASE_2:Identifier}.test4(str, column_with_codec) VALUES ('test4', 'test42');
+SELECT str, column_with_alias, valid_column_1, valid_column_2 FROM {CLICKHOUSE_DATABASE_2:Identifier}.test4;
+
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+
+-- The engine varies with the runner flags, so assert only what must hold: this test must never
+-- leave the database it was given Replicated.
+SELECT engine = 'Replicated' FROM system.databases WHERE name = currentDatabase();

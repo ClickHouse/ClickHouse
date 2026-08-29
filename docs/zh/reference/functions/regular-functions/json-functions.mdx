@@ -46,6 +46,57 @@ ClickHouse 提供了一组用于处理简化 JSON 的特殊函数。所有这些
   这些函数的性能可能不如对应的区分大小写版本，因此如无必要，建议使用常规的 JSONExtract 函数。
 </Note>
 
+<div id="jsonpath-syntax">
+  ## JSONPath 语法
+</div>
+
+`JSON_EXISTS`、`JSON_VALUE` 和 `JSON_QUERY` 函数的第二个参数接受 JSONPath
+表达式。ClickHouse 实现了 JSONPath 的一个小型子集，
+该子集大致基于 SQL/JSON 标准 (ISO/IEC TR 19075-6) ，且其支持范围有意比 [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
+和其他常见实现更窄。支持的运算符如下。
+
+权威实现位于
+[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers)。
+
+<div id="supported-operators">
+  ### 支持的运算符
+</div>
+
+| 语法            | 描述                                     | 示例                                |
+| ------------- | -------------------------------------- | --------------------------------- |
+| `$`           | 根元素。所有路径都必须以它开头。                       | `$`                               |
+| `.key`        | 不带引号的点表示法成员访问。键可以以数字开头，也可以仅由数字组成。      | `$.store.book`, `$.1key`, `$.123` |
+| `."key"`      | 带引号的点表示法成员访问。用于包含空格或特殊字符的键。可使用双引号或反引号。 | `$."foo bar"`                     |
+| `[key]`       | 不带引号的方括号表示法成员访问。                       | `$[hello]`                        |
+| `['key']`     | 带引号的方括号表示法成员访问。可使用单引号、双引号或反引号。         | `$['foo bar']`                    |
+| `[n]`         | 按索引访问数组元素 (索引从 0 开始) 。                 | `$.items[0]`                      |
+| `[n, m, ...]` | 访问多个数组元素。                              | `$.items[0, 2, 4]`                |
+| `[n to m]`    | 数组元素范围。结束索引 `m` 不包含在内。                 | `$.items[0 to 3]`                 |
+| `[*]`         | 通配符，匹配数组中的所有元素。                        | `$.items[*]`                      |
+
+注意：
+
+* 可以在同一对方括号内组合使用索引和范围 (例如 `[0 to 2, 4]`) 。
+* 不能在同一对方括号内组合使用索引范围和通配符 (例如，`[* , 0]` 无效) 。
+* 在范围 `[n to m]` 中，起始索引 `n` 必须严格小于结束索引 `m`，否则会引发异常。
+* 单个索引 `[n]` 等同于范围 `[n to n+1]`。
+
+<div id="unsupported-operators">
+  ### 不支持的运算符
+</div>
+
+以下 JSONPath 运算符在 RFC 9535 或其他实现中可用，但 ClickHouse **不**支持：
+
+| 语法                      | 描述                           |
+| ----------------------- | ---------------------------- |
+| `..`                    | 递归下降。                        |
+| `?(@.expr)`             | 过滤表达式。                       |
+| `[start:end:step]`      | 切片表示法。请改用 `[n to m]`。        |
+| `@`                     | 当前节点引用。                      |
+| `[-n]`                  | 负数 (从末尾开始) 数组索引。             |
+| 脚本表达式                   | 路径中的算术表达式或函数表达式。             |
+| `ON ERROR` / `ON EMPTY` | 用于控制错误和空结果行为的标准 SQL/JSON 子句。 |
+
 {/* 
   下方标签内的内容会在文档框架构建时被替换为
   根据 system.functions 生成的文档。请不要修改或删除这些标签。
@@ -2165,14 +2216,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 引入版本：v21.7.0
 
 将一个值序列化为其 JSON 表示形式。支持多种数据类型和嵌套结构。
-默认情况下，64 位[整数](/zh/reference/data-types/int-uint)或更大的整数 (例如 `UInt64` 或 `Int128`) 会以引号括起来。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats#output_format_json_quote_64bit_integers) 控制此行为。
-特殊值 `NaN` 和 `inf` 会被替换为 `null`。启用 [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats#output_format_json_quote_denormals) 设置可显示它们。
+默认情况下，64 位[整数](/zh/reference/data-types/int-uint)或更大的整数 (例如 `UInt64` 或 `Int128`) 会以引号括起来。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) 控制此行为。
+特殊值 `NaN` 和 `inf` 会被替换为 `null`。启用 [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats/output-format#output_format_json_quote_denormals) 设置可显示它们。
 序列化 [枚举](/zh/reference/data-types/enum) 值时，该函数会输出其名称。
 
 另请参见：
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **语法**
 

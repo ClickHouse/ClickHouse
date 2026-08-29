@@ -84,7 +84,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
           .build();
   ```
 
-  액세스 토큰을 통한 인증(authentication)은 `setAccessToken(String)`을 호출하여 액세스 토큰을 설정해야 합니다:
+  액세스 토큰을 통한 인증(authentication)을 사용하려면 `setAccessToken(String)`을 호출하여 액세스 토큰을 설정해야 합니다:
 
   ```java showLineNumbers
    Client client = new Client.Builder()
@@ -137,7 +137,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
       | `setDefaultDatabase(String database)`                                   | `database` - 데이터베이스 이름                                                    | 기본 데이터베이스를 설정합니다.                                                   | `default` | `database`                  |
     </Tab>
 
-    <Tab title="인증">
+    <Tab title="인증(Authentication)">
       | 메서드                                                  | 인수                                      | 설명                                                                        | 기본값       | 키                     |
       | ---------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------- | --------- | --------------------- |
       | `setUsername(String username)`                       | `username` - 인증에 사용할 사용자 이름             | 추가 구성에서 선택하는 인증 메서드에 사용할 사용자 이름을 설정합니다                                    | `default` | `user`                |
@@ -210,7 +210,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     </Tab>
 
     <Tab title="서버 설정">
-      | 메서드                                             | 인수                                  | 설명                                                                                                                                                          | 기본값       | 키                        |
+      | Method                                          | Arguments                           | Description                                                                                                                                                 | Default   | Key                      |
       | ----------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------ |
       | `serverSetting(String name, String value)`      | `name` - 설정 이름<br />`value` - 설정 값  | 각 쿼리와 함께 서버에 전달할 설정을 지정합니다. 개별 작업 설정에서 이를 재정의할 수 있습니다. [설정 목록](/ko/concepts/features/configuration/settings/settings-query-level)                              | `none`    | `none`                   |
       | `serverSetting(String name, Collection values)` | `name` - 설정 이름<br />`values` - 설정 값 | 여러 값을 사용해 서버에 전달할 설정을 지정합니다. 예를 들면 [역할](/ko/concepts/features/interfaces/http#setting-role-with-query-parameters)이 있습니다                                        | `none`    | `none`                   |
@@ -327,7 +327,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   ### ClickHouseFormat
 
-  [지원되는 포맷](/ko/reference/formats/index)의 열거형(Enum)입니다. ClickHouse가 지원하는 모든 포맷을 포함합니다.
+  [지원되는 포맷](/ko/reference/formats/index)의 enum입니다. ClickHouse가 지원하는 모든 포맷이 포함됩니다.
 
   * `raw` - raw 데이터는 사용자가 직접 트랜스코딩해야 합니다
   * `full` - 클라이언트가 직접 데이터를 트랜스코딩할 수 있으며, 원시 데이터 스트림을 수신합니다
@@ -525,7 +525,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | 메서드                             | 설명                                                 |
   | ------------------------------- | -------------------------------------------------- |
   | `OperationMetrics getMetrics()` | 작업 메트릭이 포함된 객체를 반환합니다.                             |
-  | `String getQueryId()`           | 애플리케이션이 작업에 할당한 쿼리 ID(작업 설정 또는 서버를 통해 할당됨)를 반환합니다. |
+  | `String getQueryId()`           | 애플리케이션이 작업에 할당한 쿼리 ID(작업 설정을 통해 또는 서버가 할당)를 반환합니다. |
 
   ## 쿼리 API
 
@@ -548,7 +548,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **반환 값**
 
-  `QueryResponse` 유형의 Future로, 결과 데이터셋과 서버 측 메트릭 등의 추가 정보를 포함합니다. Response 객체는 데이터셋을 사용한 후 반드시 닫아야 합니다.
+  `QueryResponse` 유형의 Future로, 결과 데이터셋과 서버 측 메트릭 등의 추가 정보를 포함합니다. 데이터셋을 모두 사용한 후에는 Response 객체를 닫아야 합니다.
 
   **예시**
 
@@ -670,18 +670,18 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **구성 방법**
 
-  | 메서드                                               | 설명                                                                                                                                 |
-  | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | 작업에 할당할 Query ID를 설정합니다.                                                                                                           |
-  | `setFormat(ClickHouseFormat format)`              | 응답 포맷을 설정합니다. 전체 목록은 `RowBinaryWithNamesAndTypes`를 참조하세요.                                                                          |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | 서버에서의 작업 실행 시간을 설정합니다. 읽기 타임아웃에는 영향을 주지 않습니다.                                                                                      |
-  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | 응답을 보내기 전에 서버가 쿼리가 끝날 때까지 기다리도록 요청합니다.                                                                                             |
-  | `setUseServerTimeZone(Boolean useServerTimeZone)` | 연산 결과의 날짜/시간 타입을 파싱할 때 서버 시간대(클라이언트 구성 참조)를 사용합니다. 기본값은 `false`입니다.                                                                |
-  | `setUseTimeZone(String timeZone)`                 | `timeZone`을 시간 변환에 사용하도록 서버에 요청합니다. 자세한 내용은 [session&#95;timezone](/ko/reference/settings/session-settings#session_timezone)을 참조하십시오. |
-  | `serverSetting(String name, String value)`        | 작업에 대한 개별 서버 설정을 지정합니다.                                                                                                            |
-  | `serverSetting(String name, Collection values)`   | 작업에 사용할 개별 서버 설정을 여러 값으로 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                        |
-  | `setDBRoles(Collection dbRoles)`                  | 작업 실행 전에 설정할 DB 역할을 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                             |
-  | `setOption(String option, Object value)`          | 구성 옵션을 raw 포맷으로 설정합니다. 서버 설정은 아닙니다.                                                                                                |
+  | 메서드                                               | 설명                                                                                                                                       |
+  | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | 작업에 할당할 쿼리 ID를 설정합니다.                                                                                                                    |
+  | `setFormat(ClickHouseFormat format)`              | 응답 포맷을 설정합니다. 전체 목록은 `RowBinaryWithNamesAndTypes`를 참조하세요.                                                                                |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | 서버에서의 작업 실행 시간을 설정합니다. 읽기 타임아웃에는 영향을 주지 않습니다.                                                                                            |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | 응답을 보내기 전에 서버가 쿼리가 끝날 때까지 기다리도록 요청합니다.                                                                                                   |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | 연산 결과의 날짜/시간 타입을 파싱할 때 서버 시간대(클라이언트 구성 참조)를 사용합니다. 기본값은 `false`입니다.                                                                      |
+  | `setUseTimeZone(String timeZone)`                 | `timeZone`을 시간 변환에 사용하도록 서버에 요청합니다. 자세한 내용은 [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)을 참조하십시오. |
+  | `serverSetting(String name, String value)`        | 작업에 대한 개별 서버 설정을 지정합니다.                                                                                                                  |
+  | `serverSetting(String name, Collection values)`   | 작업에 사용할 개별 서버 설정을 여러 값으로 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                              |
+  | `setDBRoles(Collection dbRoles)`                  | 작업 실행 전에 설정할 DB 역할을 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                                   |
+  | `setOption(String option, Object value)`          | 구성 옵션을 원시 포맷으로 설정합니다. 서버 설정은 아닙니다.                                                                                                       |
 
   ### QueryResponse
 
@@ -725,7 +725,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **반환 값**
 
-  테이블 컬럼 목록이 담긴 `TableSchema` 객체를 반환합니다.
+  테이블 컬럼 목록이 포함된 `TableSchema` 객체를 반환합니다.
 
   ### getTableSchemaFromQuery(String sql)
 
@@ -749,8 +749,8 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   ### register(Class&lt;?&gt; clazz, TableSchema schema)
 
-  `schema`를 사용하여 데이터를 쓰고 읽기 위한 Java 클래스의 직렬화(serialization) 및 역직렬화(deserialization) 레이어를 컴파일합니다. 이 메서드는 getter/setter 쌍과 해당 컬럼에 대한 직렬화기 및 역직렬화기를 생성합니다.
-  컬럼 매칭은 메서드 이름에서 컬럼 이름을 추출하는 방식으로 수행됩니다. 예를 들어, `getFirstName`은 컬럼 `first_name` 또는 `firstname`에 해당합니다.
+  `schema`를 사용해 데이터를 읽고 쓰는 데 사용할 Java 클래스용 직렬화(serialization) 및 역직렬화(deserialization) 레이어를 컴파일합니다. 이 메서드는 getter/setter 쌍과 이에 대응하는 컬럼에 대한 직렬화기 및 역직렬화기를 생성합니다.
+  컬럼 매칭은 메서드 이름에서 컬럼 이름을 추출하여 수행됩니다. 예를 들어 `getFirstName`은 컬럼 `first_name` 또는 `firstname`에 해당합니다.
 
   **서명**
 

@@ -293,7 +293,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 ```
 
 <Note>
-  Para leer subcolumnas de forma eficiente en partes Compact de MergeTree, asegúrese de que esté habilitada la configuración de MergeTree [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/es/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts).
+  Para leer subcolumnas de forma eficiente en partes Compact de MergeTree, asegúrese de que esté habilitada la configuración de MergeTree [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/es/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts).
 </Note>
 
 <div id="reading-json-sub-objects-as-sub-columns">
@@ -392,20 +392,20 @@ FROM test;
   ## Inferencia de tipos para rutas
 </div>
 
-Durante el análisis de `JSON`, ClickHouse intenta detectar el tipo de datos más adecuado para cada ruta JSON.
-Funciona de forma similar a la [inferencia automática del esquema a partir de los datos de entrada](/es/concepts/features/interfaces/schema-inference)
+Durante el análisis de `JSON`, ClickHouse intenta detectar el tipo de dato más adecuado para cada ruta JSON.
+Funciona de forma similar a la [inferencia automática del esquema a partir de los datos de entrada](/es/concepts/features/interfaces/schema-inference),
 y se controla con los mismos ajustes:
 
-* [input&#95;format&#95;try&#95;infer&#95;dates](/es/reference/settings/formats#input_format_try_infer_dates)
-* [input&#95;format&#95;try&#95;infer&#95;datetimes](/es/reference/settings/formats#input_format_try_infer_datetimes)
-* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/es/reference/settings/formats#schema_inference_make_columns_nullable)
-* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/es/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)
-* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/es/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/es/reference/settings/formats#input_format_json_read_numbers_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/es/reference/settings/formats#input_format_json_read_bools_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/es/reference/settings/formats#input_format_json_read_bools_as_numbers)
-* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/es/reference/settings/formats#input_format_json_read_arrays_as_strings)
-* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/es/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
+* [input&#95;format&#95;try&#95;infer&#95;dates](/es/reference/settings/formats/input-format#input_format_try_infer_dates)
+* [input&#95;format&#95;try&#95;infer&#95;datetimes](/es/reference/settings/formats/input-format#input_format_try_infer_datetimes)
+* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/es/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)
+* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/es/reference/settings/formats/input-format#input_format_json_try_infer_numbers_from_strings)
+* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/es/reference/settings/formats/input-format#input_format_json_infer_incomplete_types_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/es/reference/settings/formats/input-format#input_format_json_read_numbers_from_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/es/reference/settings/formats/input-format#input_format_json_read_bools_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/es/reference/settings/formats/input-format#input_format_json_read_bools_as_numbers)
+* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/es/reference/settings/formats/input-format#input_format_json_read_arrays_as_strings)
+* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/es/reference/settings/formats/input-format#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 Veamos algunos ejemplos:
 
@@ -581,7 +581,7 @@ SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
 Significa que es imposible determinar si los datos JSON originales contenían alguna ruta con el valor NULL o si no la contenían en absoluto.
 
 <div id="handling-json-keys-with-dots">
-  ## Gestión de claves JSON con puntos
+  ## Manejo de claves JSON con puntos
 </div>
 
 Internamente, la columna JSON almacena todas las rutas y los valores de forma aplanada. Esto significa que, de forma predeterminada, estos 2 objetos se consideran iguales:
@@ -616,7 +616,7 @@ Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path fo
 ```
 
 Si desea conservar las claves con puntos y evitar tratarlas como objetos anidados, puede habilitar la
-configuración [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/es/reference/settings/formats#json_type_escape_dots_in_keys) (disponible a partir de la versión `25.8`). En este caso, durante el análisis, todos los puntos de las claves JSON se
+configuración [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/es/reference/settings/formats/other#json_type_escape_dots_in_keys) (disponible a partir de la versión `25.8`). En este caso, durante el análisis, todos los puntos de las claves JSON se
 escaparán como `%2E` y se restaurarán durante el formateo.
 
 ```sql title="Query"
@@ -881,12 +881,12 @@ Actualmente, hay 3 serializaciones distintas de la estructura de datos compartid
 y `advanced`.
 
 La versión de serialización se controla mediante los ajustes de MergeTree
-[object&#95;shared&#95;data&#95;serialization&#95;version](/es/reference/settings/merge-tree-settings#object_shared_data_serialization_version)
-y [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/es/reference/settings/merge-tree-settings#object_shared_data_serialization_version_for_zero_level_parts)
+[object&#95;shared&#95;data&#95;serialization&#95;version](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
+y [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
 (la parte de nivel cero es la que se crea al insertar datos en la tabla; durante las fusiones, las partes tienen un nivel superior).
 
 Nota: cambiar la serialización de la estructura de datos compartida solo se admite
-para la [versión de serialización de objetos](/es/reference/settings/merge-tree-settings#object_serialization_version) `v3`
+para la [versión de serialización de objetos](/es/reference/settings/merge-tree-settings/other#object_serialization_version) `v3`
 
 <div id="shared-data-map">
   #### Map
@@ -909,8 +909,8 @@ lee toda la columna `Map` de un único bucket y extrae en memoria la ruta solici
 Esta serialización es menos eficiente para escribir datos y leer toda la columna `JSON`, pero es más eficiente para leer sub-columnas de rutas
 porque solo lee datos de los buckets necesarios.
 
-La cantidad de buckets `N` se controla mediante las configuraciones de MergeTree [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/es/reference/settings/merge-tree-settings#object_shared_data_buckets_for_compact_part) (8 de forma predeterminada)
-y [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/es/reference/settings/merge-tree-settings#object_shared_data_buckets_for_wide_part) (32 de forma predeterminada).
+La cantidad de buckets `N` se controla mediante las configuraciones de MergeTree [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part) (8 de forma predeterminada)
+y [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part) (32 de forma predeterminada).
 El valor máximo permitido para ambas configuraciones es 256.
 
 <div id="shared-data-advanced">
@@ -1168,7 +1168,9 @@ Puede comprobar que el `ALTER` se completó sin ninguna mutación consultando la
 SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 ```
 
-Con indicación de tipo diferida habilitada, esta consulta no devuelve ninguna fila, lo que confirma que la operación solo modificó los metadatos.
+Con indicación de tipo diferida habilitada, esta consulta no devuelve ninguna fila, lo que confirma que la operación fue una operación de solo metadatos.
+
+Esto se aplica a los cambios de indicaciones de tipo descritos anteriormente; consulte [Limitaciones](#lazy-type-hints-limitations) para conocer los casos que se rechazan en su lugar.
 
 <div id="materializing-type-hints">
   ### Materialización de indicaciones de tipo
@@ -1187,6 +1189,13 @@ Para materializar las indicaciones de tipo en los datos existentes, puedes optar
 * Esta funcionalidad es experimental y puede cambiar en futuras versiones
 * La conversión de tipos en tiempo de consulta puede suponer una sobrecarga de rendimiento significativa en comparación con los tipos materializados previamente, especialmente en objetos JSON grandes
 * Esta funcionalidad solo se aplica al modificar `typed_paths` (indicaciones de tipo); otros parámetros de JSON, como `max_dynamic_paths`, `SKIP` o `SKIP REGEXP`, siguen requiriendo mutaciones
+* Modificar una indicación de tipo (o eliminar una ruta tipada) **no** es una operación de solo metadatos, y se rechaza cuando la subcolumna afectada se utiliza en una estructura persistida posicionalmente:
+
+  * la **clave primaria/de ordenación** o la **clave de partición** — el cambio está prohibido, porque los valores en disco del índice primario o de la partición no se pueden reconstruir mediante un `ALTER` como operación de solo metadatos (como ocurre con cualquier otra columna clave);
+  * un **índice de omisión de datos** explícito — primero elimine el índice o desactive `allow_experimental_json_lazy_type_hints` para ejecutar el cambio como una mutación completa que reconstruya el índice.
+  * una **proyección cuya clave de ordenación (`ORDER BY`) lee la subcolumna** — primero elimine la proyección, porque un `ALTER` como operación de solo metadatos no puede reconstruir el índice primario de la proyección.
+
+  Añadir indicaciones para rutas que no se utilizan en ninguna de esas estructuras, o realizar cambios que no modifiquen el tipo en disco de las subcolumnas utilizadas (por ejemplo, añadir una ruta tipada no relacionada), sigue siendo una operación de solo metadatos.
 
 <div id="comparison-between-values-of-the-json-type">
   ## Comparación entre valores del tipo JSON

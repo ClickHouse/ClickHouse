@@ -17,7 +17,7 @@ Le serveur ClickHouse peut être configuré à l’aide de fichiers de configura
 Dans la plupart des types d’installation, le serveur ClickHouse utilise `/etc/clickhouse-server/config.xml` comme fichier de configuration par défaut, mais il est également possible d’indiquer manuellement l’emplacement du fichier de configuration au démarrage du serveur à l’aide de l’option de ligne de commande `--config-file` ou `-C`.
 Des fichiers de configuration supplémentaires peuvent être placés dans le répertoire `config.d/`, relatif au fichier de configuration principal, par exemple dans le répertoire `/etc/clickhouse-server/config.d/`.
 Les fichiers de ce répertoire et la configuration principale sont fusionnés lors d’une étape de prétraitement avant que la configuration ne soit appliquée au serveur ClickHouse.
-Les fichiers de configuration sont fusionnés par ordre alphabétique.
+Les fragments de configuration sont fusionnés selon l’ordre lexicographique de leurs chemins complets. Pour les fichiers du répertoire standard `config.d/`, cela équivaut à les ordonner par nom de fichier. Le répertoire legacy `conf.d/` est également fusionné ; comme `conf.d` est trié avant `config.d`, tous ses fragments sont traités en premier lorsque les deux répertoires existent.
 Pour simplifier les mises à jour et améliorer la modularité, il est recommandé de ne pas modifier le fichier `config.xml` par défaut et de placer toute personnalisation supplémentaire dans `config.d/`.
 La configuration de ClickHouse Keeper se trouve dans `/etc/clickhouse-keeper/keeper_config.xml`.
 De même, les fichiers de configuration supplémentaires pour Keeper doivent être placés dans `/etc/clickhouse-keeper/keeper_config.d/`.
@@ -175,8 +175,12 @@ Ce qui donne la configuration suivante :
 
 Il est également possible de remplacer des parties de la configuration par le contenu de fichiers. Cela peut se faire de deux façons :
 
-* *Substitution de valeurs* : si un élément possède l’attribut `incl`, sa valeur sera remplacée par le contenu du fichier référencé. Par défaut, le chemin vers le fichier contenant les substitutions est `/etc/metrika.xml`. Cela peut être modifié dans l’élément [`include_from`](/fr/reference/settings/server-settings/settings#include_from) de la configuration du serveur. Les valeurs de substitution sont spécifiées dans les éléments `/clickhouse/substitution_name` de ce fichier. Si une substitution spécifiée dans `incl` n’existe pas, cela est consigné dans le journal. Pour empêcher ClickHouse de consigner les substitutions manquantes dans le journal, spécifiez l’attribut `optional="true"` (par exemple, pour les paramètres de [macros](/fr/reference/settings/server-settings/settings#macros)).
+* *Substitution de valeurs* : si un élément possède l’attribut `incl`, sa valeur sera remplacée par le contenu du fichier référencé. Le chemin vers le fichier contenant les substitutions est défini par l’élément [`include_from`](/fr/reference/settings/server-settings/settings/other#include_from) de la configuration du serveur ; aucun chemin n’est défini par défaut, les substitutions ne sont donc lues que lorsqu’il est spécifié. Les valeurs de substitution sont spécifiées dans les éléments `/clickhouse/substitution_name` de ce fichier. Si une substitution spécifiée dans `incl` n’existe pas, cela est consigné dans le journal. Pour empêcher ClickHouse de consigner les substitutions manquantes dans le journal, spécifiez l’attribut `optional="true"` (par exemple, pour les paramètres de [macros](/fr/reference/settings/server-settings/settings/other#macros)).
 * *Substitution d’éléments* : si vous souhaitez remplacer l’élément entier par une substitution, utilisez `include` comme nom d’élément. Le nom d’élément `include` peut être combiné avec l’attribut `from_zk = "/path/to/node"`. Dans ce cas, la valeur de l’élément est remplacée par le contenu du nœud ZooKeeper situé à `/path/to/node`. Cela fonctionne également si vous stockez un sous-arbre XML entier dans un nœud ZooKeeper : il sera alors entièrement inséré dans l’élément source.
+
+<Note>
+  Modifié dans la version 26.8 : avant cette version, le fichier `/etc/metrika.xml` était utilisé implicitement dès lors qu’il existait, même lorsque `include_from` n’était pas spécifié. Si vous dépendez de ce fichier, spécifiez explicitement son chemin dans `include_from`. Notez que `include_from` est lu séparément dans chaque fichier de configuration : les fichiers chargés séparément de la configuration principale du serveur — la configuration des utilisateurs (par exemple, `users.xml` lorsqu’il n’est pas inclus dans le fichier principal) et les configurations XML des dictionnaires — nécessitent chacun leur propre élément `include_from` ; le spécifier uniquement dans la configuration principale du serveur ne s’applique pas à eux.
+</Note>
 
 Un exemple est présenté ci-dessous :
 
@@ -200,7 +204,7 @@ Si vous souhaitez fusionner le contenu de substitution avec la configuration exi
 </div>
 
 Vous pouvez utiliser le chiffrement symétrique pour chiffrer un élément de configuration, par exemple un mot de passe en clair ou une clé privée.
-Pour ce faire, configurez d’abord le [codec de chiffrement](/fr/reference/statements/create/table#encryption-codecs), puis ajoutez à l’élément à chiffrer l’attribut `encrypted_by`, avec pour valeur le nom du codec de chiffrement.
+Pour ce faire, configurez d’abord le [codec de chiffrement](/fr/reference/statements/create/table/codec#encryption-codecs), puis ajoutez à l’élément à chiffrer l’attribut `encrypted_by`, avec pour valeur le nom du codec de chiffrement.
 
 Contrairement aux attributs `from_zk`, `from_env` et `incl`, ou à l’élément `include`, aucune substitution (c.-à-d. aucun déchiffrement de la valeur chiffrée) n’est effectuée dans le fichier prétraité.
 Le déchiffrement n’a lieu qu’à l’exécution, dans le processus serveur.
@@ -326,6 +330,7 @@ Le fichier `config.xml` peut spécifier une configuration distincte avec des par
 La configuration utilisateur peut être répartie dans des fichiers distincts, comme `config.xml` et `config.d/`.
 Le nom du répertoire est défini comme le paramètre `users_config` sans le suffixe `.xml`, auquel est concaténé `.d`.
 Le répertoire `users.d` est utilisé par défaut, car `users_config` vaut par défaut `users.xml`.
+Les fragments de configuration utilisateur sont fusionnés selon l’ordre lexicographique de leurs chemins complets. Pour les fichiers du répertoire standard `users.d/`, cela équivaut à un classement par nom de fichier. Le répertoire legacy `conf.d/` est également fusionné ; comme `conf.d` est classé avant `users.d`, tous ses fragments sont traités en premier lorsque les deux répertoires existent.
 
 Notez que les fichiers de configuration sont d’abord [fusionnés](#merging) en tenant compte des paramètres, puis les inclusions sont traitées.
 
