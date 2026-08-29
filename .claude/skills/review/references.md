@@ -146,13 +146,36 @@ read while every function resolves its source table before that, in one of three
   too; and `timeSeriesSelector`, via `StorageTimeSeriesSelector::getConfiguration`, whose
   `getActualTableStructure` derives columns from the parsed configuration and touches no table.
 
-The read side is where the two families diverge. Every `mergeTree*` one checks: `read` in
-`StorageMergeTreeIndex`, `StorageMergeTreeTextIndex`, `StorageMergeTreeCodecBlockCounts` and
-`StorageFromMergeTreeProjection` (which also applies row policies), and `readImpl` in
-`StorageMergeTreeAnalyzeIndexes`. The `TimeSeries` storages have no `SELECT` check on any path. So
-the `mergeTree*` functions all show the same asymmetry — guarded at the read, unguarded at whichever
-earlier entrypoint resolves the table — and that asymmetry, not the absence of a check, is what the
-sweep is looking for.
+The read side has three outcomes, not two, and the third is the one worth learning.
+
+1. **Checks directly.** Every `mergeTree*` function: `read` in `StorageMergeTreeIndex`,
+   `StorageMergeTreeTextIndex`, `StorageMergeTreeCodecBlockCounts` and
+   `StorageFromMergeTreeProjection` (which also applies row policies), and `readImpl` in
+   `StorageMergeTreeAnalyzeIndexes`. Each names the source table explicitly in its own
+   `context->checkAccess(AccessType::SELECT, …)`.
+2. **Inherits the check by delegating.** `timeSeriesSelector`: `StorageTimeSeriesSelector::readImpl`
+   builds inner `SELECT` ASTs whose `FROM` is an `ASTTableIdentifier` for the tags and samples
+   tables and runs them through `InterpreterSelectQueryAnalyzer`. Those are ordinary `TableNode`s,
+   so they take the `if (table_node)` branch of `PlannerJoinTree`'s `checkAccessRights` and get a
+   real column-aware `SELECT` check on the *target* tables — without the storage containing a
+   `checkAccess` call of its own. Grep alone would score this surface as unguarded. What it still
+   never checks is `SELECT` on the *source* `TimeSeries` table named in the arguments.
+3. **Loses the check by returning a real storage.** `timeSeriesSamples` / `timeSeriesMetrics` /
+   `timeSeriesTags`: `executeImpl` returns the target table's own storage rather than a wrapper, so
+   there is no inner query to inherit a check from, and the outer node is a `TableFunctionNode` —
+   which both planners deliberately exclude ("we do not check access rights for table functions
+   because they have been already checked in `ITableFunction::execute`", `PlannerJoinTree.cpp`, and
+   `!joined_tables.isLeftTableFunction()` in `InterpreterSelectQuery.cpp`). `execute` in turn checks
+   only `getSourceAccessObject`, derived from the engine name, which for a `MergeTree` target is
+   nothing. So neither the source nor the target is checked on any path.
+
+Two lessons. First, "does this surface check?" is not a grep question: a storage with no
+`checkAccess` may be fully guarded because it delegates to inner queries (2), and a storage that
+returns someone else's real storage may be wholly unguarded precisely *because* the framework
+believes a table function already checked (3). Second, the framework's exclusion of table-function
+nodes means `ITableFunction::execute` is the only guard the planner assumes exists — so any table
+function naming a ClickHouse table in its arguments must check `SELECT` itself, and case 3 shows what
+happens when the surface is derived from a real table and nobody does.
 
 ### Severity
 
