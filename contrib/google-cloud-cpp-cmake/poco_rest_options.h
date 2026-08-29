@@ -59,6 +59,20 @@ struct PocoRestProxyConfigProviderOption
     using Type = std::function<Poco::Net::HTTPClientSession::ProxyConfig()>;
 };
 
+/// Decides whether a pooled keep-alive session is stale and must not be handed out again. A socket
+/// that is merely `connected()` is not necessarily reusable: the peer may already have queued an
+/// unsolicited response (a `408 Request Timeout` sent before closing an idle connection), or sent a
+/// TLS `close_notify` or a FIN, and the next request would then fail spuriously or parse leftover
+/// bytes as its own response. The probe itself lives in ClickHouse (`DB::getSocketState`, which is
+/// TLS-aware and tells real application data and a real close apart from a harmless TLS
+/// post-handshake record) rather than here, so the transport does not have to depend on the
+/// ClickHouse libraries. Unset means the pool falls back to `connected()` alone. The predicate runs
+/// under the pool's lock, on the thread borrowing the session, and must not throw.
+struct PocoRestSessionStaleCheckOption
+{
+    using Type = std::function<bool(Poco::Net::HTTPClientSession &)>;
+};
+
 /// Called by the transport right before every HTTP request it sends, with the request method and
 /// its path-and-query. It lets ClickHouse count the REST calls the storage library makes on its own
 /// (the library pages `objects.list` lazily behind a `ListObjectsReader`, so the call site cannot

@@ -191,7 +191,9 @@ class SessionPool {
     return *pool;
   }
 
-  std::unique_ptr<Poco::Net::HTTPClientSession> Acquire(std::string const& key) {
+  std::unique_ptr<Poco::Net::HTTPClientSession> Acquire(
+      std::string const& key,
+      ::ClickHouse::PocoRestSessionStaleCheckOption::Type const& is_stale) {
     auto const now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mu_);
     auto it = idle_.find(key);
@@ -200,13 +202,18 @@ class SessionPool {
     while (!entries.empty()) {
       auto entry = std::move(entries.back());
       entries.pop_back();
-      // A peer may close an idle keep-alive connection at any time. `connected()`
-      // does not detect a half-closed socket, so also drop anything that has sat
-      // idle long enough to be a likely candidate, and let the caller connect
-      // afresh rather than discover the failure mid-request.
-      if (now - entry.returned_at < kMaxIdleTime && entry.session->connected()) {
-        return std::move(entry.session);
-      }
+      // A peer may close an idle keep-alive connection at any time, and
+      // `connected()` reports only what this side knows: it does not see a
+      // half-closed socket, a TLS `close_notify`, or an unsolicited response
+      // (a `408 Request Timeout`) the peer queued before closing. So drop
+      // anything that has sat idle long enough to be a likely candidate, and --
+      // when ClickHouse supplied the probe -- anything the probe reports as not
+      // idle, and let the caller connect afresh rather than discover the failure
+      // mid-request or parse leftover bytes as its own response.
+      if (now - entry.returned_at >= kMaxIdleTime) continue;
+      if (!entry.session->connected()) continue;
+      if (is_stale && is_stale(*entry.session)) continue;
+      return std::move(entry.session);
     }
     idle_.erase(it);
     return nullptr;
@@ -337,7 +344,11 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
 
   // A pooled session already points at this endpoint through this proxy -- both
   // are in the key -- so only a fresh one needs constructing and configuring.
-  auto session = SessionPool::Instance().Acquire(key);
+  ::ClickHouse::PocoRestSessionStaleCheckOption::Type stale_check;
+  if (options.has<::ClickHouse::PocoRestSessionStaleCheckOption>()) {
+    stale_check = options.get<::ClickHouse::PocoRestSessionStaleCheckOption>();
+  }
+  auto session = SessionPool::Instance().Acquire(key, stale_check);
   if (!session) {
     if (uri.getScheme() == "https") {
       std::string ca_location;
