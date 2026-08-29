@@ -2,7 +2,10 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Poco/String.h>
+
+#include <base/hex.h>
 
 #include <cstring>
 
@@ -20,49 +23,7 @@ namespace
 bool isWordChar(char c)
 {
     /// Deviation from VictoriaLogs: any non-ASCII (UTF-8 continuation or start) byte is treated as a word character.
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || static_cast<unsigned char>(c) >= 0x80;
-}
-
-bool isWhitespaceChar(char c)
-{
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
-}
-
-int hexDigit(char c)
-{
-    if (c >= '0' && c <= '9')
-        return c - '0';
-    if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F')
-        return c - 'A' + 10;
-    return -1;
-}
-
-void appendUTF8(String & out, UInt32 code_point)
-{
-    if (code_point < 0x80)
-    {
-        out += static_cast<char>(code_point);
-    }
-    else if (code_point < 0x800)
-    {
-        out += static_cast<char>(0xC0 | (code_point >> 6));
-        out += static_cast<char>(0x80 | (code_point & 0x3F));
-    }
-    else if (code_point < 0x10000)
-    {
-        out += static_cast<char>(0xE0 | (code_point >> 12));
-        out += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
-        out += static_cast<char>(0x80 | (code_point & 0x3F));
-    }
-    else
-    {
-        out += static_cast<char>(0xF0 | (code_point >> 18));
-        out += static_cast<char>(0x80 | ((code_point >> 12) & 0x3F));
-        out += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
-        out += static_cast<char>(0x80 | (code_point & 0x3F));
-    }
+    return isWordCharASCII(c) || static_cast<unsigned char>(c) >= 0x80;
 }
 
 /// The glue characters which are allowed inside unquoted compound tokens.
@@ -214,9 +175,9 @@ String LogsQLLexer::decodeDoubleQuoted(const char *& pos) const
             case 'x':
             {
                 ++pos;
-                if (end - pos < 2 || hexDigit(pos[0]) < 0 || hexDigit(pos[1]) < 0)
+                if (end - pos < 2 || !isHexDigit(pos[0]) || !isHexDigit(pos[1]))
                     throwSyntaxError("invalid \\x escape sequence in quoted string");
-                result += static_cast<char>(hexDigit(pos[0]) * 16 + hexDigit(pos[1]));
+                result += static_cast<char>(unhex2(pos));
                 pos += 2;
                 break;
             }
@@ -230,14 +191,15 @@ String LogsQLLexer::decodeDoubleQuoted(const char *& pos) const
                 UInt32 code_point = 0;
                 for (size_t i = 0; i < digits; ++i)
                 {
-                    int d = hexDigit(pos[i]);
-                    if (d < 0)
+                    if (!isHexDigit(pos[i]))
                         throwSyntaxError("invalid unicode escape sequence in quoted string");
-                    code_point = code_point * 16 + static_cast<UInt32>(d);
+                    code_point = code_point * 16 + unhex(pos[i]);
                 }
-                if (code_point > 0x10FFFF || (code_point >= 0xD800 && code_point <= 0xDFFF))
+                if (code_point > 0x10FFFF || UTF8::isSurrogateCodePoint(code_point))
                     throwSyntaxError("invalid code point in unicode escape sequence");
-                appendUTF8(result, code_point);
+                char utf8_bytes[4];
+                size_t utf8_size = UTF8::convertCodePointToUTF8(static_cast<int>(code_point), utf8_bytes, sizeof(utf8_bytes));
+                result.append(utf8_bytes, utf8_size);
                 pos += digits;
                 break;
             }
@@ -312,7 +274,7 @@ void LogsQLLexer::nextToken()
             return;
         }
 
-        if (isWhitespaceChar(*s))
+        if (isWhitespaceASCII(*s))
         {
             skipped_space = true;
             ++s;
