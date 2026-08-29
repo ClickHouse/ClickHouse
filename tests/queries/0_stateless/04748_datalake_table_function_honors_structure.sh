@@ -12,6 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 PAIMON="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_paimon"
+# A second paimon fixture, because the one above has no partition keys at all: with none, no partition
+# key condition is ever built and a partition-pruning arm would read the same either way.
+PAIMONP="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_paimonp"
 DELTA="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_delta"
 ICE="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_ice"
 NEST="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_nest"
@@ -19,6 +22,7 @@ NEST="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_nest"
 EQDEL="deletes_db/eq_deletes_table"
 mkdir -p "${USER_FILES_PATH}"
 cp -r "${CUR_DIR}/data_minio/paimon_no_partition" "${PAIMON}"
+cp -r "${CUR_DIR}/data_minio/paimon_all_types" "${PAIMONP}"
 cp -r "${CUR_DIR}/data_delta_lake/struct_column_mapping" "${DELTA}"
 cp -r "${CUR_DIR}/data_minio/iceberg_nested_sort_order" "${NEST}"
 
@@ -282,6 +286,24 @@ ${CH} --query_id="${QID_RGPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}24
 QID_WRAPPRUNE="04748-wrapprune-${CLICKHOUSE_DATABASE}"
 ${CH} --query_id="${QID_WRAPPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}23/', 'Parquet', 'id Nullable(Int64), data String, extra Nullable(String)') WHERE id < 5 SETTINGS use_iceberg_partition_pruning = 0" > /dev/null
 
+# The paimon partition key is typed by its metadata, so the same nullability-only difference must not
+# cost it its pruning either. Withholding is invisible in the values, and the count to compare against
+# is the same read with pruning off rather than a constant, so this takes a pair of query ids. Both
+# counts were measured to be the single value 1 and 10 across max_threads 1..16 and three block sizes.
+QID_PPRUNE="04748-pprune-${CLICKHOUSE_DATABASE}"
+QID_PPRUNEOFF="04748-ppruneoff-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_PPRUNE}" -q "SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn Nullable(Int64)') WHERE f_bigint_nn < 2 SETTINGS use_paimon_partition_pruning = 1, parallel_replicas_for_cluster_engines = 0" > /dev/null
+${CH} --query_id="${QID_PPRUNEOFF}" -q "SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn Nullable(Int64)') WHERE f_bigint_nn < 2 SETTINGS use_paimon_partition_pruning = 0, parallel_replicas_for_cluster_engines = 0" > /dev/null
+
+# A column outside the partition keys is not part of the key the bounds are compared against, so
+# retyping one cannot mis-prune and must not cost the partition key its pruning. The filter has to name
+# both, or the retyped column never reaches the filter's required columns and the arm reads the same
+# either way. Its own pair of query ids.
+QID_PPRUNENK="04748-pprunenk-${CLICKHOUSE_DATABASE}"
+QID_PPRUNENKOFF="04748-pprunenkoff-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_PPRUNENK}" -q "SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn Int64, f_int String') WHERE f_bigint_nn < 2 AND f_int < '5' SETTINGS use_paimon_partition_pruning = 1, parallel_replicas_for_cluster_engines = 0" > /dev/null
+${CH} --query_id="${QID_PPRUNENKOFF}" -q "SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn Int64, f_int String') WHERE f_bigint_nn < 2 AND f_int < '5' SETTINGS use_paimon_partition_pruning = 0, parallel_replicas_for_cluster_engines = 0" > /dev/null
+
 batch <<SQL
 SET allow_experimental_insert_into_iceberg = 1;
 SYSTEM FLUSH LOGS processors_profile_log;
@@ -302,6 +324,13 @@ SELECT '-- iceberg: an undeclared read of a promoted column still prunes row gro
 SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_RGPRUNE}' AND type = 'QueryFinish';
 SELECT '-- iceberg: a declaration differing only in nullability still prunes row groups';
 SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_WRAPPRUNE}' AND type = 'QueryFinish';
+SELECT '-- paimon: a declaration differing only in nullability still prunes partitions';
+-- A missing query id makes max() NULL, so an absent read reports \N rather than passing.
+SELECT (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNE}' AND type = 'QueryFinish')
+     < (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNEOFF}' AND type = 'QueryFinish');
+SELECT '-- paimon: retyping a column outside the partition keys still prunes partitions';
+SELECT (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNENK}' AND type = 'QueryFinish')
+     < (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNENKOFF}' AND type = 'QueryFinish');
 SELECT '-- iceberg cluster: a worker keeps declared columns that the metadata does not have';
 -- Keeping the key and keeping the columns are two separate decisions: clearing the key must not
 -- also discard the declared columns, or the snapshot would overwrite them and a column that exists
@@ -356,6 +385,13 @@ SELECT count(name) FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet'
 SELECT count() FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet', structure='id String, name String') PREWHERE id < '2' SETTINGS parallel_replicas_for_cluster_engines = 0;
 SELECT count() FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet', structure='id Nullable(Int32), name Nullable(String)') PREWHERE id < 2 SETTINGS parallel_replicas_for_cluster_engines = 0;
 SELECT any(toTypeName(id)), count() FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet', structure='id String, name String');
+SELECT '-- paimon: a retyped partition key is not pruned against the metadata-typed partition key';
+-- The declared String puts 1000 below '2' while the metadata Int64 does not, so a partition dropped on
+-- the metadata typing loses a matching row. Both settings and a metadata-typed oracle must agree, and
+-- f_bigint_nn is one of this fixture's twenty partition keys.
+SELECT groupArray(f_bigint_nn) FROM (SELECT f_bigint_nn FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn String') WHERE f_bigint_nn < '2' ORDER BY f_bigint_nn) SETTINGS use_paimon_partition_pruning = 1, parallel_replicas_for_cluster_engines = 0;
+SELECT groupArray(f_bigint_nn) FROM (SELECT f_bigint_nn FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn String') WHERE f_bigint_nn < '2' ORDER BY f_bigint_nn) SETTINGS use_paimon_partition_pruning = 0, parallel_replicas_for_cluster_engines = 0;
+SELECT groupArray(s) FROM (SELECT toString(f_bigint_nn) AS s FROM paimonLocal('${PAIMONP}') WHERE toString(f_bigint_nn) < '2' ORDER BY s);
 SELECT '-- iceberg cluster: DESC and SELECT report the same declared type';
 DESC icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet', 'c0 LowCardinality(String)') ${DESCFMT};
 SELECT DISTINCT toTypeName(c0) FROM icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet', 'c0 LowCardinality(String)');
@@ -415,4 +451,4 @@ SELECT count(), sum(zzz) FROM s3('http://localhost:11111/test/${CLICKHOUSE_DATAB
 SELECT groupArray(zzz) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'zzz UInt64 DEFAULT 42'); -- { serverError INCORRECT_DATA }
 DROP TABLE IF EXISTS ice14;
 SQL
-rm -rf "${PAIMON}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18" "${ICE}20" "${ICE}21" "${ICE}22" "${ICE}23" "${ICE}24"
+rm -rf "${PAIMON}" "${PAIMONP}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18" "${ICE}20" "${ICE}21" "${ICE}22" "${ICE}23" "${ICE}24"

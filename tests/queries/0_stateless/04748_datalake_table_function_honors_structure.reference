@@ -69,6 +69,10 @@ Code: 10
 1
 -- iceberg: a declaration differing only in nullability still prunes row groups
 1
+-- paimon: a declaration differing only in nullability still prunes partitions
+1
+-- paimon: retyping a column outside the partition keys still prunes partitions
+1
 -- iceberg cluster: a worker keeps declared columns that the metadata does not have
 2	2	Nullable(String)
 -- iceberg cluster: a DEFAULT declared in the structure is not honored, on either branch
@@ -86,6 +90,10 @@ Code: 10
 92
 2
 String	881
+-- paimon: a retyped partition key is not pruned against the metadata-typed partition key
+['0','1000']
+['0','1000']
+['0','1000']
 -- iceberg cluster: DESC and SELECT report the same declared type
 c0 LowCardinality(String)
 LowCardinality(String)

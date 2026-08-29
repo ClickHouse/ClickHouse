@@ -9,6 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
 namespace DB
@@ -52,6 +53,35 @@ namespace Paimon
         return DB::ColumnsDescription(names_and_types);
     }
 
+    /// True when `filter_dag` cannot prune over `table_schema`'s partition keys: a bound is compared against
+    /// the type the Paimon schema gives the column, so a filter planned on a type that orders values
+    /// differently can drop a partition holding matching rows. Wrappers and non-partition columns cannot.
+    static bool filterCannotPrunePartitions(const DB::PaimonTableSchema & table_schema, const DB::ActionsDAG & filter_dag)
+    {
+        auto comparable_type = [](const DB::DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
+        auto is_partition_key = [&](const String & name)
+        {
+            for (const auto & key : table_schema.partition_keys)
+                if (key == name)
+                    return true;
+            return false;
+        };
+
+        for (const auto & required : filter_dag.getRequiredColumns())
+        {
+            const auto & name = required.getNameInStorage();
+            if (!is_partition_key(name))
+                continue;
+            auto column_idx_it = table_schema.fields_by_name_indexes.find(name);
+            if (column_idx_it == table_schema.fields_by_name_indexes.end())
+                continue;
+            const auto & schema_type = table_schema.fields[column_idx_it->second].type.clickhouse_data_type;
+            if (!comparable_type(schema_type)->equals(*comparable_type(required.getTypeInStorage())))
+                return true;
+        }
+        return false;
+    }
+
     PartitionPruner::PartitionPruner(const PaimonTableSchema & table_schema_,
                                      const DB::ActionsDAG & filter_dag_,
                                      DB::ContextPtr context_):
@@ -68,9 +98,12 @@ namespace Paimon
                 {},
                 context_);
 
-            DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_, /* boolean_context */ true);
-            key_condition.emplace(
-                inverted_dag, context_, partition_key.column_names, partition_key.expression, true /* single_point */);
+            if (!filterCannotPrunePartitions(table_schema, filter_dag_))
+            {
+                DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_, /* boolean_context */ true);
+                key_condition.emplace(
+                    inverted_dag, context_, partition_key.column_names, partition_key.expression, true /* single_point */);
+            }
         }
     }
 
