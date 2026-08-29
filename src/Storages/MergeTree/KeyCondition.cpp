@@ -2693,12 +2693,19 @@ static bool tryPrepareSetColumnsForIndex(
 ///     `00674_has_array_enum`) and the cast accepts the codes of declared values;
 ///   - `Nothing` on the element side: an all-NULL element never equals a non-NULL key value under
 ///     `has`, and the accurate-or-null cast likewise keeps it NULL, dropping it from the set;
-///   - `Tuple` / `Array` / `Map` pairs are compared element-wise by the same rule;
+///   - `Tuple` / `Array` / `Map` pairs are compared element-wise by a stricter rule: inside a
+///     container the runtime comparison is no longer accurate. `accurateEquals` takes the same-type
+///     fast path for two container `Field`s and compares their children with the plain
+///     `Field::operator==`, which requires the same carrier type (an `UInt64` child never equals an
+///     `Int64` child even for the same value). So a nested pair is admissible only when both raw
+///     `Field`s use the same integer carrier: two native integers of the same signedness, or an
+///     `Enum` next to a *signed* native integer (both are carried as `Int64`);
 ///   - a `Variant` element is admissible when every contained alternative is, because the raw
 ///     `Field` of a `Variant` is its underlying value. A `Dynamic` element does not describe its
 ///     contents at the type level; the caller substitutes the `Variant` of the types the constant
 ///     column actually holds, so a bare `Dynamic` reaching this check is declined.
-static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_type, const DataTypePtr & key_column_type)
+static bool areTypesCompatibleForHasSetIndex(
+    const DataTypePtr & set_element_type, const DataTypePtr & key_column_type, bool within_container = false)
 {
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
@@ -2712,17 +2719,36 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
     const bool set_is_native_integer = isNativeInteger(set_type);
     const bool key_is_native_integer = isNativeInteger(key_type);
 
-    if (set_is_native_integer && key_is_native_integer)
-        return true;
+    if (within_container)
+    {
+        /// Children of a container are compared with the plain `Field::operator==`, so the raw
+        /// `Field` carriers must match: native integers of the same signedness, or an `Enum`
+        /// (carried as `Int64`) next to a signed native integer.
+        const bool set_is_signed_carrier = isNativeInt(set_type) || isEnum(set_type);
+        const bool key_is_signed_carrier = isNativeInt(key_type) || isEnum(key_type);
 
-    if ((isEnum(set_type) && key_is_native_integer) || (set_is_native_integer && isEnum(key_type)))
-        return true;
+        if (isNativeUInt(set_type) && isNativeUInt(key_type))
+            return true;
+
+        /// Two different `Enum` types never agree: the cast between them maps by name, while the
+        /// raw comparison compares the codes.
+        if (set_is_signed_carrier && key_is_signed_carrier && !(isEnum(set_type) && isEnum(key_type)))
+            return true;
+    }
+    else
+    {
+        if (set_is_native_integer && key_is_native_integer)
+            return true;
+
+        if ((isEnum(set_type) && key_is_native_integer) || (set_is_native_integer && isEnum(key_type)))
+            return true;
+    }
 
     if (const auto * set_variant_type = typeid_cast<const DataTypeVariant *>(set_type.get()))
     {
         for (const auto & alternative : set_variant_type->getVariants())
         {
-            if (!areTypesCompatibleForHasSetIndex(alternative, key_type))
+            if (!areTypesCompatibleForHasSetIndex(alternative, key_type, within_container))
                 return false;
         }
         return true;
@@ -2742,7 +2768,7 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
 
         for (size_t i = 0; i < set_elements.size(); ++i)
         {
-            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i]))
+            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i], /*within_container=*/ true))
                 return false;
         }
         return true;
@@ -2751,13 +2777,14 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
     const auto * set_array_type = typeid_cast<const DataTypeArray *>(set_type.get());
     const auto * key_array_type = typeid_cast<const DataTypeArray *>(key_type.get());
     if (set_array_type && key_array_type)
-        return areTypesCompatibleForHasSetIndex(set_array_type->getNestedType(), key_array_type->getNestedType());
+        return areTypesCompatibleForHasSetIndex(
+            set_array_type->getNestedType(), key_array_type->getNestedType(), /*within_container=*/ true);
 
     const auto * set_map_type = typeid_cast<const DataTypeMap *>(set_type.get());
     const auto * key_map_type = typeid_cast<const DataTypeMap *>(key_type.get());
     if (set_map_type && key_map_type)
-        return areTypesCompatibleForHasSetIndex(set_map_type->getKeyType(), key_map_type->getKeyType())
-            && areTypesCompatibleForHasSetIndex(set_map_type->getValueType(), key_map_type->getValueType());
+        return areTypesCompatibleForHasSetIndex(set_map_type->getKeyType(), key_map_type->getKeyType(), /*within_container=*/ true)
+            && areTypesCompatibleForHasSetIndex(set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true);
 
     return false;
 }
@@ -2806,7 +2833,11 @@ static bool areSetAndKeyTypesCompatibleForHas(
         const auto & compared_type
             = set_transforming_dags[index].has_value() ? set_transforming_dags[index]->input_type : key_types[index];
 
-        if (!areTypesCompatibleForHasSetIndex(set_types[set_element_index], compared_type))
+        /// With multiple key arguments the right-hand side of `has` is a tuple of key columns, so the
+        /// per-index comparison happens between the children of two `Tuple` `Field`s - with the plain
+        /// `Field::operator==`, not the accurate one.
+        if (!areTypesCompatibleForHasSetIndex(
+                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1))
             return false;
     }
 
