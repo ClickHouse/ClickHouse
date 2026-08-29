@@ -137,8 +137,9 @@ void unwrapJSONArgument(ASTs & arguments)
             arguments[0] = unwrapped;
 }
 
-/// Parses a simple constant JSON path ($.a.b[0]) into JSONExtract*-style
-/// arguments ('a', 'b', 1). Trino array indexes are 0-based, ClickHouse 1-based.
+/// Parses a simple constant JSON path ($.a.b[0], $["key with spaces"]) into
+/// JSONExtract*-style arguments ('a', 'b', 1). Trino array indexes are 0-based,
+/// ClickHouse 1-based.
 bool tryParseSimpleJSONPath(const ASTPtr & ast, ASTs & parts)
 {
     const auto * literal = ast->as<ASTLiteral>();
@@ -163,13 +164,29 @@ bool tryParseSimpleJSONPath(const ASTPtr & ast, ASTs & parts)
         }
         else if (path[pos] == '[')
         {
-            size_t index_begin = ++pos;
-            while (pos < path.size() && isNumericASCII(path[pos]))
-                ++pos;
-            if (pos == index_begin || pos == path.size() || path[pos] != ']')
-                return false;
-            parts.push_back(make_intrusive<ASTLiteral>(UInt64(std::stoull(path.substr(index_begin, pos - index_begin)) + 1)));
             ++pos;
+            if (pos < path.size() && (path[pos] == '"' || path[pos] == '\''))
+            {
+                /// A bracket-quoted member key: ["key"] or ['key'].
+                const char quote = path[pos];
+                size_t key_begin = ++pos;
+                while (pos < path.size() && path[pos] != quote && path[pos] != '\\')
+                    ++pos;
+                if (pos + 1 >= path.size() || path[pos] != quote || path[pos + 1] != ']')
+                    return false;
+                parts.push_back(make_intrusive<ASTLiteral>(path.substr(key_begin, pos - key_begin)));
+                pos += 2;
+            }
+            else
+            {
+                size_t index_begin = pos;
+                while (pos < path.size() && isNumericASCII(path[pos]))
+                    ++pos;
+                if (pos == index_begin || pos == path.size() || path[pos] != ']')
+                    return false;
+                parts.push_back(make_intrusive<ASTLiteral>(UInt64(std::stoull(path.substr(index_begin, pos - index_begin)) + 1)));
+                ++pos;
+            }
         }
         else
             return false;
@@ -1001,18 +1018,20 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             requireArguments(function, arguments, 2, 2, "(json, json_path)");
             unwrapJSONArgument(arguments);
             /// A simple constant path becomes JSONExtractRaw, which returns the
-            /// bare element like Trino. JSON_QUERY handles the general paths but
-            /// wraps the result in an array (the SQL standard ARRAY WRAPPER).
+            /// bare element like Trino. There is no implicit fallback for the
+            /// general paths: JSON_QUERY is close but wraps the result in an
+            /// array (the SQL standard ARRAY WRAPPER), which silently changes
+            /// valid Trino results.
             ASTs parts;
-            if (tryParseSimpleJSONPath(arguments[1], parts))
-            {
-                ASTs extract_arguments;
-                extract_arguments.push_back(arguments[0]);
-                extract_arguments.insert(extract_arguments.end(), parts.begin(), parts.end());
-                node = makeFunctionWithArguments("JSONExtractRaw", std::move(extract_arguments));
-            }
-            else
-                function.name = "JSON_QUERY";
+            if (!tryParseSimpleJSONPath(arguments[1], parts))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Trino json_extract is translated only with a simple constant JSON path, "
+                    "e.g. '$.a.b[0]' or '$[\"key\"]'. Consider json_query (note: it wraps the result into an array)");
+            ASTs extract_arguments;
+            extract_arguments.push_back(arguments[0]);
+            extract_arguments.insert(extract_arguments.end(), parts.begin(), parts.end());
+            node = makeFunctionWithArguments("JSONExtractRaw", std::move(extract_arguments));
         }},
         {"json_array_get", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
