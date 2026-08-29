@@ -445,7 +445,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         /// `Time64` and `DateTime64` use the same decimal representation. Drop the type hint so the
         /// regular decimal rescaling below preserves the fractional component.
-        return convertFieldToTypeImpl(src, type, nullptr, format_settings, strict, convert_inexact_floats);
+        Field result = convertFieldToTypeImpl(src, type, nullptr, format_settings, strict, convert_inexact_floats);
+        /// The rescaling truncates when the target scale is lower, so apply the same exactness
+        /// gate as `convertDecimalType`: a value that does not survive the round-trip cannot
+        /// match anything under `strict`.
+        if (strict && !result.isNull() && !accurateEquals(src, result))
+            return {};
+        return result;
     }
     if (which_type.isTime() && which_from_type.isDate())
     {
