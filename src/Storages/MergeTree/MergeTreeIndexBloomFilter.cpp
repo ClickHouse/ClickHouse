@@ -940,6 +940,32 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+
+            /// `String`/`FixedString` equality compares zero-padded, so a constant of M bytes matches
+            /// the whole family `value` + trailing '\0'*, while the index holds one hash per exact
+            /// stored value. The index is sound only where that family collapses to a single indexed
+            /// value: a `FixedString(N)` index with `N >= M` pads the constant into the one stored
+            /// form, while a `String` index, or a narrower `FixedString`, leaves the family unbounded
+            /// because `convertFieldToType` pads but never truncates.
+            /// The constant type is unwrapped here because `tryGetConstant` peels only an outer
+            /// `Nullable`. `Variant` and `Dynamic` keep their declared wrapper while handing out the
+            /// nested padded value, so an active `FixedString` alternative is indistinguishable from
+            /// a `String` one and both must be treated as possibly padded.
+            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
+            {
+                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+                const bool constant_may_be_fixed_string
+                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+                const size_t constant_bytes = value_field.safeGet<String>().size();
+                const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+                if (constant_may_be_fixed_string && !fixed_index_type)
+                    return false;
+
+                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
+                    return false;
+            }
+
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
