@@ -1624,7 +1624,7 @@ TEST(SchedulerSpaceShared, ReleasedCapacityTraversesWorkloadHierarchy)
     ResourceLink oversized_link = oversized_workload->getLink();
     ResourceLink fitting_link = fitting_workload->getLink();
     ResourceLink external_link = external_workload->getLink();
-    IAllocationQueue * donor_queue = donor_link.allocation_queue;
+    auto * donor_queue = static_cast<AllocationQueue *>(donor_link.allocation_queue);
 
     r.root_node = outer;
     external_workload.reset();
