@@ -94,9 +94,8 @@ def test_remote_write_ignores_query_rules():
 def test_submitted_sql_still_matches_rules():
     # The clearing above is scoped to the synthesized SQL: SQL the client itself submits over the
     # HTTP interface keeps `query_rules` and is matched as usual, including a missing rule name.
-    response = requests.get(
-        f"http://{node.ip_address}:8123/",
-        params={"query": "SELECT 1", "query_rules": MISSING_RULE},
+    response = node.http_request(
+        "", params={"query": "SELECT 1", "query_rules": MISSING_RULE}
     )
     assert response.status_code != 200
     assert "REWRITE_RULE_DOESNT_EXIST" in response.text
