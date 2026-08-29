@@ -151,9 +151,12 @@ void AllocationLimit::approveDecrease()
         }
     }
 
-    decrease = nullptr;
-
     IncreaseRequest * old_increase = increase;
+
+    /// Keep the in-flight decrease visible while the child approves it. The child may propagate an
+    /// updated increase before returning, and victim selection can recurse into the same queue while
+    /// that queue still holds its mutex. Clearing the guard only after approval keeps suction deferred
+    /// until the retry below runs outside the child lock.
     child->approveDecrease();
     setDecrease(child->decrease);
     // Check if we can now process pending increase request in case it was not changed (e.g. other allocation was decreased here)
