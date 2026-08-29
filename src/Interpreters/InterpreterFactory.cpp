@@ -39,6 +39,7 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTSQLClusterQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTDropHandlerQuery.h>
 #include <Parsers/ASTTransactionControl.h>
@@ -264,6 +265,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterAlterNamedCollectionQuery";
     }
+    else if (query->as<ASTAlterSQLClusterQuery>())
+    {
+        interpreter_name = "InterpreterAlterSQLClusterQuery";
+    }
     else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>() || query->as<ASTCheckDatabaseQuery>())
     {
         interpreter_name = "InterpreterCheckQuery";
@@ -315,6 +320,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDropNamedCollectionQuery>())
     {
         interpreter_name = "InterpreterDropNamedCollectionQuery";
+    }
+    else if (query->as<ASTDropSQLClusterQuery>())
+    {
+        interpreter_name = "InterpreterDropSQLClusterQuery";
     }
     else if (query->as<ASTGrantQuery>())
     {
@@ -379,6 +388,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTCreateNamedCollectionQuery>())
     {
         interpreter_name = "InterpreterCreateNamedCollectionQuery";
+    }
+    else if (query->as<ASTCreateSQLClusterQuery>())
+    {
+        interpreter_name = "InterpreterCreateSQLClusterQuery";
     }
     else if (query->as<ASTCreateHandlerQuery>())
     {

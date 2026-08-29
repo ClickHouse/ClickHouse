@@ -686,7 +686,8 @@
     M(1012, HANDLER_DOESNT_EXIST) \
     M(1013, AMBIGUOUS_HANDLER) \
     M(1014, TRANSACTION_ROLLBACK_PARTIAL_FAILURE) \
-    M(1015, FILE_CHANGED_DURING_READ) \
+    M(1015, CLUSTER_ALREADY_EXISTS) \
+    M(1016, FILE_CHANGED_DURING_READ) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -703,7 +704,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1015;
+    constexpr ErrorCode END = 1016;
 
 #if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,
