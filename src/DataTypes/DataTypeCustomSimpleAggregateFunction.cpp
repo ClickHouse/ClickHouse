@@ -2,6 +2,7 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -14,6 +15,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <boost/algorithm/string/join.hpp>
+
+#include <array>
 
 
 namespace DB
@@ -28,39 +31,70 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+struct SupportedFunction
+{
+    std::string_view name;
+    /// The result over a single value is that value itself. The other functions normalize even a single input
+    /// (sort and merge keys, deduplicate, truncate), and inserted data is not normalized.
+    bool identity_on_single_value;
+};
+
+/// TODO Make it sane.
+constexpr std::array supported_functions{
+    SupportedFunction{"any", true},
+    SupportedFunction{"any_respect_nulls", true},
+    SupportedFunction{"anyLast", true},
+    SupportedFunction{"anyLast_respect_nulls", true},
+    SupportedFunction{"min", true},
+    SupportedFunction{"max", true},
+    SupportedFunction{"sum", true},
+    SupportedFunction{"sumWithOverflow", true},
+    SupportedFunction{"groupBitAnd", true},
+    SupportedFunction{"groupBitOr", true},
+    SupportedFunction{"groupBitXor", true},
+    SupportedFunction{"sumMap", false},
+    SupportedFunction{"minMap", false},
+    SupportedFunction{"maxMap", false},
+    SupportedFunction{"groupArrayArray", true},
+    SupportedFunction{"groupArrayLastArray", false},
+    SupportedFunction{"groupUniqArrayArray", false},
+    SupportedFunction{"groupUniqArrayArrayMap", false},
+    SupportedFunction{"sumMappedArrays", false},
+    SupportedFunction{"minMappedArrays", false},
+    SupportedFunction{"maxMappedArrays", false},
+};
+
+const SupportedFunction * findSupportedFunction(const String & name)
+{
+    for (const auto & function : supported_functions)
+        if (function.name == name)
+            return &function;
+    return nullptr;
+}
+
+}
+
 void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
 {
-    /// TODO Make it sane.
-    static const std::vector<String> supported_functions{
-        "any",
-        "any_respect_nulls",
-        "anyLast",
-        "anyLast_respect_nulls",
-        "min",
-        "max",
-        "sum",
-        "sumWithOverflow",
-        "groupBitAnd",
-        "groupBitOr",
-        "groupBitXor",
-        "sumMap",
-        "minMap",
-        "maxMap",
-        "groupArrayArray",
-        "groupArrayLastArray",
-        "groupUniqArrayArray",
-        "groupUniqArrayArrayMap",
-        "sumMappedArrays",
-        "minMappedArrays",
-        "maxMappedArrays",
-    };
-
-    // check function
-    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
+    if (!findSupportedFunction(function->getName()))
     {
+        Strings names;
+        for (const auto & supported : supported_functions)
+            names.emplace_back(supported.name);
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported aggregate function {}, supported functions are {}",
-                function->getName(), boost::algorithm::join(supported_functions, ","));
+                function->getName(), boost::algorithm::join(names, ","));
     }
+}
+
+bool DataTypeCustomSimpleAggregateFunction::isIdentityOnSingleValue(const AggregateFunctionPtr & function)
+{
+    const auto * supported = findSupportedFunction(function->getName());
+    if (!supported)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported aggregate function {} in SimpleAggregateFunction", function->getName());
+    return supported->identity_on_single_value;
 }
 
 String DataTypeCustomSimpleAggregateFunction::getName() const

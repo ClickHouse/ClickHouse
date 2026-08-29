@@ -55,10 +55,7 @@ public:
 
         /// Applying the function to a single value yields exactly that value,
         /// so a one-row group can be copied with insertFrom instead of going through the state.
-        bool single_value_is_identity = false;
-
-        /// First row of the current group, kept until a second row arrives or the group is finished.
-        const IColumn * first_row_column = nullptr;
+        bool identity_on_single_value = false;
 
         SimpleAggregateDescription(
             AggregateFunctionPtr function_, size_t column_number_,
@@ -135,11 +132,15 @@ private:
         /// Group is a group of rows with the same sorting key. It represents single row in result.
         /// Algorithm is: start group, add several rows, finish group.
         /// Then pull chunk when enough groups were added.
-        void startGroup(const ColumnRawPtrs & raw_columns, size_t row);
+        void startGroup(SortCursor & cursor);
         void finishGroup();
 
         bool isGroupStarted() const { return is_group_started; }
         void addRow(SortCursor & cursor); /// Possible only when group was started.
+
+        /// Fold the remembered first row of the group into the states of the identity functions.
+        /// Must be called before the cursor that supplied it can be updated, i.e. before merge() returns.
+        void materializeDeferredRow();
 
         Chunk pull(); /// Possible only if group was finished.
 
@@ -147,8 +148,11 @@ private:
         ColumnsDefinition & def;
 
         bool is_group_started = false;
-        size_t current_group_rows = 0;
-        size_t first_row_index = 0;
+
+        /// First row of the current group, referenced from the cursor's columns.
+        ColumnRawPtrs * first_row_columns = nullptr;
+        size_t first_row = 0;
+        bool first_row_deferred = false;
 
         /// Initialize aggregate descriptions with columns.
         void initAggregateDescription();

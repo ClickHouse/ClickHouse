@@ -49,15 +49,17 @@ CREATE TABLE t_normalizing
     k UInt32,
     uniq_arr SimpleAggregateFunction(groupUniqArrayArray, Array(UInt32)),
     sm SimpleAggregateFunction(sumMap, Tuple(Array(UInt32), Array(UInt64))),
-    last_arr SimpleAggregateFunction(groupArrayLastArray(2), Array(UInt32))
+    last_arr SimpleAggregateFunction(groupArrayLastArray(2), Array(UInt32)),
+    long_str SimpleAggregateFunction(any, String),
+    map_arr SimpleAggregateFunction(groupUniqArrayArrayMap, Map(UInt32, Array(UInt64)))
 )
 ENGINE = AggregatingMergeTree ORDER BY k;
 
-INSERT INTO t_normalizing VALUES (1, [3, 1, 1, 2], ([2, 1, 2], [10, 20, 30]), [1, 2, 3, 4]);
-INSERT INTO t_normalizing VALUES (2, [5, 5], ([1], [1]), [7]);
-INSERT INTO t_normalizing VALUES (2, [5, 6], ([1], [2]), [8, 9]);
+INSERT INTO t_normalizing VALUES (1, [3, 1, 1, 2], ([2, 1, 2], [10, 20, 30]), [1, 2, 3, 4], repeat('a', 100), map(1, [1, 2, 2]));
+INSERT INTO t_normalizing VALUES (2, [5, 5], ([1], [1]), [7], repeat('b', 100), map(1, [1, 2, 3], 2, [4]));
+INSERT INTO t_normalizing VALUES (2, [5, 6], ([1], [2]), [8, 9], repeat('b', 100), map(1, [3, 5], 2, [4, 5]));
 
 SELECT 'normalizing final';
-SELECT k, arraySort(uniq_arr), sm, last_arr FROM t_normalizing FINAL ORDER BY k;
+SELECT k, arraySort(uniq_arr), sm, last_arr, length(long_str), mapApply((x, y) -> (x, arraySort(y)), map_arr) FROM t_normalizing FINAL ORDER BY k SETTINGS max_threads = 1;
 
 DROP TABLE t_normalizing;

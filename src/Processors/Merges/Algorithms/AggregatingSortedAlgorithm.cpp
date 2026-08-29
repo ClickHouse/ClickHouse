@@ -8,8 +8,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Common/Arena.h>
 
-#include <unordered_set>
-
 namespace DB
 {
 
@@ -21,20 +19,6 @@ namespace ErrorCodes
 AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
 AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
 AggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
-
-/// Functions for which the result over a single value is that value itself.
-/// The remaining functions allowed in SimpleAggregateFunction (sumMap, minMap, maxMap, groupUniqArrayArray,
-/// groupUniqArrayArrayMap, *MappedArrays, groupArrayLastArray) normalize even a single input (sort and merge keys,
-/// deduplicate, truncate), and inserted data is not normalized, so they must always go through the state.
-static bool isIdentityOnSingleValue(const String & name)
-{
-    static const std::unordered_set<String> names{
-        "any", "any_respect_nulls", "anyLast", "anyLast_respect_nulls",
-        "min", "max", "sum", "sumWithOverflow",
-        "groupBitAnd", "groupBitOr", "groupBitXor", "groupArrayArray",
-    };
-    return names.contains(name);
-}
 
 static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header, const SortDescription & description, bool allow_tuple_element_aggregation)
@@ -79,7 +63,6 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
 
             // simple aggregate function
             AggregatingSortedAlgorithm::SimpleAggregateDescription desc(simple->getFunction(), i, type, column.type);
-            desc.single_value_is_identity = isIdentityOnSingleValue(desc.function->getName());
             if (desc.function->allocatesMemoryInArena())
                 def.allocates_memory_in_arena = true;
 
@@ -139,6 +122,7 @@ AggregatingSortedAlgorithm::SimpleAggregateDescription::SimpleAggregateDescripti
 {
     add_function = function->getAddressOfAddFunction();
     state.reset(function->sizeOfData(), function->alignOfData());
+    identity_on_single_value = DataTypeCustomSimpleAggregateFunction::isIdentityOnSingleValue(function);
 }
 
 void AggregatingSortedAlgorithm::SimpleAggregateDescription::createState()
@@ -195,21 +179,22 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initialize(const DB::Blo
     }
 }
 
-void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnRawPtrs & raw_columns, size_t row)
+void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(SortCursor & cursor)
 {
+    auto & raw_columns = cursor->all_columns;
+    size_t row = cursor->getRow();
+
     /// We will write the data for the group. We copy the values of ordinary columns.
     for (auto column_number : def.column_numbers_not_to_aggregate)
         columns[column_number]->insertFrom(*raw_columns[column_number], row);
 
-    /// Add the empty aggregation state to the aggregate columns. The state will be updated in the `addRow` function.
-    for (auto & column_to_aggregate : def.columns_to_aggregate)
-        column_to_aggregate.column->insertDefault();
-
-    /// The state is created lazily when the second row of the group arrives (see addRow).
-    for (auto & desc : def.columns_to_simple_aggregate)
-        desc.first_row_column = raw_columns[desc.column_number];
-    first_row_index = row;
-    current_group_rows = 0;
+    /// Add the empty aggregation state to the aggregate columns and merge the first row into it.
+    /// (A one-row group cannot be made cheaper here: insertFrom of ColumnAggregateFunction is itself a create + merge.)
+    for (auto & desc : def.columns_to_aggregate)
+    {
+        desc.column->insertDefault();
+        desc.column->insertMergeFrom(*raw_columns[desc.column_number], row);
+    }
 
     /// Frequent Arena creation may be too costly, because we have to increment the atomic
     /// ProfileEvents counters when creating the first Chunk -- e.g. SELECT with
@@ -225,7 +210,41 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnR
         def.arena_size = def.arena->allocatedBytes();
     }
 
+    /// For functions that are the identity on a single value, the first row is only remembered: if the group
+    /// turns out to have one row, it is copied with insertFrom in finishGroup without touching the state.
+    /// The cursor's columns stay valid until the next consume(), so the deferred row must be materialized
+    /// before merge() returns (see materializeDeferredRow).
+    for (auto & desc : def.columns_to_simple_aggregate)
+    {
+        if (desc.identity_on_single_value)
+            continue;
+
+        desc.createState();
+        desc.add_function(desc.function.get(), desc.state.data(), &raw_columns[desc.column_number], row, def.arena.get());
+    }
+
+    first_row_columns = &raw_columns;
+    first_row = row;
+    first_row_deferred = true;
+
     is_group_started = true;
+}
+
+void AggregatingSortedAlgorithm::AggregatingMergedData::materializeDeferredRow()
+{
+    if (!first_row_deferred)
+        return;
+
+    for (auto & desc : def.columns_to_simple_aggregate)
+    {
+        if (!desc.identity_on_single_value)
+            continue;
+
+        desc.createState();
+        desc.add_function(desc.function.get(), desc.state.data(), &(*first_row_columns)[desc.column_number], first_row, def.arena.get());
+    }
+
+    first_row_deferred = false;
 }
 
 void AggregatingSortedAlgorithm::AggregatingMergedData::finishGroup()
@@ -233,22 +252,17 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::finishGroup()
     /// Write the simple aggregation result for the current group.
     for (auto & desc : def.columns_to_simple_aggregate)
     {
-        if (current_group_rows == 1)
+        if (first_row_deferred && desc.identity_on_single_value)
         {
-            if (desc.single_value_is_identity)
-            {
-                desc.column->insertFrom(*desc.first_row_column, first_row_index);
-                continue;
-            }
-
-            desc.createState();
-            desc.add_function(desc.function.get(), desc.state.data(), &desc.first_row_column, first_row_index, def.arena.get());
+            desc.column->insertFrom(*(*first_row_columns)[desc.column_number], first_row);
+            continue;
         }
 
         desc.function->insertResultInto(desc.state.data(), *desc.column, def.arena.get());
         desc.destroyState();
     }
 
+    first_row_deferred = false;
     is_group_started = false;
     ++total_merged_rows;
     ++merged_rows;
@@ -260,26 +274,16 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & curs
     if (!is_group_started)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't add a row to the group because it was not started.");
 
+    materializeDeferredRow();
+
+    auto & raw_columns = cursor->all_columns;
+    size_t row = cursor->getRow();
+
     for (auto & desc : def.columns_to_aggregate)
-        desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->getRow());
-
-    ++current_group_rows;
-
-    /// The first row is only remembered: a one-row group is written directly in finishGroup.
-    if (current_group_rows == 1)
-        return;
+        desc.column->insertMergeFrom(*raw_columns[desc.column_number], row);
 
     for (auto & desc : def.columns_to_simple_aggregate)
-    {
-        if (current_group_rows == 2)
-        {
-            desc.createState();
-            desc.add_function(desc.function.get(), desc.state.data(), &desc.first_row_column, first_row_index, def.arena.get());
-        }
-
-        auto & col = cursor->all_columns[desc.column_number];
-        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->getRow(), def.arena.get());
-    }
+        desc.add_function(desc.function.get(), desc.state.data(), &raw_columns[desc.column_number], row, def.arena.get());
 }
 
 Chunk AggregatingSortedAlgorithm::AggregatingMergedData::pull()
@@ -360,15 +364,11 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
-            /// The chunk of the deferred first row may be released once another source is updated,
-            /// so the group must be written now.
-            if (merged_data.isGroupStarted())
-                merged_data.finishGroup();
-
             /// If we skip this row, it's not equals with any key we process.
             last_key.reset();
             /// Get the next block from the corresponding source, if there is one.
             queue.removeTop();
+            merged_data.materializeDeferredRow();
             return Status(current.impl->order);
         }
 
@@ -394,10 +394,12 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
                 return Status(merged_data.pull());
             }
 
-            merged_data.startGroup(current->all_columns, current->getRow());
+            merged_data.startGroup(current);
         }
-
-        merged_data.addRow(current);
+        else
+        {
+            merged_data.addRow(current);
+        }
 
         if (!current->isLast())
         {
@@ -407,6 +409,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
         {
             /// We get the next block from the corresponding source, if there is one.
             queue.removeTop();
+            merged_data.materializeDeferredRow();
             return Status(current.impl->order);
         }
     }
