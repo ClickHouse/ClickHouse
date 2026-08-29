@@ -78,7 +78,7 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     : IStatistics(description)
     , data_type(removeLowCardinalityAndNullable(removeNullable(data_type_)))
 {
-    tracks_numeric = data_type->isValueRepresentedByNumber();
+    tracks_numeric = canStatisticsTrackMinMax(data_type);
     tracks_string = isStringOrFixedString(data_type);
 
     /// Compute the column-level default once so `estimateEqual` can compare against the same

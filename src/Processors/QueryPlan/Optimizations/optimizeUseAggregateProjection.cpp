@@ -609,7 +609,8 @@ struct AggregateProjectionCandidates
 /// Check if the whole aggregation can be answered from per-part column statistics: there is no
 /// GROUP BY and no filter, and every aggregate is count() or min/max over a physical column
 /// that has statistics with min/max (StatisticsType::MinMax or StatisticsType::Basic) declared
-/// in the table metadata.
+/// in the table metadata for a type whose min/max these statistics actually track
+/// (canStatisticsTrackMinMax).
 ///
 /// Statistics describe the physical rows of a part as they were written, so anything that changes
 /// the visible rows or values at read time disables the optimization: lightweight deletes, pending
@@ -707,6 +708,13 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
 
         if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
             && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
+            return {};
+
+        /// `basic` is declared for every column type, but it records min/max only for numeric-like
+        /// columns, so a `String` column with the default `auto_statistics_types` passes the check
+        /// above while no part will ever provide min/max. Decline here instead of loading the
+        /// estimates of every part before falling back to a normal read.
+        if (!canStatisticsTrackMinMax(column->type))
             return {};
 
         result.push_back({

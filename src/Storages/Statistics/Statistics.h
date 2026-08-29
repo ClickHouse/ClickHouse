@@ -227,5 +227,12 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 
+/// Whether statistics record the exact minimum and maximum of a column of this type. Only
+/// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`
+/// declines the other types outright (`minMaxStatisticsValidator`), while `basic` is declared for
+/// every column type but leaves its min/max sub-statistics unpopulated
+/// (`StatisticsBasic::hasNumericMinMax`).
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type);
+
 
 }

@@ -1,6 +1,8 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -956,6 +958,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
                 { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
+{
+    return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
 }
 
 }

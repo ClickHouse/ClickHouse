@@ -108,9 +108,7 @@ String StatisticsMinMax::getNameForLogs() const
 
 bool minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    auto inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber();
+    return canStatisticsTrackMinMax(data_type);
 }
 
 StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
