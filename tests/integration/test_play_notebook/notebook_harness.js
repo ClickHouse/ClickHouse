@@ -707,6 +707,46 @@ async function main() {
               !out.protocol_relative.includes('<a href'), out.protocol_relative);
     }
 
+    /// Contract 3a: block structure of the Markdown renderer. A block quote ends at the first
+    /// line that does not itself start with '>', and a fenced code block only closes on a fence
+    /// of the same character that is at least as long as the opener - so a longer fence can show
+    /// a shorter one inside a code block.
+    {
+        const scenario = 'markdown-block-boundaries';
+        const r = await runScenario(js, { href: base });
+        const out = evalJSON(r.sandbox, `
+            return {
+                quote_then_text: renderMarkdown('> quoted\\nnot quoted'),
+                quote_two_lines: renderMarkdown('> first\\n> second\\nafter'),
+                long_fence: renderMarkdown('\\u0060\\u0060\\u0060\\u0060\\n\\u0060\\u0060\\u0060\\n\\u0060\\u0060\\u0060\\u0060'),
+                tilde_fence: renderMarkdown('~~~~\\n~~~\\n~~~~'),
+                fence_trailing_text: renderMarkdown('\\u0060\\u0060\\u0060\\ncode\\n\\u0060\\u0060\\u0060'),
+            };
+        `);
+        check(scenario, 'a quote ends at the first non-quoted line',
+              out.quote_then_text.includes('quoted</p></blockquote>')
+              && !out.quote_then_text.match(/<blockquote>[\s\S]*not quoted[\s\S]*<\/blockquote>/),
+              out.quote_then_text);
+        check(scenario, 'the non-quoted line becomes its own paragraph',
+              out.quote_then_text.includes('<p>not quoted</p>'), out.quote_then_text);
+        check(scenario, 'consecutive quoted lines stay one quote',
+              (out.quote_two_lines.match(/<blockquote>/g) || []).length === 1
+              && out.quote_two_lines.match(/<blockquote>[\s\S]*first[\s\S]*second[\s\S]*<\/blockquote>/)
+              && !out.quote_two_lines.match(/<blockquote>[\s\S]*after[\s\S]*<\/blockquote>/),
+              out.quote_two_lines);
+        check(scenario, 'a longer backtick fence shows a shorter one inside',
+              (out.long_fence.match(/<pre>/g) || []).length === 1
+              && out.long_fence.includes('<pre><code>\`\`\`</code></pre>'),
+              out.long_fence);
+        check(scenario, 'a longer tilde fence shows a shorter one inside',
+              (out.tilde_fence.match(/<pre>/g) || []).length === 1
+              && out.tilde_fence.includes('<pre><code>~~~</code></pre>'),
+              out.tilde_fence);
+        check(scenario, 'an equal-length fence still closes the block',
+              out.fence_trailing_text.includes('<pre><code>code</code></pre>'),
+              out.fence_trailing_text);
+    }
+
     /// Contract 4: stopping a run AFTER the editor moved to another cell repaints the shared row
     /// from the newly active cell right away. `cancelTabRun` goes through `abortTabQuery`, which
     /// forgets `tab.runCell` before `endFlight` decides how to repaint - the stopped cell must be

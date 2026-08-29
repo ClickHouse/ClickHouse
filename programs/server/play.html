@@ -14668,10 +14668,12 @@ function renderMarkdown(source) {
 
         const fence = line.match(/^\s*(```+|~~~+)(.*)$/);
         if (fence) {
-            const marker = fence[1][0].repeat(3);
+            /// The closing fence must use the same character and be at least as long as the opener,
+            /// so a longer fence can show a shorter one inside a code block.
+            const close = new RegExp('^\\s*' + fence[1][0].repeat(fence[1].length) + '+\\s*$');
             const body = [];
             ++i;
-            while (i < lines.length && !new RegExp('^\\s*' + marker).test(lines[i])) body.push(lines[i++]);
+            while (i < lines.length && !close.test(lines[i])) body.push(lines[i++]);
             if (i < lines.length) ++i;   /// skip the closing fence
             html += '<pre><code>' + escapeHTML(body.join('\n')) + '</code></pre>';
             continue;
@@ -14689,8 +14691,8 @@ function renderMarkdown(source) {
 
         if (/^\s*>/.test(line)) {
             const body = [];
-            while (i < lines.length && !isBlank(lines[i]) && /^\s*>?/.test(lines[i])) {
-                if (!/^\s*>/.test(lines[i]) && body.length === 0) break;
+            /// The quote ends at the first line that does not itself start with `>`.
+            while (i < lines.length && /^\s*>/.test(lines[i])) {
                 body.push(lines[i].replace(/^\s*>\s?/, ''));
                 ++i;
             }
