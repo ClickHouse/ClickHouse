@@ -2131,6 +2131,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
             "not bug reproduction"
         )
 
+    is_bugfix_validation_labelled = is_bugfix_validation and (
+        Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels
+    )
+
     if not info.is_local_run:
         host_oom_in_dmesg = any(
             pattern in dmesg for pattern in HOST_OOM_DMESG_PATTERNS
@@ -2172,6 +2176,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
             or any(not r.is_ok() for r in test_results)
             # Mirrors `empty_harness_failure` below, which reports ERROR without setting `has_error`.
             or ((is_flaky_check or is_targeted_check) and not test_results and not timed_out)
+            # Mirrors `had_infra_or_error` below: it reports ERROR off the `INFRA` label alone,
+            # which leaves no row non-OK and never sets `has_error`.
+            or (
+                is_bugfix_validation_labelled
+                and any(r.has_label(Result.Label.INFRA) for r in test_results)
+            )
         ):
             uncleared = " (buffer not cleared for this run, so a kill may be a previous job's)"
             print_oom_lines(
@@ -2284,7 +2294,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
+    if is_bugfix_validation_labelled:
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
