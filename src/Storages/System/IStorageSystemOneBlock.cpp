@@ -3,19 +3,102 @@
 // #include <DataTypes/DataTypeString.h>
 // #include <Storages/ColumnsDescription.h>
 // #include <Storages/IStorage.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Processors/ISource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <functional>
+
 namespace DB
 {
+
+namespace
+{
+
+/// A subquery set is only filled by `CreatingSetsStep`, which runs after the pipeline starts; sets of
+/// every other kind are ready as soon as they are constructed.
+bool dagHasUnbuiltSubquerySet(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN)
+        {
+            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get() && typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    return true;
+            }
+        }
+
+        /// `splitFilterNodeForAllowedInputs` keeps `indexHint` arguments, and their sets live in a
+        /// separate DAG that this one only references through the function object.
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                    if (dagHasUnbuiltSubquerySet(index_hint->getActions()))
+                        return true;
+        }
+    }
+
+    return false;
+}
+
+class SystemOneBlockLazySource : public ISource
+{
+public:
+    using FillFunc = std::function<void(MutableColumns &, const ActionsDAG::Node *, std::vector<UInt8>)>;
+
+    SystemOneBlockLazySource(SharedHeader header_, FillFunc fill_, ActionsDAG filter_, std::vector<UInt8> columns_mask_)
+        : ISource(std::move(header_))
+        , fill(std::move(fill_))
+        , filter(std::move(filter_))
+        , columns_mask(std::move(columns_mask_))
+    {
+    }
+
+    String getName() const override { return "SystemOneBlockLazy"; }
+
+protected:
+    Chunk generate() override
+    {
+        if (generated)
+            return {};
+        generated = true;
+
+        MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
+        fill(res_columns, filter.getOutputs().at(0), std::move(columns_mask));
+
+        UInt64 num_rows = res_columns.at(0)->size();
+        if (num_rows == 0)
+            return {};
+
+        return Chunk(std::move(res_columns), num_rows);
+    }
+
+private:
+    FillFunc fill;
+    ActionsDAG filter;
+    std::vector<UInt8> columns_mask;
+    bool generated = false;
+};
+
+}
 
 class ReadFromSystemOneBlock : public SourceStepWithFilter
 {
@@ -83,6 +166,20 @@ void IStorageSystemOneBlock::readImpl(
 void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto sample_block = getOutputHeader();
+
+    if (filter && dagHasUnbuiltSubquerySet(*filter))
+    {
+        /// `CreatingSetsStep` holds back every output of this pipeline until it has filled the sets, so
+        /// a predicate that needs one of them can be evaluated from a source but not from here.
+        auto fill = [source_storage = storage, source_context = context](
+                        MutableColumns & columns, const ActionsDAG::Node * predicate, std::vector<UInt8> mask)
+        { source_storage->fillData(columns, source_context, predicate, std::move(mask)); };
+
+        pipeline.init(Pipe(std::make_shared<SystemOneBlockLazySource>(
+            sample_block, std::move(fill), std::move(*filter), std::move(columns_mask))));
+        return;
+    }
+
     MutableColumns res_columns = sample_block->cloneEmptyColumns();
     const ActionsDAG::Node * predicate = filter ? filter->getOutputs().at(0) : nullptr;
     storage->fillData(res_columns, context, predicate, std::move(columns_mask));
@@ -108,10 +205,6 @@ void ReadFromSystemOneBlock::applyFilters(ActionDAGNodes added_filter_nodes)
         return;
 
     filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample, context);
-
-    /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
-    if (filter)
-        VirtualColumnUtils::buildSetsForDAG(*filter, context);
 }
 
 VirtualColumnsDescription IStorageSystemOneBlock::createVirtuals()
