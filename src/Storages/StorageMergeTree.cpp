@@ -1286,11 +1286,6 @@ struct PartVersionWithName
     MergeTreePartInfo info = {};
 };
 
-bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
-{
-    return f.version < s.version;
-}
-
 }
 
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(
