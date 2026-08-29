@@ -368,6 +368,11 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
     return *right_count - *left_count;
 }
 
+bool ColumnStatistics::hasCardinality() const
+{
+    return findUniqStats(stats) != nullptr;
+}
+
 UInt64 ColumnStatistics::estimateCardinality() const
 {
     if (const IStatistics * uniq_stats = findUniqStats(stats))
@@ -524,15 +529,8 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     readIntBinary(version_raw, buf);
     auto version = static_cast<StatisticsFileVersion>(version_raw);
 
-    /// `V3` was briefly written by reverted PR #102356 and is permanently reserved. Refuse to read it
-    /// rather than silently misinterpret a `V3` payload as `V4`.
-    if (version == StatisticsFileVersion::V3)
-        throw Exception(
-            ErrorCodes::ILLEGAL_STATISTICS,
-            "Statistics file version V3 is reserved and is never produced by any released build. "
-            "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.");
-
-    if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2 && version != StatisticsFileVersion::V4)
+    if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2
+        && version != StatisticsFileVersion::V3 && version != StatisticsFileVersion::V4)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Tried to read statistics file with unsupported format version {}. "
@@ -546,22 +544,31 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
 
-    if (version == StatisticsFileVersion::V4)
+    /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
+    /// column type differs from the current type — statistics built on a different type are
+    /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
+    /// V3 is the same layout without `stored_type_name`, so it has no such guard, exactly like
+    /// V1 / V2.
+    ///
+    /// V3 layout: same layout as V4 but without the `stored_type_name` field, and the only
+    /// conflict is bit 4 of `stat_types_mask`, which meant the reverted `NullCount` in V3
+    /// and means `Basic` in V4 — the deserializer skips it.
+    if (version == StatisticsFileVersion::V3 || version == StatisticsFileVersion::V4)
     {
-        /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
-        /// column type differs from the current type — statistics built on a different type are
-        /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
-        String stored_type_name;
-        readStringBinary(stored_type_name, buf);
-        if (stored_type_name != data_type->getName())
+        if (version == StatisticsFileVersion::V4)
         {
-            LOG_TRACE(
-                getLogger("ColumnStatistics"),
-                "Skipping statistics: stored type {} does not match current column type {}. "
-                "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
-                stored_type_name,
-                data_type->getName());
-            return nullptr;
+            String stored_type_name;
+            readStringBinary(stored_type_name, buf);
+            if (stored_type_name != data_type->getName())
+            {
+                LOG_TRACE(
+                    getLogger("ColumnStatistics"),
+                    "Skipping statistics: stored type {} does not match current column type {}. "
+                    "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
+                    stored_type_name,
+                    data_type->getName());
+                return nullptr;
+            }
         }
 
         UInt64 rows_value = 0;
@@ -579,6 +586,14 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
             readIntBinary(stat_size, buf);
 
             auto type = static_cast<StatisticsType>(i);
+
+            if (version == StatisticsFileVersion::V3 && type == StatisticsType::Basic)
+            {
+                /// In V3, this was the NullCount statistics -> ignore
+                buf.ignore(stat_size);
+                continue;
+            }
+
             if (auto stat_ptr = factory.tryCreateSingle(type, data_type))
             {
                 /// Track bytes consumed so we can detect a per-stat parser drift and either pad the
