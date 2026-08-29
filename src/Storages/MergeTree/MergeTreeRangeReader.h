@@ -170,9 +170,20 @@ public:
 class MergeTreeRangeReader
 {
 public:
+    /// Shared between read tasks, see `RangeReadersSampleBlocksCache`.
+    struct SampleBlocks
+    {
+        Block read;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
+        Block result;  /// Block with columns that are returned by this step.
+    };
+
+    using SampleBlocksPtr = std::shared_ptr<const SampleBlocks>;
+
+    static SampleBlocksPtr createSampleBlocks(const IMergeTreeReader & reader, Block prev_reader_header, const PrewhereExprStep * prewhere_info);
+
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
-        Block prev_reader_header_,
+        SampleBlocksPtr sample_blocks_,
         const PrewhereExprStep * prewhere_info_,
         ReadStepPerformanceCountersPtr performance_counters_,
         bool main_reader_,
@@ -447,8 +458,8 @@ public:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
 
-    const Block & getSampleBlock() const { return result_sample_block; }
-    const Block & getReadSampleBlock() const { return read_sample_block; }
+    const Block & getSampleBlock() const { return sample_blocks->result; }
+    const Block & getReadSampleBlock() const { return sample_blocks->read; }
 
     void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const;
 
@@ -474,8 +485,7 @@ private:
 
     Stream stream;
 
-    Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
-    Block result_sample_block;  /// Block with columns that are returned by this step.
+    SampleBlocksPtr sample_blocks;
 
     FilterWithCachedCount part_offsets_filter_for_vector_search;
 

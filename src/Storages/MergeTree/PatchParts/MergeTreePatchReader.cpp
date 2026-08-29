@@ -56,7 +56,7 @@ static void fixPatchBlockTypes(Block & block, const IMergeTreeReader & patch_rea
 MergeTreePatchReader::MergeTreePatchReader(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_)
     : patch_part(std::move(patch_part_))
     , reader(std::move(reader_))
-    , range_reader(reader.get(), {}, nullptr, std::make_shared<ReadStepPerformanceCounters>(), false, reader->canReadIncompleteGranules())
+    , range_reader(reader.get(), MergeTreeRangeReader::createSampleBlocks(*reader, {}, nullptr), nullptr, std::make_shared<ReadStepPerformanceCounters>(), false, reader->canReadIncompleteGranules())
 {
 }
 

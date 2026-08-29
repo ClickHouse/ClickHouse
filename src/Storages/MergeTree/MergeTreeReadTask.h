@@ -137,6 +137,27 @@ struct MergeTreeReadTaskInfo
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
+/// Cache of sample blocks of the range readers chain, one entry per position in the chain.
+/// Sample blocks depend only on the columns of the reader, the prewhere step and the sample blocks of the previous reader,
+/// which are usually the same for consecutive read tasks (even of different parts), so building them once per task is wasteful.
+class RangeReadersSampleBlocksCache
+{
+public:
+    /// Readers must be requested in the order of the chain, starting from index 0.
+    MergeTreeRangeReader::SampleBlocksPtr get(size_t reader_idx, const IMergeTreeReader & reader, const PrewhereExprStepPtr & step);
+
+private:
+    struct Entry
+    {
+        NamesAndTypesList columns;
+        PrewhereExprStepPtr step;
+        MergeTreeRangeReader::SampleBlocksPtr prev_reader_sample_blocks;
+        MergeTreeRangeReader::SampleBlocksPtr sample_blocks;
+    };
+
+    std::vector<Entry> entries;
+};
+
 /// A batch of work for MergeTreeSelectProcessor
 struct MergeTreeReadTask : private boost::noncopyable
 {
@@ -200,7 +221,8 @@ public:
         MergeTreeIndexBuildContextPtr index_build_context,
         LazyMaterializingRowsPtr lazy_materializing_rows,
         const ReadStepsPerformanceCounters & read_steps_performance_counters,
-        bool collect_predicate_statistics);
+        bool collect_predicate_statistics,
+        RangeReadersSampleBlocksCache & sample_blocks_cache);
 
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
@@ -241,7 +263,8 @@ public:
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
         const ReadStepsPerformanceCounters & read_steps_performance_counters,
-        bool collect_predicate_statistics);
+        bool collect_predicate_statistics,
+        RangeReadersSampleBlocksCache & sample_blocks_cache);
 
 private:
     using DataflowCacheUpdateCallback = std::function<void(

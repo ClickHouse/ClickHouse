@@ -256,11 +256,30 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     return new_readers;
 }
 
+MergeTreeRangeReader::SampleBlocksPtr RangeReadersSampleBlocksCache::get(size_t reader_idx, const IMergeTreeReader & reader, const PrewhereExprStepPtr & step)
+{
+    if (reader_idx >= entries.size())
+        entries.resize(reader_idx + 1);
+
+    auto & entry = entries[reader_idx];
+    auto prev_reader_sample_blocks = reader_idx ? entries[reader_idx - 1].sample_blocks : nullptr;
+
+    if (entry.sample_blocks && entry.step == step && entry.prev_reader_sample_blocks == prev_reader_sample_blocks && entry.columns == reader.getColumns())
+        return entry.sample_blocks;
+
+    entry.columns = reader.getColumns();
+    entry.step = step;
+    entry.prev_reader_sample_blocks = prev_reader_sample_blocks;
+    entry.sample_blocks = MergeTreeRangeReader::createSampleBlocks(reader, prev_reader_sample_blocks ? prev_reader_sample_blocks->result : Block{}, step.get());
+    return entry.sample_blocks;
+}
+
 MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     const Readers & task_readers,
     const PrewhereExprInfo & prewhere_actions,
     const ReadStepsPerformanceCounters & read_steps_performance_counters,
-    bool collect_predicate_statistics)
+    bool collect_predicate_statistics,
+    RangeReadersSampleBlocksCache & sample_blocks_cache)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
     {
@@ -293,39 +312,21 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
         return collect_predicate_statistics ? read_steps_performance_counters.getCountersForStep(step) : nullptr;
     };
 
-    if (task_readers.prepared_index)
+    auto add_range_reader = [&](IMergeTreeReader * reader, const PrewhereExprStepPtr & step, ReadStepPerformanceCountersPtr counters, bool is_main_reader)
     {
-        range_readers.emplace_back(
-            task_readers.prepared_index.get(),
-            Block{},
-            /*prewhere_info_=*/ nullptr,
-            index_counter,
-            /*main_reader_=*/ false,
-            can_read_incomplete_granules);
-    }
+        auto sample_blocks = sample_blocks_cache.get(range_readers.size(), *reader, step);
+        range_readers.emplace_back(reader, std::move(sample_blocks), step.get(), std::move(counters), is_main_reader, can_read_incomplete_granules);
+    };
+
+    if (task_readers.prepared_index)
+        add_range_reader(task_readers.prepared_index.get(), /*step=*/ nullptr, index_counter, /*is_main_reader=*/ false);
 
     size_t counter_idx = 0;
     for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
-    {
-        range_readers.emplace_back(
-            task_readers.prewhere[i].get(),
-            range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
-            prewhere_actions.steps[i].get(),
-            step_counter(counter_idx++),
-            /*main_reader_=*/ false,
-            can_read_incomplete_granules);
-    }
+        add_range_reader(task_readers.prewhere[i].get(), prewhere_actions.steps[i], step_counter(counter_idx++), /*is_main_reader=*/ false);
 
     if (!task_readers.main->getColumns().empty())
-    {
-        range_readers.emplace_back(
-            task_readers.main.get(),
-            range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
-            /*prewhere_info_=*/ nullptr,
-            step_counter(counter_idx),
-            /*main_reader_=*/ true,
-            can_read_incomplete_granules);
-    }
+        add_range_reader(task_readers.main.get(), /*step=*/ nullptr, step_counter(counter_idx), /*is_main_reader=*/ true);
 
     return MergeTreeReadersChain{std::move(range_readers), task_readers.patches};
 }
@@ -335,7 +336,8 @@ void MergeTreeReadTask::initializeReadersChain(
     MergeTreeIndexBuildContextPtr index_build_context,
     LazyMaterializingRowsPtr lazy_materializing_rows,
     const ReadStepsPerformanceCounters & read_steps_performance_counters,
-    bool collect_predicate_statistics)
+    bool collect_predicate_statistics,
+    RangeReadersSampleBlocksCache & sample_blocks_cache)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
@@ -353,7 +355,7 @@ void MergeTreeReadTask::initializeReadersChain(
 
     readers_chain = createReadersChain(
         readers, all_prewhere_actions, read_steps_performance_counters,
-        collect_predicate_statistics);
+        collect_predicate_statistics, sample_blocks_cache);
 }
 
 void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows)

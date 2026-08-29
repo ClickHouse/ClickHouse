@@ -261,7 +261,8 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     if (!current_task.getReadersChain().isInitialized())
         current_task.initializeReadersChain(
             prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows,
-            read_steps_performance_counters, reader_settings.collect_predicate_statistics);
+            read_steps_performance_counters, reader_settings.collect_predicate_statistics,
+            range_readers_sample_blocks_cache);
 
     auto res = task_algorithm.readFromTask(current_task);
 

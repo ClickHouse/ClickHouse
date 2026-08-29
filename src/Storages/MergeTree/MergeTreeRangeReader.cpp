@@ -969,26 +969,16 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 #endif
 }
 
-MergeTreeRangeReader::MergeTreeRangeReader(
-    IMergeTreeReader * merge_tree_reader_,
-    Block prev_reader_header_,
-    const PrewhereExprStep * prewhere_info_,
-    ReadStepPerformanceCountersPtr performance_counters_,
-    bool main_reader_,
-    bool can_read_incomplete_granules_)
-    : merge_tree_reader(merge_tree_reader_)
-    , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
-    , prewhere_info(prewhere_info_)
-    , performance_counters(std::move(performance_counters_))
-    , main_reader(main_reader_)
-    , can_read_incomplete_granules(can_read_incomplete_granules_)
+MergeTreeRangeReader::SampleBlocksPtr MergeTreeRangeReader::createSampleBlocks(
+    const IMergeTreeReader & reader, Block prev_reader_header, const PrewhereExprStep * prewhere_info)
 {
-    result_sample_block = std::move(prev_reader_header_);
+    auto sample_blocks = std::make_shared<SampleBlocks>();
+    sample_blocks->result = std::move(prev_reader_header);
 
-    for (const auto & name_and_type : merge_tree_reader->getColumns())
+    for (const auto & name_and_type : reader.getColumns())
     {
-        read_sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
-        result_sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
+        sample_blocks->read.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
+        sample_blocks->result.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
     }
 
     if (prewhere_info)
@@ -1002,12 +992,31 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         if (step.type != PrewhereExprStep::None)
         {
             if (step.actions)
-                step.actions->execute(result_sample_block, true);
+                step.actions->execute(sample_blocks->result, true);
 
             if (step.remove_filter_column)
-                result_sample_block.erase(step.filter_column_name);
+                sample_blocks->result.erase(step.filter_column_name);
         }
     }
+
+    return sample_blocks;
+}
+
+MergeTreeRangeReader::MergeTreeRangeReader(
+    IMergeTreeReader * merge_tree_reader_,
+    SampleBlocksPtr sample_blocks_,
+    const PrewhereExprStep * prewhere_info_,
+    ReadStepPerformanceCountersPtr performance_counters_,
+    bool main_reader_,
+    bool can_read_incomplete_granules_)
+    : merge_tree_reader(merge_tree_reader_)
+    , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
+    , prewhere_info(prewhere_info_)
+    , sample_blocks(std::move(sample_blocks_))
+    , performance_counters(std::move(performance_counters_))
+    , main_reader(main_reader_)
+    , can_read_incomplete_granules(can_read_incomplete_granules_)
+{
 }
 
 size_t MergeTreeRangeReader::numReadRowsInCurrentGranule() const
@@ -1254,7 +1263,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
 
     auto add_offset_column = [&](const auto & column_name)
     {
-        size_t pos = read_sample_block.getPositionByName(column_name);
+        size_t pos = sample_blocks->read.getPositionByName(column_name);
         chassert(pos < columns.size());
 
         /// Column may be persisted in part.
@@ -1273,14 +1282,14 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
         }
     };
 
-    if (read_sample_block.has("_part_offset"))
+    if (sample_blocks->read.has("_part_offset"))
         add_offset_column("_part_offset");
 
     /// Column _block_offset is the same as _part_offset if it's not persisted in part.
-    if (read_sample_block.has(BlockOffsetColumn::name))
+    if (sample_blocks->read.has(BlockOffsetColumn::name))
         add_offset_column(BlockOffsetColumn::name);
 
-    if (read_sample_block.has("_part_granule_offset"))
+    if (sample_blocks->read.has("_part_granule_offset"))
         add_offset_column("_part_granule_offset");
 
     const auto & read_hints = merge_tree_reader->getReadHints();
@@ -1288,17 +1297,17 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     /// share the same read hints but must not shrink the block before later stages.
     const bool apply_rescoring_row_filter = main_reader && read_hints.use_vector_search_result_filter;
     bool is_vector_search = read_hints.vector_search_results.has_value()
-        && (read_sample_block.has("_distance") || apply_rescoring_row_filter);
+        && (sample_blocks->read.has("_distance") || apply_rescoring_row_filter);
     if (is_vector_search)
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
         fillDistanceColumnAndFilterForVectorSearch(columns, result, part_offsets_auto_column);
     }
-    else if (read_sample_block.has("_distance"))
+    else if (sample_blocks->read.has("_distance"))
     {
         /// Fill `_distance` with a default value when vector search is not active
         /// but the column was requested (e.g. via SELECT * with asterisk_include_virtual_columns).
-        auto pos = read_sample_block.getPositionByName("_distance");
+        auto pos = sample_blocks->read.getPositionByName("_distance");
         if (!columns[pos])
             columns[pos] = ColumnFloat32::create(result.total_rows_per_granule, Float32(0));
     }
@@ -1340,7 +1349,7 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
     /// Populate the `_distance` virtual column from the distances we got from vector index
     /// only when the query plan requested it. Rescoring queries still use the row filter
     /// below, while the SQL pipeline computes the exact distance expression.
-    const bool fill_distance = read_sample_block.has("_distance");
+    const bool fill_distance = sample_blocks->read.has("_distance");
     MutableColumnPtr distance_column;
     Float32 * distances = nullptr;
     if (fill_distance)
@@ -1406,7 +1415,7 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
 
     if (fill_distance)
     {
-        auto distance_column_pos = read_sample_block.getPositionByName("_distance");
+        auto distance_column_pos = sample_blocks->read.getPositionByName("_distance");
         columns[distance_column_pos] = std::move(distance_column);
     }
     part_offsets_filter_for_vector_search = FilterWithCachedCount(std::move(filter_data));
@@ -1726,7 +1735,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// share the same read hints but must not shrink the block before later stages.
     const bool apply_rescoring_row_filter = main_reader && read_hints.use_vector_search_result_filter;
     bool is_vector_search = read_hints.vector_search_results.has_value()
-        && (read_sample_block.has("_distance") || apply_rescoring_row_filter);
+        && (sample_blocks->read.has("_distance") || apply_rescoring_row_filter);
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.total_rows_per_granule))
     {
         auto current_filter = part_offsets_filter_for_vector_search;
@@ -1742,7 +1751,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
         return;
 
-    const auto & header = read_sample_block;
+    const auto & header = sample_blocks->read;
     size_t num_columns = header.columns();
 
     /// Check that we have columns from previous steps and newly read required columns

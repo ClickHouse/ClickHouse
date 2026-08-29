@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE mt_prewhere_many_parts (id UInt32, s String, val1 UInt32, val2 UInt32) ENGINE = MergeTree ORDER BY val1 PARTITION BY id % 2000 SETTINGS parts_to_throw_insert = 10000, parts_to_delay_insert = 10000</create_query>
+    <fill_query>SYSTEM STOP MERGES mt_prewhere_many_parts</fill_query>
+    <fill_query>INSERT INTO mt_prewhere_many_parts SELECT number, toString(number % 1000), rand() % 10000, rand() FROM numbers_mt(20000000) SETTINGS max_block_size = 10000000, max_insert_block_size = 10000000, max_partitions_per_insert_block = 2000</fill_query>
+
+    <query>SELECT count() FROM mt_prewhere_many_parts PREWHERE val1 = 7 FORMAT Null</query>
+    <query>SELECT count() FROM mt_prewhere_many_parts PREWHERE val1 % 10 = 1 AND s LIKE '%77%' WHERE val2 != 0 FORMAT Null</query>
+    <query>SELECT sum(val2) FROM mt_prewhere_many_parts PREWHERE s = '123' FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS mt_prewhere_many_parts</drop_query>
+</test>

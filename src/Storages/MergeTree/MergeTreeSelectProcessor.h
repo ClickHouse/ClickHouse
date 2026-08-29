@@ -191,6 +191,8 @@ private:
 
     ReadStepsPerformanceCounters read_steps_performance_counters;
 
+    mutable RangeReadersSampleBlocksCache range_readers_sample_blocks_cache;
+
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;
 
