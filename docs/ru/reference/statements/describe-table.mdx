@@ -21,13 +21,13 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 * `default_type` — конструкция, используемая в [выражении столбца по умолчанию](/ru/reference/statements/create/table): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Если выражение по умолчанию отсутствует, возвращается пустая строка.
 * `default_expression` — выражение, указанное после конструкции `DEFAULT`.
 * `comment` — [комментарий столбца](/ru/reference/statements/alter/column#comment-column).
-* `codec_expression` — [кодек](/ru/reference/statements/create/table#column_compression_codec), применяемый к столбцу.
+* `codec_expression` — [кодек](/ru/reference/statements/create/table/codec), применяемый к столбцу.
 * `ttl_expression` — выражение [TTL](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
-* `is_subcolumn` — флаг, равный `1` для внутренних подстолбцов. Он включается в результат только если описание подстолбцов включено параметром [describe&#95;include&#95;subcolumns](/ru/reference/settings/session-settings#describe_include_subcolumns).
+* `is_subcolumn` — флаг, равный `1` для внутренних подстолбцов. Он включается в результат только если описание подстолбцов включено параметром [describe&#95;include&#95;subcolumns](/ru/reference/settings/session-settings/describe-include#describe_include_subcolumns).
 
 Все столбцы в структурах данных [Nested](/ru/reference/data-types/nested-data-structures/index) описываются отдельно. Имя каждого столбца начинается с имени родительского столбца и точки.
 
-Чтобы показать внутренние подстолбцы других типов данных, используйте параметр [describe&#95;include&#95;subcolumns](/ru/reference/settings/session-settings#describe_include_subcolumns).
+Чтобы показать внутренние подстолбцы других типов данных, используйте параметр [describe&#95;include&#95;subcolumns](/ru/reference/settings/session-settings/describe-include#describe_include_subcolumns).
 
 **Пример**
 
@@ -81,4 +81,4 @@ DESCRIBE (SELECT 1) FORMAT TSV;
 
 **См. также**
 
-* настройка [describe&#95;include&#95;subcolumns](/ru/reference/settings/session-settings#describe_include_subcolumns).
+* настройка [describe&#95;include&#95;subcolumns](/ru/reference/settings/session-settings/describe-include#describe_include_subcolumns).

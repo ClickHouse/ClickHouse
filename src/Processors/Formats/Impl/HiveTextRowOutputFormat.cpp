@@ -194,6 +194,10 @@ void registerOutputFormatHiveText(FormatFactory & factory)
             return std::make_shared<HiveTextRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
         });
     factory.markOutputFormatSupportsParallelFormatting("HiveText");
+    /// Fields are written without escaping (Hive's non-escaping `LazySimpleSerDe`), so `String`
+    /// columns pass arbitrary bytes through verbatim - the output is not guaranteed to be valid
+    /// UTF-8 text (see `checkIfOutputFormatMayProduceRawBytes`).
+    factory.markOutputFormatMayProduceRawBytes("HiveText");
 
     /// The documentation is registered here rather than next to the input format, because the
     /// output format is compiled unconditionally while the input format is gated behind `USE_HIVE`.

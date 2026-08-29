@@ -226,7 +226,7 @@ sess.query("CREATE DATABASE IF NOT EXISTS youtube")
 ```
 
 يمكننا الآن إنشاء جدول `dislikes` استنادًا إلى المخطط المستنتَج من ملف JSON، باستخدام أسلوب `CREATE...EMPTY AS`.
-سنستخدم الإعداد [`schema_inference_make_columns_nullable`](/ar/reference/settings/formats#schema_inference_make_columns_nullable) حتى لا تصبح جميع أنواع الأعمدة من النوع `Nullable`.
+سنستخدم الإعداد [`schema_inference_make_columns_nullable`](/ar/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) حتى لا تصبح جميع أنواع الأعمدة من النوع `Nullable`.
 
 ```python
 sess.query(f"""

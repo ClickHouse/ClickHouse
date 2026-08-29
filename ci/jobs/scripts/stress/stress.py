@@ -16,6 +16,9 @@ from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
 from typing import List, Optional
 
+# Failpoint that delays every background mutation by a bounded random amount.
+MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
+
 
 class ServerDied(Exception):
     pass
@@ -38,20 +41,56 @@ def escape_tsv_info(text: str) -> str:
     )
 
 
-class RandomQueryKiller:
-    """Background thread that randomly kills queries, client processes and mutations
-    during stress tests.
+class RandomDisruptor:
+    """Background thread that randomly kills queries, client processes and mutations, and
+    briefly stops background operations such as merges, during stress tests.
 
-    This helps test that queries and mutations are cancelled correctly and handles
-    scenarios where the client unexpectedly disconnects (issue #39803).
+    This helps test that queries and mutations are cancelled correctly, handles
+    scenarios where the client unexpectedly disconnects (issue #39803), and exercises
+    operations that run while one of the background activities in `_SYSTEM_STATEMENT_PAIRS`
+    is unavailable.
     """
 
     # Subprocess caps for one loop iteration: a SELECT to pick a victim, then the kill.
     _SELECT_TIMEOUT = 5
     _KILL_QUERY_TIMEOUT = 5
     _KILL_MUTATION_TIMEOUT = 15
-    # Longest an iteration can run, plus margin, so stop() outlasts one of them.
-    _JOIN_TIMEOUT = _SELECT_TIMEOUT + _KILL_MUTATION_TIMEOUT + 5
+    # A `SYSTEM STOP/START ...` without a table walks every database and table, so it needs a
+    # longer cap than the kills above. Deliberately less generous than the same statements get
+    # in `prepare_for_hung_check` (30s and five retries): here a slow one is worth giving up
+    # on, since the next iteration comes around anyway and that teardown is the backstop.
+    _SYSTEM_STATEMENT_TIMEOUT = 15
+    _SYSTEM_STATEMENT_PAUSE_MIN = 1.0
+    _SYSTEM_STATEMENT_PAUSE_MAX = 10.0
+    # Retries for the restart only: a failed stop is harmless (the pause just does not
+    # happen), but a start that never lands leaves the operation stopped until
+    # `prepare_for_hung_check` runs at the very end of the run. Skipped once shutdown is
+    # requested, since that teardown is about to retry the same statement anyway.
+    _SYSTEM_STATEMENT_RESTART_ATTEMPTS = 3
+    _SYSTEM_STATEMENT_RESTART_BACKOFF = 2.0
+    # (stop, start) pairs the pause branch picks from uniformly. Only add a pair whose start
+    # fully undoes its stop and that `prepare_for_hung_check` also restarts, since that
+    # teardown is the last-resort net for a start this thread never managed to run.
+    _SYSTEM_STATEMENT_PAIRS = (
+        ("STOP MERGES", "START MERGES"),
+        ("STOP TTL MERGES", "START TTL MERGES"),
+        ("STOP MOVES", "START MOVES"),
+        ("STOP VIEWS", "START VIEWS"),
+        ("PAUSE VIEWS", "START VIEWS"),
+    )
+    # Longest an iteration can run, plus margin, so stop() outlasts one of them. The pause
+    # branch is the stop, the wait and the start back to back; on shutdown the wait collapses,
+    # but bound it for the case where stop() arrives just before the pause begins.
+    _JOIN_TIMEOUT = (
+        max(
+            _SELECT_TIMEOUT + _KILL_MUTATION_TIMEOUT,
+            _SYSTEM_STATEMENT_TIMEOUT
+            + _SYSTEM_STATEMENT_PAUSE_MAX
+            + _SYSTEM_STATEMENT_RESTART_ATTEMPTS * _SYSTEM_STATEMENT_TIMEOUT
+            + (_SYSTEM_STATEMENT_RESTART_ATTEMPTS - 1) * _SYSTEM_STATEMENT_RESTART_BACKOFF,
+        )
+        + 5
+    )
 
     def __init__(self, interval: float = 3.0):
         self._stop_event = threading.Event()
@@ -99,17 +138,17 @@ class RandomQueryKiller:
                 )
                 # Both expected outcomes exit 0: a matched kill prints a kill_status row,
                 # a query that already finished prints nothing. Non-zero means the command
-                # itself is broken, which would silently disable the killer.
+                # itself is broken, which would silently disable the disruptor.
                 if returncode:
                     logging.warning(
                         "KILL QUERY exited %s for query_id %s", returncode, query_id
                     )
         except subprocess.TimeoutExpired as e:
             # Expected while the server is loaded, and far too frequent to report louder.
-            logging.debug("Random query killer timed out: %s", e)
+            logging.debug("Random query kill timed out: %s", e)
         except Exception as e:
-            # Anything else means the killer itself is misbehaving.
-            logging.warning("Random query killer failed: %s: %s", type(e).__name__, e)
+            # Anything else means the disruptor itself is misbehaving.
+            logging.warning("Random query kill failed: %s: %s", type(e).__name__, e)
 
     def _kill_random_client(self) -> None:
         """Kill a random clickhouse-client process."""
@@ -130,9 +169,9 @@ class RandomQueryKiller:
                 except (ProcessLookupError, ValueError):
                     pass  # Process already gone
         except subprocess.TimeoutExpired as e:
-            logging.debug("Random client killer timed out: %s", e)
+            logging.debug("Random client kill timed out: %s", e)
         except Exception as e:
-            logging.warning("Random client killer failed: %s: %s", type(e).__name__, e)
+            logging.warning("Random client kill failed: %s: %s", type(e).__name__, e)
 
     def _kill_random_mutation(self) -> None:
         """Select a random unfinished mutation and kill it."""
@@ -193,27 +232,83 @@ class RandomQueryKiller:
                         table,
                     )
         except subprocess.TimeoutExpired as e:
-            logging.debug("Random mutation killer timed out: %s", e)
+            logging.debug("Random mutation kill timed out: %s", e)
         except Exception as e:
-            logging.warning("Random mutation killer failed: %s: %s", type(e).__name__, e)
+            logging.warning("Random mutation kill failed: %s: %s", type(e).__name__, e)
+
+    def _run_system_statement(self, statement: str) -> bool:
+        """Run `SYSTEM <statement>`, reporting whether it succeeded."""
+        query = f"SYSTEM {statement}"
+        try:
+            # Keep the subprocess cap above --receive_timeout so the client's own timeout is
+            # the one that governs, as in the mutation kill above.
+            returncode = call(
+                ["clickhouse", "client", "--receive_timeout=10", "-q", query],
+                stderr=subprocess.DEVNULL,
+                timeout=self._SYSTEM_STATEMENT_TIMEOUT,
+            )
+            if returncode:
+                logging.warning("%s exited %s", query, returncode)
+            return returncode == 0
+        except subprocess.TimeoutExpired as e:
+            logging.debug("%s timed out: %s", query, e)
+            return False
+        except Exception as e:
+            logging.warning("%s failed: %s: %s", query, type(e).__name__, e)
+            return False
+
+    def _pause_random_operation(self) -> None:
+        """Stop a background operation server-wide for a short interval, then start it again."""
+        stop_statement, start_statement = random.choice(self._SYSTEM_STATEMENT_PAIRS)
+        pause = random.uniform(self._SYSTEM_STATEMENT_PAUSE_MIN, self._SYSTEM_STATEMENT_PAUSE_MAX)
+        try:
+            if self._run_system_statement(stop_statement):
+                logging.info("SYSTEM %s, resuming in %.1fs", stop_statement, pause)
+                # Interruptible, so a shutdown request cuts the pause short instead of
+                # holding stop() for the full interval.
+                self._stop_event.wait(pause)
+        finally:
+            # Always run the start: on shutdown, and also when the stop above reported a
+            # failure, since a client-side timeout does not mean the server skipped the
+            # statement. Retried, so one failed attempt does not leave the operation
+            # stopped until `prepare_for_hung_check`'s own retry at the very end of the run.
+            for attempt in range(1, self._SYSTEM_STATEMENT_RESTART_ATTEMPTS + 1):
+                if self._run_system_statement(start_statement):
+                    if attempt > 1:
+                        logging.info("SYSTEM %s succeeded on attempt %d", start_statement, attempt)
+                    break
+                attempts_left = self._SYSTEM_STATEMENT_RESTART_ATTEMPTS - attempt
+                if not attempts_left or self._stop_event.is_set():
+                    logging.error(
+                        "Failed to run SYSTEM %s after %d attempt%s%s",
+                        start_statement,
+                        attempt,
+                        "" if attempt == 1 else "s",
+                        "" if attempts_left == 0 else " (shutting down, deferring to prepare_for_hung_check)",
+                    )
+                    break
+                # Interruptible, so shutdown does not wait out the full backoff.
+                self._stop_event.wait(self._SYSTEM_STATEMENT_RESTART_BACKOFF)
 
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
-        logging.info("Random query/client/mutation killer started (interval: %.1fs)", self._interval)
+        logging.info("Random disruptor started (interval: %.1fs)", self._interval)
+        # Picked from uniformly, one per iteration. The pause is the only one whose effect
+        # outlives the iteration that started it: it holds a background operation off
+        # server-wide for up to `_SYSTEM_STATEMENT_PAUSE_MAX` seconds.
+        disruptions = (
+            self._kill_random_query,
+            self._kill_random_client,
+            self._kill_random_mutation,
+            self._pause_random_operation,
+        )
         while not self._stop_event.is_set():
-            # Randomly choose to kill a query, a client process or a mutation
-            r = random.random()
-            if r < 0.6:
-                self._kill_random_query()
-            elif r < 0.8:
-                self._kill_random_client()
-            else:
-                self._kill_random_mutation()
+            random.choice(disruptions)()
             self._stop_event.wait(self._interval)
-        logging.info("Random query/client/mutation killer stopped")
+        logging.info("Random disruptor stopped")
 
     def start(self) -> None:
-        """Start the background killer thread."""
+        """Start the background disruptor thread."""
         if self._thread is not None:
             return
         self._stop_event.clear()
@@ -221,18 +316,18 @@ class RandomQueryKiller:
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop the background killer thread."""
+        """Stop the background disruptor thread."""
         if self._thread is None:
             return
         self._stop_event.set()
         # Outlast one full in-flight iteration: the stop flag is only checked between the
         # SELECT and the kill, so a request arriving just after that check still has to
         # wait out the kill client call. The caller goes on to the hung check and
-        # DROP DATABASE, which must not race a killer that is still running.
+        # DROP DATABASE, which must not race a disruptor that is still running.
         self._thread.join(timeout=self._JOIN_TIMEOUT)
         if self._thread.is_alive():
-            # Keep the handle so a later start() cannot spawn a second killer.
-            logging.error("Random query/client/mutation killer did not stop in time")
+            # Keep the handle so a later start() cannot spawn a second disruptor.
+            logging.error("Random disruptor did not stop in time")
             return
         self._thread = None
 
@@ -246,7 +341,11 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-settings")
         options.append("--no-random-merge-tree-settings")
 
-    # allow constraint
+    # The stress test profile constrains enable_analyzer to >= 1 (stress_tests.lib) so neither the
+    # AST fuzzer nor a test spends the run on the old interpreter. Send the setting explicitly so the
+    # randomized compatibility below cannot revert it: compatibility only rewrites settings that are
+    # not `changed`, and a constraint cannot catch that revert because there is no explicit change to
+    # check. The profile pins the same value server-side for the queries this does not cover.
     client_options.append("enable_analyzer=1")
 
     if i > 0:
@@ -277,18 +376,38 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("join_use_nulls=1")
 
     if i % 2 == 1:
-        join_alg_num = i // 2
-        if join_alg_num % 5 == 0:
-            client_options.append("join_algorithm='parallel_hash'")
-        if join_alg_num % 5 == 1:
-            client_options.append("join_algorithm='partial_merge'")
-        if join_alg_num % 5 == 2:
-            client_options.append("join_algorithm='full_sorting_merge'")
-        if join_alg_num % 5 == 3 and not upgrade_check:
-            # Some crashes are not fixed in 23.2 yet, so ignore the setting in Upgrade check
-            client_options.append("join_algorithm='grace_hash'")
-        if join_alg_num % 5 == 4:
-            client_options.append("join_algorithm='auto'")
+        # `join_algorithm` accepts a comma-separated priority list: for each query the
+        # first applicable algorithm is used. Pick a random subset in random order, so
+        # every algorithm meets every worker mode (plain, join_use_nulls, replicated
+        # database) and the multi-algorithm fallback paths are covered too.
+        join_algorithms = [
+            "hash",
+            "parallel_hash",
+            "partial_merge",
+            "full_sorting_merge",
+            "grace_hash",
+            "auto",
+        ]
+        if not upgrade_check:
+            # The Upgrade check runs the pre-upgrade load against the previous
+            # release server, which rejects join_algorithm values it does not
+            # know yet and would fail every query, so skip the values that are
+            # newer than the previous release.
+            join_algorithms += ["parallel_full_sorting_merge", "ie_join"]
+        selected = random.sample(
+            join_algorithms, k=random.randint(1, len(join_algorithms))
+        )
+        if selected == ["ie_join"]:
+            # ie_join applies only to inequality joins; alone it would fail every plain
+            # equality join with NOT_IMPLEMENTED.
+            selected.append("hash")
+        client_options.append("join_algorithm='{}'".format(",".join(selected)))
+        if selected[0] == "auto":
+            # The low limit makes auto switch from hash to partial_merge. It is safe
+            # only when auto is actually selected: the planner takes the first
+            # buildable algorithm from the list, and max_rows_in_join applies to
+            # every join implementation, so with e.g. 'hash,auto' the hash join
+            # would run under the cap and fail with SET_SIZE_LIMIT_EXCEEDED.
             client_options.append("max_rows_in_join=1000")
 
     # Rarely enable the query cache; independently, half the time also pin the
@@ -393,20 +512,94 @@ def install_thread_pool_fault_injection() -> None:
 
     logging.info("Installing thread-pool fault-injection config: %s -> %s", src, dst)
     subprocess.run(["ln", "-sf", src, dst], check=True)
-    call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
+    if not call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5):
+        # Fail-close before the verify query: a stale non-zero probability left
+        # over from an earlier reload would otherwise mask the reload failure.
+        raise RuntimeError(
+            "SYSTEM RELOAD CONFIG failed after all retries; "
+            "cannot activate thread-pool fault injection"
+        )
 
-    # Fail-close: `call_with_retry` is silent on persistent failure, so verify
-    # the injector probability is actually non-zero after reload.
+    # The reload succeeded, but still verify the injector probability is
+    # actually non-zero. The verify query gets the same retry treatment as the
+    # reload itself: right after `SYSTEM RELOAD CONFIG` a debug server under
+    # ThreadFuzzer can be slow enough to exceed the client's 15 s
+    # `receive_timeout`, and a single timeout here must not kill the whole
+    # stress job.
     verify_query = make_query_command(
         "SELECT value FROM system.server_settings "
         "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
     )
-    value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    retry_count = 5
+    value = ""
+    for i in range(retry_count):
+        try:
+            value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+            break
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            if i + 1 == retry_count:
+                raise
+            logging.info("Verify query failed (%s), retrying", str(e))
+            time.sleep(i)
     if not value or float(value) <= 0:
         raise RuntimeError(
             f"cannot_allocate_thread_fault_injection_probability is {value!r} after reload"
         )
     logging.info("Thread-pool fault injection active: probability=%s", value)
+
+
+def enable_mutation_delay_failpoint() -> None:
+    """Enable `mutate_task_random_sleep_in_prepare`, so tests that `ALTER` without waiting
+    routinely read parts the mutation has not rewritten yet. Reads over such parts resolve
+    columns with the part's own (older) type, a state that mutations normally close too
+    quickly to test (see #113925).
+    Fail-close on persistent failure or if the failpoint is still off afterwards."""
+    call_with_retry(
+        make_query_command(f"SYSTEM ENABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
+    )
+
+    # Fail-close: `call_with_retry` is silent when all its retries fail, so verify that the
+    # failpoint really became active instead of silently losing the coverage.
+    verify_query = make_query_command(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{MUTATION_DELAY_FAILPOINT}'"
+    )
+    enabled = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    if enabled != "1":
+        raise RuntimeError(
+            f"Failpoint {MUTATION_DELAY_FAILPOINT} is not enabled after "
+            f"SYSTEM ENABLE FAILPOINT: system.fail_points.enabled is {enabled!r}"
+        )
+    logging.info("Mutation-delay failpoint active: %s", MUTATION_DELAY_FAILPOINT)
+
+
+def disable_mutation_delay_failpoint() -> None:
+    """Disable `mutate_task_random_sleep_in_prepare` before the hung check, so the
+    mutations still pending drain at full speed. Fail-close, mirroring
+    `enable_mutation_delay_failpoint`: verify through `system.fail_points` that the
+    failpoint is really off instead of trusting best-effort `call_with_retry`. Binaries
+    that do not register the failpoint at all (e.g. the old binary in upgrade check,
+    where `SYSTEM DISABLE FAILPOINT` would throw on the unknown name) are skipped."""
+    probe_query = make_query_command(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{MUTATION_DELAY_FAILPOINT}'"
+    )
+    registered = check_output(probe_query, shell=True, timeout=30, text=True).strip()
+    if not registered:
+        logging.info(
+            "Failpoint %s is not registered by this binary, nothing to disable",
+            MUTATION_DELAY_FAILPOINT,
+        )
+        return
+    call_with_retry(
+        make_query_command(f"SYSTEM DISABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
+    )
+    enabled = check_output(probe_query, shell=True, timeout=30, text=True).strip()
+    if enabled != "0":
+        raise RuntimeError(
+            f"Failpoint {MUTATION_DELAY_FAILPOINT} is still enabled after "
+            f"SYSTEM DISABLE FAILPOINT: system.fail_points.enabled is {enabled!r}; "
+            "the hung check would run with mutations still delayed"
+        )
+    logging.info("Mutation-delay failpoint disabled: %s", MUTATION_DELAY_FAILPOINT)
 
 
 def run_func_test(
@@ -417,7 +610,7 @@ def run_func_test(
     global_time_limit: int,
     upgrade_check: bool,
     encrypted_storage: bool,
-    query_killer: Optional["RandomQueryKiller"] = None,
+    disruptor: Optional["RandomDisruptor"] = None,
 ) -> List[Popen]:
     upgrade_check_option = "--upgrade-check" if upgrade_check else ""
     encrypted_storage_option = "--encrypted-storage" if encrypted_storage else ""
@@ -490,9 +683,13 @@ def run_func_test(
     if not upgrade_check:
         install_thread_pool_fault_injection()
 
-    # Start the query killer after smoke check completes, before actual stress test
-    if query_killer is not None:
-        query_killer.start()
+        # Delay every background mutation by a bounded random amount.
+        # Not in upgrade check: the old binary may not know the failpoint.
+        enable_mutation_delay_failpoint()
+
+    # Start the disruptor after smoke check completes, before actual stress test
+    if disruptor is not None:
+        disruptor.start()
 
     logging.info("Run stress tests")
     for i, path in enumerate(output_paths):
@@ -527,7 +724,10 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
 
 def call_with_retry(
     query: str, timeout: int | float = 30, retry_count: int = 5
-) -> None:
+) -> bool:
+    """Return whether the command eventually succeeded, so that callers which
+    must not proceed after a persistent failure can fail close instead of
+    silently continuing."""
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         try:
@@ -540,7 +740,8 @@ def call_with_retry(
             logging.info("Command returned %s, retrying", str(code))
             time.sleep(i)
         else:
-            break
+            return True
+    return False
 
 
 def execute_bash(full_command, timeout=120):
@@ -603,6 +804,10 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry(make_query_command("SYSTEM STOP THREAD FUZZER"))
+    # Stop delaying mutations, so the ones still pending drain at full speed. Fail-close:
+    # the hung check must not run with the delay still armed, and a binary that does not
+    # register the failpoint (e.g. the old binary in upgrade check) is skipped.
+    disable_mutation_delay_failpoint()
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
     # Possibly we should fix tests and forbid to use such queries without specifying table.
@@ -613,6 +818,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START FETCHES"))
     call_with_retry(make_query_command("SYSTEM START REPLICATED SENDS"))
     call_with_retry(make_query_command("SYSTEM START REPLICATION QUEUES"))
+    call_with_retry(make_query_command("SYSTEM START VIEWS"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
     # Issue #21004, window views are experimental, so let's just suppress it
@@ -697,16 +903,22 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client --receive_timeout=30 -q "SELECT count() FROM system.processes where elapsed > 300" '
         output = (
-            check_output(query, shell=True, stderr=STDOUT, timeout=30)
+            check_output(
+                make_query_command(
+                    "SELECT count() FROM system.processes where elapsed > 300"
+                ),
+                shell=True,
+                stderr=STDOUT,
+                timeout=30,
+            )
             .decode("utf-8")
             .strip()
         )
         if int(output) == 0:
             return False
-    except:
-        pass
+    except Exception as ex:
+        logging.error("Failed to check for long running queries: %s", str(ex))
     return True
 
 
@@ -730,10 +942,15 @@ def parse_args() -> argparse.Namespace:
         "--encrypted-storage", type=lambda x: bool(int(x)), default=False
     )
     parser.add_argument(
+        "--no-random-disruptor",
+        # Kept as an alias: the flag shipped under the old name, back when the thread only
+        # killed queries.
         "--no-random-query-killer",
+        dest="no_random_disruptor",
         action="store_true",
         default=False,
-        help="Disable random query/client/mutation killer during stress test",
+        help="Disable the random disruptor (query/client/mutation kills, merge pauses) "
+        "during stress test",
     )
     return parser.parse_args()
 
@@ -751,13 +968,13 @@ def collect_stacktrace_dumps(output_folder: Path) -> None:
 def run_stress_test(args: argparse.Namespace) -> None:
     call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
 
-    # Create random query/client killer unless disabled or in upgrade check mode
+    # Create the random disruptor unless disabled or in upgrade check mode
     # (upgrade check mode should not have random kills as it may interfere with
     # the upgrade process itself)
-    # Note: the killer is started inside run_func_test after the smoke check completes
-    query_killer = None
-    if not args.no_random_query_killer and not args.upgrade_check:
-        query_killer = RandomQueryKiller(interval=3.0)
+    # Note: the disruptor is started inside run_func_test after the smoke check completes
+    disruptor = None
+    if not args.no_random_disruptor and not args.upgrade_check:
+        disruptor = RandomDisruptor(interval=3.0)
 
     try:
         run_func_test(
@@ -768,12 +985,12 @@ def run_stress_test(args: argparse.Namespace) -> None:
             args.global_time_limit,
             args.upgrade_check,
             args.encrypted_storage,
-            query_killer,
+            disruptor,
         )
     finally:
-        # Stop the query killer when tests are done
-        if query_killer is not None:
-            query_killer.stop()
+        # Stop the disruptor when tests are done
+        if disruptor is not None:
+            disruptor.stop()
 
     logging.info("All processes finished")
 
@@ -807,11 +1024,6 @@ def run_stress_test(args: argparse.Namespace) -> None:
                     # NOTE: memory_profiler_step should be also adjusted, because:
                     #
                     #     untracked_memory_limit = min(settings.max_untracked_memory, settings.memory_profiler_step)
-                    #
-                    # NOTE: that if there will be queries with GROUP BY, this trick
-                    # will not work due to CurrentMemoryTracker::check() from
-                    # Aggregator code.
-                    # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
                     "--client-option",
                     "max_untracked_memory=1Gi",
                     "max_memory_usage_for_user=0",

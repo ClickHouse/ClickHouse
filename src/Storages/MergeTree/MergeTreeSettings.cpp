@@ -486,7 +486,7 @@ partitions, and if there are enough free resources in the pool, it starts
 background merges. Merges occur until the total size of the source parts is
 larger than `max_bytes_to_merge_at_max_space_in_pool`.
 
-Merges initiated by [OPTIMIZE FINAL](/sql-reference/statements/optimize)
+Merges initiated by [OPTIMIZE FINAL](/reference/statements/optimize)
 ignore `max_bytes_to_merge_at_max_space_in_pool` (only the free disk space
 is taken into account).
 )", 0) \
@@ -640,10 +640,10 @@ OPTIMIZE FINAL query.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
-    or [during INSERTs](/reference/settings/session-settings/materialize#materialize_statistics_on_insert))", 0) \
+    or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
-Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
+Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)
 or [during INSERTs](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
 
 See also [exclude_materialize_skip_indexes_on_merge](#exclude_materialize_skip_indexes_on_merge) for more fine-grained control.
@@ -653,7 +653,7 @@ Excludes provided comma delimited list of skip indexes from being built and stor
 [materialize_skip_indexes_on_merge](#materialize_skip_indexes_on_merge) is false.
 
 The excluded skip indexes will still be built and stored by an explicit
-[MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query or during INSERTs depending on
+[MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index) query or during INSERTs depending on
 the [materialize_skip_indexes_on_insert](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert)
 session setting.
 
@@ -706,6 +706,22 @@ Can be overridden by explicit `posting_list_codec` index argument.
 Allow creating text indexes with the experimental `support_phrase_search` argument
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
+    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
+The preferred on-disk serialization format version for writing text indexes.
+
+The setting is a preference rather than a hard constraint: if the configured version cannot
+represent an index, a newer version that can represent it is chosen automatically, and
+writing a text index never fails because of this setting.
+
+During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
+the already upgraded servers, so that they keep writing the format that older servers can still read.
+
+Possible values:
+
+- `v0_initial` — The original format. Does not persist the posting list codec type.
+- `v1_with_codec` — Persists the posting list codec type in the text index header.
+- `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
+)", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
 parts were selected. A lower setting will trigger selecting tasks in
@@ -819,7 +835,7 @@ background merges of this table. If not specified (empty string), then
 server setting `merge_workload` is used instead.
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(String, mutation_workload, "", R"(
 Used to regulate how resources are utilized and shared between mutations and
@@ -828,11 +844,21 @@ background mutations of this table. If not specified (empty string), then
 server setting `mutation_workload` is used instead.
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
 Target time to execution of one step of merge or mutation. Can be exceeded if
 one step takes longer time
+)", 0) \
+    DECLARE(Bool, merge_use_batch_sorting_queue, false, R"(
+Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
+
+Only applies to merges that do not change rows, i.e. plain `MergeTree`
+(`Ordinary` merge mode). It has no effect on engines with merge-time
+semantics such as `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
+`GraphiteMergeTree` and `VersionedCollapsingMergeTree`, which keep using the
+default queue regardless of this setting.
 )", 0) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
 If this setting is enabled for destination table of a partition manipulation
@@ -868,6 +894,17 @@ Minimal amount of data parts which merge selector can pick to merge at once
 )", 0) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
+)", 0) \
+    DECLARE(MergeTreePatchPartsVersion, patch_parts_version, "v2", R"(
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
 )", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
@@ -915,7 +952,7 @@ Possible values:
 - Any positive integer.
 
 To achieve maximum performance of `SELECT` queries, it is necessary to
-minimize the number of parts processed, see [Merge Tree](/development/architecture#merge-tree).
+minimize the number of parts processed, see [Merge Tree](/resources/develop-contribute/introduction/architecture#merge-tree).
 
 Prior to version 23.6 this setting was set to 300. You can set a higher
 different value, it will reduce the probability of the `Too many parts`
@@ -1042,7 +1079,7 @@ compressability of the newly inserted table part.
 Only has an effect for ordinary MergeTree-engine tables. Does nothing for
 specialized MergeTree engine tables (e.g. CollapsingMergeTree).
 
-MergeTree tables are (optionally) compressed using [compression codecs](/sql-reference/statements/create/table#column_compression_codec).
+MergeTree tables are (optionally) compressed using [compression codecs](/reference/statements/create/table#column_compression_codec).
 Generic compression codecs such as LZ4 and ZSTD achieve maximum compression
 rates if the data exposes patterns. Long runs of the same value typically
 compress very well.
@@ -1111,8 +1148,12 @@ reduce memory usage
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
+Compared against the number of streams a wide part writes, which can greatly exceed its number
+of columns: a `Map` with many buckets, or a deeply nested `Array` or `Tuple`, writes many streams
+for a single column, and one write buffer is allocated per stream.
+
 Possible values:
-- 0 - unlimited
+- 0 - disabled
 - 1 - always enabled
 )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
@@ -1414,7 +1455,7 @@ disabled, the data part is removed. Activate this setting if you want to
 analyze such parts later.
 
 The setting is applicable to `MergeTree` tables with enabled
-[data replication](/engines/table-engines/mergetree-family/replacingmergetree).
+[data replication](/reference/engines/table-engines/mergetree-family/replacingmergetree).
 
 Possible values:
 
@@ -1449,7 +1490,7 @@ new nodes.
 )", 0) \
     DECLARE(UInt64, max_replicated_sends_network_bandwidth, 0, R"(
 Limits the maximum speed of data exchange over the network in bytes per
-second for [replicated](/engines/table-engines/mergetree-family/replacingmergetree)
+second for [replicated](/reference/engines/table-engines/mergetree-family/replacingmergetree)
 sends. This setting is applied to a particular table, unlike the
 [`max_replicated_sends_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 setting, which is applied to the server.
@@ -1588,6 +1629,20 @@ Only available in ClickHouse Cloud
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, R"(
 Enables requesting FS cache hints from in-memory
 cache on other replicas. Only available in ClickHouse Cloud
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_use_blobs_list_for_parts, false, R"(
+Store parts of a SharedMergeTree table (both Wide and Compact) as a single
+consolidated blob-list metadata node instead of one Keeper node per file.
+Collapses per-part Keeper metadata from O(files) to a small constant while
+keeping one object-storage blob per file. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_blobs_list_inline_file_max_bytes, 0, R"(
+Store files of a blob-list part that are at most this many bytes long (e.g.
+count.txt, metadata_version.txt, minmax indexes) directly inside the
+consolidated blobs.list file instead of a separate object-storage blob,
+saving one blob write and read per small file. 0 disables inlining. Takes
+effect only for parts using the blob-list storage (see
+shared_merge_tree_use_blobs_list_for_parts). Only available in ClickHouse Cloud.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, R"(
 If enabled all the replicas try to fetch part in memory data (like primary
@@ -1758,7 +1813,7 @@ The amount of memory currently spent on these values is reported by the
 and per part in `system.parts.index_granularity_bytes_in_memory`.
 
 The setting is applied only to parts written after it was changed. Use
-[ALTER TABLE ... REWRITE PARTS](/sql-reference/statements/alter/partition#rewrite-parts)
+[ALTER TABLE ... REWRITE PARTS](/reference/statements/alter/partition#rewrite-parts)
 to apply it to existing parts. `Compact` parts always use adaptive granularity.
 )", 0) \
     DECLARE(Bool, enable_index_granularity_compression, true, R"(
@@ -1907,7 +1962,7 @@ not be less than the value of the
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
 Enables the check at table creation, that the data type of a column for s
 ampling or sampling expression is correct. The data type must be one of unsigned
-[integer types](/sql-reference/data-types/int-uint): `UInt8`, `UInt16`,
+[integer types](/reference/data-types/int-uint): `UInt8`, `UInt16`,
 `UInt32`, `UInt64`.
 
 Possible values:
@@ -2165,22 +2220,19 @@ Possible values:
 Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
+    DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
 Only integer-like types are currently adaptive.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
-Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
 )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
-)", 0) \
-    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, R"(
-Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
@@ -2339,7 +2391,7 @@ The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING tabl
 )", 0) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
-Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
+Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/reference/statements/alter/projection#materialize-projection)
 or during merges with [materialize_projections_on_merge](/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_merge).
 )", 0) \
     DECLARE(Bool, materialize_projections_on_merge, false, R"(
@@ -2347,7 +2399,7 @@ When enabled, a merge rebuilds a projection that is missing from all of its sour
 inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
 
 Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
-use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
+use an explicit [MATERIALIZE PROJECTION](/reference/statements/alter/projection#materialize-projection). Projections
 are also created during INSERTs with [materialize_projections_on_insert](/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_insert).
 )", 0) \
 
@@ -2387,6 +2439,7 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2410,7 +2463,12 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(
+        size_t background_pool_tasks,
+        bool allow_experimental,
+        bool allow_private_preview,
+        bool allow_beta,
+        bool background_pool_auto_lowered) const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2515,9 +2573,14 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettingsImpl::sanityCheck(
+    size_t background_pool_tasks,
+    bool allow_experimental,
+    bool allow_private_preview,
+    bool allow_beta,
+    bool background_pool_auto_lowered) const
 {
-    if (!allow_experimental || !allow_beta)
+    if (!allow_experimental || !allow_private_preview || !allow_beta)
     {
         for (const auto & setting : all())
         {
@@ -2530,6 +2593,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 throw Exception(
                     ErrorCodes::READONLY,
                     "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
+                    "('allow_feature_tier')",
+                    setting.getName());
+            }
+            if (!allow_private_preview && tier == PRIVATE_PREVIEW)
+            {
+                throw Exception(
+                    ErrorCodes::READONLY,
+                    "Cannot modify setting '{}'. Changes to PRIVATE PREVIEW settings are disabled in the server config "
                     "('allow_feature_tier')",
                     setting.getName());
             }
@@ -2948,9 +3019,14 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || ((*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge] && input_bytes >= (*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge]));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettings::sanityCheck(
+    size_t background_pool_tasks,
+    bool allow_experimental,
+    bool allow_private_preview,
+    bool allow_beta,
+    bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
+    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_private_preview, allow_beta, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
