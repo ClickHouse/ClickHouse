@@ -164,6 +164,18 @@ void LocalConnection::sendQuery(
     else
         query_context = session->makeQueryContext();
 
+    /// Capture the parse-time parser/AST limits before overlaying the client-sent settings:
+    /// `ClientBase::processParsedSingleQuery` has already folded the query's own `SETTINGS`
+    /// clause into `query_settings`, while the query text was parsed under the session values.
+    /// The `input()` initializer below reparses `state->query` and must apply the limits the
+    /// text was originally accepted with, not stricter (or looser) query-local ones.
+    const auto & parse_time_settings = query_context->getSettingsRef();
+    const UInt64 parse_time_max_query_size = parse_time_settings[Setting::max_query_size];
+    const UInt64 parse_time_max_ast_depth = parse_time_settings[Setting::max_ast_depth];
+    const UInt64 parse_time_max_ast_elements = parse_time_settings[Setting::max_ast_elements];
+    const UInt64 parse_time_max_parser_depth = parse_time_settings[Setting::max_parser_depth];
+    const UInt64 parse_time_max_parser_backtracks = parse_time_settings[Setting::max_parser_backtracks];
+
     if (query_settings)
         query_context->setSettings(*query_settings);
 
@@ -232,16 +244,19 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
-    /// Capture the parser-affecting settings now, before the query's own `SETTINGS` clause is applied
-    /// during execution. The `input()` initializer below reparses `state->query`, and must use the
-    /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
+    /// The dialect/gate are taken from the overlaid settings: `pinOutboundDialectForJSONDialect`
+    /// has pinned them in `query_settings` to match the form of the outbound text (JSON body vs
+    /// an AST->SQL rewrite), which is exactly what the `input()` initializer must reparse with,
+    /// rather than the (possibly mutated) live session ones. The parser/AST limits come from the
+    /// parse-time snapshot above — the overlaid values may already contain the query's own
+    /// `SETTINGS` clause, which must not affect the reparse of the query text itself.
     state->parsed_as_json_dialect = query_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
     state->enable_json_ast_dialect = query_context->getSettingsRef()[Setting::enable_json_ast_dialect];
-    state->json_ast_max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
-    state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
-    state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
-    state->max_parser_depth = query_context->getSettingsRef()[Setting::max_parser_depth];
-    state->max_parser_backtracks = query_context->getSettingsRef()[Setting::max_parser_backtracks];
+    state->json_ast_max_query_size = parse_time_max_query_size;
+    state->json_ast_max_depth = parse_time_max_ast_depth;
+    state->json_ast_max_elements = parse_time_max_ast_elements;
+    state->max_parser_depth = parse_time_max_parser_depth;
+    state->max_parser_backtracks = parse_time_max_parser_backtracks;
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
