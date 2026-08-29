@@ -174,7 +174,7 @@ DROP TABLE IF EXISTS json_index_tokens_positions;
 CREATE TABLE json_index_tokens_positions
 (
     data JSON(value String),
-    INDEX tokens data TYPE text(tokenizer = jsonPathValues(64), positions = 1)
+    INDEX tokens data TYPE text(tokenizer = jsonPathValues(64), support_phrase_search = 1)
 )
 ENGINE = MergeTree
 ORDER BY tuple()
