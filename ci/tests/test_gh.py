@@ -5,9 +5,13 @@ Adding a new Result.Status value requires updating GH._STATUS_TO_GH.
 These tests verify that every status is mapped and the mapping is correct.
 """
 
+import json
 import os
+import shlex
 import sys
 from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -328,3 +332,169 @@ def test_get_pr_state_by_branch_fails_closed(monkeypatch):
         assert False, "should have raised on a failed lookup"
     except RuntimeError as e:
         assert "refusing to treat a failed lookup as 'no PR'" in str(e)
+
+
+def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
+    requests = []
+    responses = iter(
+        [
+            '["clickpipes", "unmanaged-team"]',
+            '["clickpipes", "docs", "integrations-ecosystem", "unmanaged-team"]',
+        ]
+    )
+
+    def fake_get(command, verbose=False):
+        assert "pulls/42/requested_reviewers" in command
+        return next(responses)
+
+    def fake_submit(team_slugs, pr, repo):
+        requests.append((team_slugs, pr, repo))
+
+    monkeypatch.setattr(GH, "get_output_with_retries", staticmethod(fake_get))
+    monkeypatch.setattr(GH, "_submit_team_review_requests", staticmethod(fake_submit))
+
+    assert GH.request_team_reviews(
+        team_slugs=["docs", "clickpipes", "integrations-ecosystem"],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+    assert requests == [
+        (["docs", "integrations-ecosystem"], 42, "ClickHouse/ClickHouse")
+    ]
+
+
+def test_submit_team_review_requests_uses_rest_api(monkeypatch):
+    commands = []
+    payloads = []
+
+    def fake_submit(command, verbose=False):
+        commands.append(command)
+        args = shlex.split(command)
+        payload_path = args[args.index("--input") + 1]
+        with open(payload_path, encoding="utf-8") as payload_file:
+            payloads.append(json.load(payload_file))
+        return True
+
+    monkeypatch.setattr(GH, "do_command_with_retries", staticmethod(fake_submit))
+
+    GH._submit_team_review_requests(
+        team_slugs=["clickpipes", "docs"],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+
+    assert len(commands) == 1
+    assert "repos/ClickHouse/ClickHouse/pulls/42/requested_reviewers" in commands[0]
+    assert payloads == [
+        {"reviewers": [], "team_reviewers": ["clickpipes", "docs"]}
+    ]
+
+
+def test_request_team_reviews_fails_when_submission_is_not_applied(monkeypatch):
+    monkeypatch.setattr(
+        GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "[]")
+    )
+    monkeypatch.setattr(
+        GH, "_submit_team_review_requests", staticmethod(lambda *_args: None)
+    )
+
+    with pytest.raises(RuntimeError, match=r"missing teams \[docs\]"):
+        GH.request_team_reviews(
+            team_slugs=["docs"],
+            pr=42,
+            repo="ClickHouse/ClickHouse",
+        )
+
+
+def test_request_team_reviews_does_nothing_without_teams(monkeypatch):
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected lookup")),
+    )
+    monkeypatch.setattr(
+        GH,
+        "_submit_team_review_requests",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected request")),
+    )
+
+    assert GH.request_team_reviews(
+        team_slugs=[],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+
+
+def test_request_team_reviews_fails_when_lookup_fails(monkeypatch):
+    monkeypatch.setattr(
+        GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "")
+    )
+
+    try:
+        GH.request_team_reviews(
+            team_slugs=["docs"],
+            pr=42,
+            repo="ClickHouse/ClickHouse",
+        )
+        assert False, "Should have raised when requested reviewers are unavailable"
+    except RuntimeError as e:
+        assert "Failed to retrieve team review requests" in str(e)
+
+
+# --- GH.merge_pr --------------------------------------------------------------
+
+
+def _capture_merge_command(monkeypatch):
+    """Stub the command runner and return the dict the command lands in."""
+    captured = {}
+
+    def fake_do_command(cmd, *_args, **_kwargs):
+        captured["cmd"] = cmd
+        return True
+
+    monkeypatch.setattr(GH, "do_command_with_retries", staticmethod(fake_do_command))
+    return captured
+
+
+def test_an_admin_merge_does_not_ask_gh_to_delete_the_branch(monkeypatch):
+    """`gh` refuses `--delete-branch` whenever the base branch has a merge queue
+    enabled, and refuses it next to `--admin` too, even though `--admin` is what
+    bypasses that queue. Asking for both fails the merge itself: that is how the
+    revert of #109710 was pushed and opened as #116566 and then left unmerged."""
+    captured = _capture_merge_command(monkeypatch)
+
+    assert GH.merge_pr(pr=116566, repo="ClickHouse/ClickHouse", admin=True)
+
+    assert "--delete-branch" not in captured["cmd"]
+    assert " -d" not in captured["cmd"]
+    assert "--admin" in captured["cmd"]
+    assert "--merge" in captured["cmd"]
+
+
+def test_an_admin_merge_asked_to_keep_the_branch_is_unchanged(monkeypatch):
+    captured = _capture_merge_command(monkeypatch)
+
+    assert GH.merge_pr(
+        pr=116566, repo="ClickHouse/ClickHouse", admin=True, keep_branch=True
+    )
+
+    assert "--delete-branch" not in captured["cmd"]
+
+
+def test_an_ordinary_merge_still_deletes_the_branch(monkeypatch):
+    """The queued path is untouched: there `gh` waits for the merge to happen,
+    so it is GitHub that deletes the branch and the flag is accepted."""
+    captured = _capture_merge_command(monkeypatch)
+
+    assert GH.merge_pr(pr=116566, repo="ClickHouse/ClickHouse")
+
+    assert "--delete-branch" in captured["cmd"]
+    assert "--admin" not in captured["cmd"]
+
+
+def test_a_merge_asked_to_keep_the_branch_keeps_it(monkeypatch):
+    captured = _capture_merge_command(monkeypatch)
+
+    assert GH.merge_pr(pr=116566, repo="ClickHouse/ClickHouse", keep_branch=True)
+
+    assert "--delete-branch" not in captured["cmd"]

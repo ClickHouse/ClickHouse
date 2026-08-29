@@ -38,7 +38,7 @@ CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
   ## 使用 EXPLAIN WHATIF 评估假设索引
 </div>
 
-单独定义一个假设索引并不会产生任何效果——要了解它会如何影响查询，请对一个具有代表性的 `SELECT` 运行 [`EXPLAIN WHATIF`](/zh/reference/statements/explain#explain-whatif)。估算器会报告每个候选索引的适用性、将读取的标记数、最终的跳过比例，以及该估算是如何得出的 (`empirical`、`statistical` 或 `applicability_only`) 。
+单独定义一个假设索引并不会产生任何效果——要了解它会如何影响查询，请对一个具有代表性的 `SELECT` 运行 [`EXPLAIN WHATIF`](/zh/reference/statements/explain#explain-whatif)。估算器会报告每个候选索引的适用性、将读取的标记数、最终的跳过率，以及该估算是如何得出的 (`empirical`、`statistical` 或 `applicability_only`) 。
 
 ```sql
 CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
@@ -79,7 +79,7 @@ Estimation:
 若要跳过基于内存的经验扫描，改为根据[列统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)进行估算，请先为相关列定义列统计信息 (默认关闭) ，等待物化变更完成，然后禁用经验估算路径：
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;

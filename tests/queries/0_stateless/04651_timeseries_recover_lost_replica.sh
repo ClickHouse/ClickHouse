@@ -132,10 +132,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB} SYNC"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}', 's1', 'r1')"
 
 # ---------------------------------------------------------------------------------------------
-# Part 1: a TimeSeries table with EXTERNAL target tables, so hasInnerTables() is false,
-# dropInnerTableIfAny returns without adding any operation, and the metadata transaction is
-# committed with an empty operation list. This shape already recovered before the fix, so it is
-# the control that shows the fix did not change the no-inner-tables path.
+# Part 1: a TimeSeries table with EXTERNAL target tables. It still owns inner tables (the
+# on-by-default recent samples table and its feeding materialized view), so dropInnerTableIfAny
+# adds their drops to the metadata transaction. This shape already recovered before the fix, so
+# it is the control case.
 # ---------------------------------------------------------------------------------------------
 
 ${CLIENT} -q "CREATE TABLE ${DB}.ext_data (id UUID, timestamp DateTime64(3), value Float64)
@@ -183,7 +183,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${D
 # and re-create leaves the inner tables empty, so a regression that made the eager inner drop a
 # silent no-op would leave these rows in place.
 SAMPLES_TABLE=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.samples.%'")
-${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` SELECT generateUUIDv4(), now64(3), number FROM numbers(50)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` (timestamp, value) SELECT now64(3), number FROM numbers(50)"
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
 
 RECOVERIES_BEFORE=$(count_recovery_completions)

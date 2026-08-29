@@ -241,6 +241,7 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(size_t & part_idx, size_
         if (response)
         {
             LOG_DEBUG(log, "Got response: {}", response->describe());
+            LOG_TEST(log, "Response ranges: {}", response->description.describe());
             if (response->description.empty() || response->finish)
                 no_more_tasks_available = true;
         }
@@ -265,11 +266,11 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(size_t & part_idx, size_
             per_part_infos,
             [&current_task](const auto & part)
             {
-                if (!part->data_part->isProjectionPart())
-                    return part->data_part->info == current_task.info;
+                if (!part->data_part_info->isProjectionPart())
+                    return part->data_part_info->getPartInfo() == current_task.info;
 
                 chassert(part->parent_part && !current_task.projection_name.empty());
-                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name;
+                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part_info->getPartName();
             });
     if (part_it == per_part_infos.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
@@ -296,9 +297,9 @@ bool MergeTreeReadPoolParallelReplicas::cutMoreRangesToRead(size_t part_idx, siz
     const auto & current_task = buffered_ranges.front();
     const auto & part = per_part_infos[part_idx];
 
-    bool same_part = !part->data_part->isProjectionPart()
-        ? part->data_part->info == current_task.info
-        : (part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name);
+    bool same_part = !part->data_part_info->isProjectionPart()
+        ? part->data_part_info->getPartInfo() == current_task.info
+        : (part->parent_part->info == current_task.info && current_task.projection_name == part->data_part_info->getPartName());
 
     if (!same_part)
         return false;
