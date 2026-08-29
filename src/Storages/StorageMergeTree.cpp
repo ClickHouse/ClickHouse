@@ -1195,9 +1195,8 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
         update_lock->sync_lock = std::unique_lock(lightweight_updates_sync.sync_mutex, std::defer_lock);
-        bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
-        if (!res)
+        if (!lightweight_updates_sync.lockSyncMutex(local_context, update_lock->sync_lock, timeout_ms))
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightweight update with sync mode", timeout_ms);
 
         LOG_TRACE(log, "Got lock for lightweight update in sync mode");
@@ -1208,7 +1207,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
         auto affected_columns = getUpdateAffectedColumns(commands, local_context);
-        lightweight_updates_sync.lockColumns(affected_columns, timeout_ms);
+        lightweight_updates_sync.lockColumns(local_context, affected_columns, timeout_ms);
 
         update_lock->affected_columns = std::move(affected_columns);
         update_lock->lightweight_updates_sync = &lightweight_updates_sync;
