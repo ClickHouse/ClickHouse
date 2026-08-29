@@ -704,11 +704,11 @@ def test_identity_partition_column_nested_field_retyped(
         instance.query(f"SELECT id, s.c FROM {retyped} ORDER BY id").strip()
         == "1\t2\n2\t10"
     )
-    # The declared type is a string, so the equality holds only for a converted value: the raw
-    # manifest value is the number 2.
+    # The bound is a string, so both '2' and '10' sort below '4' while only 2 is below 4: the row set
+    # holds only if the comparison runs at the declared type.
     assert (
-        instance.query(f"SELECT id FROM {retyped} WHERE s.c = '2' ORDER BY id").strip()
-        == "1"
+        instance.query(f"SELECT id FROM {retyped} WHERE s.c < '4' ORDER BY id").strip()
+        == "1\n2"
     )
     # Reading with no declaration, and with one that agrees, are the pair: both must be unchanged.
     for structure in ["", "id Int64, s Tuple(c Int64, d String)"]:
