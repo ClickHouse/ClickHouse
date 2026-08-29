@@ -1094,8 +1094,6 @@ def test_lc_null_keys_break_then_client_cancel(started_cluster):
 
         node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
         node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
-    except Exception as exc:
-        raise
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
         node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
