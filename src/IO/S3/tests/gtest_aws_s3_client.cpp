@@ -491,7 +491,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
     TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
 
-    DB::RemoteHostFilter remote_host_filter;
+    static const DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
