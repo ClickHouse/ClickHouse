@@ -1,11 +1,11 @@
 import json
+import re
 import time
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
-from helpers.keeper_utils import KeeperClient
 
 
 cluster = ClickHouseCluster(__file__)
@@ -40,61 +40,6 @@ def kafka_setup_teardown():
     yield
 
 
-def wait_for_lock_owners(kafka_cluster, keeper_path, topic_name, num_partitions,
-                         converged=None, timeout=90):
-    """
-    Poll Keeper until all partition locks exist and the distribution satisfies
-    the `converged` predicate (called with the owners dict).  Returns the
-    owners dict: replica_name -> set of locked partition ids.
-
-    Handles the TOCTOU race where a lock znode disappears between ls and get
-    during rebalancing by retrying the whole snapshot.
-    """
-    base = f"{keeper_path}/topic_partition_locks"
-    expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
-    with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
-        start = time.time()
-        last_owners = None
-        while time.time() - start < timeout:
-            try:
-                children = set(zk.ls(base))
-            except Exception:
-                time.sleep(1)
-                continue
-
-            if not children >= expected_locks:
-                time.sleep(1)
-                continue
-
-            owners = {}
-            snapshot_valid = True
-            for lock in expected_locks:
-                try:
-                    owner = zk.get(f"{base}/{lock}")
-                except Exception:
-                    snapshot_valid = False
-                    break
-                owners.setdefault(owner, set())
-                pid = int(lock.replace(f"{topic_name}_", "").replace(".lock", ""))
-                owners[owner].add(pid)
-
-            if not snapshot_valid:
-                time.sleep(1)
-                continue
-
-            last_owners = owners
-            if converged is None or converged(owners):
-                return owners
-            time.sleep(2)
-
-        if last_owners is not None:
-            return last_owners
-        pytest.fail(
-            f"Timed out waiting for stable lock distribution in Keeper "
-            f"({num_partitions} partitions, timeout={timeout}s)"
-        )
-
-
 def create_kafka_with_mv(instance, table_name, topic_name, keeper_path,
                          replica_name, consumer_group=None, settings=None):
     """Return SQL that creates a Kafka table + MergeTree destination + MV."""
@@ -120,25 +65,72 @@ def create_kafka_with_mv(instance, table_name, topic_name, keeper_path,
     )
 
 
+QUOTA_LOG_RE = re.compile(
+    r"The consumer can have (\d+) permanent locks after the current round "
+    r"\(node_quota=(\d+), active_replicas=(\d+), num_consumers=(\d+), idx=(\d+)\)"
+)
+
+
+def wait_for_quota_logs(instance, table_name, num_consumers, num_replicas,
+                        timeout=90):
+    """
+    Wait until the server log shows the permanent-lock quota line for every
+    consumer of the given table, with active_replicas == num_replicas (i.e.
+    all replicas have registered).
+
+    Returns a list of (can_lock, node_quota, active_replicas, num_consumers,
+    idx) tuples, one per consumer.
+    """
+    start = time.time()
+    hits = {}
+    while time.time() - start < timeout:
+        log = instance.grep_in_log(
+            f"permanent locks after the current round"
+        )
+        for line in log.splitlines():
+            if table_name not in line:
+                continue
+            m = QUOTA_LOG_RE.search(line)
+            if not m:
+                continue
+            can_lock, nq, ar, nc, idx = (int(x) for x in m.groups())
+            if ar >= num_replicas:
+                hits[idx] = (can_lock, nq, ar, nc, idx)
+        if len(hits) >= num_consumers:
+            return list(hits.values())
+        time.sleep(2)
+    pytest.fail(
+        f"Timed out waiting for permanent-lock quota log lines for {table_name} "
+        f"(saw {len(hits)}/{num_consumers} consumers, timeout={timeout}s)"
+    )
+
+
 @pytest.mark.parametrize(
-    "num_partitions, num_replicas, num_consumers, min_per_replica, max_per_replica, case",
+    "num_partitions, num_replicas, num_consumers, expected_node_quota, case",
     [
-        (12, 2, 3, 6, 6, "even split: node_quota 6, per-consumer 2/2/2"),
-        ( 4, 2, 3, 2, 2, "P < R*N: the max(...,1) clamp must be per node, not per consumer"),
-        ( 7, 2, 3, 3, 4, "P mod R != 0: remainder distributed; 1 partition floats on temp locks"),
-        ( 6, 3, 1, 2, 2, "N=1: formula provably reduces to the pre-existing one"),
+        (12, 2, 3, 6, "even split: node_quota 6, per-consumer 2/2/2"),
+        ( 4, 2, 3, 2, "P < R*N: the max(...,1) clamp must be per node, not per consumer"),
+        ( 7, 2, 3, 3, "P mod R != 0: node_quota 3, per-consumer 1/1/1"),
+        ( 6, 3, 1, 2, "N=1: formula reduces to the pre-existing one"),
     ],
     ids=["even", "small_topic", "remainder", "single_consumer"],
 )
 def test_permanent_lock_quota(
     kafka_cluster, num_partitions, num_replicas, num_consumers,
-    min_per_replica, max_per_replica, case,
+    expected_node_quota, case,
 ):
     """
-    node_quota = max(P / R, 1); each consumer takes
-        node_quota / N + (idx < node_quota % N ? 1 : 0)
-    so a node's consumers sum to exactly node_quota.  Verified by reading lock
-    ownership out of Keeper, where each lock znode's data is the owning replica_name.
+    Verify that the per-consumer permanent-lock quota is computed correctly:
+
+        node_quota   = max(P / R, 1)
+        per_consumer = node_quota / N + (idx < node_quota % N ? 1 : 0)
+
+    so a node's N consumers sum to exactly node_quota.
+
+    We verify the formula by parsing the server trace log that prints the
+    computed quota for each consumer.  This avoids counting Keeper lock znodes,
+    which include both permanent and temporary locks and are subject to timing
+    races that make exact bounds unreliable.
     """
     admin = k.get_admin_client(kafka_cluster)
     topic_name = f"quota_{num_partitions}p_{num_replicas}r_{num_consumers}c"
@@ -167,22 +159,35 @@ def test_permanent_lock_quota(
             ))
         instance.query("\n".join(queries))
 
-        def converged(owners):
-            if sum(len(pids) for pids in owners.values()) != num_partitions:
-                return False
-            return all(min_per_replica <= len(owners.get(r, ())) <= max_per_replica
-                       for r in replicas)
-
-        owners = wait_for_lock_owners(
-            kafka_cluster, keeper_path, topic_name, num_partitions, converged
-        )
-
         for replica in replicas:
-            held = len(owners.get(replica, ()))
-            assert min_per_replica <= held <= max_per_replica, (
-                f"[{case}] {replica} holds {held} partitions, expected "
-                f"{min_per_replica}..{max_per_replica}; owners: {owners}"
+            table = f"kafka_{topic_name}_{replica}"
+            quotas = wait_for_quota_logs(
+                instance, table, num_consumers, num_replicas
             )
+
+            total = sum(q[0] for q in quotas)
+            assert total == expected_node_quota, (
+                f"[{case}] {replica}: sum of per-consumer quotas = {total}, "
+                f"expected node_quota = {expected_node_quota}; quotas = {quotas}"
+            )
+
+            for can_lock, nq, ar, nc, idx in quotas:
+                expected = expected_node_quota // num_consumers + (
+                    1 if idx < expected_node_quota % num_consumers else 0
+                )
+                assert can_lock == expected, (
+                    f"[{case}] {replica} consumer idx={idx}: can_lock={can_lock}, "
+                    f"expected {expected} (node_quota={nq}, N={nc})"
+                )
+
+                assert nq == expected_node_quota, (
+                    f"[{case}] {replica} consumer idx={idx}: "
+                    f"node_quota={nq}, expected {expected_node_quota}"
+                )
+                assert ar == num_replicas, (
+                    f"[{case}] {replica} consumer idx={idx}: "
+                    f"active_replicas={ar}, expected {num_replicas}"
+                )
 
 
 if __name__ == "__main__":
