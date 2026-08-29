@@ -1166,7 +1166,10 @@ bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
     if (global_ctx->parent_part)
         return false;
 
-    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column];
+    /// `_block_offset` is an offset within its own insert block, so the two columns are one row identity:
+    /// a part storing the offsets alone reads `_block_number` back as a single per-part constant.
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column]
+        || (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column];
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)

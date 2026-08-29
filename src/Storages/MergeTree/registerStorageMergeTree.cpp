@@ -2433,8 +2433,8 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 - `_part_data_version` — Data version of part (either min block number or mutation version).
 - `_partition_value` — Values (a tuple) of a `partition by` expression.
 - `_sample_factor` — Sample factor (from the query).
-- `_block_number` — Original number of block for row that was assigned at insert, persisted on merges when setting `enable_block_number_column` is enabled.
-- `_block_offset` — Original number of row in block that was assigned at insert, persisted on merges when setting `enable_block_offset_column` is enabled.
+- `_block_number` — Original number of block for row that was assigned at insert, persisted on merges when setting `enable_block_number_column` or setting `enable_block_offset_column` is enabled.
+- `_block_offset` — Original number of row in block that was assigned at insert, persisted on merges when setting `enable_block_offset_column` is enabled. It is an offset within its own insert block, so `_block_number` is persisted along with it.
 - `_disk_name` — Disk name used for the storage.
 
 ## Column statistics {#column-statistics}

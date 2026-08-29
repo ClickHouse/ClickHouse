@@ -1,0 +1,22 @@
+H stored columns	['id','v','_block_number','_block_offset']
+I address	1	1	0
+I address	2	2	0
+A patch applied on read	1	u
+A patch applied on read	2	b
+B patch applied on merge	1	u
+B patch applied on merge	2	b
+C duplicate sorting key	1	b
+C duplicate sorting key	1	u
+D v1 patch format	1	u
+D v1 patch format	2	b
+E control, no toggle	1	u
+E control, no toggle	2	b
+F control, duplicate key without toggle	1	b
+F control, duplicate key without toggle	1	u
+G reported fixture	1	u
+G reported fixture	2	b
+J mutated columns	['id','v','_block_offset']
+J address	1	1	0
+J address	2	1	1
+J control, mutation path	1	u
+J control, mutation path	2	B
