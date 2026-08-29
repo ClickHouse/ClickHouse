@@ -814,6 +814,7 @@ void IcebergMetadata::createInitial(
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
             = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
+
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
@@ -825,6 +826,15 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+
+    if (catalog)
+    {
+        /// Register the namespace before any files are written (but after all local
+        /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
+        /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
+        /// a namespace over the plain directory those files would leave behind.
+        catalog->createNamespaceIfNotExists(DataLake::parseTableName(table_id_.getTableName()).first, location_path);
+    }
 
     try
     {
@@ -987,6 +997,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             history_record.parent_id = 0;
 
         bool found_in_snapshot_log = false;
+        /// A snapshot-id can occur in snapshot-log more than once (a rollback makes an older
+        /// snapshot current again); made_current_at is the LAST such time, so do not stop early.
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
@@ -994,7 +1006,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             {
                 history_record.made_current_at = parse_timestamp_ms(snapshot_log);
                 found_in_snapshot_log = true;
-                break;
             }
         }
 

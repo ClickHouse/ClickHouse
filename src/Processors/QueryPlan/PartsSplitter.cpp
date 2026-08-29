@@ -1219,10 +1219,22 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 }
 
 /// Applies a FilterSortedStreamByRange built from a per-layer border predicate AST. No-op when the AST
-/// is null (the open first/last interval). `pipe`'s streams must be sorted by the primary key.
+/// is null (the open first/last interval) or when the pipe is empty. `pipe`'s streams must be sorted by
+/// the primary key.
 static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, const KeyDescription & primary_key, ContextPtr context)
 {
-    if (!filter_function)
+    /// An empty pipe has no header at all, and there is nothing to filter in it anyway. Skipping it here
+    /// is safe: the only step getters that can return an empty pipe are the merging-pipe getters (the
+    /// `ReadType::InOrder` getters in `ReadFromMergeTree::spreadMarkRangesAmongStreams` and
+    /// `spreadMarkRangesAmongStreamsFinal`, including the distributed `FINAL` lane getter passed to
+    /// `buildDistributedFinalPipe`), and their consumers drop the empty per-layer pipes:
+    /// the first unites them with `Pipe::unitePipes`, which starts with `removeEmptyPipes`, and the
+    /// other two skip them explicitly before attaching the `FINAL` merging transforms.
+    /// The join-by-shards path, where an empty layer must keep occupying its output port to preserve
+    /// positional shard pairing, never passes an empty pipe here: in `ReadFromMergeTree::readByLayers`
+    /// the in-order getter substitutes a `NullSource` placeholder, and the default getter reads through
+    /// `readFromPool`, which creates one source per thread regardless of the number of parts.
+    if (!filter_function || pipe.empty())
         return;
 
     auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());

@@ -192,7 +192,8 @@ struct DotProductTransposed
 
 /// When `Quantized` is true the function operates on a `QBit(Int8)` whose codes were produced by the `quantizeBFloat16ToInt8`
 /// Lloyd-Max codec. Because that quantizer is non-linear, the distance cannot be computed on the `Int8` codes directly: each
-/// reconstructed code is dequantized to its Lloyd-Max reconstruction level (as `Float32`) on the fly and the distance is
+/// reconstructed code is dequantized to a precision-specific Float32 prefix centroid on the fly (the conditional mean of the
+/// retained prefix interval for `p < 8`, or the exact BFloat16 reconstruction at `p = 8`) and the distance is
 /// computed against the reference (query) vector. The reference vector is polymorphic: a `Float` reference is the query, compared
 /// directly (asymmetric distance) and cast to `Float32` -- the reconstruction precision of the dequantized codes -- exactly as the
 /// non-quantized transposed functions cast the reference to the QBit element type (so a `BFloat16` query widens to `Float32`
@@ -486,8 +487,9 @@ public:
 
         if constexpr (Quantized)
         {
-            /// The QBit is Int8 (Lloyd-Max codes) and the reference vector is Float32. Reconstruct each code, dequantize it to
-            /// its Float32 Lloyd-Max level, and compute the distance against the reference. See executeQuantizedDistanceCalculation.
+            /// The QBit is Int8 (Lloyd-Max codes) and the reference vector is Float32. Reconstruct each code with the
+            /// precision-specific prefix centroid and compute the distance against the reference. See
+            /// executeQuantizedDistanceCalculation.
             const bool ref_is_const = arguments.back().column->isConst();
             return ref_is_const
                 ? executeQuantizedDistanceCalculation<true>(reference_vector, expanded_planes, precision, stride, used_dims, input_rows_count)
@@ -668,8 +670,9 @@ private:
     /// `planes` holds `num_groups * precision` FixedString bit-plane columns in group-major order (plane[g * precision + b]).
     /// Each stride group is untransposed into its own contiguous slice of the reconstructed `used_dims`-element vector.
     /// A value truncated to `precision` bit planes is reconstructed to the centre of its coarse cell (the most significant dropped
-    /// bit is set), mirroring `LloydMax::transposedDequantLUT` on the quantized path - but only while the centre stays a bounded,
-    /// value-space-meaningful estimate: for a float that is sign-only truncation (`precision == 1`) or mantissa truncation
+    /// bit is set) for this generic bit-pattern path. The quantized Lloyd-Max path uses conditional-mean prefix centroids instead;
+    /// this centre remains a bounded, value-space-meaningful estimate here: for a float that is sign-only truncation
+    /// (`precision == 1`) or mantissa truncation
     /// (`precision > exponent_bits`); once `precision` truncates exponent bits the bounded lower edge is kept instead of a
     /// centre that would jump across binades. See the reconstruction block below for the full reasoning.
     template <typename RefT, typename CalcT, bool ref_is_const>
@@ -722,10 +725,10 @@ private:
         auto block_row = [&](size_t r) -> CalcT * { return block.data() + r * padded_array_size; };
 
         /// A value truncated to `precision` bit planes is rounded to the centre of its coarse cell by setting the most significant
-        /// dropped bit (the direct analogue of `top | (1 << (7 - precision))` in `LloydMax::transposedDequantLUT`). Zero-filling the
-        /// dropped bits would instead reconstruct the cell's lower edge, which biases every value towards zero and degenerates at low
-        /// precision: e.g. for BFloat16 at precision 1 only the sign bit survives, so every value would be reconstructed as +-0.0 and
-        /// the distance would be the same for every row. When `precision` covers the whole word, the fill is zero; the dispatch in
+        /// dropped bit. Zero-filling the dropped bits would instead reconstruct the cell's lower edge, which biases every value
+        /// towards zero and degenerates at low precision: e.g. for BFloat16 at precision 1 only the sign bit survives, so every
+        /// value would be reconstructed as +-0.0 and the distance would be the same for every row. When `precision` covers the
+        /// whole word, the fill is zero; the dispatch in
         /// `executeImpl` downcasts to a narrower CalcT only while `precision` is strictly below the narrow width, so this happens
         /// exactly when `precision` covers the whole *element* and no bits are dropped at all. `centre_fill` is a single bit strictly
         /// below the `precision` kept planes.
@@ -771,11 +774,11 @@ private:
             }
 
             /// Reconstruct each truncated cell by setting the most significant dropped bit (`centre_fill`), rounding to the coarse
-            /// cell's centre - but only where that is a bounded, value-space-meaningful approximation. The centre is applied:
+            /// cell's centre - but only where that is a bounded, value-space-meaningful approximation. This generic reconstruction
+            /// is separate from the conditional-mean prefix centroids used by the explicit quantized path. The centre is applied:
             ///
             ///  - `Int8` element type (the raw sibling of `...TransposedQuantized`): the code is a linear integer, so its centre
-            ///    is the bounded midpoint of the code range. It is applied to every word (including exact `0`), matching the
-            ///    `...TransposedQuantized` LUT which likewise reconstructs every truncated code to its cell centre.
+            ///    is the bounded midpoint of the code range. It is applied to every word (including exact `0`).
             ///
             ///  - `precision == 1` for a float: only the sign bit is kept (pure sign quantization). The single dropped bit set is
             ///    the top exponent bit, reconstructing a bounded +-2.0, so every value keeps just its sign as +-2.0. This is the
@@ -823,7 +826,8 @@ private:
                 /// kernel handles trailing lanes.
                 if constexpr (is_int8)
                 {
-                    /// Int8 has no exponent; every truncated code is centred unconditionally (matching the quantized LUT).
+                    /// Int8 has no exponent; every truncated code is centred unconditionally. The explicit quantized path
+                    /// instead uses its Gaussian prefix-centroid LUT.
                     for (size_t r = 0; r < rows_in_block; ++r)
                     {
                         Word * row = words + r * padded_array_size;
@@ -903,8 +907,9 @@ private:
     /// a quantized Array(Int8) query.
     /// `planes` holds `num_groups * precision` FixedString bit-plane columns in group-major order (plane[g * precision + b]).
     /// Each stride group is untransposed into a contiguous slice of a `used_dims`-element buffer of raw code bytes, which is then
-    /// dequantized to Float32 Lloyd-Max reconstruction levels (rounding a truncated code to its coarse cell's centre) before the
-    /// Float32 distance kernel runs. The distance therefore equals the distance computed on `dequantizeInt8ToBFloat16` of the codes.
+    /// dequantized to Float32 prefix centroids before the Float32 distance kernel runs. For `p < 8`, each centroid is the
+    /// Gaussian conditional mean over the union of fine Lloyd-Max cells represented by the retained prefix; at `p = 8` the
+    /// existing `dequantizeInt8ToBFloat16` reconstruction is preserved exactly.
     /// An Array(Int8) reference is a complete (not partially read) quantized query, so it is dequantized at full precision (row 8 of
     /// the LUT, i.e. `dequantizeInt8ToBFloat16`) before the kernel runs; a Float32 reference is used verbatim.
     template <bool ref_is_const>
@@ -948,7 +953,8 @@ private:
         auto col_res = ColumnVector<Float64>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        /// Reconstruction table for this precision: maps a raw code byte to its Float32 Lloyd-Max level.
+        /// Reconstruction table for this precision: maps a raw code byte to its Float32 prefix centroid (or the exact
+        /// BFloat16 Lloyd-Max reconstruction at precision 8).
         const std::array<Float32, 256> & dequant = LloydMax::transposedDequantLUT()[precision];
 
         /// We process 32 rows per iteration, mirroring executeDistanceCalculation.
@@ -992,7 +998,8 @@ private:
                 }
             }
 
-            /// Dequantize the reconstructed codes to Float32 Lloyd-Max levels. Only the first `used_dims` entries are meaningful:
+            /// Dequantize the reconstructed codes to precision-specific Float32 prefix centroids. Only the first `used_dims`
+            /// entries are meaningful:
             /// strided groups pack contiguously, and for the single non-strided group the trailing entries are padding.
             for (size_t r = 0; r < rows_in_block; ++r)
             {

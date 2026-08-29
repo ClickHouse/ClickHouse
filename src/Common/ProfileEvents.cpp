@@ -1177,6 +1177,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.", ValueType::Microseconds) \
     M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.", ValueType::Microseconds) \
+    M(AsyncLoaderSpawnFailures, "Number of times the async loader could not spawn a worker because the global thread pool could not provide a thread. Queued jobs are then run by a worker the pool already has: one that is running, or one resuming from a wait on a job of another pool.", ValueType::Number) \
     \
     M(DistrCacheServerSwitches, "Distributed Cache read buffer event. Number of server switches between distributed cache servers in read/write-through cache", ValueType::Number) \
     M(DistrCacheReadMicroseconds, "Distributed Cache read buffer event. Time spent reading from distributed cache", ValueType::Microseconds) \
@@ -1515,6 +1516,8 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
+    M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
+    M(SelectivityEstimatorInSetEstimatedFromSize, "Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`", ValueType::Number) \
     \
     M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
     M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \
@@ -1683,8 +1686,8 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
-    , parent(src.parent.exchange(nullptr))
-    , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
+    , parent(src.parent.exchange(nullptr, std::memory_order_acquire))
+    , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_acquire))
     , should_trace_holder(std::move(src.should_trace_holder))
     , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
@@ -1713,21 +1716,21 @@ Count Counters::load(Event event) const
 
 void Counters::setParent(Counters * parent_)
 {
-    parent.store(parent_, std::memory_order_relaxed);
+    parent.store(parent_, std::memory_order_release);
 }
 
 void Counters::setUserCounters(Counters * user)
 {
     auto * current_val = this;
-    auto * parent_val = this->parent.load(std::memory_order_relaxed);
+    auto * parent_val = this->parent.load(std::memory_order_acquire);
 
     while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
     {
         current_val = parent_val;
-        parent_val = current_val->parent.load(std::memory_order_relaxed);
+        parent_val = current_val->parent.load(std::memory_order_acquire);
     }
 
-    current_val->parent.store(user, std::memory_order_relaxed);
+    current_val->parent.store(user, std::memory_order_release);
 }
 
 void Counters::setTraceAllProfileEvents()
@@ -1806,13 +1809,13 @@ Event getByName(std::string_view name)
 
 void Counters::setTraceProfileEvent(Event event)
 {
-    auto * trace_array = should_trace_array.load(std::memory_order_relaxed);
+    auto * trace_array = should_trace_array.load(std::memory_order_acquire);
     if (!trace_array)
     {
         /// It is very unlikely that it will be allocated twice, since we set it at the beginning of the query
         auto fresh = std::make_unique<std::atomic_bool[]>(num_counters);
         std::atomic_bool * expected = nullptr;
-        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_relaxed))
+        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_acquire))
         {
             should_trace_holder = std::move(fresh);
             trace_array = should_trace_holder.get();
@@ -1934,11 +1937,17 @@ void Counters::increment(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        if (auto * trace_arr = current->should_trace_array.load(std::memory_order_relaxed))
-            send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
+        /// Small optimization for quite a hot path.
+        /// Load with relaxed as it almost always returns null.
+        /// If non-null, add an acquire fence.
+        if (current->should_trace_array.load(std::memory_order_relaxed))
+        {
+            if (auto * trace_arr = current->should_trace_array.load(std::memory_order_acquire))
+                send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
+        }
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 
     if (unlikely(send_to_trace_log))
@@ -1952,7 +1961,7 @@ void Counters::incrementNoTrace(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 
@@ -1964,7 +1973,7 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, -1);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 
