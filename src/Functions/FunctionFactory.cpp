@@ -151,15 +151,22 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     if (!res)
         return nullptr;
 
+    ContextPtr query_context;
     if (CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+        query_context = CurrentThread::get().tryGetQueryContext();
 
-        /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
-        /// check this setting here and decide if we need to change the function to get
-        if (query_context && Poco::toLower(name) == "totime" && query_context->getSettingsRef()[Setting::use_legacy_to_time])
+    if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+        query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+
+    /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
+    /// check this setting here and decide if we need to change the function to get.
+    /// The query context takes priority; without one — the metadata loader at startup, which replays
+    /// definitions persisted when the legacy meaning was the default — the passed context decides, so
+    /// that `use_legacy_to_time` in the server default profile heals loading such definitions.
+    if (Poco::toLower(name) == "totime")
+    {
+        const ContextPtr & settings_context = query_context ? query_context : context;
+        if (settings_context && settings_context->getSettingsRef()[Setting::use_legacy_to_time])
         {
             it = functions.find(ToTimeWithFixedDateImpl::name);
             if (functions.end() != it)
