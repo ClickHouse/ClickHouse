@@ -27,6 +27,7 @@ LC_FAULT_NAME = "distinct_transform_lc_pause"
 NULL_FAULT_NAME = "distinct_transform_null_pause"
 FILTER_FAULT_NAME = "distinct_transform_filter_pause"
 EXECUTOR_TIMEOUT_FAULT_NAME = "distinct_transform_soft_timeout_executor"
+POLLER_TIMEOUT_FAULT_NAME = "pipeline_executor_soft_timeout_fired"
 
 
 def run_kill_query_failpoint_test(query, fault_name, query_id=None):
@@ -496,6 +497,14 @@ def test_lc_soft_timeout_executor_throw(started_cluster):
     false for throw mode, so `buildFilter` (and the LC scan) reach `timeoutShouldThrow()` and raise
     `TIMEOUT_EXCEEDED` via `checkTimeLimit()`. The old code treated the executor-side cancel as a soft
     break timeout and silently preserved/returned a partial prefix instead of erroring.
+
+    The `CancellationChecker` also cancels the query at the same deadline (via
+    `cancelQuery(CancelReason::TIMEOUT)`), so an assertion on the final `TIMEOUT_EXCEEDED` alone cannot
+    distinguish which mechanism delivered it. The test therefore pins the *executor-side* detection
+    deterministically: a failpoint fired only inside `PipelineExecutor::checkTimeLimitSoft()` right
+    after its `CancelledByTimeout` cancel -- a code path the `CancellationChecker` never takes. Only the
+    executor poll loop can satisfy its wait, so the executor-side regression (treating the timeout as a
+    break-style soft cancel) makes the wait time out and the test fail.
     """
     node1.query("CREATE TABLE IF NOT EXISTS lc_test (key LowCardinality(String)) ENGINE = Memory")
     node1.query("TRUNCATE TABLE IF EXISTS lc_test")
@@ -510,6 +519,7 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
 
     node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
     node1.query(f"SYSTEM ENABLE FAILPOINT {EXECUTOR_TIMEOUT_FAULT_NAME}")
+    node1.query(f"SYSTEM ENABLE FAILPOINT {POLLER_TIMEOUT_FAULT_NAME}")
 
     thread_error = [None]
     query_error = [None]
@@ -549,6 +559,17 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
         ## pipeline thread at the failpoint until we notify it.
         time.sleep(8)
 
+        ## The deterministic proof that the *executor-side* path (not the global
+        ## `CancellationChecker`) observed the timeout: this failpoint fires only inside
+        ## `PipelineExecutor::checkTimeLimitSoft()` right after it cancels the pipeline with
+        ## `CancelledByTimeout`. The `CancellationChecker` never calls that code -- it cancels via
+        ## `cancelQuery(CancelReason::TIMEOUT)` directly -- so even if the checker also delivers a
+        ## `TIMEOUT_EXCEEDED` later, this wait can only be satisfied by the executor poll loop having
+        ## detected `max_execution_time` overrun itself. If the executor-side handling regressed, the
+        ## pull loop would never hit the failpoint and the wait would time out.
+        wait_failpoint(POLLER_TIMEOUT_FAULT_NAME)
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {POLLER_TIMEOUT_FAULT_NAME}")
+
         ## Do NOT arm the hashmap failpoint: in throw mode `buildFilter` must throw at the
         ## `isCancelled()` check (`timeoutShouldThrow` -> `checkTimeLimit()`) before it could pause
         ## there, so the query fails with TIMEOUT_EXCEEDED rather than pausing or returning a partial
@@ -556,18 +577,18 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
         ## and the query returns a partial prefix without error.
         node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
 
-        ## The `CancellationChecker` can also deliver a `TIMEOUT_EXCEEDED` (it cancels the query at the
-        ## same deadline), so the assertion above alone does not prove the *executor-side* throw path.
-        ## The dedicated failpoint fires only inside this transform's `timeoutShouldThrow()` branch,
-        ## i.e. once the pipeline thread resumes from the hold and the executor poll loop reports the
-        ## timeout. If the checker had won, this branch would still be reached (the failpoint wait is
-        ## not interruptible by `cancelQuery`), proving the executor-side raise regardless of who noticed
-        ## the deadline first. A thrown `TIMEOUT_EXCEEDED` from this branch is the contract under test.
+        ## Now that the executor poll loop has reported the timeout, the resumed transform must raise
+        ## `TIMEOUT_EXCEEDED` from its own `timeoutShouldThrow()` branch. The `CancellationChecker`
+        ## (which cancels at the same deadline with `cancel_reason = TIMEOUT`) cannot satisfy the
+        ## `POLLER_TIMEOUT_FAULT_NAME` wait above, so reaching this failpoint together with it pins
+        ## both halves of the contract: the executor side detected the soft timeout and this transform
+        ## raised the throw-mode error instead of preserving a partial prefix.
         wait_failpoint(EXECUTOR_TIMEOUT_FAULT_NAME)
         node1.query(f"SYSTEM NOTIFY FAILPOINT {EXECUTOR_TIMEOUT_FAULT_NAME}")
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
         node1.query(f"SYSTEM DISABLE FAILPOINT {EXECUTOR_TIMEOUT_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {POLLER_TIMEOUT_FAULT_NAME}")
         pool.shutdown(wait=False, cancel_futures=True)
 
     query_thread.join(timeout=60)

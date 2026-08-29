@@ -355,6 +355,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(distinct_transform_null_pause) \
     PAUSEABLE_ONCE(distinct_transform_filter_pause) \
     PAUSEABLE_ONCE(distinct_transform_soft_timeout_executor) \
+    PAUSEABLE_ONCE(pipeline_executor_soft_timeout_fired) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
     PAUSEABLE_ONCE(limit_by_transform_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
