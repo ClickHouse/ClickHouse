@@ -246,10 +246,13 @@ namespace ServerSetting
     extern const ServerSettingsBool concurrent_threads_lazy_allocation;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsBool enable_read_through_distributed_cache;
+    extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -697,6 +700,30 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config, const Server
     return listen_try;
 }
 
+#if USE_GRPC || USE_ARROWFLIGHT
+bool isWildcardListenHost(const std::string & listen_host)
+{
+    Poco::Net::IPAddress address;
+    return Poco::Net::IPAddress::tryParse(listen_host, address) && address.isWildcard();
+}
+
+/// gRPC treats `::` and `0.0.0.0` as one family-agnostic wildcard: for either of them it binds a
+/// dual-stack `::` socket and falls back to `0.0.0.0` only on a host without IPv6 (see
+/// `add_wildcard_addrs_to_server` in `contrib/grpc`). A wildcard listener therefore overlaps every
+/// listener on that port, not only another wildcard listener. Normalize the gRPC-based listeners to
+/// the first wildcard address so a configuration such as `127.0.0.1`, `0.0.0.0`, `::1` creates one
+/// listener instead of creating overlapping sockets. This applies independently to each gRPC-based
+/// port because all such ports use the same `listen_host` configuration.
+Strings getGRPCListenHosts(const Strings & listen_hosts)
+{
+    const auto wildcard_it = std::ranges::find_if(listen_hosts, isWildcardListenHost);
+    if (wildcard_it == listen_hosts.end())
+        return listen_hosts;
+
+    return {*wildcard_it};
+}
+#endif
+
 }
 
 
@@ -709,7 +736,8 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
-    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger()))
+    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger())
+        && (start_server || !servers.back().bindsOnStart()))
     {
         /// Register the configured port rather than the actual bound port. `getServerPort` keeps a
         /// single value per `port_name`, so with `tcp_port=0` (OS-assigned) and several `listen_host`
@@ -1924,6 +1952,15 @@ try
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
+    /// Zero means the number of CPU cores.
+    const size_t shutdown_concurrency = server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        ? server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        : getNumberOfCPUCoresToUse();
+    getDatabaseCatalogShutdownTablesThreadPool().initialize(
+        shutdown_concurrency,
+        0, // Threads are only needed during server shutdown.
+        shutdown_concurrency);
+
     getMergeTreePrefixesDeserializationThreadPool().initialize(
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
@@ -2838,6 +2875,8 @@ try
                     : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
+            global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -3196,66 +3235,76 @@ try
 
             /// HTTP control endpoints
             port_name = "keeper_server.http_control.port";
-            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-            servers_to_start_before_tables,
-            [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config().getString(port_name, "").empty())
             {
-                auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
+                auto handler_factory = createKeeperHTTPHandlerFactory(
+                    *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory");
+                createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    auto http_context = httpContext();
+                    Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
+                    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+                    http_params->setTimeout(http_context->getReceiveTimeout());
+                    http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(http_context->getReceiveTimeout());
-                socket.setSendTimeout(http_context->getSendTimeout());
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "HTTP Control: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(http_context),
-                        createKeeperHTTPHandlerFactory(
-                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-            });
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(http_context->getReceiveTimeout());
+                    socket.setSendTimeout(http_context->getSendTimeout());
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "HTTP Control: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::move(http_context),
+                            handler_factory,
+                            server_pool,
+                            socket,
+                            http_params));
+                });
+            }
 
             /// HTTPS control endpoints
             port_name = "keeper_server.http_control.secure_port";
-            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-            servers_to_start_before_tables,
-            [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config().getString(port_name, "").empty())
             {
 #if USE_SSL
-                auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
-
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(http_context->getReceiveTimeout());
-                socket.setSendTimeout(http_context->getSendTimeout());
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "HTTPS Control: https://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(http_context),
-                        createKeeperHTTPHandlerFactory(
-                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-#else
-                UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+                auto handler_factory = createKeeperHTTPHandlerFactory(
+                    *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory");
 #endif
-            });
+                createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSL
+                    auto http_context = httpContext();
+                    Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
+                    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+                    http_params->setTimeout(http_context->getReceiveTimeout());
+                    http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                    socket.setReceiveTimeout(http_context->getReceiveTimeout());
+                    socket.setSendTimeout(http_context->getSendTimeout());
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "HTTPS Control: https://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::move(http_context),
+                            handler_factory,
+                            server_pool,
+                            socket,
+                            http_params));
+#else
+                    UNUSED(port);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+                });
+            }
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
@@ -3295,10 +3344,11 @@ try
 
     {
         std::lock_guard lock(servers_lock);
-        for (auto & server : servers_to_start_before_tables)
+        startServers(servers_to_start_before_tables, listen_try, log);
+        for (const auto & server : servers_to_start_before_tables)
         {
-            server.start();
-            LOG_INFO(log, "Listening for {}", server.getDescription());
+            if (server.bindsOnStart())
+                global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
         }
     }
 
@@ -3396,11 +3446,15 @@ try
         /// In either case, we need to return an error.
         if (is_cancelled || !global_context->isServerCompletelyStarted())
             throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
+        /// The config may have been reloaded since startup, so recompute the listener
+        /// configuration from the current config instead of the startup snapshot.
+        ServerSettings current_server_settings;
+        current_server_settings.loadSettingsFromConfig(config());
         createServers(
             config(),
-            server_settings,
-            listen_hosts,
-            listen_try,
+            current_server_settings,
+            getListenHosts(config()),
+            getListenTry(config(), current_server_settings),
             server_pool,
             *async_metrics,
             servers,
@@ -3950,11 +4004,15 @@ try
                 }
             }
 
-            for (auto & server : servers)
+            startServers(servers, listen_try, log);
+            for (const auto & server : servers)
             {
-                server.start();
-                LOG_INFO(log, "Listening for {}", server.getDescription());
+                if (server.bindsOnStart())
+                    global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
             }
+            if (servers.empty())
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                    "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
 
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
@@ -4227,6 +4285,9 @@ void Server::createServers(
     bool only_introspection_protocols)
 {
     const Settings & settings = global_context->getSettingsRef();
+#if USE_GRPC || USE_ARROWFLIGHT
+    const auto grpc_listen_hosts = getGRPCListenHosts(listen_hosts);
+#endif
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings[Setting::http_receive_timeout]);
@@ -4310,44 +4371,57 @@ void Server::createServers(
         {
             /// HTTP
             port_name = "http_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            /// Handler configuration is parsed outside the callback: anything the callback throws is
+            /// reported as a listener bind failure, and only logged when `listen_try` is set. The port
+            /// check matches the early return in `createServer`.
+            if (!config.getString(port_name, "").empty())
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory");
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
 
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-            });
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                });
+            }
         }
 
         if (server_type.shouldStart(ServerType::Type::HTTPS))
         {
             /// HTTPS
             port_name = "https_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config.getString(port_name, "").empty())
             {
 #if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "https://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-#else
-                UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory");
 #endif
-            });
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSL
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "https://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+#else
+                    UNUSED(port);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+                });
+            }
         }
 
         if (server_type.shouldStart(ServerType::Type::TCP))
@@ -4397,20 +4471,22 @@ void Server::createServers(
         }
 
 #if USE_ARROWFLIGHT
-        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT))
+        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT)
+            && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
         {
             port_name = "arrowflight_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(Poco::Timespan());
-                socket.setSendTimeout(settings[Setting::send_timeout]);
+                /// Do not bind a Poco socket here: gRPC owns the listening socket of an Arrow Flight
+                /// server and binds it in `start`. A pre-bind would both bind the address twice and
+                /// defeat the family-agnostic handling of a wildcard address by gRPC, which falls
+                /// back to `0.0.0.0` for `::` on a host without IPv6.
+                auto address = makeSocketAddress(listen_host, port, &logger());
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
                     "Arrow Flight compatibility protocol: " + address.toString(),
-                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, address)),
                     true);
             });
         }
@@ -4532,7 +4608,8 @@ void Server::createServers(
         }
 
 #if USE_GRPC
-        if (server_type.shouldStart(ServerType::Type::GRPC))
+        if (server_type.shouldStart(ServerType::Type::GRPC)
+            && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
         {
             port_name = "grpc_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
@@ -4553,19 +4630,23 @@ void Server::createServers(
 
             const char * handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
 
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config.getString(port_name, "").empty())
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "Prometheus: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, handler_name), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
-            });
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, handler_name);
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "Prometheus: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                });
+            }
         }
     }
 }
@@ -4671,6 +4752,9 @@ void Server::updateServers(
     const auto listen_hosts = getListenHosts(config);
     const auto interserver_listen_hosts = getInterserverListenHosts(config);
     const auto listen_try = getListenTry(config, server_settings);
+#if USE_GRPC || USE_ARROWFLIGHT
+    const auto grpc_listen_hosts = getGRPCListenHosts(listen_hosts);
+#endif
 
     /// Remove servers once all their connections are closed
     auto check_server = [&log](const char prefix[], auto & server)
@@ -4809,7 +4893,14 @@ void Server::updateServers(
             }
 
             if (!has_host)
-                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
+            {
+                const auto & server_listen_hosts =
+#if USE_GRPC || USE_ARROWFLIGHT
+                    (port_name == "grpc_port" || port_name == "arrowflight_port") ? grpc_listen_hosts :
+#endif
+                    listen_hosts;
+                has_host = std::find(server_listen_hosts.begin(), server_listen_hosts.end(), server->getListenHost()) != server_listen_hosts.end();
+            }
             bool has_port = !config.getString(port_name, "").empty();
             bool force_restart = false;
             if (is_http && previous_handlers_key != handlers_key)
