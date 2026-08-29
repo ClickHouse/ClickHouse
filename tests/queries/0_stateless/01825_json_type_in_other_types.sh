@@ -7,8 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The test prints whole `Map` values, whose key order `with_buckets` serialization does not
 # preserve (keys are reassembled in hash-bucket order). Pin the serialization, which CI randomizes.
-# `t_json_nested_buckets` below keeps `with_buckets` covered for this column type using
-# order-independent queries.
+# `t_json_nested_buckets` below keeps `with_buckets` covered for this column type.
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_json_nested;
 
@@ -94,8 +93,10 @@ $CLICKHOUSE_CLIENT -q "SELECT data.3 AS obj FROM t_json_nested ORDER BY id FORMA
 
 echo "============="
 
-# Same column type read back through the bucketed Map format. Every query here is
-# order-independent, so the assertions hold under either bucket layout.
+# Same column type read back through the bucketed Map format. Since 26.8 a bucketed part
+# carries a `bucket_indexes` substream and a whole-map read restores the written key order
+# from it; parts without that substream still reassemble in bucket order. So the whole-map
+# assertion below is deterministic here and fails if that restoration stops working.
 # `serialization_info_version` and `max_buckets_in_map` are pinned as well: the first
 # downgrades Map serialization to `basic` and the second collapses the column to a
 # single bucket, and either one would silently skip the split/reassembly path.
@@ -121,7 +122,7 @@ ${CLICKHOUSE_CLIENT} -q "
 
     INSERT INTO t_json_nested_buckets SELECT * FROM t_json_nested" --enable_json_type 1
 
-# The queries below normalize key order, so they would still pass if the Map had been
+# The key subscripts below are order-independent, so they would also pass on a map
 # written without bucketing. Assert the part really has 4 key buckets first.
 $CLICKHOUSE_CLIENT -q "
     SELECT countDistinct(extract(s, '^data%2E2\.([0-9]+)%2Ekeys\$')) AS buckets
@@ -130,7 +131,7 @@ $CLICKHOUSE_CLIENT -q "
     WHERE match(s, '^data%2E2\.[0-9]+%2Ekeys\$')"
 
 $CLICKHOUSE_CLIENT -q "
-    SELECT id, data.1 AS s, mapSort(data.2) AS m, data.3 AS obj
+    SELECT id, data.1 AS s, data.2 AS m, data.3 AS obj
     FROM t_json_nested_buckets ORDER BY id FORMAT JSONEachRow"
 
 $CLICKHOUSE_CLIENT -q "
