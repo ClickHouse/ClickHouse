@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -53,6 +54,15 @@ public:
     using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
+    /// Constants of the arena serialization format that depend only on the variant, not on the row.
+    struct ArenaSerialization
+    {
+        String encoded_type;
+        SerializationPtr serialization;
+    };
+
+    using ArenaSerializations = VectorWithMemoryTracking<ArenaSerialization>;
+
     struct VariantInfo
     {
         DataTypePtr variant_type;
@@ -63,6 +73,13 @@ public:
         /// Mapping (variant name) -> (global discriminator).
         /// It's used during variant extension.
         UnorderedMapWithMemoryTracking<String, UInt8> variant_name_to_discriminator;
+        /// Global discriminator of the shared variant.
+        ColumnVariant::Discriminator shared_variant_discriminator = 0;
+        /// Indexed by global discriminator. Built together with the rest of VariantInfo and never
+        /// modified afterwards, so a const method may read it on a copy-on-write-shared column.
+        /// The shared variant's entry is empty, and serialization is null for a variant whose
+        /// serialization is not poolable, since such an object carries mutable per-use state.
+        std::shared_ptr<const ArenaSerializations> arena_serializations;
     };
 
 private:
@@ -446,7 +463,7 @@ public:
 
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {
-        return variant_info.variant_name_to_discriminator.at(getSharedVariantTypeName());
+        return variant_info.shared_variant_discriminator;
     }
 
     ColumnString & getSharedVariant()

@@ -1,12 +1,21 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <gtest/gtest.h>
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 
+#include <array>
+#include <atomic>
 #include <set>
+#include <thread>
 
 using namespace DB;
 
@@ -1198,4 +1207,209 @@ TEST(ColumnDynamic, InsertRangeFrom4)
         total_variants_sizes += variant->size();
 
     ASSERT_EQ(total_variants_sizes, column_to->getVariantColumn().getLocalDiscriminators().size());
+}
+
+/// A column that covers every branch of serializeValueIntoArena: a NULL, three typed variants
+/// (one of them nested, so the encoded type is more than a single byte) and values that did not
+/// fit into max_dynamic_types and went into the shared variant.
+static ColumnDynamic::MutablePtr getDynamicForArenaSerialization()
+{
+    auto column = ColumnDynamic::create(3);
+    column->insert(Field(42));
+    column->insert(Field("str"));
+    column->insert(Field(Array({Field(42)})));
+    column->insert(Field(42.42));
+    column->insert(Field(Null()));
+    column->insert(Field("str2"));
+    column->insert(Field(Array({Field(1), Field(2)})));
+    return column;
+}
+
+TEST(ColumnDynamic, SerializeValueIntoArenaFromSharedColumn)
+{
+    ColumnPtr column = getDynamicForArenaSerialization();
+    const size_t rows = column->size();
+    std::atomic<size_t> serialized_rows = 0;
+
+    auto serialize_all_rows = [&]
+    {
+        Arena arena;
+        SipHash hash;
+        const char * begin = nullptr;
+        for (size_t i = 0; i != rows; ++i)
+        {
+            auto serialized = column->serializeValueIntoArena(i, arena, begin, nullptr);
+            hash.update(serialized.data(), serialized.size());
+            serialized_rows.fetch_add(1);
+        }
+        return hash.get64();
+    };
+
+    const UInt64 expected_hash = serialize_all_rows();
+    serialized_rows = 0;
+
+    constexpr size_t threads_count = 8;
+    std::array<UInt64, threads_count> hashes{};
+    VectorWithMemoryTracking<std::thread> threads;
+    threads.reserve(threads_count);
+    for (size_t i = 0; i != threads_count; ++i)
+        threads.emplace_back([&, i] { hashes[i] = serialize_all_rows(); });
+    for (auto & thread : threads)
+        thread.join();
+
+    for (size_t i = 0; i != threads_count; ++i)
+        ASSERT_EQ(hashes[i], expected_hash) << "thread " << i;
+    /// Every thread must have gone through the function, otherwise the comparison above is vacuous.
+    ASSERT_EQ(serialized_rows.load(), threads_count * rows);
+}
+
+TEST(ColumnDynamic, SerializeDeserializeFromArena3)
+{
+    auto column_from = getDynamicForArenaSerialization();
+    const size_t rows = column_from->size();
+
+    Arena arena;
+    const char * begin = nullptr;
+    size_t serialized_size = 0;
+    for (size_t i = 0; i != rows; ++i)
+        serialized_size += column_from->serializeValueIntoArena(i, arena, begin, nullptr).size();
+
+    auto column_to = ColumnDynamic::create(254);
+    ReadBufferFromString in({begin, serialized_size});
+    for (size_t i = 0; i != rows; ++i)
+        column_to->deserializeAndInsertFromArena(in, nullptr);
+
+    ASSERT_TRUE(in.eof());
+    ASSERT_EQ(column_to->size(), rows);
+    for (size_t i = 0; i != rows; ++i)
+    {
+        ASSERT_EQ(column_from->getTypeNameAt(i), column_to->getTypeNameAt(i)) << "row " << i;
+        ASSERT_EQ(column_from->compareAt(i, i, *column_to, -1), 0) << "row " << i;
+    }
+}
+
+static String serializeBinaryToString(const ISerialization & serialization, const IColumn & column, size_t n)
+{
+    String bytes;
+    WriteBufferFromString buf(bytes);
+    serialization.serializeBinary(column, n, buf, FormatSettings{});
+    buf.finalize();
+    return bytes;
+}
+
+TEST(ColumnDynamic, ArenaSerializationsMatchPerRowExpression)
+{
+    /// The parameterless types, then types carrying parameters, a wrapper, a custom name, and JSON
+    /// both bare and wrapped. Nothing is dropped by Variant, and Nullable and
+    /// LowCardinality(Nullable) are not allowed inside it, because Dynamic keeps NULL in its own
+    /// discriminator and registers the nested type as the variant.
+    const Names type_names{
+        "UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "UInt256", "Int8", "Int16", "Int32", "Int64", "Int128",
+        "Int256", "BFloat16", "Float32", "Float64", "Date", "Date32", "String", "UUID", "IPv4", "IPv6", "Bool",
+        "Enum8('a' = 1, 'b' = 2)", "Decimal(18, 4)", "DateTime", "DateTime64(6, 'UTC')", "FixedString(7)",
+        "LowCardinality(String)", "Array(Tuple(a Int8, b String))", "Map(String, Int64)",
+        "Nested(a UInt8, b String)", "Point", "JSON", "Array(JSON)"};
+
+    for (const auto & type_name : type_names)
+    {
+        /// Resolved through the factory first, so a typo cannot make the assertions trivially true.
+        auto type = DataTypeFactory::instance().get(type_name);
+        auto column = ColumnDynamic::create(254);
+        ASSERT_TRUE(column->addNewVariant(type)) << type_name;
+
+        const auto & variant_info = column->getVariantInfo();
+        const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+        auto it = variant_info.variant_name_to_discriminator.find(type->getName());
+        ASSERT_NE(it, variant_info.variant_name_to_discriminator.end()) << type_name;
+        const auto & entry = (*variant_info.arena_serializations)[it->second];
+
+        ASSERT_FALSE(entry.encoded_type.empty()) << type_name;
+        ASSERT_EQ(entry.encoded_type, encodeDataType(variants[it->second])) << type_name;
+
+        /// The expression serializeValueIntoArena evaluated per row before the table existed.
+        auto per_row_serialization = variants[it->second]->getDefaultSerialization();
+        ASSERT_EQ(entry.serialization != nullptr, per_row_serialization->supportsPooling()) << type_name;
+
+        auto value = type->createColumn();
+        value->insertDefault();
+        const auto & used = entry.serialization ? *entry.serialization : *per_row_serialization;
+        ASSERT_EQ(serializeBinaryToString(used, *value, 0), serializeBinaryToString(*per_row_serialization, *value, 0))
+            << type_name;
+    }
+}
+
+TEST(ColumnDynamic, ArenaSerializationsFollowStructureChange)
+{
+    auto check = [](const ColumnDynamic & column, const String & structure_change)
+    {
+        const auto & variant_info = column.getVariantInfo();
+        const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+        ASSERT_NE(variant_info.arena_serializations, nullptr) << structure_change;
+        ASSERT_EQ(variant_info.arena_serializations->size(), variants.size()) << structure_change;
+        ASSERT_EQ(variant_info.variant_names.size(), variants.size()) << structure_change;
+        ASSERT_EQ(
+            variant_info.shared_variant_discriminator,
+            variant_info.variant_name_to_discriminator.at(ColumnDynamic::getSharedVariantTypeName()))
+            << structure_change;
+
+        for (size_t discr = 0; discr != variants.size(); ++discr)
+        {
+            const auto & entry = (*variant_info.arena_serializations)[discr];
+            const String context = structure_change + ", variant " + variant_info.variant_names[discr];
+            if (discr == variant_info.shared_variant_discriminator)
+            {
+                ASSERT_TRUE(entry.encoded_type.empty()) << context;
+                ASSERT_EQ(entry.serialization, nullptr) << context;
+            }
+            else
+            {
+                ASSERT_EQ(entry.encoded_type, encodeDataType(variants[discr])) << context;
+            }
+        }
+
+        Arena arena;
+        const char * begin = nullptr;
+        size_t serialized_size = 0;
+        for (size_t i = 0; i != column.size(); ++i)
+            serialized_size += column.serializeValueIntoArena(i, arena, begin, nullptr).size();
+
+        auto column_to = ColumnDynamic::create(254);
+        ReadBufferFromString in({begin, serialized_size});
+        for (size_t i = 0; i != column.size(); ++i)
+            column_to->deserializeAndInsertFromArena(in, nullptr);
+        ASSERT_TRUE(in.eof()) << structure_change;
+        for (size_t i = 0; i != column.size(); ++i)
+            ASSERT_EQ(column.compareAt(i, i, *column_to, -1), 0) << structure_change << ", row " << i;
+    };
+
+    check(*getDynamicForArenaSerialization(), "construction");
+
+    auto growing = ColumnDynamic::create(254);
+    growing->insert(Field(42));
+    growing->insert(Field("str"));
+    growing->insert(Field(Array({Field(42)})));
+    check(*growing, "addNewVariant");
+
+    auto source = ColumnDynamic::create(2);
+    source->insert(Field(42));
+    source->insert(Field("str"));
+    auto target = ColumnDynamic::create(254);
+    target->takeExactDynamicStructureFrom(*source);
+    for (size_t i = 0; i != source->size(); ++i)
+        target->insertFrom(*source, i);
+    check(*target, "takeExactDynamicStructureFrom");
+
+    /// Adding a variant re-sorts the discriminators, and "Array(Int8)" < "Int8" < "SharedVariant" <
+    /// "String", so each insert below moves the variants added before it. The shared variant moves
+    /// too, which is why its discriminator is asserted after each step and not only at the end.
+    auto reordering = ColumnDynamic::create(254);
+    reordering->insert(Field("str"));
+    check(*reordering, "reordering, String added");
+    ASSERT_EQ(size_t(reordering->getVariantInfo().shared_variant_discriminator), 0u);
+    reordering->insert(Field(42));
+    check(*reordering, "reordering, Int8 added");
+    ASSERT_EQ(size_t(reordering->getVariantInfo().shared_variant_discriminator), 1u);
+    reordering->insert(Field(Array({Field(42)})));
+    check(*reordering, "reordering, Array(Int8) added");
+    ASSERT_EQ(size_t(reordering->getVariantInfo().shared_variant_discriminator), 2u);
 }

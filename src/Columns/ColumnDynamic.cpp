@@ -124,6 +124,13 @@ void ColumnDynamic::setMaxDynamicPaths(size_t max_dynamic_type_)
 
 void ColumnDynamic::createVariantInfo(const DataTypePtr & variant_type)
 {
+    /// An arena serialization entry is a function of the variant's type object alone, so an entry
+    /// built from the same object still describes it and is carried over instead of being rebuilt.
+    /// Adding a variant re-sorts the discriminators, so an old entry is found by variant name.
+    auto previous_variant_type = variant_info.variant_type;
+    auto previous_arena_serializations = variant_info.arena_serializations;
+    auto previous_name_to_discriminator = std::move(variant_info.variant_name_to_discriminator);
+
     variant_info.variant_type = variant_type;
     variant_info.variant_name = variant_type->getName();
     const auto & variants = assert_cast<const DataTypeVariant &>(*variant_type).getVariants();
@@ -137,8 +144,37 @@ void ColumnDynamic::createVariantInfo(const DataTypePtr & variant_type)
         variant_info.variant_name_to_discriminator[variant_name] = discr;
     }
 
-    if (!variant_info.variant_name_to_discriminator.contains(getSharedVariantTypeName()))
+    auto shared_variant_it = variant_info.variant_name_to_discriminator.find(getSharedVariantTypeName());
+    if (shared_variant_it == variant_info.variant_name_to_discriminator.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant in Dynamic column doesn't contain shared variant");
+    variant_info.shared_variant_discriminator = shared_variant_it->second;
+
+    const DataTypes * previous_variants = previous_arena_serializations && previous_variant_type
+        ? &assert_cast<const DataTypeVariant &>(*previous_variant_type).getVariants()
+        : nullptr;
+    auto arena_serializations = std::make_shared<ArenaSerializations>(variants.size());
+    for (ColumnVariant::Discriminator discr = 0; discr != variants.size(); ++discr)
+    {
+        if (discr == variant_info.shared_variant_discriminator)
+            continue;
+        auto & arena_serialization = (*arena_serializations)[discr];
+        if (previous_variants)
+        {
+            auto it = previous_name_to_discriminator.find(variant_info.variant_names[discr]);
+            if (it != previous_name_to_discriminator.end() && it->second < previous_variants->size()
+                && it->second < previous_arena_serializations->size()
+                && (*previous_variants)[it->second].get() == variants[discr].get())
+            {
+                arena_serialization = (*previous_arena_serializations)[it->second];
+                continue;
+            }
+        }
+        arena_serialization.encoded_type = encodeDataType(variants[discr]);
+        auto serialization = variants[discr]->getDefaultSerialization();
+        if (serialization->supportsPooling())
+            arena_serialization.serialization = std::move(serialization);
+    }
+    variant_info.arena_serializations = std::move(arena_serializations);
 }
 
 bool ColumnDynamic::addNewVariant(const DataTypePtr & new_variant, const String & new_variant_name)
@@ -818,20 +854,33 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
         return {pos, sizeof(UInt8)};
     }
 
-    WriteBufferFromOwnString buf;
+    String value_storage;
     std::string_view type_and_value;
     /// If we have value from shared variant, it's already stored in the desired format.
-    if (discr == getSharedVariantDiscriminator())
+    if (discr == variant_info.shared_variant_discriminator)
     {
         type_and_value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
     }
     /// For regular variants serialize its type and value in binary format.
     else
     {
-        const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(discr);
-        encodeDataType(variant_type, buf);
-        variant_type->getDefaultSerialization()->serializeBinary(variant_col.getVariantByGlobalDiscriminator(discr), variant_col.offsetAt(n), buf, getFormatSettings());
-        type_and_value = buf.str();
+        chassert(variant_info.arena_serializations && discr < variant_info.arena_serializations->size());
+        const auto & arena_serialization = (*variant_info.arena_serializations)[discr];
+        /// A serialization that does not support pooling holds mutable per-use state, so it is
+        /// resolved per call instead of being shared through VariantInfo.
+        SerializationPtr non_poolable_serialization;
+        if (!arena_serialization.serialization)
+            non_poolable_serialization = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(discr)->getDefaultSerialization();
+        const ISerialization & serialization
+            = arena_serialization.serialization ? *arena_serialization.serialization : *non_poolable_serialization;
+        {
+            WriteBufferFromString value_buf(value_storage);
+            writeString(arena_serialization.encoded_type, value_buf);
+            serialization.serializeBinary(
+                variant_col.getVariantByGlobalDiscriminator(discr), variant_col.offsetAt(n), value_buf, getFormatSettings());
+            value_buf.finalize();
+        }
+        type_and_value = value_storage;
     }
 
     char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + type_and_value.size(), begin);
