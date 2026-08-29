@@ -51,7 +51,7 @@ namespace
 /// what makes an `INSERT` fail with `MEMORY_LIMIT_EXCEEDED`. In that case write through adaptive buffers
 /// instead: they start at `adaptive_write_buffer_initial_size` and double up to `max_compress_block_size`,
 /// so only the streams that really write that much end up paying for it.
-bool writeBuffersWouldTakeSignificantMemory(size_t num_columns, size_t max_compress_block_size, const MergeTreeWriterSettings & settings)
+bool writeBuffersWouldTakeSignificantMemory(size_t num_streams, size_t max_compress_block_size, const MergeTreeWriterSettings & settings)
 {
     const double ratio = static_cast<double>(settings.max_memory_ratio_to_activate_adaptive_write_buffer);
     if (ratio <= 0)
@@ -61,9 +61,8 @@ bool writeBuffersWouldTakeSignificantMemory(size_t num_columns, size_t max_compr
     if (memory_limit <= 0)
         return false;
 
-    /// A lower bound on what this writer reserves: each column has at least one stream, and each stream
-    /// has two buffers. Columns with several substreams only reserve more.
-    const double preallocated = static_cast<double>(num_columns) * 2 * static_cast<double>(max_compress_block_size);
+    /// What this writer reserves: two buffers per stream.
+    const double preallocated = static_cast<double>(num_streams) * 2 * static_cast<double>(max_compress_block_size);
     return preallocated >= static_cast<double>(memory_limit) * ratio;
 }
 
@@ -181,6 +180,36 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
     return enumerate_settings;
 }
 
+void MergeTreeDataPartWriterWide::initStreamsAndSubstreamsIfNeeded()
+{
+    initColumnsSubstreamsIfNeeded();
+    initStreamsToOpenCount();
+    initStreamsIfNeeded();
+
+    chassert(column_streams.size() == *streams_to_open_in_part);
+}
+
+void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
+{
+    if (streams_to_open_in_part)
+        return;
+
+    NameSet stream_names;
+    for (size_t column_position = 0; column_position != columns_list.size(); ++column_position)
+    {
+        for (const auto & full_stream_name : columns_substreams.getColumnSubstreams(column_position))
+        {
+            String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
+            /// Skip offset streams that has been written before (not using this object)
+            if (written_offset_substreams && written_offset_substreams->contains(stream_name))
+                continue;
+            stream_names.insert(std::move(stream_name));
+        }
+    }
+
+    streams_to_open_in_part = stream_names.size();
+}
+
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & name_and_type,
     const ASTPtr & effective_codec_desc)
@@ -250,11 +279,15 @@ void MergeTreeDataPartWriterWide::addStreams(
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
+        /// A write buffer is allocated per stream below, and a single column can own thousands of
+        /// streams (a Map with many buckets, a deeply nested Array or Tuple), so the threshold is
+        /// compared against streams rather than columns.
+        chassert(streams_to_open_in_part.has_value());
         WriteSettings query_write_settings = settings.query_write_settings;
         query_write_settings.use_adaptive_write_buffer =
-            (settings.min_columns_to_activate_adaptive_write_buffer && columns_list.size() >= settings.min_columns_to_activate_adaptive_write_buffer)
+            (settings.min_columns_to_activate_adaptive_write_buffer && *streams_to_open_in_part >= settings.min_columns_to_activate_adaptive_write_buffer)
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()))
-            || writeBuffersWouldTakeSignificantMemory(columns_list.size(), max_compress_block_size, settings);
+            || writeBuffersWouldTakeSignificantMemory(*streams_to_open_in_part, max_compress_block_size, settings);
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
         fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
@@ -373,8 +406,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     /// preparations to achieve it.
     prepareBlockForWriting(block_to_write);
 
-    initStreamsIfNeeded();
-    initColumnsSubstreamsIfNeeded();
+    initStreamsAndSubstreamsIfNeeded();
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
@@ -841,8 +873,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
 {
     /// If no data was written, streams and columns substreams will be uninitialized, but we need them.
-    initStreamsIfNeeded();
-    initColumnsSubstreamsIfNeeded();
+    initStreamsAndSubstreamsIfNeeded();
 
     auto serialize_settings = getSerializationSettings();
     if (rows_written_in_last_mark > 0)
