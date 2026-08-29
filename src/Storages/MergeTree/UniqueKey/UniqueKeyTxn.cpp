@@ -127,7 +127,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         staged = write.stage(write_guard);
         if (!staged)
         {
-            LOG_TRACE(log, "UNIQUE KEY {} (partition {}): staged nothing, rolling back tid {}",
+            LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): staged nothing, rolling back tid {}",
                 kind, partition_id, txn->tid);
             rollbackTransaction(txn);
             return INVALID_CSN;
@@ -174,7 +174,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
     }
     catch (...)
     {
-        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): threw at csn {}, rolling back tid {}",
+        LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): threw at csn {}, rolling back tid {}",
             kind, partition_id, csn, txn->tid);
         rollbackTransaction(txn);
 
@@ -210,14 +210,21 @@ void UniqueKeyTxnManager::runRecovery(const std::vector<MergeTreeDataPartPtr> & 
 {
     auto component_guard = Coordination::setCurrentComponent("UniqueKeyTxnManager::runRecovery");
 
+    IBitmapStore::SettleReport total;
+    size_t parts_with_work = 0;
+
     for (const auto & part : parts)
     {
         try
         {
-            settleStagedBitmaps(*part);
+            const auto report = settleStagedBitmaps(*part);
+            if (report.deferred || report.failed || report.owner_unresolved)
+                ++parts_with_work;
+            total.add(report);
         }
         catch (...)
         {
+            ++parts_with_work;
             /// Not fail-closed: a staged bitmap left in place is still readable through its
             /// owner, and the next settle retries it.
             tryLogCurrentException(log,
@@ -225,6 +232,15 @@ void UniqueKeyTxnManager::runRecovery(const std::vector<MergeTreeDataPartPtr> & 
                     part->name));
         }
     }
+
+    /// INFO and not TRACE: a table that had staged bitmaps left over is recovering from an unclean
+    /// stop, which an operator reading the startup log should see without having raised the level.
+    /// Silent when there was nothing to do, which is every ordinary startup.
+    if (parts_with_work)
+        LOG_INFO(log,
+            "Txn-state recovery over {} part(s): {} still owe a staged bitmap ({} deferred, {} failed{})",
+            parts.size(), parts_with_work, total.deferred, total.failed,
+            total.owner_unresolved ? ", an owner is no longer in the part set" : "");
 }
 
 }

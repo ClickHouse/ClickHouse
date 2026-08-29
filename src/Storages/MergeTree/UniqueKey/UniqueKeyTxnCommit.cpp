@@ -388,7 +388,7 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
     {
         const auto conflict_action = (*storage().getSettings())[MergeTreeSetting::unique_key_conflict_action].value;
 
-        LOG_TRACE(log, "UNIQUE KEY INSERT (partition {}): {} of {} row(s) conflict, applying {}",
+        LOG_DEBUG(log, "UNIQUE KEY INSERT (partition {}): {} of {} row(s) conflict, applying {}",
             partitionId(), conflict_rows.size(), results.size(), conflict_action);
 
         switch (conflict_action)
@@ -457,7 +457,7 @@ UniqueKeyTxnCommit::InsertOutcome UniqueKeyTxnCommit::insert(InsertRequest reque
     InsertCommit op(request);
     auto conflicts = op.run();
 
-    LOG_TRACE(getLogger("UniqueKeyTxnCommit"),
+    LOG_DEBUG(getLogger("UniqueKeyTxnCommit"),
         "UNIQUE KEY INSERT (partition {}): done, {} conflicting block(s), part {}",
         op.partitionId(), conflicts.size(), op.partDiscarded() ? "discarded" : "published");
 
@@ -577,7 +577,7 @@ void UniqueKeyTxnCommit::merge(
 
     const String & partition_id = request.merged_part->info.getPartitionId();
 
-    LOG_TRACE(getLogger("UniqueKeyTxnCommit"),
+    LOG_DEBUG(getLogger("UniqueKeyTxnCommit"),
         "UNIQUE KEY MERGE (partition {}): done, merged part {} from {} source part(s)",
         partition_id, request.merged_part->name, request.source_parts.size());
 
@@ -753,7 +753,7 @@ size_t UniqueKeyTxnCommit::deleteRows(StorageMergeTree & storage, DeleteRequest 
 
     const size_t rows = op.committedRows();
 
-    LOG_TRACE(getLogger("UniqueKeyTxnCommit"),
+    LOG_DEBUG(getLogger("UniqueKeyTxnCommit"),
         "UNIQUE KEY DELETE (partition {}): done, killed {} row(s) across {} part(s)",
         request.partition_id, rows, request.rows_by_part.size());
 
