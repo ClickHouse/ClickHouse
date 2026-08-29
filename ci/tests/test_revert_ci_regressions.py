@@ -1767,6 +1767,52 @@ def test_a_conflicting_revert_is_recorded_and_left_to_a_human(monkeypatch):
     assert "conflicts with later changes" in investigation.explanation
 
 
+def _capture_merge(monkeypatch, state):
+    """Run `merge_immediately` against the real `GH.merge_pr`, with only the
+    subprocess boundary stubbed, and return the `gh` commands it ran."""
+    commands = []
+
+    def fake_do_command(cmd, *_args, **_kwargs):
+        commands.append(cmd)
+        return True
+
+    monkeypatch.setattr(
+        job.GH, "do_command_with_retries", staticmethod(fake_do_command)
+    )
+    monkeypatch.setattr(
+        job.GH, "get_output_with_retries", staticmethod(lambda *_a, **_k: state)
+    )
+    return commands
+
+
+def test_the_revert_merge_does_not_ask_gh_to_delete_the_branch(monkeypatch):
+    """`gh` refuses `--delete-branch` whenever the base branch has a merge queue
+    enabled, and refuses it next to `--admin` as well -- the very flag that
+    bypasses that queue -- because the check reads the branch setting and not
+    what the merge does. Asking for both fails the merge itself: that is how the
+    revert of #109710 was pushed, opened as #116566 and then left sitting there,
+    with `master` still broken and no reapply draft behind it. GitHub deletes the
+    head branch on its own here, so the merge does not ask for it."""
+    commands = _capture_merge(monkeypatch, "MERGED")
+
+    job.merge_immediately(116566, "ClickHouse/ClickHouse")
+
+    assert len(commands) == 1, commands
+    assert commands[0].startswith("gh pr merge 116566 --repo ClickHouse/ClickHouse")
+    assert "--admin" in commands[0]
+    assert "--delete-branch" not in commands[0]
+
+
+def test_a_revert_that_did_not_merge_is_not_reported_as_merged(monkeypatch):
+    """The state GitHub reports decides the outcome, not the exit code of the
+    last `gh pr merge` attempt, so a merge that did not take fails the job
+    instead of going on to open a reapply of a change still on `master`."""
+    _capture_merge(monkeypatch, "OPEN")
+
+    with pytest.raises(RuntimeError, match="#116566 is OPEN after merging it"):
+        job.merge_immediately(116566, "ClickHouse/ClickHouse")
+
+
 def test_a_revert_is_merged_and_the_change_is_reopened_as_a_draft(monkeypatch):
     monkeypatch.setattr(job, "get_pull_request", lambda *a, **k: make_pull_request())
     monkeypatch.setattr(job.Shell, "check", lambda *a, **k: True)
