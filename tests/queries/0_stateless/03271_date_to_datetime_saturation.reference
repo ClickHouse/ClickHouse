@@ -167,14 +167,20 @@ SELECT count() FROM test32 WHERE toUnixTimestamp(identity(d)) > 2524608000;
 drop table if exists test32z;
 create table test32z (d Date32, v Int64) engine MergeTree order by d settings auto_statistics_types = '';
 insert into test32z select toDate32('1970-01-01') + number, number from numbers(40);
-SELECT count() FROM test32z WHERE toDateTime32(d) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_implicit_projections = 1;
+SELECT count() FROM test32z WHERE toDateTime32(d) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 31
-SELECT count() FROM test32z WHERE toDateTime32(identity(d)) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_implicit_projections = 1;
+SELECT count() FROM test32z WHERE toDateTime32(identity(d)) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 31
-SELECT count() FROM test32z WHERE toDateTime32(d) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_implicit_projections = 1, date_time_overflow_behavior = 'saturate';
+SELECT count() FROM test32z WHERE toDateTime32(d) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_projections = 1, optimize_use_implicit_projections = 1, date_time_overflow_behavior = 'saturate';
 31
-SELECT count() FROM test32z WHERE toDateTime32(identity(d)) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_implicit_projections = 1, date_time_overflow_behavior = 'saturate';
+SELECT count() FROM test32z WHERE toDateTime32(identity(d)) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow', optimize_use_projections = 1, optimize_use_implicit_projections = 1, date_time_overflow_behavior = 'saturate';
 31
+-- An exactly continuous key range is searched by binary search, a range that is not by generic
+-- exclusion; the raw-key arm is the control that shows the probe can print either value.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM test32z WHERE toDateTime32(d) > toDateTime('1970-01-10 12:00:00') SETTINGS session_timezone = 'Europe/Moscow') WHERE explain ILIKE '%generic exclusion search%';
+1
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM test32z WHERE d > toDate32('1970-01-10')) WHERE explain ILIKE '%binary search%';
+1
 -- A `Date` day number reaches the saturated lookup table, which is never negative, so day 0 stays
 -- inside the window and keeps pruning in the same timezone.
 drop table if exists testz;
