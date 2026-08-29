@@ -688,13 +688,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         if (ctx->need_remove_expired_values || !global_ctx->metadata_snapshot->hasAnyGroupByTTL())
             global_ctx->new_data_part->ttl_infos.rows_where_ttl.clear();
 
-        /// The MOVE and RECOMPRESS maps are read directly by the background mover and by
-        /// recompression selection, so a pre-patch value there is acted on rather than merely
-        /// reported. They are dropped in every case: a rebuild repopulates them from the merged
-        /// data, and where no rebuild runs an empty map means "not known yet" instead of a
-        /// placement or codec decision taken from values the patch has already invalidated.
-        global_ctx->new_data_part->ttl_infos.moves_ttl.clear();
-        global_ctx->new_data_part->ttl_infos.recompression_ttl.clear();
+        /// The MOVE and RECOMPRESS maps are the only record the background mover and the
+        /// recompression selector ever read, so they are dropped under the same condition as the
+        /// rows-WHERE ones: only when a rebuild will refill them. Emptying them with no rebuild
+        /// would not defer the action, it would delete the metadata that schedules it. The
+        /// placement and codec decisions taken during this merge do not read them either way -
+        /// those already ignore pre-patch infos.
+        if (ctx->need_remove_expired_values || !global_ctx->metadata_snapshot->hasAnyGroupByTTL())
+        {
+            global_ctx->new_data_part->ttl_infos.moves_ttl.clear();
+            global_ctx->new_data_part->ttl_infos.recompression_ttl.clear();
+        }
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
