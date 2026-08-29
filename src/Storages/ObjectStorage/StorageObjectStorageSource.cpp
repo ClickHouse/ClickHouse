@@ -1222,6 +1222,19 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 const auto schema_id = iceberg_info->info.underlying_format_read_schema_id;
                 if (schema_processor->hasClickHouseTableSchemaById(schema_id))
                     identity_partition_lake_types = *schema_processor->getClickHouseTableSchemaById(schema_id);
+                /// That list holds top-level fields only. A nested field is registered under its
+                /// dotted full name, which is also the name the value carries, so it is resolved by
+                /// field id from the same schema.
+                for (const auto & [name, _] : identity_partition_columns)
+                {
+                    if (identity_partition_lake_types.contains(name))
+                        continue;
+                    const auto source_id = schema_processor->tryGetColumnIDByName(schema_id, name);
+                    if (!source_id)
+                        continue;
+                    if (auto field = schema_processor->tryGetFieldCharacteristics(schema_id, *source_id))
+                        identity_partition_lake_types.push_back(*field);
+                }
             }
         }
 #endif

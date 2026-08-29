@@ -271,6 +271,12 @@ ${CH} --query_id="${QID_STRUCT}" -q "SELECT id FROM icebergS3Cluster('test_clust
 QID_PRUNE="04748-prune-${CLICKHOUSE_DATABASE}"
 ${CH} --query_id="${QID_PRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}22/', 'Parquet', 'id Nullable(Int64), data String') WHERE id < 4" > /dev/null
 
+# Low cardinality is the other wrapper that cannot reorder values, and each pruning site decides about
+# it separately, so each one needs its own arm. This is the manifest site. The declaration is rejected
+# outright without allow_suspicious_low_cardinality_types.
+QID_LCPRUNE="04748-lcprune-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_LCPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}22/', 'Parquet', 'id LowCardinality(Int64), data String') WHERE id < 4 SETTINGS allow_suspicious_low_cardinality_types = 1" > /dev/null
+
 # Same for the reader's own row-group pruning on a schema-evolved file, which is likewise invisible in
 # the values: this read declares no structure, so a legal Iceberg promotion must not cost it. Manifest
 # pruning is off so that the file reaches the reader at all, and it is the reader's counter that
@@ -286,6 +292,10 @@ ${CH} --query_id="${QID_RGPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}24
 QID_WRAPPRUNE="04748-wrapprune-${CLICKHOUSE_DATABASE}"
 ${CH} --query_id="${QID_WRAPPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}23/', 'Parquet', 'id Nullable(Int64), data String, extra Nullable(String)') WHERE id < 5 SETTINGS use_iceberg_partition_pruning = 0" > /dev/null
 
+# The reader site's own decision about low cardinality, which is separate from the manifest site's.
+QID_LCWRAPPRUNE="04748-lcwrapprune-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_LCWRAPPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}23/', 'Parquet', 'id LowCardinality(Int64), data String, extra Nullable(String)') WHERE id < 5 SETTINGS use_iceberg_partition_pruning = 0, allow_suspicious_low_cardinality_types = 1" > /dev/null
+
 # The paimon partition key is typed by its metadata, so the same nullability-only difference must not
 # cost it its pruning either. Withholding is invisible in the values, and the count to compare against
 # is the same read with pruning off rather than a constant, so this takes a pair of query ids. Both
@@ -294,6 +304,12 @@ QID_PPRUNE="04748-pprune-${CLICKHOUSE_DATABASE}"
 QID_PPRUNEOFF="04748-ppruneoff-${CLICKHOUSE_DATABASE}"
 ${CH} --query_id="${QID_PPRUNE}" -q "SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn Nullable(Int64)') WHERE f_bigint_nn < 2 SETTINGS use_paimon_partition_pruning = 1, parallel_replicas_for_cluster_engines = 0" > /dev/null
 ${CH} --query_id="${QID_PPRUNEOFF}" -q "SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn Nullable(Int64)') WHERE f_bigint_nn < 2 SETTINGS use_paimon_partition_pruning = 0, parallel_replicas_for_cluster_engines = 0" > /dev/null
+
+# The paimon site's own decision about low cardinality, the third of the three. Same relative oracle.
+QID_LCPPRUNE="04748-lcpprune-${CLICKHOUSE_DATABASE}"
+QID_LCPPRUNEOFF="04748-lcppruneoff-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_LCPPRUNE}" -q "SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn LowCardinality(Int64)') WHERE f_bigint_nn < 2 SETTINGS use_paimon_partition_pruning = 1, parallel_replicas_for_cluster_engines = 0, allow_suspicious_low_cardinality_types = 1" > /dev/null
+${CH} --query_id="${QID_LCPPRUNEOFF}" -q "SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn LowCardinality(Int64)') WHERE f_bigint_nn < 2 SETTINGS use_paimon_partition_pruning = 0, parallel_replicas_for_cluster_engines = 0, allow_suspicious_low_cardinality_types = 1" > /dev/null
 
 # A column outside the partition keys is not part of the key the bounds are compared against, so
 # retyping one cannot mis-prune and must not cost the partition key its pruning. The filter has to name
@@ -319,18 +335,27 @@ SELECT count() > 0 FROM system.processors_profile_log WHERE initial_query_id = '
 SELECT countIf(name = 'PartialSortingTransform') > 0 FROM system.processors_profile_log WHERE initial_query_id = '${QID_STRUCT}' AND query_id != initial_query_id;
 SELECT '-- iceberg: a declaration differing only in nullability still prunes manifest entries';
 SYSTEM FLUSH LOGS query_log;
-SELECT max(ProfileEvents['IcebergMinMaxIndexPrunedFiles']) > 0 FROM system.query_log WHERE query_id = '${QID_PRUNE}' AND type = 'QueryFinish';
+-- Every query_log lookup below is scoped to this run's database as well as to its query id,
+-- because a query id is only unique within a run.
+SELECT max(ProfileEvents['IcebergMinMaxIndexPrunedFiles']) > 0 FROM system.query_log WHERE query_id = '${QID_PRUNE}' AND type = 'QueryFinish' AND current_database = currentDatabase();
+SELECT '-- iceberg: a declaration differing only in low cardinality still prunes manifest entries';
+SELECT max(ProfileEvents['IcebergMinMaxIndexPrunedFiles']) > 0 FROM system.query_log WHERE query_id = '${QID_LCPRUNE}' AND type = 'QueryFinish' AND current_database = currentDatabase();
 SELECT '-- iceberg: an undeclared read of a promoted column still prunes row groups';
-SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_RGPRUNE}' AND type = 'QueryFinish';
+SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_RGPRUNE}' AND type = 'QueryFinish' AND current_database = currentDatabase();
 SELECT '-- iceberg: a declaration differing only in nullability still prunes row groups';
-SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_WRAPPRUNE}' AND type = 'QueryFinish';
+SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_WRAPPRUNE}' AND type = 'QueryFinish' AND current_database = currentDatabase();
+SELECT '-- iceberg: a declaration differing only in low cardinality still prunes row groups';
+SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_LCWRAPPRUNE}' AND type = 'QueryFinish' AND current_database = currentDatabase();
 SELECT '-- paimon: a declaration differing only in nullability still prunes partitions';
 -- A missing query id makes max() NULL, so an absent read reports \N rather than passing.
-SELECT (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNE}' AND type = 'QueryFinish')
-     < (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNEOFF}' AND type = 'QueryFinish');
+SELECT (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNE}' AND type = 'QueryFinish' AND current_database = currentDatabase())
+     < (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNEOFF}' AND type = 'QueryFinish' AND current_database = currentDatabase());
+SELECT '-- paimon: a declaration differing only in low cardinality still prunes partitions';
+SELECT (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_LCPPRUNE}' AND type = 'QueryFinish' AND current_database = currentDatabase())
+     < (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_LCPPRUNEOFF}' AND type = 'QueryFinish' AND current_database = currentDatabase());
 SELECT '-- paimon: retyping a column outside the partition keys still prunes partitions';
-SELECT (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNENK}' AND type = 'QueryFinish')
-     < (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNENKOFF}' AND type = 'QueryFinish');
+SELECT (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNENK}' AND type = 'QueryFinish' AND current_database = currentDatabase())
+     < (SELECT max(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE query_id = '${QID_PPRUNENKOFF}' AND type = 'QueryFinish' AND current_database = currentDatabase());
 SELECT '-- iceberg cluster: a worker keeps declared columns that the metadata does not have';
 -- Keeping the key and keeping the columns are two separate decisions: clearing the key must not
 -- also discard the declared columns, or the snapshot would overwrite them and a column that exists
@@ -393,17 +418,18 @@ SELECT groupArray(f_bigint_nn) FROM (SELECT f_bigint_nn FROM paimonLocal('${PAIM
 SELECT groupArray(f_bigint_nn) FROM (SELECT f_bigint_nn FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn String') WHERE f_bigint_nn < '2' ORDER BY f_bigint_nn) SETTINGS use_paimon_partition_pruning = 0, parallel_replicas_for_cluster_engines = 0;
 SELECT groupArray(s) FROM (SELECT toString(f_bigint_nn) AS s FROM paimonLocal('${PAIMONP}') WHERE toString(f_bigint_nn) < '2' ORDER BY s);
 SELECT '-- iceberg: a retyped identity partition column is read as declared';
--- An identity-partitioned file need not store the partition column, so its value comes from the
--- manifest and is injected as a constant. The value is extracted at the metadata type, and the two
--- arms below reach the injection separately: returning the column without a filter injects it into the
--- read, while filtering on it without returning it substitutes it into the filter instead. Ids 2 and
--- 10 order differently as numbers and as strings, so both rows are below '4' but only one is below 4.
+-- An identity partition value comes from the manifest, and the injection replaces the column even
+-- where the writer did store it in the file. The value is extracted at the metadata type. A plain
+-- WHERE reaches both the filter substitution and the reader injection; only an explicit PREWHERE
+-- isolates the substitution, and it needs the cluster rewrite off because that wrapper rejects
+-- PREWHERE. Ids 2 and 10 order differently as numbers and as strings, so both rows are below '4' but
+-- only one is below 4.
 CREATE TABLE ice25 (id Int64, data String) ENGINE = IcebergLocal('${ICE}25/', 'Parquet') PARTITION BY id;
 INSERT INTO ice25 VALUES (2, 'two');
 INSERT INTO ice25 VALUES (10, 'ten');
 SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}25/', 'Parquet', 'id String, data String') ORDER BY id);
-SELECT groupArray(data) FROM (SELECT data FROM icebergLocal('${ICE}25/', 'Parquet', 'id String, data String') WHERE id < '4' ORDER BY data);
-SELECT groupArray(data) FROM (SELECT data FROM icebergLocal('${ICE}25/', 'Parquet', 'id String, data String') PREWHERE id < '4' ORDER BY data);
+SELECT groupArray(data) FROM (SELECT data FROM icebergLocal('${ICE}25/', 'Parquet', 'id String, data String') WHERE id < '4' ORDER BY data) SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SELECT groupArray(data) FROM (SELECT data FROM icebergLocal('${ICE}25/', 'Parquet', 'id String, data String') PREWHERE id < '4' ORDER BY data) SETTINGS parallel_replicas_for_cluster_engines = 0;
 -- Reading it with no declaration, and with one that agrees, are the pair: both must be unchanged, or
 -- the arms above could pass with the partition value dropped rather than converted.
 SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}25/', 'Parquet') ORDER BY id);
