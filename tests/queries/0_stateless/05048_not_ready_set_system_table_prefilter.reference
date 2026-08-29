@@ -1,7 +1,9 @@
 1
 0
-databases IN: 0
-mutations IN: 0
-iceberg_history IN: 0
-databases GLOBAL IN: 0
+rows read for one matching database: 2
+rows read for no matching database: 1
+databases IN: 0 ok
+mutations IN: 0 ok
+iceberg_history IN: 0 ok
+databases GLOBAL IN: 0 ok
 alive
