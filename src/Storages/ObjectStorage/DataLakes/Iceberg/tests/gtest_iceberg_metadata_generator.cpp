@@ -15,6 +15,7 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
@@ -87,12 +88,24 @@ String snapshotOperation(
     return result.snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_operation);
 }
 
-void callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id)
+/// Returns the summary of the generated manifest-only snapshot.
+Poco::JSON::Object::Ptr callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
     auto metadata_info = generator.generateMetadataPathWithInfo();
-    MetadataGenerator(metadata).generateManifestOnlySnapshot(generator, metadata_info.path, parent_snapshot_id);
+    auto result = MetadataGenerator(metadata).generateManifestOnlySnapshot(generator, metadata_info.path, parent_snapshot_id);
+    return result.snapshot->getObject(Iceberg::f_summary);
+}
+
+/// Append one snapshot, then drop `field_name` from its summary so it stands in for a parent
+/// written by an engine that omits that optional counter. Returns the parent snapshot id.
+Int64 appendParentWithoutSummaryField(Poco::JSON::Object::Ptr metadata, const char * field_name)
+{
+    appendSnapshot(metadata);
+    auto parent = metadata->getArray(Iceberg::f_snapshots)->getObject(0);
+    parent->getObject(Iceberg::f_summary)->remove(field_name);
+    return parent->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
 }
 
 }
@@ -210,6 +223,46 @@ TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
     EXPECT_EQ(
         metadata->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->getValue<Int64>(Iceberg::f_metadata_snapshot_id),
         metadata->getValue<Int64>(Iceberg::f_current_snapshot_id));
+}
+
+/// The `total-*` metrics are optional per the Iceberg spec, so a parent snapshot written by another
+/// engine may omit them. A manifest-only rewrite adds no data, so every such total is unchanged and
+/// an absent one stays absent; refusing the rewrite would leave OPTIMIZE ... MANIFEST permanently
+/// unavailable on a table that reads correctly. Totals the parent does carry are still forwarded.
+TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenParentTotalRecordsMissing)
+{
+    auto metadata = makeMinimalV2Metadata();
+    auto parent_snapshot_id = appendParentWithoutSummaryField(metadata, Iceberg::f_total_records);
+
+    Poco::JSON::Object::Ptr summary;
+    ASSERT_NO_THROW(summary = callManifestOnlySnapshot(metadata, parent_snapshot_id));
+
+    /// The parent's own summary would satisfy the total-* assertions below, so pin the new snapshot
+    /// first: `replace` separates it from the parent's `append`, and it must be attached and current.
+    EXPECT_EQ(summary->getValue<String>(Iceberg::f_operation), Iceberg::f_replace);
+    EXPECT_EQ(metadata->getArray(Iceberg::f_snapshots)->size(), 2u);
+    EXPECT_NE(metadata->getValue<Int64>(Iceberg::f_current_snapshot_id), parent_snapshot_id);
+
+    EXPECT_FALSE(summary->has(Iceberg::f_total_records));
+    EXPECT_EQ(summary->getValue<String>(Iceberg::f_total_files_size), "100");
+    EXPECT_EQ(summary->getValue<String>(Iceberg::f_total_data_files), "1");
+}
+
+/// The same absent counter must still be rejected when the commit moves it: a delta cannot be added
+/// to an unknown total, and writing the delta alone would report a total missing the parent's rows.
+TEST(IcebergMetadataGenerator, ThrowsWhenParentTotalRecordsMissingAndCommitAddsRecords)
+{
+    auto metadata = makeMinimalV2Metadata();
+    auto parent_snapshot_id = appendParentWithoutSummaryField(metadata, Iceberg::f_total_records);
+    try
+    {
+        appendSnapshot(metadata, parent_snapshot_id);
+        FAIL() << "Expected BAD_ARGUMENTS";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::BAD_ARGUMENTS);
+    }
 }
 
 #endif
