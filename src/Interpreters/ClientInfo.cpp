@@ -341,6 +341,15 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
 }
 
 
+/** Every string of `ClientInfo` is short metadata: a user name, a query id, a host name, a client
+  * name, a quota key, a user agent, a URL, a token. The value comes from the peer and the string is
+  * resized to the declared size before the value arrives, and in interserver mode `ClientInfo` is
+  * read before the secret hash of the query is checked, so bound them. The `Hello` packet bounds its
+  * fields the same way. The same holds for the number of current roles.
+  */
+static constexpr size_t MAX_CLIENT_INFO_STRING_SIZE = 64 * 1024;
+static constexpr size_t MAX_CLIENT_INFO_ROLES = 65536;
+
 void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -354,11 +363,11 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
     resolve_client_hostname_on_demand = false;
 
-    readBinary(initial_user, in);
-    readBinary(initial_query_id, in);
+    readStringBinary(initial_user, in, MAX_CLIENT_INFO_STRING_SIZE);
+    readStringBinary(initial_query_id, in, MAX_CLIENT_INFO_STRING_SIZE);
 
     String initial_address_string;
-    readBinary(initial_address_string, in);
+    readStringBinary(initial_address_string, in, MAX_CLIENT_INFO_STRING_SIZE);
     /// The wire address must never reach Poco's resolver (getservbyname/DNS, trapped to SIGILL). For a
     /// SECONDARY_QUERY the value is consumed verbatim (system.query_log, interserver authenticate), so a
     /// non-"ip:port" form is corrupted input and is rejected as INCORRECT_DATA. For an INITIAL_QUERY the
@@ -384,9 +393,9 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
     if (interface == Interface::TCP)
     {
-        readBinary(os_user, in);
-        readBinary(client_hostname, in);
-        readBinary(client_name, in);
+        readStringBinary(os_user, in, MAX_CLIENT_INFO_STRING_SIZE);
+        readStringBinary(client_hostname, in, MAX_CLIENT_INFO_STRING_SIZE);
+        readStringBinary(client_name, in, MAX_CLIENT_INFO_STRING_SIZE);
         readVarUInt(client_version_major, in);
         readVarUInt(client_version_minor, in);
         readVarUInt(client_tcp_protocol_version, in);
@@ -397,25 +406,25 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         readBinary(read_http_method, in);
         http_method = HTTPMethod(read_http_method);
 
-        readBinary(http_user_agent, in);
+        readStringBinary(http_user_agent, in, MAX_CLIENT_INFO_STRING_SIZE);
 
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO)
-            readBinary(forwarded_for, in);
+            readStringBinary(forwarded_for, in, MAX_CLIENT_INFO_STRING_SIZE);
 
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
-            readBinary(http_referer, in);
+            readStringBinary(http_referer, in, MAX_CLIENT_INFO_STRING_SIZE);
 
         /// See the note in `write`: absent from the embedded `ClientInfo` of the persisted async
         /// `Distributed` insert header, where they are stored as trailing header fields instead.
         if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
         {
-            readBinary(http_handler_name, in);
-            readBinary(http_request_url, in);
+            readStringBinary(http_handler_name, in, MAX_CLIENT_INFO_STRING_SIZE);
+            readStringBinary(http_request_url, in, MAX_CLIENT_INFO_STRING_SIZE);
         }
     }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
-        readBinary(quota_key, in);
+        readStringBinary(quota_key, in, MAX_CLIENT_INFO_STRING_SIZE);
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH)
         readVarUInt(distributed_depth, in);
@@ -436,7 +445,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         {
             readBinary(client_trace_context.trace_id, in);
             readBinary(client_trace_context.span_id, in);
-            readBinary(client_trace_context.tracestate, in);
+            readStringBinary(client_trace_context.tracestate, in, MAX_CLIENT_INFO_STRING_SIZE);
             readBinary(client_trace_context.trace_flags, in);
         }
     }
@@ -461,11 +470,11 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         UInt8 have_jwt = 0;
         readBinary(have_jwt, in);
         if (have_jwt)
-            readBinary(jwt, in);
+            readStringBinary(jwt, in, MAX_CLIENT_INFO_STRING_SIZE);
     }
 
     if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
-        readBinary(client_agent, in);
+        readStringBinary(client_agent, in, MAX_CLIENT_INFO_STRING_SIZE);
 
     if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG)
         readBinary(is_internal, in);
@@ -477,7 +486,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         if (have_current_roles)
         {
             std::vector<String> roles;
-            readVectorBinary(roles, in);
+            readVectorBinary(roles, in, MAX_CLIENT_INFO_ROLES);
             current_roles = std::move(roles);
         }
         else

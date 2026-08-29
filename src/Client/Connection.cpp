@@ -1590,8 +1590,11 @@ Packet Connection::receivePacket()
                 // materializing it (do not resize a vector to a peer-chosen size).
                 UInt64 num_part_uuids = 0;
                 readVarUInt(num_part_uuids, *in);
-                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                /// The count comes from the server and is only used to skip the payload, but it
+                /// still decides how much the client reads from the socket, so keep it realistic.
+                static constexpr UInt64 max_part_uuids = 1000000;
+                if (num_part_uuids > max_part_uuids)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", max_part_uuids);
                 in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
             }

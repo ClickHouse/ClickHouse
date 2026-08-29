@@ -84,6 +84,12 @@ std::string TablesStatusRequest::getAuthDigest() const
     return data;
 }
 
+/** The number of tables comes from the peer and each of them is inserted into a collection before
+  * the names that follow are read, so bound it: a request or a response about a hundred thousand
+  * tables is already far beyond what a query touches.
+  */
+static constexpr size_t MAX_TABLES_IN_TABLES_STATUS = 100000;
+
 void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
@@ -92,8 +98,9 @@ void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > MAX_TABLES_IN_TABLES_STATUS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large collection size: {} (maximum: {})", size, MAX_TABLES_IN_TABLES_STATUS);
 
     for (size_t i = 0; i < size; ++i)
     {
@@ -129,8 +136,9 @@ void TablesStatusResponse::read(ReadBuffer & in, UInt64 server_protocol_revision
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > MAX_TABLES_IN_TABLES_STATUS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large collection size: {} (maximum: {})", size, MAX_TABLES_IN_TABLES_STATUS);
 
     for (size_t i = 0; i < size; ++i)
     {

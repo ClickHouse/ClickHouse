@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+
+# The server allocates from counts and sizes that a client puts on the wire, before the corresponding
+# data arrives, so a collection read from the protocol has to be bounded by what the data can
+# plausibly hold. In interserver mode some of these fields are read before the secret hash of the
+# query is checked.
+
+import os
+import socket
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "05053 native protocol"
+CLIENT_REVISION = 54449
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+
+        ba.append(byte)
+
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8")
+    writeVarUInt(len(b), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise RuntimeError("Socket is closed")
+        size -= len(cur)
+        res.extend(cur)
+
+    return res
+
+
+def readUInt(s, size=1):
+    res = readStrict(s, size)
+    val = 0
+    for i in range(len(res)):
+        val += res[i] << (i * 8)
+    return val
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+
+        if not byte & 0x80:
+            return x
+
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    return readStrict(s, size).decode("utf-8", "replace")
+
+
+def connect():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(30)
+    s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(21, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(CLIENT_REVISION, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)
+    writeStringBinary("default", ba)
+    writeStringBinary("", ba)
+    s.sendall(ba)
+
+    assert readVarUInt(s) == 0  # Hello
+    readStringBinary(s)  # server name
+    readVarUInt(s)  # version major
+    readVarUInt(s)  # version minor
+    readVarUInt(s)  # revision
+    readStringBinary(s)  # timezone
+    readStringBinary(s)  # display name
+    readVarUInt(s)  # version patch
+    return s
+
+
+def serializeClientInfo(ba, query_id, os_user_declared_size=None):
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.extend([0] * 8)  # initial_query_start_time_microseconds
+    ba.append(1)  # TCP
+    if os_user_declared_size is None:
+        writeStringBinary("os_user", ba)  # os_user
+    else:
+        writeVarUInt(os_user_declared_size, ba)  # os_user, but the value never follows
+        return
+    writeStringBinary("client_hostname", ba)  # client_hostname
+    writeStringBinary(CLIENT_NAME, ba)  # client_name
+    writeVarUInt(21, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(CLIENT_REVISION, ba)
+    writeStringBinary("", ba)  # quota_key
+    writeVarUInt(0, ba)  # distributed_depth
+    writeVarUInt(1, ba)  # client_version_patch
+    ba.append(0)  # no telemetry
+
+
+def sendQuery(s, query, num_settings=0, os_user_declared_size=None):
+    ba = bytearray()
+    query_id = uuid.uuid4().hex
+    writeVarUInt(1, ba)  # Query
+    writeStringBinary(query_id, ba)
+    ba.append(1)  # INITIAL_QUERY
+    serializeClientInfo(ba, query_id, os_user_declared_size)
+    if os_user_declared_size is not None:
+        s.sendall(ba)
+        return
+
+    for _ in range(num_settings):
+        writeStringBinary("max_threads", ba)
+        writeVarUInt(0, ba)  # flags
+        writeStringBinary("1", ba)
+    writeStringBinary("", ba)  # end of settings
+
+    writeStringBinary("", ba)  # no interserver secret
+    writeVarUInt(2, ba)  # stage: Complete
+    ba.append(0)  # no compression
+    writeStringBinary(query, ba)
+    s.sendall(ba)
+
+
+def sendEmptyBlock(s):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
+    writeVarUInt(1, ba)
+    ba.append(0)  # is_overflows
+    writeVarUInt(2, ba)
+    writeVarUInt(0, ba)
+    ba.extend([0] * 4)  # bucket_num
+    writeVarUInt(0, ba)  # columns
+    writeVarUInt(0, ba)  # rows
+    s.sendall(ba)
+
+
+def readException(s):
+    readUInt(s, 4)  # code
+    readStringBinary(s)  # name
+    message = readStringBinary(s)
+    readStringBinary(s)  # stack trace
+    readUInt(s)  # has_nested
+    for known in ("Too many settings received", "Too large string size"):
+        if known in message:
+            return known
+    return "UNEXPECTED " + message[:120]
+
+
+def outcome(s):
+    """The name of the exception the server answered with, or how the exchange ended."""
+    try:
+        while True:
+            packet_type = readVarUInt(s)
+            if packet_type == 2:  # Exception
+                return readException(s)
+            if packet_type == 5:  # EndOfStream
+                return "end of stream"
+            if packet_type == 1:  # Data
+                return "data"
+            if packet_type == 3:  # Progress
+                continue
+            return "unexpected packet {}".format(packet_type)
+    except socket.timeout:
+        return "TIMEOUT"
+    except RuntimeError:
+        return "closed"
+
+
+def main():
+    # A settings sequence longer than any real query.
+    s = connect()
+    sendQuery(s, "SELECT 1", num_settings=65537)
+    print("too many settings:", outcome(s))
+    s.close()
+
+    # A `ClientInfo` string that declares a gigabyte and never sends it.
+    s = connect()
+    sendQuery(s, "SELECT 1", os_user_declared_size=1 << 30)
+    print("client info string of a gigabyte:", outcome(s))
+    s.close()
+
+    # A well-formed query still works.
+    s = connect()
+    sendQuery(s, "SELECT 1", num_settings=1)
+    sendEmptyBlock(s)
+    print("well-formed query:", outcome(s))
+    s.close()
+
+
+if __name__ == "__main__":
+    main()
