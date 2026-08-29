@@ -4294,6 +4294,11 @@ try
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
 
+            /// Everything constructed during startup has probed by now, and nothing here holds the
+            /// context lock, so the finding is logged as part of startup instead of waiting for
+            /// someone to read `system.warnings`.
+            flushExt4CorruptionKernelBugWarning(*global_context);
+
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }

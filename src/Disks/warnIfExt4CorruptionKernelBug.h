@@ -17,7 +17,10 @@ class Context;
 /// constructor cannot prove its caller's lock state, so publication is deferred to the drain below.
 void warnIfAffectedByExt4CorruptionKernelBug(const String & directory, const String & description);
 
-/// Publishes whatever the probes above recorded. Must be called without `Context::shared->mutex`.
+/// Publishes whatever the probes above recorded, logging it and storing it for `system.warnings`.
+/// Must be called without `Context::shared->mutex`. The server calls it once startup is complete,
+/// so this is a real startup warning; `Context::getWarnings` calls it too, to catch disks built
+/// later.
 void flushExt4CorruptionKernelBugWarning(const Context & context);
 
 }
