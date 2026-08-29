@@ -44,3 +44,5 @@ RegularMerge	0	200
 -- Case 16: patched merge keeps rows-WHERE TTL entries live
 10
 0
+-- Case 17: the recalculation step honours a rows-WHERE predicate
+1
