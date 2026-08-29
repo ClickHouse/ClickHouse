@@ -1,0 +1,26 @@
+<test>
+    <!-- A two-sided range over a wrapped key column produces two condition atoms whose monotonic
+         function chains transform every granule identically. `z = number + 65536` keeps every
+         granule endpoint above the `UInt16` maximum, so the cast is out of domain and cannot be
+         skipped as representation preserving; `index_granularity = 64` makes the granule loop, not
+         the scan, the dominant cost. -->
+
+    <create_query>
+        CREATE TABLE idx_dup_chain (z UInt64, w UInt16 ALIAS z, INDEX i_w (z) TYPE minmax GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 64
+    </create_query>
+
+    <fill_query>
+        INSERT INTO idx_dup_chain SELECT number + 65536 FROM numbers(6400000)
+        SETTINGS max_insert_threads = 1, max_block_size = 65536
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE idx_dup_chain FINAL</fill_query>
+
+    <!-- Two atoms sharing one chain. -->
+    <query>SELECT count() FROM idx_dup_chain WHERE w >= 20000 AND w &lt;= 20100 SETTINGS max_threads = 1</query>
+
+    <!-- One atom: negative control. -->
+    <query>SELECT count() FROM idx_dup_chain WHERE w >= 20000 SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS idx_dup_chain</drop_query>
+</test>

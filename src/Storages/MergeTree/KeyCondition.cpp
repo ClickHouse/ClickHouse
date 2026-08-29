@@ -25,8 +25,10 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/RegexpUtils.h>
+#include <Common/SipHash.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
@@ -2971,12 +2973,83 @@ public:
 
     Kind getKind() const { return kind; }
     const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
+    /// Every other accessor forwards to this function, so the wrapper's own dynamic type says
+    /// nothing about what will run; `getMonotonicityForRange` above dispatches on this one.
+    const FunctionBasePtr & getWrappedFunction() const { return func; }
 
 private:
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
 };
+
+/// Identifies what a chain of monotonic functions computes: equal identities transform a range
+/// identically. Absent when an element's result is not a function of its arguments alone, or when
+/// the chain cannot be described completely. Type NAMES are hashed rather than compared with
+/// `IDataType::equals`, which is not canonical: `DataTypeDateTime::equals` ignores the time zone,
+/// yet a bare `toHour` reads its argument type's zone.
+static std::optional<UInt128> monotonicFunctionsChainIdentity(const KeyCondition::MonotonicFunctionsChain & chain)
+{
+    if (chain.empty())
+        return {};
+
+    SipHash hash;
+    /// `SipHash::update(const std::string &)` does not feed the length, so ("a","bc") and ("ab","c")
+    /// would otherwise collide.
+    auto add = [&hash](const String & s)
+    {
+        hash.update(s.size());
+        hash.update(s.data(), s.size());
+    };
+
+    for (const auto & element : chain)
+    {
+        const IFunctionBase * function = element.get();
+        /// Two separately built instances agree only if the result depends on the arguments alone.
+        /// `isDeterministicInScopeOfQuery` is not enough: `randConstant` satisfies it and captures a
+        /// different value in every instance.
+        if (!function || !function->isDeterministic())
+            return {};
+
+        if (const auto * with_const_arg = typeid_cast<const FunctionWithOptionalConstArg *>(function))
+        {
+            const auto & const_arg = with_const_arg->getConstArg();
+            const auto * const_column = typeid_cast<const ColumnConst *>(const_arg.column.get());
+            if (!const_column || !const_arg.type)
+                return {};
+
+            hash.update(static_cast<UInt8>(with_const_arg->getKind()));
+            add(const_arg.type->getName());
+            applyVisitor(FieldVisitorHash(hash), const_column->getField());
+
+            function = with_const_arg->getWrappedFunction().get();
+            if (!function)
+                return {};
+        }
+
+        add(function->getName());
+        add(String(typeid(*function).name()));
+        const auto & argument_types = function->getArgumentTypes();
+        hash.update(argument_types.size());
+        for (const auto & argument_type : argument_types)
+        {
+            if (!argument_type)
+                return {};
+            add(argument_type->getName());
+        }
+        if (!function->getResultType())
+            return {};
+        add(function->getResultType()->getName());
+    }
+
+    return hash.get128();
+}
+
+void KeyCondition::RPNElement::setMonotonicFunctionsChain(MonotonicFunctionsChain chain)
+{
+    monotonic_functions_chain_identity = monotonicFunctionsChainIdentity(chain);
+    monotonic_functions_chain = std::move(chain);
+}
 
 DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
 {
@@ -3910,7 +3983,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         return false;
 
                     out.key_columns.push_back(key_column_num);
-                    out.monotonic_functions_chain = std::move(chain);
+                    out.setMonotonicFunctionsChain(std::move(chain));
                     out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
                     const auto atom_it = atom_map.find("isNull");
@@ -4178,7 +4251,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         const auto atom_it = atom_map.find(func_name);
 
         out.key_columns.push_back(key_column_num);
-        out.monotonic_functions_chain = std::move(chain);
+        out.setMonotonicFunctionsChain(std::move(chain));
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
         return atom_it->second(out, const_value);
@@ -4241,7 +4314,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                 out.range = Range(Field(UInt64(0)));
                 out.key_columns.push_back(key_column_num);
-                out.monotonic_functions_chain = std::move(chain);
+                out.setMonotonicFunctionsChain(std::move(chain));
                 out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
                 return true;
             }
@@ -5644,6 +5717,73 @@ static void tupleRangeToBoundingBox(const Range & tuple_range, Float64 & x_min, 
     }
 }
 
+namespace
+{
+
+/// Ranges transformed by a monotonic function chain, reused within one hyperrectangle check.
+/// `single_point` and the key column's data type are the same for every atom of one check, so a
+/// transformed range is determined by the key column and the chain's identity alone.
+class TransformedRangeMemo
+{
+public:
+    explicit TransformedRangeMemo(const KeyCondition::RPN & rpn_) : rpn(rpn_) { }
+
+    std::optional<Range> apply(
+        size_t key_column,
+        const Range & key_range,
+        const KeyCondition::RPNElement & element,
+        const DataTypePtr & type,
+        bool single_point)
+    {
+        auto transform = [&] {
+            return KeyCondition::applyMonotonicFunctionsChainToRange(
+                key_range, element.monotonic_functions_chain, type, single_point);
+        };
+
+        const auto & identity = element.monotonic_functions_chain_identity;
+        if (!identity)
+            return transform();
+
+        for (const auto & entry : entries)
+            if (entry.key_column == key_column && entry.identity == *identity)
+                return entry.result;
+
+        /// A non-monotonic outcome is stored too: another atom with this identity would get it as well.
+        std::optional<Range> result = transform();
+        if (isWorthMemoizing())
+            entries.push_back({key_column, *identity, result});
+        return result;
+    }
+
+private:
+    struct Entry
+    {
+        size_t key_column;
+        UInt128 identity;
+        std::optional<Range> result;
+    };
+
+    /// A single chain-bearing atom can never see a hit, so it should not pay for an entry.
+    bool isWorthMemoizing()
+    {
+        if (!worth_memoizing.has_value())
+        {
+            size_t count = 0;
+            for (const auto & element : rpn)
+                if (element.monotonic_functions_chain_identity && ++count == 2)
+                    break;
+            worth_memoizing = count == 2;
+        }
+        return *worth_memoizing;
+    }
+
+    const KeyCondition::RPN & rpn;
+    absl::InlinedVector<Entry, 4> entries;
+    std::optional<bool> worth_memoizing;
+};
+
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -5651,6 +5791,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
+    TransformedRangeMemo transformed_range_memo(rpn);
 
     auto curve_type = [&](size_t key_column_pos)
     {
@@ -5690,20 +5831,15 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
-                key_range_storage = hyperrectangle[key_column];
-                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    *key_range_storage,
-                    element.monotonic_functions_chain,
-                    data_types[key_column],
-                    single_point
-                );
+                std::optional<Range> new_range = transformed_range_memo.apply(
+                    key_column, hyperrectangle[key_column], element, data_types[key_column], single_point);
 
                 if (!new_range)
                 {
                     rpn_stack.emplace_back(true, true);
                     continue;
                 }
-                key_range_storage = *new_range;
+                key_range_storage = std::move(*new_range);
                 key_range_ptr = &*key_range_storage;
             }
 
@@ -6086,6 +6222,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const DataTypes & sparse_data_types) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
+    TransformedRangeMemo transformed_range_memo(rpn);
 
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -6132,11 +6269,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 /// The case when the column is wrapped in a chain of possibly monotonic functions.
                 if (!element.monotonic_functions_chain.empty())
                 {
-                    std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                        key_range,
-                        element.monotonic_functions_chain,
-                        sparse_data_types[sparse_pos],
-                        single_point);
+                    std::optional<Range> new_range = transformed_range_memo.apply(
+                        sparse_pos, key_range, element, sparse_data_types[sparse_pos], single_point);
 
                     if (!new_range)
                     {

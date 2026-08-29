@@ -393,6 +393,13 @@ public:
         /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
 
+        /// Identity of the chain above: equal identities transform a range identically.
+        /// Absent means unknown, and an absent identity never matches, not even another absent one.
+        std::optional<UInt128> monotonic_functions_chain_identity;
+
+        /// The only writer of the chain and of its identity, so the two can never disagree.
+        void setMonotonicFunctionsChain(MonotonicFunctionsChain chain);
+
         std::optional<BloomFilterData> bloom_filter_data;
     };
 
