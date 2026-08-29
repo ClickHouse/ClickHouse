@@ -13,14 +13,13 @@ WHERE _path = '/';
 -- opened. Nothing listens on port 1, so the query fails if a connection is
 -- attempted.
 --
--- `parallel_replicas_for_cluster_engines` is pinned off for these two arms:
--- with parallel replicas enabled `url` is served by `StorageURLCluster`, whose
--- task iterator hands the URL out to a replica without applying this pruning,
--- and the replica then opens the URL and fails with `Connection refused`. The
--- deferral being checked here belongs to the local plan, so ask for it
--- explicitly instead of depending on how the run randomizes replicas. The
--- arm above deliberately keeps the cluster plan reachable, because that is
--- where `StorageURLCluster` builds the same iterator.
+-- The branch these two arms cover is the deferred filter of the local
+-- `ReadFromURL` plan, so `parallel_replicas_for_cluster_engines` is pinned off
+-- to ask for that plan explicitly instead of depending on how the run
+-- randomizes replicas. `StorageURLCluster` builds the same iterator from
+-- `getTaskIteratorExtension`; the cluster plan is covered by the arm above
+-- (which deliberately keeps it reachable) and by
+-- `05048_url_cluster_path_filter_prune`.
 SELECT * FROM url('http://localhost:1/04907_missing.tsv', TSV, 'x UInt64')
 WHERE _path GLOBAL IN (SELECT 'no such path')
 SETTINGS parallel_replicas_for_cluster_engines = 0;
