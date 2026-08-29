@@ -251,10 +251,15 @@ def test_implicit_index_upgrade_alter_replay(started_cluster):
 
 
 def test_implicit_index_upgrade_disable_auto_minmax(started_cluster):
-    """A replica with implicit indexes disabled can join legacy Keeper metadata.
+    """Joining legacy Keeper metadata normalizes implicit indexes per the local setting.
 
-    A 25.10 replica serialized implicit minmax indexes. A current replica with the
-    corresponding setting disabled must normalize those legacy entries while joining.
+    A 25.10 replica serialized implicit minmax indexes into Keeper metadata. A current
+    replica recognizes those legacy entries only while the corresponding
+    `add_minmax_index_for_*` setting is enabled (with the setting disabled an index named
+    `auto_minmax_index_<column>` is a legal explicit index, so stored entries cannot be
+    assumed implicit). Therefore joining with the setting disabled is rejected with
+    `METADATA_MISMATCH`, while joining with the setting enabled normalizes the legacy
+    entries and succeeds.
     """
     node = started_cluster.instances["node"]
     node2 = started_cluster.instances["node2"]
@@ -273,12 +278,24 @@ def test_implicit_index_upgrade_disable_auto_minmax(started_cluster):
         "SELECT name FROM system.data_skipping_indices WHERE table = 'test_disable_auto_minmax';"
     )
 
-    node2.query(
+    # With the setting disabled the stored legacy entries are not recognized as
+    # implicit, so the structures genuinely differ and the join must fail closed.
+    assert "METADATA_MISMATCH" in node2.query_and_get_error(
         """
         CREATE TABLE test_disable_auto_minmax (key UInt64, value Int32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_disable_auto_minmax', 'r2')
         ORDER BY key
         SETTINGS add_minmax_index_for_numeric_columns = 0;
+        """
+    )
+
+    # With the setting enabled the legacy entries are normalized and the join succeeds.
+    node2.query(
+        """
+        CREATE TABLE test_disable_auto_minmax (key UInt64, value Int32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_disable_auto_minmax', 'r2')
+        ORDER BY key
+        SETTINGS add_minmax_index_for_numeric_columns = 1;
         """
     )
     wait_for_active_replica(node2, "test_disable_auto_minmax")
