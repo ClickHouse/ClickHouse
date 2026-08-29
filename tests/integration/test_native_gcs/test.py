@@ -23,12 +23,19 @@ from helpers.mock_servers import start_mock_servers
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-# Two stub token endpoints, differing only in the lifetime they report. google-cloud-cpp's caching
-# decorator refreshes a token once it is within `GoogleOAuthAccessTokenExpirationSlack()` (4 minutes)
-# of expiry, so a 30-second lifetime makes every use a refresh while a 2-hour one is minted once and
-# then served from the cache.
+# Two stub token endpoints for the explicit `google_adc_*` tests, differing only in the lifetime
+# they report. google-cloud-cpp's caching decorator refreshes a token once it is within
+# `GoogleOAuthAccessTokenExpirationSlack()` (4 minutes) of expiry, so a 30-second lifetime makes
+# every use a refresh while a 2-hour one is minted once and then served from the cache.
 SHORT_LIVED_TOKEN_PORT = 8963
 LONG_LIVED_TOKEN_PORT = 8964
+
+# A third stub, standing in for the endpoint an Application Default Credentials file names. The one
+# test that must let the client really fall back to ADC points `GOOGLE_APPLICATION_CREDENTIALS` at a
+# stub `authorized_user` file whose `token_uri` is this port: without it the ADC chain ends at the
+# GCE metadata server, which is unreachable in the test network and hangs the first write.
+ADC_TOKEN_PORT = 8965
+ADC_CREDENTIALS_PATH = "/var/lib/clickhouse/google_application_credentials.json"
 
 cluster = ClickHouseCluster(__file__)
 
@@ -44,9 +51,13 @@ def started_cluster():
                 "configs/dynamic_gcs_disk_include_source.xml",
                 "configs/filesystem_caches.xml",
                 "configs/custom_local_disks.xml",
+                "configs/allowed_disks_for_table_engines.xml",
             ],
             with_gcs=True,
-            env_variables={"NATIVE_GCS_DYNAMIC_DISK_TYPE": "gcs"},
+            env_variables={
+                "NATIVE_GCS_DYNAMIC_DISK_TYPE": "gcs",
+                "GOOGLE_APPLICATION_CREDENTIALS": ADC_CREDENTIALS_PATH,
+            },
         )
         cluster.start()
 
@@ -69,7 +80,30 @@ def started_cluster():
             [
                 ("oauth_token_mock.py", "node", SHORT_LIVED_TOKEN_PORT, ["30"]),
                 ("oauth_token_mock.py", "node", LONG_LIVED_TOKEN_PORT, ["7200"]),
+                ("oauth_token_mock.py", "node", ADC_TOKEN_PORT, ["7200"]),
             ],
+        )
+
+        # The Application Default Credentials file the `GOOGLE_APPLICATION_CREDENTIALS` environment
+        # variable above names. It is written after the server has started because nothing reads it
+        # before the first request that resolves ADC.
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cat > {} <<'CREDENTIALS_EOF'\n{}\nCREDENTIALS_EOF".format(
+                    ADC_CREDENTIALS_PATH,
+                    json.dumps(
+                        {
+                            "type": "authorized_user",
+                            "client_id": "adc-client-id",
+                            "client_secret": "adc-client-secret",
+                            "refresh_token": "adc-refresh-token",
+                            "token_uri": f"http://localhost:{ADC_TOKEN_PORT}/token",
+                        }
+                    ),
+                ),
+            ]
         )
 
         yield cluster
@@ -352,7 +386,9 @@ def test_dynamic_gcs_disk_caches_a_long_lived_access_token(started_cluster):
     matter how many GCS requests the queries make.
     """
     node = started_cluster.instances["node"]
-    disk_endpoint = f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/adc_cached/"
+    disk_endpoint = (
+        f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/adc_cached/"
+    )
 
     before, _ = token_exchanges(LONG_LIVED_TOKEN_PORT)
 
@@ -405,7 +441,12 @@ def test_dynamic_disk_credential_grant_is_scoped_to_the_resolved_backend(
         "s3_allow_server_credentials_in_user_queries": 1,
     }
 
-    # A GCS backend that really falls back to Application Default Credentials earns the grant.
+    # A GCS backend that really falls back to Application Default Credentials earns the grant. The
+    # fallback is a real one: no credential field is given, so the client resolves the stub
+    # `authorized_user` file that `GOOGLE_APPLICATION_CREDENTIALS` names and exchanges its refresh
+    # token at the stub endpoint -- which is exactly what makes the disk depend on the server's own
+    # ambient identity, and therefore on the grant.
+    before, _ = token_exchanges(ADC_TOKEN_PORT)
     node.query("DROP TABLE IF EXISTS gcs_marker_adc SYNC")
     node.query(
         "CREATE TABLE gcs_marker_adc (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
@@ -422,6 +463,8 @@ def test_dynamic_disk_credential_grant_is_scoped_to_the_resolved_backend(
     assert "_server_credentials_allowed" in node.query(
         "SHOW CREATE TABLE gcs_marker_adc"
     )
+    after, _ = token_exchanges(ADC_TOKEN_PORT)
+    assert after > before, "the disk did not resolve Application Default Credentials"
     node.query("DROP TABLE gcs_marker_adc SYNC")
 
     # An `include` that resolves to a local backend does not: it never relied on server credentials.

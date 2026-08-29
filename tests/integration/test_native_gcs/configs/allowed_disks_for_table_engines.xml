@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- A data-lake table engine only accepts a disk named here, so the Iceberg-on-a-native-GCS-disk
+         test needs its disk listed. The disk itself is still created dynamically by the test: a
+         static `gcs` disk in the configuration would stop the server from starting on a build
+         without the google-cloud-cpp SDK, which is the case this module means to skip. -->
+    <allowed_disks_for_table_engines>gcs_iceberg_disk</allowed_disks_for_table_engines>
+</clickhouse>
