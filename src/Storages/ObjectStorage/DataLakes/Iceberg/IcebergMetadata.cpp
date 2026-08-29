@@ -384,10 +384,13 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
-        auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
-        if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
+        const auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+        if (snapshot->has(f_schema_id) && !snapshot->isNull(f_schema_id))
+        {
+            const auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
+            schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
+        }
+        if (current_snapshot_id == snapshot_id)
         {
             current_snapshot = snapshot;
         }
@@ -423,7 +426,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         }
     }
 
-    if (!snapshot_object->has(f_schema_id))
+    if (!snapshot_object->has(f_schema_id) || snapshot_object->isNull(f_schema_id))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No schema id found for snapshot id `{}`", snapshot_id);
     Int32 schema_id = snapshot_object->getValue<Int32>(f_schema_id);
 
