@@ -1,5 +1,7 @@
 -- Tests the streaming merge of text index posting lists: the k-way merge of interleaved
 -- postings on merges with row remapping and the multi-segment merge on index materialization.
+-- `merge_max_block_size` is pinned in the merge tables: a randomized tiny value (down to 1)
+-- makes the merge of 100k rows do thousands of pipeline iterations and time out under ThreadFuzzer.
 
 SET mutations_sync = 2;
 
@@ -15,7 +17,7 @@ CREATE TABLE tab_bp_merge
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, text_index_posting_list_codec = 'bitpacking', text_index_posting_list_block_size = 256,
-         allow_experimental_text_index_phrase_search = 1;
+         allow_experimental_text_index_phrase_search = 1, merge_max_block_size = 8192;
 
 SYSTEM STOP MERGES tab_bp_merge;
 
@@ -65,7 +67,8 @@ CREATE TABLE tab_none_merge
     INDEX idx(s) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, text_index_posting_list_codec = 'none', text_index_posting_list_block_size = 256;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, text_index_posting_list_codec = 'none', text_index_posting_list_block_size = 256,
+         merge_max_block_size = 8192;
 
 SYSTEM STOP MERGES tab_none_merge;
 
