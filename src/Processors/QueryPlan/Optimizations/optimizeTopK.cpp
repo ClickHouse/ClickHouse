@@ -1,6 +1,7 @@
 #include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -173,8 +174,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
     /// The threshold is a bare Field, so it can only order types whose Field ordering matches
-    /// ORDER BY.
-    /// TODO: lift this once the threshold carries the full sort-key representation.
+    /// ORDER BY. Comparison functions also reject zero-sized tuples even though ORDER BY
+    /// supports them.
+    /// TODO: lift the Field restriction once the threshold carries the full sort-key representation.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
     /// elements), the per-row threshold comparison cost can exceed its savings — most notably
@@ -182,9 +184,11 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// path behind an explicit opt-in. Nullable and Tuple of fixed-length types are still
     /// considered fixed-length (haveMaximumSizeOfValue forwards through them).
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
+    const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo()
         && !hasRuntimeTypedType(sort_column.type)
+        && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix

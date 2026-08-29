@@ -1,6 +1,8 @@
 #include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
@@ -14,6 +16,32 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// `Tuple` comparison functions reject an empty `Tuple` nested inside another `Tuple`,
+/// while the column comparison path supports it. Other composite types have their
+/// own comparison implementations, so only descend through `Tuple` and `Nullable`.
+bool hasEmptyTuple(const DataTypePtr & type)
+{
+    const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get());
+    const auto & nested_type = nullable_type ? nullable_type->getNestedType() : type;
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get());
+    if (!tuple_type)
+        return false;
+
+    if (tuple_type->getElements().empty())
+        return true;
+
+    for (const auto & element_type : tuple_type->getElements())
+        if (hasEmptyTuple(element_type))
+            return true;
+
+    return false;
+}
+
+}
 
 namespace ErrorCodes
 {
@@ -87,6 +115,7 @@ public:
             /// does. lessOrEquals/greaterOrEquals place NULLs and NaNs last whatever
             /// nulls_direction says, and leave NaN unordered against every value including itself.
             if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type)
+                || hasEmptyTuple(data_type)
                 || (nulls_direction == -1 && hasTypeThatCanContainNulls(data_type))
                 || hasTypeThatCanContainFloat(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
@@ -113,7 +142,7 @@ private:
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
     }
 
-    /// General path for Nullable and/or collation-aware types.
+    /// General path for `Nullable`, collation-aware, and non-vectorizable `Tuple` types.
     ColumnPtr executeGeneral(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,

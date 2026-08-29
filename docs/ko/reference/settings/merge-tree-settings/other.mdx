@@ -532,6 +532,25 @@ below the threshold)`에 비례합니다.
 * `partition_key_only` — 파티션 키 컬럼만 추적합니다.
 * `with_block_number_offset` — 파티션 키 컬럼에 더해 영속적으로 저장된 `_block_number` 및 `_block_offset` 가상 컬럼도 추적합니다. 이 컬럼을 기준으로 파트 수준 프루닝을 사용할 수 있습니다.
 
+<div id="patch_parts_version">
+  ## patch_parts_version
+</div>
+
+<SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "v2"},{"label": "경량 업데이트로 생성된 패치 파트의 온디스크 직렬화 버전을 제어하는 새로운 설정입니다. 이전 compatibility 모드에서는 혼합 버전 클러스터의 모든 레플리카가 읽을 수 있는 v1 패치를 계속 기록합니다."}]}]} />
+
+경량 UPDATE 쿼리로 생성된 패치 파트의 온디스크 직렬화 버전입니다.
+
+가능한 값:
+
+* `v1` - 레거시 포맷: 패치 파트에 `_part, _part_offset` 시스템 컬럼이 포함되며
+  `(_part, _part_offset)` 기준으로 정렬됩니다. 최악의 경우 적용 중 메모리 사용량은 전체 패치 파트 크기로 제한됩니다.
+* `v2` - 패치 파트에 기본 테이블의 정렬 키 컬럼이 포함되며
+  `(sorting_key_columns..., _block_number, _block_offset)` 기준으로 정렬됩니다. 적용 중 메모리 사용량은 동일한 정렬 키를 가진 가장 큰 연속 구간의 크기로 제한됩니다.
+
+이 설정과 관계없이 디스크에 저장된 이전 포맷 패치는 계속 읽을 수 있습니다.
+
 <div id="propagate_types_serialization_versions_to_nested_types">
   ## propagate_types_serialization_versions_to_nested_types
 </div>

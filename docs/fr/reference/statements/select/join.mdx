@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## JOIN avec des conditions d’inégalité sur des colonnes de tables différentes
 </div>
 
-ClickHouse prend actuellement en charge `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` avec des conditions d’inégalité, en plus des conditions d’égalité. Les conditions d’inégalité sont prises en charge uniquement par les algorithmes de jointure `hash` et `grace_hash`. Elles ne sont pas prises en charge avec `join_use_nulls`.
+ClickHouse prend actuellement en charge `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` avec des conditions d’inégalité, en plus des conditions d’égalité. Les conditions d’inégalité sont prises en charge uniquement par les algorithmes de jointure `hash`, `parallel_hash` et `grace_hash`. Une condition de non-équijointure évaluée lors de la jointure ne peut pas contenir `arrayJoin`, car une telle condition doit préserver le nombre de lignes ; une condition qui ne s’applique qu’à un seul côté, ainsi qu’une clé d’égalité sur `arrayJoin`, sont extraites avant la jointure et ne sont pas affectées ; une condition `ALL INNER JOIN` non disjonctive n’est pas non plus affectée, car la condition est alors appliquée après la jointure. Lorsque l’expansion ne dépend que d’un seul côté, placez-la dans un `ARRAY JOIN` d’une sous-requête avant la jointure ; une condition dont l’argument `arrayJoin` lit des colonnes des deux côtés doit être restructurée.
 
 **Exemple**
 

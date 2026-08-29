@@ -36,7 +36,13 @@ public:
     /// The IStorage default ties this to supportsSubcolumns(); forward it so a proxy around a
     /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
     bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return getNested()->supportsOptimizationToTupleElementSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
+    /// `ReadFromMerge::getSelectedTables` prunes children by name based on this flag; a lazy
+    /// `StorageTableProxy` around a delegating storage (`Distributed`, `Merge`, `Buffer`, `Alias`)
+    /// answering false would let a `_table`/`_database` filter incorrectly prune the child.
+    bool readsFromOtherTables() const override { return getNested()->readsFromOtherTables(); }
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override { return getNested()->getMaxReadStreams(num_streams, context); }
     /// `AlterCommands::validate` checks these on the storage the ALTER is addressed to, which is
     /// the proxy itself for lazily loaded tables — forward them so support does not depend on the
     /// database's `lazy_load_tables` setting. Both are only queried while validating an ALTER,
