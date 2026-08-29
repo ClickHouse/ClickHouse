@@ -249,6 +249,17 @@ SELECT count() FROM testbd WHERE toUnixTimestamp(d) > 4000000000;
 1
 SELECT count() FROM testbd WHERE toUnixTimestamp(identity(d)) > 4000000000;
 1
+-- The lower edge is exact too: a `Date32` day number below zero rescales to a negative second
+-- count that wraps, so a key range reaching day -1 must not prune. The bound sits above every
+-- in-window day of the range, so only the wrapped day can match and a claim over the range maps
+-- the range past it. `toUnixTimestamp` has no timezone term, so day 0 is exactly zero.
+drop table if exists testbe;
+create table testbe (d Date32) engine MergeTree order by d settings auto_statistics_types = '';
+insert into testbe select toDate32('1969-12-31') + number from numbers(10);
+SELECT count() FROM testbe WHERE toUnixTimestamp(d) > 777600;
+1
+SELECT count() FROM testbe WHERE toUnixTimestamp(identity(d)) > 777600;
+1
 -- The rescaling is reached through a wrapped source type too, where a rule about integer width
 -- claims monotonicity for any day number. `Nullable` reaches the range analysis, which strips
 -- only `LowCardinality`; `LowCardinality` reaches the read-in-order consumers, which strip neither.
