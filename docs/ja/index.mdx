@@ -174,16 +174,18 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const handleClick = (e) => {
-        e.preventDefault();
-        const target = document.getElementById('mcp-setup');
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
+    const path = '/ja/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
+    const withBase = (p) => assetBase + p;
+    const href = withBase(path);
     return (
         <a
-            href="#mcp-setup"
+            href={href}
             data-galaxy-event="docs.home.mcp-server"
-            onClick={handleClick}
+            onClick={(e) => {
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                window.location.href = href;
+            }}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
             <span
@@ -260,25 +262,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-          .ch-goal-icon { color: #374151; }
-          .dark .ch-goal-icon { color: #FAFF69; }
-          /* Integrations バナー: 両モードでアクセントカラーの枠線 */
-          html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-          html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-          .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-          .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-          /* ホームページではサイドバーを即座に非表示にする（ちらつきを防止） */
-          #sidebar { display: none !important; }
-          /* サイドバーが非表示のため、ナビゲーションバーを全幅表示にする */
-          #navbar-transition-maple {
-            width: 100vw !important;
-            left: 0 !important;
-            margin-left: 0 !important;
-            /* ナビゲーションバー自体の右側のパディング（3rem）に合わせる */
-            padding-left: 3rem !important;
-            justify-content: flex-start !important;
-          }
-          `}
+            .ch-goal-icon { color: #374151; }
+            .dark .ch-goal-icon { color: #FAFF69; }
+            /* Integrations バナー: 両モードでアクセントカラーの枠線 */
+            html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+            html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+            .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+            .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+            /* ホームページではサイドバーを即座に非表示にする（ちらつきを防止） */
+            #sidebar { display: none !important; }
+            /* サイドバーが非表示のため、ナビゲーションバーを全幅表示にする */
+            #navbar-transition-maple {
+              width: 100vw !important;
+              left: 0 !important;
+              margin-left: 0 !important;
+              /* ナビゲーションバー自体の右側のパディング（3rem）に合わせる */
+              padding-left: 3rem !important;
+              justify-content: flex-start !important;
+            }
+            `}
 </style>
 
 <PageWrapper>
@@ -317,7 +319,7 @@ export const PageWrapper = ({ children }) => {
         <HeroCard
           title="はじめに"
           galaxyEvent="docs.home.get-started"
-          description="ここは初めてなので、まずは始め方を知って、もっと詳しく学びたいです"
+          description="初めての方はこちらから。始め方を学び、さらに詳しく知る"
           href="/ja/get-started/quickstarts/create-your-first-service-on-cloud"
           icon={
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
@@ -368,7 +370,7 @@ export const PageWrapper = ({ children }) => {
         { label: "設定", href: "/ja/reference/settings/index" },
         { label: "関数", href: "/ja/reference/functions/regular-functions/overview" },
         { label: "エンジン", href: "/ja/reference/engines/engines" },
-        { label: "システムテーブル", href: "/ja/reference/system-tables" },
+        { label: "システムテーブル", href: "/ja/reference/system-tables/overview" },
         { label: "フォーマット", href: "/ja/reference/formats/index" },
         { label: "データ型", href: "/ja/reference/data-types/index" }
     ]}
@@ -387,7 +389,7 @@ export const PageWrapper = ({ children }) => {
           links={[
         { label: "ClickHouse Cloud", href: "/ja/products/cloud/getting-started/cloud-get-started" },
         { label: "ClickStack", href: "/ja/clickstack" },
-        { label: "Managed Postgres", href: "/ja/products/managed-postgres/overview" },
+        { label: "ClickHouse Managed Postgres", href: "/ja/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
         { label: "chDB", href: "/ja/chdb" },
         { label: "Kubernetes Operator", href: "/ja/products/kubernetes-operator/overview" },
@@ -436,7 +438,7 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">学べること:</p>
           </>}
               links={[
-              { label: "1. 一般的なデータソースから最小限の作業でデータを取り込む方法", href: "/integrations" },
+              { label: "1. 一般的なデータソースから最小限の作業でデータを取り込む方法", href: "/ja/integrations/home" },
               { label: "2. 分析と成長のためにデータを整理するベストプラクティス", href: "/ja/guides/clickhouse/data-modelling/schema-design" },
               { label: "3. 大規模なデータセットにリアルタイムでクエリする方法", href: "/ja/get-started/use-cases/real-time-analytics" },
               { label: "4. その上にダッシュボード、アラート、イベント駆動型の機能を構築する方法", href: "/ja/get-started/use-cases/data-warehousing" },
@@ -448,11 +450,11 @@ export const PageWrapper = ({ children }) => {
           <div className="flex flex-col gap-4">
             <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="ClickHouse を基盤とするオールインワンのオブザーバビリティスタックで、ログ、メトリクス、トレース、セッションリプレイ、エラーに対して超高速のクエリと強力な集計を提供します。" href="/ja/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="高速でスケーラブルな、エンタープライズ向けの Postgres サービスです。ClickHouse とネイティブに統合されています。トランザクションには Postgres、分析には ClickHouse を簡単に組み合わせられます。" href="/ja/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="高速でスケーラブルな、エンタープライズ向けの Postgres サービスです。ClickHouse とネイティブに統合されています。トランザクションには Postgres、分析には ClickHouse を簡単に組み合わせられます。" href="/ja/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
-        {/* 全幅のインテグレーション バナー */}
+        {/* 全幅のインテグレーションバナー */}
 
         <IntegrationsBanner />
 
@@ -467,51 +469,6 @@ export const PageWrapper = ({ children }) => {
         </div>
       </div>
 
-      <FullWidthDivider style={{ margin: '40px 0 0' }} />
-
-      <div id="mcp-setup" className="mt-16 scroll-mt-20">
-        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">ドキュメント用MCPサーバーをセットアップ</h2>
-        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Model Context Protocol を使用して、AIツールからClickHouseドキュメントを直接参照できます。</p>
-
-        <div className="mt-6">
-          <Tabs>
-            <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">ターミナルで次を実行します：</p>
-
-              <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}
-              </CodeBlock>
-            </Tab>
-
-            <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]"><code>claude&#95;desktop&#95;config.json</code> に追加します：</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-
-            <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-              <p className="mb-2 text-[#9ca3af] text-[13px]"><code>.cursor/mcp.json</code> に追加します：</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-
-            <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]"><code>~/.codeium/windsurf/mcp&#95;config.json</code> に追加します：</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-          </Tabs>
-        </div>
-
-        <div className="mt-6 p-4 rounded-lg bg-[#f9f9f9] dark:bg-white/[0.03] border border-[#e5e7eb] dark:border-white/10">
-          <p className="text-sm font-semibold text-gray-900 dark:text-zinc-50 mb-1">コーディングエージェントにClickHouseスキルを追加</p>
-          <p className="text-sm text-gray-500 dark:text-zinc-500 mb-3">ClickHouseスキルをインストールすると、エージェントにClickHouseの専門知識とベストプラクティスを持たせることができます。</p>
-
-          <CodeBlock language="bash">
-            {`npx skills add https://clickhouse.com`}
-          </CodeBlock>
-        </div>
-      </div>
     </div>
   </div>
 </PageWrapper>
