@@ -106,7 +106,11 @@ TRAP(jrand48)
 TRAP(l64a)
 TRAP(lcong48)
 TRAP(lgammafNx)
-TRAP(localeconv)
+// `nlohmann::json`'s serializer calls it on every `dump` to find the decimal point, which makes
+// the AI SQL generation of the client (`??`) trap in every debug and sanitizer build. ClickHouse
+// never changes the locale after startup (`setlocale` is called by replxx while single-threaded,
+// and is not trapped either), so the returned `lconv` is immutable and reading it is safe.
+// TRAP(localeconv)
 TRAP(localtime)
 TRAP(login)
 TRAP(login_tty)
