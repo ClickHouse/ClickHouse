@@ -1,12 +1,4 @@
-new analyzer
-2
-2
-2
-2
-1
-1
-2
-old analyzer
+negated ordering comparisons
 2
 2
 2
@@ -16,43 +8,28 @@ old analyzer
 2
 function argument
 2
-2
 int column
-1
-1
 1
 1
 string mixed
 1
 1
-1
-1
 nullable float
-2
 2
 tautology
 2
-2
 constraint
 2
-2
 index hint
-1
-1
 1
 1
 constraint full match
 2
 3
-2
-3
 mixed types
 1
 1
-1
-1
 float primary key
-2
 2
 folding shapes
 1
