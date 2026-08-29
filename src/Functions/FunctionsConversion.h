@@ -4425,13 +4425,9 @@ struct ToDateTimeMonotonicity
         {
             auto which = WhichDataType(type);
 
-            /// A `Date`/`Date32` day number is rescaled to seconds, so the `UInt32` result wraps
-            /// outside a bounded window of day numbers and keeps order only inside it. The floor is 0
-            /// for `Date` and 1 for `Date32`: `Date` reads the saturated lookup table, which is never
-            /// negative, while `Date32` reads the raw table, where day 0 is negative in a timezone
-            /// ahead of UTC. No overflow behaviour clamps either end, since each inspects the day
-            /// number before the timezone is applied. An integer source is a timestamp, not a day
-            /// number, so it is not rescaled.
+            /// Rescaling a day number to seconds wraps the `UInt32` result outside a bounded window, and
+            /// this trait cannot read `date_time_overflow_behavior`, so the window must hold for the
+            /// wrapping default. `Date32` also needs a floor: its raw day 0 is negative ahead of UTC.
             if constexpr (std::is_same_v<T, DataTypeDateTime>)
             {
                 const auto * source_type = &type;
@@ -4470,17 +4466,20 @@ struct ToDateTimeMonotonicity
 };
 
 /// `toUnixTimestamp` of a `Date`/`Date32` multiplies the day number by the seconds in a day, with no
-/// timezone term, so the `UInt32` result wraps above a bounded day number. `ToNumberMonotonicity`
-/// cannot express that, reasoning about integer width alone, under which a day number always fits.
-/// Every other source keeps that shared reasoning, so `toUInt32` of a `Date`, which reads the day
-/// number unscaled, stays monotonic on any range.
+/// timezone term, so the `UInt32` result wraps above a bounded day number.
 struct ToUnixTimestampMonotonicity
 {
     static bool has() { return true; }
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        if (WhichDataType(type).isDateOrDate32())
+        const IDataType * source_type = &type;
+        if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(source_type))
+            source_type = lowcard_type->getDictionaryType().get();
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(source_type))
+            source_type = nullable_type->getNestedType().get();
+
+        if (WhichDataType(*source_type).isDateOrDate32())
         {
             /// Largest day number whose whole days of seconds still fit into the result.
             static constexpr Int64 max_day_num = std::numeric_limits<UInt32>::max() / DATE_SECONDS_PER_DAY;
