@@ -210,9 +210,11 @@ class JobConfigs:
             include_paths=[
                 "./ci",
                 # The ci/tests/ guards for the expect-trace / bash-xtrace separation read these
-                # two files, so a change to either must run this job.
+                # two files, and the get_gh_api / download retry guards read the helper below,
+                # so a change to any of them must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
+                "./tests/ci/build_download_helper.py",
                 # The CFI build-classification guards read these two, so a change to either
                 # must run this job instead of reusing a cached result.
                 "./tests/config/install.sh",
@@ -1181,6 +1183,10 @@ class JobConfigs:
                 # not cover ./tests/ci.
                 "./tests/ci/get_previous_release_tag.py",
                 "./tests/ci/download_release_packages.py",
+                # Both entry scripts import this at module level, and it in turn
+                # imports the GitHub API retry policy out of praktika.
+                "./tests/ci/build_download_helper.py",
+                "./ci/praktika/gh.py",
             ]
         ),
         timeout=3600 * 2,
