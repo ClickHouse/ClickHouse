@@ -40,6 +40,7 @@ use vortex::buffer::{Alignment, ByteBufferMut};
 use vortex::dtype::{FieldName, Nullability};
 use vortex::error::{vortex_err, VortexResult};
 use vortex::expr::{get_item, is_null, lit, not, root, select, Expression};
+use vortex::extension::datetime::{Date, TimeUnit, Timestamp, TimestampOptions};
 use vortex::file::{OpenOptionsSessionExt, VortexFile, WriteOptionsSessionExt};
 use vortex::io::runtime::{AbortHandle, AbortHandleRef, Executor, Handle, Task};
 use vortex::io::session::RuntimeSessionExt;
@@ -1061,6 +1062,29 @@ pub enum FFI_VortexComparisonOperator {
     Gte = 5,
 }
 
+/// The unit of a temporal literal; the values mirror the discriminants of the Vortex `TimeUnit`.
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FFI_VortexTimeUnit {
+    Nanoseconds = 0,
+    Microseconds = 1,
+    Milliseconds = 2,
+    Seconds = 3,
+    Days = 4,
+}
+
+impl From<FFI_VortexTimeUnit> for TimeUnit {
+    fn from(unit: FFI_VortexTimeUnit) -> TimeUnit {
+        match unit {
+            FFI_VortexTimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+            FFI_VortexTimeUnit::Microseconds => TimeUnit::Microseconds,
+            FFI_VortexTimeUnit::Milliseconds => TimeUnit::Milliseconds,
+            FFI_VortexTimeUnit::Seconds => TimeUnit::Seconds,
+            FFI_VortexTimeUnit::Days => TimeUnit::Days,
+        }
+    }
+}
+
 // Every builder below returns null for input it cannot use, borrows rather than consumes its
 // arguments, and returns a handle that has to be freed with `vortex_ffi_expr_free`.
 
@@ -1186,6 +1210,56 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_string(
     Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
 }
 
+/// Creates a `vortex.date` literal: days or milliseconds since the Unix epoch. The only units a
+/// date supports are `Days`, whose value has to fit `i32`, and `Milliseconds`. Returns null
+/// otherwise.
+#[no_mangle]
+pub unsafe extern "C" fn vortex_ffi_expr_literal_date(
+    unit: FFI_VortexTimeUnit,
+    value: i64,
+) -> *mut FFI_VortexExpression {
+    let storage = match unit {
+        FFI_VortexTimeUnit::Days => match i32::try_from(value) {
+            Ok(days) => Scalar::primitive(days, Nullability::NonNullable),
+            Err(_) => return std::ptr::null_mut(),
+        },
+        FFI_VortexTimeUnit::Milliseconds => Scalar::primitive(value, Nullability::NonNullable),
+        _ => return std::ptr::null_mut(),
+    };
+    let scalar = Scalar::extension::<Date>(TimeUnit::from(unit), storage);
+    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+}
+
+/// Creates a `vortex.timestamp` literal: ticks of `unit` since the Unix epoch, with `timezone`
+/// naming the zone or null for a zone-less timestamp. `Days` is not a timestamp unit. The unit and
+/// the zone have to be exactly the file column's: Vortex only compares timestamps whose metadata
+/// is identical.
+#[no_mangle]
+pub unsafe extern "C" fn vortex_ffi_expr_literal_timestamp(
+    unit: FFI_VortexTimeUnit,
+    timezone: *const c_char,
+    value: i64,
+) -> *mut FFI_VortexExpression {
+    if unit == FFI_VortexTimeUnit::Days {
+        return std::ptr::null_mut();
+    }
+    let tz = if timezone.is_null() {
+        None
+    } else {
+        match (unsafe { CStr::from_ptr(timezone) }).to_str() {
+            Ok(name) => Some(std::sync::Arc::<str>::from(name)),
+            Err(_) => return std::ptr::null_mut(),
+        }
+    };
+    let options = TimestampOptions {
+        unit: TimeUnit::from(unit),
+        tz,
+    };
+    let storage = Scalar::primitive(value, Nullability::NonNullable);
+    let scalar = Scalar::extension::<Timestamp>(options, storage);
+    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+}
+
 /// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the scan
 /// treats as a row that does not match.
 #[no_mangle]
@@ -1257,6 +1331,19 @@ pub unsafe extern "C" fn vortex_ffi_expr_is_null(
     }
     let expr = unsafe { is_null((*child).0.clone()) };
     Box::into_raw(Box::new(FFI_VortexExpression(expr)))
+}
+
+/// Renders the expression the way the library prints it, for logs and error messages. The string
+/// has to be freed with `vortex_ffi_free_string`.
+#[no_mangle]
+pub unsafe extern "C" fn vortex_ffi_expr_display(expr: *const FFI_VortexExpression) -> *mut c_char {
+    if expr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let rendered = format!("{}", unsafe { &(*expr).0 });
+    let rendered = CString::new(rendered.replace('\0', " "))
+        .unwrap_or_else(|_| CString::new("invalid expression string").expect("valid literal"));
+    rendered.into_raw()
 }
 
 /// Frees an expression handle.
@@ -1717,6 +1804,29 @@ mod tests {
         .expect("valid batch")
     }
 
+    fn temporal_batch() -> RecordBatch {
+        use arrow_array::{Date32Array, TimestampMicrosecondArray};
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("d", DataType::Date32, false),
+            Field::new(
+                "ts",
+                DataType::Timestamp(arrow_schema::TimeUnit::Microsecond, Some("UTC".into())),
+                false,
+            ),
+        ]));
+        RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Date32Array::from(vec![10, 20, 30])),
+                Arc::new(
+                    TimestampMicrosecondArray::from(vec![1_000_000i64, 2_000_000, 3_000_000])
+                        .with_timezone("UTC"),
+                ),
+            ],
+        )
+        .expect("valid batch")
+    }
+
     fn scan_options() -> FFI_VortexScanOptions {
         FFI_VortexScanOptions {
             columns: std::ptr::null(),
@@ -1974,6 +2084,76 @@ mod tests {
             assert!(reader.is_null());
             assert!(!error.is_null());
             vortex_ffi_free_string(error);
+        }
+    }
+
+    /// The temporal literals: a `vortex.date` / `vortex.timestamp` literal filters the matching
+    /// rows, only the legal units build, and an expression renders for logging.
+    #[test]
+    fn ffi_temporal_literals() {
+        let file = unsafe { write_file(vec![temporal_batch()]) };
+        let host = TestHost::new(2);
+        let mut test_file = TestFile::new(file);
+        unsafe {
+            let reader = open_reader(host.runtime(), &mut test_file, &reader_options(1, None));
+
+            let date_column_name = CString::new("d").expect("valid name");
+            let date_column = vortex_ffi_expr_column(date_column_name.as_ptr());
+            let date_literal = vortex_ffi_expr_literal_date(FFI_VortexTimeUnit::Days, 15);
+            assert!(!date_literal.is_null());
+            let date_filter = vortex_ffi_expr_compare(
+                FFI_VortexComparisonOperator::Gt,
+                date_column,
+                date_literal,
+            );
+            let mut options = scan_options();
+            options.filter = date_filter;
+            let consumer = run_scan(reader, &options, None, true);
+            assert_eq!(consumer.rows(), 2);
+
+            let rendered = vortex_ffi_expr_display(date_filter);
+            assert!(!rendered.is_null());
+            assert!(!CStr::from_ptr(rendered).to_bytes().is_empty());
+            vortex_ffi_free_string(rendered);
+
+            vortex_ffi_expr_free(date_filter);
+            vortex_ffi_expr_free(date_literal);
+            vortex_ffi_expr_free(date_column);
+
+            let ts_column_name = CString::new("ts").expect("valid name");
+            let ts_column = vortex_ffi_expr_column(ts_column_name.as_ptr());
+            let timezone = CString::new("UTC").expect("valid name");
+            let ts_literal = vortex_ffi_expr_literal_timestamp(
+                FFI_VortexTimeUnit::Microseconds,
+                timezone.as_ptr(),
+                2_000_000,
+            );
+            assert!(!ts_literal.is_null());
+            let ts_filter =
+                vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Lte, ts_column, ts_literal);
+            let mut options = scan_options();
+            options.filter = ts_filter;
+            let consumer = run_scan(reader, &options, None, true);
+            assert_eq!(consumer.rows(), 2);
+            vortex_ffi_expr_free(ts_filter);
+            vortex_ffi_expr_free(ts_literal);
+            vortex_ffi_expr_free(ts_column);
+
+            // Values and units that no literal exists for.
+            assert!(vortex_ffi_expr_literal_date(
+                FFI_VortexTimeUnit::Days,
+                i64::from(i32::MAX) + 1
+            )
+            .is_null());
+            assert!(vortex_ffi_expr_literal_date(FFI_VortexTimeUnit::Seconds, 1).is_null());
+            assert!(vortex_ffi_expr_literal_timestamp(
+                FFI_VortexTimeUnit::Days,
+                std::ptr::null(),
+                1
+            )
+            .is_null());
+
+            vortex_ffi_reader_free(reader);
         }
     }
 

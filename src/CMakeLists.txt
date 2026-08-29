@@ -507,6 +507,9 @@ if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
 endif()
 
+# Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
+add_object_library(clickhouse_processors_formats_impl_vortex Processors/Formats/Impl/Vortex)
+
 if (USE_ARROW)
     add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
 endif()

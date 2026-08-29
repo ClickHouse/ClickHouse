@@ -1,549 +1,53 @@
-#include <Processors/Formats/Impl/VortexBlockInputFormat.h>
+#include <Processors/Formats/Impl/Vortex/VortexBlockInputFormat.h>
 
 #if USE_VORTEX
 
 #include <Core/Defines.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SharedThreadPools.h>
-#include <Interpreters/Set.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Processors/Formats/Impl/Vortex/VortexFFIHelpers.h>
+#include <Processors/Formats/Impl/Vortex/VortexScanPlanner.h>
 #include <Processors/Port.h>
-#include <Storages/MergeTree/KeyCondition.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <base/scope_guard.h>
 
 #include <arrow/api.h>
 #include <arrow/c/bridge.h>
-#include <arrow/io/interfaces.h>
-#include <arrow/io/memory.h>
 #include <arrow/result.h>
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <shared_mutex>
 
 #include <vortex_ffi.h>
+
+namespace ProfileEvents
+{
+extern const Event VortexScanSplits;
+extern const Event VortexScanEmptySplits;
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
-static constexpr auto VORTEX_MAGIC_BYTES = "VTXF";
+using namespace Vortex;
 
 /// `read` waits on a condition variable, but also wakes up this often to check that the scan is
 /// still making progress. Finding it idle this many times in a row means it never will again.
 static constexpr auto PROGRESS_CHECK_PERIOD = std::chrono::seconds(1);
 static constexpr size_t IDLE_CHECKS_BEFORE_STUCK = 3;
-
-/// The state the read callback works with. Several threads may be inside the callback at once when
-/// the buffer underneath supports concurrent positioned reads.
-struct VortexReadContext
-{
-    arrow::io::RandomAccessFile * file = nullptr;
-    std::atomic<size_t> bytes_read{0};
-
-    std::mutex exception_mutex;
-    /// A failed read surfaces from the library only as a generic scan error, so the original
-    /// exception is stored here and thrown instead of it.
-    std::exception_ptr exception TSA_GUARDED_BY(exception_mutex);
-
-    void setException(std::exception_ptr e)
-    {
-        std::lock_guard lock(exception_mutex);
-        if (!exception)
-            exception = std::move(e);
-    }
-
-    std::exception_ptr getException()
-    {
-        std::lock_guard lock(exception_mutex);
-        return exception;
-    }
-};
-
-extern "C" int32_t vortexFFIReadCallback(void * context, uint64_t offset, uint64_t length, uint8_t * out);
-extern "C" int32_t vortexFFIReadCallback(void * context, uint64_t offset, uint64_t length, uint8_t * out)
-{
-    auto * ctx = static_cast<VortexReadContext *>(context);
-    try
-    {
-        auto result = ctx->file->ReadAt(static_cast<int64_t>(offset), static_cast<int64_t>(length), out);
-        if (!result.ok())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Vortex file: {}", result.status().ToString());
-        if (*result != static_cast<int64_t>(length))
-            throw Exception(
-                ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Unexpected end of Vortex file: read {} bytes instead of {} at offset {}",
-                *result, length, offset);
-        ctx->bytes_read.fetch_add(length, std::memory_order_relaxed);
-        return 0;
-    }
-    catch (...)
-    {
-        ctx->setException(std::current_exception());
-        return 1;
-    }
-}
-
-static String takeVortexError(char * error)
-{
-    String message = error ? String(error) : "unknown error";
-    if (error)
-        vortex_ffi_free_string(error);
-    return message;
-}
-
-static std::exception_ptr
-makeVortexException(const String & message, const std::exception_ptr & callback_exception, int code = ErrorCodes::INCORRECT_DATA)
-{
-    if (callback_exception)
-        return callback_exception;
-    return std::make_exception_ptr(Exception(code, "Error while reading Vortex file: {}", message));
-}
-
-[[noreturn]] static void
-throwVortexError(char * error, const std::exception_ptr & callback_exception, int code = ErrorCodes::INCORRECT_DATA)
-{
-    std::rethrow_exception(makeVortexException(takeVortexError(error), callback_exception, code));
-}
-
-static void throwFromArrowStatusIfFailed(const arrow::Status & status)
-{
-    if (!status.ok())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Error while reading Vortex file: {}", status.ToString());
-}
-
-namespace
-{
-
-/// Translation of the query's `KeyCondition` into a Vortex filter expression. Passing one to the
-/// scan lets it skip whole statistics zones instead of decoding them.
-///
-/// Not every condition can be translated. Whatever cannot be expressed exactly is *widened* into
-/// something that keeps at least the rows the query needs - ClickHouse applies the full WHERE to
-/// the result in any case. Widening is only valid in one direction at a time: under an even number
-/// of NOTs a conjunct of an AND may be dropped, under an odd number a disjunct of an OR. Anything
-/// else would silently lose rows.
-
-struct VortexExpressionDeleter
-{
-    void operator()(FFI_VortexExpression * expression) const { vortex_ffi_expr_free(expression); }
-};
-using VortexExpressionPtr = std::unique_ptr<FFI_VortexExpression, VortexExpressionDeleter>;
-
-String getColumnNameFromKeyCondition(const KeyCondition & key_condition, size_t index)
-{
-    for (const auto & [name, i] : key_condition.getKeyColumns())
-        if (i == index)
-            return name;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get column with index {} from KeyCondition", index);
-}
-
-/// Whether the two types describe the same set of values. Only then does a comparison mean the
-/// same thing on both sides. `UInt64` in the header against `I64` in the file is the trap: the
-/// same bits, but a different order.
-bool typesMatchForFilterPushdown(const DataTypePtr & header_type, const arrow::DataType & arrow_type)
-{
-    WhichDataType which(removeNullable(recursiveRemoveLowCardinality(header_type)));
-    switch (arrow_type.id())
-    {
-        case arrow::Type::INT8: return which.isInt8();
-        case arrow::Type::INT16: return which.isInt16();
-        case arrow::Type::INT32: return which.isInt32();
-        case arrow::Type::INT64: return which.isInt64();
-        case arrow::Type::UINT8: return which.isUInt8();
-        case arrow::Type::UINT16: return which.isUInt16();
-        case arrow::Type::UINT32: return which.isUInt32();
-        case arrow::Type::UINT64: return which.isUInt64();
-        case arrow::Type::FLOAT: return which.isFloat32();
-        case arrow::Type::DOUBLE: return which.isFloat64();
-        /// FixedString is excluded: its zero padding makes it order differently from Binary.
-        case arrow::Type::STRING:
-        case arrow::Type::LARGE_STRING:
-        case arrow::Type::STRING_VIEW:
-        case arrow::Type::BINARY:
-        case arrow::Type::LARGE_BINARY:
-        case arrow::Type::BINARY_VIEW:
-            return which.isString();
-        default:
-            return false;
-    }
-}
-
-/// Builds a literal in the file column's own type. Returns null when the value does not fit that
-/// type exactly, and the comparison is then not pushed down at all.
-VortexExpressionPtr makeVortexLiteral(const arrow::DataType & arrow_type, const Field & field)
-{
-    auto make_int = [&](FFI_VortexPrimitiveType ptype) -> VortexExpressionPtr
-    {
-        if (field.getType() == Field::Types::Int64)
-            return VortexExpressionPtr(vortex_ffi_expr_literal_int(ptype, field.safeGet<Int64>()));
-        if (field.getType() == Field::Types::UInt64)
-        {
-            UInt64 value = field.safeGet<UInt64>();
-            if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                return nullptr;
-            return VortexExpressionPtr(vortex_ffi_expr_literal_int(ptype, static_cast<Int64>(value)));
-        }
-        return nullptr;
-    };
-
-    auto make_uint = [&](FFI_VortexPrimitiveType ptype) -> VortexExpressionPtr
-    {
-        if (field.getType() == Field::Types::UInt64)
-            return VortexExpressionPtr(vortex_ffi_expr_literal_uint(ptype, field.safeGet<UInt64>()));
-        if (field.getType() == Field::Types::Int64)
-        {
-            Int64 value = field.safeGet<Int64>();
-            if (value < 0)
-                return nullptr;
-            return VortexExpressionPtr(vortex_ffi_expr_literal_uint(ptype, static_cast<UInt64>(value)));
-        }
-        return nullptr;
-    };
-
-    auto make_float = [&](FFI_VortexPrimitiveType ptype) -> VortexExpressionPtr
-    {
-        if (field.getType() != Field::Types::Float64)
-            return nullptr;
-        Float64 value = field.safeGet<Float64>();
-        if (!std::isfinite(value))
-            return nullptr;
-        return VortexExpressionPtr(vortex_ffi_expr_literal_float(ptype, value));
-    };
-
-    auto make_string = [&](bool is_utf8) -> VortexExpressionPtr
-    {
-        if (field.getType() != Field::Types::String)
-            return nullptr;
-        const auto & value = field.safeGet<String>();
-        return VortexExpressionPtr(
-            vortex_ffi_expr_literal_string(reinterpret_cast<const uint8_t *>(value.data()), value.size(), is_utf8));
-    };
-
-    switch (arrow_type.id())
-    {
-        case arrow::Type::INT8: return make_int(FFI_VortexPrimitiveType::I8);
-        case arrow::Type::INT16: return make_int(FFI_VortexPrimitiveType::I16);
-        case arrow::Type::INT32: return make_int(FFI_VortexPrimitiveType::I32);
-        case arrow::Type::INT64: return make_int(FFI_VortexPrimitiveType::I64);
-        case arrow::Type::UINT8: return make_uint(FFI_VortexPrimitiveType::U8);
-        case arrow::Type::UINT16: return make_uint(FFI_VortexPrimitiveType::U16);
-        case arrow::Type::UINT32: return make_uint(FFI_VortexPrimitiveType::U32);
-        case arrow::Type::UINT64: return make_uint(FFI_VortexPrimitiveType::U64);
-        case arrow::Type::FLOAT: return make_float(FFI_VortexPrimitiveType::F32);
-        case arrow::Type::DOUBLE: return make_float(FFI_VortexPrimitiveType::F64);
-        case arrow::Type::STRING:
-        case arrow::Type::LARGE_STRING:
-        case arrow::Type::STRING_VIEW:
-            return make_string(/* is_utf8 */ true);
-        case arrow::Type::BINARY:
-        case arrow::Type::LARGE_BINARY:
-        case arrow::Type::BINARY_VIEW:
-            return make_string(/* is_utf8 */ false);
-        default:
-            return nullptr;
-    }
-}
-
-/// A larger `IN` list becomes a chain of ORs that has to be evaluated against every statistics
-/// zone, which costs more than the pushdown saves.
-constexpr size_t max_pushed_down_set_size = 64;
-
-VortexExpressionPtr buildVortexAtomExpression(
-    const KeyCondition::RPNElement & element,
-    const KeyCondition & key_condition,
-    const Block & header,
-    const arrow::Schema & schema,
-    bool positive)
-{
-    using RPNElement = KeyCondition::RPNElement;
-
-    /// The condition is on a function of the column, e.g. `toDate(t) = ...`, not on the column.
-    if (!element.monotonic_functions_chain.empty())
-        return nullptr;
-
-    /// A relaxed atom already matches more rows than the condition does, e.g. the prefix range
-    /// built for a LIKE. That is harmless on its own, but negating it would drop rows the query
-    /// needs.
-    if (element.relaxed && !positive)
-        return nullptr;
-
-    const bool is_set = element.function == RPNElement::FUNCTION_IN_SET || element.function == RPNElement::FUNCTION_NOT_IN_SET;
-    if (is_set
-        && (!element.set_index || element.set_index->getOrderedSet().size() != 1
-            || element.set_index->hasMonotonicFunctionsChain()))
-        return nullptr;
-
-    String column_name = getColumnNameFromKeyCondition(key_condition, element.getKeyColumn());
-    auto arrow_field = schema.GetFieldByName(column_name);
-    const auto * header_column = header.findByName(column_name);
-    if (!arrow_field || !header_column)
-        return nullptr;
-
-    if (!typesMatchForFilterPushdown(header_column->type, *arrow_field->type()))
-        return nullptr;
-
-    /// When a nullable file column is read as non-nullable, its nulls become default values. The
-    /// scan does not know about that substitution: it evaluates the atom on null and drops the row.
-    const bool header_nullable = header_column->type->isNullable() || header_column->type->isLowCardinalityNullable();
-    if (arrow_field->nullable() && !header_nullable)
-        return nullptr;
-
-    VortexExpressionPtr column(vortex_ffi_expr_column(column_name.c_str()));
-    if (!column)
-        return nullptr;
-
-    switch (element.function)
-    {
-        case RPNElement::FUNCTION_IS_NULL:
-            return VortexExpressionPtr(vortex_ffi_expr_is_null(column.get()));
-        case RPNElement::FUNCTION_IS_NOT_NULL:
-        {
-            VortexExpressionPtr null_check(vortex_ffi_expr_is_null(column.get()));
-            return VortexExpressionPtr(vortex_ffi_expr_not(null_check.get()));
-        }
-        case RPNElement::FUNCTION_IN_RANGE:
-        case RPNElement::FUNCTION_NOT_IN_RANGE:
-        {
-            const Range & range = element.range;
-            const bool has_left = !range.left.isNegativeInfinity();
-            const bool has_right = !range.right.isPositiveInfinity();
-            if (!has_left && !has_right)
-                return nullptr;
-
-            VortexExpressionPtr result;
-            if (has_left && has_right && range.left_included && range.right_included && range.left == range.right)
-            {
-                auto literal = makeVortexLiteral(*arrow_field->type(), range.left);
-                if (!literal)
-                    return nullptr;
-                result = VortexExpressionPtr(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Eq, column.get(), literal.get()));
-            }
-            else
-            {
-                VortexExpressionPtr left_bound;
-                if (has_left)
-                {
-                    auto literal = makeVortexLiteral(*arrow_field->type(), range.left);
-                    if (!literal)
-                        return nullptr;
-                    left_bound = VortexExpressionPtr(vortex_ffi_expr_compare(
-                        range.left_included ? FFI_VortexComparisonOperator::Gte : FFI_VortexComparisonOperator::Gt, column.get(), literal.get()));
-                }
-                VortexExpressionPtr right_bound;
-                if (has_right)
-                {
-                    auto literal = makeVortexLiteral(*arrow_field->type(), range.right);
-                    if (!literal)
-                        return nullptr;
-                    right_bound = VortexExpressionPtr(vortex_ffi_expr_compare(
-                        range.right_included ? FFI_VortexComparisonOperator::Lte : FFI_VortexComparisonOperator::Lt, column.get(), literal.get()));
-                }
-                if (left_bound && right_bound)
-                    result = VortexExpressionPtr(vortex_ffi_expr_and(left_bound.get(), right_bound.get()));
-                else
-                    result = left_bound ? std::move(left_bound) : std::move(right_bound);
-            }
-            if (!result)
-                return nullptr;
-            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
-                return VortexExpressionPtr(vortex_ffi_expr_not(result.get()));
-            return result;
-        }
-        case RPNElement::FUNCTION_IN_SET:
-        case RPNElement::FUNCTION_NOT_IN_SET:
-        {
-            const auto & set_column = element.set_index->getOrderedSet()[0];
-            if (set_column->empty() || set_column->size() > max_pushed_down_set_size)
-                return nullptr;
-
-            VortexExpressionPtr result;
-            for (size_t i = 0; i < set_column->size(); ++i)
-            {
-                auto literal = makeVortexLiteral(*arrow_field->type(), (*set_column)[i]);
-                if (!literal)
-                    return nullptr;
-                VortexExpressionPtr equals(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Eq, column.get(), literal.get()));
-                if (!equals)
-                    return nullptr;
-                if (result)
-                    result = VortexExpressionPtr(vortex_ffi_expr_or(result.get(), equals.get()));
-                else
-                    result = std::move(equals);
-            }
-            if (!result)
-                return nullptr;
-            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                return VortexExpressionPtr(vortex_ffi_expr_not(result.get()));
-            return result;
-        }
-        default:
-            return nullptr;
-    }
-}
-
-/// Translates one node of the RPN stack. `positive` tells whether the expression is under an even
-/// number of NOTs, which decides the direction it may be widened in.
-VortexExpressionPtr buildVortexFilterImpl(
-    KeyCondition::RPN & rpn_stack,
-    const KeyCondition & key_condition,
-    const Block & header,
-    const arrow::Schema & schema,
-    bool positive)
-{
-    using RPNElement = KeyCondition::RPNElement;
-
-    if (rpn_stack.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty RPN stack while building a Vortex filter expression");
-
-    const RPNElement element = rpn_stack.back();
-    rpn_stack.pop_back();
-
-    switch (element.function)
-    {
-        case RPNElement::FUNCTION_IN_RANGE:
-        case RPNElement::FUNCTION_NOT_IN_RANGE:
-        case RPNElement::FUNCTION_IN_SET:
-        case RPNElement::FUNCTION_NOT_IN_SET:
-        case RPNElement::FUNCTION_IS_NULL:
-        case RPNElement::FUNCTION_IS_NOT_NULL:
-            return buildVortexAtomExpression(element, key_condition, header, schema, positive);
-        case RPNElement::FUNCTION_NOT:
-        {
-            auto child = buildVortexFilterImpl(rpn_stack, key_condition, header, schema, !positive);
-            if (!child)
-                return nullptr;
-            return VortexExpressionPtr(vortex_ffi_expr_not(child.get()));
-        }
-        case RPNElement::FUNCTION_AND:
-        {
-            auto rhs = buildVortexFilterImpl(rpn_stack, key_condition, header, schema, positive);
-            auto lhs = buildVortexFilterImpl(rpn_stack, key_condition, header, schema, positive);
-            if (lhs && rhs)
-                return VortexExpressionPtr(vortex_ffi_expr_and(lhs.get(), rhs.get()));
-            /// Dropping one side of an AND only lets more rows through.
-            if (positive)
-                return lhs ? std::move(lhs) : std::move(rhs);
-            return nullptr;
-        }
-        case RPNElement::FUNCTION_OR:
-        {
-            auto rhs = buildVortexFilterImpl(rpn_stack, key_condition, header, schema, positive);
-            auto lhs = buildVortexFilterImpl(rpn_stack, key_condition, header, schema, positive);
-            if (lhs && rhs)
-                return VortexExpressionPtr(vortex_ffi_expr_or(lhs.get(), rhs.get()));
-            /// NOT (a OR b) is at most NOT a, so one side may go when a NOT is above.
-            if (!positive)
-                return lhs ? std::move(lhs) : std::move(rhs);
-            return nullptr;
-        }
-        case RPNElement::ALWAYS_FALSE:
-            return VortexExpressionPtr(vortex_ffi_expr_literal_bool(false));
-        case RPNElement::ALWAYS_TRUE:
-        /// ALWAYS_TRUE is what `KeyCondition` produces for anything it could not analyse, so it is
-        /// not an exact statement and must never be negated.
-        case RPNElement::FUNCTION_UNKNOWN:
-        case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
-        case RPNElement::FUNCTION_POINT_IN_POLYGON:
-            return nullptr;
-    }
-    return nullptr;
-}
-
-VortexExpressionPtr buildVortexFilterExpression(const KeyCondition & key_condition, const Block & header, const arrow::Schema & schema)
-{
-    auto rpn_stack = key_condition.getRPN();
-    if (rpn_stack.empty())
-        return nullptr;
-
-    auto result = buildVortexFilterImpl(rpn_stack, key_condition, header, schema, /* positive */ true);
-    chassert(rpn_stack.empty());
-    return result;
-}
-
-}
-
-/// The I/O options of a reader. A read occupies the thread that runs it until it returns, so
-/// allowing more concurrent reads than there are threads to serve them gains nothing; and a buffer
-/// that can only seek and read has to be limited to one read at a time. Coalescing reads the gaps
-/// between nearby segments in exchange for fewer requests, which pays off on remote storage.
-static FFI_VortexReaderOptions makeReaderOptions(const arrow::io::RandomAccessFile & file, size_t io_threads, bool is_remote_fs)
-{
-    FFI_VortexReaderOptions options{};
-    const bool in_memory = dynamic_cast<const arrow::io::BufferReader *>(&file) != nullptr;
-    const bool thread_safe = in_memory || dynamic_cast<const RandomAccessFileFromRandomAccessReadBuffer *>(&file) != nullptr;
-    options.io_concurrency = thread_safe ? static_cast<uint32_t>(std::clamp<size_t>(io_threads, 1, 1024)) : 1;
-    if (!in_memory)
-    {
-        options.coalesce_max_gap_bytes = 1 << 20;
-        options.coalesce_max_read_bytes = is_remote_fs ? (16 << 20) : (4 << 20);
-    }
-    return options;
-}
-
-static FFI_VortexReader * openVortexReader(
-    const FFI_VortexRuntime * runtime,
-    ReadBuffer & in,
-    const FormatSettings & format_settings,
-    std::atomic<int> & is_stopped,
-    std::shared_ptr<arrow::io::RandomAccessFile> & arrow_file,
-    VortexReadContext & read_context,
-    std::shared_ptr<arrow::Schema> & file_schema,
-    size_t io_threads,
-    bool is_remote_fs)
-{
-    /// Read-ahead here would only fetch bytes the library never asked for: it chooses the byte
-    /// ranges itself and merges the nearby ones.
-    arrow_file = asArrowFile(in, format_settings, is_stopped, "Vortex", VORTEX_MAGIC_BYTES, /* avoid_buffering */ true);
-    if (is_stopped)
-        return nullptr;
-
-    auto file_size = arrow_file->GetSize();
-    throwFromArrowStatusIfFailed(file_size.status());
-
-    read_context.file = arrow_file.get();
-
-    const FFI_VortexReaderOptions options = makeReaderOptions(*arrow_file, io_threads, is_remote_fs);
-    char * error = nullptr;
-    auto * reader
-        = vortex_ffi_reader_open(runtime, &read_context, vortexFFIReadCallback, static_cast<uint64_t>(*file_size), &options, &error);
-    if (!reader)
-        throwVortexError(error, read_context.getException());
-
-    ArrowSchema c_schema{};
-    if (vortex_ffi_reader_schema(reader, &c_schema, &error) != 0)
-    {
-        vortex_ffi_reader_free(reader);
-        throwVortexError(error, read_context.getException());
-    }
-
-    auto schema = arrow::ImportSchema(&c_schema);
-    if (!schema.ok())
-    {
-        vortex_ffi_reader_free(reader);
-        throwFromArrowStatusIfFailed(schema.status());
-    }
-    file_schema = *schema;
-
-    return reader;
-}
 
 /// The C entry points the library calls. An exception escaping one of them would unwind into Rust,
 /// so everything they reach is `noexcept`.
@@ -616,7 +120,7 @@ size_t VortexBlockInputFormat::maxDrivers(FFI_VortexTaskQueue queue) const
     /// Files read in parallel divide the pool between them, and the share grows back as they
     /// finish, so this is recomputed rather than cached.
     size_t threads = queue == FFI_VortexTaskQueue::IO ? parser_shared_resources->getIOThreadsPerReader()
-                                                 : parser_shared_resources->getParsingThreadsPerReader();
+                                                      : parser_shared_resources->getParsingThreadsPerReader();
     return std::max<size_t>(threads, 1);
 }
 
@@ -714,6 +218,11 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
 {
     try
     {
+        ProfileEvents::increment(ProfileEvents::VortexScanSplits);
+        /// The library reports a fully filtered-out split as a null array.
+        if (!array)
+            ProfileEvents::increment(ProfileEvents::VortexScanEmptySplits);
+
         DeliveredChunk delivered_chunk;
         delivered_chunk.empty = array == nullptr;
         delivered_chunk.holds_permit = array != nullptr;
@@ -733,7 +242,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
             SCOPE_EXIT({ returnConverter(std::move(converter)); });
 
             delivered_chunk.missing_values = BlockMissingValues(getPort().getHeader().columns());
-            BlockMissingValues * missing_values_ptr = format_settings.defaults_for_omitted_fields ? &delivered_chunk.missing_values : nullptr;
+            BlockMissingValues * missing_values_ptr
+                = format_settings.defaults_for_omitted_fields ? &delivered_chunk.missing_values : nullptr;
             delivered_chunk.chunk = converter->arrowTableToCHChunk(*table, (*table)->num_rows(), nullptr, missing_values_ptr);
         }
 
@@ -923,46 +433,24 @@ void VortexBlockInputFormat::prepareReader()
     if (need_only_count)
         return;
 
-    /// Request the header's columns that the file actually has; the rest are filled with default
-    /// values, and if none is left there is no scan at all, only a row count.
-    ///
-    /// A header entry can also name a subcolumn, `name.sub`, which `ArrowColumnToCHColumn` can only
-    /// extract once the whole field `name` has been read - hence the second name per column.
-    std::vector<std::string> column_names;
-    /// Points into `column_names`, which must not be modified from here on.
-    std::vector<const char *> column_name_pointers;
-    std::unordered_set<std::string> added_column_names;
-    auto add_column_name = [&](const std::string & name)
-    {
-        if (file_schema->GetFieldByName(name) && added_column_names.emplace(name).second)
-            column_names.push_back(name);
-    };
-    for (const auto & column : getPort().getHeader())
-    {
-        add_column_name(column.name);
-        add_column_name(Nested::extractTableName(column.name));
-    }
-    for (const auto & name : column_names)
-        column_name_pointers.push_back(name.c_str());
+    const VortexScanPlan plan = planVortexScan(getPort().getHeader(), *file_schema, format_filter_info.get(), format_settings, log);
 
-    if (column_names.empty())
+    if (plan.column_names.empty())
     {
         pending_rows_without_columns = vortex_ffi_reader_row_count(reader);
         return;
     }
 
-    VortexExpressionPtr filter;
-    if (format_settings.vortex.filter_push_down && format_filter_info && format_filter_info->hasFilter())
-    {
-        format_filter_info->initKeyConditionOnce(getPort().getHeader());
-        if (format_filter_info->key_condition)
-            filter = buildVortexFilterExpression(*format_filter_info->key_condition, getPort().getHeader(), *file_schema);
-    }
+    /// Points into `plan.column_names`, which must not be modified from here on.
+    std::vector<const char *> column_name_pointers;
+    column_name_pointers.reserve(plan.column_names.size());
+    for (const auto & name : plan.column_names)
+        column_name_pointers.push_back(name.c_str());
 
     FFI_VortexScanOptions options{};
     options.columns = column_name_pointers.data();
     options.num_columns = column_name_pointers.size();
-    options.filter = filter.get();
+    options.filter = plan.filter.get();
     /// Splits allowed in flight at once: being read, decoded, or queued for `read`. Two per
     /// decoding thread leaves each thread something to decode while the next split is still being
     /// read. The limit is low because it counts splits and not bytes, and the decoded chunks of a
@@ -978,8 +466,8 @@ void VortexBlockInputFormat::prepareReader()
     /// will be imported with has to exist beforehand: the file schema projected to the requested
     /// columns, the same way the library projects it.
     arrow::FieldVector scan_fields;
-    scan_fields.reserve(column_names.size());
-    for (const auto & name : column_names)
+    scan_fields.reserve(plan.column_names.size());
+    for (const auto & name : plan.column_names)
         scan_fields.push_back(file_schema->GetFieldByName(name));
     scan_schema = arrow::schema(std::move(scan_fields));
 
@@ -990,7 +478,12 @@ void VortexBlockInputFormat::prepareReader()
         /// The scan is started last, after everything that can fail, so nothing was delivered yet;
         /// this only makes sure no driver of this reader is running when the exception propagates.
         stopTasks();
-        throwVortexError(error, read_context->getException());
+        String message = takeVortexError(error);
+        /// The translator only builds filters the scan can bind, so a failure here is a bug in it;
+        /// the expression is the piece of context that makes such a report actionable.
+        if (plan.filter)
+            message += fmt::format(" (the scan was created with the pushed-down filter: {})", vortexExpressionToString(plan.filter.get()));
+        std::rethrow_exception(makeVortexException(message, read_context->getException()));
     }
 
     /// Debug-only cross-check that the library projects the schema the same way.
@@ -1145,8 +638,8 @@ Chunk VortexBlockInputFormat::read()
         }
 
         lock.unlock();
-        const bool has_tasks
-            = vortex_ffi_runtime_pending(runtime, FFI_VortexTaskQueue::CPU) > 0 || vortex_ffi_runtime_pending(runtime, FFI_VortexTaskQueue::IO) > 0;
+        const bool has_tasks = vortex_ffi_runtime_pending(runtime, FFI_VortexTaskQueue::CPU) > 0
+            || vortex_ffi_runtime_pending(runtime, FFI_VortexTaskQueue::IO) > 0;
         if (has_tasks)
         {
             /// Tasks are queued and nothing is running them, which should not be reachable.
@@ -1165,8 +658,7 @@ Chunk VortexBlockInputFormat::read()
 
         const bool nothing_deliverable
             = delivered.empty() || (format_settings.vortex.preserve_order && delivered.begin()->first != next_split_index);
-        if (idle_checks >= IDLE_CHECKS_BEFORE_STUCK && nothing_deliverable && !scan_finished && !background_exception
-            && !is_stopped)
+        if (idle_checks >= IDLE_CHECKS_BEFORE_STUCK && nothing_deliverable && !scan_finished && !background_exception && !is_stopped)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in the Vortex reader (thread pool)");
     }
 }
@@ -1197,7 +689,8 @@ const BlockMissingValues * VortexBlockInputFormat::getMissingValues() const
 }
 
 VortexSchemaReader::VortexSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : ISchemaReader(in_), format_settings(format_settings_)
+    : ISchemaReader(in_)
+    , format_settings(format_settings_)
 {
 }
 
@@ -1350,7 +843,7 @@ SELECT * FROM numbers(3) INTO OUTFILE 'numbers.vortex' FORMAT Vortex;
 
 | Setting                                  | Description                                                          | Default |
 |------------------------------------------|----------------------------------------------------------------------|---------|
-| `input_format_vortex_filter_push_down`   | Push translatable parts of the `WHERE` condition down into the scan, so that a selective query reads and decodes less data. Only the translated part of the condition is enforced inside the scan: a condition that is only partly translatable is widened to one that keeps at least every matching row, so rows that do not match can still be read and decoded, and ClickHouse reapplies the full filter afterwards. Pushdown currently supports top-level integer, floating-point, and string/binary columns. | `1` |
+| `input_format_vortex_filter_push_down`   | Push translatable parts of the `WHERE` condition down into the scan, so that a selective query reads and decodes less data. Only the translated part of the condition is enforced inside the scan: a condition that is only partly translatable is widened to one that keeps at least every matching row, so rows that do not match can still be read and decoded, and ClickHouse reapplies the full filter afterwards. Pushdown currently supports top-level integer, floating-point, string/binary, `Bool`, `Date`, `Date32` and `DateTime64` columns. | `1` |
 | `input_format_vortex_preserve_order`     | Return the rows in file order. By default the row splits of a file are decoded in parallel and returned as soon as they are ready, so the row order is not guaranteed; with the setting a slow split holds back the ones after it. | `0` |
 | `max_parsing_threads`                    | The number of threads that decode Vortex files (shared by the files read in parallel by one query). `1` disables the thread pool: the file is then read inside `read`, on the thread of the query pipeline. | number of cores |
 | `max_download_threads`                   | The number of threads that read the file. `0` makes the reads share the decoding threads. | `4` |
@@ -1378,9 +871,7 @@ void registerVortexSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader(
         "Vortex",
         [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
-        {
-            return std::make_shared<VortexSchemaReader>(buf, settings);
-        });
+        { return std::make_shared<VortexSchemaReader>(buf, settings); });
 
     /// These settings determine the inferred types, so a cached schema is only valid for the same
     /// values of them.
@@ -1407,10 +898,14 @@ namespace DB
 {
 class FormatFactory;
 void registerInputFormatVortex(FormatFactory &);
-void registerInputFormatVortex(FormatFactory &) {}
+void registerInputFormatVortex(FormatFactory &)
+{
+}
 
 void registerVortexSchemaReader(FormatFactory &);
-void registerVortexSchemaReader(FormatFactory &) {}
+void registerVortexSchemaReader(FormatFactory &)
+{
+}
 }
 
 #endif

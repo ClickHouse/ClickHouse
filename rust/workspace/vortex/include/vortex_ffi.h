@@ -135,6 +135,16 @@ enum class FFI_VortexComparisonOperator : int32_t
     Gte = 5,
 };
 
+/// The unit of a temporal literal; the values mirror the discriminants of the Vortex `TimeUnit`.
+enum class FFI_VortexTimeUnit : int32_t
+{
+    Nanoseconds = 0,
+    Microseconds = 1,
+    Milliseconds = 2,
+    Seconds = 3,
+    Days = 4,
+};
+
 /// A zero-initialized struct means one read at a time and no merging.
 struct FFI_VortexReaderOptions
 {
@@ -260,6 +270,17 @@ FFI_VortexExpression * vortex_ffi_expr_literal_bool(bool value);
 /// UTF-8, or a `Binary` one. A nullptr `data` is only accepted for length 0.
 FFI_VortexExpression * vortex_ffi_expr_literal_string(const uint8_t * data, uint64_t length, bool is_utf8);
 
+/// Creates a `vortex.date` literal: days or milliseconds since the Unix epoch. The only units a
+/// date supports are `Days`, whose value has to fit `int32_t`, and `Milliseconds`. Returns nullptr
+/// otherwise.
+FFI_VortexExpression * vortex_ffi_expr_literal_date(FFI_VortexTimeUnit unit, int64_t value);
+
+/// Creates a `vortex.timestamp` literal: ticks of `unit` since the Unix epoch, with `timezone`
+/// naming the zone or nullptr for a zone-less timestamp. `Days` is not a timestamp unit. The unit
+/// and the zone have to be exactly the file column's: Vortex only compares timestamps whose
+/// metadata is identical.
+FFI_VortexExpression * vortex_ffi_expr_literal_timestamp(FFI_VortexTimeUnit unit, const char * timezone, int64_t value);
+
 /// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the scan
 /// treats as a row that does not match.
 FFI_VortexExpression * vortex_ffi_expr_compare(
@@ -276,6 +297,10 @@ FFI_VortexExpression * vortex_ffi_expr_not(const FFI_VortexExpression * child);
 
 /// Creates an expression that is true for the rows where the child expression is null.
 FFI_VortexExpression * vortex_ffi_expr_is_null(const FFI_VortexExpression * child);
+
+/// Renders the expression the way the library prints it, for logs and error messages. The string
+/// has to be freed with `vortex_ffi_free_string`.
+char * vortex_ffi_expr_display(const FFI_VortexExpression * expr);
 
 /// Frees an expression handle.
 void vortex_ffi_expr_free(FFI_VortexExpression * expr);
