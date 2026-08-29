@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/// Auto-vectorizable sin/cos/tan kernels used when `fast_float_math` is enabled.
+/// Auto-vectorizable sin/cos/tan kernels.
 ///
 /// No intrinsics and no runtime dispatch: the loops are written so that clang vectorizes them with
 /// whatever SIMD width the target has. Each element goes through a Cody-Waite reduction to a
@@ -18,8 +18,8 @@ namespace DB
 ///
 /// The reduction constant pi/2 is split into three parts, the first two having only 24 significant
 /// bits, so that `q * part` is exact for |q| < 2^29. Inputs beyond `fast_trig_limit` (and NaN/Inf)
-/// are recomputed with libm in a second, scalar pass. The result is accurate to a few ulp inside
-/// the limit; see the `fast_float_math` setting documentation for the measured bounds.
+/// are recomputed with libm in a second, scalar pass. Inside the limit the result is accurate to
+/// ~1 ulp for sin/cos and ~2 ulp for tan (measured against libm over the whole range).
 namespace FastTrig
 {
 

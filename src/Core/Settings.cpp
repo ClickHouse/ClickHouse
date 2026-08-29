@@ -4301,21 +4301,6 @@ Possible values:
     DECLARE(Bool, decimal_check_overflow, true, R"(
 Check overflow of decimal arithmetic/comparison operations
 )", 0) \
-    DECLARE(Bool, fast_float_math, false, R"(
-Use faster, vectorized (SIMD) but less precise implementations of certain floating-point math functions (`exp2`, `exp10`, `log2`, `log10`, `pow`, `sin`, `cos`, `tan`).
-
-When disabled (the default), these functions use precise scalar libm implementations, so results are bit-for-bit unchanged. When enabled, `exp2`, `exp10`, `log2`, `log10` and `pow` are evaluated through the vectorized `FastOps` kernels (the same ones already used unconditionally by `exp`/`log`), which are 2.5-11x faster but approximate, and `sin`, `cos`, `tan` through a branch-free, auto-vectorized polynomial kernel that is 1.5-2x faster.
-
-:::warning
-Results become inaccurate. Measured worst-case relative error over the finite domain:
-- `exp2`, `exp10`: ~`1e-12` (about 12 significant digits);
-- `log2`, `log10`: ~`5e-9` (matching the accuracy of the already-vectorized `exp`/`log`);
-- `sin`, `cos`: ~`2e-16` (1 ulp) and `tan`: ~`5e-16` (2 ulp) for `|x| <= 1e7`; the absolute error stays below `1.2e-16` up to `|x| <= 1e8`, but the relative error of results very close to zero grows to ~`1e-14` there. Arguments with `|x| > 1e8` (and `NaN`/`Inf`) fall back to precise libm and are bit-for-bit unchanged;
-- `pow`: ~`1e-14` for a constant integer exponent `n` with `|n| <= 64` (computed by repeated multiplication, not bit-identical to precise `pow`; the error grows like `|n| * eps`, and `64` is where it reaches ~`1e-14`); ~`1e-12` for a constant positive base. Every other case - a larger integer exponent, a non-integer constant exponent, a non-positive constant base, or two non-constant arguments - falls back to precise `pow` and is bit-for-bit unchanged.
-
-Special values (zero, negatives, `NaN`, `Inf`, and the overflow/underflow boundaries) are handled correctly in both modes; only the last few mantissa bits of finite results differ.
-:::
-)", 0) \
     DECLARE(Bool, allow_custom_error_code_in_throwif, false, R"(
 Enable custom error code in function throwIf(). If true, thrown exceptions may have unexpected error codes.
 )", 0) \

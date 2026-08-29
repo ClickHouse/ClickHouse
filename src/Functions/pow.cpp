@@ -1,5 +1,4 @@
 #include <Functions/FunctionMathBinaryFloat64.h>
-#include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 
 #include "config.h"
@@ -27,27 +26,25 @@ namespace
 {
 
 struct PowName { static constexpr auto name = "pow"; };
-using FunctionPowPrecise = FunctionMathBinaryFloat64<BinaryFunctionVectorized<PowName, pow>>;
 
 #if USE_FASTOPS
 
-/// Fast, vectorized `pow` used when the `fast_float_math` setting is enabled.
-/// It handles the common special cases:
+/// Fast, vectorized `pow` for the common special cases:
 ///   - constant integer exponent (including 0, 1, 2, and negatives) via multiplication;
 ///   - constant positive base `b`, evaluated as `b^y = exp2(y * log2(b))`.
 /// Anything else (non-integer constant exponent, non-positive constant base, or two non-constant
 /// arguments) falls back to precise scalar `std::pow`, so results stay correct across the whole
 /// domain (negative bases, zero, NaN/Inf, subnormals).
-class FunctionPowFast final : public IFunction
+class FunctionPow final : public IFunction
 {
 public:
     static constexpr auto name = PowName::name;
 
-    explicit FunctionPowFast() = default;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPow>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -59,8 +56,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    /// Matches FunctionMathBinaryFloat64 so that pow(Dynamic, ...) keeps returning Nullable(Float64)
-    /// instead of Dynamic once fast_float_math routes through this implementation.
+    /// Matches FunctionMathBinaryFloat64 so that pow(Dynamic, ...) returns Nullable(Float64) instead of Dynamic.
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeFloat64>();
@@ -97,8 +93,8 @@ private:
     }
 
     /// Squaring doubles the base's accumulated error, so accuracy decays like `|n| * eps`: measured
-    /// 6.6e-15 at 64, 1.0e-13 at 1024. 64 is where it still meets the ~1e-14 documented for
-    /// `fast_float_math`. It also keeps the `Int64` cast below in range - `floor` alone admits 1e19.
+    /// 6.6e-15 at 64, 1.0e-13 at 1024. 64 keeps it around 1e-14. It also keeps the `Int64` cast
+    /// below in range - `floor` alone admits 1e19.
     static constexpr Float64 max_fast_integer_exponent = 64;
 
     /// pow(x, y) with a constant exponent. Only the integer-exponent cases are fast-pathed;
@@ -197,21 +193,9 @@ private:
     }
 };
 
+#else
+using FunctionPow = FunctionMathBinaryFloat64<BinaryFunctionVectorized<PowName, pow>>;
 #endif
-
-struct FunctionPow
-{
-    static constexpr auto name = PowName::name;
-
-    static FunctionPtr create(ContextPtr context)
-    {
-#if USE_FASTOPS
-        if (fastFloatMathEnabled(context))
-            return std::make_shared<FunctionPowFast>();
-#endif
-        return FunctionPowPrecise::create(context);
-    }
-};
 
 }
 

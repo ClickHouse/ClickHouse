@@ -11,19 +11,8 @@ namespace
 struct Log10Name { static constexpr auto name = "log10"; };
 
 #if USE_FASTOPS
-struct Log10Fast
-{
-    static constexpr auto name = Log10Name::name;
-    static void fast(const double * src, size_t size, double * dst)
-    {
-        fastNaturalLogScaled(src, size, dst, std::numbers::log10e);
-    }
-};
-struct FunctionLog10
-{
-    static constexpr auto name = Log10Name::name;
-    static FunctionPtr create(ContextPtr context) { return createGatedMathUnary<Log10Name, Log10Fast, log10>(context); }
-};
+void log10Kernel(const double * src, size_t size, double * dst) { fastNaturalLogScaled(src, size, dst, std::numbers::log10e); }
+using FunctionLog10 = FunctionMathUnary<VectorizedFloat64Impl<Log10Name, log10Kernel>>;
 #else
 using FunctionLog10 = FunctionMathUnary<UnaryFunctionVectorized<Log10Name, log10>>;
 #endif

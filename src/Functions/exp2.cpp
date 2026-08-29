@@ -9,16 +9,8 @@ namespace
 struct Exp2Name { static constexpr auto name = "exp2"; };
 
 #if USE_FASTOPS
-struct Exp2Fast
-{
-    static constexpr auto name = Exp2Name::name;
-    static void fast(const double * src, size_t size, double * dst) { NFastOps::Exp2<true>(src, size, dst); }
-};
-struct FunctionExp2
-{
-    static constexpr auto name = Exp2Name::name;
-    static FunctionPtr create(ContextPtr context) { return createGatedMathUnary<Exp2Name, Exp2Fast, exp2>(context); }
-};
+void exp2Kernel(const double * src, size_t size, double * dst) { NFastOps::Exp2<true>(src, size, dst); }
+using FunctionExp2 = FunctionMathUnary<VectorizedFloat64Impl<Exp2Name, exp2Kernel>>;
 #else
 using FunctionExp2 = FunctionMathUnary<UnaryFunctionVectorized<Exp2Name, exp2>>;
 #endif

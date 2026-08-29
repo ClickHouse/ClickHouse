@@ -8,16 +8,7 @@ namespace
 {
 
 struct CosName { static constexpr auto name = "cos"; };
-struct CosFast
-{
-    static constexpr auto name = CosName::name;
-    static void fast(const double * src, size_t size, double * dst) { FastTrig::cos(src, size, dst); }
-};
-struct FunctionCos
-{
-    static constexpr auto name = CosName::name;
-    static FunctionPtr create(ContextPtr context) { return createGatedMathUnary<CosName, CosFast, cos>(context); }
-};
+using FunctionCos = FunctionMathUnary<VectorizedFloat64Impl<CosName, FastTrig::cos>>;
 
 }
 

@@ -27,9 +27,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/// Defined in FunctionMathUnary.cpp; reads the `fast_float_math` setting from the query context.
-bool fastFloatMathEnabled(const ContextPtr & context);
-
 
 template <typename Impl>
 class FunctionMathUnary final : public IFunction
@@ -195,13 +192,12 @@ struct UnaryFunctionVectorized
 };
 
 
-/// Whole-column vectorized unary math impl, selected at create time when `fast_float_math` is enabled.
-/// `Ops` must provide `static constexpr auto name` and `static void fast(const double *, size_t, double *)`.
+/// Whole-column vectorized unary math impl over a `void (const double *, size_t, double *)` kernel.
 /// Always returns Float64, matching the historical behavior of these functions.
-template <typename Ops>
-struct FastMathUnaryImpl
+template <typename Name, void (*Kernel)(const double *, size_t, double *)>
+struct VectorizedFloat64Impl
 {
-    static constexpr auto name = Ops::name;
+    static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 0;
     static constexpr bool always_returns_float64 = true;
 
@@ -210,7 +206,7 @@ struct FastMathUnaryImpl
     {
         if constexpr (std::is_same_v<T, Float64>)
         {
-            Ops::fast(src, size, dst);
+            Kernel(src, size, dst);
         }
         else
         {
@@ -218,19 +214,10 @@ struct FastMathUnaryImpl
             /// already arrive as Float64, so this only runs for Float32/BFloat16 columns.
             for (size_t i = 0; i < size; ++i)
                 dst[i] = static_cast<Float64>(src[i]);
-            Ops::fast(dst, size, dst);
+            Kernel(dst, size, dst);
         }
     }
 };
-
-/// Precise scalar libm by default; the vectorized `FastOps` path when `fast_float_math` is enabled.
-template <typename Name, typename FastOps, Float64(Precise)(Float64)>
-FunctionPtr createGatedMathUnary(ContextPtr context)
-{
-    if (fastFloatMathEnabled(context))
-        return FunctionMathUnary<FastMathUnaryImpl<FastOps>>::create(context);
-    return FunctionMathUnary<UnaryFunctionVectorized<Name, Precise>>::create(context);
-}
 
 #if USE_FASTOPS
 
