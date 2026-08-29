@@ -59,7 +59,7 @@ alias list over UNION ALL
 3
 UNION DISTINCT is not rewritten
 Output: getSubcolumn(tup, \'a\')
-│     Output: tup
+│        Output: tup
 Output: tup
 1
 2
