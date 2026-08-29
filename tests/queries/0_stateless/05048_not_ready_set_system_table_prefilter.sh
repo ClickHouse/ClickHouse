@@ -38,9 +38,12 @@ BIG="(SELECT toString(number) FROM numbers(300000000))"
 
 # Report the client's exit status next to the count, so that a query failing for an unrelated reason
 # is distinguishable from one that succeeded.
+# The subquery has to keep reading until the time limit stops it, so the read limit must be lifted:
+# the functional-test profile caps reads at 20M rows, and a read limit, unlike a time limit, still
+# lets the set finish building.
 check() {
     local out="${CLICKHOUSE_TMP}/05048_${CLICKHOUSE_DATABASE}_$1_${3// /_}.out"
-    $CLICKHOUSE_CLIENT --max_execution_time 0.3 --timeout_overflow_mode break \
+    $CLICKHOUSE_CLIENT --max_rows_to_read 0 --max_execution_time 0.3 --timeout_overflow_mode break \
         --query "SELECT count() FROM system.$1 WHERE $2 $3 $BIG FORMAT Null" > "$out" 2>&1
     local rc=$?
     echo "$1 $3: $(grep -c -F 'Not-ready Set' "$out") $([ "$rc" -eq 0 ] && echo ok || echo "rc=$rc")"
