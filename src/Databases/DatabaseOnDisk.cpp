@@ -246,6 +246,7 @@ void DatabaseOnDisk::createTableImpl(
     bool check_rows_limit)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
+    ensurePopulated();
     auto db_disk = getDisk();
     createDirectories();
 
@@ -519,6 +520,10 @@ void DatabaseOnDisk::renameTable(
     waitDatabaseStarted();
     if (this != &to_database)
         to_database.waitDatabaseStarted();
+
+    ensurePopulated();
+    if (auto * to_database_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
+        to_database_with_own_tables->ensurePopulated();
 
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
