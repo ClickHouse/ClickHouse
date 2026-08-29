@@ -592,7 +592,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(
     }
 }
 
-QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree, bool include_table_functions)
 {
     QueryTreeNodes result;
 
@@ -627,6 +627,8 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
                 // Arguments of table function can't contain TableNodes.
+                if (include_table_functions)
+                    result.push_back(std::move(node_to_process));
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:

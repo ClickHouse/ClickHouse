@@ -1,0 +1,10 @@
+-- No SELECT on the parameterized view: CREATE VIEW over it must be denied in every shape
+pv in a FROM subquery: ACCESS_DENIED
+pv as the table expression: ACCESS_DENIED
+pv in a nested subquery: ACCESS_DENIED
+pv joined inside a subquery: ACCESS_DENIED
+-- Over-denial control: the same statements without the view stay allowed
+granted table in a subquery: OK
+-- With SELECT on the parameterized view everything is allowed
+pv in a FROM subquery: OK
+pv as the table expression: OK

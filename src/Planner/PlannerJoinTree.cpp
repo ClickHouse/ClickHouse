@@ -382,9 +382,26 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
 /// Check access rights for all tables referenced in a subquery
 void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const ContextPtr & query_context)
 {
-    auto table_nodes = extractAllTableReferences(subquery_node);
+    auto table_nodes = extractAllTableReferences(subquery_node, /*include_table_functions=*/ true);
     for (const auto & table_node_ptr : table_nodes)
     {
+        if (const auto * table_function_node = table_node_ptr->as<TableFunctionNode>())
+        {
+            /// A parameterized view is resolved as a `TableFunctionNode` wrapping the view's storage, and
+            /// no `ITableFunction::execute` ever checks it, so its `SELECT` grant has to be enforced here,
+            /// exactly as `prepareBuildQueryPlanForTableExpression` does when the view is the table
+            /// expression itself. Any other table function checks its own access in `ITableFunction::execute`.
+            const auto & storage = table_function_node->getStorage();
+            const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+            if (storage_view && storage_view->isParameterizedView())
+            {
+                const auto & storage_id = table_function_node->getStorageID();
+                if (storage_id.hasDatabase())
+                    query_context->checkAccess(AccessType::SELECT, storage_id);
+            }
+            continue;
+        }
+
         const auto & table_node = table_node_ptr->as<TableNode &>();
         if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
             continue;

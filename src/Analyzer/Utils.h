@@ -110,7 +110,10 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
 const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node);
 
 /// Extract all TableNodes from the query tree.
-QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
+/// With `include_table_functions` the result also carries the TableFunctionNodes, which some callers
+/// need to inspect too (e.g. a parameterized view is resolved as a TableFunctionNode wrapping the
+/// view's storage, and its `SELECT` grant has to be checked like a table's).
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree, bool include_table_functions = false);
 
 /// Extract table, table function, query, union from join tree.
 TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
