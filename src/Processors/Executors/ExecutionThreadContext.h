@@ -8,6 +8,7 @@ namespace DB
 {
 
 class ReadProgressCallback;
+class MemorySpillScheduler;
 
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
@@ -24,8 +25,17 @@ private:
     /// Exception from executing thread itself.
     std::exception_ptr exception;
 
+    /// The last task ran only its forced-recovery hook. Its prepared processor state must be
+    /// preserved and deferred, not passed through prepare() again.
+    bool task_consumed_for_recovery = false;
+
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
+
+    /// Retained controller for the complete dependency graph. Never rediscover it from the worker's
+    /// current ThreadGroup: nested executors can otherwise register on one controller and execute
+    /// recovery against another.
+    std::shared_ptr<MemorySpillScheduler> memory_spill_scheduler;
 
 public:
 #ifndef NDEBUG
@@ -59,14 +69,19 @@ public:
     ExecutingGraph::Node * getTask() const { return node; }
     ExecutingGraph::Node * popTask() { return std::exchange(node, nullptr); }
     bool executeTask();
+    bool wasTaskConsumedForRecovery() const { return task_consumed_for_recovery; }
 
     std::unique_lock<std::mutex> lockStatus() const { return std::unique_lock(node->status_mutex); }
 
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
+    explicit ExecutionThreadContext(
+        size_t thread_number_, bool profile_processors_, bool trace_processors_,
+        const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback,
+        const std::shared_ptr<MemorySpillScheduler> & memory_spill_scheduler_)
         : read_progress_callback(callback)
+        , memory_spill_scheduler(memory_spill_scheduler_)
         , step_to_wall_clock_registry(step_wall_clock_registry_)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)

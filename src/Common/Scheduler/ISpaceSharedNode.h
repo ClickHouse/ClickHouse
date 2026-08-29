@@ -14,6 +14,19 @@
 namespace DB
 {
 
+struct UnusedCapacityReclaimResult
+{
+    /// Exact positive ordinary decrease committed by this subtree. Its approval enqueues one
+    /// local scheduling turn at every enclosing AllocationLimit.
+    DecreaseRequest * decrease = nullptr;
+
+    /// A descendant dependency graph consumed the bounded handoff. Callers must stop probing and
+    /// wait for that graph's explicit completion/update; this flag does not itself represent bytes.
+    bool local_demand = false;
+
+    explicit operator bool() const { return decrease || local_demand; }
+};
+
 /// Base class for all scheduler nodes that manage space-shared resource.
 /// NOTE: All fields and methods can only be accessed from the scheduler thread.
 class ISpaceSharedNode : public ISchedulerNode
@@ -114,6 +127,71 @@ public:
     ///  A0 A1 A2 A3 A4 A5 A6 A7 A8 - ResourceAllocations
     ///    <-- killing order --
     virtual ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) = 0;
+
+    /// Selects one request that can consume a released-capacity turn. The default keeps
+    /// the node's ordinary current selection; policies may search only where their own ordering
+    /// permits it. Implementations must not allocate and must leave the selection unchanged on
+    /// failure. A policy that moves away from its ordinary current request must pin the successful
+    /// selection until the owning AllocationLimit either approves it or explicitly clears it.
+    virtual IncreaseRequest * selectFittingIncreaseForHandoff(ResourceCost max_size)
+    {
+        return increase && !increase->allocation.isIncreaseSuspended() && increase->size <= max_size
+            ? increase
+            : nullptr;
+    }
+
+    /// Clears a transient selection installed by selectFittingIncreaseForHandoff(). Cancellation
+    /// or growth spends that level's turn instead of transferring it to another job.
+    virtual void clearFittingIncreaseForHandoff(const IncreaseRequest &) {}
+
+    /// Ask allocations in this subtree to release already-charged capacity they no longer use.
+    /// `allow_local_handoff` lets an enclosing dependency graph use one release-driven turn for a
+    /// fitting local selection; policy boundaries may disable it (for example, when a strictly
+    /// higher-precedence requester must win). Requests are activated asynchronously so this call
+    /// never re-enters the hierarchy currently evaluating an increase. Exact decrease identity
+    /// prevents unrelated or zero-byte releases from enqueueing a turn.
+    virtual UnusedCapacityReclaimResult reclaimUnusedCapacity(IncreaseRequest &, ResourceCost, bool) { return {}; }
+
+    /// True while a descendant has scheduled or committed one local slack reclaim, or has an
+    /// ordinary positive release waiting to be published. Ancestor limits wait for that node-owned
+    /// round before probing the same subtree, preserving local-first order without timers or
+    /// synchronous recursive scheduling.
+    virtual bool hasUnusedCapacityReclaimPending() const { return false; }
+
+    /// True for the exact request selected during a just-completed local turn. Policy nodes may
+    /// preserve that selection through approval, after which the marker is cleared. This is not a
+    /// capacity reservation.
+    virtual bool isUnusedCapacityReclaimBeneficiary(const IncreaseRequest &) const { return false; }
+    virtual bool hasUnusedCapacityReclaimBeneficiary() const { return false; }
+
+    /// This subtree's exact release marker lost its bounded policy opportunity to `selected`.
+    /// Composite nodes follow only their currently visible beneficiary path; they must not scan or
+    /// flatten unrelated branches. The owning limit clears the exact marker and restores policy order.
+    virtual void expireUnusedCapacityReclaimBeneficiariesExcept(const IncreaseRequest &) {}
+
+    /// A subtree entered a bounded local reclaim/retry round. This metadata walk is unconditional:
+    /// the selected IncreaseRequest pointer may remain null while policy nodes install a barrier.
+    virtual void notifyUnusedCapacityReclaimStarted()
+    {
+        if (parent)
+            castParent().notifyUnusedCapacityReclaimStarted();
+    }
+
+    /// A scheduled descendant probe completed without publishing a decrease. Wake the nearest
+    /// ancestor probe that was waiting for it; ordinary decreases are their own durable wakeup.
+    virtual void notifyUnusedCapacityReclaimCompleted()
+    {
+        if (parent)
+            castParent().notifyUnusedCapacityReclaimCompleted();
+    }
+
+    /// A descendant observed unused, already-charged capacity. Forward it until the nearest
+    /// currently constrained limit consumes the notification and schedules a reclaim probe.
+    virtual void notifyUnusedCapacityAvailable()
+    {
+        if (parent)
+            castParent().notifyUnusedCapacityAvailable();
+    }
 
     /// For parent only. Sets the usage key.
     void setUsageKey(double value, size_t tie_breaker)

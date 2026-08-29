@@ -8,6 +8,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace DB
 {
@@ -114,6 +115,7 @@ void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, Resour
     chassert(allocation.running_hook.is_linked());
     allocation.decrease.prepare(decrease_size, /*removing_allocation=*/ false);
     decreasing_allocations.push_back(allocation);
+    refreshUnusedCapacityReclaimPending();
     if (&allocation == &*decreasing_allocations.begin())
         scheduleActivation();
 }
@@ -144,10 +146,14 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
         /// work. Remember it, then hide the blocked growth for one complete policy-scoped search.
         /// AllocationLimit consumes the decision only after every currently visible alternative
         /// has been considered.
-        if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
-            allocation.memory_growth_suction_priority = true;
+        /// Keep one queue-level policy owner, but do not conflate that with query-side recovery.
+        /// Every blocked allocation must enter its own recovery lane before the policy owner reaches
+        /// the shared last-resort path. Allocations from one dependency graph may still coalesce that
+        /// work through their shared query-scoped spill controller.
         if (!suspended_growth)
             suspended_growth = &allocation;
+        if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
+            allocation.memory_growth_suction_priority = true;
     }
 
     allocation.memory_growth_suspended = true;
@@ -158,15 +164,27 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
     return true;
 }
 
-void AllocationQueue::notifyRecoveryProgress(ResourceAllocation & allocation)
+void AllocationQueue::notifyRecoveryProgress(ResourceAllocation & allocation, UInt64 recovery_epoch)
 {
     std::lock_guard lock(mutex);
-    if (is_not_usable)
+    if (is_not_usable || !allocation.increasing_hook.is_linked()
+        || allocation.increase.kind != IncreaseRequest::Kind::Regular
+        || !allocation.acceptRecoveryProgress(recovery_epoch))
         return;
 
-    /// Publish against the allocation, not the queue's owner pointer. Completion may arrive before
-    /// the scheduler finishes parking the owner; the next activation consumes this durable bit.
+    /// Validation and publication are one queue-serialized hand-off. Completion may arrive before
+    /// the scheduler finishes parking the owner, but it cannot attach to a later reuse of the
+    /// allocation's embedded IncreaseRequest.
     allocation.memory_growth_recovery_pending = true;
+    scheduleActivation();
+}
+
+void AllocationQueue::notifyUnusedCapacity(ResourceAllocation & allocation)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable || (!allocation.running_hook.is_linked() && !allocation.increasing_hook.is_linked()))
+        return;
+    unused_capacity_changed = true;
     scheduleActivation();
 }
 
@@ -198,6 +216,7 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
     if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
         return;
     removing_allocations.push_back(allocation);
+    refreshUnusedCapacityReclaimPending();
     if (&allocation == &*removing_allocations.begin())
         scheduleActivation();
 }
@@ -245,6 +264,7 @@ void AllocationQueue::purgeQueue()
     chassert(increasing_allocations.empty());
     chassert(decreasing_allocations.empty());
     chassert(removing_allocations.empty());
+    unused_capacity_reclaim_pending.store(false, std::memory_order_release);
 
     // All further calls to this queue will throw exceptions
     increase = nullptr;
@@ -314,8 +334,14 @@ void AllocationQueue::approveIncrease()
     allocation.last_increase_approval_epoch = increase->approval_epoch;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
-        allocation.memory_growth_suction_priority = false;
-        allocation.onGrowthPressureResolved();
+        /// Approval can beat an already-queued recovery-completion activation. Consume the exact
+        /// allocation's durable bit here so it cannot be mistaken for completion of a later grow.
+        allocation.memory_growth_recovery_pending = false;
+        if (suspended_growth != &allocation)
+        {
+            allocation.memory_growth_suction_priority = false;
+            allocation.onGrowthPressureResolved();
+        }
     }
 
     if (suspended_growth == &allocation)
@@ -336,6 +362,11 @@ void AllocationQueue::approveIncrease()
 
     // Notify allocation
     increase->allocation.increaseApproved(*increase);
+    if (allocation.takeUnusedCapacityNotification())
+    {
+        unused_capacity_changed = true;
+        scheduleActivation();
+    }
     increase = nullptr;
 
     setIncrease();
@@ -349,6 +380,7 @@ void AllocationQueue::approveDecrease()
     ResourceAllocation & allocation = decrease->allocation;
     SCHED_DBG("{} -- approveDecrease(id={}, size={}, allocated={})", getPath(), allocation.id, decrease->size, allocated);
     decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
+    refreshUnusedCapacityReclaimPending();
 
     // We need to remove from running/increasing allocations to update the key
     running_allocations.erase(running_allocations.iterator_to(allocation));
@@ -408,6 +440,61 @@ void AllocationQueue::approveDecrease()
     setDecrease();
 }
 
+UnusedCapacityReclaimResult AllocationQueue::reclaimUnusedCapacity(IncreaseRequest &, ResourceCost max_size, bool)
+{
+    if (max_size <= 0)
+        return {};
+
+    DecreaseRequest * reclaimed = nullptr;
+    {
+        std::lock_guard lock(mutex);
+        if (is_not_usable)
+            return {};
+
+        /// A query-thread decrease may already be committed but not yet published by this leaf's
+        /// activation. Treat it as progress instead of claiming a second donor or declaring the
+        /// local round exhausted. Its ordinary decrease approval is the durable wakeup.
+        auto existing_release = std::find_if(decreasing_allocations.begin(), decreasing_allocations.end(), [](const ResourceAllocation & allocation)
+        {
+            return allocation.decrease.size > 0;
+        });
+        if (existing_release != decreasing_allocations.end())
+            reclaimed = &existing_release->decrease;
+
+        /// Release from the largest allocations first, mirroring victim order while avoiding a
+        /// kill entirely. The allocation callback only commits currently unused capacity; the
+        /// ordinary decrease path performs all accounting and hierarchy propagation.
+        for (auto it = running_allocations.rbegin(); it != running_allocations.rend() && !reclaimed; ++it)
+        {
+            ResourceAllocation & allocation = *it;
+            if (allocation.decreasing_hook.is_linked() || allocation.removing_hook.is_linked())
+                continue;
+
+            const ResourceCost amount = allocation.reclaimUnusedCapacity(max_size);
+            chassert(amount >= 0 && amount <= max_size);
+            if (amount == 0)
+                continue;
+
+            allocation.decrease.prepare(amount, /*removing_allocation=*/ false);
+            decreasing_allocations.push_back(allocation);
+            refreshUnusedCapacityReclaimPending();
+            reclaimed = &allocation.decrease;
+            break; // Publish and acknowledge one ordinary decrease before claiming another.
+        }
+    }
+
+    /// Do not propagate synchronously while an ancestor is evaluating an increase. Activation
+    /// publishes the decrease on the next scheduler turn, where decreases already have priority.
+    if (reclaimed)
+        scheduleActivation();
+    return {.decrease = reclaimed};
+}
+
+bool AllocationQueue::hasUnusedCapacityReclaimPending() const
+{
+    return unused_capacity_reclaim_pending.load(std::memory_order_acquire);
+}
+
 ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
     UNUSED(limit);
@@ -419,6 +506,23 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
         return nullptr;
 
     if (running_allocations.empty())
+        return nullptr;
+
+    /// Eviction is graph-wide last resort. Before applying largest-first victim order, prove that
+    /// every other blocked dependency graph in this queue has completed its own explicit recovery
+    /// pass. This pre-scan is necessary when the killer itself is the largest allocation: the
+    /// reverse-order victim loop stops at the requester and would otherwise never see a smaller
+    /// graph whose recovery is still active.
+    const bool another_graph_is_recovering = std::any_of(
+        running_allocations.begin(), running_allocations.end(), [&](ResourceAllocation & candidate)
+        {
+            return &candidate != &killer.allocation
+                && !candidate.kill_requested
+                && candidate.increasing_hook.is_linked()
+                && candidate.increase.kind == IncreaseRequest::Kind::Regular
+                && (candidate.isGrowthRecoveryActive() || !candidate.memory_growth_suction_priority);
+        });
+    if (another_graph_is_recovering)
         return nullptr;
 
     ResourceAllocation * victim = nullptr;
@@ -437,6 +541,20 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
         if (&candidate == &killer.allocation)
         {
             self_fallback = &candidate;
+            /// running_allocations is already in reverse victim order. Once the requester itself
+            /// is reached, every remaining candidate is smaller; killing one of them would invert
+            /// the existing largest-first isolation policy. Keep the requester as the fallback and
+            /// stop, unless productive work seen above still postpones eviction altogether.
+            break;
+        }
+        if (candidate.increasing_hook.is_linked()
+            && candidate.increase.kind == IncreaseRequest::Kind::Regular
+            && (candidate.isGrowthRecoveryActive() || !candidate.memory_growth_suction_priority))
+        {
+            /// One graph's suction decision cannot consume a different graph that has not completed
+            /// its own explicit recovery pass. Once that graph publishes completion and injects its
+            /// own priority, it re-enters the ordinary victim order.
+            productive_work_is_protected = true;
             continue;
         }
         if (protection_epoch != 0
@@ -471,48 +589,63 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
 
 void AllocationQueue::processActivation()
 {
-    if (!parent)
-        return; // Detached queue - nothing to do
     Update update;
+    bool notify_unused_capacity = false;
     {
         std::lock_guard lock(mutex);
 
-        if (suspended_growth && suspended_growth->memory_growth_recovery_pending)
+        /// Recovery completion belongs to the exact allocation/query graph, not to this queue's
+        /// singleton policy owner. Consume every published completion before reopening one complete
+        /// queue-policy pass.
+        bool recovery_completed = false;
+        while (true)
         {
-            suspended_growth->memory_growth_recovery_pending = false;
+            auto recovering_it = std::find_if(increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
+            {
+                return allocation.memory_growth_recovery_pending;
+            });
+            if (recovering_it == increasing_allocations.end())
+                break;
+
+            ResourceAllocation & recovering = *recovering_it;
+            recovering.memory_growth_recovery_pending = false;
+            const ResourceCost old_size = recovering.increase.size;
+            const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
+            if (reconciled_size != old_size)
+            {
+                increasing_allocations.erase(recovering_it);
+                running_allocations.erase(running_allocations.iterator_to(recovering));
+                recovering.increase.size = reconciled_size;
+                recovering.fair_key = recovering.allocated + reconciled_size;
+                running_allocations.insert(recovering);
+
+                if (reconciled_size > 0)
+                    increasing_allocations.insert(recovering);
+                else
+                {
+                    if (&recovering == suspended_growth)
+                        clearMemoryGrowthSuspension();
+                    else
+                    {
+                        recovering.memory_growth_suction_priority = false;
+                        recovering.onGrowthPressureResolved();
+                    }
+                    recovering.increaseCancelled();
+                    if (recovering.takeUnusedCapacityNotification())
+                        unused_capacity_changed = true;
+                }
+            }
+            recovery_completed = true;
+        }
+
+        if (recovery_completed)
+        {
             memory_growth_suspension_retry_requested = true;
             memory_growth_suspension_changed = true;
         }
 
         if (memory_growth_suspension_retry_requested)
         {
-            /// Forced spill can change actual demand while the original request remains parked.
-            /// Reconcile it on the scheduler thread before the next fit check, so retry/eviction
-            /// never uses the stale pre-spill size.
-            if (suspended_growth && suspended_growth->increasing_hook.is_linked())
-            {
-                ResourceAllocation & recovering = *suspended_growth;
-                const ResourceCost old_size = recovering.increase.size;
-                const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
-                if (reconciled_size != old_size)
-                {
-                    increasing_allocations.erase(increasing_allocations.iterator_to(recovering));
-                    running_allocations.erase(running_allocations.iterator_to(recovering));
-                    recovering.increase.size = reconciled_size;
-                    recovering.fair_key = recovering.allocated + reconciled_size;
-                    running_allocations.insert(recovering);
-
-                    if (reconciled_size > 0)
-                        increasing_allocations.insert(recovering);
-                    else
-                    {
-                        clearMemoryGrowthSuspension();
-                        recovering.increaseCancelled();
-                    }
-                    memory_growth_suspension_changed = true;
-                }
-            }
-
             /// A release elsewhere in the constrained subtree starts a new fit-check round here.
             for (ResourceAllocation & pending : pending_allocations)
             {
@@ -545,10 +678,19 @@ void AllocationQueue::processActivation()
                 // Cancel pending increase (safe: we are on the scheduler thread)
                 if (allocation.increasing_hook.is_linked())
                 {
+                    const bool cancelled_recovery = allocation.increase.kind == IncreaseRequest::Kind::Regular;
                     increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
                     running_allocations.erase(running_allocations.iterator_to(allocation));
                     allocation.fair_key = allocation.allocated;
                     running_allocations.insert(allocation);
+                    if (cancelled_recovery)
+                    {
+                        /// A non-owner reservation can be removed while its own recovery lane is
+                        /// active. The singleton-owner cleanup above cannot resolve that episode.
+                        allocation.memory_growth_recovery_pending = false;
+                        allocation.memory_growth_suction_priority = false;
+                        allocation.onGrowthPressureResolved();
+                    }
                 }
 
                 // Never-admitted allocation (inserted with `initial_size == 0` and either never
@@ -576,6 +718,8 @@ void AllocationQueue::processActivation()
             }
         }
 
+        refreshUnusedCapacityReclaimPending();
+
         // Update requests
         if (setIncrease() || memory_growth_suspension_changed)
         {
@@ -584,11 +728,31 @@ void AllocationQueue::processActivation()
         }
         if (setDecrease())
             update.setDecrease(decrease);
+        if (parent)
+            notify_unused_capacity = std::exchange(unused_capacity_changed, false);
     }
 
     // Propagate update to parent
-    if (update)
+    if (parent && update)
         propagate(std::move(update));
+    if (notify_unused_capacity && parent)
+        castParent().notifyUnusedCapacityAvailable();
+}
+
+void AllocationQueue::refreshUnusedCapacityReclaimPending()
+{
+    bool pending = std::any_of(decreasing_allocations.begin(), decreasing_allocations.end(), [](const ResourceAllocation & allocation)
+    {
+        return allocation.decrease.size > 0;
+    });
+    if (!pending)
+    {
+        pending = std::any_of(removing_allocations.begin(), removing_allocations.end(), [](const ResourceAllocation & allocation)
+        {
+            return allocation.allocated > 0;
+        });
+    }
+    unused_capacity_reclaim_pending.store(pending, std::memory_order_release);
 }
 
 void AllocationQueue::attachChild(const SchedulerNodePtr &)
@@ -655,7 +819,8 @@ bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
     /// Do not let request quantization decide who runs. If a fitting admission is already queued
     /// and regular growth would consume the capacity it needs, admit the smaller work first.
     const ResourceCost available = allocated < min_max_allocated ? min_max_allocated - allocated : 0;
-    const bool pending_precedes_growth = eligible != increasing_allocations.end()
+    const bool pending_precedes_growth = suspended_growth
+        && eligible != increasing_allocations.end()
         && pending != pending_allocations.end()
         && pending->increase.size <= available
         && eligible->increase.size + pending->increase.size > available;
@@ -690,13 +855,11 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     {
         allocation.memory_growth_suspended = false;
         allocation.memory_growth_suspension_attempted = false;
-        allocation.memory_growth_recovery_pending = false;
     }
     for (ResourceAllocation & allocation : pending_allocations)
     {
         allocation.memory_growth_suspended = false;
         allocation.memory_growth_suspension_attempted = false;
-        allocation.memory_growth_recovery_pending = false;
     }
 }
 

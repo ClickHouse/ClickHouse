@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace DB
 {
@@ -105,11 +106,166 @@ ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest & ki
     return nullptr;
 }
 
+UnusedCapacityReclaimResult FairAllocation::reclaimUnusedCapacity(
+    IncreaseRequest & requester, ResourceCost max_size, bool allow_local_handoff)
+{
+    if (increase_child && increase_child->increase == &requester)
+    {
+        auto reclaimed = increase_child->reclaimUnusedCapacity(requester, max_size, allow_local_handoff);
+        if (reclaimed)
+            return reclaimed;
+    }
+
+    /// Reclaim from the most over-share running child first. This is only unused reservation
+    /// capacity, but keeping normal reverse-acquisition order makes retention policy-consistent.
+    /// Commit one decrease per scheduler round; its approval re-evaluates the exact remaining
+    /// deficit before another graph is asked to surrender slack.
+    for (auto it = running_children.rbegin(); it != running_children.rend(); ++it)
+    {
+        if (&*it != increase_child)
+        {
+            auto reclaimed = it->reclaimUnusedCapacity(requester, max_size, allow_local_handoff);
+            if (reclaimed)
+                return reclaimed;
+        }
+    }
+    return {};
+}
+
+bool FairAllocation::hasUnusedCapacityReclaimPending() const
+{
+    for (const auto & [_, child] : children)
+    {
+        if (child->hasUnusedCapacityReclaimPending())
+            return true;
+    }
+    return false;
+}
+
+bool FairAllocation::isUnusedCapacityReclaimBeneficiary(const IncreaseRequest & request) const
+{
+    return increase_child && increase_child->increase == &request
+        && increase_child->isUnusedCapacityReclaimBeneficiary(request);
+}
+
+bool FairAllocation::hasUnusedCapacityReclaimBeneficiary() const
+{
+    return std::any_of(children.begin(), children.end(), [](const auto & item)
+    {
+        return item.second->hasUnusedCapacityReclaimBeneficiary();
+    });
+}
+
+void FairAllocation::expireUnusedCapacityReclaimBeneficiariesExcept(const IncreaseRequest & selected)
+{
+    if (increase_child
+        && increase_child->increase
+        && increase_child->increase != &selected
+        && increase_child->isUnusedCapacityReclaimBeneficiary(*increase_child->increase))
+    {
+        increase_child->expireUnusedCapacityReclaimBeneficiariesExcept(selected);
+        updateKey(*increase_child, increase_child->increase, false);
+        updateIncreaseSelection();
+    }
+}
+
+IncreaseRequest * FairAllocation::selectFittingIncreaseForHandoff(ResourceCost max_size)
+{
+    if (fitting_handoff
+        && increase_child
+        && increase_child->increase == fitting_handoff
+        && !fitting_handoff->allocation.isIncreaseSuspended()
+        && fitting_handoff->size <= max_size)
+        return fitting_handoff;
+
+    auto select_from = [max_size](auto & candidates, bool beneficiary_only)
+    {
+        for (ISpaceSharedNode & candidate : candidates)
+        {
+            if (!candidate.increase || candidate.increase->allocation.isIncreaseSuspended())
+                continue;
+
+            /// Recurse through policy/wrapper nodes in this same AllocationLimit boundary. A
+            /// nested AllocationLimit deliberately keeps the base implementation and therefore
+            /// stops the search at its own dependency-graph boundary.
+            IncreaseRequest * selected = candidate.selectFittingIncreaseForHandoff(max_size);
+            if (!selected)
+                continue;
+            if (beneficiary_only && !candidate.isUnusedCapacityReclaimBeneficiary(*selected))
+            {
+                candidate.clearFittingIncreaseForHandoff(*selected);
+                continue;
+            }
+            return std::pair<ISpaceSharedNode *, IncreaseRequest *>{&candidate, selected};
+        }
+        return std::pair<ISpaceSharedNode *, IncreaseRequest *>{nullptr, nullptr};
+    };
+
+    /// Keep Fair's configured order at every hierarchy level. Beneficiaries own already-committed
+    /// bytes, then ordinary running growth precedes admission. An oversized head is transiently
+    /// bypassed only for this exact release; no global flattening or persistent reserve is added.
+    auto selected = select_from(increasing_children, /* beneficiary_only = */ true);
+    if (!selected.first)
+        selected = select_from(pending_children, /* beneficiary_only = */ true);
+    if (!selected.first)
+        selected = select_from(increasing_children, /* beneficiary_only = */ false);
+    if (!selected.first)
+        selected = select_from(pending_children, /* beneficiary_only = */ false);
+    if (!selected.first)
+        return nullptr;
+
+    /// Recursive selection may change the immediate child's visible request and even move it
+    /// between Fair's pending and increasing sets. Repair that policy bookkeeping before pinning
+    /// the exact path; the iteration above has already finished, so reinsertion is safe.
+    updateKey(*selected.first, selected.first->increase, false);
+    increase_child = selected.first;
+    increase = selected.second;
+    fitting_handoff = increase;
+    return increase;
+}
+
+void FairAllocation::clearFittingIncreaseForHandoff(const IncreaseRequest & request)
+{
+    if (fitting_handoff == &request)
+    {
+        ISpaceSharedNode * handoff_child = nullptr;
+        for (ISchedulerNode * node = &request.allocation.queue; node && node->parent; node = node->parent)
+        {
+            if (node->parent == this)
+            {
+                handoff_child = static_cast<ISpaceSharedNode *>(node);
+                handoff_child->clearFittingIncreaseForHandoff(request);
+                break;
+            }
+        }
+        if (handoff_child)
+            updateKey(*handoff_child, handoff_child->increase, false);
+        fitting_handoff = nullptr;
+        updateIncreaseSelection();
+    }
+}
+
+void FairAllocation::notifyUnusedCapacityReclaimStarted()
+{
+    if (updateIncreaseSelection() && parent)
+        propagate(Update().setIncrease(increase));
+    ISpaceSharedNode::notifyUnusedCapacityReclaimStarted();
+}
+
+void FairAllocation::notifyUnusedCapacityReclaimCompleted()
+{
+    if (updateIncreaseSelection() && parent)
+        propagate(Update().setIncrease(increase));
+    ISpaceSharedNode::notifyUnusedCapacityReclaimCompleted();
+}
+
 void FairAllocation::approveIncrease()
 {
     chassert(increase);
     SCHED_DBG("{} -- approveIncrease(child={}, id={}, size={})",
         getPath(), increase_child->basename, increase->allocation.id, increase->size);
+    if (fitting_handoff == increase)
+        fitting_handoff = nullptr;
     apply(*increase);
     increase = nullptr;
     increase_child->approveIncrease();
@@ -125,6 +281,7 @@ void FairAllocation::approveDecrease()
     decrease = nullptr;
     decrease_child->approveDecrease();
     setDecrease(*decrease_child, decrease_child->decrease, false);
+    updateIncreaseSelection();
 }
 
 void FairAllocation::retrySuspendedIncreases()
@@ -166,19 +323,69 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
 bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child)
 {
     updateKey(from_child, new_increase, detach_child);
+    return updateIncreaseSelection(detach_child ? &from_child : nullptr);
+}
 
+bool FairAllocation::updateIncreaseSelection(const ISpaceSharedNode * ignored_child)
+{
     // Update current increase request
     // To avoid thrashing we first server running allocation increase requests, then pending ones
     IncreaseRequest * old_increase = increase;
+    if (fitting_handoff)
+    {
+        /// Unrelated child updates cannot steal an exact one-selection handoff. If its request was
+        /// cancelled, changed policy path, or suspended, drop the pin and resume ordinary Fair order.
+        if (increase_child
+            && increase_child != ignored_child
+            && increase_child->increase == fitting_handoff
+            && !fitting_handoff->allocation.isIncreaseSuspended())
+        {
+            increase = fitting_handoff;
+            return old_increase != increase;
+        }
+        IncreaseRequest * stale_handoff = fitting_handoff;
+        fitting_handoff = nullptr;
+        for (ISchedulerNode * node = &stale_handoff->allocation.queue; node && node->parent; node = node->parent)
+        {
+            if (node->parent == this)
+            {
+                auto * stale_child = static_cast<ISpaceSharedNode *>(node);
+                stale_child->clearFittingIncreaseForHandoff(*stale_handoff);
+                /// removeChild() has already unlinked `ignored_child` from every intrusive set.
+                /// Never reinsert that same child while unwinding its stale handoff.
+                updateKey(*stale_child, stale_child->increase, stale_child == ignored_child);
+                break;
+            }
+        }
+    }
     auto eligible = [](const ISpaceSharedNode & child)
     {
         return child.increase && !child.increase->allocation.isIncreaseSuspended();
     };
+    auto beneficiary = [](const ISpaceSharedNode & child)
+    {
+        return child.increase && !child.increase->allocation.isIncreaseSuspended()
+            && child.isUnusedCapacityReclaimBeneficiary(*child.increase);
+    };
+    auto beneficiary_increasing = std::find_if(increasing_children.begin(), increasing_children.end(), beneficiary);
+    auto beneficiary_pending = std::find_if(pending_children.begin(), pending_children.end(), beneficiary);
     auto increasing = std::find_if(increasing_children.begin(), increasing_children.end(), eligible);
     auto pending = std::find_if(pending_children.begin(), pending_children.end(), eligible);
-    increase_child = increasing != increasing_children.end()
-        ? &*increasing
-        : (pending != pending_children.end() ? &*pending : nullptr);
+    const bool local_round_pending = std::any_of(children.begin(), children.end(), [&](const auto & item)
+    {
+        return item.second.get() != ignored_child
+            && item.second->hasUnusedCapacityReclaimPending();
+    });
+    if (beneficiary_increasing != increasing_children.end())
+        increase_child = &*beneficiary_increasing;
+    else if (beneficiary_pending != pending_children.end())
+        increase_child = &*beneficiary_pending;
+    else if (local_round_pending)
+        increase_child = nullptr;
+    else if (increasing != increasing_children.end())
+        increase_child = &*increasing;
+    else
+        increase_child = pending != pending_children.end() ? &*pending : nullptr;
     increase = increase_child ? increase_child->increase : nullptr;
     return old_increase != increase;
 }

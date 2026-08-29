@@ -6,6 +6,7 @@
 #include <boost/intrusive/set.hpp>
 #include <boost/intrusive/options.hpp>
 
+#include <atomic>
 #include <mutex>
 #include <exception>
 
@@ -30,7 +31,8 @@ public:
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
     bool trySuspendIncrease(ResourceAllocation & allocation) override;
-    void notifyRecoveryProgress(ResourceAllocation & allocation) override;
+    void notifyRecoveryProgress(ResourceAllocation & allocation, UInt64 recovery_epoch = 0) override;
+    void notifyUnusedCapacity(ResourceAllocation & allocation) override;
     void retrySuspendedIncreases() override;
     bool hasSuspendedIncrease() const override;
     void removeAllocation(ResourceAllocation & allocation) override;
@@ -38,6 +40,9 @@ public:
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
     void approveIncrease() override;
     void approveDecrease() override;
+    UnusedCapacityReclaimResult reclaimUnusedCapacity(
+        IncreaseRequest & requester, ResourceCost max_size, bool allow_local_handoff) override;
+    bool hasUnusedCapacityReclaimPending() const override;
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override;
     void processActivation() override;
     void attachChild(const SchedulerNodePtr &) override;
@@ -55,6 +60,7 @@ private:
     bool setDecrease();
     void ensureUsable() const;
     void clearMemoryGrowthSuspension();
+    void refreshUnusedCapacityReclaimPending();
 
     /// Protects all the following fields
     mutable std::mutex mutex;
@@ -78,6 +84,8 @@ private:
     /// Scheduler-thread only; forces parent re-evaluation even if the same increase is restored.
     bool memory_growth_suspension_changed = false;
     bool memory_growth_suspension_retry_requested = false;
+    bool unused_capacity_changed = false;
+    std::atomic_bool unused_capacity_reclaim_pending{false};
 
     UInt64 rejects = 0; /// Number of rejected allocations
 };

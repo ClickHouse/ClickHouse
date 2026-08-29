@@ -922,12 +922,60 @@ private:
         decrease = nullptr;
         child->approveDecrease();
         decrease = child->decrease;
+        increase = child->increase;
     }
 
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override
     {
         chassert(child);
         return child->selectAllocationToKill(killer, limit, details);
+    }
+
+    UnusedCapacityReclaimResult reclaimUnusedCapacity(
+        IncreaseRequest & requester, ResourceCost max_size, bool allow_local_handoff) override
+    {
+        return child ? child->reclaimUnusedCapacity(requester, max_size, allow_local_handoff) : UnusedCapacityReclaimResult{};
+    }
+
+    IncreaseRequest * selectFittingIncreaseForHandoff(ResourceCost max_size) override
+    {
+        if (!child)
+            return nullptr;
+        IncreaseRequest * selected = child->selectFittingIncreaseForHandoff(max_size);
+        if (selected)
+            increase = selected;
+        return selected;
+    }
+
+    void clearFittingIncreaseForHandoff(const IncreaseRequest & request) override
+    {
+        if (!child)
+            return;
+        child->clearFittingIncreaseForHandoff(request);
+        increase = child->increase;
+    }
+
+    bool hasUnusedCapacityReclaimPending() const override
+    {
+        return child && child->hasUnusedCapacityReclaimPending();
+    }
+
+    bool isUnusedCapacityReclaimBeneficiary(const IncreaseRequest & request) const override
+    {
+        return child && child->isUnusedCapacityReclaimBeneficiary(request);
+    }
+
+    bool hasUnusedCapacityReclaimBeneficiary() const override
+    {
+        return child && child->hasUnusedCapacityReclaimBeneficiary();
+    }
+
+    void expireUnusedCapacityReclaimBeneficiariesExcept(const IncreaseRequest & selected) override
+    {
+        if (!child)
+            return;
+        child->expireUnusedCapacityReclaimBeneficiariesExcept(selected);
+        increase = child->increase;
     }
 
     void retrySuspendedIncreases() override

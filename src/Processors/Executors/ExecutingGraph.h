@@ -16,6 +16,8 @@
 namespace DB
 {
 
+class MemorySpillScheduler;
+
 /// Graph of executing pipeline.
 class ExecutingGraph
 {
@@ -120,6 +122,20 @@ public:
         /// Cached clock for EXPLAIN ANALYZE
         StepWallClockCache cached_clock{};
 
+        /// A forced-recovery observation must preserve the task prepared by IProcessor::prepare().
+        /// ExecutorTasks links these already-existing nodes without allocating under pressure.
+        Node * recovery_deferred_next = nullptr;
+        bool recovery_deferred = false;
+
+        /// True when this prepared processor can enter work now. Kept separately from ExecStatus:
+        /// both a Ready task and an Async task waiting for its event use Executing status.
+        std::atomic_bool memory_spill_eligible = false;
+
+        /// False after this executor is paused or terminally stopped. Keep it separate from
+        /// eligibility so a late graph/async update cannot resurrect work which its owner will
+        /// no longer execute in the shared dependency-graph recovery census.
+        std::atomic_bool memory_spill_owner_active = true;
+
         Node(Processors::iterator processor_iter_, uint64_t processors_id_)
             : processor_iter(processor_iter_), processors_id(processors_id_)
         {
@@ -139,6 +155,11 @@ public:
     ProcessorsMap processors_map;
 
     explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
+
+    /// Bind graph-lifetime registration and every dynamic runnable transition to one retained
+    /// query controller. The executor sets this once before the first prepare pass.
+    void setMemorySpillScheduler(const std::shared_ptr<MemorySpillScheduler> & scheduler);
+    void setMemorySpillSchedulerActive(bool active);
 
     const Processors & getProcessors() const { return *processors; }
     String dump(bool with_profile_counters = true) const;
@@ -188,6 +209,9 @@ private:
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;
     std::mutex processors_mutex;
+
+    std::shared_ptr<MemorySpillScheduler> memory_spill_scheduler;
+    std::atomic_bool memory_spill_scheduler_active = true;
 
     struct PendingRemovalGroup
     {

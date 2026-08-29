@@ -5,8 +5,6 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <base/defines.h>
 #include <Common/MemorySpillScheduler.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 
 namespace DB
@@ -48,12 +46,15 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
+static bool executeJob(
+    ExecutingGraph::Node * node,
+    ReadProgressCallback * read_progress_callback,
+    MemorySpillScheduler * memory_spill_scheduler)
 {
     try
     {
-        if (node->processor()->isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor());
+        if (memory_spill_scheduler && memory_spill_scheduler->checkAndSpill(node->processor()))
+            return true;
 
         node->processor()->work();
 
@@ -68,12 +69,13 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
 
                 if (read_progress->counters.total_bytes)
-                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+                read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
                     node->processor()->cancel();
             }
         }
+        return false;
     }
     catch (Exception exception) /// NOLINT
     {
@@ -86,6 +88,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 
 bool ExecutionThreadContext::executeTask()
 {
+    task_consumed_for_recovery = false;
     std::unique_ptr<OpenTelemetry::SpanHolder> span;
 
     if (trace_processors)
@@ -125,8 +128,9 @@ bool ExecutionThreadContext::executeTask()
 
     try
     {
-        executeJob(node, read_progress_callback);
-        ++node->num_executed_jobs;
+        task_consumed_for_recovery = executeJob(node, read_progress_callback, memory_spill_scheduler.get());
+        if (!task_consumed_for_recovery)
+            ++node->num_executed_jobs;
     }
     catch (...)
     {

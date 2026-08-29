@@ -59,11 +59,26 @@ public:
     virtual GrowthPressureAction onGrowthPressure() { return GrowthPressureAction::Protect; }
     virtual void onGrowthPressureResolved() {}
     virtual bool isGrowthRecoveryActive() { return false; }
+    /// Accepts completion of the exact externally-managed recovery epoch. AllocationQueue calls
+    /// this while holding its mutex, before publishing the durable retry bit, so approval or a new
+    /// embedded IncreaseRequest generation cannot interleave with the hand-off.
+    virtual bool acceptRecoveryProgress(UInt64) { return true; }
 
     /// At an explicit recovery checkpoint, reconcile a parked request with the allocation's
     /// current demand. Called by the scheduler thread under the allocation-queue mutex.
     virtual ResourceCost reconcilePendingIncrease(ResourceCost, ResourceCost requested_size) { return requested_size; }
     virtual void increaseCancelled() {}
+
+    /// Returns currently allocated capacity that this allocation no longer uses and commits it
+    /// for an ordinary scheduler decrease, up to `max_size`. AllocationQueue calls this under its
+    /// mutex when a real competing request is blocked at an ancestor limit. The default keeps no
+    /// reusable slack.
+    virtual ResourceCost reclaimUnusedCapacity(ResourceCost) { return 0; }
+
+    /// Consumes a durable notification that unused capacity appeared while another request was in
+    /// flight. AllocationQueue calls this under its mutex after completing that request, so the
+    /// notification cannot be lost between query-side observation and scheduler-side publication.
+    virtual bool takeUnusedCapacityNotification() { return false; }
 
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
@@ -71,6 +86,10 @@ public:
     /// Suspended increases remain queued but are temporarily invisible to every scheduling layer.
     /// The allocation itself keeps running and may still release resources.
     bool isIncreaseSuspended() const { return memory_growth_suspended; }
+
+    /// Scheduler-thread diagnostic used to fence victim-selection tests without depending on how
+    /// quickly the owning query thread observes the kill callback.
+    bool isKillRequested() const { return kill_requested; }
 
 private:
     friend class ISpaceSharedNode;

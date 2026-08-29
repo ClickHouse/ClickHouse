@@ -1,4 +1,6 @@
 #include <Processors/Executors/ExecutorTasks.h>
+#include <Common/MemorySpillScheduler.h>
+#include <Common/scope_guard_safe.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Processors/StepWallClockRegistry.h>
@@ -55,6 +57,15 @@ void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & se
             tryWakeUpAnyOtherThreadWithTasksInQueue(self, fast_task_queue, lock);
         else if (!task_queue.empty())
             tryWakeUpAnyOtherThreadWithTasksInQueue(self, task_queue, lock);
+        else if (recovery_deferred_head)
+        {
+            const size_t thread_to_wake = threads_queue.popAny();
+            if (thread_to_wake >= use_threads)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred recovery task without allocated thread");
+
+            lock.unlock();
+            executor_contexts[thread_to_wake]->wakeUp();
+        }
     }
 }
 
@@ -85,7 +96,9 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         {
             if (auto res = async_task_queue.tryGetReadyTask(lock))
             {
-                context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
+                auto * node = static_cast<ExecutingGraph::Node *>(res.data);
+                activateAsyncTask(node);
+                context.setTask(node);
                 return;
             }
         }
@@ -102,6 +115,17 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         {
             context.setTask(task_queue.pop(context.thread_number));
         }
+        else if (recovery_deferred_head)
+        {
+            auto * task = recovery_deferred_head;
+            recovery_deferred_head = task->recovery_deferred_next;
+            if (!recovery_deferred_head)
+                recovery_deferred_tail = nullptr;
+            task->recovery_deferred_next = nullptr;
+            task->recovery_deferred = false;
+            --recovery_deferred_size;
+            context.setTask(task);
+        }
 
         /// Task found.
         if (context.hasTask())
@@ -115,7 +139,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         /// This thread has no tasks to do and is going to wait.
         /// Finish execution if this was the last active thread.
         chassert(task_queue.empty() && fast_task_queue.empty());
-        if (threads_queue.size() + 1 == total_slots && async_task_queue.empty())
+        if (threads_queue.size() + 1 == total_slots && async_task_queue.empty() && recovery_deferred_size == 0)
         {
             lock.unlock();
             finish();
@@ -134,7 +158,9 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
             }
 
-            context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
+            auto * node = static_cast<ExecutingGraph::Node *>(res.data);
+            activateAsyncTask(node);
+            context.setTask(node);
             return;
         }
     #endif
@@ -144,6 +170,23 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
     }
 
     context.wait(finished);
+}
+
+void ExecutorTasks::deferTaskForRecovery(ExecutionThreadContext & context)
+{
+    std::unique_lock lock(mutex);
+    auto * task = context.popTask();
+    chassert(task);
+    chassert(!task->recovery_deferred);
+    task->recovery_deferred = true;
+    task->recovery_deferred_next = nullptr;
+    if (recovery_deferred_tail)
+        recovery_deferred_tail->recovery_deferred_next = task;
+    else
+        recovery_deferred_head = task;
+    recovery_deferred_tail = task;
+    ++recovery_deferred_size;
+    tryWakeUpAnyOtherThreadWithTasks(context, lock);
 }
 
 size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
@@ -207,13 +250,18 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
     return 0; // No new tasks -- no need for new threads
 }
 
-void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback)
+void ExecutorTasks::init(
+    size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_,
+    const std::shared_ptr<MemorySpillScheduler> & memory_spill_scheduler_,
+    bool profile_processors, bool trace_processors,
+    const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback)
 {
     num_threads = num_threads_;
     use_threads = use_threads_;
     threads_queue.init(num_threads);
     task_queue.init(num_threads);
     fast_task_queue.init(num_threads);
+    memory_spill_scheduler = memory_spill_scheduler_;
 
     {
         std::lock_guard lock(mutex); // In case finish() is executed concurrently with init() due to exception
@@ -228,7 +276,8 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAll
 
         executor_contexts.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors, trace_processors, step_to_wall_clock_registry, callback));
+            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(
+                i, profile_processors, trace_processors, step_to_wall_clock_registry, callback, memory_spill_scheduler));
     }
 }
 
@@ -322,7 +371,7 @@ void ExecutorTasks::preempt(size_t slot_id)
         /// Wake up at least one thread to avoid deadlocks (all other threads maybe idle)
         tryWakeUpAnyOtherThreadWithTasks(*context, lock); // this releases the lock if it wakes up a thread
     }
-    else if (task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && threads_queue.size() == total_slots)
+    else if (task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && recovery_deferred_size == 0 && threads_queue.size() == total_slots)
     {
         /// Finish pipeline if preempted thread was the last non-idle thread executed the last task of the whole pipeline
         lock.unlock();
@@ -345,7 +394,7 @@ void ExecutorTasks::processAsyncTasks()
         while (auto task = async_task_queue.wait(lock))
         {
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
-            node->processor()->onAsyncJobReady();
+            activateAsyncTask(node);
 
             if (fast_task_queue.empty())
                 has_fast_tasks = true;
@@ -371,6 +420,27 @@ void ExecutorTasks::processAsyncTasks()
 #endif
 }
 
+void ExecutorTasks::activateAsyncTask(ExecutingGraph::Node * node)
+{
+    if (memory_spill_scheduler)
+        memory_spill_scheduler->beginForcedSpillScan();
+    SCOPE_EXIT({
+        if (memory_spill_scheduler)
+            memory_spill_scheduler->finishForcedSpillScan();
+    });
+
+    node->processor()->onAsyncJobReady();
+    {
+        /// Serialize with terminal/pause deactivation. Otherwise a late async notification could
+        /// re-advertise a task after its executor stopped and pin the shared graph epoch forever.
+        std::lock_guard lock(node->status_mutex);
+        node->memory_spill_eligible.store(true, std::memory_order_release);
+        if (memory_spill_scheduler)
+            memory_spill_scheduler->setProcessorRunnable(
+                node->processor(), node->memory_spill_owner_active.load(std::memory_order_acquire));
+    }
+}
+
 String ExecutorTasks::dump()
 {
     std::scoped_lock lock(mutex);
@@ -383,6 +453,7 @@ String ExecutorTasks::dump()
     buffer << "  total_slots: " << total_slots << "\n";
     buffer << "  finished: " << static_cast<int>(finished) << "\n";
     buffer << "  has_fast_tasks: " << has_fast_tasks.load(std::memory_order_relaxed) << "\n";
+    buffer << "  recovery_deferred_size: " << recovery_deferred_size << "\n";
 
     for (size_t i = 0; i < slot_count.size(); ++i)
         buffer << "  slot_count[" << i << "]: " << slot_count[i] << "\n";

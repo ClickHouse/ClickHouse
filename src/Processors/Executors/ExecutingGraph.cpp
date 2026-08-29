@@ -11,10 +11,7 @@
 #include <IO/Operators.h>
 
 #include <Common/Stopwatch.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/MemorySpillScheduler.h>
-
 #include <algorithm>
 #include <memory>
 #include <shared_mutex>
@@ -58,10 +55,37 @@ ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool pro
         addEdges(node);
 }
 
+void ExecutingGraph::setMemorySpillScheduler(const std::shared_ptr<MemorySpillScheduler> & scheduler)
+{
+    chassert(!memory_spill_scheduler || memory_spill_scheduler == scheduler);
+    memory_spill_scheduler = scheduler;
+}
+
+void ExecutingGraph::setMemorySpillSchedulerActive(bool active)
+{
+    memory_spill_scheduler_active.store(active, std::memory_order_release);
+
+    std::shared_lock read_lock(nodes_mutex);
+    if (memory_spill_scheduler)
+        memory_spill_scheduler->beginForcedSpillScan();
+    for (auto & node : nodes)
+    {
+        std::lock_guard lock(node.status_mutex);
+        node.memory_spill_owner_active.store(active, std::memory_order_release);
+        if (memory_spill_scheduler)
+            memory_spill_scheduler->setProcessorRunnable(
+                node.processor(), active && node.memory_spill_eligible.load(std::memory_order_acquire));
+    }
+    if (memory_spill_scheduler)
+        memory_spill_scheduler->finishForcedSpillScan();
+}
+
 ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_iter)
 {
     IProcessor * processor = processor_iter->get();
     auto & new_node = nodes.emplace_back(processor_iter, next_node_id++);
+    new_node.memory_spill_owner_active.store(
+        memory_spill_scheduler_active.load(std::memory_order_acquire), std::memory_order_release);
     new_node.self_iter = std::prev(nodes.end());
 
     const auto [_, inserted] = processors_map.emplace(processor, &new_node);
@@ -254,6 +278,15 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
     {
         if (auto new_edges = addEdges(node); !new_edges.empty())
             added_edges.emplace_back(&node, std::move(new_edges));
+    }
+
+    /// Initial processors are registered by PipelineExecutor only after graph construction
+    /// succeeds. Do the same for runtime additions: a malformed dynamic update must not leave
+    /// raw processor pointers in the query-level spill scheduler while this update unwinds.
+    if (memory_spill_scheduler)
+    {
+        for (const auto & new_proc : update.to_add)
+            memory_spill_scheduler->registerProcessor(new_proc.get());
     }
 
     /// Record updated ports for each newly added edge for each processor and schedule it for prepare if something changed.
@@ -467,10 +500,23 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                 {
                     auto & processor = *node.processor();
                     const auto last_status = node.last_processor_status;
+                    node.memory_spill_eligible.store(false, std::memory_order_release);
+                    if (memory_spill_scheduler)
+                        memory_spill_scheduler->setProcessorRunnable(&processor, false);
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
-                    if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
-                        CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
+                    node.memory_spill_eligible.store(
+                        status == IProcessor::Status::Ready, std::memory_order_release);
+                    if (memory_spill_scheduler)
+                    {
+                        if (status == IProcessor::Status::Finished)
+                            memory_spill_scheduler->remove(&processor);
+                        else
+                            memory_spill_scheduler->setProcessorRunnable(
+                                &processor,
+                                status == IProcessor::Status::Ready
+                                    && node.memory_spill_owner_active.load(std::memory_order_acquire));
+                    }
 
                     if (profile_processors)
                     {
