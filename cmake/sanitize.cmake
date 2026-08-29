@@ -172,7 +172,9 @@ if (WITH_COVERAGE)
     # (integration tests do this on purpose) leaves an intact profile instead of a
     # half-written one that crashes llvm-profdata later. Without %c at runtime the
     # flag is inert (the bias stays zero).
-    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping -mllvm -runtime-counter-relocation)
+    # Each -mllvm pair is one `SHELL:` group: CMake de-duplicates compile options, so a
+    # repeated bare -mllvm is dropped and orphans its value.
+    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping "SHELL:-mllvm -runtime-counter-relocation")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 
     if (WITH_COVERAGE_DEPTH)
@@ -193,7 +195,7 @@ if (WITH_COVERAGE)
         # Without this flag, LLVMProfileData::Values is always NULL and indirect-call data
         # cannot be collected. Only enabled for per-test coverage builds to avoid changing
         # the regular amd_llvm_coverage build behaviour.
-        set (COVERAGE_FLAGS ${COVERAGE_FLAGS} -mllvm -enable-value-profiling=true)
+        set (COVERAGE_FLAGS ${COVERAGE_FLAGS} "SHELL:-mllvm -enable-value-profiling=true")
     endif()
 
     if (WITH_COVERAGE_XRAY)
