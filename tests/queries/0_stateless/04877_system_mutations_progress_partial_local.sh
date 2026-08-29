@@ -21,7 +21,24 @@ $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA t_mut_partial_2"
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP FETCHES t_mut_partial_2"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_mut_partial_1 SELECT number, number FROM numbers(200000)"
 
+# Hold the local rewrite as well, so the read below lands while the small part is still outstanding.
+# The denominator is what a part weighed when this replica first sized it, and it is recorded by a
+# reader: if the rewrite wins that race the small part is never sized while in scope, the baseline
+# starts at the large part alone, and the reading asserted at the end is 0 rather than above it.
+$CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_mut_partial_2"
+
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_mut_partial_1 UPDATE v = v + 1 WHERE 1" --mutations_sync=0
+
+for _ in {1..300}; do
+    entry_seen=$($CLICKHOUSE_CLIENT -q "
+        SELECT count()
+        FROM system.mutations
+        WHERE database = currentDatabase() AND table = 't_mut_partial_2'")
+    [ "$entry_seen" -ge 1 ] && break
+    sleep 0.3
+done
+
+$CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_mut_partial_2"
 
 # Mutations are allowed on the second replica, so it rewrites the part it does have while the other
 # one is still unfetched: parts_to_do drops to the single queued part, and progress stays unset
