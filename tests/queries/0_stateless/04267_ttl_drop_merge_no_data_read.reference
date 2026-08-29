@@ -46,3 +46,6 @@ RegularMerge	0	200
 0
 -- Case 17: the recalculation step honours a rows-WHERE predicate
 1
+-- Case 18: blocked patched merge pulls part_min_ttl into the past
+100
+1
