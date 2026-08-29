@@ -78,20 +78,19 @@ public:
     /// dispatched to at the row level -- there is no dependency on the concrete alternative type,
     /// only on the constant Field arguments and construction-time settings.
     ///
-    /// A geometry kind the wrapped function rejects normally means "evaluating this argument is
-    /// guaranteed to raise `ILLEGAL_TYPE_OF_ARGUMENT`", which is what makes `spatial_bbox` pruning
-    /// fail closed (see `hasDeferredGeometryKindRejection` in `Common/GeoBbox.h`). That holds only
-    /// while this adaptor actually raises: with `dynamic_throw_on_type_mismatch` off,
-    /// `ExecutableFunctionDynamicAdaptor` swallows the build-time `ILLEGAL_TYPE_OF_ARGUMENT` for an
-    /// incompatible alternative and resolves those rows to NULL instead, so there is no exception
-    /// left for pruning to hide and reporting a rejection would cost pruning for nothing. Only the
-    /// argument this adaptor dispatches per alternative is covered; a rejection at any other
-    /// argument position the wrapped function raises itself.
+    /// A geometry kind the wrapped function rejects means "evaluating this argument is guaranteed to
+    /// raise `ILLEGAL_TYPE_OF_ARGUMENT`", which is what makes `spatial_bbox` pruning fail closed (see
+    /// `Common/GeoBbox.h`). This forwards it unconditionally, including when
+    /// `dynamic_throw_on_type_mismatch` is off. Leniency is NOT a reason to drop the rejection:
+    /// `ExecutableFunctionDynamicAdaptor::try_execute` swallows only a rejection raised while BUILDING the
+    /// wrapped function for an incompatible alternative, and deliberately re-throws one raised while
+    /// executing it. `polygonsIntersectCartesian`/`polygonsWithinCartesian` reject `Point`,
+    /// `LineString`, `MultiLineString` and `MultiPoint` only in `executeImpl`, so under a lenient
+    /// session they still raise -- and masking the rejection here let a sibling conjunct prune the
+    /// granule away and answer `0` instead of raising. Losing pruning in a lenient session is a cost;
+    /// answering `0` where the query must raise is a wrong result.
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
     {
-        if (!throw_on_type_mismatch && arg_index == dynamic_argument_index)
-            return false;
-
         return function_overload_resolver->rejectsColumnGeometryKind(kind_name, arg_index);
     }
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function_overload_resolver->treatsConstTupleAsPoint(arg_index); }
@@ -102,9 +101,6 @@ private:
     DataTypes arguments;
     DataTypePtr return_type;
     size_t dynamic_argument_index;
-    /// Resolved at construction time, like `ExecutableFunctionDynamicAdaptor`'s own flag: whether an alternative
-    /// incompatible with the wrapped function raises or resolves the row to NULL.
-    bool throw_on_type_mismatch = true;
 };
 
 

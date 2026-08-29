@@ -51,7 +51,6 @@ ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
     size_t variant_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , variant_argument_index(variant_argument_index_)
-    , throw_on_type_mismatch(shouldThrowOnVariantTypeMismatch())
 {
 }
 
@@ -753,7 +752,6 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     size_t variant_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , variant_argument_index(variant_argument_index_)
-    , throw_on_type_mismatch(shouldThrowOnVariantTypeMismatch())
 {
     arguments.reserve(arguments_with_type_.size());
     for (const auto & arg : arguments_with_type_)
