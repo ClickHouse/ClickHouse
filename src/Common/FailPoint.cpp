@@ -40,6 +40,8 @@ static struct InitFiu
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(merge_tree_sink_on_start_random_sleep) \
+    REGULAR(merge_tree_sequential_source_sleep_before_read) \
+    REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
@@ -360,7 +362,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
     ONCE(hash_join_throw_after_data_release) \
     REGULAR(smt_force_takeover_predicate_true) \
-    REGULAR(smt_takeover_fake_hardware_error_after_set)
+    REGULAR(smt_takeover_fake_hardware_error_after_set) \
+    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
 
 namespace FailPoints
 {
