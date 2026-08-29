@@ -53,4 +53,10 @@ SELECT length(h3Line(stringToH3(start), stringToH3(end))) FROM h3_indexes ORDER 
 
 SELECT h3Line(0xffffffffffffff, 0xffffffffffffff); -- { serverError INCORRECT_DATA }
 
+-- A line whose endpoints are valid but which crosses pentagon distortion: the length of the line can
+-- be computed while the line itself cannot, so the query must fail rather than return a partially
+-- written array.
+SELECT h3Line(toUInt64(585609238802333695), toUInt64(585624631965122559)); -- { serverError INCORRECT_DATA }
+SELECT h3Line(materialize(toUInt64(585609238802333695)), materialize(toUInt64(585624631965122559))); -- { serverError INCORRECT_DATA }
+
 DROP TABLE h3_indexes;
