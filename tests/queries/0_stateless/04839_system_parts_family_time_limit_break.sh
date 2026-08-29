@@ -7,8 +7,10 @@
 #   in the middle of the checks.
 #
 # Tests that the eager readers of the `system.parts` family honor `max_execution_time` with
-# `timeout_overflow_mode = 'break'`: the query stops early and returns the rows collected so far
-# instead of failing.
+# `timeout_overflow_mode = 'break'`: the query stops the eager result building at the first
+# cancellation checkpoint that sees the expired deadline and finishes without an error. No partial
+# prefix is handed out past the deadline (see the note before the second group below), so the
+# checks assert that the work stops quickly, not that the collected rows are returned.
 #
 # Both groups of checks run under the `slowdown_system_parts_enumeration` failpoint, which only
 # affects the tables named `t_slowdown_system_parts*` (see below).
