@@ -108,6 +108,11 @@ private:
             }
             else if (tag_name == "Result")
             {
+                if (!isResultToken(tag_value))
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Invalid PGN: tag 'Result' has value '{}', expected '1-0', '0-1', '1/2-1/2' or '*'",
+                        tag_value);
                 game.result = tag_value;
                 game.has_result = true;
             }
@@ -397,6 +402,12 @@ private:
                         game.result = token;
                         game.has_result = true;
                     }
+                    else if (game.result != token)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Invalid PGN: the game termination marker '{}' contradicts the game result '{}'",
+                            token,
+                            game.result);
                 }
                 else
                     appendMove(game.moves, extractMoveToken(token));
@@ -602,7 +613,9 @@ skipped as well.
 When a tag is not present in a game, the corresponding column is reported as absent, so that a `DEFAULT`
 expression of the target table is applied to it. An Elo rating that the file spells as unknown (an empty value,
 `?` or `-`) is reported as absent as well; a rating that is neither a number nor one of those is an error.
-When the `Result` tag is missing, the result is taken from the result token of the move text.
+When the `Result` tag is missing, the result is taken from the game termination marker of the move text.
+A `Result` tag whose value is not one of `1-0`, `0-1`, `1/2-1/2` or `*` is an error, and so is a game
+termination marker that contradicts the game result.
 
 ## Example usage {#example-usage}
 
