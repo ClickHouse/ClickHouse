@@ -1235,9 +1235,13 @@ private:
                 if (!element.isNull())
                     element = enum_type->castToName(element);
 
-            if (!isString(arguments[1].type))
+            if (!isString(removeNullable(arguments[1].type)))
             {
-                searched_value_holder = castColumn(arguments[1], std::make_shared<DataTypeString>());
+                DataTypePtr string_type = std::make_shared<DataTypeString>();
+                if (arguments[1].type->isNullable())
+                    string_type = std::make_shared<DataTypeNullable>(string_type);
+
+                searched_value_holder = castColumn(arguments[1], string_type);
                 item_arg = searched_value_holder.get();
             }
         }
