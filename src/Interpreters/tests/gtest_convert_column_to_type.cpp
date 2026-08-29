@@ -192,6 +192,12 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         /// use `castColumnAccurateOrNull`, which would round `33.33` to `33.3` instead of rejecting it).
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true}, // scale loss -> null
         {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal64(2)", true},  // widen -> 33.30
+
+        /// identical types: the value passes through untouched (including a genuine NULL)
+        {"UInt64", Field(UInt64(5)), "UInt64", true},
+        {"String", Field(String("abc")), "String", true},
+        {"Nullable(UInt8)", Field(), "Nullable(UInt8)", true},
+        {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(2)", true},
     };
 
     for (const auto & c : cases)

@@ -140,41 +140,102 @@ IColumn::Filter keepNotNullFilter(const NullMap & null_map, size_t & kept)
     return filter;
 }
 
-/// Fast path for a single native-number key whose members are separate size-1 columns (e.g. a `Tuple`
-/// collection): gather them into one column, cast once, and drop the not-representable rows with a
-/// single `IColumn::filter`. Returns nullopt (caller uses the per-member loop) unless the target and
-/// every member share a plain native-number type, so no reordering or behavior change can leak in. For
-/// an `Array` collection the elements are already contiguous, so `build_from_array` converts the data
-/// column directly and never reaches here.
-std::optional<ColumnPtr> tryConvertNativeNumberMembersBatch(const SetMembers & members, const DataTypePtr & lhs_type)
+/// The members of one key position converted to `lhs_type`, in member order: `values` holds one row per
+/// member (a default row where the member is dropped) and `keep[i]` says whether member `i` enters the set.
+struct ConvertedMembers
 {
-    if (!isNativeNumber(lhs_type) || isBool(lhs_type))
-        return std::nullopt;
-
-    if (members.empty())
-        return ColumnPtr(lhs_type->createColumn());
-
-    const DataTypePtr & source_type = members.front().type;
-    if (!nativeBatchApplicable(source_type, lhs_type))
-        return std::nullopt;
-    for (const auto & member : members)
-        if (!member.type->equals(*source_type))
-            return std::nullopt;
-
-    /// Gather the size-1 member columns into one column of the (homogeneous) source type. This is a
-    /// plain copy - no conversion - so the single accurate cast carries all the per-element cost.
-    MutableColumnPtr gathered = source_type->createColumn();
-    gathered->reserve(members.size());
-    for (const auto & member : members)
-        gathered->insertRangeFrom(*member.column, 0, 1);
-
-    ColumnPtr casted = castColumnAccurateOrNull({std::move(gathered), source_type, ""}, lhs_type);
-    casted = casted->convertToFullColumnIfConst();
-    const auto & nullable = assert_cast<const ColumnNullable &>(*casted);
-
+    MutableColumnPtr values;
+    IColumn::Filter keep;
     size_t kept = 0;
-    IColumn::Filter filter = keepNotNullFilter(nullable.getNullMapData(), kept);
-    return nullable.getNestedColumn().filter(filter, kept);
+};
+
+/// Convert the members of one key position to `lhs_type`, preserving their order. A literal list such
+/// as `(1, 300, 70000)` is heterogeneously typed (`UInt8`, `UInt16`, `UInt32`), so the members are grouped
+/// by type and every native-number group is converted with a single accurate cast: a per-member
+/// `castColumnAccurateOrNull` would build a CAST function for every member, which is prohibitive for the
+/// tens of thousands of literals a direct dictionary sends per block. All other groups keep the
+/// per-member `convertColumnToTypeCheckEnum` path, so their semantics and errors are unchanged.
+///
+/// A member is dropped when it is not representable in `lhs_type`, or when it is a genuine NULL and NULLs
+/// are not inserted (`transform_null_in` off, or a non-nullable target).
+ConvertedMembers convertMembers(const SetMembers & members, const DataTypePtr & lhs_type, GetSetElementParams params)
+{
+    const size_t n = members.size();
+    const bool insert_null = params.transform_null_in && lhs_type->isNullable();
+
+    std::vector<size_t> group_of(n);
+    DataTypes group_types;
+    std::vector<std::vector<size_t>> group_members;
+    for (size_t i = 0; i < n; ++i)
+    {
+        size_t g = 0;
+        while (g < group_types.size() && !group_types[g]->equals(*members[i].type))
+            ++g;
+        if (g == group_types.size())
+        {
+            group_types.push_back(members[i].type);
+            group_members.emplace_back();
+        }
+        group_members[g].push_back(i);
+        group_of[i] = g;
+    }
+
+    /// Per group: the kept values (of `lhs_type`, in member order) and a keep flag per group member.
+    const size_t num_groups = group_types.size();
+    Columns group_values(num_groups);
+    std::vector<IColumn::Filter> group_keep(num_groups);
+    for (size_t g = 0; g < num_groups; ++g)
+    {
+        const auto & indices = group_members[g];
+        const DataTypePtr & source_type = group_types[g];
+
+        if (nativeBatchApplicable(source_type, lhs_type))
+        {
+            MutableColumnPtr gathered = source_type->createColumn();
+            gathered->reserve(indices.size());
+            for (size_t i : indices)
+                gathered->insertRangeFrom(*members[i].column, 0, 1);
+
+            ColumnPtr casted = castColumnAccurateOrNull({std::move(gathered), source_type, ""}, lhs_type);
+            casted = casted->convertToFullColumnIfConst();
+            const auto & nullable = assert_cast<const ColumnNullable &>(*casted);
+
+            size_t kept = 0;
+            group_keep[g] = keepNotNullFilter(nullable.getNullMapData(), kept);
+            group_values[g] = nullable.getNestedColumn().filter(group_keep[g], kept);
+            continue;
+        }
+
+        MutableColumnPtr values = lhs_type->createColumn();
+        IColumn::Filter & keep = group_keep[g];
+        keep.resize(indices.size());
+        for (size_t pos = 0; pos < indices.size(); ++pos)
+        {
+            const auto & member = members[indices[pos]];
+            auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.forbid_unknown_enum_values);
+            keep[pos] = converted && (!(*converted)->isNullAt(0) || insert_null);
+            if (keep[pos])
+                values->insertRangeFrom(**converted, 0, 1);
+        }
+        group_values[g] = std::move(values);
+    }
+
+    ConvertedMembers result{lhs_type->createColumn(), IColumn::Filter(n), 0};
+    result.values->reserve(n);
+    std::vector<size_t> member_cursor(num_groups, 0);
+    std::vector<size_t> value_cursor(num_groups, 0);
+    for (size_t i = 0; i < n; ++i)
+    {
+        const size_t g = group_of[i];
+        const UInt8 k = group_keep[g][member_cursor[g]++];
+        result.keep[i] = k;
+        result.kept += k;
+        if (k)
+            result.values->insertFrom(*group_values[g], value_cursor[g]++);
+        else
+            result.values->insertDefault();
+    }
+    return result;
 }
 
 /// Unwrap a non-NULL member column down to its `ColumnTuple` (the member holds a Tuple value at row 0).
@@ -294,40 +355,24 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
 
         /// Generic single-key column (all cases except `Nullable(Tuple(...))`, e.g. T / Nullable(T) / Tuple() / Tuple(T))
-        /// Fast path: all members share one native-number type -> one batch cast + a single filter.
-        if (auto fast = tryConvertNativeNumberMembersBatch(members, lhs_type))
-        {
-            ColumnsWithTypeAndName res(1);
-            res[0].type = lhs_type;
-            res[0].column = std::move(*fast);
-            return res;
-        }
-
-        MutableColumnPtr column = lhs_type->createColumn();
-        column->reserve(members.size());
-        for (const auto & member : members)
-        {
-            auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.forbid_unknown_enum_values);
-
-            bool need_insert_null = params.transform_null_in && column->isNullable();
-            if (converted && (!(*converted)->isNullAt(0) || need_insert_null))
-                column->insertRangeFrom(**converted, 0, 1);
-        }
+        ConvertedMembers converted = convertMembers(members, lhs_type, params);
 
         ColumnsWithTypeAndName res(1);
         res[0].type = lhs_type;
-        res[0].column = std::move(column);
+        if (converted.kept == members.size())
+            res[0].column = std::move(converted.values);
+        else
+            res[0].column = converted.values->filter(converted.keep, converted.kept);
         return res;
     }
 
-    MutableColumns columns(num_elements);
-    for (size_t i = 0; i < num_elements; ++i)
-    {
-        columns[i] = lhs_unpacked_types[i]->createColumn();
-        columns[i]->reserve(members.size());
-    }
-
-    Columns converted_row(num_elements);
+    /// Multi-column key: unpack every non-NULL tuple member into its element columns.
+    std::vector<ColumnPtr> member_holders;
+    std::vector<const ColumnTuple *> member_tuples;
+    std::vector<const DataTypes *> member_element_types;
+    member_holders.reserve(members.size());
+    member_tuples.reserve(members.size());
+    member_element_types.reserve(members.size());
 
     for (const auto & member : members)
     {
@@ -346,36 +391,52 @@ ColumnsWithTypeAndName createBlockFromCollection(
                 ErrorCodes::INCORRECT_ELEMENT_OF_SET,
                 "Incorrect size of tuple in set: {} instead of {}", rhs_element_unpacked_types.size(), num_elements);
 
-        ColumnPtr member_holder;
-        const ColumnTuple & member_tuple = getMemberTuple(member.column, member_holder);
+        member_holders.emplace_back();
+        member_tuples.push_back(&getMemberTuple(member.column, member_holders.back()));
+        member_element_types.push_back(&rhs_element_unpacked_types);
+    }
 
-        size_t i = 0;
-        for (; i < num_elements; ++i)
+    /// Convert key by key, each time only the tuples that every previous key kept: this preserves the
+    /// per-tuple short-circuit of the per-member loop (a later key of a tuple already dropped by an earlier
+    /// key is never converted, so it can neither throw nor be observed).
+    const size_t num_tuples = member_tuples.size();
+    std::vector<UInt8> alive(num_tuples, 1);
+    std::vector<ColumnPtr> key_values(num_elements);
+    std::vector<std::vector<size_t>> key_tuple_indices(num_elements);
+
+    for (size_t key = 0; key < num_elements; ++key)
+    {
+        SetMembers key_members;
+        auto & tuple_indices = key_tuple_indices[key];
+        for (size_t t = 0; t < num_tuples; ++t)
         {
-            auto converted = convertColumnToTypeCheckEnum(
-                *member_tuple.getColumnPtr(i), rhs_element_unpacked_types[i], lhs_unpacked_types[i], params.forbid_unknown_enum_values);
-            if (!converted)
-                break;
-
-            bool need_insert_null = params.transform_null_in && lhs_unpacked_types[i]->isNullable();
-            if ((*converted)->isNullAt(0) && !need_insert_null)
-                break;
-
-            converted_row[i] = std::move(*converted);
+            if (!alive[t])
+                continue;
+            key_members.push_back({member_tuples[t]->getColumnPtr(key), (*member_element_types[t])[key]});
+            tuple_indices.push_back(t);
         }
 
-        if (i == num_elements)
-        {
-            for (i = 0; i < num_elements; ++i)
-                columns[i]->insertRangeFrom(*converted_row[i], 0, 1);
-        }
+        ConvertedMembers converted = convertMembers(key_members, lhs_unpacked_types[key], params);
+        for (size_t r = 0; r < tuple_indices.size(); ++r)
+            if (!converted.keep[r])
+                alive[tuple_indices[r]] = 0;
+        key_values[key] = std::move(converted.values);
     }
 
     ColumnsWithTypeAndName res(num_elements);
-    for (size_t i = 0; i < num_elements; ++i)
+    for (size_t key = 0; key < num_elements; ++key)
     {
-        res[i].type = lhs_unpacked_types[i];
-        res[i].column = std::move(columns[i]);
+        const auto & tuple_indices = key_tuple_indices[key];
+        IColumn::Filter filter(tuple_indices.size());
+        size_t kept = 0;
+        for (size_t r = 0; r < tuple_indices.size(); ++r)
+        {
+            filter[r] = alive[tuple_indices[r]];
+            kept += filter[r];
+        }
+
+        res[key].type = lhs_unpacked_types[key];
+        res[key].column = kept == tuple_indices.size() ? key_values[key] : key_values[key]->filter(filter, kept);
     }
 
     return res;

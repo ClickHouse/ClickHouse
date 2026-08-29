@@ -145,6 +145,10 @@ ColumnPtr convertColumnToTypeOrNull(
     const ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
 
+    /// Same as `convertFieldToType`, which returns the value untouched when `from` equals `to`.
+    if (from->equals(*to))
+        return full;
+
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))
         return std::move(*native);
 
