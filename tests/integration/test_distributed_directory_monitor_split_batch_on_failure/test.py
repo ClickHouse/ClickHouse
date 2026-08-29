@@ -151,13 +151,21 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
     create_tables(
         background_insert_batch=1, background_insert_split_batch_on_failure=1
     )
-    insert_settings = {
-        "distributed_foreground_insert": 0,
-    }
-    for offset, limit in ((0, 1), (1, 1_000_000), (1_000_001, 100_000)):
+    for _, node in cluster.instances.items():
+        node.query(
+            """
+                drop view mv;
+                create materialized view mv to data as
+                    select key, uniqExact(value) uniq_values
+                    from null_ array join range(if(value = 2, 2, 1))
+                    group by key;
+            """
+        )
+
+    for value in (1, 2, 3):
         node1.query(
-            f"insert into dist select 1, number from system.numbers limit {limit} offset {offset}",
-            settings=insert_settings,
+            f"insert into dist values (1, {value})",
+            settings={"distributed_foreground_insert": 0},
         )
 
     queue_path = node1.query(
@@ -169,12 +177,9 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
     assert len(files) == 3
 
     node1.query("system start distributed sends dist")
-    with pytest.raises(
-        QueryRuntimeException,
-        match=r"DB::Exception: Received from.*Query memory limit exceeded",
-    ):
+    with pytest.raises(QueryRuntimeException, match="ARGUMENT_OUT_OF_BOUND"):
         node1.query(
-            "system flush distributed dist settings max_memory_usage='10Mi', max_untracked_memory=0"
+            "system flush distributed dist settings function_range_max_elements_in_block=1"
         )
 
     assert int(
@@ -188,8 +193,10 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
         ["cat", f"{queue_path}/current_batch.txt"]
     ).splitlines() == [file.rsplit("/", 1)[-1][:-4] for file in files[1:]]
 
-    node1.query("system flush distributed dist settings max_memory_usage='1Gi'")
-    assert int(node1.query("select sum(uniq_values) from dist_data")) == 1_100_001
+    node1.query(
+        "system flush distributed dist settings function_range_max_elements_in_block=3"
+    )
+    assert int(node1.query("select sum(uniq_values) from dist_data")) == 3
 
 
 def test_broken_file_during_split_removes_sent_files(started_cluster):
