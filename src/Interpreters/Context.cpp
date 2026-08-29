@@ -6695,19 +6695,33 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
     if (!treat_local_port_as_remote)
         return getCluster(cluster_name);
 
-    std::lock_guard lock(shared->clusters_mutex);
-    const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-    const String config_prefix = "remote_servers." + cluster_name;
-    if (config.has(config_prefix))
-        return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
-
-    if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
-        return res;
-    if (shared->cluster_discovery)
+    /// Follow the resolution order of `tryGetCluster`, so that every cluster name accepted by the
+    /// plain overload (which validates the name at `CREATE DATABASE` time for the `Remote` and
+    /// `Cluster` database engines) is also accepted here. Only the static `remote_servers` case is
+    /// rebuilt from the configuration: the pre-built object treats the replica that matches the
+    /// server's own address as a local shard, which is wrong in clickhouse-local. The clusters of
+    /// the other sources already account for `treat_local_port_as_remote` on construction (see
+    /// `DatabaseReplicated::getClusterImpl`) or describe genuinely remote discovered replicas.
     {
-        if (auto res = shared->cluster_discovery->getCluster(cluster_name))
+        std::lock_guard lock(shared->clusters_mutex);
+
+        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        const String config_prefix = "remote_servers." + cluster_name;
+        if (config.has(config_prefix))
+            return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
+
+        if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
             return res;
+
+        if (shared->cluster_discovery)
+        {
+            if (auto res = shared->cluster_discovery->getCluster(cluster_name))
+                return res;
+        }
     }
+
+    if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
+        return res;
 
     throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
 }
