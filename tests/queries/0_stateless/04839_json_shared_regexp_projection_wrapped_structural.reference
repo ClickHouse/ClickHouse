@@ -1,3 +1,3 @@
-materialize(tuple(j1,j2)) retains both elements\' own provenance	1
-arrayMap materialize(tuple(x,y)) slots carry their own policies	1
+materialize(tuple(j1,j2)) type	Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
+arrayMap materialize(tuple(x,y)) slots carry their own policies	Array(Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^a_\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^b_\')))
 mapApply materialize(tuple(k,v)) values carry their policy	1
