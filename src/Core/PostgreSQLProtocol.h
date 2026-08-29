@@ -165,6 +165,25 @@ public:
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
 
+/// Reads exactly `size` bytes into `s`. The size is declared by the client and the payload may
+/// never arrive, so the string grows as the bytes are received instead of being resized to the
+/// declared size up front: otherwise a tiny packet declaring a huge field makes the server
+/// allocate that much and then wait for data that never comes.
+inline void readStringOfDeclaredSize(String & s, size_t size, ReadBuffer & in)
+{
+    s.clear();
+    while (s.size() < size)
+    {
+        if (in.eof())
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Message from client declares a field of {} bytes, but contains only {}", size, s.size());
+
+        const size_t bytes_to_copy = std::min(size - s.size(), in.available());
+        s.append(in.position(), bytes_to_copy);
+        in.position() += bytes_to_copy;
+    }
+}
+
 class MessageTransport
 {
 private:
@@ -193,11 +212,22 @@ public:
         return message;
     }
 
+    /// Reads the declared message length and parses the message from a buffer limited to it, for the
+    /// same reason as in `receiveWithPayloadSize`, and so that a field declaring more bytes than the
+    /// message carries fails on the message boundary instead of being allocated first. The message
+    /// type byte, where the protocol has one, is read separately by `receiveMessageType`.
     template<typename TMessage>
     std::unique_ptr<TMessage> receive()
     {
+        Int32 size = 0;
+        readBinaryBigEndian(size, *in);
+        if (size < static_cast<Int32>(sizeof(size)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} received from client, it must be at least {}", size, sizeof(size));
+
         std::unique_ptr<TMessage> message = std::make_unique<TMessage>();
-        message->deserialize(*in);
+        LimitReadBuffer limited_in(*in, {.read_no_more = static_cast<size_t>(size) - sizeof(size)});
+        message->deserialize(limited_in);
         return message;
     }
 
@@ -409,9 +439,8 @@ public:
 class Terminate : FrontMessage
 {
 public:
-    void deserialize(ReadBuffer & in) override
+    void deserialize(ReadBuffer &) override
     {
-        in.ignore(4);
     }
 
     MessageType getMessageType() const override
@@ -526,10 +555,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
-        readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
-        readBinaryBigEndian(size, in);
         readNullTerminated(auth_method, in);
         Int32 size_sasl_mechanism = 0;
         readBinaryBigEndian(size_sasl_mechanism, in);
@@ -538,10 +563,7 @@ public:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                             "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
         if (size_sasl_mechanism > 0)
-        {
-            sasl_mechanism.resize(size_sasl_mechanism);
-            in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
-        }
+            readStringOfDeclaredSize(sasl_mechanism, size_sasl_mechanism, in);
     }
 
     MessageType getMessageType() const override
@@ -586,15 +608,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
-        readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
-        readBinaryBigEndian(size, in);
-        if (size < 4)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong message length {} in SASLResponse, it must be at least 4", size);
-        sasl_mechanism.resize(size - 4);
-        in.readStrict(sasl_mechanism.data(), size - 4);
+        readStringUntilEOF(sasl_mechanism, in);
     }
 
     MessageType getMessageType() const override
@@ -632,8 +646,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
         readNullTerminated(password, in);
     }
 
@@ -712,8 +724,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
 
@@ -732,8 +742,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
@@ -780,8 +788,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
@@ -807,9 +813,9 @@ public:
                 parameters.emplace_back("NULL");
                 continue;
             }
-            String current_param(sz_param, 0);
-            in.readStrict(current_param.data(), sz_param);
-            parameters.push_back(current_param);
+            String current_param;
+            readStringOfDeclaredSize(current_param, sz_param, in);
+            parameters.push_back(std::move(current_param));
         }
 
         Int16 num_format_params_result = 0;
@@ -855,8 +861,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
         in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
     }
@@ -876,8 +880,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
     }
@@ -924,8 +926,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
         Int8 byte = 0;
         readBinaryBigEndian(byte, in);
         close_target = static_cast<char>(byte);
@@ -965,10 +965,8 @@ public:
 class SyncQuery : FrontMessage
 {
 public:
-    void deserialize(ReadBuffer & in) override
+    void deserialize(ReadBuffer &) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
     }
 
     MessageType getMessageType() const override
@@ -1116,8 +1114,6 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
 
@@ -1186,18 +1182,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        if (sz < static_cast<Int32>(sizeof(Int32)))
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong message length {} in CopyData, it must be at least 4", sz);
-        query.reserve(sz - sizeof(Int32));
-        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
-        {
-            char byte = 0;
-            readBinary(byte, in);
-            query.push_back(byte);
-        }
+        readStringUntilEOF(query, in);
     }
 
     MessageType getMessageType() const override
@@ -1209,10 +1194,8 @@ public:
 class CopyDone : FrontMessage
 {
 public:
-    void deserialize(ReadBuffer & in) override
+    void deserialize(ReadBuffer &) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
     }
 
     MessageType getMessageType() const override
@@ -1524,6 +1507,16 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
+    /// Both SASL messages of the SCRAM exchange are sent with the `PasswordMessage` type byte.
+    static void expectPasswordMessage(Messaging::MessageTransport & mt)
+    {
+        Messaging::FrontMessageType type = mt.receiveMessageType();
+        if (type != Messaging::FrontMessageType::PASSWORD_MESSAGE)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                    "Client sent wrong message or closed the connection. Message byte was {}.",
+                    static_cast<Int32>(type));
+    }
+
     static size_t findPatternPosition(const String & key, const String & pattern)
     {
         size_t pos = key.size();
@@ -1635,6 +1628,7 @@ public:
         String auth_message;
 
         mt.send(Messaging::AuthenticationSASL(), true);
+        expectPasswordMessage(mt);
         auto rsp = mt.receive<Messaging::SASLInitialResponse>();
 
         auto server_nonce = generateNonce();
@@ -1657,6 +1651,7 @@ public:
         auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
+        expectPasswordMessage(mt);
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();
         auto proof = parseProof(rsp_continue->sasl_mechanism);
         auto proof_position = findProofPosition(rsp_continue->sasl_mechanism);

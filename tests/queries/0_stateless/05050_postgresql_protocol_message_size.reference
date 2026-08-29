@@ -1,0 +1,3 @@
+SASL mechanism longer than the message: error response
+password without a terminator: error response
+well-formed exchange: query result received
