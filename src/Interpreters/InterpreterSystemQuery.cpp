@@ -71,6 +71,8 @@
 #include <Storages/StorageFile.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
@@ -2363,6 +2365,23 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
+    /// Source parts of the merges scheduled so far. Captured before the loop so every wait clause
+    /// (coverage, merge list, fetch) and the final `clearScheduledParts` are scoped to exactly these
+    /// parts, even if a concurrent SCHEDULE MERGE adds more meanwhile. Both the infos (for the
+    /// coverage predicate) and their names (for the merge list / fetch checks) come from the same
+    /// snapshot, so the three clauses can never disagree about which parts are being synced.
+    const std::vector<MergeTreePartInfo> scheduled_part_infos = ManualMergeSelector::getScheduledPartInfos(table_id);
+    NameSet scheduled_part_names;
+    for (const auto & part_info : scheduled_part_infos)
+        scheduled_part_names.insert(part_info.getPartNameV1());
+    auto & merge_list = getContext()->getMergeList();
+
+    /// On a replicated table a scheduled merge can be satisfied by fetching the merged part instead
+    /// of executing it locally (always_fetch_merged_part / prefer-fetch / zero-copy contention). The
+    /// fetch path commits the fetched part active before it queues its DOWNLOAD_PART part_log row and
+    /// creates no merge list entry, so the merge list check above does not cover it.
+    auto * replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(&merge_tree);
+
     const auto start = std::chrono::steady_clock::now();
     const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
     /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
@@ -2386,8 +2405,30 @@ void InterpreterSystemQuery::syncMerges()
         for (const auto & part : merge_tree.getDataPartsVectorForInternalUsage())
             active_set.add(part->info, part->name);
 
-        if (ManualMergeSelector::isAllScheduledPartsCovered(table_id, active_set))
+        /// A merge makes its result part active by committing the transaction (plain:
+        /// MergePlainMergeTreeTask::finish, replicated: MergeFromLogEntryTask::finalize), which
+        /// happens BEFORE the task writes its part_log row. Returning as soon as the result part
+        /// is active would let SYNC MERGES finish before part_log is populated. The merge keeps its
+        /// merge list entry until after `write_part_log`, so we additionally wait until no scheduled
+        /// merge is left in the merge list. Scoping to the scheduled source parts (and skipping
+        /// mutations) keeps this from over-waiting on unrelated in-flight merges/mutations, and
+        /// covers both plain and replicated storage that run the Manual selector. The replicated
+        /// fetch path has no merge list entry, so we also wait for any in-flight MERGE_PARTS fetch
+        /// whose own source parts intersect this snapshot's scheduled source parts (the fetch keeps it
+        /// tracked until after its DOWNLOAD_PART part_log write). Matching by the fetch's source parts
+        /// rather than its result part keeps a later-scheduled merge's fetch from extending this wait.
+        if (ManualMergeSelector::isAllScheduledPartsCovered(scheduled_part_infos, active_set)
+            && !merge_list.hasUnfinishedMergeOfSourceParts(table_id, scheduled_part_names)
+            && !(replicated_merge_tree && replicated_merge_tree->hasInFlightFetchOfSourceParts(scheduled_part_names)))
+        {
+            /// The command has fully succeeded: the scheduled parts are covered and their part_log
+            /// rows are queued. Drop them now (not inside the coverage check) so a call that times
+            /// out or is cancelled while still waiting for part_log leaves the set intact for a
+            /// retry. Scope to the names captured at the start so a concurrent SCHEDULE MERGE that
+            /// added new parts meanwhile keeps waiting for its own merges.
+            ManualMergeSelector::clearScheduledParts(table_id, scheduled_part_names);
             return;
+        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_delay.getCurrentDelay()));
         poll_delay.up();

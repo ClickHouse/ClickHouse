@@ -41,12 +41,14 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_merge_task_sleep_in_prepare[];
+    extern const char merge_throw_after_commit_before_part_log[];
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_DATA_PART_NAME;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 MergeFromLogEntryTask::MergeFromLogEntryTask(
@@ -478,34 +480,60 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         throw;
     }
 
-    if (zero_copy_lock)
-        zero_copy_lock->lock->unlock();
-
-    /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
-     */
-
-    /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
-     * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
-     */
-    UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
-    ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
-    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
-
+    /// Must be armed here, before any post-commit work that can throw: the result part is already
+    /// active, so a dependent merge has to be selectable whether or not the rest of this function
+    /// succeeds. Running after `merge_mutate_entry` is destroyed is guaranteed by the member
+    /// declaration order in ReplicatedMergeMutateTaskBase, not by where this is assigned.
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
-    ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
-    auto prewarm_caches = storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
+    /// From here the result part is committed (active), so every step up to `write_part_log` is
+    /// guarded: on any failure we queue the part_log row before rethrowing. Otherwise the part stays
+    /// active with no part_log row, which would let SYSTEM SYNC MERGES return before part_log is
+    /// populated for this merge (the merge list entry is gone once the task unwinds). The zero-copy
+    /// unlock talks to Keeper and can throw, so it has to be inside the guard too.
+    try
+    {
+        /// Injected at the very top of the guard, so it stands in for the earliest throw-capable
+        /// post-commit statement (the zero-copy unlock below, which talks to Keeper). Anything that
+        /// must survive a throw in this window has to be in place before this point.
+        fiu_do_on(FailPoints::merge_throw_after_commit_before_part_log,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after commit before part_log");
+        });
 
-    if (prewarm_caches.mark_cache)
-        addMarksToCache(*part, cached_marks, prewarm_caches.mark_cache.get());
+        if (zero_copy_lock)
+            zero_copy_lock->lock->unlock();
 
-    if (prewarm_caches.index_mark_cache)
-        addMarksToCache(*part, cached_index_marks, prewarm_caches.index_mark_cache.get());
+        /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
+         */
 
-    /// Move index to cache and reset it here because we need
-    /// a correct part name after rename for a key of cache entry.
-    if (prewarm_caches.primary_index_cache)
-        part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+        /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
+         * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
+         */
+        UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+        ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
+        ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
+
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
+
+        auto prewarm_caches = storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
+
+        if (prewarm_caches.mark_cache)
+            addMarksToCache(*part, cached_marks, prewarm_caches.mark_cache.get());
+
+        if (prewarm_caches.index_mark_cache)
+            addMarksToCache(*part, cached_index_marks, prewarm_caches.index_mark_cache.get());
+
+        /// Move index to cache and reset it here because we need
+        /// a correct part name after rename for a key of cache entry.
+        if (prewarm_caches.primary_index_cache)
+            part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+    }
+    catch (...)
+    {
+        write_part_log(ExecutionStatus::fromCurrentException("", true));
+        throw;
+    }
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

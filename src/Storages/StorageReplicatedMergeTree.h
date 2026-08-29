@@ -221,6 +221,15 @@ public:
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedStatus & res, bool with_zk_fields = true);
 
+    /// Whether a MERGE_PARTS fetch is in progress whose own source parts intersect `source_part_names`.
+    /// A fetch satisfies a scheduled merge (e.g. always_fetch_merged_part / prefer-fetch / zero-copy)
+    /// by committing the fetched part active before it queues its DOWNLOAD_PART part_log row, and it
+    /// creates no merge list entry. SYSTEM SYNC MERGES uses this (in addition to the merge list) so it
+    /// does not return before the fetch path's post-commit part_log write of the scheduled parts.
+    /// Matching by the fetch's exact source parts (not by whether its result part covers a snapshotted
+    /// source part) keeps a later-scheduled merge's fetch from extending an earlier snapshot's wait.
+    bool hasInFlightFetchOfSourceParts(const NameSet & source_part_names) const;
+
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getQueue(LogEntriesData & res, String & replica_name);
 
@@ -791,6 +800,10 @@ private:
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.
       * If quorum != 0, then the node for tracking the quorum is updated.
+      * If `merge_source_parts` is non-empty, this fetch satisfies a MERGE_PARTS log entry (the result
+      * of a merge over exactly these source parts) and therefore owes a DOWNLOAD_PART part_log row
+      * that SYSTEM SYNC MERGES waits for; the source parts are recorded so SYNC MERGES only waits on
+      * fetches whose source parts intersect its own snapshot.
       * Returns false if part is already fetching right now.
       */
     bool fetchPart(
@@ -801,7 +814,8 @@ private:
         bool to_detached,
         size_t quorum,
         zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
-        bool try_fetch_shared = true);
+        bool try_fetch_shared = true,
+        const NameSet & merge_source_parts = {});
 
     /** Download the specified part from the specified replica.
       * Used for replace local part on the same s3-shared part in hybrid storage.
@@ -816,6 +830,17 @@ private:
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
+    /// In-flight fetches that satisfy a MERGE_PARTS log entry (the merged result part) and therefore
+    /// owe a DOWNLOAD_PART part_log row that SYSTEM SYNC MERGES waits for. Keyed by the fetched result
+    /// part name, mapping to the MERGE_PARTS entry's exact source_parts. SYNC MERGES matches a fetch
+    /// to its snapshot by intersecting these source_parts with the snapshotted scheduled source parts,
+    /// so a later-scheduled merge's fetch does not extend an earlier snapshot's wait just because its
+    /// result part happens to cover that snapshot's source parts. Ordinary replication fetches (GET_PART
+    /// / ATTACH_PART, which can resolve to a covering merged part via findReplicaHavingCoveringPart),
+    /// mutation fetches, detached fetches (SYSTEM FETCH PART/PARTITION), and fetchExistsPart
+    /// (shared-storage move) are NOT merge results and are never recorded here. Guarded by the same
+    /// currently_fetching_parts_mutex.
+    std::unordered_map<String, NameSet> currently_fetching_merged_parts;
     mutable std::mutex currently_fetching_parts_mutex;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.

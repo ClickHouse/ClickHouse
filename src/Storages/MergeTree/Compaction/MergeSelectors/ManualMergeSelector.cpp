@@ -154,17 +154,43 @@ void ManualMergeSelector::push(const StorageID & id, const Names & parts_to_merg
     info->queue.push_back(parts_to_merge);
 }
 
-bool ManualMergeSelector::isAllScheduledPartsCovered(const StorageID & id, const ActiveDataPartSet & active_set)
+std::vector<MergeTreePartInfo> ManualMergeSelector::getScheduledPartInfos(const StorageID & id)
+{
+    auto [info, lock] = getTableInfo(id);
+    return info->scheduled_part_infos;
+}
+
+bool ManualMergeSelector::isAllScheduledPartsCovered(const std::vector<MergeTreePartInfo> & scheduled_part_infos, const ActiveDataPartSet & active_set)
+{
+    /// Pure predicate over a caller-supplied snapshot: a scheduled source part is covered when a
+    /// strictly larger active part contains it. Reads no registry state, so SYNC MERGES sees exactly
+    /// the set it captured at entry and does not start waiting on parts a concurrent SCHEDULE MERGE
+    /// added meanwhile. Does not drain anything -- SYNC MERGES still waits for part_log after this
+    /// returns true and may time out or be cancelled, and a retry must still see the scheduled parts.
+    /// The set is dropped only by `clearScheduledParts` once the command fully succeeds.
+    for (const auto & part_info : scheduled_part_infos)
+    {
+        const std::string containing = active_set.getContainingPart(part_info);
+        if (containing.empty() || containing == part_info.getPartNameV1())
+            return false;
+    }
+
+    return true;
+}
+
+void ManualMergeSelector::clearScheduledParts(const StorageID & id, const NameSet & part_names)
 {
     auto [info, lock] = getTableInfo(id);
 
+    /// Drop the scheduled source parts named in `part_names` (the snapshot SYNC MERGES captured and
+    /// has now fully synced). Scoped to that snapshot, so a part added by a concurrent SCHEDULE MERGE
+    /// after the snapshot is not in `part_names` and is left intact. The `queue` used by `select` has
+    /// its own lifecycle (entries are retired there once their merge result is observed), so it is not
+    /// touched here.
     std::erase_if(info->scheduled_part_infos, [&](const MergeTreePartInfo & part_info)
     {
-        const std::string containing = active_set.getContainingPart(part_info);
-        return !containing.empty() && containing != part_info.getPartNameV1();
+        return part_names.contains(part_info.getPartNameV1());
     });
-
-    return info->scheduled_part_infos.empty();
 }
 
 void ManualMergeSelector::erase(const StorageID & id)

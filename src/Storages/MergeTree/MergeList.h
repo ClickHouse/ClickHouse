@@ -224,6 +224,27 @@ public:
     {
         return merges_with_ttl_counter;
     }
+
+    /// Whether a merge (not a mutation) consuming any of `source_part_names` is still in the merge
+    /// list for `table_id`. A task keeps its merge list entry alive until after it has written its
+    /// part_log row -- this holds for both the plain (MergePlainMergeTreeTask::finish) and the
+    /// replicated (MergeFromLogEntryTask::finalize) execution paths, where the entry is owned by the
+    /// task object and write_part_log({}) runs before the task completes. SYNC MERGES uses this to
+    /// wait for the part_log of exactly the scheduled merges, instead of for all in-flight
+    /// merges/mutations on the table.
+    bool hasUnfinishedMergeOfSourceParts(const StorageID & table_id, const NameSet & source_part_names) const
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & merge_element : entries)
+        {
+            if (merge_element.is_mutation || merge_element.table_id != table_id)
+                continue;
+            for (const auto & source_part_name : merge_element.source_part_names)
+                if (source_part_names.contains(source_part_name))
+                    return true;
+        }
+        return false;
+    }
 };
 
 }

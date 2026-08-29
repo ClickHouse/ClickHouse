@@ -268,6 +268,9 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char rmt_fetch_part_pause_before_part_log[];
+    extern const char rmt_fetch_detached_part_pause[];
+    extern const char rmt_fetch_throw_after_commit_before_part_log[];
     extern const char check_table_inject_retryable_zk_error[];
 }
 
@@ -2840,6 +2843,12 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 LOG_DEBUG(log, "Will fetch part {} instead of {}", entry.actual_new_part_name, entry.new_part_name);
 
             String source_replica_path = fs::path(zookeeper_path) / "replicas" / replica;
+            /// For a MERGE_PARTS entry, record the exact source parts (normalized to the same V1 name
+            /// form the SYNC MERGES snapshot uses) so the wait is scoped to fetches of this merge only.
+            NameSet merge_source_parts;
+            if (entry.type == LogEntry::MERGE_PARTS)
+                for (const auto & source_part_name : entry.source_parts)
+                    merge_source_parts.insert(MergeTreePartInfo::fromPartName(source_part_name, format_version).getPartNameV1());
             if (!fetchPart(part_name,
                 metadata_snapshot,
                 zookeeper_info.zookeeper_name,
@@ -2847,7 +2856,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 /* to_detached= */ false,
                 entry.quorum,
                 /* zookeeper_ */ nullptr,
-                /* try_fetch_shared= */ true))
+                /* try_fetch_shared= */ true,
+                /* merge_source_parts= */ merge_source_parts))
             {
                 return false;
             }
@@ -5522,7 +5532,8 @@ bool StorageReplicatedMergeTree::fetchPart(
     bool to_detached,
     size_t quorum,
     zkutil::ZooKeeper::Ptr zookeeper_,
-    bool try_fetch_shared)
+    bool try_fetch_shared,
+    const NameSet & merge_source_parts)
 {
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
@@ -5549,12 +5560,35 @@ bool StorageReplicatedMergeTree::fetchPart(
             LOG_DEBUG(log, "Part {} is already fetching right now", part_name);
             return false;
         }
+        /// Only a fetch that satisfies a MERGE_PARTS log entry (the merged result part) owes a
+        /// DOWNLOAD_PART part_log row that SYSTEM SYNC MERGES must wait for. Ordinary GET_PART /
+        /// ATTACH_PART fetches (which can resolve to a covering merged part), mutation fetches, and
+        /// detached fetches (SYSTEM FETCH PART/PARTITION) are not merge results and must not make
+        /// SYNC MERGES wait, even when they cover a scheduled source part. Record the entry's exact
+        /// source parts so SYNC MERGES only waits on fetches whose source parts intersect its snapshot.
+        if (!to_detached && !merge_source_parts.empty())
+        {
+            /// Copying the source set allocates. If it throws, part_name would stay in
+            /// currently_fetching_parts with no scope guard installed yet, and every later fetch of
+            /// this part would report "already fetching right now" until the server restarts.
+            try
+            {
+                currently_fetching_merged_parts.emplace(part_name, merge_source_parts);
+            }
+            catch (...)
+            {
+                currently_fetching_parts.erase(part_name);
+                throw;
+            }
+        }
     }
 
     SCOPE_EXIT_MEMORY
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
+        if (!to_detached && !merge_source_parts.empty())
+            currently_fetching_merged_parts.erase(part_name);
     });
 
     LOG_DEBUG(log, "Fetching part {} from {}:{}", part_name, source_zookeeper_name, source_replica_path);
@@ -5706,6 +5740,11 @@ bool StorageReplicatedMergeTree::fetchPart(
         };
     }
 
+    /// Set once the fetched part has been committed (made active). The post-commit work below can
+    /// still throw before the DOWNLOAD_PART part_log row is queued; this lets the catch blocks tell
+    /// a post-commit failure (part already active, row owed) from a pre-commit one.
+    bool part_committed = false;
+
     try
     {
         part = get_part();
@@ -5718,6 +5757,16 @@ bool StorageReplicatedMergeTree::fetchPart(
 
             chassert(!part_to_clone || !is_zero_copy_part(part));
             replaced_parts = checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
+            part_committed = true;
+
+            /// Must stay above the quorum updates below: they can throw, and the retry then retires
+            /// the queue entry via `checkExistingPart` without coming back here.
+            merge_selecting_task->schedule();
+
+            fiu_do_on(FailPoints::rmt_fetch_throw_after_commit_before_part_log,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after fetch commit before part_log");
+            });
 
             /** If a quorum is tracked for this part, you must update it.
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
@@ -5743,8 +5792,6 @@ bool StorageReplicatedMergeTree::fetchPart(
                 }
             }
 
-            merge_selecting_task->schedule();
-
             for (const auto & replaced_part : replaced_parts)
             {
                 LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
@@ -5765,6 +5812,11 @@ bool StorageReplicatedMergeTree::fetchPart(
             if (prewarm_caches.primary_index_cache)
                 part->loadIndexToCache(*prewarm_caches.primary_index_cache);
 
+            /// The fetched part is already committed (active) at this point but its DOWNLOAD_PART
+            /// part_log row is queued only below. A test pauses here to hold the window open
+            /// deterministically and observe that SYSTEM SYNC MERGES waits for the part_log write.
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_fetch_part_pause_before_part_log);
+
             write_part_log({});
         }
         else
@@ -5772,6 +5824,11 @@ bool StorageReplicatedMergeTree::fetchPart(
             // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
             part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);
+
+            /// A detached fetch keeps the part in currently_fetching_parts but owes no DOWNLOAD_PART
+            /// row. A test pauses here to hold that state open and confirm SYSTEM SYNC MERGES does
+            /// not wait on a detached fetch that covers a scheduled source part.
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_fetch_detached_part_pause);
         }
     }
     catch (const Exception & e)
@@ -5783,6 +5840,14 @@ bool StorageReplicatedMergeTree::fetchPart(
             LOG_TRACE(log, "Not fetching part: {}", e.message());
             return false;
         }
+
+        /// If the part was already committed (active) when a post-commit step threw, the
+        /// DOWNLOAD_PART row was not queued yet. Queue the (failed) row before unwinding so the
+        /// part_log entry exists for this active part: SYSTEM SYNC MERGES waits for an in-flight
+        /// fetch covering a scheduled part (currently_fetching_parts, still held here) and would
+        /// otherwise return after the SCOPE_EXIT erase with no part_log row to flush.
+        if (part_committed && !to_detached)
+            write_part_log(ExecutionStatus::fromCurrentException("", true));
 
         throw;
     }
@@ -5802,6 +5867,34 @@ bool StorageReplicatedMergeTree::fetchPart(
         LOG_DEBUG(log, "Fetched part {} from {}:{}{}", part_name, source_zookeeper_name, source_replica_path, to_detached ? " (to 'detached' directory)" : "");
 
     return true;
+}
+
+
+bool StorageReplicatedMergeTree::hasInFlightFetchOfSourceParts(const NameSet & source_part_names) const
+{
+    if (source_part_names.empty())
+        return false;
+
+    std::lock_guard lock(currently_fetching_parts_mutex);
+    /// Only fetches that satisfy a MERGE_PARTS log entry (the merged result part) owe a DOWNLOAD_PART
+    /// part_log row, so we wait on that subset. An ordinary GET_PART / ATTACH_PART fetch (which can
+    /// resolve to a covering merged part), a mutation fetch, an unrelated SYSTEM FETCH PART/PARTITION
+    /// (detached), or a shared-storage move of a covering part queues no success row for a scheduled
+    /// merge and must not make SYNC MERGES wait or time out.
+    ///
+    /// Match a fetch to this snapshot by its MERGE_PARTS entry's exact source parts, not by whether
+    /// its result part covers a snapshotted source part. A merge scheduled AFTER this snapshot can
+    /// produce a result part that covers this snapshot's source parts (e.g. snapshot {all_0_0_0,
+    /// all_1_1_0}, later schedule {all_0_1_1, all_2_2_0} fetching all_0_2_2 which contains both), so a
+    /// result-part-coverage test would let that later fetch extend this earlier wait. Intersecting the
+    /// entry's source parts with the snapshot keeps each wait scoped to its own scheduled merges.
+    for (const auto & [fetching_part_name, fetch_source_parts] : currently_fetching_merged_parts)
+    {
+        for (const auto & fetch_source_part : fetch_source_parts)
+            if (source_part_names.contains(fetch_source_part))
+                return true;
+    }
+    return false;
 }
 
 
