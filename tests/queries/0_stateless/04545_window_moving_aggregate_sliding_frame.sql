@@ -432,6 +432,28 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
+-- The remaining positive opt-ins that other window tests only exercise over a whole
+-- partition or with the frame-unchanged shortcut: groupConcat (merge appends the
+-- segments in frame order, and with a row limit takes only the leading elements of
+-- the appended segment), sumMap, and the histogram-based quantileTiming /
+-- quantileBFloat16 families (the tree merges the per-segment histograms; the
+-- quantileTiming values span the small, medium and large state representations).
+-- Cross-checked against sequential re-aggregation of the frame rows.
+SELECT countIf(NOT (gc = gc2 AND gcl = gcl2 AND sm = sm2 AND qt = qt2 AND qtw = qtw2 AND qb = qb2)) AS mismatches
+FROM
+(
+    SELECT
+        n,
+        groupConcat(',')(str) OVER w AS gc, arrayStringConcat(groupArray(str) OVER w, ',') AS gc2,
+        groupConcat(',', 7)(str) OVER w AS gcl, arrayStringConcat(arraySlice(groupArray(str) OVER w, 1, 7), ',') AS gcl2,
+        sumMap(keys, vals) OVER w AS sm, arrayReduce('sumMap', groupArray(keys) OVER w, groupArray(vals) OVER w) AS sm2,
+        quantileTiming(0.7)(t) OVER w AS qt, arrayReduce('quantileTiming(0.7)', groupArray(t) OVER w) AS qt2,
+        quantileTimingWeighted(0.7)(t, wt) OVER w AS qtw, arrayReduce('quantileTimingWeighted(0.7)', groupArray(t) OVER w, groupArray(wt) OVER w) AS qtw2,
+        quantileBFloat16(0.3)(value) OVER w AS qb, arrayReduce('quantileBFloat16(0.3)', groupArray(value) OVER w) AS qb2
+    FROM (SELECT n, value, str, [n % 7, n % 11 + 100] AS keys, [value, toInt64(n)] AS vals, toUInt64(cityHash64(n, 9) % 40000) AS t, toUInt64(n % 5 + 1) AS wt FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
+);
+
 -- State-returning wrappers (-State, -Merge, -SimpleState) through the tree: their
 -- results are materialized via insertMergeResultInto instead of insertResultInto.
 SELECT countIf(NOT (s = s2 AND u = u2 AND m = m2 AND sm = sm2)) AS mismatches
