@@ -423,6 +423,14 @@ void MetadataStorageInMemoryTransaction::writeStringToFile(const std::string & p
             entry = &metadata_storage.files[path];
         }
         recordBlobGroupBefore(entry->blob_group);
+        /// Inline data and backing objects are mutually exclusive representations of the file
+        /// content (`DiskObjectStorage::prepareRead` asserts this). When an existing blob-backed
+        /// file is rewritten with plain content, release its objects like `createMetadataFile`
+        /// does on rewrite, so the borrowed cache segments are reclaimed and `getFileSize`/
+        /// `truncateFile` follow the inline payload.
+        for (const auto & obj : entry->blob_group->objects)
+            objects_to_remove.push_back(obj);
+        entry->blob_group->objects.clear();
         entry->blob_group->inline_data = data;
         entry->blob_group->last_modified = Poco::Timestamp();
     });
@@ -436,7 +444,16 @@ void MetadataStorageInMemoryTransaction::writeInlineDataToFile(const std::string
         if (!entry)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
         recordBlobGroupBefore(entry->blob_group);
+        /// `DiskObjectStorageTransaction::writeFile` routes a small `Rewrite` of an existing file
+        /// here: switching the entry to the inline representation must drop the old backing
+        /// objects (mirroring the rewrite path of `createMetadataFile`), otherwise the stale
+        /// blobs keep their borrowed cache segments pinned and the entry carries two conflicting
+        /// content representations.
+        for (const auto & obj : entry->blob_group->objects)
+            objects_to_remove.push_back(obj);
+        entry->blob_group->objects.clear();
         entry->blob_group->inline_data = data;
+        entry->blob_group->last_modified = Poco::Timestamp();
     });
 }
 

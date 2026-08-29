@@ -556,15 +556,9 @@ TEST_F(MetadataInMemoryTest, TestPlainFileSizeAndTruncate)
     EXPECT_EQ(metadata->getFileSize("frozen_metadata.txt"), 1);
     EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "2");
 
-    /// Growing a file is not something `truncateFile` supports on any metadata backend.
-    {
-        auto transaction = metadata->createTransaction();
-        transaction->truncateFile("frozen_metadata.txt", 100);
-        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
-    }
-    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "2");
-
     /// Truncating to zero leaves an empty file with no readable leftover content.
+    /// (Growing a file is not something `truncateFile` supports on any metadata backend, but that
+    /// path throws a logical error — which aborts in sanitizer builds — so it is not covered here.)
     {
         auto transaction = metadata->createTransaction();
         transaction->truncateFile("frozen_metadata.txt", 0);
@@ -573,6 +567,55 @@ TEST_F(MetadataInMemoryTest, TestPlainFileSizeAndTruncate)
     EXPECT_TRUE(metadata->existsFile("frozen_metadata.txt"));
     EXPECT_EQ(metadata->getFileSize("frozen_metadata.txt"), 0);
     EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "");
+}
+
+/// Mirrors `MetadataStorageFromMemory.InlineOverwriteReleasesCreatedBlob`: rewriting a blob-backed
+/// file with inline content (`DiskObjectStorageTransaction::writeFile` routes a small `Rewrite`
+/// through `writeInlineDataToFile`, and `writeStringToFile` can overwrite an existing entry) must
+/// release the old objects and leave only the inline representation, so `getFileSize` follows the
+/// new payload and the borrowed cache segments are reclaimed.
+TEST_F(MetadataInMemoryTest, TestInlineOverwriteReleasesBlobs)
+{
+    auto metadata = getMetadataStorage();
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k_inline_rewrite").serialize(), "file", 123);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getFileSize("file"), 123);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeInlineDataToFile("file", "tiny");
+        transaction->commit(DB::NoCommitOptions{});
+        auto removed = transaction->getSubmittedForRemovalBlobs();
+        ASSERT_EQ(removed.size(), 1);
+        EXPECT_EQ(removed[0].remote_path, blob.remote_path);
+    }
+    EXPECT_EQ(metadata->readInlineDataToString("file"), "tiny");
+    EXPECT_EQ(metadata->getFileSize("file"), 4);
+    EXPECT_TRUE(metadata->getStorageObjects("file").empty());
+
+    /// The same contract holds for `writeStringToFile` overwriting a blob-backed entry.
+    const DB::StoredObject blob2(DB::ObjectStorageKey::createAsAbsolute("k_string_rewrite").serialize(), "file2", 45);
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file2", {blob2});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("file2", "plain");
+        transaction->commit(DB::NoCommitOptions{});
+        auto removed = transaction->getSubmittedForRemovalBlobs();
+        ASSERT_EQ(removed.size(), 1);
+        EXPECT_EQ(removed[0].remote_path, blob2.remote_path);
+    }
+    EXPECT_EQ(metadata->readFileToString("file2"), "plain");
+    EXPECT_EQ(metadata->getFileSize("file2"), 5);
+    EXPECT_TRUE(metadata->getStorageObjects("file2").empty());
 }
 
 /// The sibling in-memory backend (`MetadataStorageFromMemory`, made by `wrapWithMemoryMetadata`)
