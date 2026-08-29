@@ -659,13 +659,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// A pending patch can change rows/column TTL inputs in both directions, so the pre-patch
     /// aggregated infos can neither feed TTLTransform's drop-all/drop-column fast paths nor stay
-    /// on the merged part. The maxima are reset; the rows-WHERE and GROUP BY entries are dropped
-    /// wholesale, because their ttl_finished bit survives recalculation (TTLDeleteAlgorithm marks
-    /// finished off the old max and update() never clears it, hiding the part from later TTL
-    /// passes). The TTL step is forced even for a part that did not look due before the patch;
-    /// when the TTL blocker is active the rows must survive, so the pipeline recalculates the
-    /// infos instead. Recompression/move infos are likewise ignored where they drive the output
-    /// codec and the reserved destination.
+    /// on the merged part. The maxima are reset; the rows-WHERE entries are dropped wholesale,
+    /// because their ttl_finished bit survives recalculation (TTLDeleteAlgorithm marks finished
+    /// off the old max and update() never clears it, hiding the part from later TTL passes).
+    /// GROUP BY entries are deliberately left alone: TTLAggregationAlgorithm keeps the old info
+    /// whenever the recomputed one is not finished, so clearing them yields a part with no
+    /// GROUP BY bound at all - the infinite-rollup shape 04501 pins. The TTL step is forced even
+    /// for a part that did not look due before the patch; when the TTL blocker is active the rows
+    /// must survive, so the pipeline recalculates the infos instead. Recompression/move infos are
+    /// likewise ignored where they drive the output codec and the reserved destination.
     ctx->recalculate_ttl_for_patches
         = global_ctx->metadata_snapshot->hasAnyTTL() && !global_ctx->future_part->patch_parts.empty();
     if (ctx->recalculate_ttl_for_patches)
@@ -674,7 +676,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         for (auto & [column_name, column_info] : global_ctx->new_data_part->ttl_infos.columns_ttl)
             column_info.max = 0;
         global_ctx->new_data_part->ttl_infos.rows_where_ttl.clear();
-        global_ctx->new_data_part->ttl_infos.group_by_ttl.clear();
         if (ctx->need_remove_expired_values || !global_ctx->ttl_merges_blocker->isCancelled())
         {
             ctx->need_remove_expired_values = true;
@@ -3555,23 +3556,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
-
-        /// The aggregation algorithm recomputes bounds only for the rows it rolled up, so with
-        /// the pre-patch GROUP BY entries invalidated the merged part would keep none and later
-        /// TTL passes would skip it; recalculate every family per row from the final stream.
-        if (ctx->recalculate_ttl_for_patches && global_ctx->metadata_snapshot->hasAnyGroupByTTL())
-        {
-            auto ttl_calc_step = std::make_unique<TTLCalcStep>(
-                merge_parts_query_plan.getCurrentHeader(),
-                global_ctx->context,
-                *global_ctx->data,
-                global_ctx->metadata_snapshot,
-                global_ctx->new_data_part,
-                global_ctx->time_of_merge,
-                /*force_=*/ true);
-            ttl_calc_step->setStepDescription("TTL info recalculation step");
-            merge_parts_query_plan.addStep(std::move(ttl_calc_step));
-        }
     }
     else if (ctx->recalculate_ttl_for_patches)
     {
