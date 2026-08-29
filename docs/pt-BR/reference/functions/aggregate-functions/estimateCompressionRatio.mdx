@@ -29,7 +29,7 @@ estimateCompressionRatio([codec, block_size_bytes])(column)
 **Parâmetros**
 
 * `codec` — String que contém um codec de compressão ou vários codecs separados por vírgulas em uma única string. [`String`](/pt-BR/reference/data-types/string)
-* `block_size_bytes` — Tamanho do bloco de dados comprimidos. Isso é semelhante a definir tanto [`max_compress_block_size`](/pt-BR/reference/settings/merge-tree-settings#max_compress_block_size) quanto [`min_compress_block_size`](/pt-BR/reference/settings/merge-tree-settings#min_compress_block_size). O valor padrão é 1 MiB (1048576 bytes). O valor máximo permitido é 256 MiB (268435456 bytes). [`UInt64`](/pt-BR/reference/data-types/int-uint)
+* `block_size_bytes` — Tamanho do bloco de dados comprimidos. Isso é semelhante a definir tanto [`max_compress_block_size`](/pt-BR/reference/settings/merge-tree-settings/max#max_compress_block_size) quanto [`min_compress_block_size`](/pt-BR/reference/settings/merge-tree-settings/min#min_compress_block_size). O valor padrão é 1 MiB (1048576 bytes). O valor máximo permitido é 256 MiB (268435456 bytes). [`UInt64`](/pt-BR/reference/data-types/int-uint)
 
 **Argumentos**
 

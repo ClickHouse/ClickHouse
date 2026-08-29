@@ -458,7 +458,7 @@ timeSeriesIdToGroup(id)
 
 **Arguments**
 
-* `id` — Identifiant d’une série temporelle. [`UInt64`](/fr/reference/data-types/int-uint) ou [`UInt128`](/fr/reference/data-types/int-uint) ou [`UUID`](/fr/reference/data-types/uuid) ou [`FixedString(16)`](/fr/reference/data-types/fixedstring)
+* `id` — Identifiant d’une série temporelle. Doit être du même type que celui utilisé lors de l’appel à [timeSeriesStoreTags()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/fr/reference/data-types/index)
 
 **Valeur renvoyée**
 
@@ -503,7 +503,7 @@ timeSeriesIdToTags(id)
 
 **Arguments**
 
-* `id` — Identifiant d’une série temporelle. [`UInt64`](/fr/reference/data-types/int-uint) ou [`UInt128`](/fr/reference/data-types/int-uint) ou [`UUID`](/fr/reference/data-types/uuid) ou [`FixedString(16)`](/fr/reference/data-types/fixedstring)
+* `id` — Identifiant d’une série temporelle. Doit être du même type que celui utilisé lors de l’appel à [timeSeriesStoreTags()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/fr/reference/data-types/index)
 
 **Valeur renvoyée**
 
@@ -831,7 +831,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **Arguments**
 
-* `id` — Identifiant d’une série temporelle. [`UInt64`](/fr/reference/data-types/int-uint) ou [`UInt128`](/fr/reference/data-types/int-uint) ou [`UUID`](/fr/reference/data-types/uuid) ou [`FixedString(16)`](/fr/reference/data-types/fixedstring)
+* `id` — Identifiant d’une série temporelle. Peut être de tout type comparable. Les lignes dont les identifiants sont NULL sont ignorées. [`Any`](/fr/reference/data-types/index)
 * `tags_array` — Tableau de paires (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/fr/reference/data-types/array) ou [`NULL`](/fr/reference/syntax#null)
 * `separate_tag_name_i` — Le nom d’un tag. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
 * `separate_tag_value_i` — La valeur d’un tag. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable)
