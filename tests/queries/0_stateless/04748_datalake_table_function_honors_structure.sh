@@ -274,6 +274,14 @@ ${CH} --query_id="${QID_PRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}22/'
 QID_RGPRUNE="04748-rgprune-${CLICKHOUSE_DATABASE}"
 ${CH} --query_id="${QID_RGPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}24/', 'Parquet') WHERE id > 4 SETTINGS use_iceberg_partition_pruning = 0" > /dev/null
 
+# The declared type is what the arm above leaves untested: this one declares the evolved file's own
+# column as Nullable(Int64) over the metadata's Int64. Nullability cannot reorder the values a bound is
+# compared against, so the reader's row-group pruning has to survive a difference in it alone, and only
+# the counter says whether it did. The bound excludes the single group entirely, and manifest pruning is
+# off so the file reaches the reader rather than being discarded before it. Its own query id.
+QID_WRAPPRUNE="04748-wrapprune-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_WRAPPRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}23/', 'Parquet', 'id Nullable(Int64), data String, extra Nullable(String)') WHERE id < 5 SETTINGS use_iceberg_partition_pruning = 0" > /dev/null
+
 batch <<SQL
 SET allow_experimental_insert_into_iceberg = 1;
 SYSTEM FLUSH LOGS processors_profile_log;
@@ -292,6 +300,8 @@ SYSTEM FLUSH LOGS query_log;
 SELECT max(ProfileEvents['IcebergMinMaxIndexPrunedFiles']) > 0 FROM system.query_log WHERE query_id = '${QID_PRUNE}' AND type = 'QueryFinish';
 SELECT '-- iceberg: an undeclared read of a promoted column still prunes row groups';
 SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_RGPRUNE}' AND type = 'QueryFinish';
+SELECT '-- iceberg: a declaration differing only in nullability still prunes row groups';
+SELECT max(ProfileEvents['ParquetPrunedRowGroups']) > 0 FROM system.query_log WHERE query_id = '${QID_WRAPPRUNE}' AND type = 'QueryFinish';
 SELECT '-- iceberg cluster: a worker keeps declared columns that the metadata does not have';
 -- Keeping the key and keeping the columns are two separate decisions: clearing the key must not
 -- also discard the declared columns, or the snapshot would overwrite them and a column that exists
@@ -405,4 +415,4 @@ SELECT count(), sum(zzz) FROM s3('http://localhost:11111/test/${CLICKHOUSE_DATAB
 SELECT groupArray(zzz) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'zzz UInt64 DEFAULT 42'); -- { serverError INCORRECT_DATA }
 DROP TABLE IF EXISTS ice14;
 SQL
-rm -rf "${PAIMON}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18" "${ICE}20" "${ICE}21" "${ICE}22"
+rm -rf "${PAIMON}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18" "${ICE}20" "${ICE}21" "${ICE}22" "${ICE}23" "${ICE}24"

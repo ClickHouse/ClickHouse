@@ -67,6 +67,8 @@ Code: 10
 1
 -- iceberg: an undeclared read of a promoted column still prunes row groups
 1
+-- iceberg: a declaration differing only in nullability still prunes row groups
+1
 -- iceberg cluster: a worker keeps declared columns that the metadata does not have
 2	2	Nullable(String)
 -- iceberg cluster: a DEFAULT declared in the structure is not honored, on either branch

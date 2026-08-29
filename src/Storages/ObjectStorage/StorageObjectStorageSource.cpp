@@ -236,12 +236,12 @@ static bool readsIdentityPartitionColumn(
     return false;
 }
 
-/// True when `header` types a column some filter reads differently from the type that filter was
-/// planned on, so evaluating it against `header` would compare values of a type its plan does not
-/// state. A required input `header` does not name is left to whatever resolves it downstream.
+/// True when `header` types a column the row-level or PREWHERE filter reads differently from the type
+/// that filter was planned on, so evaluating it against `header` would compare values of a type its
+/// plan does not state. A required input `header` does not name is left to whatever resolves it
+/// downstream.
 static bool filtersReadRetypedColumns(
     const Block & header,
-    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
     const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info)
 {
@@ -256,24 +256,24 @@ static bool filtersReadRetypedColumns(
         return false;
     };
 
-    return (filter_actions_dag && any_retyped(*filter_actions_dag))
-        || (row_level_filter && any_retyped(row_level_filter->actions))
+    return (row_level_filter && any_retyped(row_level_filter->actions))
         || (prewhere_info && any_retyped(prewhere_info->prewhere_actions));
 }
 
-/// True when `dag` cannot be turned into pruning against this file's statistics. A bound is compared
-/// against the type the lake gives the column now (`current_types`), so one planned on another type
-/// can order values differently and discard data holding matching rows. A column the lake no longer
-/// types is unsafe only while the reader can still bind it, which is what `file_types` records; a name
-/// in neither reaches no statistics and so has no pruning to lose.
+/// True when `dag` cannot be turned into pruning against this file's statistics. A bound is compared against the type
+/// the lake gives the column now (`current_types`), so one planned on a type that orders values differently can discard
+/// data holding matching rows; nullability and low-cardinality do not reorder values, and only evaluation
+/// (`filtersReadRetypedColumns`) needs the exact planned type. A column the lake no longer types is unsafe only while
+/// the reader can still bind it, which is what `file_types` records; a name in neither has statistics to prune with.
 static bool filterCannotPruneAgainst(const Block & current_types, const Block & file_types, const ActionsDAG & dag)
 {
+    auto comparable_type = [](const DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
     for (const auto & required : dag.getRequiredColumns())
     {
         const auto & name = required.getNameInStorage();
         if (const auto * current = current_types.findByName(name))
         {
-            if (!current->type->equals(*required.getTypeInStorage()))
+            if (!comparable_type(current->type)->equals(*comparable_type(required.getTypeInStorage())))
                 return true;
         }
         else if (file_types.has(name))
@@ -1256,16 +1256,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// The two coincide for a file written under the current schema; where they do not, the
             /// transform's outputs carry the current types. The native ORC reader builds such pruning
             /// without supporting PREWHERE, so this does not test `format_supports_prewhere`.
-            Block current_lake_types = initial_header;
-            if (has_schema_transform)
+            bool pruning_dag_retyped = false;
+            if (schema_changed && format_filter_info->filter_actions_dag)
             {
                 Block transform_outputs;
-                for (const auto & column : schema_transformer->getResultColumns())
-                    transform_outputs.insertUnique({column.type->createColumn(), column.type, column.name});
-                current_lake_types = std::move(transform_outputs);
+                if (has_schema_transform)
+                    for (const auto & column : schema_transformer->getResultColumns())
+                        transform_outputs.insertUnique({column.type->createColumn(), column.type, column.name});
+                pruning_dag_retyped = filterCannotPruneAgainst(
+                    has_schema_transform ? transform_outputs : initial_header,
+                    initial_header,
+                    *format_filter_info->filter_actions_dag);
             }
-            const bool pruning_dag_retyped = schema_changed && format_filter_info->filter_actions_dag
-                && filterCannotPruneAgainst(current_lake_types, initial_header, *format_filter_info->filter_actions_dag);
 
             if (schema_changed)
             {
@@ -1290,7 +1292,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                             stripped_prewhere_info = format_filter_info->prewhere_info;
                     }
                     filter_inputs_retyped = format_supports_prewhere && !has_schema_transform
-                        && filtersReadRetypedColumns(initial_header, nullptr, row_level_filter, prewhere_info);
+                        && filtersReadRetypedColumns(initial_header, row_level_filter, prewhere_info);
                     if (filter_inputs_retyped)
                     {
                         if (format_filter_info->row_level_filter)
