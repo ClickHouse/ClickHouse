@@ -44,6 +44,14 @@ SELECT parseISO8601Duration('PT1HT1M'); -- { serverError BAD_ARGUMENTS }
 SELECT parseISO8601Duration('P1H'); -- { serverError BAD_ARGUMENTS }
 SELECT parseISO8601Duration('PT1D'); -- { serverError BAD_ARGUMENTS }
 
+-- ISO 8601 also allows a comma as the decimal separator, and RFC 3339 / XSD add signed durations.
+-- Neither is accepted: ClickHouse rejects comma decimals elsewhere, and a sign is not part of the
+-- core grammar.
+SELECT parseISO8601Duration('PT1,5S'); -- { serverError BAD_ARGUMENTS }
+SELECT parseISO8601Duration('P1,5D'); -- { serverError BAD_ARGUMENTS }
+SELECT parseISO8601Duration('-PT1S'); -- { serverError BAD_ARGUMENTS }
+SELECT parseISO8601Duration('+PT1S'); -- { serverError BAD_ARGUMENTS }
+
 -- Values that do not fit into Float64 are rejected rather than returned as infinity.
 -- A single component that overflows on its own:
 SELECT parseISO8601Duration(concat('PT', repeat('9', 309), 'S')); -- { serverError BAD_ARGUMENTS }

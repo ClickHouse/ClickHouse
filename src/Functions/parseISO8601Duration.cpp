@@ -236,11 +236,23 @@ introduced by `T`:
 - `M` - minutes, only after `T`
 - `S` - seconds, which may have a fractional part
 
-Designators must appear in the order above and each may appear at most once.
+Designators must appear in the order above and each may appear at most once. The week designator may
+be combined with the others, unlike in ISO 8601:2004 where it is exclusive.
 
 The year (`Y`) designator and the month (`M`) designator before `T` are rejected, because neither a
 year nor a month has a fixed length in seconds. Convert such durations against a reference date
 instead.
+
+A fractional part is accepted on any component, not only on the lowest-order one as ISO 8601
+requires, so `PT0.5H` is valid and returns 1800.
+
+Two forms that the standard and its extensions allow are not accepted:
+
+- a comma as the decimal separator, as in `PT1,5S` - use a full stop
+- a leading sign, as in `-PT1S`, which comes from RFC 3339 and XML Schema rather than the core grammar
+
+A value that does not fit into [Float64](/reference/data-types/float) is rejected rather than
+returned as infinity.
     )";
     FunctionDocumentation::Syntax syntax = "parseISO8601Duration(duration)";
     FunctionDocumentation::Arguments arguments = {
