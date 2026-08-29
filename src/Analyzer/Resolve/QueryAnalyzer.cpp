@@ -1269,6 +1269,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 scope,
                 identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */))
             {
+                scope.used_alias_names.insert(identifier_bind_part);
                 return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
             }
             return {};
@@ -1283,6 +1284,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 scope.scope_node->formatASTForErrorMessage());
         }
     }
+
+    /// Record that some identifier was actually resolved through this alias
+    /// (used by the check for multiple expressions with the same alias, see resolveQuery).
+    /// Tentative lookups that fall back to another resolution path return earlier and are not recorded.
+    if (alias_node)
+        scope.used_alias_names.insert(identifier_bind_part);
 
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
@@ -6372,6 +6379,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasQualify() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
 
+    /// The alias names of the top level projection nodes become the column names of the result.
+    /// They are collected before resolution: resolution can replace a projection node
+    /// with a folded constant that does not keep the alias.
+    std::unordered_set<std::string> projection_alias_names;
+    for (const auto & projection_node : query_node_typed.getProjection().getNodes())
+        if (projection_node->hasAlias())
+            projection_alias_names.insert(projection_node->getAlias());
+
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope.aliases);
 
@@ -6638,6 +6653,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * After scope nodes are resolved, we can compare node with duplicate alias with
       * node from scope alias table.
       */
+    /// Whether some alias with conflicting definitions was allowed because it is not used.
+    /// Only in that case can two different projection expressions end up with the same column name,
+    /// see the renaming of colliding projection columns below.
+    bool has_unused_duplicated_aliases = false;
+
     for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
     {
         auto node = node_with_duplicated_alias;
@@ -6651,6 +6671,21 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           */
         if (node_alias.empty())
             continue;
+
+        /** Conflicting expressions for an alias are an error only if the alias is actually used:
+          * either it was looked up to resolve some identifier, or it names a projection column
+          * (and therefore becomes a column name of the result). An alias can also just give a name
+          * to a nested expression without being referenced anywhere, e.g. a name of a tuple element in
+          * SELECT tuple(1 AS x), tuple(2 AS x)
+          * (see the setting enable_named_columns_in_function_tuple), and such queries are valid.
+          * If the alias is used, the check below is preserved: whichever expression a reference
+          * resolved to, conflicting definitions make the reference ambiguous.
+          */
+        if (!scope.used_alias_names.contains(node_alias) && !projection_alias_names.contains(node_alias))
+        {
+            has_unused_duplicated_aliases = true;
+            continue;
+        }
 
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
@@ -6766,6 +6801,71 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     for (auto & [_, node] : scope.aliases.alias_name_to_lambda_node)
         node->removeAlias();
+
+    /// Nested aliases can repeat between different projection expressions
+    /// (SELECT tuple(1 AS x), tuple(2 AS x) -- see the check for duplicated aliases above),
+    /// and the column name of an expression is built using the aliases of its subexpressions,
+    /// so different constant projection expressions can end up with the same column name.
+    /// Columns with identical names must have identical structure in a Block, so such columns
+    /// are renamed by appending a numeric suffix. The renaming applies only to a query that has
+    /// repeated aliases of nested expressions, and only to collisions between unequal constants,
+    /// so no previously working query changes its column names, and a collision that was an error
+    /// before (e.g. WITH 3 AS "1" SELECT 1, "1") still throws AMBIGUOUS_COLUMN_NAME.
+    /// Other collisions (e.g. same-named columns of joined tables) keep the historical behavior.
+    if (has_unused_duplicated_aliases)
+    {
+        const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+        if (projection_nodes.size() == projection_columns.size())
+        {
+            std::unordered_map<std::string, size_t> name_to_first_position;
+            std::unordered_set<std::string> projection_column_names;
+            for (const auto & projection_column : projection_columns)
+                projection_column_names.insert(projection_column.name);
+
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                auto [it, inserted] = name_to_first_position.emplace(projection_columns[i].name, i);
+                if (inserted)
+                    continue;
+
+                const auto & first_column = projection_columns[it->second];
+                const auto * first_constant = projection_nodes[it->second]->as<ConstantNode>();
+                const auto * current_constant = projection_nodes[i]->as<ConstantNode>();
+
+                bool need_rename = false;
+                if (first_constant && current_constant)
+                {
+                    need_rename = !projection_columns[i].type->equals(*first_column.type)
+                        || first_constant->getValue() != current_constant->getValue();
+                }
+                else if (projection_nodes[it->second]->getNodeType() != QueryTreeNodeType::COLUMN
+                    || projection_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
+                {
+                    /// Unequal non-constant expressions can also collide on the column name when the name
+                    /// is built from repeated element names, e.g. SELECT tuple(a AS x), tuple(b AS x).
+                    /// They can become constants of different values during planning (e.g. when the source
+                    /// columns are constant), and columns with identical names must have identical structure
+                    /// in a Block. Collisions between two plain columns (e.g. same-named columns of joined
+                    /// tables) keep the historical behavior and are not renamed.
+                    need_rename = !projection_nodes[it->second]->isEqual(
+                        *projection_nodes[i], IQueryTreeNode::CompareOptions{.compare_aliases = false});
+                }
+
+                if (!need_rename)
+                    continue;
+
+                size_t suffix = 1;
+                std::string new_name;
+                do
+                {
+                    new_name = fmt::format("{}_{}", projection_columns[i].name, suffix);
+                    ++suffix;
+                } while (!projection_column_names.emplace(new_name).second);
+
+                projection_columns[i].name = std::move(new_name);
+            }
+        }
+    }
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 }
