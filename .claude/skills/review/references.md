@@ -65,8 +65,11 @@ that reads another ClickHouse object:
   (`DatabaseCatalog::instance().getTable`), casts it to an expected engine, and reads its metadata
   to store a type name or a column type on the table-function object. Follow every helper it
   delegates to — a storage's `getConfiguration` is a common one — and note that a `typeid_cast`
-  helper such as `storagePtrToTimeSeries` throws a message naming the table and its engine. Anything
-  resolved here leaks before the check that a later entrypoint performs, so a check added only to
+  helper throws too: `storagePtrToTimeSeries` reports that the engine of the named table is not
+  `TimeSeries`, which discloses the table's existence and one negative fact about its engine without
+  naming the engine, where the `MergeTree` helpers print `got: {}` and name it outright. Both are
+  disclosures; grade them, but do not treat the weaker one as harmless. Anything resolved here leaks
+  before the check that a later entrypoint performs, so a check added only to
   `getActualTableStructure` or `read` does not cover it.
 - `ITableFunction::getActualTableStructure` — reached by `DESCRIBE table_function(...)`
   (`InterpreterDescribeQuery`), `CREATE TABLE ... AS table_function(...)`
