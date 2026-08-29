@@ -33,7 +33,7 @@ public:
     public:
         String label_name;
         String label_value;
-        MatcherType matcher_type{};
+        MatcherType matcher_type;
     };
 
     using MatcherList = std::vector<Matcher>;
@@ -57,8 +57,8 @@ public:
     class Node
     {
     public:
-        NodeType node_type{};
-        ResultType result_type{};          /// The data type this node with its children evaluates to.
+        NodeType node_type;
+        ResultType result_type;          /// The data type this node with its children evaluates to.
         std::vector<const Node *> children;  /// E.g. arguments for a function, matchers for selectors.
         const Node * parent = nullptr;
         Node() = default;
@@ -75,7 +75,7 @@ public:
     class Scalar : public Node
     {
     public:
-        ScalarType scalar{};
+        ScalarType scalar;
         Scalar() { node_type = NodeType::Scalar; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
@@ -112,7 +112,7 @@ public:
     class RangeSelector : public Node
     {
     public:
-        DurationType range{};
+        DurationType range;
         const InstantSelector * getInstantSelector() const { return &typeid_cast<const InstantSelector &>(*children.at(0)); }
         RangeSelector() { node_type = NodeType::RangeSelector; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
@@ -126,7 +126,7 @@ public:
     class Subquery : public Node
     {
     public:
-        DurationType range{};
+        DurationType range;
         std::optional<DurationType> step;
         const Node * getExpression() const { return children.at(0); }
         Subquery() { node_type = NodeType::Subquery; result_type = ResultType::RANGE_VECTOR; }
@@ -139,19 +139,13 @@ public:
     /// Represents a change of the evaluation time applied to an instant selector or a range selector or a subquery.
     /// Examples: <expression> offset 1d
     ///           <expression> @ 1609746000
-    ///           <expression> @ start()
-    ///           <expression> @ end()
-    ///           <expression> @ start() offset -1d
+    ///           <expression> @ 1609746000 offset -1d
     class Offset : public Node
     {
     public:
-        enum class AtModifier { None, Timestamp, Start, End };
-
-        AtModifier at_modifier = AtModifier::None;
         std::optional<TimestampType> at_timestamp;
         std::optional<DurationType> offset_value;
         const Node * getExpression() const { return children.at(0); }
-        bool hasAtModifier() const { return at_modifier != AtModifier::None; }
         Offset() { node_type = NodeType::Offset; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;

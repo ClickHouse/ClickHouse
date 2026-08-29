@@ -33,6 +33,7 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     , projection(projection_)
 {
     setInMemoryMetadata(*projection->metadata);
+    setVirtuals(MergeTreeData::createVirtuals(*parent_metadata));
 }
 
 void StorageFromMergeTreeProjection::read(
@@ -68,10 +69,6 @@ void StorageFromMergeTreeProjection::read(
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "Cannot enforce the row policy of table {} on projection `{}` without the analyzer",
                 parent_storage_id.getNameForLogs(), projection->name);
-
-        for (const auto & policy : row_policy_filter->policies)
-            if (context->hasQueryContext())
-                context->getQueryContext()->addUsedRowPolicy(policy->getFullName().toString());
 
         FilterDAGInfo filter_info;
         try

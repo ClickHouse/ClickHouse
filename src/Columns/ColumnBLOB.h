@@ -16,6 +16,7 @@
 #include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
+#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -30,7 +31,7 @@ extern const int LOGICAL_ERROR;
 /// Used to offload the (de)serialization and (de)compression of columns to the pipeline threads instead of TCPHandler and remote connection threads.
 /// Methods `toBLOB` and `fromBLOB` are used to convert between the original column and the BLOB representation.
 /// See `MarshallBlocksTransform`, `UnmarshallBlocksTransform`, and `SerializationDetached`.
-class ColumnBLOB final : public COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>
+class ColumnBLOB : public COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>
 {
 public:
     using BLOB = PODArray<char>;
@@ -59,15 +60,6 @@ private:
         chassert(wrapped_column);
     }
 
-    /// Empty receiving BLOB carrying only the nested template column; the BLOB bytes, row count and
-    /// from_blob_task are filled in later by SerializationDetached during deserialization.
-    explicit ColumnBLOB(ColumnPtr wrapped_column_)
-        : rows(0)
-        , wrapped_column(std::move(wrapped_column_))
-    {
-        chassert(wrapped_column);
-    }
-
     // Only needed to make compiler happy.
     [[noreturn]] ColumnBLOB(const ColumnBLOB & other)
         : COWHelper(other)
@@ -88,11 +80,6 @@ public:
 
     BLOB & getBLOB() { return blob; }
     const BLOB & getBLOB() const { return blob; }
-
-    /// Set after the raw BLOB is read so that `size()` reports the number of rows in the block.
-    void setRows(size_t rows_) { rows = rows_; }
-    /// Install the task that reconstructs the original column from the BLOB (used later by `convertFrom`).
-    void setFromBLOBTask(FromBLOB task) { from_blob_task = std::move(task); }
 
     const ColumnPtr & getWrappedColumn() const
     {
@@ -131,7 +118,7 @@ public:
     /// Decompresses and deserializes the blob into the source column.
     static ColumnPtr fromBLOB(
         const BLOB & blob,
-        MutableColumnPtr nested,
+        ColumnPtr nested,
         SerializationPtr nested_serialization,
         size_t rows,
         const FormatSettings * format_settings)
@@ -139,7 +126,7 @@ public:
         ReadBufferFromMemory rbuf(blob.data(), blob.size());
         CompressedReadBuffer decompressed_buffer(rbuf);
         chassert(nested->empty());
-        NativeReader::readData(*nested_serialization, *nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
+        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
         return nested;
     }
 
@@ -178,7 +165,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwInapplicable(); }
     void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
-    void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwInapplicable(); }
+    WeakHash32 getWeakHash32() const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
 
     ColumnPtr filter(const Filter &, ssize_t) const override { throwInapplicable(); }
@@ -206,7 +193,7 @@ public:
         throwInapplicable();
     }
     ColumnPtr replicate(const Offsets &) const override { throwInapplicable(); }
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const Selector &) const override { throwInapplicable(); }
+    MutableColumns scatter(size_t, const Selector &) const override { throwInapplicable(); }
     void gather(ColumnGathererStream &) override { throwInapplicable(); }
     void getExtremes(Field &, Field &, size_t, size_t) const override { throwInapplicable(); }
     size_t byteSizeAt(size_t) const override { throwInapplicable(); }
@@ -216,14 +203,15 @@ public:
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
     void takeExactDynamicStructureFrom(const IColumn &) override { throwInapplicable(); }
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwInapplicable(); }
+    void chooseDynamicStructureForMerge(const Columns &, std::optional<size_t>) override { throwInapplicable(); }
     void fixDynamicStructure() override { throwInapplicable(); }
 
 private:
     /// Compressed and serialized representation of the wrapped column.
     BLOB blob;
 
-    size_t rows;
+    /// Always set
+    const size_t rows;
     ColumnPtr wrapped_column;
 
     /// Set only in cast of "from" conversion

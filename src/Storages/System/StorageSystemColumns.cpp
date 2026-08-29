@@ -1,13 +1,10 @@
 #include <optional>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageAlias.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -35,7 +32,7 @@ namespace Setting
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -77,16 +74,7 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     });
 
     storage_metadata.setColumns(description);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageSystemColumns::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 
@@ -96,7 +84,7 @@ namespace
 }
 
 
-class ColumnsSource final : public ISource
+class ColumnsSource : public ISource
 {
 public:
     ColumnsSource(
@@ -106,14 +94,13 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context_)
+        ContextPtr context)
         : ISource(header_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , tables(std::move(tables_))
         , storages(std::move(storages_))
-        , context(std::move(context_))
         , client_info_interface(context->getClientInfo().interface)
         , total_tables(tables->size())
         , access(context->getAccess())
@@ -147,10 +134,9 @@ protected:
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
-            StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-            const auto * alias = storage->as<StorageAlias>();
 
             {
+                StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
 
                 if (table_lock == nullptr)
@@ -159,25 +145,13 @@ protected:
                     continue;
                 }
 
-                const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                auto metadata_snapshot = storage->tryGetInMemoryMetadataPtr().value_or(std::make_shared<StorageInMemoryMetadata>());
                 columns = metadata_snapshot->getColumns();
-
-                const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[21];
-                bool can_expose_any_column_metadata = !needs_column_metadata;
-                if (needs_column_metadata)
-                {
-                    for (const auto & column : columns)
-                    {
-                        if (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
-                        {
-                            can_expose_any_column_metadata = true;
-                            break;
-                        }
-                    }
-                }
+                if (auto hints = storage->tryGetSerializationHints())
+                    serialization_hints = std::move(*hints);
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
-                if (can_expose_any_column_metadata && (columns_mask[7] || columns_mask[8] || columns_mask[9]))
+                if (columns_mask[7] || columns_mask[8] || columns_mask[9])
                 {
                     if (auto sizes = storage->tryGetColumnSizes())
                         column_sizes = std::move(*sizes);
@@ -191,12 +165,6 @@ protected:
                     cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
                 if (columns_mask[14])
                     cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
-
-                if (can_expose_any_column_metadata && columns_mask[21])
-                {
-                    if (auto hints = storage->tryGetSerializationHints())
-                        serialization_hints = std::move(*hints);
-                }
             }
 
             /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
@@ -210,9 +178,6 @@ protected:
             {
                 ++position;
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
-                    continue;
-
-                if (alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
                     continue;
 
                 size_t src_index = 0;
@@ -376,7 +341,6 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
-    ContextPtr context;
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;
@@ -440,7 +404,7 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
-void StorageSystemColumns::readImpl(
+void StorageSystemColumns::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -569,6 +533,3 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemColumns) }

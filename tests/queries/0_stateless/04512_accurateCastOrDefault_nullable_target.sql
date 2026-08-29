@@ -33,9 +33,10 @@ SELECT accurateCastOrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'), 'Nul
 
 -- Targets with native NULL representations must use their own null carrier
 -- rather than being forced into an outer Nullable column.
-SELECT accurateCastOrDefault(42, 'Dynamic');
+-- Only `Variant` is checked here: accepting `Dynamic` and `LowCardinality(Nullable(...))`
+-- as an `accurateCastOrNull` target is a separate change that is not part of this branch,
+-- so on this branch these targets are still rejected by the cast resolver.
 SELECT accurateCastOrDefault(42, 'Variant(UInt8, String)');
-SELECT accurateCastOrDefault(42, 'LowCardinality(Nullable(UInt32))') SETTINGS allow_suspicious_low_cardinality_types = 1;
 
 -- `Dynamic` and `Variant` source NULLs are preserved for non-Nullable targets
 -- when `cast_keep_nullable` is enabled, just like physically Nullable sources.
@@ -47,9 +48,6 @@ SELECT toUInt32OrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'));
 SELECT toUInt32OrDefault(CAST(NULL, 'LowCardinality(Nullable(String))'));
 
 -- Native NULL carriers cannot be wrapped in an outer Nullable column.
-SELECT accurateCastOrDefault(NULL, 'Dynamic');
 SELECT accurateCastOrDefault(NULL, 'Variant(UInt8, String)');
-SELECT accurateCastOrDefault(CAST(NULL, 'LowCardinality(Nullable(String))'), 'LowCardinality(Nullable(UInt32))')
-    SETTINGS allow_suspicious_low_cardinality_types = 1;
 
 SET cast_keep_nullable = 0;

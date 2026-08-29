@@ -345,13 +345,6 @@ WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_,
     }
 }
 
-WorkloadEntityStorageBase::~WorkloadEntityStorageBase()
-{
-    /// The chain subscription must be dropped before members are destroyed: its handler reads
-    /// `log`, which is declared after `subscription` and would die first.
-    subscription.reset();
-}
-
 ASTPtr WorkloadEntityStorageBase::get(const String & entity_name) const
 {
     if (auto result = tryGet(entity_name))
@@ -444,21 +437,11 @@ bool WorkloadEntityStorageBase::storeEntity(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
             }
 
-            // Check the settings values and throw if something is wrong
-            WorkloadSettings validator;
-            validator.initFromChanges(workload->changes);
-        }
+            WorkloadSettings io_validator;
+            io_validator.initFromChanges(CostUnit::IOByte, workload->changes);
 
-        // Validate resource: cost unit cannot change via CREATE OR REPLACE — the scheduler
-        // hierarchy is built with unit-specific node types and would silently end up with the
-        // wrong scheduler/link type in release builds.
-        if (resource && old_entity)
-        {
-            auto * old_resource = typeid_cast<ASTCreateResourceQuery *>(old_entity.get());
-            if (old_resource && old_resource->unit != resource->unit)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cost unit of resource '{}' cannot be changed via CREATE OR REPLACE; drop and recreate the resource instead.",
-                    entity_name);
+            WorkloadSettings cpu_validator;
+            cpu_validator.initFromChanges(CostUnit::CPUNanosecond, workload->changes);
         }
 
         // Validate resource
@@ -480,11 +463,6 @@ bool WorkloadEntityStorageBase::storeEntity(
                 {
                     if (!query_resource.empty() && query_resource != resource->getResourceName())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for QUERY is not allowed. Current resource name: '{}'.", query_resource);
-                }
-                if (operation.mode == ResourceAccessMode::MemoryReservation)
-                {
-                    if (!memory_reservation_resource.empty() && memory_reservation_resource != resource->getResourceName())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for MEMORY RESERVATION is not allowed. Current resource name: '{}'.", memory_reservation_resource);
                 }
             }
         }
@@ -511,7 +489,7 @@ bool WorkloadEntityStorageBase::storeEntity(
 
                         // Validate that we could parse the settings for specific resource
                         WorkloadSettings validator;
-                        validator.initFromChanges(workload->changes, target);
+                        validator.initFromChanges(target_resource->unit, workload->changes, target);
                         break;
                     }
                 }
@@ -607,17 +585,12 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
         current_state = orderEntities(entities);
 
         std::lock_guard lock2{handlers->mutex};
-        handlers->list.push_back(std::make_shared<HandlerEntry>(handler));
+        handlers->list.push_back(handler);
         auto handler_it = std::prev(handlers->list.end());
-        result = [my_handlers = handlers, entry = *handler_it, handler_it]
+        result = [my_handlers = handlers, handler_it]
         {
-            {
-                std::lock_guard lock3{my_handlers->mutex};
-                my_handlers->list.erase(handler_it);
-            }
-
-            std::lock_guard exec_lock{entry->exec_mutex};
-            entry->unsubscribed = true;
+            std::lock_guard lock3{my_handlers->mutex};
+            my_handlers->list.erase(handler_it);
         };
     }
 
@@ -645,12 +618,6 @@ String WorkloadEntityStorageBase::getQueryResourceName()
     return query_resource;
 }
 
-String WorkloadEntityStorageBase::getMemoryReservationResourceName()
-{
-    std::lock_guard lock{mutex};
-    return memory_reservation_resource;
-}
-
 void WorkloadEntityStorageBase::unlockAndNotify(
     std::unique_lock<std::recursive_mutex> & lock,
     const std::vector<Event> & tx)
@@ -658,7 +625,7 @@ void WorkloadEntityStorageBase::unlockAndNotify(
     if (tx.empty())
         return;
 
-    std::vector<HandlerEntryPtr> current_handlers;
+    std::vector<OnChangedHandler> current_handlers;
     {
         std::lock_guard handlers_lock{handlers->mutex};
         boost::range::copy(handlers->list, std::back_inserter(current_handlers));
@@ -666,14 +633,11 @@ void WorkloadEntityStorageBase::unlockAndNotify(
 
     lock.unlock();
 
-    for (const auto & entry : current_handlers)
+    for (const auto & handler : current_handlers)
     {
         try
         {
-            std::lock_guard exec_lock{entry->exec_mutex};
-            if (entry->unsubscribed)
-                continue;
-            entry->handler(tx);
+            handler(tx);
         }
         catch (...)
         {
@@ -731,21 +695,6 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
         }
     }
 
-    // Reject cost-unit changes from config/Keeper refresh just like the SQL path does. The
-    // scheduler hierarchy is built per unit, so silently swapping units would leave classifiers
-    // handing back `ResourceLink`s for the wrong pointer field.
-    for (const auto & change : changes)
-    {
-        if (!change.before || !change.after)
-            continue;
-        auto * before_resource = typeid_cast<ASTCreateResourceQuery *>(change.before.get());
-        auto * after_resource = typeid_cast<ASTCreateResourceQuery *>(change.after.get());
-        if (before_resource && after_resource && before_resource->unit != after_resource->unit)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cost unit of resource '{}' cannot be changed; drop and recreate the resource instead.",
-                change.name);
-    }
-
     // Update local entities
     local_entities = std::move(local_new_entities);
 
@@ -780,33 +729,17 @@ void WorkloadEntityStorageBase::applyEvent(
         if (workload && !workload->hasParent())
             root_name = workload->getWorkloadName();
 
-        // Update resource names. First clear any role-name field that currently points to this
-        // resource: `CREATE OR REPLACE RESOURCE r (...)` may change `r`'s operation set, e.g.
-        // drop QUERY and add MEMORY RESERVATION. Without clearing, `query_resource` would still
-        // be "r" while `memory_reservation_resource` would also be "r" — leading to a
-        // `QuerySlot` or `MemoryReservation` receiving a `ResourceLink` for the wrong unit.
+        // Update resource names
         if (resource)
         {
-            const String & name = resource->getResourceName();
-            if (master_thread_resource == name)
-                master_thread_resource.clear();
-            if (worker_thread_resource == name)
-                worker_thread_resource.clear();
-            if (query_resource == name)
-                query_resource.clear();
-            if (memory_reservation_resource == name)
-                memory_reservation_resource.clear();
-
             for (const auto & operation : resource->operations)
             {
                 if (operation.mode == ResourceAccessMode::MasterThread)
-                    master_thread_resource = name;
+                    master_thread_resource = resource->getResourceName();
                 if (operation.mode == ResourceAccessMode::WorkerThread)
-                    worker_thread_resource = name;
+                    worker_thread_resource = resource->getResourceName();
                 if (operation.mode == ResourceAccessMode::Query)
-                    query_resource = name;
-                if (operation.mode == ResourceAccessMode::MemoryReservation)
-                    memory_reservation_resource = name;
+                    query_resource = resource->getResourceName();
             }
         }
 
@@ -838,9 +771,6 @@ void WorkloadEntityStorageBase::applyEvent(
 
         if (event.name == query_resource)
             query_resource.clear();
-
-        if (event.name == memory_reservation_resource)
-            memory_reservation_resource.clear();
 
         // Clean up references
         removeReferences(it->second);

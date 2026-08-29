@@ -1,3 +1,12 @@
+Expression (Projection)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromSystemNumbers
+Expression (Projection)
+  Limit (preliminary LIMIT)
+    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+      ReadFromRemote (Read from remote replica)
 Expression (Project names)
   Limit (preliminary LIMIT)
     Sorting (Sorting for ORDER BY)
