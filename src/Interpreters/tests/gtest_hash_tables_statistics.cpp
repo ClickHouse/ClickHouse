@@ -106,6 +106,42 @@ TEST(HashTablesStatistics, NoHintWhenPreallocationLimitIsTooSmall)
     EXPECT_FALSE(getSizeHint(params, /*tables_cnt=*/8).has_value());
 }
 
+TEST(HashTablesStatistics, NoHintWhenTheNormalizedSizeExceedsThePerTableLimit)
+{
+    /// The stored median fits into the per-table limit, but the normalized average does not.
+    const StatsCollectingParams params(
+        0xA6610F06ULL, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/10000, /*max_size_to_preallocate_=*/16'000'000);
+    record(params, /*sum_of_sizes=*/8'000'000, /*median_size=*/1000, /*tables_cnt=*/8);
+
+    EXPECT_FALSE(getSizeHint(params, /*tables_cnt=*/64).has_value());
+}
+
+TEST(HashTablesStatistics, SumOfSizesIsRescaledToCurrentTablesCount)
+{
+    const auto params = makeParams(0xA6610F07ULL);
+    record(params, /*sum_of_sizes=*/4'000'000, /*median_size=*/500'000, /*tables_cnt=*/8);
+
+    /// A single table of 500'000 entries is not worth starting two-level, even though the recorded run had 4'000'000 in total.
+    EXPECT_FALSE(getSizeHint(params, /*tables_cnt=*/1).has_value());
+
+    const auto hint = getSizeHint(params, /*tables_cnt=*/2);
+    ASSERT_TRUE(hint.has_value());
+    EXPECT_EQ(hint->sum_of_sizes, 1'000'000u);
+    EXPECT_EQ(hint->median_size, 500'000u);
+    EXPECT_EQ(hint->tables_cnt, 2u);
+}
+
+TEST(HashTablesStatistics, RecordingTheSameSizesWithAnotherTablesCountReplacesTheEntry)
+{
+    const auto params = makeParams(0xA6610F08ULL);
+    record(params, /*sum_of_sizes=*/8'000'000, /*median_size=*/1'000'000, /*tables_cnt=*/16);
+    record(params, /*sum_of_sizes=*/8'000'000, /*median_size=*/1'000'000, /*tables_cnt=*/8);
+
+    const auto hint = getSizeHint(params, /*tables_cnt=*/8);
+    ASSERT_TRUE(hint.has_value());
+    EXPECT_EQ(hint->sum_of_sizes, 8'000'000u);
+}
+
 TEST(HashTablesStatistics, NoHintForSmallAggregations)
 {
     const auto params = makeParams(0xA6610F04ULL);

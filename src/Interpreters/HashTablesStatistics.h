@@ -48,7 +48,8 @@ struct AggregationEntry
     bool shouldBeUpdated(const AggregationEntry & new_entry) const
     {
         return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
-            || median_size < new_entry.median_size || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
+            || median_size < new_entry.median_size || new_entry.tables_cnt != tables_cnt
+            || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
     }
 
     std::string dump() const
