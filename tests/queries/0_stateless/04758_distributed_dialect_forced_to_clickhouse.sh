@@ -37,11 +37,13 @@ ${CLICKHOUSE_CLIENT} --use_hedged_requests 0 --query "SELECT count() FROM remote
 echo -n 'select_hedged: '
 ${CLICKHOUSE_CLIENT} --use_hedged_requests 1 --query "SELECT count() FROM remote('127.0.0.{1,2}:${CLICKHOUSE_PORT_TCP}', currentDatabase(), 't_04758_dialect', '${user}')"
 
-# Assert the override actually reaches the shard, instead of the query merely happening to parse.
-echo -n 'dialect_on_shard_multiplexed: '
-${CLICKHOUSE_CLIENT} --use_hedged_requests 0 --prefer_localhost_replica 0 --query "SELECT getSetting('dialect') FROM remote('127.0.0.2:${CLICKHOUSE_PORT_TCP}', system, one, '${user}')"
-echo -n 'dialect_on_shard_hedged: '
-${CLICKHOUSE_CLIENT} --use_hedged_requests 1 --prefer_localhost_replica 0 --query "SELECT getSetting('dialect') FROM remote('127.0.0.2:${CLICKHOUSE_PORT_TCP}', system, one, '${user}')"
+# Positive control, so the cases above cannot pass vacuously: the very same user, asked directly rather
+# than as a shard, must have the server parse ClickHouse-SQL with the KQL parser and reject it. That
+# proves the profile is in effect, hence that the distributed cases above only pass because the
+# initiator forced `dialect` back. The error is expected, so it is captured - a test that leaks
+# anything on stderr fails.
+echo -n 'direct_query_as_that_user: '
+${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT 1" 2>&1 | grep -o -m1 "SYNTAX_ERROR"
 
 # Distributed INSERT goes through `RemoteInserter`.
 echo -n 'insert_remote: '
