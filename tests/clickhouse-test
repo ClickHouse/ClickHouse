@@ -6279,6 +6279,8 @@ ORDER BY (test_name, callee_offset)
                     print(" done")
                     break
                 print(". ", end="")
+                # Paces the probes; the zero-hung path breaks above.
+                sleep(1)
         except Exception as e:
             print(
                 colored(

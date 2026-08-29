@@ -41,6 +41,33 @@ def escape_tsv_info(text: str) -> str:
     )
 
 
+HUNG_CHECK_INFO_BUDGET = 32 * 1024
+
+
+def build_hung_check_info(hung_check_log: Path) -> str:
+    """Build the `info` cell of the `Hung check failed` row from `hung_check.log`.
+
+    Bounded, and read from the head: `clickhouse-test --hung-check` prints the
+    verdict and the longest-running queries first, so the head is the diagnostic
+    region. The whole log is uploaded as a CI artifact.
+    """
+    with open(hung_check_log, "rb") as f:
+        # The extra byte separates "exactly the budget" from "there was more".
+        chunk = f.read(HUNG_CHECK_INFO_BUDGET + 1)
+    log_text = chunk[:HUNG_CHECK_INFO_BUDGET].decode("utf-8", errors="replace")
+    if len(chunk) > HUNG_CHECK_INFO_BUDGET:
+        # Keep the trailing fragment: one hung query is one unescaped line of
+        # arbitrary length, so dropping a partial last line can erase the whole
+        # processlist.
+        log_text = (
+            "(truncated; see the hung_check.log artifact for the full output;"
+            " showing the first 32 KiB, whose last line may be cut)\n"
+            + log_text
+            + "\n..."
+        )
+    return log_text
+
+
 class RandomDisruptor:
     """Background thread that randomly kills queries, client processes and mutations, and
     briefly stops background operations such as merges, during stress tests.
@@ -1085,44 +1112,14 @@ def run_stress_test(args: argparse.Namespace) -> None:
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
 
-                # Embed a tail of the captured hung-check output in
-                # test_results.tsv so the processlist and thread stacktraces
-                # are visible in CIDB. The full log is also kept as a CI
-                # artifact (see process_results in stress_job.py), giving
-                # investigators access to the complete diagnostic output.
-                #
-                # Read only the last 32 KiB rather than the whole file: on
-                # deadlock failures `hung_check.log` can be very large (a
-                # full processlist plus a `gdb` backtrace for every server
-                # process), and the stress-test machine is already under
-                # memory pressure. The diagnostic content we need
-                # (`Found hung queries`, the processlist with stacktraces,
-                # the `gdb` backtraces) is printed at the end of the log,
-                # so the tail is exactly the relevant region.
+                # Embed part of the hung-check output in test_results.tsv so the
+                # verdict and the processlist are visible in CIDB. The whole log
+                # is also a CI artifact (process_results in stress_job.py).
                 info_field = ""
                 try:
-                    tail_bytes_size = 32 * 1024
-                    with open(hung_check_log, "rb") as f:
-                        f.seek(0, os.SEEK_END)
-                        size = f.tell()
-                        offset = max(0, size - tail_bytes_size)
-                        f.seek(offset)
-                        tail_bytes = f.read()
-                    log_text = tail_bytes.decode("utf-8", errors="replace")
-                    if offset > 0:
-                        # Drop the (likely partial) first line so the tail
-                        # always starts on a line boundary.
-                        nl = log_text.find("\n")
-                        if nl >= 0:
-                            log_text = log_text[nl + 1 :]
-                        log_text = (
-                            "(truncated; see hung_check.log artifact for"
-                            " the full output; showing last 32 KiB)\n...\n"
-                            + log_text
-                        )
                     # Escape so NUL, tab, and newline survive the TSV encoding,
                     # matching the decoder in read_test_results().
-                    info_field = escape_tsv_info(log_text)
+                    info_field = escape_tsv_info(build_hung_check_info(hung_check_log))
                 except OSError as ex:
                     logging.warning(
                         "Failed to read hung_check.log to embed in"
