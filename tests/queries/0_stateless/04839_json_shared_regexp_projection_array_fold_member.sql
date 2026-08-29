@@ -30,11 +30,14 @@ ALTER TABLE arrayfold_member_04839
     ADD PROJECTION p (SELECT id, arrayFold((acc, x) -> tupleElement(x, 'doc'), arr, seed) WHERE id > 0 ORDER BY id);
 ALTER TABLE arrayfold_member_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
 
--- `^oth_` must be absent: donating the whole `arr` would offer both tuple elements' rules, so its
--- absence is what shows the donor was the member the body reads.
+-- Print the type instead of counting one rule present and its sibling absent. Note what no oracle
+-- can prove here: arrayFold requires the accumulator's type to equal the lambda's return type, so
+-- `seed` has to carry `^tag_` as well, and it keeps donating that rule even if the `arr.doc` donor
+-- regresses to the whole `arr`. The member-qualified donor is pinned discriminatingly by the
+-- scalar-member case in 04839_json_shared_regexp_projection_arraymap_tuple.sql, which has no seed.
 SELECT
     'arrayFold donates the member the body reads',
-    countIf(position(type, '^tag_') > 0 AND position(type, '^oth_') = 0)
+    type
 FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='arrayfold_member_04839' AND column != 'id' AND active;
 
