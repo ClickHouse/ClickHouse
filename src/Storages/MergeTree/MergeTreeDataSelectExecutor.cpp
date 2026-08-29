@@ -1974,11 +1974,10 @@ bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
     if (!primary_key.column_names.empty())
     {
         bool skip_pk_analysis = !settings[Setting::use_primary_key];
-        auto key_condition_factory = [context, primary_key_column_names = primary_key.column_names, primary_key_expression = primary_key.expression, skip_pk_analysis]
-            (const ActionsDAG *, const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [context, metadata_snapshot, skip_pk_analysis](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, context, /*boolean_context=*/false);
-            return KeyCondition{wrapped, context, primary_key_column_names, primary_key_expression, /*single_point_=*/false, skip_pk_analysis};
+            return KeyCondition{wrapped, context, metadata_snapshot->getPrimaryKey(), /*single_point_=*/false, skip_pk_analysis};
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(
             filter_dag, std::move(key_condition_factory), metadata_snapshot, context, skip_constant_folding);
