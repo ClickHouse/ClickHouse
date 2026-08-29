@@ -1,3 +1,8 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: the pruning under test is delivered by `collectFiltersForAnalysis`, which only the
+-- analyzer runs, and the old analyzer rewrites a `GLOBAL IN` subquery into an external table that
+-- `ReadFromCluster` never sends to the replicas, so the replica fails to resolve it.
+
 -- A cluster read hands paths out to replicas through `getTaskIteratorExtension`, which prunes them
 -- with the `_path` / `_file` predicate. The initiator's plan for such a read stops at
 -- `WithMergeableState`, so there is no `Filter` step above `ReadFromCluster` to collect the `WHERE`
