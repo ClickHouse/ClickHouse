@@ -70,5 +70,9 @@ FROM numbers(8);
 
 SELECT count() FROM t_json_all_values_has_array_tokenizer WHERE has(data.tags, 'bug');
 SELECT count() FROM t_json_all_values_has_array_tokenizer WHERE has(data.tags, 'bug') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_all_values_has_array_tokenizer WHERE hasAnyTokens(data.tags, ['bug']);
+SELECT count() FROM t_json_all_values_has_array_tokenizer WHERE hasAnyTokens(data.tags, ['bug']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_all_values_has_array_tokenizer WHERE hasAllTokens(data.tags, ['bug']);
+SELECT count() FROM t_json_all_values_has_array_tokenizer WHERE hasAllTokens(data.tags, ['bug']) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_json_all_values_has_array_tokenizer;

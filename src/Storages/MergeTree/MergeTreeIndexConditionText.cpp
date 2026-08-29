@@ -1025,18 +1025,19 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+        const auto * key_dag = index_column_node.getDAGNode();
+
+        if (!key_dag)
+            return false;
+
+        const auto & key_type = key_dag->result_type;
+        if (is_special_text_index_function && WhichDataType(removeLowCardinalityAndNullable(key_type)).isArray())
+            return false;
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
         if (!is_special_text_index_function)
         {
-            const auto * key_dag = index_column_node.getDAGNode();
-
-            if (!key_dag)
-                return false;
-
-            const auto & key_type = key_dag->result_type;
-
             if ((function_name == "startsWith" || function_name == "endsWith")
                 && !WhichDataType(removeLowCardinalityAndNullable(key_type)).isStringOrFixedString())
                 return false;
