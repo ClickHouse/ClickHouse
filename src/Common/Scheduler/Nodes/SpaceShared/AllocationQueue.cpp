@@ -305,28 +305,35 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Select the eviction victim by (memory_eviction_score, fair_key, unique_id), highest first, but skip
-    // OTHER allocations that hold no memory (allocated == 0): the per-query `memory_eviction_score`
-    // (0 by default) is the primary key, then the largest `fair_key`. A never-admitted zero-byte allocation
+    // Choose the eviction victim among the running allocations.
+    //
+    // Skip never-admitted allocations other than the requester itself. A never-admitted allocation
     // (e.g. `reserve_memory = 0` before its first non-zero sync) frees nothing when killed and is removed
     // via the local path in `processActivation` that never propagates a decrease to the parent limit, so
-    // choosing a third party like that would leave the over-limit increase blocked; a high
-    // `memory_eviction_score` on such an allocation must not let it outrank one that actually holds the
-    // reservation. The killer itself is exempt from the skip so a zero-byte requester can still select
-    // itself and fail its own increase cleanly (the self-kill path handled by `AllocationLimit`). With the
-    // default score everywhere this is the largest-`fair_key` allocation, matching the previous behaviour.
+    // picking such a third party would leave the over-limit increase blocked forever. The requester is
+    // exempt so a never-admitted query can still select itself and fail its own increase cleanly (the
+    // self-kill path handled by `AllocationLimit`).
+    //
+    // Rank the remaining candidates by (holds memory, memory_eviction_score, fair_key, unique_id),
+    // highest first. Preferring an allocation that actually holds memory (`allocated > 0`) keeps an
+    // admitted allocation that shrank back to zero from being evicted while a real holder exists (killing
+    // it would free nothing), yet still lets such an allocation be the victim when it is the only
+    // candidate — so a lower-precedence workload holding only a shrunk allocation cannot block a
+    // higher-precedence one. Then `memory_eviction_score` (the per-query setting, 0 by default) decides,
+    // falling back to the largest `fair_key`; at the default score everywhere this is the largest holder,
+    // matching the previous behaviour.
     ResourceAllocation * victim_ptr = nullptr;
     for (ResourceAllocation & candidate : running_allocations)
     {
-        if (candidate.allocated <= 0 && &candidate != &killer.allocation)
+        if (!candidate.admitted && &candidate != &killer.allocation)
             continue;
         if (!victim_ptr
-            || std::tie(candidate.memory_eviction_score, candidate.fair_key, candidate.unique_id)
-             > std::tie(victim_ptr->memory_eviction_score, victim_ptr->fair_key, victim_ptr->unique_id))
+            || std::make_tuple(candidate.allocated > 0, candidate.memory_eviction_score, candidate.fair_key, candidate.unique_id)
+             > std::make_tuple(victim_ptr->allocated > 0, victim_ptr->memory_eviction_score, victim_ptr->fair_key, victim_ptr->unique_id))
             victim_ptr = &candidate;
     }
     if (!victim_ptr)
-        return nullptr; // No allocation is holding memory to reclaim in this queue.
+        return nullptr; // No admitted allocation to reclaim from in this queue.
     ResourceAllocation & victim = *victim_ptr;
 
     // If this is the least common ancestor of killer and victim - add details

@@ -749,3 +749,37 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreSkipsZeroByteVictim)
     killer.waitSynced();
     EXPECT_EQ(killer.size(), 3000);
 }
+
+
+/// An admitted allocation that grew and then shrank back to zero (still admitted, so still counted by the
+/// hierarchy) must not be evicted while an allocation that actually holds memory exists — killing it would
+/// free nothing — even if it carries the highest `memory_eviction_score`. The real holder is the victim.
+TEST(SchedulerSpaceShared, MemoryEvictionScorePrefersMemoryHolderOverShrunkZero)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    auto holder = std::make_unique<ManualAllocation>(queue, "holder", 8000, /* memory_eviction_score = */ 0);
+    // `shrunk` is admitted, then releases all of its memory: admitted == true but allocated == 0. Despite
+    // its higher score, evicting it would free nothing, so it must not be chosen over `holder`.
+    ManualAllocation shrunk(queue, "shrunk", 3000, /* memory_eviction_score = */ 100);
+    shrunk.decreaseAsync(3000);
+    shrunk.waitSynced();
+    ManualAllocation killer(queue, "killer", 1000, /* memory_eviction_score = */ 0);
+
+    killer.increaseAsync(2000); // 8000 + 3000 > 10000 -> triggers an eviction
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (holder->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(holder->killCount(), 1u) << "The memory holder must be evicted, not the shrunk zero-byte allocation";
+    EXPECT_EQ(shrunk.killCount(), 0u);
+    EXPECT_EQ(killer.killCount(), 0u);
+
+    holder.reset();
+    killer.waitSynced();
+    EXPECT_EQ(killer.size(), 3000);
+}
