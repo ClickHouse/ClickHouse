@@ -183,9 +183,9 @@ def test_legacy_names_mode_frees_the_key_labels(start_cluster):
     )
 
 
-def test_switching_back_revalidates_the_constant_labels(start_cluster):
-    """Switching the same node into the key-value form makes the constant label collide with the key label,
-    so the endpoint is rebuilt and the configuration is rejected instead of exposing two `disk` labels.
+def test_switching_back_rejects_the_reload_and_changes_nothing(start_cluster):
+    """Switching the same node into the key-value form would make the constant label collide with the key
+    label, so the whole reload is rejected before it takes effect, instead of exposing two `disk` labels.
     """
     node_legacy_names_labels.replace_in_config(
         "/etc/clickhouse-server/config.d/legacy_names.xml",
@@ -197,3 +197,34 @@ def test_switching_back_revalidates_the_constant_labels(start_cluster):
         QueryRuntimeException, match="Invalid Prometheus label name 'disk'"
     ):
         node_legacy_names_labels.query("SYSTEM RELOAD CONFIG")
+
+    # The rejected configuration is not installed: the published form, the exposed metrics and the
+    # reported setting value all stay as they were, and the endpoint keeps serving.
+    assert get_current_metrics(node_legacy_names_labels) == ("", "1")
+    assert (
+        node_legacy_names_labels.query(
+            "SELECT value FROM system.server_settings"
+            " WHERE name = 'asynchronous_metrics_key_values_mode'"
+        ).strip()
+        == "legacy_names"
+    )
+
+    node_legacy_names_labels.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    lines = fetch_prometheus_metrics(node_legacy_names_labels).split("\n")
+    assert any(
+        line.startswith(
+            f'ClickHouseAsyncMetrics_{LEGACY_NAME}{{disk="the_whole_node"}} '
+        )
+        for line in lines
+    )
+
+    # Removing the constant label makes the same switch acceptable again.
+    node_legacy_names_labels.replace_in_config(
+        "/etc/clickhouse-server/config.d/prometheus_with_labels.xml",
+        "<disk>the_whole_node</disk>",
+        "",
+    )
+    node_legacy_names_labels.query("SYSTEM RELOAD CONFIG")
+
+    assert get_current_metrics(node_legacy_names_labels) == ("1", "")
+    assert get_prometheus_metrics(node_legacy_names_labels) == (True, False)

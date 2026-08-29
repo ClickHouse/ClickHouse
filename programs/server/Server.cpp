@@ -140,6 +140,7 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/KeeperHTTPHandlerFactory.h>
@@ -1250,6 +1251,13 @@ void initializeAzureSDKLogger(
 #endif
 }
 
+}
+
+namespace
+{
+/// Defined next to `resolveHTTPHandlersKey` below, which it walks the `impl` chain with; declared here
+/// because the configuration reload callback of `Server::main` validates a configuration with it.
+Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config);
 }
 
 #if defined(SANITIZER)
@@ -2739,6 +2747,16 @@ try
                 validate_insert_deduplication_version(incoming_server_settings);
             }
 
+            /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
+            /// itself. `asynchronous_metrics_key_values_mode` takes part in this check, because it decides
+            /// whether the key of a key-value asynchronous metric is written as a label (`device="sda"`),
+            /// so the same set of constant labels can be unambiguous under one form and not under another.
+            /// Validate the incoming config BEFORE config().replace below, for the same reason as above:
+            /// the form is read from the live configuration on every update of the asynchronous metrics,
+            /// so validating afterwards would leave a rejected reload publishing the new form while the
+            /// endpoints keep serving with the labels of the old one.
+            validatePrometheusConstantLabels(*loaded_config, servedHTTPHandlersKeys(*loaded_config));
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
@@ -4113,6 +4131,31 @@ std::optional<String> resolveHTTPHandlersKey(const Poco::Util::AbstractConfigura
         if (!pset.insert(conf_name).second)
             return {};
     }
+}
+
+/// The `<http_handlers>`-style sections the HTTP listeners of a configuration serve: the default
+/// `http_handlers` for `http_port` and `https_port`, and the section each composable `http` endpoint
+/// references. A section no listener serves is left out, so that validating a configuration accepts
+/// exactly what starting the server with it would.
+Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config)
+{
+    std::unordered_set<String> keys;
+
+    if (config.has("http_port") || config.has("https_port"))
+        keys.insert("http_handlers");
+
+    if (config.has("protocols"))
+    {
+        Poco::Util::AbstractConfiguration::Keys protocols;
+        config.keys("protocols", protocols);
+        for (const auto & protocol : protocols)
+        {
+            if (auto handlers_key = resolveHTTPHandlersKey(config, "protocols." + protocol))
+                keys.insert(*handlers_key);
+        }
+    }
+
+    return {keys.begin(), keys.end()};
 }
 
 /// Whether a non-keeper `prometheus` endpoint (serving the global `prometheus` section)
