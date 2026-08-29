@@ -166,7 +166,7 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-Quando o servidor ClickHouse executa muitas consultas simultâneas com [múltiplas threads](/pt-BR/reference/settings/session-settings#max_threads) e todos os slots de CPU estão em uso, o estado de sobrecarga é atingido. Nesse estado, cada slot de CPU liberado é reatribuído à carga de trabalho apropriada de acordo com as políticas de agendamento. Para consultas que compartilham a mesma carga de trabalho, os slots são alocados usando round-robin. Para consultas em cargas de trabalho separadas, os slots são alocados de acordo com os pesos, prioridades e limites especificados para as cargas de trabalho.
+Quando o servidor ClickHouse executa muitas consultas simultâneas com [múltiplas threads](/pt-BR/reference/settings/session-settings/max-threads#max_threads) e todos os slots de CPU estão em uso, o estado de sobrecarga é atingido. Nesse estado, cada slot de CPU liberado é reatribuído à carga de trabalho apropriada de acordo com as políticas de agendamento. Para consultas que compartilham a mesma carga de trabalho, os slots são alocados usando round-robin. Para consultas em cargas de trabalho separadas, os slots são alocados de acordo com os pesos, prioridades e limites especificados para as cargas de trabalho.
 
 O tempo de CPU é consumido pelas threads quando elas não estão bloqueadas e executam tarefas intensivas em CPU. Para fins de agendamento, distinguem-se dois tipos de threads:
 
@@ -198,18 +198,18 @@ CREATE WORKLOAD ingestion IN production
 
 Este exemplo de configuração fornece pools independentes de slots de CPU para admin e produção. O pool de produção é compartilhado entre analytics e ingestão. Além disso, se o pool de produção estiver sobrecarregado, 9 em cada 10 slots liberados serão reatribuídos a consultas analíticas, se necessário. As consultas de ingestão receberão apenas 1 em cada 10 slots durante períodos de sobrecarga. Isso pode melhorar a latência das consultas voltadas ao usuário. Analytics tem seu próprio limite de 60 threads concorrentes, sempre deixando pelo menos 40 threads para dar suporte à ingestão. Quando não há sobrecarga, a ingestão pode usar todas as 100 threads.
 
-Para excluir uma consulta do agendamento de CPU, defina a configuração de consulta [use&#95;concurrency&#95;control](/pt-BR/reference/settings/session-settings#use_concurrency_control) como 0.
+Para excluir uma consulta do agendamento de CPU, defina a configuração de consulta [use&#95;concurrency&#95;control](/pt-BR/reference/settings/session-settings/use#use_concurrency_control) como 0.
 
 O agendamento de CPU ainda não é compatível com merges e mutações.
 
 Para fornecer alocações justas para as cargas de trabalho, é necessário realizar preempção e redução de escala durante a execução da consulta. A preempção é habilitada com a configuração de servidor `cpu_slot_preemption`. Se ela estiver habilitada, cada thread renova periodicamente seu slot de CPU (de acordo com a configuração de servidor `cpu_slot_quantum_ns`). Essa renovação pode bloquear a execução se a CPU estiver sobrecarregada. Quando a execução fica bloqueada por muito tempo (consulte a configuração de servidor `cpu_slot_preemption_timeout_ms`), a consulta reduz o número de threads em execução, que diminui dinamicamente. Observe que a distribuição justa de tempo de CPU é garantida entre cargas de trabalho, mas, entre consultas dentro da mesma carga de trabalho, isso pode falhar em alguns casos extremos.
 
 <Warning>
-  O agendamento de slots oferece uma forma de controlar a [concorrência de consultas](/pt-BR/reference/settings/session-settings#max_threads), mas não garante uma alocação justa do tempo de CPU, a menos que a configuração de servidor `cpu_slot_preemption` esteja definida como `true`; caso contrário, a justiça é fornecida com base no número de alocações de slots de CPU entre cargas de trabalho concorrentes. Isso não implica a mesma quantidade de segundos de CPU porque, sem preempção, um slot de CPU pode ser mantido indefinidamente. Uma thread adquire um slot no início e o libera quando o trabalho é concluído.
+  O agendamento de slots oferece uma forma de controlar a [concorrência de consultas](/pt-BR/reference/settings/session-settings/max-threads#max_threads), mas não garante uma alocação justa do tempo de CPU, a menos que a configuração de servidor `cpu_slot_preemption` esteja definida como `true`; caso contrário, a justiça é fornecida com base no número de alocações de slots de CPU entre cargas de trabalho concorrentes. Isso não implica a mesma quantidade de segundos de CPU porque, sem preempção, um slot de CPU pode ser mantido indefinidamente. Uma thread adquire um slot no início e o libera quando o trabalho é concluído.
 </Warning>
 
 <Note>
-  Definir um recurso de CPU desabilita o efeito das configurações [`concurrent_threads_soft_limit_num`](/pt-BR/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) e [`concurrent_threads_soft_limit_ratio_to_cores`](/pt-BR/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores). Em vez disso, a configuração de carga de trabalho `max_concurrent_threads` é usada para limitar o número de CPUs alocadas a uma carga de trabalho específica. Para obter o comportamento anterior, crie apenas o recurso WORKER THREAD, defina `max_concurrent_threads` para a carga de trabalho `all` com o mesmo valor de `concurrent_threads_soft_limit_num` e use a configuração de consulta `workload = "all"`. Essa configuração corresponde à configuração [`concurrent_threads_scheduler`](/pt-BR/reference/settings/server-settings/settings#concurrent_threads_scheduler) definida com o valor &quot;fair&#95;round&#95;robin&quot;.
+  Definir um recurso de CPU desabilita o efeito das configurações [`concurrent_threads_soft_limit_num`](/pt-BR/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) e [`concurrent_threads_soft_limit_ratio_to_cores`](/pt-BR/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores). Em vez disso, a configuração de carga de trabalho `max_concurrent_threads` é usada para limitar o número de CPUs alocadas a uma carga de trabalho específica. Para obter o comportamento anterior, crie apenas o recurso WORKER THREAD, defina `max_concurrent_threads` para a carga de trabalho `all` com o mesmo valor de `concurrent_threads_soft_limit_num` e use a configuração de consulta `workload = "all"`. Essa configuração corresponde à configuração [`concurrent_threads_scheduler`](/pt-BR/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) definida com o valor &quot;fair&#95;round&#95;robin&quot;.
 </Note>
 
 <div id="threads_vs_cpus">
@@ -295,7 +295,7 @@ stateDiagram-v2
 
 As alocações pendentes de uma carga de trabalho folha são aceitas de acordo com a ordem FIFO. Quando várias cargas de trabalho têm alocações pendentes, elas são aceitas de acordo com as configurações de precedência e peso. Cargas de trabalho com precedência mais alta são atendidas primeiro. Cargas de trabalho irmãs com a mesma precedência compartilham a memória de acordo com os pesos, de forma max-min justa, o que significa que a carga de trabalho com menor uso de memória normalizado (uso atual mais o aumento solicitado, dividido pelo peso) é atendida primeiro. A lógica inversa é aplicada durante a evicção. Quando é necessário liberar memória, as cargas de trabalho com menor precedência e maior uso de memória normalizado são removidas primeiro.
 
-Observe que recursos compartilhados no tempo usam prioridade, enquanto recursos compartilhados no espaço usam precedência. São configurações independentes e podem ter valores diferentes. Prioridade mais alta implica preempção não destrutiva (atraso ou throttling), enquanto precedência mais alta pode implicar evicção destrutiva (interrupção com erro). Uma carga de trabalho pode ter alta prioridade para o scheduling de CPU, mas a mesma precedência para reserva de memória, para evitar a remoção de outras cargas de trabalho e a perda do trabalho já realizado por elas.
+Observe que recursos compartilhados no tempo usam prioridade, enquanto recursos compartilhados no espaço usam precedência. São configurações independentes e podem ter valores diferentes. Prioridade mais alta implica preempção não destrutiva (atraso ou throttling), enquanto precedência mais alta pode implicar evicção destrutiva (interrupção com erro). Uma carga de trabalho pode ter alta prioridade para o agendamento de CPU, mas a mesma precedência para reserva de memória, para evitar a remoção de outras cargas de trabalho e a perda do trabalho já realizado por elas.
 
 Toda carga de trabalho com um limite `max_memory` garante que a memória total alocada em sua subárvore não exceda esse limite. Se uma alocação pendente ou crescente exceder o limite, o procedimento de evicção é iniciado para liberar memória. O procedimento de evicção seleciona uma vítima a ser interrompida. A carga de trabalho ancestral comum mais baixa entre quem provoca a remoção e a vítima impede a evicção nas seguintes situações:
 
@@ -305,7 +305,7 @@ Toda carga de trabalho com um limite `max_memory` garante que a memória total a
   Se a evicção for impedida ou não liberar memória suficiente, a nova alocação será bloqueada até que memória suficiente seja liberada. Essas regras permitem o enfileiramento de consultas em excesso com base na pressão de memória e fornecem uma maneira conveniente de evitar erros MEMORY&#95;LIMIT&#95;EXCEEDED.
 
 <Note>
-  Os limites da carga de trabalho são independentes de outras formas de limitar o consumo de memória, como a configuração de consulta [max&#95;memory&#95;usage](/pt-BR/reference/settings/session-settings#max_memory_usage). Eles podem ser usados em conjunto para obter melhor controle sobre o consumo de memória. É possível definir limites de memória independentes com base em usuários (não em cargas de trabalho). Isso é menos flexível e não oferece recursos como reserva de memória e enfileiramento de consultas pendentes. Consulte [Memory overcommit](/pt-BR/concepts/features/configuration/settings/memory-overcommit)
+  Os limites da carga de trabalho são independentes de outras formas de limitar o consumo de memória, como a configuração de consulta [max&#95;memory&#95;usage](/pt-BR/reference/settings/session-settings/max-memory-usage#max_memory_usage). Eles podem ser usados em conjunto para obter melhor controle sobre o consumo de memória. É possível definir limites de memória independentes com base em usuários (não em cargas de trabalho). Isso é menos flexível e não oferece recursos como reserva de memória e enfileiramento de consultas pendentes. Consulte [Memory overcommit](/pt-BR/concepts/features/configuration/settings/memory-overcommit)
 </Note>
 
 A configuração de carga de trabalho `max_waiting_queries` limita o número de alocações pendentes da carga de trabalho. Quando o limite é atingido, o servidor retorna o erro `SERVER_OVERLOADED`. Observe que `max_waiting_queries` não é herdado por cargas de trabalho filhas e só faz sentido para cargas de trabalho folha.
@@ -345,7 +345,7 @@ CREATE RESOURCE query (QUERY)
 CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
 ```
 
-A configuração de carga de trabalho `max_concurrent_queries` limita o número de consultas concorrentes que podem ser executadas simultaneamente para uma determinada carga de trabalho. Ela é análoga à configuração de consulta [`max_concurrent_queries_for_all_users`](/pt-BR/reference/settings/session-settings#max_concurrent_queries_for_all_users) e à configuração do servidor [max&#95;concurrent&#95;queries](/pt-BR/reference/settings/server-settings/settings#max_concurrent_queries). Consultas de async insert e algumas consultas específicas, como KILL, não são contabilizadas nesse limite.
+A configuração de carga de trabalho `max_concurrent_queries` limita o número de consultas concorrentes que podem ser executadas simultaneamente para uma determinada carga de trabalho. Ela é análoga à configuração de consulta [`max_concurrent_queries_for_all_users`](/pt-BR/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) e à configuração do servidor [max&#95;concurrent&#95;queries](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries). Consultas de async insert e algumas consultas específicas, como KILL, não são contabilizadas nesse limite.
 
 As configurações de carga de trabalho `max_queries_per_second` e `max_burst_queries` limitam o número de consultas da carga de trabalho usando um throttler de token bucket. Isso garante que, durante qualquer intervalo de tempo `T`, não mais que `max_queries_per_second * T + max_burst_queries` novas consultas iniciarão a execução.
 
@@ -508,12 +508,12 @@ Observe que as opções de configuração do servidor têm prioridade sobre a fo
 * [system.scheduler](/pt-BR/reference/system-tables/scheduler)
 * [system.workloads](/pt-BR/reference/system-tables/workloads)
 * [system.resources](/pt-BR/reference/system-tables/resources)
-* [merge&#95;workload](/pt-BR/reference/settings/merge-tree-settings#merge_workload) configuração do MergeTree
-* [merge&#95;workload](/pt-BR/reference/settings/server-settings/settings#merge_workload) configuração global do servidor
-* [mutation&#95;workload](/pt-BR/reference/settings/merge-tree-settings#mutation_workload) configuração do MergeTree
-* [mutation&#95;workload](/pt-BR/reference/settings/server-settings/settings#mutation_workload) configuração global do servidor
-* [workload&#95;path](/pt-BR/reference/settings/server-settings/settings#workload_path) configuração global do servidor
-* [workload&#95;zookeeper&#95;path](/pt-BR/reference/settings/server-settings/settings#workload_zookeeper_path) configuração global do servidor
-* [cpu&#95;slot&#95;preemption](/pt-BR/reference/settings/server-settings/settings#cpu_slot_preemption) configuração global do servidor
-* [cpu&#95;slot&#95;quantum&#95;ns](/pt-BR/reference/settings/server-settings/settings#cpu_slot_quantum_ns) configuração global do servidor
-* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/pt-BR/reference/settings/server-settings/settings#cpu_slot_preemption_timeout_ms) configuração global do servidor
+* [merge&#95;workload](/pt-BR/reference/settings/merge-tree-settings/merge#merge_workload) configuração do MergeTree
+* [merge&#95;workload](/pt-BR/reference/settings/server-settings/settings/merge#merge_workload) configuração global do servidor
+* [mutation&#95;workload](/pt-BR/reference/settings/merge-tree-settings/other#mutation_workload) configuração do MergeTree
+* [mutation&#95;workload](/pt-BR/reference/settings/server-settings/settings/other#mutation_workload) configuração global do servidor
+* [workload&#95;path](/pt-BR/reference/settings/server-settings/settings/workload#workload_path) configuração global do servidor
+* [workload&#95;zookeeper&#95;path](/pt-BR/reference/settings/server-settings/settings/workload#workload_zookeeper_path) configuração global do servidor
+* [cpu&#95;slot&#95;preemption](/pt-BR/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) configuração global do servidor
+* [cpu&#95;slot&#95;quantum&#95;ns](/pt-BR/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) configuração global do servidor
+* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/pt-BR/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) configuração global do servidor

@@ -761,8 +761,7 @@
         return `${formattedSeconds}.${formattedMilliseconds}`;
     }
 
-    // Human-readable file size, e.g. 1288490189 -> "1.2 GiB". Returns an empty
-    // string for an unknown size so that callers can just skip rendering it.
+    // e.g. 1288490189 -> "1.2 GiB"; empty string for an unknown size.
     function formatFileSize(sizeInBytes) {
         if (sizeInBytes === null || sizeInBytes === undefined) {
             return '';
@@ -778,8 +777,21 @@
             value /= 1024;
             unitIdx++;
         }
-        // Bytes are whole, everything else gets one decimal place.
         return `${unitIdx === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIdx]}`;
+    }
+
+    // Size of the linked file, reused from StorageUsage (uploaded_details is
+    // keyed by basename, which is the link's last path component). undefined if
+    // unknown, e.g. a link to another report.
+    function sizeForLink(link, storage_usage) {
+        const details = storage_usage && storage_usage.uploaded_details;
+        if (!details) return undefined;
+        let name = link.split('/').pop().split('?')[0];
+        try {
+            name = decodeURIComponent(name);
+        } catch (e) {
+        }
+        return details[name];
     }
 
     // Appends " (1.2 GiB)" to a file link element, if the size is known.
@@ -797,6 +809,7 @@
         const lowerStatus = status.toLowerCase();
         if (lowerStatus === 'xfail') return 'status-other';  // expected failure: gray (known, not alarming)
         if (lowerStatus === 'xpass') return 'status-fail';    // unexpected pass: red
+        if (lowerStatus === 'slower') return 'status-fail';    // perf regression: red, as shouldShowRow counts it
         if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
         if (lowerStatus.includes('fail')) return 'status-fail';
         if (lowerStatus.includes('pending')) return 'status-pending';
@@ -905,7 +918,7 @@
         statusContainer.appendChild(widget);
     }
 
-    function addFileLinksWidget(links, link_sizes = {}) {
+    function addFileLinksWidget(links, storage_usage = null) {
         if (!Array.isArray(links) || links.length === 0) return;
 
         const statusContainer = document.getElementById('status-container');
@@ -921,7 +934,7 @@
             fileLink.target = '_blank';
             fileLink.className = 'file-link';
             fileLink.textContent = link.includes(base_url) ? "Report" : link.split('/').pop();
-            appendFileSize(fileLink, (link_sizes || {})[link]);
+            appendFileSize(fileLink, sizeForLink(link, storage_usage));
 
             // Wrap each link in its own line for spacing
             const line = document.createElement('div');
@@ -2020,7 +2033,7 @@
                         statusEl.href = '#';
                         statusEl.addEventListener('click', (e) => {
                             e.preventDefault();
-                            toggleInfoRow(row, result.info, result.results, result.links, result.ext?.link_sizes);
+                            toggleInfoRow(row, result.info, result.results, result.links, result.ext?.storage_usage);
                         });
                     }
                     td.appendChild(statusEl);
@@ -2092,7 +2105,7 @@
 
             // unfold all for preview mode (nest_level = 0 in this case)
             if (nest_level === 0 && result.results.length > 0) {
-                toggleInfoRow(row, result.info, result.results, result.links, result.ext?.link_sizes);
+                toggleInfoRow(row, result.info, result.results, result.links, result.ext?.storage_usage);
             }
 
         });
@@ -2101,7 +2114,7 @@
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, sub_results = [], links = [], link_sizes = {}) {
+    function toggleInfoRow(row, infoText, sub_results = [], links = [], storage_usage = null) {
         let nextRow = row.nextElementSibling;
 
         // Check if the next row is already an "info" row
@@ -2153,7 +2166,7 @@
                     } else {
                         linkElement.textContent = "Report";
                     }
-                    appendFileSize(linkElement, (link_sizes || {})[link]);
+                    appendFileSize(linkElement, sizeForLink(link, storage_usage));
 
                     // Each link, with its size, on a new line
                     const line = document.createElement('div');
@@ -2475,7 +2488,7 @@
         let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
         addLabelsWidget(result.ext);
         if (nameParams.length > 1) {
-            addFileLinksWidget(result.links, result.ext?.link_sizes);
+            addFileLinksWidget(result.links, result.ext?.storage_usage);
             if (nameParams.length === 2) {
                 addStatisticsWidget(nameParams[1], result.duration * 1000)
             }
@@ -2589,10 +2602,8 @@
         const results = await Promise.all(fetchTasks);
 
         if (nameParams.length > 1) {
-            const { data, updated, status } = results[0]; // First request result
-            if (status === 403) {
-                return { error: 403, message: 'Report does not exist or expired' };
-            }
+            const { data, updated } = results[0]; // First request result
+            // A missing per-job report is not a missing report.
             if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
@@ -2665,18 +2676,11 @@
             // Rewrite links: replace origin+bucket prefix with proxy base URL.
             // privateBaseUrl is e.g. https://proxy/bucket-name, extract /bucket-name
             const bucketPath = new URL(privateBaseUrl).pathname;
-            const re = new RegExp('^https?://[^/]+' + bucketPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-            const rewriteLink = link => link.replace(re, privateBaseUrl);
             if (Array.isArray(copy.links)) {
-                copy.links = copy.links.map(rewriteLink);
-            }
-            // ext.link_sizes is keyed by link, so its keys need the same rewrite
-            if (copy.ext && copy.ext.link_sizes) {
-                const link_sizes = {};
-                Object.entries(copy.ext.link_sizes).forEach(([link, size]) => {
-                    link_sizes[rewriteLink(link)] = size;
+                copy.links = copy.links.map(link => {
+                    const re = new RegExp('^https?://[^/]+' + bucketPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                    return link.replace(re, privateBaseUrl);
                 });
-                copy.ext = Object.assign({}, copy.ext, {link_sizes});
             }
             return copy;
         });
@@ -2728,13 +2732,12 @@
                     // For single-level results, check json0 status
                     shouldContinue = ["running", "pending"].includes((runtimeCache?.json0?.status || '').toLowerCase());
                 } else if (nameParams?.length === 2) {
-                    // For two-level results, check json1 status (or json0 if json1 is null)
-                    if (runtimeCache?.json1) {
-                        shouldContinue = ["running", "pending"].includes((runtimeCache?.json1?.status || '').toLowerCase());
-                    } else {
-                        // If json1 is null, we might still be loading, so continue
-                        shouldContinue = true;
-                    }
+                    // For two-level results, check the status of the node actually rendered
+                    const target = runtimeCache?.json1 || getTargetResults(nameParams);
+                    // An unresolved target means nothing is loaded yet, so keep polling.
+                    shouldContinue = target
+                        ? ["running", "pending"].includes((target.status || '').toLowerCase())
+                        : true;
                 }
 
                 if (!shouldContinue) {

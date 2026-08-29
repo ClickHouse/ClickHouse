@@ -35,7 +35,8 @@ Remember it as `$REPO` and use it everywhere below instead of the literal `Click
 Fetch PR metadata using `gh` if available, otherwise use `WebFetch` on the GitHub API:
 
 ```bash
-gh pr view "$PR_NUMBER" --json number,title,body,headRefName,baseRefName,state,mergeable,mergeStateStatus,author,url,headRepository,headRepositoryOwner,statusCheckRollup,reviews,comments,reviewRequests
+GH_USER=$(gh api user --jq .login)
+gh pr view "$PR_NUMBER" --json number,title,body,headRefName,baseRefName,state,mergeable,mergeStateStatus,author,url,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,statusCheckRollup,reviews,comments,reviewRequests
 ```
 
 If `gh` is not available or not authenticated, use WebFetch to get the data. Append `?per_page=100` and follow the `Link` header for pagination (the `rel="next"` URL) to fetch all pages:
@@ -45,15 +46,36 @@ If `gh` is not available or not authenticated, use WebFetch to get the data. App
 
 Report the PR title, author, branch, and current state to the user.
 
+### 1a. Verify "already integrated" claims before closing
+
+Treat closing a PR as already integrated or obsolete as a high-confidence decision. Verify both of these independently against freshly fetched refs:
+
+1. **Historical ancestry:** Resolve and print the exact base and PR-head OIDs, then check the candidate commit in this direction only:
+   ```bash
+   HEAD_REMOTE=origin
+   if [ "$IS_CROSS_REPOSITORY" = "true" ]; then
+       HEAD_REMOTE="pr-$AUTHOR_LOGIN"
+       git remote add "$HEAD_REMOTE" "$FORK_URL" 2>/dev/null || git remote set-url "$HEAD_REMOTE" "$FORK_URL"
+   fi
+   git fetch origin "$BASE_BRANCH"
+   git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+   git rev-parse "origin/$BASE_BRANCH" "$HEAD_REMOTE/$HEAD_BRANCH"
+   git merge-base --is-ancestor "$CANDIDATE_COMMIT" "origin/$BASE_BRANCH"
+   ```
+   Derive `$IS_CROSS_REPOSITORY`, `$AUTHOR_LOGIN`, and `$FORK_URL` from the PR metadata as in step 2. Exit status `0` means the base contains the commit; any other status means it does not. Never check against `HEAD`, the PR branch, `--all`, or a worktree and describe that result as containment by the base branch. If this check is nonzero, do not claim the commit is in the base and do not close the PR as integrated.
+2. **Current effective state:** An ancestor commit may have been reverted or backed out later. Ancestry, `git branch --contains`, `git cherry`, and patch-equivalence results are historical evidence only; none proves that the change remains effective. Inspect all later base-branch commits touching the changed paths, search for explicit and manual reverts/backouts, compare the current base tree with the PR's intended effect, and run the reproducer or regression test against the current base when feasible. If the change was fully or partially reverted, count it as **not integrated**. If the current effect cannot be established confidently, leave the PR open for human review.
+
+Before posting a closure comment, state the fetched base OID and the evidence for both ancestry and the current effective state. Do not close from a remembered ref, a stale local branch, a matching subject, or a commit merely visible somewhere in the repository.
+
 ### 2. Check out the PR branch locally
 
 Determine whether the PR branch is in the main repository or in the author's fork.
 
 **If the branch is in the main repository (`ClickHouse/ClickHouse`):**
 ```bash
-git fetch origin "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "origin/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull origin "$HEAD_BRANCH"
+HEAD_REMOTE=origin
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
@@ -64,10 +86,39 @@ Derive the fork clone URL from the PR metadata (`headRepository.url` or `headRep
 REMOTE_NAME="pr-$AUTHOR_LOGIN"
 FORK_URL="https://github.com/$FORK_OWNER/$FORK_REPO.git"  # from headRepository in PR metadata
 git remote add "$REMOTE_NAME" "$FORK_URL" 2>/dev/null || git remote set-url "$REMOTE_NAME" "$FORK_URL"
-git fetch "$REMOTE_NAME" "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "$REMOTE_NAME/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull "$REMOTE_NAME" "$HEAD_BRANCH"
+HEAD_REMOTE="$REMOTE_NAME"
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
+
+Immediately after either checkout completes, discard any state left by an
+earlier PR before recording the immutable baseline. The automation uses a
+dedicated worker worktree, so it must never preserve staged, unstaged, or
+untracked files from a previous session. This is the only authoritative record
+of the PR surface that existed when the worker began:
+
+```bash
+git fetch origin "$BASE_BRANCH"
+git reset --hard "$HEAD_REMOTE/$HEAD_BRANCH"
+git clean -ffdx -e build/ -e tmp/continue-all-prs/
+test -z "$(git status --porcelain)"
+mkdir -p tmp
+PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
+rm -rf "$PR_BASELINE_DIR"
+mkdir -p "$PR_BASELINE_DIR"
+INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
+test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
+INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
+printf '%s\n%s\n' "$INITIAL_PR_HEAD" "$INITIAL_BASE_HEAD" > "$PR_BASELINE_DIR/state"
+git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
+git diff --stat "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/stat"
+git diff --binary "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/diff"
+```
+
+Do not modify, stage, or delete this artifact during the session. It must remain
+available through the push safety gate in step 7. The deterministic path and
+`state` file are required because each resumed worker turn starts a fresh shell
+process.
 
 ### 3. Resolve conflicts with the base branch (if any)
 
@@ -107,13 +158,34 @@ Resolving merge markers is not always enough. If the branch is long-stale, the m
 4. Only when a full rework is genuinely infeasible in this environment — e.g. a submodule points at a fork that cannot be fetched or built here — do the most you can (merge, resolve conflicts, rework whatever you can build), push it, and state plainly what could not be verified and what remains blocked (e.g. the submodule needs a ClickHouse-org fork).
 
 **A `CONFLICTING` PR must not be left unresolved whenever you can push.** Resolve the conflicts (steps above) and push:
-- For your own PRs / branches in the main repo, and for **fork PRs where `maintainerCanModify` is true**, push the resolved branch — to the fork's remote for fork PRs (step 7). A `contested`, `reserved`, `NA`, `dsgn`, or "superseded" note does **not** block the mechanical conflict resolution and push; it only reserves the final *design / merge* decision. Resolving conflicts means keeping the author's intended change merge-clean against current master — it does **not** require the PR's design to be correct (that stays the human's call).
-- **If you cannot push** — a fork with `maintainerCanModify=false`, or you otherwise lack permission — **supersede the PR**, provided the change is still wanted and is not obsolete, already fixed on master, already covered by another open PR, or design-rejected/contested. (In those excluded cases, report the state and leave the human decision; never open a duplicate of an existing superseding PR.) To supersede:
-  1. You already have the resolved + reworked branch in the worktree. Push it to the **main repo** (`origin`) under a new name (e.g. `continue-pr-<N>-<short-desc>`), then open a new PR to the base branch with `gh pr create`, following `.github/PULL_REQUEST_TEMPLATE.md`. State that it **supersedes** the original and add `Related: <original PR URL>` (and `Closes: <issue>` if the original targeted one).
-  2. **Credit the original author.** If they have signed the CLA, keep their original commits so their authorship is preserved in the history. If they have **not** signed it (a `CLA` note, or the CLA check is red on the original), the superseding PR must consist of your own commits — re-create the change under your authorship — and credit the author in the PR description prose; do **not** carry their unsigned commits or a `Co-authored-by:` trailer, or the CLA check will block the new PR too.
-  3. Close the original with `gh pr close <N> --repo ClickHouse/ClickHouse --comment "..."`: say it is superseded by the new PR (link it), that you could not push the resolution here because maintainer edits are disabled on the fork, and thank the author.
+- Determine pushability in this order:
+  1. A branch in the main repository (`isCrossRepository=false`) is directly pushable through `origin`. **Ignore `maintainerCanModify` for same-repository PRs**; GitHub can report it as false because the field describes maintainer access to a fork, not access to a branch in the base repository.
+  2. A fork owned by the authenticated `$GH_USER` (or a PR authored by `$GH_USER`) is directly pushable through that user's fork remote. **Ignore `maintainerCanModify` for the authenticated user's own fork PRs**; the owner can push regardless of whether base-repository maintainers are allowed to edit.
+  3. Only for a cross-repository fork owned by someone else, use `maintainerCanModify`: true means push to the fork remote; false means the branch is not pushable by the authenticated user.
+- For every pushable PR above, push the resolved branch — to `origin` for same-repository PRs and to the fork's remote for fork PRs (step 7). A `contested`, `reserved`, `NA`, `dsgn`, or "superseded" note does **not** block the mechanical conflict resolution and push; it only reserves the final *design / merge* decision. Resolving conflicts means keeping the author's intended change merge-clean against current master — it does **not** require the PR's design to be correct (that stays the human's call).
+- **If you cannot push** — specifically, another author's cross-repository fork with `maintainerCanModify=false`, or a push actually fails for lack of permission — **supersede the PR**, provided the change is still wanted and is not obsolete, already fixed on master, already covered by another open PR, or design-rejected/contested. (In those excluded cases, report the state and leave the human decision; never open a duplicate of an existing superseding PR.) To supersede:
+  1. Switch explicitly to supersede mode before creating the replacement target; do not reuse the original fork remote or branch name:
+     ```bash
+     PUSH_MODE=supersede
+     PUSH_REMOTE=origin
+     PUSH_BRANCH="continue-pr-${PR_NUMBER}-<short-desc>"
+     SUPERSEDE_REASON="maintainer edits are disabled on the original fork"
+     SUPERSEDE_REAUTHORED_UNSIGNED_CLA=false
+     git ls-remote --exit-code "$PUSH_REMOTE" "refs/heads/$PUSH_BRANCH" && exit 1 || true
+     ```
+     The branch name must be new. Never update, delete, or force-push an existing replacement branch.
+  2. **Credit the original author.** If they have signed the CLA, keep their original commits so their authorship is preserved in the history. If they have **not** signed it (a `CLA` note, or the CLA check is red on the original), create a new branch from the fetched base and re-create the intended change under your own authorship. Do not carry the original commits or a `Co-authored-by:` trailer, or the CLA check will block the new PR too:
+     ```bash
+     git checkout --detach "origin/$BASE_BRANCH"
+     git switch -c "$PUSH_BRANCH"
+     SUPERSEDE_REAUTHORED_UNSIGNED_CLA=true
+     # Re-create and test the intended change, then commit it under the current user.
+     ```
+     Record the reason for using supersede mode and whether the replacement is a re-authored unsigned-CLA change before passing the step-7 gate.
+  3. Push the replacement to the **main repo** (`origin`) under `$PUSH_BRANCH`, then open a new PR to the base branch with `gh pr create`, following `.github/PULL_REQUEST_TEMPLATE.md`. State that it **supersedes** the original and add `Related: <original PR URL>` (and `Closes: <issue>` if the original targeted one).
+  4. Close the original with `gh pr close <N> --repo "$REPO" --comment "..."`: say it is superseded by the new PR (link it), that you could not push the resolution here because maintainer edits are disabled on the fork, and thank the author.
   If the change is genuinely not worth superseding, resolve locally if useful and report the **specific** blocker (e.g. "resolved locally but the fork has maintainer edits disabled") — not a bare "needs attention".
-- Check push access up front with `gh pr view <n> --json maintainerCanModify,headRepositoryOwner,headRepository` so you know before starting whether a resolved branch can land or must be superseded.
+- Check push access up front with `gh api user --jq .login` and `gh pr view <n> --json author,isCrossRepository,maintainerCanModify,headRepositoryOwner,headRepository`. Never infer that a same-repository PR or the authenticated user's own PR is unpushable from `maintainerCanModify=false`.
 
 ### 4. Analyze CI status and fix failures
 
@@ -263,14 +335,70 @@ Report your assessment to the user.
 
 Determine where to push based on step 2:
 
+For an ordinary update, set `PUSH_MODE=update` and select the original PR target:
+
 **If the branch is in the main repository:**
 ```bash
-git push origin "$HEAD_BRANCH"
+PUSH_MODE=update
+PUSH_REMOTE=origin
+PUSH_BRANCH="$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
 ```bash
-git push "$REMOTE_NAME" "$HEAD_BRANCH"
+PUSH_MODE=update
+PUSH_REMOTE="$REMOTE_NAME"
+PUSH_BRANCH="$HEAD_BRANCH"
+```
+
+Before every commit and push, run this safety gate. It is a hard stop and overrides the general requirement to push:
+
+1. Restore and validate the recorded state before using it; resumed turns do not inherit shell variables:
+   ```bash
+   PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
+   mapfile -t BASELINE_STATE < "$PR_BASELINE_DIR/state"
+   test "${#BASELINE_STATE[@]}" = 2
+   INITIAL_PR_HEAD=${BASELINE_STATE[0]}
+   INITIAL_BASE_HEAD=${BASELINE_STATE[1]}
+   git cat-file -e "$INITIAL_PR_HEAD^{commit}"
+   git cat-file -e "$INITIAL_BASE_HEAD^{commit}"
+   if [ "$PUSH_MODE" = update ]; then
+       git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
+   elif [ "$PUSH_MODE" = supersede ]; then
+       test "$PUSH_REMOTE" = origin
+       test "$PUSH_BRANCH" != "$HEAD_BRANCH"
+       test -n "${SUPERSEDE_REASON:-}"
+       git ls-remote --exit-code "$PUSH_REMOTE" "refs/heads/$PUSH_BRANCH" && exit 1 || true
+       if [ "${SUPERSEDE_REAUTHORED_UNSIGNED_CLA:-false}" = true ]; then
+           ! git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
+       fi
+   else
+       echo "unknown push mode: $PUSH_MODE" >&2
+       exit 1
+   fi
+   ```
+   In `update` mode, preserve `INITIAL_PR_HEAD` as an ancestor: only add commits on top of the existing PR history. In `supersede` mode, publish only the new `$PUSH_BRANCH`; a re-authored unsigned-CLA replacement must not have `INITIAL_PR_HEAD` in its ancestry. In either mode, never rebase, reset a published branch onto another commit, amend published commits, delete a remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
+2. Stage only explicit paths with `git add <path>`. Never use `git add -A`, `git add .`, or `git commit -a` in this workflow. Before committing, inspect both `git diff --cached --name-status` and `git diff --cached --stat`. Every staged path must be explained by the requested fix or by a specific conflict resolution. Unstage unexpected paths and do not commit when the scope is unclear.
+3. Before pushing in `update` mode, fetch the remote PR branch again and require its current tip to be an ancestor of local `HEAD`:
+   ```bash
+   git fetch "$PUSH_REMOTE" "$PUSH_BRANCH"
+   REMOTE_HEAD=$(git rev-parse "$PUSH_REMOTE/$PUSH_BRANCH")
+   git merge-base --is-ancestor "$REMOTE_HEAD" HEAD
+   ```
+   If the check is nonzero, merge the remote branch normally or stop and report the lineage problem. Never replace its history. In `supersede` mode, require instead that `git ls-remote --exit-code "$PUSH_REMOTE" "refs/heads/$PUSH_BRANCH"` remains nonzero immediately before pushing: the target must still be a new branch.
+4. Inspect the complete proposed PR diff with `git diff --name-status "origin/$BASE_BRANCH"...HEAD` and `git diff --stat "origin/$BASE_BRANCH"...HEAD`, then compare both against the immutable checkout baseline:
+   ```bash
+   diff -u "$PR_BASELINE_DIR/name-status" <(git diff --name-status "origin/$BASE_BRANCH"...HEAD)
+   diff -u "$PR_BASELINE_DIR/stat" <(git diff --stat "origin/$BASE_BRANCH"...HEAD)
+   ```
+   Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
+
+The automation additionally installs a `pre-push` hook that rejects non-fast-forward updates and branch deletion for ordinary pushes. It is defense in depth: `--no-verify` bypasses Git hooks, so the explicit prohibition and safety gates above remain authoritative. Do not bypass it. A hook rejection is a safety failure to report, not an obstacle to work around.
+
+After the gate succeeds, push with:
+
+```bash
+git push "$PUSH_REMOTE" HEAD:"$PUSH_BRANCH"
 ```
 
 Always push once you have committed conflict resolutions or fixes — pushing is mandatory and must never be deferred or gated on a question. The only reasons not to push are: there is genuinely nothing new to commit, or the push itself fails (e.g. no permission on a fork), in which case report the error.

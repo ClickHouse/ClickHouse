@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Backups'
+sidebarTitle: 'Visão geral'
 slug: /cloud/features/backups
 title: 'Backups'
 keywords: ['backups', 'backups na nuvem', 'restauração']
@@ -47,7 +47,7 @@ Consulte [&quot;Revisar e restaurar backups&quot;](/pt-BR/products/cloud/guides/
 
 O ClickHouse Cloud permite configurar o agendamento dos seus backups para serviços dos tiers **Scale** e **Enterprise**. Os backups podem ser configurados nas dimensões a seguir, de acordo com as necessidades do seu negócio.
 
-* **Retenção**: O período, em dias, durante o qual cada backup será mantido. A retenção pode ser definida de no mínimo 1 dia até no máximo 30 dias, com vários valores intermediários à escolha.
+* **Retenção**: O período, em dias, durante o qual cada backup será mantido. A retenção pode ser definida de no mínimo 1 dia até no máximo 45 dias, com vários valores intermediários à escolha.
 * **Frequência**: A frequência permite definir o intervalo de tempo entre backups consecutivos. Por exemplo, uma frequência de &quot;a cada 12 horas&quot; significa que os backups terão um intervalo de 12 horas entre si. A frequência pode variar de &quot;a cada 6 horas&quot; a &quot;a cada 48 horas&quot;, com os seguintes incrementos em horas: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
 * **Horário de início**: O horário em que você deseja que os backups sejam agendados todos os dias. Especificar um horário de início implica que a &quot;Frequência&quot; do backup será, por padrão, de uma vez a cada 24 horas. O ClickHouse Cloud iniciará o backup dentro de uma hora do horário de início especificado.
 
