@@ -11,8 +11,15 @@
 # `polygonsIntersectCartesian`'s, accept a bare point there. `FunctionUserDefinedWasm` never
 # overrode the hook, so a UDF declared `(geom Point, rect Ring)` came back as
 # `NodeBboxStatus::NoInfo` and lost pruning on its indexed `rect` column for every query the runtime
-# accepts perfectly well. The hook is now answered from the declared representation, which also
-# covers a `Variant`/`Dynamic` constant, since the adaptors forward it.
+# accepts perfectly well. The hook is now answered from the declared representation.
+#
+# There is deliberately no `Dynamic`/`Variant` constant case here. Passing one makes the UDF's
+# result type `Dynamic` (`FunctionUserDefinedWasm` does not override
+# `getReturnTypeForDefaultImplementationForDynamic`), and the analyzer rejects a `Dynamic` `WHERE`
+# filter outright with `ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER` in `validateFilter`, so such a predicate
+# never reaches index analysis at all. That is a general WASM UDF limitation rather than anything
+# spatial. `FunctionVariantAdaptor`'s forwarding of these hooks is covered on `Variant` COLUMNS by
+# `05048_spatial_bbox_wasm_deferred_kind_closed.sh`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -67,15 +74,6 @@ WHERE explain LIKE '%Granules:%';
 
 SELECT count() FROM test_spatial_bbox_wasm_const_point
 WHERE wasm_point_in_rect_const((0., 0.), rect);
-
--- The same value behind a \`Dynamic\`, which the adaptor forwards to the same hook.
-SELECT 'dynamic point const', extract(explain, '(Parts:.*|Granules:.*)')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_wasm_const_point
-      WHERE wasm_point_in_rect_const(CAST((0., 0.), 'Tuple(Float64, Float64)')::Dynamic, rect))
-WHERE explain LIKE '%Granules:%';
-
-SELECT count() FROM test_spatial_bbox_wasm_const_point
-WHERE wasm_point_in_rect_const(CAST((0., 0.), 'Tuple(Float64, Float64)')::Dynamic, rect);
 
 DROP TABLE test_spatial_bbox_wasm_const_point;
 DROP FUNCTION wasm_point_in_rect_const;
