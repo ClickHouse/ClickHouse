@@ -475,7 +475,7 @@ private:
     /// in `system.mutations` (see getMutationsStatus()).
     mutable std::mutex mutation_initial_bytes_mutex;
     mutable std::unordered_map<String, MutationScopeInitialBytes> mutation_initial_bytes;
-    /// Counts denominators actually removed, so a reader can tell that its snapshot predates a drop.
+    /// Counts mutation removals, so a reader can tell that its snapshot predates one.
     mutable UInt64 mutation_initial_bytes_drops = 0;
     /// Called by the queue when a mutation is done or leaves it: a done mutation reports progress 1
     /// whatever the denominator was, so the bookkeeping goes at the transition, not on the next read.

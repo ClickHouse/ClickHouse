@@ -1414,20 +1414,32 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
         /// transactional mutation rewrites exactly the lower-version parts visible to its snapshot.
         const bool scope_is_block_ordered = entry.tid.isNonTransactional();
         size_t parts_to_do = 0;
+        bool has_uncommitted_part_in_scope = false;
         for (const auto & part : data_parts)
         {
             if (part->info.getDataVersion() >= static_cast<Int64>(mutation_version))
                 continue;
-            const bool in_scope = scope_is_block_ordered
-                ? (!part->version || part->version->getInfo().isCreated())
-                : (part->version && part->version->isVisible(entry.tid.start_csn, entry.tid));
-            if (in_scope)
+            const bool committed = !part->version || part->version->getInfo().isCreated();
+            if (scope_is_block_ordered)
+            {
+                /// Not countable work yet, but this mutation still has to rewrite it once the
+                /// transaction commits, so the entry must not be reported as having nothing left.
+                if (!committed)
+                {
+                    has_uncommitted_part_in_scope = true;
+                    continue;
+                }
                 ++parts_to_do;
+            }
+            else if (part->version && part->version->isVisible(entry.tid.start_csn, entry.tid))
+            {
+                ++parts_to_do;
+            }
         }
 
         const bool waiting_for_lower_block
             = scope_is_block_ordered && static_cast<Int64>(mutation_version) > lowest_uncommitted_insert_block;
-        if (parts_to_do > 0 || waiting_for_lower_block)
+        if (parts_to_do > 0 || waiting_for_lower_block || has_uncommitted_part_in_scope)
             result.emplace(entry.file_name, *entry.commands);
     }
     return result;
@@ -2409,10 +2421,12 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         if (entry.tid.isNonTransactional())
         {
             /// `max()` means nothing bounds completion - no uncommitted block and no part left -
-            /// so every ordinary entry is done. Otherwise the map is ordered by version, so once
-            /// one falls outside the bound, so does every later one.
+            /// so every ordinary entry is done. Otherwise the map is ordered by version, so once one
+            /// falls outside the bound so does every later one; the test is monotone, so skipping
+            /// rather than breaking costs nothing and still lets the transactional entries behind
+            /// this one reach the visibility check, which that bound does not decide.
             if (done_below != std::numeric_limits<Int64>::max() && static_cast<Int64>(mutation_version) > done_below)
-                break;
+                continue;
         }
         else
         {

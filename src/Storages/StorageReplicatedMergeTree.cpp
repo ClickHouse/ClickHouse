@@ -8612,8 +8612,10 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
 void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutation_id)
 {
     std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-    if (mutation_initial_bytes.erase(mutation_id))
-        ++mutation_initial_bytes_drops;
+    mutation_initial_bytes.erase(mutation_id);
+    /// Counted even when nothing was cached: a reader whose snapshot predates this call may not have
+    /// created the entry yet, and it must not create it afterwards either.
+    ++mutation_initial_bytes_drops;
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
