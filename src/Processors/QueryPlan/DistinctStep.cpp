@@ -25,6 +25,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+bool preliminaryDistinctIsUseful(size_t max_threads)
+{
+    return max_threads > 1;
+}
+
 static ITransformingStep::Traits getTraits(bool pre_distinct)
 {
     const bool preserves_number_of_streams = pre_distinct;
