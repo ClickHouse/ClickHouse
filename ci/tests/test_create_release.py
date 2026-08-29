@@ -1408,7 +1408,12 @@ def test_bump_resyncs_onto_advanced_branch_tip(tmp_path):
     # re-sync to that tip (`reset --hard FETCH_HEAD`) and rebuild there before
     # pushing, rather than pushing the stale start-of-run checkout.
     bump = step("--create-bump-version-pr")
-    assert "reset --hard FETCH_HEAD" in bump.stdout
+    # `Shell.run` logs the command through `textwrap.fill(width=80)`, so the
+    # verbose line is wrapped at a column that depends on the length of the temp
+    # `UserKnownHostsFile` path in `GIT_PREFIX` — short `/tmp` paths on the CI
+    # runners split `reset\n--hard FETCH_HEAD`, long macOS `/var/folders` paths do
+    # not. Collapse whitespace so the check does not hinge on the wrap position.
+    assert "reset --hard FETCH_HEAD" in " ".join(bump.stdout.split())
 
     def origin_show(path):
         return subprocess.run(
