@@ -1,0 +1,38 @@
+<test>
+  <settings>
+      <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+      <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+      <use_text_index_like_evaluation_by_dictionary_scan>1</use_text_index_like_evaluation_by_dictionary_scan>
+  </settings>
+
+  <create_query>
+    CREATE TABLE t_text_index_like_guards
+    (
+        s String,
+        INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha')
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+  </create_query>
+
+  <!-- `common` is in every row, `medium` groups a thousand rows each, `rare` is unique per row.
+       The guards key on that spread: only `common` and the `medium` prefix exceed the default
+       posting-rows budget. -->
+  <fill_query>INSERT INTO t_text_index_like_guards SELECT concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(2000000)</fill_query>
+  <fill_query>OPTIMIZE TABLE t_text_index_like_guards FINAL</fill_query>
+
+  <!-- The case the guards exist for: one token, 2M postings, and every granule matches, so the
+       posting read is paid in full and then prunes nothing. -->
+  <query>SELECT count() FROM t_text_index_like_guards WHERE s LIKE '%common%'</query>
+  <query>SELECT count() FROM t_text_index_like_guards WHERE s ILIKE '%COMMON%'</query>
+
+  <!-- Same overrun reached the other way: 1111 matched tokens of 1000 rows each. -->
+  <query>SELECT count() FROM t_text_index_like_guards WHERE s LIKE '%medium1%'</query>
+
+  <!-- Selective needles stay on the index; these catch a bypass that fires too eagerly and turns
+       an index hit into a full scan. -->
+  <query>SELECT count() FROM t_text_index_like_guards WHERE s LIKE '%rare1234567%'</query>
+  <query>SELECT count() FROM t_text_index_like_guards WHERE s LIKE '%nonexistent%'</query>
+
+  <drop_query>DROP TABLE IF EXISTS t_text_index_like_guards</drop_query>
+</test>
