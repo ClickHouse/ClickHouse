@@ -20,7 +20,6 @@ BUGFIX_VALIDATE_CHECK=0
 PREVIOUS_RELEASE_CONFIG=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
-WASM_ENGINE=""
 REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 
@@ -45,7 +44,6 @@ while [[ "$#" -gt 0 ]]; do
         --previous-release) PREVIOUS_RELEASE_CONFIG=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
-        --wasm-engine) WASM_ENGINE=$2 && shift ;;
         --remote-database-disk) REMOTE_DATABASE_DISK=1 ;;
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
@@ -566,12 +564,6 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
 fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
-
-if [ ! -z "$WASM_ENGINE" ]; then
-    # ensure that default entry exists and we correctly replace it
-    grep -q -F ">wasmtime<" $DEST_SERVER_PATH/config.d/wasm_udf.xml || exit 1
-    sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
-fi
 
 if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; then
     function remove_keeper_config()
