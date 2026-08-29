@@ -15,6 +15,8 @@ PAIMON="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_paimon"
 DELTA="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_delta"
 ICE="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_ice"
 NEST="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_nest"
+# Read-only committed fixture, shared like iceberg_sorted_order_test below.
+EQDEL="deletes_db/eq_deletes_table"
 mkdir -p "${USER_FILES_PATH}"
 cp -r "${CUR_DIR}/data_minio/paimon_no_partition" "${PAIMON}"
 cp -r "${CUR_DIR}/data_delta_lake/struct_column_mapping" "${DELTA}"
@@ -186,6 +188,16 @@ SELECT countIf(create_table_query LIKE '%DEFAULT 42%') FROM system.tables WHERE 
 -- the delete, and the declared-only column is still unknown.
 SELECT count() FROM ice19;
 SELECT zzz FROM ice19; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT '-- iceberg: a retyped filter column does not prune manifest entries by the metadata type';
+-- Two files, ids 0..3 and 10..13. Under the declared String every id is below '4'; under the lake
+-- Int64 only four are, so a manifest bound compared at the lake type drops the second file and the
+-- four rows it holds. Needs no deletes and no explicit PREWHERE, so the whole table is the oracle.
+CREATE TABLE ice22 (id Int64, data String) ENGINE = IcebergLocal('${ICE}22/', 'Parquet');
+INSERT INTO ice22 SELECT number, concat('r', toString(number)) FROM numbers(4);
+INSERT INTO ice22 SELECT number + 10, concat('r', toString(number + 10)) FROM numbers(4);
+SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}22/', 'Parquet', 'id String, data String') WHERE id < '4' ORDER BY id);
+-- Declaring the lake's own type instead is the pair, and it still prunes: four rows, not eight.
+SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}22/', 'Parquet', 'id Int64, data String') WHERE id < 4 ORDER BY id);
 SELECT '-- iceberg: a structure-bearing read does not keep the metadata sorting key';
 -- A sorted iceberg table: the metadata sorting key is resolved against the metadata schema, so it
 -- must not survive alongside a user-declared structure. An empty table counts as sorted, which is
@@ -228,6 +240,12 @@ QID_STRUCT="04748-struct-${CLICKHOUSE_DATABASE}"
 ${CH} --query_id="${QID_NOSTRUCT}" -q "SELECT id FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet') ORDER BY id SETTINGS optimize_read_in_order = 1" > /dev/null
 ${CH} --query_id="${QID_STRUCT}" -q "SELECT id FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='id Nullable(Int64)') ORDER BY id SETTINGS optimize_read_in_order = 1" > /dev/null
 
+# Withholding manifest pruning is invisible in the values, so the only oracle for keeping it is the
+# counter. This declaration differs from the metadata in nullability alone, which cannot reorder the
+# values a bound is compared against, so the second file must still be pruned. Its own query id.
+QID_PRUNE="04748-prune-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_PRUNE}" -q "SELECT count() FROM icebergLocal('${ICE}22/', 'Parquet', 'id Nullable(Int64), data String') WHERE id < 4" > /dev/null
+
 batch <<SQL
 SET allow_experimental_insert_into_iceberg = 1;
 SYSTEM FLUSH LOGS processors_profile_log;
@@ -241,6 +259,9 @@ SELECT countIf(name = 'PartialSortingTransform') FROM system.processors_profile_
 -- structure the user passed clears the key, so the worker has to sort.
 SELECT count() > 0 FROM system.processors_profile_log WHERE initial_query_id = '${QID_STRUCT}' AND query_id != initial_query_id;
 SELECT countIf(name = 'PartialSortingTransform') > 0 FROM system.processors_profile_log WHERE initial_query_id = '${QID_STRUCT}' AND query_id != initial_query_id;
+SELECT '-- iceberg: a declaration differing only in nullability still prunes manifest entries';
+SYSTEM FLUSH LOGS query_log;
+SELECT max(ProfileEvents['IcebergMinMaxIndexPrunedFiles']) > 0 FROM system.query_log WHERE query_id = '${QID_PRUNE}' AND type = 'QueryFinish';
 SELECT '-- iceberg cluster: a worker keeps declared columns that the metadata does not have';
 -- Keeping the key and keeping the columns are two separate decisions: clearing the key must not
 -- also discard the declared columns, or the snapshot would overwrite them and a column that exists
@@ -281,6 +302,20 @@ SELECT groupArray(id) FROM (SELECT id FROM icebergS3Cluster('test_cluster_two_sh
 -- Same table without a structure: still in its own correct order, so the arm above cannot pass
 -- merely because nothing was dispatched or the fixture is unsorted.
 SELECT groupArray(id) FROM (SELECT id FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='iceberg_sorted_order_test/', format='Parquet') ORDER BY id);
+SELECT '-- iceberg: a retyped filter column is read as declared where equality deletes are applied';
+-- The declared String puts 1000..1009 below '2' while the lake Int32 does not, so the two row sets are
+-- 92 and 2. WHERE, PREWHERE and a lake-typed oracle must all report 92; declaring the lake's own type
+-- instead is the pair that keeps 2, and the unfiltered arm shows the deletes are still applied. Ids
+-- reaching four digits are what separate the row sets, and no writer emits equality deletes, so the
+-- fixture is committed.
+SELECT countIf(toString(id) < '2') FROM icebergS3(s3_conn, filename='${EQDEL}');
+SELECT count() FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet', structure='id String, name String') WHERE id < '2';
+-- Returning only the other column is what lets the mover put this same WHERE into PREWHERE, so no
+-- explicit PREWHERE is needed to reach it; the mover is pinned because it is randomized off.
+SELECT count(name) FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet', structure='id String, name String') WHERE id < '2' SETTINGS parallel_replicas_for_cluster_engines = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SELECT count() FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet', structure='id String, name String') PREWHERE id < '2' SETTINGS parallel_replicas_for_cluster_engines = 0;
+SELECT count() FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet', structure='id Nullable(Int32), name Nullable(String)') PREWHERE id < 2 SETTINGS parallel_replicas_for_cluster_engines = 0;
+SELECT any(toTypeName(id)), count() FROM icebergS3(s3_conn, filename='${EQDEL}', format='Parquet', structure='id String, name String');
 SELECT '-- iceberg cluster: DESC and SELECT report the same declared type';
 DESC icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet', 'c0 LowCardinality(String)') ${DESCFMT};
 SELECT DISTINCT toTypeName(c0) FROM icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet', 'c0 LowCardinality(String)');
@@ -340,4 +375,4 @@ SELECT count(), sum(zzz) FROM s3('http://localhost:11111/test/${CLICKHOUSE_DATAB
 SELECT groupArray(zzz) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'zzz UInt64 DEFAULT 42'); -- { serverError INCORRECT_DATA }
 DROP TABLE IF EXISTS ice14;
 SQL
-rm -rf "${PAIMON}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18" "${ICE}20" "${ICE}21"
+rm -rf "${PAIMON}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18" "${ICE}20" "${ICE}21" "${ICE}22"

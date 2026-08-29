@@ -236,6 +236,31 @@ static bool readsIdentityPartitionColumn(
     return false;
 }
 
+/// True when `header` types a column some filter reads differently from the type that filter was
+/// planned on, so evaluating it against `header` would compare values of a type its plan does not
+/// state. A required input `header` does not name is left to whatever resolves it downstream.
+static bool filtersReadRetypedColumns(
+    const Block & header,
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info)
+{
+    auto any_retyped = [&](const ActionsDAG & dag)
+    {
+        for (const auto & required : dag.getRequiredColumns())
+        {
+            const auto * elem = header.findByName(required.getNameInStorage());
+            if (elem && !elem->type->equals(*required.getTypeInStorage()))
+                return true;
+        }
+        return false;
+    };
+
+    return (filter_actions_dag && any_retyped(*filter_actions_dag))
+        || (row_level_filter && any_retyped(row_level_filter->actions))
+        || (prewhere_info && any_retyped(prewhere_info->prewhere_actions));
+}
+
 static ActionsDAG substituteIdentityPartitionColumns(
     const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
 {
@@ -1144,6 +1169,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
         PrewhereInfoPtr stripped_prewhere_info;
+        /// Set when a filter was stripped because the reader retypes an input of it, so the
+        /// conversion below must land on the exact type it was planned on.
+        bool filter_inputs_retyped = false;
 
         auto filter_info = [&]() -> FormatFilterInfoPtr
         {
@@ -1198,6 +1226,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 }
             }
 
+            const bool has_schema_transform
+                = schema_changed && configuration->getSchemaTransformer(context_, object_info) != nullptr;
+            /// Pruning built from this DAG compares against the reader's own types and runs before
+            /// anything downstream can correct them. The native ORC reader builds one without
+            /// supporting PREWHERE, so this does not test `format_supports_prewhere`.
+            const bool pruning_dag_retyped = schema_changed && !has_schema_transform
+                && filtersReadRetypedColumns(initial_header, format_filter_info->filter_actions_dag, nullptr, nullptr);
+
             if (schema_changed)
             {
                 if (auto mapper = configuration->getColumnMapperForObject(object_info))
@@ -1205,16 +1241,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// `schema_changed` is true for real schema evolution (a schema-id
                     /// mismatch: renamed / type-changed columns) AND for current-schema
                     /// files that merely carry equality deletes. Strip the reader-side
-                    /// filters ONLY for the former: there the old-schema mapper resolves
-                    /// field-ids to the file's OLD names while PREWHERE / row-level filter
-                    /// reference the CURRENT names, so in-reader evaluation matches nothing
-                    /// (re-applied as fallback FilterTransforms after the schema transform
-                    /// renames the columns below). For equality-delete-only files
-                    /// (getSchemaTransformer() == null, no rename) the mapper already yields
-                    /// the current names, so keep the filters in the reader to preserve
-                    /// Parquet row-group / page pruning.
-                    const bool has_schema_transform
-                        = configuration->getSchemaTransformer(context_, object_info) != nullptr;
+                    /// filters for the former: the old-schema mapper resolves field-ids to
+                    /// the file's OLD names while PREWHERE / row-level filter reference the
+                    /// CURRENT names, so in-reader evaluation matches nothing (re-applied as
+                    /// fallback FilterTransforms after the schema transform renames the
+                    /// columns below). For equality-delete-only files (no rename) the mapper
+                    /// already yields the current names, so the filters stay in the reader
+                    /// to preserve Parquet row-group / page pruning unless it emits a type
+                    /// they were not planned on.
                     if (format_supports_prewhere && has_schema_transform)
                     {
                         if (format_filter_info->row_level_filter)
@@ -1222,9 +1256,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         if (format_filter_info->prewhere_info)
                             stripped_prewhere_info = format_filter_info->prewhere_info;
                     }
-                    const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
+                    filter_inputs_retyped = format_supports_prewhere && !has_schema_transform
+                        && filtersReadRetypedColumns(initial_header, nullptr, row_level_filter, prewhere_info);
+                    if (filter_inputs_retyped)
+                    {
+                        if (format_filter_info->row_level_filter)
+                            stripped_row_level_filter = format_filter_info->row_level_filter;
+                        if (format_filter_info->prewhere_info)
+                            stripped_prewhere_info = format_filter_info->prewhere_info;
+                    }
+                    const bool keep_in_reader
+                        = format_supports_prewhere && !has_schema_transform && !filter_inputs_retyped;
                     auto result = std::make_shared<FormatFilterInfo>(
-                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        pruning_dag_retyped ? nullptr : format_filter_info->filter_actions_dag,
+                        format_filter_info->context.lock(),
                         mapper,
                         keep_in_reader ? row_level_filter : nullptr,
                         keep_in_reader ? prewhere_info : nullptr);
@@ -1240,7 +1285,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             if (!format_supports_prewhere)
                 return std::make_shared<FormatFilterInfo>(
-                    format_filter_info->filter_actions_dag,
+                    pruning_dag_retyped ? nullptr : format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
@@ -1499,10 +1544,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     continue;
                 const auto & type_in_block = header_after_transform.getByName(name_in_storage).type;
                 /// A schema may declare a column required that an older file of the same table wrote
-                /// as optional, so the target keeps the column's own nullability: dropping the null
-                /// map would fail on such a row instead of letting the filter decide it.
+                /// as optional, so the target keeps the column's own nullability: dropping the null map
+                /// would fail on such a row. That file is a schema-id mismatch, which the guard below
+                /// excludes, and there only the declaration can differ, so the plan's type is exact.
                 auto type_to_align_to = filter_input.getTypeInStorage();
-                if (isNullableOrLowCardinalityNullable(type_in_block))
+                if (!filter_inputs_retyped && isNullableOrLowCardinalityNullable(type_in_block))
                     type_to_align_to = makeNullableOrLowCardinalityNullableSafe(type_to_align_to);
                 if (type_in_block->equals(*type_to_align_to))
                     continue;
