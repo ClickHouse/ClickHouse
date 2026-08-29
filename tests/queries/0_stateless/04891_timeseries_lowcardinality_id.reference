@@ -1,3 +1,5 @@
+-- the default id type is dictionary-encoded
+Tuple(UInt64, LowCardinality(UUID))
 -- the default id generator dictionary-encodes the tags hash
 tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))
 -- the selector returns the id with the declared type

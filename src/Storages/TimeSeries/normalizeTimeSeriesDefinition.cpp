@@ -313,7 +313,8 @@ namespace
         if (!scalar_type)
             scalar_type = std::make_shared<DataTypeFloat64>();
         if (!id_type)
-            id_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUUID>()});
+            id_type = std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())});
 
         /// Validate types.
         {

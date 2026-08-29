@@ -15,7 +15,13 @@ DROP TABLE IF EXISTS ts_lc;
 DROP TABLE IF EXISTS ts_plain;
 DROP TABLE IF EXISTS ts_custom_gen;
 
-CREATE TABLE ts_lc ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, LowCardinality(UUID)));
+-- The dictionary-encoded layout is the default id type now.
+CREATE TABLE ts_lc ENGINE = TimeSeries;
+
+SELECT '-- the default id type is dictionary-encoded';
+
+SELECT type FROM system.columns
+WHERE database = currentDatabase() AND table LIKE '.inner_id.tags.%' AND name = 'id';
 
 SELECT '-- the default id generator dictionary-encodes the tags hash';
 
