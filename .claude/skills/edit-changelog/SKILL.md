@@ -311,10 +311,15 @@ Observed across releases:
   `deny-list`.
 - Expand a non-obvious abbreviation on first use: `DP JOIN reordering` →
   `DP (dynamic programming) JOIN reordering`.
-- `Clickhouse` → `ClickHouse` — any wrong capitalization. The CI style
-  check greps `CHANGELOG.md` for this and fails the build; 26.8 needed a
-  dedicated follow-up commit for one `Clickhouse`. Grep the final file for
-  `Clickhouse` / `Click house` / `clickHouse` before finishing.
+- Fix any wrong capitalization of the product name: the only accepted
+  spellings are `ClickHouse`, `clickhouse` and `CLICKHOUSE`. The CI style
+  check `clickhouse_spelling` greps `CHANGELOG.md` for the bad variants and
+  fails the build; 26.8 needed a dedicated follow-up commit for a single
+  one. Before finishing, run the same check over the final file:
+
+  ```bash
+  grep -niE 'click[ _-]?house' CHANGELOG.md | grep -vE 'ClickHouse|clickhouse|CLICKHOUSE'
+  ```
 - Homophone typos: `loose` → `lose`, and similar.
 - No spaces just inside parentheses: `( introduced in 26.7 )` →
   `(introduced in 26.7)`.
