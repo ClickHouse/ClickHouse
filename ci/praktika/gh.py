@@ -848,7 +848,7 @@ class GH:
                     f'"/repos/{repo}/issues/{pr}/comments" '
                     f"--jq '.[] | {{id: .id, body: .body}}' | grep -F {safe_substr}"
                 )
-                output = Shell.get_output(cmd_check_created)
+                output = cls.get_output_with_retries(cmd_check_created)
                 if output:
                     comment_ids = []
                     try:
@@ -923,7 +923,10 @@ class GH:
             f'"/repos/{repo}/issues/{pr}/comments" '
             f"--jq '[.[] | {{id: .id, body: .body}}]' --paginate"
         )
-        output = Shell.get_output(cmd_list, verbose=verbose)
+        # Idempotent read on the maintenance path: retry transient GitHub
+        # failures so a flake does not skip the delete step and post a duplicate
+        # tagged comment.
+        output = cls.get_output_with_retries(cmd_list, verbose=verbose)
         if output:
             try:
                 for comment in json.loads(output):
@@ -984,7 +987,9 @@ class GH:
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
             --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
-        output = Shell.get_output(cmd_check_created, verbose=verbose)
+        # Idempotent read: retry transient GitHub failures so a flake does not
+        # give up and leave a stale review/status comment in place.
+        output = cls.get_output_with_retries(cmd_check_created, verbose=verbose)
 
         if not output or not output.strip():
             print(

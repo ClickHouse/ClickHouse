@@ -41,6 +41,9 @@ class _Settings:
     ######################################
     MAX_RETRIES_S3 = 3
     MAX_RETRIES_GH = 3
+    # PR label that bypasses all job filtering (filter hooks, changed-file
+    # filtering and cache lookup) to force a full rerun of every job.
+    CI_FORCE_ALL_LABEL: str = "ci-force-all"
     # How many times the orchestrator retries its startup (AI advisor +
     # workflow plan build) on an infra error before giving up and finalizing
     # the check as failed. The job loop itself is never retried.
