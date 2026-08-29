@@ -8,7 +8,10 @@
 SET distributed_ddl_output_mode = 'none';
 SET distributed_ddl_entry_format_version = 1;
 SET use_legacy_to_time = 1;
-SET mutations_sync = 2;
+SET enable_lightweight_update = 1;
+-- The synchronous lowering: with entry format 1 the worker does not receive `mutations_sync`
+-- either, so an `ALTER`-lowered delete would race the count below.
+SET lightweight_delete_mode = 'lightweight_update_force';
 
 DROP TABLE IF EXISTS t_totime_lwu;
 

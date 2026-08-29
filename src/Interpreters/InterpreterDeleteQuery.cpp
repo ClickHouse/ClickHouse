@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/replaceLegacyToTime.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
@@ -69,8 +71,13 @@ BlockIO InterpreterDeleteQuery::execute()
 
     /// The spelling must be canonical before the query is enqueued for a Replicated database or
     /// lowered into an UPDATE / ALTER text: the replaying host may not carry this session's settings.
+    /// SQL UDF bodies are inlined first, so a `toTime` hidden in one is canonicalized too.
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+    {
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
         replaceLegacyToTime(*query_ptr);
+    }
 
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
