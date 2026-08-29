@@ -791,11 +791,12 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_vertical_recompress;"
 
-# The recompression TTL was rebuilt from the merged data rather than dropped, which is only
-# possible if its input column reached the TTL step. The merge algorithm itself is deliberately not
-# asserted: which one chooseMergeAlgorithm picks is not stable across CI build flavors, and the
-# horizontal path satisfies this case trivially. The vertical path is what makes the case fail
-# without the fix, and it is reproducible locally.
+# NOTE: this is a smoke check, not a regression for the vertical-merge fix. The horizontal path
+# always carried the MOVE/RECOMPRESS input columns, so it satisfies the assertion below without
+# exercising the change, and which algorithm chooseMergeAlgorithm picks here is not stable across
+# CI build flavors (pinning every one of its documented inputs at table level did not make it so).
+# The vertical path reproduces deterministically on a local server, where an unfixed build aborts
+# this merge with NOT_FOUND_COLUMN_IN_BLOCK.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT any(recompression_ttl_info.max[1]) > now()
     FROM system.parts
