@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
@@ -80,3 +81,36 @@ def test_connection_refused_through_multi_record_proxy_names_one_record(started_
     assert (
         f"{peer_ip}:1" in error or f"{node_ip}:1" in error
     ), f"expected a concrete proxy record in: {error}"
+
+
+def test_connect_timeout_names_the_dialled_address(started_cluster):
+    # The other cases here are refusals, which arrive as an immediate RST. This one covers the
+    # deferred branch: the peer never answers, the kernel gives up on its own, and the socket is
+    # left holding SO_ERROR = ETIMEDOUT.
+    #
+    # That code is the one entry in Poco's `SocketImpl::error` switch that throws without its `arg`,
+    # so before the translation the client reported a bare "Timeout" naming nothing at all -- the
+    # address in the message came only from the connection description appended afterwards. The
+    # assertion below is on "connect timed out", which is what distinguishes the two: the address
+    # alone would pass either way.
+    peer_ip = cluster.get_instance_ip("peer")
+
+    # The default six SYN retries take over two minutes to give up. One is a few seconds, and the
+    # kernel has to lose this race for the deferred branch to be the one that reports: the client
+    # timeout below is deliberately far longer, or Poco's own poll deadline reports instead.
+    node.exec_in_container(
+        ["sysctl", "-w", "net.ipv4.tcp_syn_retries=1"],
+        privileged=True,
+        user="root",
+    )
+
+    with PartitionManager() as pm:
+        # DROP rather than REJECT: a rejection would arrive as an RST and take the refused path.
+        pm.partition_instances(node, peer, port=9000)
+        error = node.query_and_get_error(
+            f"SELECT * FROM remote('{peer_ip}:9000', system, one) "
+            "SETTINGS connect_timeout_with_failover_ms = 60000, connections_with_failover_max_tries = 1"
+        )
+
+    assert "connect timed out" in error, f"expected the deferred-timeout text in: {error}"
+    assert f"{peer_ip}:9000" in error, f"expected the dialled address in: {error}"
