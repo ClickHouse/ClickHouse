@@ -57,6 +57,7 @@ bool ParserTrinoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     const char * statement_end = begin;
     size_t depth = 0;
     bool is_insert = false;
+    bool insert_has_select = false;
     bool delegate_to_standard_parser = false;
 
     while (pos.isValid() && !(pos->type == TokenType::Semicolon && depth == 0))
@@ -74,14 +75,34 @@ bool ParserTrinoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (tokens.empty())
             is_insert = tokenIsKeyword(token, "INSERT");
 
+        /// A top-level SELECT (or the WITH of its CTEs) means the statement is
+        /// INSERT ... SELECT: it has no inline-data tail, and its select list
+        /// may legitimately contain barewords such as the `format` function or
+        /// a column named `values`.
+        if (is_insert && depth == 0 && (tokenIsKeyword(token, "SELECT") || tokenIsKeyword(token, "WITH")))
+            insert_has_select = true;
+
         /// INSERT with inline data: the VALUES/FORMAT tail must not be translated
         /// (it can be arbitrary non-SQL data, and the parsed AST keeps zero-copy
         /// pointers into the original buffer), so the whole statement is
-        /// delegated to the standard parser.
-        if (is_insert && depth == 0 && (tokenIsKeyword(token, "VALUES") || tokenIsKeyword(token, "FORMAT")))
+        /// delegated to the standard parser. Only the real inline-data tail is
+        /// recognized: a top-level VALUES/FORMAT before any top-level SELECT,
+        /// where FORMAT must be followed by a bare format name (and not by the
+        /// opening parenthesis of a function call).
+        if (is_insert && depth == 0 && !insert_has_select)
         {
-            delegate_to_standard_parser = true;
-            break;
+            bool is_inline_data_tail = tokenIsKeyword(token, "VALUES");
+            if (!is_inline_data_tail && tokenIsKeyword(token, "FORMAT"))
+            {
+                Pos next = pos;
+                ++next;
+                is_inline_data_tail = next.isValid() && next->type == TokenType::BareWord;
+            }
+            if (is_inline_data_tail)
+            {
+                delegate_to_standard_parser = true;
+                break;
+            }
         }
 
         tokens.push_back(token);
