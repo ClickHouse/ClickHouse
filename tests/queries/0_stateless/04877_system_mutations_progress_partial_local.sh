@@ -41,7 +41,15 @@ echo "${partial_state:-FAIL: the local part never finished while the other was u
 # reading is taken with exactly the large part outstanding.
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_mut_partial_2"
 $CLICKHOUSE_CLIENT -q "SYSTEM START FETCHES t_mut_partial_2"
-$CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA t_mut_partial_2"
+
+# Wait for the part itself rather than for the queue: SYSTEM SYNC REPLICA also waits for the
+# mutation entry, which cannot execute while merges are stopped, so it would never return.
+for _ in {1..300}; do
+    if [[ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_mut_partial_2' AND active")" -ge 2 ]]; then
+        break
+    fi
+    sleep 0.3
+done
 
 # The finished small part keeps its share of the denominator, so progress is above zero even though
 # every byte still to do belongs to the part that just arrived.
