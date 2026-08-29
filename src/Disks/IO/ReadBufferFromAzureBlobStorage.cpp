@@ -17,6 +17,7 @@
 #include <base/sleep.h>
 
 #include <limits>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -423,6 +424,16 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureMicroseconds);
 
+    /// `supportsReadAt` allows a positioned read on a freshly constructed buffer, which has not
+    /// created `blob_client` yet: the member is only created by the sequential path and by
+    /// `tryGetFileSize`. Positioned reads also run concurrently on the same buffer, so the member
+    /// must not be created here either. Getting a blob client is a local operation, so a
+    /// call-local one is used whenever the shared one does not exist yet.
+    std::optional<AzureBlobStorage::BlobClient> local_blob_client;
+    if (!blob_client)
+        local_blob_client.emplace(blob_container_client->GetBlobClient(path));
+    const AzureBlobStorage::BlobClient & client = blob_client ? *blob_client : *local_blob_client;
+
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
         size_t bytes_copied = 0;
@@ -438,7 +449,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             download_options.Range = {static_cast<int64_t>(range_begin), n};
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
-            auto download_response = blob_client->Download(download_options, azure_context);
+            auto download_response = client.Download(download_options, azure_context);
             if (blob_storage_log)
             {
                 blob_storage_log->addEvent(

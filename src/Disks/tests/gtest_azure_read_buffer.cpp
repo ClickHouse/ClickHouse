@@ -45,7 +45,9 @@ private:
     size_t OnRead(uint8_t * buffer, size_t count, const Azure::Core::Context &) override
     {
         const size_t to_read = std::min(count, data.size() - position);
-        memcpy(buffer, data.data() + position, to_read);
+        /// `memcpy` must not be called with a null source, and an empty response has one.
+        if (to_read != 0)
+            memcpy(buffer, data.data() + position, to_read);
         position += to_read;
         return to_read;
     }
@@ -157,6 +159,26 @@ std::string readWithRightBound(
     std::string result;
     DB::readStringUntilEOF(result, buffer);
     return result;
+}
+
+/// A buffer over an endpoint that serves a blob of `blob_size` bytes, `max_response_size` bytes
+/// at a time, without any read having been performed on it yet.
+std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(size_t max_response_size, size_t blob_size)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
+        max_response_size, blob_size, blob_size, /* send_etag */ true);
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    return std::make_unique<DB::ReadBufferFromAzureBlobStorage>(
+        container_client,
+        "blob",
+        DB::ReadSettings{},
+        /* max_single_read_retries */ 1,
+        /* max_single_download_retries */ 1);
 }
 
 }
@@ -283,6 +305,22 @@ TEST(AzureReadUntilPosition, TruncatedBlob)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
     }
+}
+
+/// `supportsReadAt` promises that a positioned read may be performed on a buffer on which nothing
+/// has been read yet, so `readBigAt` must not depend on any state that only the sequential path or
+/// `tryGetFileSize` creates.
+TEST(AzureReadBigAt, OnFreshBuffer)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 100, /* blob_size */ 100);
+    ASSERT_TRUE(buffer->supportsReadAt());
+
+    std::string destination(16, '\0');
+    size_t bytes_read = 0;
+    ASSERT_NO_THROW(bytes_read = buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 0, {}));
+
+    ASSERT_EQ(bytes_read, destination.size());
+    assertCountsUpFromZero(destination);
 }
 
 /// The `ETag` response header is optional, and `Azure::ETag::ToString` aborts the process when the
