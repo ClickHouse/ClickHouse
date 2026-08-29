@@ -491,7 +491,6 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token >> 4;
 
         UInt8 * copy_end = nullptr;
-        size_t real_length = 0;
 
         /// It might be true fairly often for well-compressed columns.
         /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
@@ -526,18 +525,18 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         if (unlikely(copy_end > output_end))
             return false;
 
-        // Due to implementation specifics the copy length is always a multiple of copy_amount
-        real_length = 0;
-
-        static_assert(copy_amount == 8 || copy_amount == 16 || copy_amount == 32);
-        if constexpr (copy_amount == 8)
-            real_length = (((length >> 3) + 1) * 8);
-        else if constexpr (copy_amount == 16)
-            real_length = (((length >> 4) + 1) * 16);
-        else if constexpr (copy_amount == 32)
-            real_length = (((length >> 5) + 1) * 32);
-
-        if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
+        /// The literal has to be entirely inside the compressed payload.
+        ///
+        /// It is not enough to check that the copy stays within the `ADDITIONAL_BYTES_AT_END_OF_BUFFER`
+        /// slack reserved after the payload: that slack is uninitialized memory (`PODArray::resize` does
+        /// not zero it), so a crafted block declaring a literal longer than the bytes it actually carries
+        /// would copy uninitialized heap into the decompressed block and still report success. Only the
+        /// unconditional over-read of `wildCopyFromInput` may touch the slack - it exceeds the literal by
+        /// less than `copy_amount` bytes, which is always less than `ADDITIONAL_BYTES_AT_END_OF_BUFFER`,
+        /// and those bytes always land after `copy_end`, where they are either overwritten by the next
+        /// iteration or fall outside of `size_decompressed`.
+        static_assert(copy_amount <= ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+        if (unlikely(length > static_cast<size_t>(input_end - ip)))
             return false;
 
         wildCopyFromInput<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
