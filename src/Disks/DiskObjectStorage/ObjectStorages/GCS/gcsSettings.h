@@ -30,6 +30,11 @@ inline constexpr UInt64 DEFAULT_GCS_CONNECT_TIMEOUT_MS = 1000;
 inline constexpr UInt64 DEFAULT_GCS_REQUEST_TIMEOUT_MS = 30000;
 /// Same value as `S3::DEFAULT_MAX_CONNECTIONS`, repeated for the same reason.
 inline constexpr UInt64 DEFAULT_GCS_MAX_CONNECTIONS = 1024;
+/// How many times a failed request is retried before the error is reported. The SDK's own default is
+/// `LimitedTimeRetryPolicy(15 minutes)`, which sits *above* `request_timeout_ms` and does not observe
+/// query cancellation, so a transient failure could keep a cancelled query retrying for a quarter of
+/// an hour. A bounded number of attempts keeps the worst case a small multiple of the request timeout.
+inline constexpr UInt64 DEFAULT_GCS_RETRY_ATTEMPTS = 10;
 
 /// Parsed configuration of a native Google Cloud Storage object storage backend.
 ///
@@ -90,6 +95,9 @@ struct GCSObjectStorageSettings
     /// only pooled on release, so this bounds the retained ones rather than the concurrent ones —
     /// the same meaning `ConnectionPoolSizeOption` has for the upstream transports.
     UInt64 max_connections = DEFAULT_GCS_MAX_CONNECTIONS;
+    /// Upper bound on the retries of one request, from the `retry_attempts` key of a disk section.
+    /// 0 means "do not retry".
+    UInt64 retry_attempts = DEFAULT_GCS_RETRY_ATTEMPTS;
     /// Proxy of the requests, resolved per request. Set from the disk section (the old
     /// `<gcs><proxy>` format, then the server-wide `<proxy>` / the environment) exactly like the S3
     /// disk does. Left unset on the SQL surface: `getGCSClient` then resolves the server-wide

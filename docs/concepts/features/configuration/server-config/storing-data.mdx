@@ -567,6 +567,8 @@ SETTINGS disk = disk(
 | `connect_timeout_ms`        | Connection timeout, in milliseconds.                                                                                                                 | `1000`        |
 | `request_timeout_ms`        | Request (transfer stall) timeout, in milliseconds.                                                                                                   | `30000`       |
 | `list_object_keys_size`     | Maximum number of objects requested per listing page.                                                                                                | `1000`        |
+| `max_connections`           | Upper bound on the keep-alive connections retained per endpoint.                                                                                     | `1024`        |
+| `retry_attempts`            | How many times a failed request is retried before the error is reported. `0` disables retries.                                                       | `10`          |
 | `readonly`                  | Only allow reading from the disk.                                                                                                                    | `false`       |
 | `proxy`                     | Proxy configuration in the same format as for the `s3` disk type; the server-wide `<proxy>` section and proxy environment variables also apply.      | -             |
 

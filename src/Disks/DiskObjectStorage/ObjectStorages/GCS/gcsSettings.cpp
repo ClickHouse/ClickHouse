@@ -8,6 +8,7 @@
 #include <google/cloud/internal/rest_options.h>
 #include <google/cloud/options.h>
 #include <google/cloud/storage/options.h>
+#include <google/cloud/storage/retry_policy.h>
 
 #include <poco_rest_options.h>
 
@@ -28,6 +29,7 @@
 #include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/SocketPeerClosed.h>
 #include <Interpreters/Context.h>
 
 namespace gcs = ::google::cloud::storage;
@@ -279,6 +281,7 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.connect_timeout_ms = config.getUInt64(config_prefix + ".connect_timeout_ms", DEFAULT_GCS_CONNECT_TIMEOUT_MS);
     result.request_timeout_ms = config.getUInt64(config_prefix + ".request_timeout_ms", DEFAULT_GCS_REQUEST_TIMEOUT_MS);
     result.max_connections = config.getUInt64(config_prefix + ".max_connections", DEFAULT_GCS_MAX_CONNECTIONS);
+    result.retry_attempts = config.getUInt64(config_prefix + ".retry_attempts", DEFAULT_GCS_RETRY_ATTEMPTS);
 
     /// The same lookup order an S3 disk uses (`S3Settings::loadFromConfigForObjectStorage`): the
     /// disk-local `<proxy>` section first, then the server-wide `<proxy>` configuration, then the
@@ -334,6 +337,7 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         && connect_timeout_ms == other.connect_timeout_ms
         && request_timeout_ms == other.request_timeout_ms
         && max_connections == other.max_connections
+        && retry_attempts == other.retry_attempts
         /// Resolvers are compared by identity: two of them can hand out different proxies (and a
         /// remote one cannot be asked what it would answer without querying it), so only the very
         /// same resolver object is known to describe the same transport. The cost of the
@@ -498,6 +502,35 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     /// switching `use_native_gcs` on silently drop an operator's connection cap.
     if (settings.max_connections)
         options.set<gc::rest_internal::ConnectionPoolSizeOption>(static_cast<std::size_t>(settings.max_connections));
+
+    /// Bound the SDK's retry loop. It sits above the per-request timeouts set just above and does not
+    /// observe query cancellation, so its default -- `LimitedTimeRetryPolicy(15 minutes)` -- would let a
+    /// transient failure keep a cancelled query or a disk operation retrying long after the caller gave
+    /// up. A limited number of attempts with a capped exponential backoff keeps the worst case a small
+    /// multiple of `request_timeout_ms`, which is what ClickHouse expects of remote I/O.
+    options.set<gcs::RetryPolicyOption>(
+        gcs::LimitedErrorCountRetryPolicy(static_cast<int>(settings.retry_attempts)).clone());
+    options.set<gcs::BackoffPolicyOption>(
+        gcs::ExponentialBackoffPolicy(std::chrono::milliseconds(100), std::chrono::seconds(5), 2.0).clone());
+
+    /// Whether a pooled keep-alive session is still usable is decided by ClickHouse's own TLS-aware
+    /// probe, the one `HTTPConnectionPool` uses: a session that is merely `connected()` may already
+    /// carry an unsolicited response the peer queued before closing (a `408 Request Timeout`), or a
+    /// `close_notify`, and reusing it would fail the next request spuriously or make it parse leftover
+    /// bytes as its own response. The transport cannot call this itself -- it is a contrib translation
+    /// unit that must not depend on the ClickHouse libraries -- so the probe is handed to it here.
+    options.set<::ClickHouse::PocoRestSessionStaleCheckOption>(
+        [](Poco::Net::HTTPClientSession & session) -> bool
+        {
+            try
+            {
+                return getSocketState(session.socket()) != SocketState::Idle;
+            }
+            catch (const Poco::Exception &)
+            {
+                return true;
+            }
+        });
 
     /// A disk carries its own resolver (the disk section can override the server-wide proxy); the
     /// SQL surface does not, and resolves the server-wide configuration here, which is what an S3
