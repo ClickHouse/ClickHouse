@@ -689,7 +689,7 @@ void AllocationLimit::processActivation()
     {
         /// Nested graphs finish their own two-phase pass first. Their explicit completion wakes
         /// this node through notifyUnusedCapacityReclaimCompleted(); no timer or polling is needed.
-        if (child && child->hasUnusedCapacityReclaimPending())
+        if (!local_decrease && child && child->hasUnusedCapacityReclaimPending())
             return;
 
         /// Reconciliation may have removed the parked owner during phase one. End that episode
