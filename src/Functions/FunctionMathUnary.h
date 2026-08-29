@@ -138,10 +138,13 @@ private:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
+        /// Whole-column kernels may re-read the source after writing the destination, so the
+        /// converted values cannot be computed in place in `dst_data`.
+        PODArray<ReturnType> converted(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
-            dst_data[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
+            converted[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
 
-        executeInIterations(dst_data.data(), dst_data.data(), input_rows_count);
+        executeInIterations(converted.data(), dst_data.data(), input_rows_count);
 
         return dst;
     }
@@ -210,11 +213,13 @@ struct VectorizedFloat64Impl
         }
         else
         {
-            /// The kernels operate on Float64 in place; promote the input first. Integer inputs
-            /// already arrive as Float64, so this only runs for Float32/BFloat16 columns.
+            /// Integer inputs already arrive as Float64, so this only runs for Float32/BFloat16 columns.
+            /// The kernels may re-read `src` after writing `dst` (e.g. the `libm` fallback in `FastTrig`),
+            /// so the promoted values must live in a buffer separate from `dst`.
+            PODArray<Float64> promoted(size);
             for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<Float64>(src[i]);
-            Kernel(dst, size, dst);
+                promoted[i] = static_cast<Float64>(src[i]);
+            Kernel(promoted.data(), size, dst);
         }
     }
 };
