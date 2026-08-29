@@ -191,14 +191,14 @@ namespace DB
             const auto & time_zone = DateLUT::instance("");
             const auto & utc_time_zone = DateLUT::instance("UTC");
 
-            /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a year
-            /// field of `0` means "not specified", so it is silently replaced with the current (or
-            /// previous) year instead of being kept as-is - see the `!year` fallback in
-            /// `parseDateTimeBestEffortImpl` (src/IO/parseDateTimeBestEffort.cpp). The bound check below
-            /// would then pass on a deadline the caller never asked for - a live one, years in the future
-            /// of the intended point in time. This concerns every spelling of a zero year the parser
-            /// accepts (`0000-01-01`, `01/01/0000`, `00000101`, ...), so it is detected by the parser
-            /// itself rather than by inspecting the string here.
+            /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`:
+            /// when `has_year && year == 0`, it sets `has_explicit_zero_year` and
+            /// substitutes the current (or previous) year instead — see `parseDateTimeBestEffortImpl`.
+            /// (src/IO/parseDateTimeBestEffort.cpp). The bound check below would then pass on a
+            /// deadline the caller never asked for - a live one, years in the future of the intended
+            /// point in time. This concerns every spelling of a zero year the parser accepts
+            /// (`0000-01-01`, `01/01/0000`, `00000101`, ...), so it is detected by the parser itself
+            /// rather than by inspecting the string here.
             bool has_explicit_zero_year = false;
             parseDateTimeBestEffort(time, in, time_zone, utc_time_zone, has_explicit_zero_year);
 

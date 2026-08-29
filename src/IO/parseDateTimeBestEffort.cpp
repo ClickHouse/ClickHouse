@@ -946,8 +946,14 @@ ReturnType parseDateTimeBestEffortImpl(
     {
         if ((has_month && month == 0) || (has_day && day_of_month == 0))
         {
-            res = 0;
-            return ReturnType(true);
+            /// Zero-date placeholders map to the Unix epoch for normal callers. Callers that pass
+            /// `has_explicit_zero_year` must still see an explicit year `0000`, including placeholder
+            /// spellings such as `0000-00-00`, so they can reject the input themselves.
+            if (has_explicit_zero_year == nullptr)
+            {
+                res = 0;
+                return ReturnType(true);
+            }
         }
     }
 
