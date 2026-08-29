@@ -1993,7 +1993,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 if log_file.is_file():
                     failed_tests_files.append(str(log_file))
 
-        if failed_suits:
+        # A contained OOM leaves no failing `*.py` row to key on: `_mark_infrastructure_errors`
+        # relabels the killed container's `Connection reset by peer` to the successful `SKIPPED`.
+        _, leaf_breached = leaf_oom_report(os.environ, b"")
+        if failed_suits or leaf_breached:
             # Bounded and non-fatal only on the timed-out path: elsewhere the archive has the
             # time it needs, and failing to produce it is a real error.
             archive_deadline = (
