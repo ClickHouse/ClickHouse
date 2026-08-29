@@ -8,9 +8,6 @@ namespace DB::S3
 inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
 inline static constexpr uint64_t DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 inline static constexpr uint64_t DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-/// A credential-acquisition round trip is bounded by this, independently of the data-transfer
-/// request timeout, which callers such as backups legitimately raise to an hour.
-inline static constexpr uint64_t DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS = 10000;
 inline static constexpr uint64_t DEFAULT_MAX_CONNECTIONS = 1024;
 inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_TIMEOUT = 5;
 inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_MAX_REQUESTS = 100;

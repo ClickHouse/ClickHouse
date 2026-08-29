@@ -23,9 +23,8 @@ ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSV
 4,"c"
 3,"d"' &
 
-# Do not add an explicit `SYSTEM FLUSH ASYNC INSERT QUEUE` here: it only snapshots the queue and does not block
-# concurrent pushes, so it can flush a partial batch and leave a late insert waiting for `async_insert_busy_timeout_ms`.
-# `async_insert_max_query_number` = 3 flushes all three inserts as one batch regardless of their arrival order.
+sleep 2
+${CLICKHOUSE_CURL} -sS "$url" -d 'SYSTEM FLUSH ASYNC INSERT QUEUE async_inserts;'
 wait
 
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM async_inserts ORDER BY id"

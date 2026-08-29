@@ -4,7 +4,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -148,13 +147,6 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     {
         res = column_low_cardinality->convertToFullColumn();
     }
-    else if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
-    {
-        const auto & nested = column_replicated->getNestedColumn();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
-        if (nested.get() != nested_no_lc.get())
-            res = ColumnReplicated::create(nested_no_lc, column_replicated->getIndexesColumn());
-    }
 
     if (res != column)
     {
@@ -278,29 +270,6 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
                 return column;
 
             return ColumnTuple::create(columns);
-        }
-    }
-
-    if (const auto * from_map_type = typeid_cast<const DataTypeMap *>(from_type.get()))
-    {
-        if (const auto * to_map_type = typeid_cast<const DataTypeMap *>(to_type.get()))
-        {
-            const auto * column_map = typeid_cast<const ColumnMap *>(column.get());
-            if (!column_map)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}", column->getName(), from_type->getName());
-
-            /// A Map is stored as Array(Tuple(key, value)); delegate to that nested
-            /// representation so the Array/Tuple/LowCardinality branches above rebuild
-            /// the key and value types (recursing through nested Maps as well).
-            const auto & nested_from = from_map_type->getNestedType();
-            const auto & nested_to = to_map_type->getNestedType();
-
-            auto nested_result = recursiveLowCardinalityTypeConversion(column_map->getNestedColumnPtr(), nested_from, nested_to);
-
-            if (nested_result.get() == column_map->getNestedColumnPtr().get())
-                return column;
-
-            return ColumnMap::create(nested_result);
         }
     }
 

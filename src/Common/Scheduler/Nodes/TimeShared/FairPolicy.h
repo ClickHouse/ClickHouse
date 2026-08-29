@@ -47,7 +47,11 @@ class FairPolicy final : public ITimeSharedNode
     };
 
 public:
-    explicit FairPolicy(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {})
+    explicit FairPolicy(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+        : ITimeSharedNode(event_queue_, config, config_prefix)
+    {}
+
+    FairPolicy(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
         : ITimeSharedNode(event_queue_, info_)
     {}
 
@@ -59,6 +63,15 @@ public:
     }
 
     std::string_view getTypeName() const override { return "fair"; }
+
+    bool equals(ISchedulerNode * other) override
+    {
+        if (!ISchedulerNode::equals(other))
+            return false;
+        if (auto * _ = dynamic_cast<FairPolicy *>(other))
+            return true;
+        return false;
+    }
 
     void attachChild(const SchedulerNodePtr & child_base) override
     {

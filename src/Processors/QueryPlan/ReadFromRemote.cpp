@@ -292,21 +292,10 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->column)
         {
-            ASTPtr literal;
-            if (typeMayContainDecimal(*node->result_type))
-                /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) exactly so
-                /// the shard does not re-parse them through Float64 or DateTime64 text heuristics.
-                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
-            else
-                /// Other types keep their raw Field literal. In particular a DateTime serialized as local
-                /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
-                /// share one text, and parsing picks one side), whereas the raw Unix-timestamp literal is exact.
-                literal = make_intrusive<ASTLiteral>(node->column->getField());
+            auto literal = make_intrusive<ASTLiteral>(node->column->getField());
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            /// makeCastToTypeNameAST skips the wrap when the exact serialization already cast the value to
-            /// the result type (scalar Decimal/DateTime64/Time64), avoiding a redundant identity cast.
-            auto casted_literal = makeCastToTypeNameAST(std::move(literal), node->result_type->getName());
+            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
@@ -495,7 +484,7 @@ static void addFilters(
     if (!predicate)
         return;
 
-    auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
+    auto table_expressions = extractTableExpressions(query_node->getJoinTree());
     /// Case with JOIN is not supported so far.
     if (table_expressions.size() != 1)
         return;
@@ -536,7 +525,7 @@ static void addFilters(
         if (!inner_query_node)
             return;
 
-        table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
+        table_expressions = extractTableExpressions(inner_query_node->getJoinTree());
         /// Case with JOIN is not supported so far.
         if (table_expressions.size() != 1)
             return;
@@ -614,9 +603,8 @@ void ReadFromRemote::addLazyPipe(
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
-            my_unavailable_shard_tracker = unavailable_shard_tracker,
             query = shard.query, header = shard.header,
-            my_context = context, my_throttler = throttler, my_log = log,
+            my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
             my_stage = stage, my_storage = storage,
@@ -688,16 +676,8 @@ void ReadFromRemote::addLazyPipe(
 
             if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
             {
-                /// We are falling back from a remote replica to the local one. A shard limit drops
-                /// rows before they reach DelayedSource, but `rows_before_limit_at_least` must include
-                /// those rows. DelayedSource cannot place the counter before a plan that does not exist
-                /// yet, so build this fallback without a shard limit.
-                auto local_stage = my_stage;
-                if (local_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
-                    local_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-
                 auto plan = createLocalPlan(
-                    query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
+                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }
@@ -729,11 +709,7 @@ void ReadFromRemote::addLazyPipe(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
-        remote_query_executor->setLogger(my_log);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
-        /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
-        /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
-        remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
@@ -754,6 +730,7 @@ void ReadFromRemote::addPipe(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
+    bool parallel_replicas_disabled = context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
     if (stage == QueryProcessingStage::Complete)
     {
         if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
@@ -858,22 +835,20 @@ void ReadFromRemote::addPipe(
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
-        // Several connections to a shard are correct only when every replica reads its own part of the data,
-        // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
-        // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
-        //
-        // In every other case a replica executes the whole query, so there should be a single connection
-        // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
-        //   * with parallel reading from replicas (`ParallelReplicasMode::READ_TASKS`) the replica we
-        //     connect to instantiates the coordinator which manages the reading on the whole shard and
-        //     returns the result of the shard, so several connections mean several coordinators;
-        //   * with parallel replicas disabled, or not applicable for any other reason (e.g. by
-        //     `automatic_parallel_replicas_mode` or `parallel_replicas_only_with_analyzer`), a replica
-        //     just executes the query over all of its data.
-        if (context->canUseOffsetParallelReplicas())
-            remote_query_executor->setPoolMode(PoolMode::GET_MANY);
-        else
+        if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
+        {
+            // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
+            // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
+            // The coordinator will return query result from the shard.
+            // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
+            // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
+            // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
+            //
+            // In case parallel replicas are disabled, there also should be a single connection to each shard to prevent result duplication
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+        }
+        else
+            remote_query_executor->setPoolMode(PoolMode::GET_MANY);
 
         if (!table_func_ptr)
             remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
