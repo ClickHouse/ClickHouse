@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -99,6 +100,14 @@ BlockIO InterpreterDeleteQuery::execute()
 
     if (table->supportsDelete())
     {
+        /// This pipeline serializes only the predicate into the mutation command, and the storages
+        /// that take it (`KeeperMap`, `EmbeddedRocksDB`, Iceberg, `system.wasm_modules`, ...) have
+        /// no notion of MergeTree-style partitions anyway. Reject the clause instead of silently
+        /// mutating a wider scope than the query requested.
+        if (delete_query.partition || delete_query.partitions)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DELETE ... IN PARTITION is not supported for table {}", table->getStorageID().getFullTableName());
+
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
         MutationCommand mut_command;
@@ -169,11 +178,19 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Build "UPDATE <table> [ON CLUSTER <cluster>] SET _row_exists = 0 [IN PARTITION <partition_id>] WHERE <predicate>" query
             static constexpr auto update_query_template = "UPDATE {}{} SET `_row_exists` = 0{} WHERE {}";
 
+            auto partition_clause = [&]() -> String
+            {
+                if (delete_query.partitions)
+                    return " IN PARTITION " + delete_query.partitions->formatWithSecretsOneLine();
+                if (delete_query.partition)
+                    return " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine();
+                return "";
+            }();
             String update_query = fmt::format(
                 update_query_template,
                 table->getStorageID().getFullTableName(),
                 delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster),
-                delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "",
+                partition_clause,
                 delete_query.predicate->formatWithSecretsOneLine());
 
             ParserUpdateQuery parser;
@@ -194,11 +211,19 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Build "ALTER <table> [ON CLUSTER <cluster>] UPDATE _row_exists = 0 [IN PARTITION <partition_id>] WHERE <predicate>" query
             static constexpr auto alter_query_template = "ALTER TABLE {}{} UPDATE `_row_exists` = 0{} WHERE {}";
 
+            auto partition_clause = [&]() -> String
+            {
+                if (delete_query.partitions)
+                    return " IN PARTITION " + delete_query.partitions->formatWithSecretsOneLine();
+                if (delete_query.partition)
+                    return " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine();
+                return "";
+            }();
             String alter_query = fmt::format(
                 alter_query_template,
                 table->getStorageID().getFullTableName(),
                 delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster),
-                delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "",
+                partition_clause,
                 delete_query.predicate->formatWithSecretsOneLine());
 
             ParserAlterQuery parser;

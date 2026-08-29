@@ -66,6 +66,9 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
     if (update_query.partition)
         alter_query->set(alter_query->partition, update_query.partition);
 
+    if (update_query.partitions)
+        alter_query->set(alter_query->partitions, update_query.partitions);
+
     auto mutation_command = MutationCommand::parse(
         *alter_query,
         /* parse_alter_commands = */ false,

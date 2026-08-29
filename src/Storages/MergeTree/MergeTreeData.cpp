@@ -18,7 +18,10 @@
 #endif
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
@@ -66,16 +69,18 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Functions/FunctionFactory.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -83,13 +88,16 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -119,6 +127,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -264,6 +273,8 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool optimize_mutations_with_partition_pruning;
+    extern const SettingsBool validate_mutation_query;
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_skip_indexes;
 }
@@ -9553,23 +9564,330 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
     return partition_ids;
 }
 
-std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
-    const MutationCommands & commands, ContextPtr query_context) const
+std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
+    const ASTPtr & predicate,
+    ContextPtr query_context,
+    bool command_runs_in_background,
+    std::unordered_set<String> * analyzed_partition_ids) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    if (!metadata_snapshot->hasPartitionKey())
+        return std::nullopt;
+
+    if (!query_context->getSettingsRef()[Setting::use_partition_pruning])
+        return std::nullopt;
+
+    /// A deferred set is evaluated independently by the pruning pass and by mutation execution.
+    /// It can therefore produce a different partition set between those evaluations. This is
+    /// also unsafe for foreground lightweight updates: their partition block numbers bound the
+    /// parts that `updateLightweightImpl` reads, rather than merely serving as an optimization
+    /// hint. Besides explicit subqueries, `IN` accepts tables and table functions; the analyzer
+    /// turns all three forms into prepared sets. Conservatively leave such commands unpruned.
+    auto contains_deferred_set = [](const ASTPtr & ast, const auto & self) -> bool
+    {
+        if (ast->as<ASTSubquery>())
+            return true;
+
+        if (const auto * function = ast->as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name))
+        {
+            const auto & arguments = function->arguments->children;
+            if (arguments.size() >= 2)
+            {
+                const auto & right_argument = arguments[1];
+                if (right_argument->as<ASTTableIdentifier>())
+                    return true;
+
+                /// A non-literal function in the right-hand side may be a table function. It is
+                /// resolved to a prepared set by the analyzer, whereas literal tuples and arrays
+                /// are always stable constant sets.
+                auto is_literal_enumeration = [](const ASTPtr & node, const auto & literal_self) -> bool
+                {
+                    if (node->as<ASTLiteral>())
+                        return true;
+
+                    const auto * rhs_function = node->as<ASTFunction>();
+                    if (!rhs_function || !rhs_function->arguments || (rhs_function->name != "tuple" && rhs_function->name != "array"))
+                        return false;
+
+                    return std::ranges::all_of(rhs_function->arguments->children, [&](const auto & child)
+                    {
+                        return literal_self(child, literal_self);
+                    });
+                };
+
+                if (right_argument->as<ASTFunction>() && !is_literal_enumeration(right_argument, is_literal_enumeration))
+                    return true;
+            }
+        }
+
+        return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
+    };
+    if (contains_deferred_set(predicate, contains_deferred_set))
+        return std::nullopt;
+
+    /// A query-time non-deterministic constant (e.g. `now` or `today`) is folded to its
+    /// submission-time value by this analysis, but the stored mutation re-evaluates it during
+    /// the asynchronous execution - possibly much later, or on another replica. That happens
+    /// when `allow_nondeterministic_mutations = 1` and the initiator did not rewrite the
+    /// predicate to literals (`mutations_execute_nondeterministic_on_initiator = 0`). The two
+    /// evaluations can disagree, and a partition matching only the execution-time value would
+    /// be missing from the mutation scope and escape the mutation. The same holds for a
+    /// foreground lightweight update, whose predicate is evaluated once more after this
+    /// analysis. Prune only predicates built from deterministic functions; a predicate already
+    /// rewritten to literals on the initiator passes this check naturally. A function unknown
+    /// to the factory (e.g. a user-defined function) is conservatively treated as
+    /// non-deterministic.
+    auto contains_nondeterministic_function = [&](const ASTPtr & ast, const auto & self) -> bool
+    {
+        /// Being deterministic for a lambda expression is completely determined by the
+        /// contents of its definition, so just proceed to the children.
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name != "lambda")
+        {
+            if (!FunctionFactory::instance().has(function->name))
+                return true;
+
+            if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
+                return true;
+        }
+
+        return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
+    };
+    if (contains_nondeterministic_function(predicate, contains_nondeterministic_function))
+        return std::nullopt;
+
+    auto predicate_clone = predicate->clone();
+
+    /// The analysis must accept everything the mutation itself accepts, so it has to run in the
+    /// same context the commands will be interpreted in. An ALTER mutation does not run with the
+    /// submitting session's context: the background worker builds a fresh context from the
+    /// background context (`MutatePlainMergeTreeTask::createTaskContext`,
+    /// `MutateFromLogEntryTask::prepare`), so session-only settings - most importantly the
+    /// analyzer selection consulted by `shouldUseAnalyzerForMutations` - do not propagate to the
+    /// execution. Derive the analysis context the same way, so that the pruning analysis and the
+    /// asynchronous execution cannot diverge. A lightweight update, on the contrary, interprets
+    /// its commands in the foreground with the submitting context
+    /// (`MergeTreeData::updateLightweightImpl`), where the session settings and the current
+    /// database do apply: unlike ALTER commands, which `InterpreterAlterQuery` qualifies with
+    /// `AddDefaultDatabaseVisitor`, its predicate may reference tables without a database, so
+    /// analyzing it in the background context (which has no current database) would reject
+    /// a predicate the update itself accepts.
+    ContextMutablePtr execution_context;
+    if (command_runs_in_background)
+    {
+        execution_context = Context::createCopy(getContext()->getBackgroundContext());
+        execution_context->makeQueryContextForMutate(*getSettings());
+    }
+    else
+    {
+        execution_context = Context::createCopy(query_context);
+    }
+
+    /// The predicate comes from a serialized mutation command that was re-parsed, so its set
+    /// operations (`UNION`/`INTERSECT`/`EXCEPT`) are not normalized yet and the analyzer would
+    /// reject them with "UNION mode UNION_DEFAULT must be normalized". Normalize them exactly as
+    /// the mutation execution path does in `getPartitionAndPredicateExpressionForMutationCommand`.
+    normalizeSetOperations(predicate_clone, execution_context);
+
+    /// Some predicate shapes (e.g. qualified column names) resolve only under the query-tree
+    /// analyzer.
+    std::optional<ActionsDAG> actions_dag;
+    const ActionsDAG::Node * predicate_node = nullptr;
+
+    if (shouldUseAnalyzerForMutations(execution_context))
+    {
+        auto expression = buildQueryTree(predicate_clone, execution_context);
+
+        /// Resolve against the real storage, so that its columns (including `ALIAS` and
+        /// `EPHEMERAL`), subcolumns and virtual columns (e.g. `_part`, `_partition_id`)
+        /// are visible, just like during the mutation execution.
+        auto table_expression = std::make_shared<TableNode>(
+            std::const_pointer_cast<IStorage>(shared_from_this()), execution_context);
+
+        QueryAnalyzer analyzer(false);
+        analyzer.resolveConstantExpression(expression, table_expression, execution_context);
+
+        GlobalPlannerContextPtr global_planner_context
+            = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+        collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+        collectSets(expression, *planner_context);
+
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        /// Use plain column names for the DAG inputs (instead of planner column identifiers
+        /// like `__table1.x`), so that `PartitionPruner` can match them against the partition
+        /// key expression columns.
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/ {},
+            planner_context,
+            empty_correlated_columns_set,
+            /*use_column_identifier_as_action_node_name=*/ false);
+        correlated_subtrees.assertEmpty("in a mutation predicate");
+
+        /// Plan the subqueries, so that `KeyCondition` can build the sets for `IN (SELECT ...)`.
+        auto subquery_options = SelectQueryOptions{}.subquery();
+        for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+        {
+            auto query_tree = subquery->detachQueryTree();
+            createUniqueAliasesIfNecessary(query_tree, execution_context);
+            Planner subquery_planner(
+                query_tree,
+                subquery_options,
+                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+            subquery_planner.buildQueryPlanIfNeeded();
+
+            auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+            subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        }
+
+        actions_dag.emplace(std::move(actions));
+        if (actions_dag->getOutputs().size() != 1)
+            return std::nullopt;
+        predicate_node = actions_dag->getOutputs().front();
+    }
+    else
+    {
+        /// Every column the mutation predicate may legally reference must be known here, otherwise
+        /// this analysis throws on a predicate the mutation itself accepts. `getAll` adds the
+        /// `ALIAS` and `EPHEMERAL` columns on top of the physical ones; the virtual columns
+        /// (e.g. `_part`, `_partition_id`) are available during mutation execution too.
+        /// A column that is not part of the partition key simply makes the expression opaque to
+        /// `PartitionPruner`, which then keeps the partition - it does not have to be readable here.
+        auto columns = metadata_snapshot->getColumns().getAll();
+
+        NameSet column_names;
+        for (const auto & column : columns)
+            column_names.insert(column.name);
+        for (const auto & column : metadata_snapshot->virtuals)
+        {
+            if (!column_names.contains(column.name))
+                columns.emplace_back(column.name, column.type);
+        }
+
+        TreeRewriter tree_rewriter(execution_context);
+        auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
+        actions_dag.emplace(ExpressionAnalyzer(predicate_clone, syntax_result, execution_context).getActionsDAG(false));
+
+        /// The predicate output is the node matching the predicate expression name.
+        /// `getActionsDAG` may include input columns in the outputs list, so we need
+        /// to find the correct node by name.
+        String predicate_column_name = predicate_clone->getColumnName();
+        predicate_node = actions_dag->tryFindInOutputs(predicate_column_name);
+    }
+
+    if (!predicate_node)
+        return std::nullopt;
+
+    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, execution_context, /* boolean_context */ true);
+
+    PartitionPruner partition_pruner(
+        metadata_snapshot,
+        inverted_dag,
+        execution_context,
+        false /* strict */);
+
+    if (partition_pruner.isUseless())
+        return std::nullopt;
+
+    DataPartsVector active_parts;
+    {
+        auto lock = readLockParts();
+        active_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
+    }
+
+    std::set<String> affected_partition_ids;
+    for (const auto & part : active_parts)
+    {
+        if (part->info.getPartitionId().starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+            continue;
+
+        if (analyzed_partition_ids)
+            analyzed_partition_ids->insert(part->info.getPartitionId());
+
+        if (!partition_pruner.canBePruned(*part))
+            affected_partition_ids.insert(part->info.getPartitionId());
+    }
+
+    LOG_DEBUG(log, "Mutation partition pruning: {} partition(s) affected for predicate '{}'",
+        affected_partition_ids.size(), predicate->formatForErrorMessage());
+
+    return affected_partition_ids;
+}
+
+std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands(
+    const MutationCommands & commands,
+    ContextPtr query_context,
+    bool commands_run_in_background,
+    std::unordered_set<String> * analyzed_partition_ids) const
 {
     std::set<String> affected_partition_ids;
+    /// When validation is disabled, mutation predicates may deliberately reference objects that
+    /// do not exist yet. Do not run the pruning analysis then: it would eagerly validate the
+    /// predicate and change `validate_mutation_query = 0` from deferred validation into a
+    /// submission-time exception.
+    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning]
+        && query_context->getSettingsRef()[Setting::validate_mutation_query];
+
+    /// Each pruned command analyzes its own snapshot of the local parts, taken at a slightly
+    /// different time. A partition counts as analyzed only if every pruned command has seen it,
+    /// so the per-command sets are intersected.
+    bool has_analyzed_partition_ids = false;
 
     for (const auto & command : commands)
     {
         auto alter = command.ast();
-        if (!alter || !alter->partition)
+        if (alter && alter->partitions)
         {
-            affected_partition_ids.clear();
-            break;
+            for (const auto & partition_ast : alter->partitions->children)
+            {
+                affected_partition_ids.insert(
+                    getPartitionIDFromQuery(partition_ast, query_context)
+                );
+            }
         }
+        else if (alter && alter->partition)
+        {
+            affected_partition_ids.insert(
+                getPartitionIDFromQuery(ASTPtr(alter->partition), query_context)
+            );
+        }
+        else if (optimize_with_pruning && alter && alter->predicate)
+        {
+            std::unordered_set<String> command_analyzed_partition_ids;
+            auto pruned = getPartitionIdsPrunedByPredicate(
+                ASTPtr(alter->predicate),
+                query_context,
+                commands_run_in_background,
+                analyzed_partition_ids ? &command_analyzed_partition_ids : nullptr);
+            if (!pruned.has_value())
+            {
+                /// Pruning was not possible, fall back to all partitions
+                return std::nullopt;
+            }
+            affected_partition_ids.insert(pruned->begin(), pruned->end());
 
-        affected_partition_ids.insert(
-            getPartitionIDFromQuery(ASTPtr(alter->partition), query_context)
-        );
+            if (analyzed_partition_ids)
+            {
+                if (!has_analyzed_partition_ids)
+                {
+                    *analyzed_partition_ids = std::move(command_analyzed_partition_ids);
+                    has_analyzed_partition_ids = true;
+                }
+                else
+                {
+                    std::erase_if(*analyzed_partition_ids, [&](const String & partition_id)
+                    {
+                        return !command_analyzed_partition_ids.contains(partition_id);
+                    });
+                }
+            }
+        }
+        else
+        {
+            /// No partition and no predicate (e.g. MATERIALIZE_TTL) - affects all partitions
+            return std::nullopt;
+        }
     }
 
     return affected_partition_ids;
