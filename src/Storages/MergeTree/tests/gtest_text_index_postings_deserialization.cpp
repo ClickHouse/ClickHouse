@@ -31,8 +31,9 @@ String serializePostings(const PostingList & postings)
 
 PostingsSerialization makeSerialization()
 {
-    /// A posting list without the `IsCompressed` flag never consults the codec.
-    return PostingsSerialization(nullptr, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
+    /// A posting list without the `IsCompressed` flag never consults the codec, but `PostingsSerialization` requires one.
+    auto codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::None);
+    return PostingsSerialization(std::move(codec), MergeTreeTextIndexSerializationVersion::V2_WithPositions);
 }
 
 /// The whole payload is in the buffer, so `deserialize` deserializes it in place.
