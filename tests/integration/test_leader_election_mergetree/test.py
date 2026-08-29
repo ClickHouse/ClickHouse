@@ -731,13 +731,14 @@ def test_alter_rejected_under_leader_election(started_cluster):
             ("MODIFY SETTING", f"ALTER TABLE {table} MODIFY SETTING merge_max_block_size = 1024"),
         ]
         for label, sql in cases:
-            # Leader path: the new `leader_election` guard throws
-            # `SUPPORT_IS_DISABLED`. Follower path: the existing
-            # `assertNotReadonly` throws `TABLE_IS_READ_ONLY` before reaching
-            # the new guard. Both outcomes are acceptable rejections.
+            # `StorageMergeTree::checkAlterIsPossible` runs on every node from
+            # `InterpreterAlterQuery::executeToTable`, before any read-only gate,
+            # so a non-comment `ALTER` is rejected with `SUPPORT_IS_DISABLED` on
+            # the follower exactly like on the leader — a follower must NOT
+            # report `TABLE_IS_READ_ONLY` here (that is reserved for writes).
             for node, role, accepted in [
                 (leader, "leader", ("SUPPORT_IS_DISABLED", "leader_election")),
-                (follower, "follower", ("TABLE_IS_READ_ONLY", "SUPPORT_IS_DISABLED", "leader_election")),
+                (follower, "follower", ("SUPPORT_IS_DISABLED", "leader_election")),
             ]:
                 try:
                     node.query(sql)
@@ -789,12 +790,12 @@ def test_rename_rejected_under_leader_election(started_cluster):
         leader, followers = wait_for_leader([node1, node2], table_name=table)
         follower = followers[0]
 
-        # Leader path: the `leader_election` guard throws `SUPPORT_IS_DISABLED`.
-        # Follower path: `assertNotReadonly` may throw `TABLE_IS_READ_ONLY`
-        # first; both outcomes are acceptable rejections.
+        # `StorageMergeTree::checkTableCanBeRenamed` rejects the rename on every
+        # node before any read-only gate runs, so both the leader and the
+        # follower must report `SUPPORT_IS_DISABLED`, never `TABLE_IS_READ_ONLY`.
         for node, role, accepted in [
             (leader, "leader", ("SUPPORT_IS_DISABLED", "leader_election")),
-            (follower, "follower", ("TABLE_IS_READ_ONLY", "SUPPORT_IS_DISABLED", "leader_election")),
+            (follower, "follower", ("SUPPORT_IS_DISABLED", "leader_election")),
         ]:
             try:
                 node.query(f"RENAME TABLE {table} TO {new_table}")
