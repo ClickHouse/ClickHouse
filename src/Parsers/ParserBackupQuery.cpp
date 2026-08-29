@@ -13,9 +13,8 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
-
-#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -364,8 +363,8 @@ namespace
     {
         /// Both names reach the field through a keyword, which is case-insensitive, so the reset that clears
         /// it has to be matched the same way or a locator survives the reset naming it.
-        auto is_base_backup = [](const String & name) { return boost::iequals(name, "base_backup"); };
-        auto is_cluster_host_ids = [](const String & name) { return boost::iequals(name, "cluster_host_ids"); };
+        auto is_base_backup = [](const String & name) { return equalsCaseInsensitive(name, "base_backup"); };
+        auto is_cluster_host_ids = [](const String & name) { return equalsCaseInsensitive(name, "cluster_host_ids"); };
 
         for (const auto & name : res.default_settings)
         {

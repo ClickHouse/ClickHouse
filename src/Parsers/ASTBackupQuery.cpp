@@ -10,10 +10,9 @@
 #include <Parsers/stripQuerySettings.h>
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-
-#include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
 
@@ -638,7 +637,7 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
         /// resolves a `= DEFAULT` naming either one by clearing the field and dropping the name. Such an
         /// entry would format as a `<field> = ..., <field> = DEFAULT` pair that reparses without the field.
         for (const auto & name : settings->as<const ASTSetQuery &>().default_settings)
-            if (boost::iequals(name, "base_backup") || boost::iequals(name, "cluster_host_ids"))
+            if (equalsCaseInsensitive(name, "base_backup") || equalsCaseInsensitive(name, "cluster_host_ids"))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "'{}' is a BACKUP/RESTORE field rather than a setting, so it must not appear in "
