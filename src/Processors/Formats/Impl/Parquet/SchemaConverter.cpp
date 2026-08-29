@@ -931,7 +931,7 @@ void SchemaConverter::processPrimitiveColumn(
             case TypeIndex::IPv4:
                 /// Only the UInt32 -> IPv4 cast is supported; stats on other inputs could hide
                 /// the unsupported-cast error when all row groups are pruned.
-                if (!allow_datetime_and_ipv4 || converter.input_signed || converter.input_size != 4)
+                if (!allow_datetime_and_ipv4 || converter.input_signed || converter.input_size != sizeof(IPv4))
                     return false;
                 converter.field_ipv4 = true;
                 converter.field_signed = false;
