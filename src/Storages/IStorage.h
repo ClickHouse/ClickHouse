@@ -114,6 +114,12 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// Returns true for storages that do not store data themselves but read it from other tables,
+    /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
+    /// of the rows read from such a storage carry the name of the table that actually produced
+    /// each row, which is not necessarily the name of this storage.
+    virtual bool readsFromOtherTables() const { return false; }
+
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
 
