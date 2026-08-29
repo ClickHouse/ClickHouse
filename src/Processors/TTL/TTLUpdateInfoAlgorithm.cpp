@@ -23,8 +23,18 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+
+    /// A ROWS WHERE rule only deletes rows matching its predicate, so rows it can never touch must
+    /// not widen the recorded min/max and leave the part looking due for a TTL merge that would
+    /// find nothing to drop. The other fields apply to the whole part and take every row.
+    ColumnPtr where_column;
+    if (ttl_update_field == TTLUpdateField::ROWS_WHERE_TTL)
+        where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+
     for (size_t i = 0; i < block.rows(); ++i)
     {
+        if (where_column && !where_column->getBool(i))
+            continue;
         Int64 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);
         new_ttl_info.update(cur_ttl);
     }
