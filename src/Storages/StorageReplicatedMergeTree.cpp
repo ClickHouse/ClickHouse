@@ -9242,7 +9242,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     const MergeTreeData & src_data,
     const String & partition_id,
     const ZooKeeperPtr & zookeeper,
-    bool replace,
+    bool requested_replace,
     const bool & zero_copy_enabled,
     const bool & always_use_copy_instead_of_hardlinks,
     const ContextPtr & query_context)
@@ -9264,7 +9264,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     /// silently drop the destination partition's data without writing anything in its place
     /// (see #23727). Reject by default; users who actually want this behavior must opt in via
     /// the `allow_replace_partition_from_empty_source` setting, or use `DROP PARTITION` instead.
-    if (replace && src_all_parts.empty()
+    if (requested_replace && src_all_parts.empty()
         && !query_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -9302,6 +9302,12 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         MergeTreePartInfo drop_range;
         std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
         bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
+
+        /// Whether this attempt drops the destination partition is re-decided on every retry from
+        /// the original request and a fresh snapshot: a `ZBADVERSION` retry commits nothing, and the
+        /// destination may have been filled by a concurrent alter between attempts, in which case a
+        /// previous attempt's degradation to attach semantics must not be carried forward.
+        bool replace = requested_replace;
         if (replace && partition_was_empty)
         {
             /// Nothing to drop, will just attach new parts
