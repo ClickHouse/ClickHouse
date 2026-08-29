@@ -204,8 +204,13 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
-    /// Creates new table in catalog.
+    /// Creates new table in catalog. Callers must ensure the namespace exists before
+    /// writing any table files to storage: a catalog that shares its storage view with
+    /// the data refuses to create a namespace over a plain directory those files create.
     virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+
+    /// Creates the namespace unless it already exists.
+    virtual void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
 
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
