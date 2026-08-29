@@ -153,8 +153,6 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
     )
     insert_settings = {
         "distributed_foreground_insert": 0,
-        "max_memory_usage": "10Mi",
-        "max_untracked_memory": "0",
     }
     for offset, limit in ((0, 1), (1, 1_000_000), (1_000_001, 100_000)):
         node1.query(
@@ -175,7 +173,9 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
         QueryRuntimeException,
         match=r"DB::Exception: Received from.*Query memory limit exceeded",
     ):
-        node1.query("system flush distributed dist")
+        node1.query(
+            "system flush distributed dist settings max_memory_usage='10Mi', max_untracked_memory=0"
+        )
 
     assert int(
         node1.query(
