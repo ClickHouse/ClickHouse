@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel-replicas, no-replicated-database, no-shared-merge-tree
+# Tags: long, no-parallel-replicas, no-replicated-database, no-shared-merge-tree, no-random-detach
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
