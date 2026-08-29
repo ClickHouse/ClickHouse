@@ -22,5 +22,14 @@
     <!-- One atom: negative control. -->
     <query>SELECT count() FROM idx_dup_chain WHERE w >= 20000 SETTINGS max_threads = 1</query>
 
+    <!-- Five atoms whose chains all differ, so nothing may be shared: a negative control against
+         paying per granule for entries that can never be reused. -->
+    <query>
+        SELECT count() FROM idx_dup_chain
+        WHERE CAST(z, 'UInt16') >= 20000 AND CAST(z, 'UInt8') >= 100 AND CAST(z, 'Int16') >= 1000
+            AND CAST(z, 'UInt32') >= 70000 AND CAST(z, 'Int32') >= 70000
+        SETTINGS max_threads = 1
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS idx_dup_chain</drop_query>
 </test>

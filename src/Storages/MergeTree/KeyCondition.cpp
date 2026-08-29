@@ -27,6 +27,7 @@
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/ProfileEvents.h>
 #include <Common/RegexpUtils.h>
 #include <Common/SipHash.h>
 #include <Common/HilbertUtils.h>
@@ -57,6 +58,11 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
 
+
+namespace ProfileEvents
+{
+extern const Event IndexMonotonicFunctionChainApplications;
+}
 
 namespace DB
 {
@@ -2983,11 +2989,9 @@ private:
     Kind kind = Kind::NO_CONST;
 };
 
-/// Identifies what a chain of monotonic functions computes: equal identities transform a range
-/// identically. Absent when an element's result is not a function of its arguments alone, or when
-/// the chain cannot be described completely. Type NAMES are hashed rather than compared with
-/// `IDataType::equals`, which is not canonical: `DataTypeDateTime::equals` ignores the time zone,
-/// yet a bare `toHour` reads its argument type's zone.
+/// Identifies what a chain computes: equal identities transform a range identically. Absent when an
+/// element's result is not a function of its arguments alone. Type NAMES are canonical, while
+/// `DataTypeDateTime::equals` ignores the time zone that a bare `toHour` reads from its argument.
 static std::optional<UInt128> monotonicFunctionsChainIdentity(const KeyCondition::MonotonicFunctionsChain & chain)
 {
     if (chain.empty())
@@ -3002,13 +3006,18 @@ static std::optional<UInt128> monotonicFunctionsChainIdentity(const KeyCondition
         hash.update(s.data(), s.size());
     };
 
+    /// Two separately built instances agree only if the result depends on the arguments alone:
+    /// `isDeterministicInScopeOfQuery` admits `randConstant`, which captures a value per instance,
+    /// and a stateful function reads more than its arguments.
+    auto is_reusable = [](const IFunctionBase & function)
+    {
+        return function.isDeterministic() && !function.isStateful();
+    };
+
     for (const auto & element : chain)
     {
         const IFunctionBase * function = element.get();
-        /// Two separately built instances agree only if the result depends on the arguments alone.
-        /// `isDeterministicInScopeOfQuery` is not enough: `randConstant` satisfies it and captures a
-        /// different value in every instance.
-        if (!function || !function->isDeterministic())
+        if (!function || !is_reusable(*function))
             return {};
 
         if (const auto * with_const_arg = typeid_cast<const FunctionWithOptionalConstArg *>(function))
@@ -3022,8 +3031,9 @@ static std::optional<UInt128> monotonicFunctionsChainIdentity(const KeyCondition
             add(const_arg.type->getName());
             applyVisitor(FieldVisitorHash(hash), const_column->getField());
 
+            /// The wrapper forwards `isDeterministic` but not `isStateful`, so ask the wrapped one.
             function = with_const_arg->getWrappedFunction().get();
-            if (!function)
+            if (!function || !is_reusable(*function))
                 return {};
         }
 
@@ -5248,6 +5258,8 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    ProfileEvents::increment(ProfileEvents::IndexMonotonicFunctionChainApplications);
+
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
     current_type = recursiveRemoveLowCardinality(current_type);
@@ -5721,15 +5733,19 @@ namespace
 {
 
 /// Ranges transformed by a monotonic function chain, reused within one hyperrectangle check.
-/// `single_point` and the key column's data type are the same for every atom of one check, so a
-/// transformed range is determined by the key column and the chain's identity alone.
+/// `single_point` and the data type are the same for every atom of one check, so the memo key and
+/// the chain identity determine the range; `MemoKeyOfElement` must yield the key `apply` is passed.
+template <typename MemoKeyOfElement>
 class TransformedRangeMemo
 {
 public:
-    explicit TransformedRangeMemo(const KeyCondition::RPN & rpn_) : rpn(rpn_) { }
+    TransformedRangeMemo(const KeyCondition::RPN & rpn_, MemoKeyOfElement memo_key_of_element_)
+        : rpn(rpn_), memo_key_of_element(std::move(memo_key_of_element_))
+    {
+    }
 
     std::optional<Range> apply(
-        size_t key_column,
+        size_t memo_key,
         const Range & key_range,
         const KeyCondition::RPNElement & element,
         const DataTypePtr & type,
@@ -5744,43 +5760,54 @@ public:
         if (!identity)
             return transform();
 
+        const Key key{memo_key, *identity};
         for (const auto & entry : entries)
-            if (entry.key_column == key_column && entry.identity == *identity)
+            if (entry.key == key)
                 return entry.result;
 
         /// A non-monotonic outcome is stored too: another atom with this identity would get it as well.
         std::optional<Range> result = transform();
-        if (isWorthMemoizing())
-            entries.push_back({key_column, *identity, result});
+        if (isRepeated(key))
+            entries.push_back({key, result});
         return result;
     }
 
 private:
+    using Key = std::pair<size_t, UInt128>;
+
     struct Entry
     {
-        size_t key_column;
-        UInt128 identity;
+        Key key;
         std::optional<Range> result;
     };
 
-    /// A single chain-bearing atom can never see a hit, so it should not pay for an entry.
-    bool isWorthMemoizing()
+    /// A key that occurs once can never be reused, so it must not pay for an entry. Sorting once per
+    /// check keeps this off the per-atom path, where a condition with many chains would make it
+    /// quadratic.
+    bool isRepeated(const Key & key)
     {
-        if (!worth_memoizing.has_value())
+        if (!sorted_keys.has_value())
         {
-            size_t count = 0;
+            sorted_keys.emplace();
+            /// `getKeyColumn` requires exactly one key column, which is also what reaches `apply`.
             for (const auto & element : rpn)
-                if (element.monotonic_functions_chain_identity && ++count == 2)
-                    break;
-            worth_memoizing = count == 2;
+                if (element.monotonic_functions_chain_identity && element.key_columns.size() == 1)
+                    sorted_keys->emplace_back(memo_key_of_element(element), *element.monotonic_functions_chain_identity);
+            std::sort(sorted_keys->begin(), sorted_keys->end());
         }
-        return *worth_memoizing;
+
+        auto [first, last] = std::equal_range(sorted_keys->begin(), sorted_keys->end(), key);
+        return last - first > 1;
     }
 
     const KeyCondition::RPN & rpn;
+    MemoKeyOfElement memo_key_of_element;
     absl::InlinedVector<Entry, 4> entries;
-    std::optional<bool> worth_memoizing;
+    std::optional<absl::InlinedVector<Key, 8>> sorted_keys;
 };
+
+template <typename MemoKeyOfElement>
+TransformedRangeMemo(const KeyCondition::RPN &, MemoKeyOfElement) -> TransformedRangeMemo<MemoKeyOfElement>;
 
 }
 
@@ -5791,7 +5818,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
-    TransformedRangeMemo transformed_range_memo(rpn);
+    TransformedRangeMemo transformed_range_memo(
+        rpn, [](const RPNElement & element) { return element.getKeyColumn(); });
 
     auto curve_type = [&](size_t key_column_pos)
     {
@@ -6222,7 +6250,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const DataTypes & sparse_data_types) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
-    TransformedRangeMemo transformed_range_memo(rpn);
 
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -6230,6 +6257,16 @@ BoolMask KeyCondition::checkInHyperrectangle(
         const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
         return {is_key_col_present, sparse_pos};
     };
+
+    /// Entries are keyed on the sparse position rather than the key column, because that is what
+    /// selects the range and the type here, and several key columns may share one position.
+    TransformedRangeMemo transformed_range_memo(
+        rpn,
+        [&](const RPNElement & element) -> size_t
+        {
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(element.getKeyColumn());
+            return is_key_col_present ? sparse_pos : std::numeric_limits<size_t>::max();
+        });
 
     auto curve_type = [&](size_t key_column_pos)
     {

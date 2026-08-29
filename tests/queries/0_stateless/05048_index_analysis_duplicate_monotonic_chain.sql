@@ -27,6 +27,34 @@ SELECT countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64O
     WHERE toStartOfHour(ts, 'UTC') >= toDateTime(1700010000) AND toStartOfHour(ts, 'UTC') <= toDateTime(1700020000)
 );
 
+-- Two equivalent atoms must apply the chain as many times as one atom does, otherwise the sharing
+-- has silently stopped: correct results and no other signal anywhere. The query condition cache is
+-- off for both, because a hit skips the granules an identical earlier query already excluded and the
+-- two counts would then be measured over different granule sets.
+SELECT count() FROM t_dup_chain_mm
+WHERE toStartOfHour(ts, 'UTC') >= toDateTime(1700010000) AND toStartOfHour(ts, 'UTC') <= toDateTime(1700020000)
+SETTINGS log_comment = '05048_two_equivalent_atoms', use_query_condition_cache = 0;
+SELECT count() FROM t_dup_chain_mm
+WHERE toStartOfHour(ts, 'UTC') >= toDateTime(1700010000)
+SETTINGS log_comment = '05048_one_atom', use_query_condition_cache = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT count() = 2 AND uniqExact(applications) = 1 AND min(applications) > 0 AND uniqExact(marks) = 1
+FROM
+(
+    -- The latest row per comment, so a repeated run against the same database is not confused by
+    -- an earlier one.
+    SELECT
+        argMax(ProfileEvents['IndexMonotonicFunctionChainApplications'], event_time_microseconds) AS applications,
+        argMax(ProfileEvents['SelectedMarksTotal'], event_time_microseconds) AS marks
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+      AND current_database = currentDatabase()
+      AND log_comment IN ('05048_two_equivalent_atoms', '05048_one_atom')
+    GROUP BY log_comment
+);
+
 DROP TABLE t_dup_chain_mm;
 
 DROP TABLE IF EXISTS t_dup_chain_pk;
