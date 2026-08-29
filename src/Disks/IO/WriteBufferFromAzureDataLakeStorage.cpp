@@ -179,7 +179,7 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            const bool retryable = isRetryableAzureException(e);
+            const bool retryable = isRetryableAzureException(e, write_settings.is_initial_access_check);
             if (!retryable || attempt >= max_unexpected_write_error_retries)
             {
                 log_event(static_cast<Int32>(e.StatusCode), e.Message, watch.elapsedMicroseconds());

@@ -18,19 +18,12 @@
 #include <fmt/ranges.h>
 
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 using namespace DB;
-
-namespace DB::ErrorCodes
-{
-    extern const int ICEBERG_SPECIFICATION_VIOLATION;
-    extern const int LOGICAL_ERROR;
-}
 
 namespace DB::Iceberg
 {
@@ -59,16 +52,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     return makeASTFunction(transform_and_argument->transform_name, make_intrusive<ASTIdentifier>(column_name));
 }
 
-namespace
-{
-    constexpr const char * row_id_column = "_row_id";
-    constexpr const char * last_sequence_number_column = "_last_updated_sequence_number";
-}
-
-std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(
-    const DB::ActionsDAG * source_dag,
-    std::vector<Int32> & used_columns_in_filter,
-    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter) const
+std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
 {
     const auto & inputs = source_dag->getInputs();
 
@@ -77,14 +61,6 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
         if (input->type == ActionsDAG::ActionType::INPUT)
         {
             std::string input_name = input->result_name;
-            if (input_name == row_id_column || input_name == last_sequence_number_column)
-            {
-                const Int32 field_id = input_name == row_id_column ? row_id_field_id : last_updated_sequence_number_field_id;
-                used_columns_in_filter.push_back(field_id);
-                row_lineage_columns_in_filter.emplace(field_id, DB::NameAndTypePair(input_name, input->result_type));
-                continue;
-            }
-
             std::optional<Int32> input_id = schema_processor.tryGetColumnIDByName(current_schema_id, input_name);
             if (input_id)
                 used_columns_in_filter.push_back(*input_id);
@@ -94,13 +70,6 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
     ActionsDAG dag_with_renames;
     for (const auto column_id : used_columns_in_filter)
     {
-        if (auto lineage_column = row_lineage_columns_in_filter.find(column_id); lineage_column != row_lineage_columns_in_filter.end())
-        {
-            const auto * node = &dag_with_renames.addInput(lineage_column->second.name, lineage_column->second.type);
-            dag_with_renames.getOutputs().push_back(node);
-            continue;
-        }
-
         auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id);
 
         /// Columns which we dropped and don't exist in current schema
@@ -142,7 +111,7 @@ ManifestFilesPruner::ManifestFilesPruner(
 
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
-    transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter, row_lineage_columns);
+    transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
     chassert(transformed_dag != nullptr);
 
     if (manifest_file.hasPartitionKey())
@@ -155,19 +124,11 @@ ManifestFilesPruner::ManifestFilesPruner(
 
     for (Int32 used_column_id : used_columns_in_filter)
     {
-        std::optional<NameAndTypePair> name_and_type;
-        if (auto lineage_column = row_lineage_columns.find(used_column_id); lineage_column != row_lineage_columns.end())
-        {
-            name_and_type = lineage_column->second;
-        }
-        else
-        {
-            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
-            if (!name_and_type.has_value())
-                continue;
+        auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
+        if (!name_and_type.has_value())
+            continue;
 
-            name_and_type->name = DB::backQuote(DB::toString(used_column_id));
-        }
+        name_and_type->name = DB::backQuote(DB::toString(used_column_id));
 
         ExpressionActionsPtr expression
             = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
@@ -175,49 +136,6 @@ ManifestFilesPruner::ManifestFilesPruner(
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
     }
-}
-
-namespace
-{
-
-/// Iceberg keeps a decimal partition value as an Avro `fixed`: the unscaled value in two's-complement
-/// big-endian form, using the minimum number of bytes. ClickHouse reads such a `fixed` as a `String`,
-/// so restore the decimal here. Accumulate into the unsigned counterpart, pre-filled with the sign
-/// bits, so that the sign extension comes out of the shifts themselves.
-template <typename DecimalType>
-Field decodePartitionDecimal(const String & bytes, const IDataType & type)
-{
-    using NativeType = typename DecimalType::NativeType;
-    using UnsignedType = make_unsigned_t<NativeType>;
-
-    if (bytes.empty() || bytes.size() > sizeof(NativeType))
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {} bytes of {}",
-            bytes.size(),
-            sizeof(NativeType),
-            type.getName());
-
-    UnsignedType unscaled_value = (bytes[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
-    for (const auto byte : bytes)
-        unscaled_value = (unscaled_value << 8) | static_cast<UInt8>(byte);
-
-    return DecimalField<DecimalType>(static_cast<NativeType>(unscaled_value), getDecimalScale(type));
-}
-
-Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
-{
-    if (checkDecimal<Decimal32>(type))
-        return decodePartitionDecimal<Decimal32>(bytes, type);
-    if (checkDecimal<Decimal64>(type))
-        return decodePartitionDecimal<Decimal64>(bytes, type);
-    if (checkDecimal<Decimal128>(type))
-        return decodePartitionDecimal<Decimal128>(bytes, type);
-    if (checkDecimal<Decimal256>(type))
-        return decodePartitionDecimal<Decimal256>(bytes, type);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal type {} of an Iceberg partition column", type.getName());
-}
-
 }
 
 PruningReturnStatus ManifestFilesPruner::canBePruned(
@@ -236,8 +154,6 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 field = POSITIVE_INFINITY;
             else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
                 field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
-            else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
-                field = decodePartitionDecimalByType(field.safeGet<String>(), *type);
         }
 
         bool can_be_true = partition_key_condition->mayBeTrueInRange(
@@ -251,30 +167,21 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
-        std::optional<NameAndTypePair> name_and_type;
-        bool has_no_nulls = true;
+        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
 
-        if (auto lineage_column = row_lineage_columns.find(column_id); lineage_column != row_lineage_columns.end())
+        /// There is no such column in this manifest file
+        if (!name_and_type.has_value())
         {
-            name_and_type = lineage_column->second;
-        }
-        else
-        {
-            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
-
-            if (!name_and_type.has_value())
-            {
-                continue;
-            }
-
-            auto info_it = entry->parsed_entry->columns_infos.find(column_id);
-            has_no_nulls = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nulls_count.has_value()
-                && *info_it->second.nulls_count == 0;
+            continue;
         }
 
         auto rect_it = entry_hyperrectangles.find(column_id);
         if (rect_it == entry_hyperrectangles.end())
             continue;
+
+        auto info_it = entry->parsed_entry->columns_infos.find(column_id);
+        bool has_no_nulls = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nulls_count.has_value()
+            && *info_it->second.nulls_count == 0;
 
         if (has_no_nulls && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, {name_and_type->type}))
         {

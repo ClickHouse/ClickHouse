@@ -10,10 +10,9 @@ doc_type: 'reference'
   ## WKT
 </div>
 
-Devuelve un objeto geométrico WKT (Well Known Text) a partir de varios [tipos de datos Geo](/es/reference/data-types/geo). Los objetos WKT compatibles son:
+Devuelve un objeto geométrico WKT (Well Known Text) a partir de varios [tipos de datos geográficos](/es/reference/data-types/geo). Los objetos WKT compatibles son:
 
 * POINT
-* MULTIPOINT
 * POLYGON
 * MULTIPOLYGON
 * LINESTRING
@@ -27,10 +26,9 @@ WKT(geo_data)
 
 **Parámetros**
 
-`geo_data` puede ser uno de los siguientes [tipos de datos Geo](/es/reference/data-types/geo) o uno de sus tipos primitivos subyacentes:
+`geo_data` puede ser uno de los siguientes [Tipos de datos Geo](/es/reference/data-types/geo) o uno de sus tipos primitivos subyacentes:
 
 * [Point](/es/reference/data-types/geo#point)
-* [MultiPoint](/es/reference/data-types/geo#multipoint)
 * [Ring](/es/reference/data-types/geo#ring)
 * [Polygon](/es/reference/data-types/geo#polygon)
 * [MultiPolygon](/es/reference/data-types/geo#multipolygon)
@@ -40,7 +38,6 @@ WKT(geo_data)
 **Valor devuelto**
 
 * Se devuelve el objeto geométrico WKT `POINT` para un Point.
-* Se devuelve el objeto geométrico WKT `MULTIPOINT` para un MultiPoint.
 * Se devuelve el objeto geométrico WKT `POLYGON` para un Polygon.
 * Se devuelve el objeto geométrico WKT `MULTIPOLYGON` para un MultiPolygon.
 * Se devuelve el objeto geométrico WKT `LINESTRING` para un LineString.
@@ -75,7 +72,7 @@ SELECT wkt([[[(0., 0.), (10., 0.), (10., 10.), (0., 10.)], [(4., 4.), (5., 4.), 
 ```
 
 ```response
-MULTIPOLYGON(((0 0,10 0,10 0,10 10,0 10,0 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))
+MULTIPOLYGON(((0 0,10 0,10 10,0 10,0 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))
 ```
 
 <div id="readwktmultipolygon">
@@ -256,44 +253,6 @@ SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6)
 
 ```response
 [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
-```
-
-<div id="readwktmultipoint">
-  ## readWKTMultiPoint
-</div>
-
-Analiza una representación de Well-Known Text (WKT) de una geometría MultiPoint y la devuelve en el formato interno de ClickHouse.
-
-<div id="syntax">
-  ### Sintaxis
-</div>
-
-```sql
-readWKTMultiPoint(wkt_string)
-```
-
-<div id="arguments">
-  ### Argumentos
-</div>
-
-* `wkt_string`: La cadena WKT de entrada que representa una geometría de tipo MultiPoint.
-
-<div id="returned-value">
-  ### Valor devuelto
-</div>
-
-La función devuelve una representación interna de ClickHouse de la geometría de multipuntos.
-
-<div id="example">
-  ### Ejemplo
-</div>
-
-```sql
-SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)');
-```
-
-```response
-[(1,1),(2,2),(3,3)]
 ```
 
 <div id="readwktring">
@@ -541,44 +500,6 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
 </div>
 
 UInt8: 0 para false, 1 para true
-
-<div id="readwkbmultipoint">
-  ## readWKBMultiPoint
-</div>
-
-Analiza una representación Well-Known Binary (WKB) de una geometría MultiPoint y la devuelve en el formato interno de ClickHouse.
-
-<div id="syntax">
-  ### Sintaxis
-</div>
-
-```sql
-readWKBMultiPoint(wkb_string)
-```
-
-<div id="arguments">
-  ### Argumentos
-</div>
-
-* `wkb_string`: La cadena WKB de entrada que representa una geometría MultiPoint.
-
-<div id="returned-value">
-  ### Valor devuelto
-</div>
-
-La función devuelve una representación interna de ClickHouse de la geometría multipunto.
-
-<div id="example">
-  ### Ejemplo
-</div>
-
-```sql
-SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f000000000000f03f010100000000000000000000400000000000000040'));
-```
-
-```response
-[(1,1),(2,2)]
-```
 
 <div id="polygonsdistancespherical">
   ## polygonsDistanceSpherical
@@ -849,78 +770,6 @@ Dos polígonos
 </div>
 
 UInt8: 0 para false, 1 para true
-
-<div id="geometryintersectcartesian">
-  ## geometryIntersectCartesian
-</div>
-
-Devuelve true si dos geometrías se intersecan (comparten algún punto, línea o área).
-
-A diferencia de [`polygonsIntersectCartesian`](#polygonsintersectcartesian), acepta cualquier tipo de dato geométrico
-(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), incluido el tipo común
-[`Geometry`](/es/reference/data-types/geo#geometry), y los dos argumentos pueden ser de tipos distintos.
-
-Las coordenadas se expresan en el sistema de coordenadas cartesianas.
-
-<div id="example">
-  ### Ejemplo
-</div>
-
-```sql
-SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
-```
-
-```response
-1
-```
-
-<div id="input-parameters">
-  ### Parámetros de entrada
-</div>
-
-Dos geometrías de cualquier tipo de dato geométrico (o `Geometry`).
-
-<div id="returned-value">
-  ### Valor devuelto
-</div>
-
-UInt8, 0 para false, 1 para true
-
-<div id="geometryintersectspherical">
-  ## geometryIntersectSpherical
-</div>
-
-Devuelve true si dos geometrías se intersecan (comparten algún punto, línea o área).
-
-A diferencia de [`polygonsIntersectSpherical`](#polygonsintersectspherical), acepta cualquier tipo de dato geométrico
-(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), incluido el tipo común
-[`Geometry`](/es/reference/data-types/geo#geometry), y los dos argumentos pueden ser de tipos diferentes.
-
-Las coordenadas se interpretan como si estuvieran sobre una esfera ideal.
-
-<div id="example">
-  ### Ejemplo
-</div>
-
-```sql
-SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
-```
-
-```response
-1
-```
-
-<div id="input-parameters">
-  ### Parámetros de entrada
-</div>
-
-Dos geometrías de cualquier tipo de dato geométrico (o `Geometry`).
-
-<div id="returned-value">
-  ### Valor devuelto
-</div>
-
-UInt8, 0 para false, 1 para true
 
 <div id="polygonconvexhullcartesian">
   ## polygonConvexHullCartesian

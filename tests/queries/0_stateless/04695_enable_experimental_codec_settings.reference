@@ -1,9 +1,0 @@
-rejected with all settings disabled
-the dedicated setting alone enables its codec
-4
-the dedicated setting of one codec does not enable the others
-each remaining codec can be enabled with its dedicated setting
-the dedicated setting also enables the codec in ALTER
-the dedicated setting also enables the codec in the codec-valued MergeTree settings
-the dedicated setting also enables the codec in ALTER MODIFY SETTING
-the dedicated setting also enables the codec in TTL RECOMPRESS

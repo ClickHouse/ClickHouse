@@ -34,7 +34,7 @@ namespace ProfileEvents
 {
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorBytesFromSource;
-    extern const Event ReaderExecutorDeliveredBytes;
+    extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorLongConnectionHits;
@@ -119,8 +119,7 @@ protected:
     {
         auto ex = std::make_unique<ReaderExecutor>(
             std::make_shared<LocalSourceReader>(), StoredObjects{obj}, ReaderExecutor::Options{
-                /// Window == block so the file spans many windows; the metrics measure reuse across them.
-                .window_size = BLOCK, .min_bytes_for_seek = MIN_BYTES_FOR_SEEK, .block_size = BLOCK,
+                .min_bytes_for_seek = MIN_BYTES_FOR_SEEK, .block_size = BLOCK,
                 .max_tail_for_drain = MAX_TAIL_FOR_DRAIN, .long_connection_limit = std::move(limit)});
         return std::make_unique<PipelineReadBuffer>(std::move(ex));
     }
@@ -131,7 +130,7 @@ protected:
         m.requests = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
         m.incomplete = tg.get(ProfileEvents::ReaderExecutorIncompleteConnections);
         m.hits = tg.get(ProfileEvents::ReaderExecutorLongConnectionHits);
-        m.requested = tg.get(ProfileEvents::ReaderExecutorDeliveredBytes);
+        m.requested = tg.get(ProfileEvents::ReaderExecutorRequestedBytes);
         m.from_source = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
         m.cost_ms = static_cast<double>(tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds)) / 1000.0;
         return m;

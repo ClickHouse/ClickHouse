@@ -1051,7 +1051,7 @@ GROUP BY UserId
   ## Procesamiento paralelo frente a secuencial
 </div>
 
-Como se mostró en el ejemplo anterior, una tabla puede actuar como fuente para varias vistas materializadas. El orden en que se ejecutan depende de la configuración [`parallel_view_processing`](/es/reference/settings/session-settings/parallel#parallel_view_processing).
+Como se mostró en el ejemplo anterior, una tabla puede actuar como fuente para varias vistas materializadas. El orden en que se ejecutan depende de la configuración [`parallel_view_processing`](/es/reference/settings/session-settings#parallel_view_processing).
 
 De forma predeterminada, esta configuración es `0` (`false`), lo que significa que las vistas materializadas se ejecutan secuencialmente en orden de `uuid`.
 
@@ -1151,7 +1151,7 @@ ORDER BY uuid ASC
 │ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
 └──────┴──────────────────────────────────────┘
 
-3 rows in set. Elapsed: 0.004 sec.
+3 filas en el conjunto. Elapsed: 0.004 sec.
 ```
 
 Por el contrario, veamos qué sucede si insertamos una fila con `parallel_view_processing=1` activado. Con esta opción activada, las vistas se ejecutan en paralelo, sin garantizar el orden en que las filas llegan a la tabla de destino:
@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-En este caso, la CTE users se vuelve a evaluar en cada inserción en posts, y la vista materializada no se actualizará cuando se inserten nuevos registros en users, sino solo cuando se inserten en posts.
+En este caso, la CTE `users` se vuelve a evaluar con cada inserción en `posts`, y la vista materializada no se actualizará cuando se inserten nuevos `users`, sino solo cuando se inserten `posts`.
 
-En general, use CTE para la lógica que opera sobre la misma tabla de origen a la que está asociada la vista materializada, o asegúrese de que las tablas referenciadas sean pequeñas y no vayan a provocar cuellos de botella de rendimiento. Como alternativa, considere [las mismas optimizaciones que para los JOINs con vistas materializadas](/es/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+En general, use las CTE para la lógica que opera sobre la misma tabla de origen a la que está asociada la vista materializada, o asegúrese de que las tablas a las que se hace referencia sean pequeñas y sea poco probable que provoquen cuellos de botella de rendimiento. Como alternativa, considere [las mismas optimizaciones que para los JOIN con vistas materializadas](/es/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

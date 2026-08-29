@@ -10,7 +10,7 @@ keywords: ['空值/零值占比', '计算']
   ## 如何计算表中每一列的空值/零值占比
 </div>
 
-如果某一列是稀疏的 (为空或大多数值为零) ，ClickHouse 可以将其编码为稀疏格式，并自动优化计算——查询时无需对数据进行完全解压。实际上，如果你知道某一列的稀疏程度，就可以通过 [`ratio_of_defaults_for_sparse_serialization` 设置](/zh/reference/settings/merge-tree-settings/other#ratio_of_defaults_for_sparse_serialization) 来定义其占比，从而优化序列化。
+如果某一列是稀疏的 (为空或大多数值为零) ，ClickHouse 可以将其编码为稀疏格式，并自动优化计算——查询时无需对数据进行完全解压。实际上，如果你知道某一列的稀疏程度，就可以通过 [`ratio_of_defaults_for_sparse_serialization` 设置](/zh/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) 来定义其占比，从而优化序列化。
 
 这个实用查询可能需要一些时间，但它会分析表中的每一行，并计算指定表中每一列的零值 (或默认值) 占比：
 

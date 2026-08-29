@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 이 단계별 가이드에서는 [MySQL ClickPipe](/ko/integrations/clickpipes/mysql/index)를 사용해 Amazon RDS MySQL의 데이터를 ClickHouse Cloud로 복제하도록 구성하는 방법을 안내합니다. MySQL CDC에 관한 일반적인 질문은 [MySQL FAQ 페이지](/ko/integrations/clickpipes/mysql/faq)를 참조하십시오.
 
@@ -19,33 +18,35 @@ import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.m
   ## 바이너리 로그 보존 활성화
 </div>
 
-바이너리 로그는 MySQL 서버 인스턴스에서 수행된 데이터 변경 정보를 포함하는 로그 파일 집합이며, 바이너리 로그 파일은 복제에 필요합니다. RDS MySQL에서 바이너리 로그 보존을 구성하려면 [바이너리 로깅 활성화](#enable-binlog-logging) 및 [binlog 보존 기간 늘리기](#binlog-retention-interval)를 수행해야 합니다.
+바이너리 로그는 MySQL server 인스턴스에서 수행된 데이터 변경 정보가 담긴 로그 파일의 집합이며, 복제에는 바이너리 로그 파일이 필요합니다. RDS MySQL에서 바이너리 로그 보존을 구성하려면 [바이너리 로깅을 활성화](#enable-binlog-logging)하고 [binlog 보존 기간을 늘려야](#binlog-retention-interval) 합니다.
 
-<Steps>
-  <Step title="자동 백업을 통해 바이너리 로깅 활성화" id="enable-binlog-logging">
-    자동 백업 기능은 MySQL에서 바이너리 로깅이 활성화되는지 여부를 결정합니다. 자동 백업은 RDS Console에서 **Modify** &gt; **Additional configuration** &gt; **Backup**으로 이동한 다음 **Enable automated backups** 확인란을 선택하여(아직 선택하지 않은 경우) 인스턴스에 대해 구성할 수 있습니다.
+<div id="enable-binlog-logging">
+  ### 1. 자동 백업을 통해 바이너리 로깅 활성화
+</div>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS에서 자동 백업 활성화" size="lg" border />
+자동 백업 기능 설정에 따라 MySQL의 바이너리 로깅이 활성화되거나 비활성화됩니다. 자동 백업은 RDS Console에서 **Modify** &gt; **Additional configuration** &gt; **Backup**으로 이동한 다음 **Enable automated backups** 체크박스를 선택해 인스턴스에 대해 구성할 수 있습니다(아직 선택하지 않은 경우).
 
-    복제 사용 사례에 따라 **Backup retention period**를 충분히 긴 값으로 설정하는 것을 권장합니다.
-  </Step>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS에서 자동 백업 활성화" size="lg" border />
 
-  <Step title="binlog 보존 기간 늘리기" id="binlog-retention-interval">
-    <Warning>
-      ClickPipes가 복제를 재개하려고 할 때 구성된 binlog 보존 값에 따라 필요한 binlog 파일이 이미 삭제된 경우, ClickPipe는 오류 상태가 되며 resync가 필요합니다.
-    </Warning>
+복제 용도에 따라 **Backup retention period**를 충분히 긴 값으로 설정하는 것이 좋습니다.
 
-    기본적으로 Amazon RDS는 바이너리 로그를 가능한 한 빨리 삭제합니다(즉, *지연 삭제(lazy purging)*). 장애 상황에서도 복제에 필요한 바이너리 로그 파일을 사용할 수 있도록 binlog 보존 기간을 최소 **72시간**으로 늘리는 것을 권장합니다. 바이너리 로그 보존 기간([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours))을 설정하려면 [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) 프로시저를 사용하십시오:
+<div id="binlog-retention-interval">
+  ### 2. binlog 보존 기간 늘리기
+</div>
 
-    [//]: # "참고: 대부분의 CDC 제공업체는 RDS의 최대 보존 기간(7일/168시간)을 권장합니다. 이는 디스크 사용량에 영향을 미치므로, 여기서는 보수적으로 최소 3일/72시간을 권장합니다."
+<Warning>
+  ClickPipes가 복제를 재개하려고 할 때 구성된 binlog 보존 값에 따라 필요한 binlog 파일이 이미 삭제된 경우, ClickPipe는 오류 상태가 되며 resync가 필요합니다.
+</Warning>
 
-    ```text
-    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-    ```
+기본적으로 Amazon RDS는 바이너리 로그를 가능한 한 빨리 삭제합니다(즉, *지연 삭제(lazy purging)*). 장애 상황에서도 복제에 필요한 바이너리 로그 파일을 사용할 수 있도록 binlog 보존 기간을 최소 **72시간**으로 늘리는 것을 권장합니다. 바이너리 로그 보존 기간([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours))을 설정하려면 [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) 프로시저를 사용하십시오:
 
-    이 구성이 설정되지 않았거나 인터벌이 너무 짧으면 바이너리 로그에 공백이 발생하여 ClickPipes가 복제를 재개하지 못할 수 있습니다.
-  </Step>
-</Steps>
+[//]: # "참고: 대부분의 CDC 제공업체는 RDS의 최대 보존 기간(7일/168시간)을 권장합니다. 이는 디스크 사용량에 영향을 미치므로, 여기서는 보수적으로 최소 3일/72시간을 권장합니다."
+
+```text
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+```
+
+이 구성이 설정되지 않았거나 인터벌이 너무 짧으면 바이너리 로그에 공백이 발생하여 ClickPipes가 복제를 재개하지 못할 수 있습니다.
 
 <div id="binlog-settings">
   ## binlog 설정 구성하기
@@ -137,12 +138,6 @@ GTID 기반 복제는 Amazon RDS for MySQL 버전 5.7, 8.0, 8.4에서 지원됩�
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
-<div id="iam-authentication">
-  ### IAM authentication 사용(선택 사항)
-</div>
-
-<IAMAuthentication engine="mysql" service="rds" />
-
 <div id="configure-network-access">
   ## 네트워크 액세스 설정
 </div>
@@ -151,7 +146,7 @@ GTID 기반 복제는 Amazon RDS for MySQL 버전 5.7, 8.0, 8.4에서 지원됩�
   ### IP 기반 접근 제어
 </div>
 
-Aurora MySQL 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 RDS 보안 그룹의 **인바운드 규칙**에 추가하십시오.
+Aurora MySQL 인스턴스에 대한 트래픽을 제한하려면, [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 RDS 보안 그룹의 **인바운드 규칙**에 추가하십시오.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS MySQL에서 보안 그룹을 찾는 위치" size="lg" border />
 
@@ -167,4 +162,4 @@ Aurora MySQL 인스턴스로의 트래픽을 제한하려면 [문서에 안내�
   ## 다음 단계
 </div>
 
-이제 Amazon RDS MySQL 인스턴스가 binlog 복제용으로 구성되었고 ClickHouse Cloud와 안전하게 연결되었으므로, [첫 번째 MySQL ClickPipe를 생성할 수 있습니다](/ko/integrations/clickpipes/mysql/index#create-your-clickpipe). MySQL CDC와 관련된 일반적인 질문은 [MySQL FAQ 페이지](/ko/integrations/clickpipes/mysql/faq)를 참조하십시오.
+이제 Amazon RDS MySQL 인스턴스가 binlog 복제를 위해 구성되었고 ClickHouse Cloud에 안전하게 연결되었으므로, [첫 번째 MySQL ClickPipe를 생성하세요](/ko/integrations/clickpipes/mysql/index#create-your-clickpipe). MySQL CDC에 관한 일반적인 질문은 [MySQL FAQ 페이지](/ko/integrations/clickpipes/mysql/faq)에서 확인하십시오.
