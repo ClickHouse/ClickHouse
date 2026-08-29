@@ -2166,7 +2166,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # Every failure, not only the two the verdicts above can attribute: on cgroup v1 a kill
         # inside a test container is charged to that container's own cgroup, so no verdict here
         # sees one and the dump is its only record.
-        if attach_dmesg or has_error or any(not r.is_ok() for r in test_results):
+        if (
+            attach_dmesg
+            or has_error
+            or any(not r.is_ok() for r in test_results)
+            # Mirrors `empty_harness_failure` below, which reports ERROR without setting `has_error`.
+            or ((is_flaky_check or is_targeted_check) and not test_results and not timed_out)
+        ):
             uncleared = " (buffer not cleared for this run, so a kill may be a previous job's)"
             print_oom_lines(
                 dmesg.decode(errors="replace"), caveat="" if dmesg_cleared else uncleared
