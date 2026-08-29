@@ -34,6 +34,11 @@ from .settings import Settings
 from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
+# Bound for the on_error_hook, in seconds. The hook is best-effort log collection
+# that runs while the result is still unpublished, so it must not be able to
+# outlive the job's remaining budget. Generous enough for any observed hook.
+ON_ERROR_HOOK_TIMEOUT_SEC = 1800
+
 
 class Runner:
     @staticmethod
@@ -599,8 +604,14 @@ class Runner:
 
         if result.is_error() and result.get_on_error_hook():
             print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
-            # Add hook timeout once it's needed
-            Shell.check(result.get_on_error_hook(), verbose=True)
+            # Bounded: the hook runs before the result is uploaded, so a hook that
+            # never returns (the integration hook archives every test instance
+            # directory) costs the whole report instead of just its own output.
+            Shell.check(
+                result.get_on_error_hook(),
+                verbose=True,
+                timeout=ON_ERROR_HOOK_TIMEOUT_SEC,
+            )
 
         result.update_duration()
         result.set_files([Settings.RUN_LOG], strict=False)

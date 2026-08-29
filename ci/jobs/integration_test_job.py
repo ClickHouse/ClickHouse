@@ -39,6 +39,15 @@ MAX_FAILS_BEFORE_DROP = 5
 # flakiness coverage instead of a truncated run. See FLAKY_CHECK_TIME_LIMIT for the hard
 # time guarantee that backstops this.
 MAX_FLAKY_CHECK_MODULES = 10
+# Bound for the post-run log/config archiving, in seconds. Archiving sits between result
+# collection and the only result dump, so exceeding it must cost the tarball rather than
+# the report. Healthy shards run 4491-5747s against the 18000s job budget, so 30 minutes
+# is far more than any observed shard needs to archive.
+# Applied twice per archive - once to the `tar` write, and again to the `tar -tzf`
+# read-back that decides whether a non-zero exit still produced a usable archive - so one
+# call's worst case is twice this value. Immaterial: the read-back measures ~1.6s for a
+# 367MB archive, so even both call sites at 3600s stay far inside the job budget.
+ARCHIVE_TIMEOUT_SEC = 1800
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
@@ -850,6 +859,26 @@ def is_empty_best_effort_skip(
     return (is_flaky_check or is_targeted_check) and not has_results and timed_out
 
 
+def checkpoint_collected_results(job_name: str, test_results: list, is_local_run: bool):
+    """
+    Write the results collected so far into the job's existing result file, so a job
+    script that dies during post-processing still leaves them on disk for the runner to
+    publish instead of the empty `RUNNING` stub.
+
+    Updates the existing result rather than building a fresh one: `Result.create_from`
+    takes no `ext`, so it would drop the on_error_hook the job script sets and the run
+    url. No status is assigned - the runner's `KILLED` patch keeps the children and
+    decides the status, and every status decision in `main` still runs on a normal job.
+    `set_results` dumps by itself, since `_pre_run` created the file.
+
+    Skipped on a local run, which has no runner to publish anything. This does not cover
+    the whole runner process being cancelled: nothing local is left to upload then.
+    """
+    if is_local_run:
+        return
+    Result.from_fs(job_name).set_results(test_results)
+
+
 def main():
     sw = Utils.Stopwatch()
     info = Info()
@@ -867,15 +896,37 @@ def main():
     is_llvm_coverage = False
     llvm_profdata_cmd = None
 
-    # Set on_error_hook to collect logs on hard timeout
+    # Set on_error_hook to collect logs on hard timeout.
+    # The archive is built under a temporary name unique to this shell and renamed in
+    # only once it is known to be usable: the hook writes the same logs.tar.gz the
+    # normal path produces, and the upload only checks that the file exists. Writing
+    # the destination directly would publish an archive cut short by the hook timeout,
+    # and would destroy a complete archive the normal path had already written.
+    # A non-zero tar exit does not mean the archive is unusable, so it only decides
+    # what still needs proving: 0 and 1 ("some files differ", routine here since the
+    # inputs are logs still being appended to) are taken as they are, and any other
+    # code is settled by reading the archive back. The globs below are the reason:
+    # `_instances*` matches nothing until a cluster starts, and the unexpanded pattern
+    # makes tar exit 2 after archiving every input that did exist.
+    # The whole hook stays non-fatal (the trailing `:`).
     Result.from_fs(info.job_name).set_on_error_hook(
         """
 dmesg -T >./ci/tmp/dmesg.log
 sudo chown -R $(id -u):$(id -g) ./tests/integration
-tar -czf ./ci/tmp/logs.tar.gz \
+tmp_archive=$(mktemp ./ci/tmp/logs.tar.gz.XXXXXXXX.tmp)
+tar --warning=no-file-changed -czf "$tmp_archive" \
   ./tests/integration/test_*/_instances*/ \
   ./ci/tmp/*.log \
-  ./ci/tmp/*.jsonl || :
+  ./ci/tmp/*.jsonl
+tar_rc=$?
+if [ "$tar_rc" -le 1 ] || tar -tzf "$tmp_archive" >/dev/null 2>&1; then
+  echo "on_error_hook archiving finished, tar rc [$tar_rc]"
+  mv "$tmp_archive" ./ci/tmp/logs.tar.gz
+else
+  echo "WARNING: on_error_hook archiving failed, tar rc [$tar_rc]"
+  rm -f "$tmp_archive"
+fi
+:
 """
     ).set_files(
         [
@@ -1458,6 +1509,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 if any(not r.is_ok() for r in bt_test_results):
                     break
 
+    # Before any post-processing, so an archiving overrun below cannot cost the results.
+    checkpoint_collected_results(info.job_name, test_results, info.is_local_run)
+
     # Collect logs before re-run
     attached_files = []
     if not info.is_local_run:
@@ -1481,12 +1535,23 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     failed_tests_files.append(str(log_file))
 
         if failed_suits:
-            attached_files.append(
-                Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
-            )
-            attached_files.append(
-                Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
-            )
+            # Attach only archives that were actually produced: a bounded archive
+            # that overran returns None, and losing a tarball is preferable to
+            # losing the report that the archiving delays.
+            for archive in (
+                Utils.compress_files_gz(
+                    failed_tests_files,
+                    f"{temp_path}/logs.tar.gz",
+                    timeout=ARCHIVE_TIMEOUT_SEC,
+                ),
+                Utils.compress_files_gz(
+                    config_files,
+                    f"{temp_path}/configs.tar.gz",
+                    timeout=ARCHIVE_TIMEOUT_SEC,
+                ),
+            ):
+                if archive:
+                    attached_files.append(archive)
             if Path("./ci/tmp/docker-in-docker.log").exists():
                 attached_files.append("./ci/tmp/docker-in-docker.log")
 

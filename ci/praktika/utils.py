@@ -12,6 +12,7 @@ import sys
 import shutil
 import tempfile
 import time
+import uuid
 from abc import ABC, abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -280,10 +281,38 @@ class Shell:
         return not failed
 
     @classmethod
-    def _check_timeout(cls, timeout, process) -> None:
+    def _check_timeout(cls, timeout, process, finished) -> None:
         if not timeout:
             return
-        time.sleep(timeout)
+        # Wake as soon as this attempt's child is reaped rather than sleeping the
+        # timeout out: in a long-lived process a blind sleep fires after the
+        # command already finished and killpg's a possibly PID-recycled group.
+        if finished.wait(timeout):
+            return
+
+        # Every liveness test here is about the whole process GROUP, not the leader:
+        # when the shell exits but a background descendant still holds the inherited
+        # output pipes, the reader threads stay blocked, so `finished` is not set yet
+        # while the leader is already reaped. A leader-only test then reports "gone"
+        # and the enforcement it guards never happens - before the signal it returns
+        # without signalling at all, and after the signal it ends the grace period on
+        # its first iteration and skips the SIGKILL, leaving `Shell.run` blocked in
+        # its reader joins for the descendant's whole natural lifetime.
+        def group_alive():
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                # The group exists but is not ours. "Alive" is the fail-safe answer:
+                # signalling a group killpg will then reject costs nothing, while
+                # calling it dead silently stops enforcing the bound.
+                return True
+            return True
+
+        # Backstop for the race between the wait expiring and the attempt ending.
+        if not group_alive():
+            return
         print(
             f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
         )
@@ -297,13 +326,13 @@ class Shell:
         wait_interval = 5
 
         # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
+        while group_alive() and time_wait < 100:
             print("Waiting for process to exit...")
             time.sleep(wait_interval)
             time_wait += wait_interval
 
         # Force kill if still running
-        if process.poll() is None:
+        if group_alive():
             print("WARNING: Process still running after SIGTERM, sending SIGKILL")
             try:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -351,6 +380,14 @@ class Shell:
                     print(f"Retrying in {delay}s...")
                 time.sleep(delay)
 
+            # One Event per attempt. A single Event hoisted out of the loop would
+            # already be set once attempt 1 was reaped, so every later attempt
+            # would run with no timeout enforcement at all.
+            finished = Event()
+            # Cleared per attempt for the same reason: an attempt that raises before
+            # its own Popen must not signal the previous attempt's reaped pid, which
+            # may have been recycled as an unrelated process group.
+            proc = None
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -369,7 +406,9 @@ class Shell:
 
                     # Start the timeout thread if specified
                     if timeout:
-                        t = Thread(target=cls._check_timeout, args=(timeout, proc))
+                        t = Thread(
+                            target=cls._check_timeout, args=(timeout, proc, finished)
+                        )
                         t.daemon = True
                         t.start()
 
@@ -450,12 +489,26 @@ class Shell:
                         if retry == retries - 1:
                             print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
-                    proc.kill()
+                    # The whole group, not just the leader: `finally` below cancels the
+                    # watchdog, so whatever is left running here is never signalled by
+                    # anyone. Reaped afterwards so the leader leaves no zombie.
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        proc.kill()
+                    try:
+                        proc.wait(timeout=10)
+                    except Exception:  # noqa: BLE001
+                        pass
                 if retry == retries - 1:
                     if strict:
                         raise
                     else:
                         return 1  # Return non-zero for failure
+            finally:
+                # This attempt is over: cancel its watchdog so it cannot signal a
+                # process group we no longer wait on (and that may be recycled).
+                finished.set()
 
         if verbose:
             print(
@@ -828,22 +881,119 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{aes_key_path}")
         return f"{path}.enc"
 
+    # Only a clean exit says the archive is whole. `Shell.run` reports an internal
+    # failure of its own as 1 too, and such a failure can leave the write cut short,
+    # so a 1 is indistinguishable from tar's own and has to be read back.
+    TAR_UNCONDITIONALLY_OK_RETURN_CODES = (0,)
+
     @classmethod
-    def compress_files_gz(cls, files, archive_name):
+    def _archive_reads_back(cls, archive, rc, timeout=None):
+        """Whether `archive` is a complete, listable archive despite `tar` exit `rc`.
+
+        `tar -tzf` walks the member stream, so it accepts an archive whose write
+        completed and rejects one cut short mid-member; it is not a stand-in for the
+        rc, it answers the only question the caller has. A negative rc is the
+        watchdog's SIGTERM, which by construction interrupted the write, so it is
+        rejected without asking. Bounded by the caller's `timeout` and silent about
+        its own failure, because this helper must not raise either.
+        """
+        if rc < 0:
+            return False
+        return (
+            Shell.run(f"tar -tzf {archive} > /dev/null", verbose=False, timeout=timeout)
+            == 0
+        )
+
+    @staticmethod
+    def _discard(path):
+        # Best-effort: an exception here would skip the caller's result upload, the very
+        # outcome the bound exists to prevent. `missing_ok` covers only a missing file.
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError as e:
+            print(f"WARNING: failed to remove temporary archive [{path}]: {e}")
+
+    @classmethod
+    def compress_files_gz(cls, files, archive_name, timeout=None):
+        """Archive `files` into `archive_name`, optionally bounded by `timeout`.
+
+        Returns the archive path on success and None on failure, so a caller can
+        attach the archive only when it was actually produced. Nothing here raises:
+        an exception would skip the caller's result upload, which is the outcome the
+        bound exists to prevent. Missing inputs are dropped with a warning, and a
+        failed publish returns None.
+
+        The archive is built under a per-invocation temporary name and renamed into
+        place on success only. `tar` killed by the timeout leaves a large truncated
+        archive that the upload's existence check accepts, so writing the
+        destination directly would publish that truncation as the logs; and the two
+        callers that write the job's `logs.tar.gz` would then overwrite each other's
+        archive rather than just their own temporary file.
+
+        A non-zero `tar` exit does not by itself mean the archive is unusable, so the
+        rc only decides which cases still need proving: a negative rc is the
+        watchdog's SIGTERM and its archive is always truncated, while a positive rc
+        can accompany a complete archive of every input that did exist (an input path
+        that cannot be stat'ed makes `tar` exit 2 after archiving the rest). Those are
+        separated by asking whether the archive reads back, not by the rc.
+        """
         files = [
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
         ]
+        # A declared path may never have been created: `Result.from_pytest_run`
+        # registers the pytest log and report files before running pytest, and a
+        # conftest import error leaves both absent.
+        present = [file for file in files if Path(file).exists()]
         for file in files:
-            assert Path(file).exists(), f"Path does not exist [{file}]"
+            if file not in present:
+                print(f"WARNING: not archiving non-existent path [{file}]")
+        if not present:
+            print(f"WARNING: nothing to archive into [{archive_name}]")
+            return None
 
-        with tempfile.NamedTemporaryFile() as f:
-            f.write("\n".join(files).encode())
-            f.flush()
-            Shell.check(
-                f"tar -cf - -T {f.name} | gzip > {archive_name}",
-                verbose=True,
-                strict=True,
+        # Beside the destination, so os.replace stays atomic, and unique per invocation,
+        # so an overlapping writer cannot keep writing into the archive this one
+        # publishes. A pid does not make it unique: the two writers of the job's
+        # logs.tar.gz share this directory across a Docker pid namespace boundary.
+        tmp_archive = f"{archive_name}.{uuid.uuid4().hex}.tmp"
+        try:
+            with tempfile.NamedTemporaryFile() as f:
+                f.write("\n".join(present).encode())
+                f.flush()
+                # Direct `tar -czf`, not `tar -cf - | gzip`: the pipe reports only
+                # gzip's status (Shell.run does not set pipefail), so a tar that fails
+                # part-way - a test instance directory vanishing mid-job - exits 0 and
+                # would be renamed into place as complete.
+                rc = Shell.run(
+                    f"tar --warning=no-file-changed -czf {tmp_archive} -T {f.name}",
+                    verbose=True,
+                    timeout=timeout,
+                )
+        except OSError as e:
+            print(f"WARNING: failed to stage the archive for [{archive_name}]: {e}")
+            cls._discard(tmp_archive)
+            return None
+
+        if rc not in cls.TAR_UNCONDITIONALLY_OK_RETURN_CODES:
+            if not cls._archive_reads_back(tmp_archive, rc, timeout):
+                print(
+                    f"WARNING: failed to archive into [{archive_name}], tar rc [{rc}]"
+                )
+                cls._discard(tmp_archive)
+                return None
+            # Kept, but the rc is reported: it usually means an input was gone, so the
+            # archive is complete yet covers fewer inputs than the caller asked for.
+            print(
+                f"WARNING: archiving into [{archive_name}] reported tar rc [{rc}] but "
+                "the archive reads back, publishing it"
             )
+
+        try:
+            os.replace(tmp_archive, archive_name)
+        except OSError as e:
+            print(f"WARNING: failed to publish archive [{archive_name}]: {e}")
+            cls._discard(tmp_archive)
+            return None
         return archive_name
 
     @classmethod
