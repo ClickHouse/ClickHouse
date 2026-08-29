@@ -90,13 +90,16 @@ void StorageObjectStorageSink::initialize()
     auto buffer = object_storage->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
-    destination_buf = buffer.get();
+    /// The pointer is taken before the move, but it is assigned to the field only afterwards,
+    /// otherwise the lifetime analysis considers the field to be dangling.
+    auto * buffer_ptr = buffer.get();
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(buffer),
         chosen_compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
         settings[Setting::snappy_mode]);
+    destination_buf = buffer_ptr;
 
     /// With the parallel formatting, the data is written into the buffer by a background thread,
     /// and the amount of the written data cannot be checked after every block without a data race.
@@ -224,6 +227,10 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
     if (query_settings.split_on_write_by_size_bytes)
     {
+        if (query_settings.truncate_on_insert)
+            removeStaleSplitObjects(
+                *object_storage, key_for_splitting, getStartSequenceNumber(key_for_splitting, 1));
+
         get_next_path = [storage = object_storage, config = configuration, settings = query_settings,
                          key = key_for_splitting,
                          sequence_number = getStartSequenceNumber(key_for_splitting, 1)]() mutable -> String

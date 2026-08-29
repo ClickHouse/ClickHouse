@@ -2698,6 +2698,24 @@ static String getNextPathForSplittingBySize(
 }
 
 
+/// A truncating insert overwrites the whole dataset of the table. If the previous insert has produced
+/// more files than the current one, the leftovers have to be deleted - otherwise the stale data will be
+/// still visible both for the readers of this table and for the readers of the glob pattern over the directory.
+/// The files are written with consecutive numbers, so the removal stops at the first missing number.
+static void removeStaleSplitFiles(const String & path, size_t sequence_number)
+{
+    while (true)
+    {
+        String stale_path = setSequenceNumberInFileName(path, sequence_number);
+        ++sequence_number;
+
+        std::error_code error;
+        if (!fs::remove(stale_path, error) || error)
+            break;
+    }
+}
+
+
 class StorageFileSink final : public SinkToStorage, WithContext
 {
 public:
@@ -2822,13 +2840,16 @@ public:
                 "Data cannot be appended to {} because the {} format doesn't support appends",
                 use_table_fd ? "the given file descriptor" : ("file " + path), format_name);
 
-        destination_buf = naked_buffer.get();
+        /// The pointer is taken before the move, but it is assigned to the field only afterwards,
+        /// otherwise the lifetime analysis considers the field to be dangling.
+        auto * naked_buffer_ptr = naked_buffer.get();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
             static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
             settings[Setting::snappy_mode]);
+        destination_buf = naked_buffer_ptr;
 
         /// With the parallel formatting, the data is written into the buffer by a background thread,
         /// and the amount of the written data cannot be checked after every block without a data race.
@@ -2981,6 +3002,9 @@ public:
         StorageFileSink::GetNextPathCallback get_next_path;
         if (split_on_write_by_size_bytes)
         {
+            if (settings[Setting::engine_file_truncate_on_insert])
+                removeStaleSplitFiles(filepath, getStartSequenceNumber(filepath, 1));
+
             get_next_path = [partition_path = filepath,
                              sequence_number = getStartSequenceNumber(filepath, 1),
                              truncate_on_insert = settings[Setting::engine_file_truncate_on_insert].value,
@@ -3121,7 +3145,10 @@ SinkToStoragePtr StorageFile::write(
         /// A truncating insert overwrites the table: the split files of the previous inserts are forgotten,
         /// and the numbering starts over, overwriting them one by one.
         if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
+        {
             paths.resize(1);
+            removeStaleSplitFiles(path, getStartSequenceNumber(path, 1));
+        }
 
         /// The numbering is derived per insert from the name of the file this insert starts with:
         /// the next files continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).

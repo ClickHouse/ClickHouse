@@ -817,7 +817,11 @@ SinkToStoragePtr StorageObjectStorage::write(
     /// A truncating insert overwrites the table: it starts from the base key, the split objects
     /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
     if (settings.truncate_on_insert)
+    {
         paths.resize(1);
+        if (settings.split_on_write_by_size_bytes)
+            removeStaleSplitObjects(*object_storage, paths.front().path, getStartSequenceNumber(paths.front().path, 1));
+    }
 
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
             *object_storage, *configuration, settings, paths.front().path,

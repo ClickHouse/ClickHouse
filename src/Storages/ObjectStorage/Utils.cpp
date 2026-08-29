@@ -96,6 +96,23 @@ String getNextKeyForSplittingBySize(
     }
 }
 
+void removeStaleSplitObjects(
+    IObjectStorage & object_storage,
+    const String & key,
+    size_t sequence_number)
+{
+    while (true)
+    {
+        String stale_key = setSequenceNumberInFileName(key, sequence_number);
+        ++sequence_number;
+
+        if (!object_storage.exists(StoredObject(stale_key)))
+            break;
+
+        object_storage.removeObjectIfExists(StoredObject(stale_key));
+    }
+}
+
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
