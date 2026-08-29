@@ -2314,6 +2314,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     size_t num_streams,
     const Names & origin_column_names,
     const Names & column_names,
+    const NameSet & extra_columns_required_by_the_merge,
     std::optional<ActionsDAG> & out_projection)
 {
     const size_t total_marks_to_read = parts_with_ranges.getMarksCountAllParts();
@@ -2371,6 +2372,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             columns_to_restore.insert(data.merging_params.sign_column);
         if (!data.merging_params.is_deleted_column.empty())
             columns_to_restore.insert(data.merging_params.is_deleted_column);
+        columns_to_restore.insert(extra_columns_required_by_the_merge.begin(), extra_columns_required_by_the_merge.end());
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
@@ -4255,6 +4257,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
         /// A Summing merge decides whether to remove a row by looking at all aggregated columns,
         /// so the read has to fetch all of them even when the query needs only a subset of them.
+        NameSet columns_required_by_the_summing_merge;
         if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
         {
             const auto aggregated_columns = getColumnsAggregatedForSummingFinal(storage_snapshot->metadata, data.merging_params);
@@ -4268,18 +4271,39 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             std::vector<Strings> flattened_ancestors;
             if (data.merging_params.allow_tuple_element_aggregation)
                 header = Nested::flattenTupleRecursive(header, &flattened_ancestors);
-            auto is_leaf_of_a_column_already_read = [&](size_t position)
+            /// The column that carries a flattened leaf into the merge: the outermost tuple ancestor
+            /// the read set already contains. `flattened_ancestors` lists ancestors from the root
+            /// column inwards, so the first match is the outermost one - and picking the outermost
+            /// keeps a single carrier per leaf when several ancestors of the same leaf are read.
+            auto covering_ancestor = [&](size_t position) -> const String *
             {
                 if (position >= flattened_ancestors.size())
-                    return false;
-                return std::ranges::any_of(
-                    flattened_ancestors[position], [&](const String & ancestor) { return names.contains(ancestor); });
+                    return nullptr;
+                for (const auto & ancestor : flattened_ancestors[position])
+                    if (names.contains(ancestor))
+                        return &ancestor;
+                return nullptr;
             };
             for (size_t position = 0; const auto & column : header)
             {
-                if (aggregated_columns.contains(column.name) && !is_leaf_of_a_column_already_read(position)
-                    && names.emplace(column.name).second)
-                    column_names_to_read.push_back(column.name);
+                if (aggregated_columns.contains(column.name))
+                {
+                    /// Whichever column carries the leaf has to reach the merge, so remember it:
+                    /// a `PREWHERE` consumes its inputs, and a carrier that is only a `PREWHERE`
+                    /// input (a tuple ancestor such as `tup.inner`) is not in the query output and
+                    /// would be dropped from the block after filtering, leaving the merge to decide
+                    /// row removal without the leaves that ancestor covers.
+                    if (const auto * ancestor = covering_ancestor(position))
+                    {
+                        columns_required_by_the_summing_merge.insert(*ancestor);
+                    }
+                    else
+                    {
+                        columns_required_by_the_summing_merge.insert(column.name);
+                        if (names.emplace(column.name).second)
+                            column_names_to_read.push_back(column.name);
+                    }
+                }
                 ++position;
             }
         }
@@ -4290,6 +4314,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             num_streams,
             original_column_names,
             column_names_to_read,
+            columns_required_by_the_summing_merge,
             result_projection);
     }
 

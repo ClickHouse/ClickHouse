@@ -674,6 +674,7 @@ private:
         size_t num_streams,
         const Names & origin_column_names,
         const Names & column_names,
+        const NameSet & extra_columns_required_by_the_merge,
         std::optional<ActionsDAG> & out_projection);
 
     /// Reads non-intersecting primary-key ranges (each owned by a single deduplicated part) without a
