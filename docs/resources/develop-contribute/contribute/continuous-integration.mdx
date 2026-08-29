@@ -228,7 +228,7 @@ Download the binary from [CI build checks page](/get-started/setup/self-managed/
 
 In pull requests, most sanitizer jobs whose name ends with `selected tests` do not run the whole test suite.
 They run only the tests selected for the change: the tests the pull request adds or modifies, the tests that already failed in this pull request, and the tests covering the changed lines according to the coverage database.
-The MSan/WasmEdge jobs continue to run the full suite because the existing Wasm UDF tests are not MSan-compatible. The whole suite also runs in the debug and plain binary configurations, the builds with sanitizers are exercised by the [stress test](#stress-test), and the master branch runs the whole suite in every configuration.
+The whole suite runs in the debug and plain binary configurations, the builds with sanitizers are exercised by the [stress test](#stress-test), and the master branch runs the whole suite in every configuration.
 
 ## Integration tests {#integration-tests}
 
