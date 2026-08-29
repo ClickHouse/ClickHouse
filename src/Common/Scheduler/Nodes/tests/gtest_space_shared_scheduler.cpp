@@ -764,13 +764,15 @@ TEST(SchedulerSpaceShared, MemoryEvictionScorePrefersMemoryHolderOverShrunkZero)
 
     auto holder = std::make_unique<ManualAllocation>(queue, "holder", 8000, /* memory_eviction_score = */ 0);
     // `shrunk` is admitted, then releases all of its memory: admitted == true but allocated == 0. Despite
-    // its higher score, evicting it would free nothing, so it must not be chosen over `holder`.
-    ManualAllocation shrunk(queue, "shrunk", 3000, /* memory_eviction_score = */ 100);
-    shrunk.decreaseAsync(3000);
+    // its higher score, evicting it would free nothing, so it must not be chosen over `holder`. Its initial
+    // size must fit alongside `holder` under the limit (8000 + 1000 <= 10000): a not-yet-admitted allocation
+    // cannot reclaim within its own queue, so it has to be admittable outright rather than through eviction.
+    ManualAllocation shrunk(queue, "shrunk", 1000, /* memory_eviction_score = */ 100);
+    shrunk.decreaseAsync(1000);
     shrunk.waitSynced();
     ManualAllocation killer(queue, "killer", 1000, /* memory_eviction_score = */ 0);
 
-    killer.increaseAsync(2000); // 8000 + 3000 > 10000 -> triggers an eviction
+    killer.increaseAsync(2000); // 8000 (holder) + 3000 (killer grows to 3000) > 10000 -> triggers an eviction
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     while (holder->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
