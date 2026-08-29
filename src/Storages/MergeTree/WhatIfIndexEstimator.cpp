@@ -2,7 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/JoinedTables.h>
@@ -75,28 +75,28 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
 }
 
 /// Nothing was scanned, so mark every candidate not-applicable with the same reason
-WhatIfIndexEstimator::Result buildResultWithoutScan(
-    const MergeTreeData & data, const HypotheticalIndexStore & store, const String & reason)
+WhatIfResult buildResultWithoutScan(
+    const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason)
 {
-    WhatIfIndexEstimator::Result result;
+    WhatIfResult result;
     result.database = data.getStorageID().getDatabaseName();
     result.table = data.getStorageID().getTableName();
     for (const auto & index_desc : store.getForTable(data.getStorageID()))
     {
-        WhatIfIndexEstimator::IndexResult r;
-        r.index_name = index_desc.name;
-        r.index_type = index_desc.type;
-        r.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        WhatIfCandidateResult r;
+        r.name = index_desc.name;
+        r.type = index_desc.type;
+        r.status = WhatIfCandidateResult::NotApplicable;
         r.not_applicable_reason = reason;
-        result.index_results.push_back(std::move(r));
+        result.candidates.push_back(std::move(r));
     }
-    if (result.index_results.empty())
+    if (result.candidates.empty())
     {
-        WhatIfIndexEstimator::IndexResult none;
-        none.index_name = "(none)";
-        none.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        WhatIfCandidateResult none;
+        none.name = "(none)";
+        none.status = WhatIfCandidateResult::NotApplicable;
         none.not_applicable_reason = "No hypothetical indexes defined for this table.";
-        result.index_results.push_back(std::move(none));
+        result.candidates.push_back(std::move(none));
     }
     return result;
 }
@@ -133,7 +133,7 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
 }
 
 /// Check applicability, then try empirical → statistical → applicability_only
-WhatIfIndexEstimator::IndexResult evaluateIndex(
+WhatIfCandidateResult evaluateIndex(
     const IndexDescription & index_desc,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
@@ -144,16 +144,16 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 {
     const auto & data = read_step->getMergeTreeData();
 
-    WhatIfIndexEstimator::IndexResult result;
-    result.index_name = index_desc.name;
-    result.index_type = index_desc.type;
+    WhatIfCandidateResult result;
+    result.name = index_desc.name;
+    result.type = index_desc.type;
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
 
     /// `context` already has the inner-SELECT settings applied, so these checks match a real read
     if (!context->getSettingsRef()[Setting::use_skip_indexes])
     {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.status = WhatIfCandidateResult::NotApplicable;
         result.not_applicable_reason = "Skip indexes are disabled by `use_skip_indexes = 0`";
         return result;
     }
@@ -168,7 +168,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
                 user_settings[Setting::ignore_data_skipping_indices].toString(), user_settings);
             if (ignored_names.contains(index_desc.name))
             {
-                result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+                result.status = WhatIfCandidateResult::NotApplicable;
                 result.not_applicable_reason = "Index '" + index_desc.name + "' is listed in `ignore_data_skipping_indices`";
                 return result;
             }
@@ -189,7 +189,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
     catch (const Exception &)
     {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.status = WhatIfCandidateResult::NotApplicable;
         result.not_applicable_reason = "Hypothetical index no longer matches the current table schema: "
             + getCurrentExceptionMessage(false);
         return result;
@@ -205,7 +205,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
     catch (const Exception &)
     {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.status = WhatIfCandidateResult::NotApplicable;
         result.not_applicable_reason = "Failed to create index: " + getCurrentExceptionMessage(false);
         return result;
     }
@@ -217,7 +217,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     const auto & filter_dag = read_step->getFilterActionsDAG();
     if (!filter_dag)
     {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.status = WhatIfCandidateResult::NotApplicable;
         result.not_applicable_reason = "Query has no filter predicate";
         return result;
     }
@@ -234,7 +234,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
     catch (const Exception &)
     {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.status = WhatIfCandidateResult::NotApplicable;
         result.not_applicable_reason = "Cannot build index condition: " + getCurrentExceptionMessage(false);
         return result;
     }
@@ -243,7 +243,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     /// OR. Only fall through to the disjunction case when it can't prune on its own
     if (!condition || condition->alwaysUnknownOrTrue())
     {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.status = WhatIfCandidateResult::NotApplicable;
         if (predicate && context->getSettingsRef()[Setting::use_skip_indexes_for_disjunctions])
         {
             NameSet index_columns_set;
@@ -260,23 +260,23 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    result.status = WhatIfIndexEstimator::IndexResult::Applicable;
+    result.status = WhatIfCandidateResult::Applicable;
 
     if (settings.empirical)
     {
         if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, surviving_marks, context))
             return result;
-        result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
+        result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
     else
     {
-        result.empirical_status = WhatIfIndexEstimator::IndexResult::Disabled;
+        result.empirical_status = WhatIfCandidateResult::Disabled;
     }
 
     if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, predicate, context))
         return result;
 
-    result.estimate_source = WhatIfIndexEstimator::IndexResult::ApplicabilityOnly;
+    result.estimate_source = WhatIfCandidateResult::ApplicabilityOnly;
     result.estimated_marks = analysis.selected_marks;
     result.skip_ratio = 0.0;
 
@@ -286,7 +286,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 }
 
 
-WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
+WhatIfResult estimateHypotheticalIndexes(
     const ASTPtr & select_query, ContextPtr context, const ASTPtr & explain_settings)
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);
@@ -331,7 +331,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     if (read_steps.empty())
     {
         auto storage = tryResolveSingleTable(select_query, local_context);
-        const auto & store = local_context->getHypotheticalIndexStore();
+        const auto & store = local_context->getHypotheticalObjectStore();
         if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get()))
         {
             /// Empty table -> ReadNothing, report a zero baseline
@@ -402,7 +402,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     const RangesInDataParts & baseline_parts = analysis.parts_with_ranges;
 
-    Result result;
+    WhatIfResult result;
     result.database = data.getStorageID().getDatabaseName();
     result.table = data.getStorageID().getTableName();
     result.baseline_parts = analysis.selected_parts;
@@ -429,9 +429,9 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         for (const auto & stat : analysis.index_stats)
             if (stat.type == ReadFromMergeTree::IndexType::Skip)
                 satisfied.insert(stat.name);
-        for (const auto & idx : result.index_results)
-            if (idx.status == IndexResult::Applicable)
-                satisfied.insert(idx.index_name);
+        for (const auto & idx : result.candidates)
+            if (idx.status == WhatIfCandidateResult::Applicable)
+                satisfied.insert(idx.name);
         for (const auto & name : forced_indices)
             if (!satisfied.contains(name))
                 throw Exception(
@@ -440,17 +440,17 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
                     backQuoteIfNeed(name));
     };
 
-    const auto & store = context->getHypotheticalIndexStore();
+    const auto & store = context->getHypotheticalObjectStore();
     auto hypo_indexes = store.getForTable(data.getStorageID());
 
     if (hypo_indexes.empty())
     {
-        IndexResult no_index;
-        no_index.index_name = "(none)";
-        no_index.status = IndexResult::NotApplicable;
+        WhatIfCandidateResult no_index;
+        no_index.name = "(none)";
+        no_index.status = WhatIfCandidateResult::NotApplicable;
         no_index.not_applicable_reason = "No hypothetical indexes defined for this table. "
             "Use CREATE HYPOTHETICAL INDEX to define one.";
-        result.index_results.push_back(std::move(no_index));
+        result.candidates.push_back(std::move(no_index));
         validate_forced_indices();
         return result;
     }
@@ -477,12 +477,12 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     {
         if (!blanket_not_applicable_reason.empty())
         {
-            IndexResult r;
-            r.index_name = index_desc.name;
-            r.index_type = index_desc.type;
-            r.status = IndexResult::NotApplicable;
+            WhatIfCandidateResult r;
+            r.name = index_desc.name;
+            r.type = index_desc.type;
+            r.status = WhatIfCandidateResult::NotApplicable;
             r.not_applicable_reason = blanket_not_applicable_reason;
-            result.index_results.push_back(std::move(r));
+            result.candidates.push_back(std::move(r));
             continue;
         }
 
@@ -493,7 +493,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             index_desc, read_step, analysis, baseline_parts, settings, want_combined ? &surviving_marks : nullptr, plan_context);
 
         /// push empirically-evaluated candidates in a per-mark survival set we can intersect
-        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == IndexResult::Empirical)
+        if (want_combined && index_result.status == WhatIfCandidateResult::Applicable && index_result.estimate_source == WhatIfCandidateResult::Empirical)
         {
             if (!combined_started)
             {
@@ -503,12 +503,12 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             else
                 for (size_t m = 0; m < combined_surviving_marks.size(); ++m)
                     combined_surviving_marks[m] &= surviving_marks[m];
-            combined_names.push_back(index_result.index_name);
+            combined_names.push_back(index_result.name);
             combined_total_parts = index_result.total_parts;
             combined_total_marks = index_result.total_marks;
         }
 
-        result.index_results.push_back(std::move(index_result));
+        result.candidates.push_back(std::move(index_result));
     }
 
     validate_forced_indices();
@@ -521,21 +521,21 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             survivors += m;
         survivors = std::min<UInt64>(survivors, result.baseline_marks);
 
-        IndexResult combined;
+        WhatIfCandidateResult combined;
         String joined;
         for (size_t i = 0; i < combined_names.size(); ++i)
             joined += (i ? ", " : "") + combined_names[i];
-        combined.index_name = "(combined: " + joined + ")";
-        combined.status = IndexResult::Applicable;
-        combined.empirical_status = IndexResult::Ok;
-        combined.estimate_source = IndexResult::Empirical;
+        combined.name = "(combined: " + joined + ")";
+        combined.status = WhatIfCandidateResult::Applicable;
+        combined.empirical_status = WhatIfCandidateResult::Ok;
+        combined.estimate_source = WhatIfCandidateResult::Empirical;
         combined.estimated_marks = survivors;
         combined.skip_ratio = static_cast<double>(result.baseline_marks - survivors) / static_cast<double>(result.baseline_marks);
         combined.sampled_parts = analysis.selected_parts;
         combined.sampled_marks = analysis.selected_marks;
         combined.total_parts = combined_total_parts;
         combined.total_marks = combined_total_marks;
-        result.index_results.push_back(std::move(combined));
+        result.candidates.push_back(std::move(combined));
     }
 
     return result;

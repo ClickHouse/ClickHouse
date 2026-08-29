@@ -98,7 +98,8 @@ ReturnType parseDateTimeBestEffortImpl(
     const DateLUTImpl & local_time_zone,
     const DateLUTImpl & utc_time_zone,
     DateTimeSubsecondPart * fractional,
-    const char * allowed_date_delimiters = nullptr)
+    const char * allowed_date_delimiters = nullptr,
+    bool * has_explicit_zero_year = nullptr)
 {
     auto on_error = [&]<typename... FmtArgs>(
                         int error_code [[maybe_unused]],
@@ -113,6 +114,14 @@ ReturnType parseDateTimeBestEffortImpl(
 
     res = 0;
     UInt16 year = 0;
+
+    /// A year field of `0` is indistinguishable from "the year is not specified" in the code below, so an
+    /// explicitly written year of `0000` is silently replaced with the current (or previous) year. Remember
+    /// that this happened, so that a caller which must not accept a value it was not given can reject it -
+    /// see the `has_explicit_zero_year` parameter.
+    bool zero_year_was_read = false;
+    auto note_year_was_read = [&] { zero_year_was_read |= !year; };
+
     UInt8 month = 0;
     UInt8 day_of_month = 0;
     UInt8 hour = 0;
@@ -255,6 +264,7 @@ ReturnType parseDateTimeBestEffortImpl(
             if (engage)
             {
                 year = fp_year;
+                note_year_was_read();
                 month = fp_month;
                 day_of_month = fp_day;
                 if (time_matches)
@@ -393,6 +403,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is YYYYMMDDhhmmss
                 readDecimalNumber<4>(year, digits);
+                note_year_was_read();
                 readDecimalNumber<2>(month, digits + 4);
                 readDecimalNumber<2>(day_of_month, digits + 6);
                 readDecimalNumber<2>(hour, digits + 8);
@@ -408,6 +419,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is YYYYMMDD
                 readDecimalNumber<4>(year, digits);
+                note_year_was_read();
                 readDecimalNumber<2>(month, digits + 4);
                 readDecimalNumber<2>(day_of_month, digits + 6);
             }
@@ -421,6 +433,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (!year && !month)
                 {
                     readDecimalNumber<4>(year, digits);
+                    note_year_was_read();
                     readDecimalNumber<2>(month, digits + 4);
                 }
                 else if (!has_time)
@@ -444,6 +457,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 /// YYYY*M*D
 
                 readDecimalNumber<4>(year, digits);
+                note_year_was_read();
 
                 if (!in.eof())
                 {
@@ -638,7 +652,10 @@ ReturnType parseDateTimeBestEffortImpl(
                         num_digits = readDigits(digits, sizeof(digits), in);
 
                         if (num_digits == 4)
+                        {
                             readDecimalNumber<4>(year, digits);
+                            note_year_was_read();
+                        }
                         else if (num_digits == 2)
                         {
                             readDecimalNumber<2>(year, digits);
@@ -913,6 +930,11 @@ ReturnType parseDateTimeBestEffortImpl(
 
     if (!year)
     {
+        /// The year is either absent or explicitly written as `0000`; in the latter case the value returned
+        /// below is not the one the caller asked for, so report it to a caller that wants to know.
+        if (has_explicit_zero_year)
+            *has_explicit_zero_year = zero_year_was_read;
+
         if constexpr (strict)
             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year is required");
 
@@ -1073,6 +1095,12 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr);
+}
+
+void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool & has_explicit_zero_year)
+{
+    has_explicit_zero_year = false;
+    parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, &has_explicit_zero_year);
 }
 
 void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

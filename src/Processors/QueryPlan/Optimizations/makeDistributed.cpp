@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
@@ -128,7 +129,6 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
-bool keyTypeBreaksHashSharding(const IDataType & type);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -643,7 +643,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         gather_node.children = {&partial_aggregation_node};
 
         /// Replace original aggregation step with MergingAggregated step
-        aggregator_params.only_merge = true;    /// Merge partial aggregation results
+        aggregator_params.only_merge = true; /// Merge partial aggregation results
         QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
             gather_node.step->getOutputHeader(),
             aggregator_params,
@@ -844,11 +844,14 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
     node->children = std::move(node->children[0]->children);
 }
 
-/// True if `column_name` is produced by `dag` as the unchanged input column of the same name (only
-/// possibly aliased). Such a column keeps its value, so a merge by it stays sort-preserving.
+/// True if `column_name` reaches the step's output with its value unchanged, so a merge by it stays
+/// sort-preserving. A column the `dag` does not mention is preserved: the step forwards it untouched.
+/// A column the `dag` does mention is preserved only if it is the input column of the same name.
 static bool isSortColumnPreserved(const ActionsDAG & dag, const String & column_name)
 {
-    const auto * node = &dag.findInOutputs(column_name);
+    const auto * node = dag.tryFindInOutputs(column_name);
+    if (!node)
+        return true;
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
     return node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name;

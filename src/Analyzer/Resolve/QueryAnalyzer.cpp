@@ -866,27 +866,20 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
             if (table_expression_modifiers->hasStream())
             {
-                #if !defined(OS_LINUX) && !defined(OS_DARWIN)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Queries are supported only on Linux and macOS.");
-                #else
-                    if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
-                        throw Exception(ErrorCodes::SYNTAX_ERROR, "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
+                if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
 
-                    if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
+                if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
 
-                    if (!storage->supportsStreaming())
-                        throw Exception(ErrorCodes::ILLEGAL_STREAM, "Storage {} doesn't support STREAM", storage->getName());
+                if (!storage->supportsStreaming())
+                    throw Exception(ErrorCodes::ILLEGAL_STREAM, "Storage {} doesn't support STREAM", storage->getName());
 
-                    const auto & stream_settings = table_expression_modifiers->getStreamSettings();
-                    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+                const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+                const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-                    if (stream_settings->watermark)
-                    {
-                        validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watermarks for Streaming Queries are not supported yet");
-                    }
-                #endif
+                if (stream_settings->watermark)
+                    validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
             }
         }
     }
@@ -3442,15 +3435,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                 }
 
-                /// Keep the original five-placeholder `message_format_string` for `text_log`
-                /// (see `03096_text_log_format_string_args_not_empty`) and attach the optional
-                /// `FROM`-clause hint via `addMessage` so the format string stays stable.
-                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
+                /// The typo hint goes before the formatted query, which can be many kilobytes long, so that
+                /// the actionable part of the message does not end up behind it. The optional `FROM`-clause
+                /// hint is still attached via `addMessage` to keep the number of placeholders in
+                /// `message_format_string` for `text_log` at five
+                /// (see `03096_text_log_format_string_args_not_empty`).
+                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {}{}. In scope {}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     backQuote(unresolved_identifier.getFullName()),
-                    scope.scope_node->formatASTForErrorMessage(),
-                    getHintsErrorMessageSuffix(hints));
+                    getHintsErrorMessageSuffix(hints),
+                    scope.scope_node->formatASTForErrorMessage());
                 if (!from_clause_hint.empty())
                     exception.addMessage(from_clause_hint);
                 throw exception; /// NOLINT(hicpp-exception-baseclass,cert-err09-cpp,cert-err61-cpp,misc-throw-by-value-catch-by-reference)
@@ -4261,13 +4256,13 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         = IdentifierResolver::tryGetTableNameHint(from_table_identifier.getIdentifier(), scope.context);
                     if (!hint_database_name.empty())
                         throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                            "Unknown table expression identifier '{}' in scope {}. Maybe you meant {}.{}?",
+                            "Unknown table expression identifier '{}'. Maybe you meant {}.{}? In scope {}",
                             from_table_identifier.getIdentifier().getFullName(),
-                            scope.scope_node->formatASTForErrorMessage(),
                             backQuoteIfNeed(hint_database_name),
-                            backQuoteIfNeed(hint_table_name));
+                            backQuoteIfNeed(hint_table_name),
+                            scope.scope_node->formatASTForErrorMessage());
                     throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                        "Unknown table expression identifier '{}' in scope {}",
+                        "Unknown table expression identifier '{}'. In scope {}",
                         from_table_identifier.getIdentifier().getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
                 }
@@ -6107,11 +6102,22 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
         auto [it, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(alias_name, table_expression_node);
         if (!inserted)
-            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
-                alias_name,
-                table_expression_node->formatASTForErrorMessage(),
-                it->second->formatASTForErrorMessage());
+        {
+            /** An identifier node can get here only from QueryExpressionsAliasVisitor, which speculatively registers
+              * aliased identifiers from expression sections (e.g. the projection `number AS x`) as potential transitive
+              * table expression aliases. An actual table expression from the FROM section owns the alias in the table
+              * expression namespace, so it replaces the speculative entry (example: SELECT number AS x FROM (SELECT 1) AS x).
+              * Genuine duplicate aliases between table expressions are rejected earlier by TableExpressionsAliasVisitor.
+              */
+            if (it->second->getNodeType() == QueryTreeNodeType::IDENTIFIER)
+                it->second = table_expression_node;
+            else
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
+                    alias_name,
+                    table_expression_node->formatASTForErrorMessage(),
+                    it->second->formatASTForErrorMessage());
+        }
     };
 
     add_table_expression_alias_into_scope(join_tree_node);
