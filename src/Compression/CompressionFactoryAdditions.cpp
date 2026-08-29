@@ -194,24 +194,38 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
 
-                if (settings && result_codec->isExperimental())
+                if (settings)
                 {
-                    const String enable_setting_name = fmt::format("enable_{}_codec", Poco::toLower(codec_family_name));
-                    Field enable_setting_value;
-                    if (!settings->tryGet(enable_setting_name, enable_setting_value))
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Experimental codec {} has no dedicated '{}' setting. Every experimental codec"
-                            " must declare one",
-                            codec_family_name,
-                            enable_setting_name);
-                    if (!enable_setting_value.safeGet<bool>() && !(*settings)[Setting::allow_experimental_codecs])
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Codec {} is experimental and not meant to be used in production."
-                            " You can enable it with the '{}' setting",
-                            codec_family_name,
-                            enable_setting_name);
+                    const String gate_setting_name = getGateSettingName(codec_family_name);
+                    if (const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name))
+                    {
+                        const bool umbrella_bypass
+                            = *tier == SettingsTierType::EXPERIMENTAL && (*settings)[Setting::allow_experimental_codecs];
+                        if (!settings->get(gate_setting_name).safeGet<bool>() && !umbrella_bypass)
+                        {
+                            std::string_view reason;
+                            switch (*tier)
+                            {
+                                case SettingsTierType::EXPERIMENTAL:
+                                    reason = "is experimental and not meant to be used in production";
+                                    break;
+                                case SettingsTierType::BETA:
+                                    reason = "is in beta and not yet recommended for production use";
+                                    break;
+                                case SettingsTierType::PRODUCTION:
+                                case SettingsTierType::PRIVATE_PREVIEW:
+                                case SettingsTierType::OBSOLETE:
+                                    reason = "is disabled";
+                                    break;
+                            }
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Codec {} {}. You can enable it with the '{}' setting",
+                                codec_family_name,
+                                reason,
+                                gate_setting_name);
+                        }
+                    }
                 }
 
                 /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
