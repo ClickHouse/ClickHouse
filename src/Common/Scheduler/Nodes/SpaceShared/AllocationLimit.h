@@ -45,6 +45,8 @@ private:
     bool setIncrease(
         IncreaseRequest * new_increase, bool reapply_constraint, bool notify_reclaim_completion = true);
     bool setDecrease(DecreaseRequest * new_decrease);
+    ResourceCost allocatedForScheduling() const;
+    void publishDecrease(bool increase_changed);
     void selectAndKill(IncreaseRequest & killer);
     void processSuction();
     void clearMemoryGrowthSuspension();
@@ -76,6 +78,10 @@ private:
     /// mutex is held by the update currently reaching this limit.
     UnusedCapacityReclaimState unused_capacity_reclaim_state = UnusedCapacityReclaimState::Idle;
     DecreaseRequest * unused_capacity_reclaim_decrease = nullptr;
+    /// Child request waiting for this boundary's local turn. `decrease` is set only after that
+    /// turn, so ancestors cannot observe or approve the release prematurely.
+    DecreaseRequest * local_decrease = nullptr;
+    bool decrease_local_turn_complete = false;
     /// True after this node returned `local_demand` and an ancestor is waiting for a durable
     /// decrease or explicit completion. This is distinct from the deferred policy Start event.
     bool unused_capacity_reclaim_waiter = false;
