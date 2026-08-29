@@ -8612,11 +8612,18 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
 void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutation_id)
 {
     std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-    mutation_initial_bytes.erase(mutation_id);
+    if (mutation_initial_bytes.erase(mutation_id))
+        ++mutation_initial_bytes_drops;
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
+    UInt64 drops_before_snapshot = 0;
+    {
+        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+        drops_before_snapshot = mutation_initial_bytes_drops;
+    }
+
     auto statuses = queue.getMutationsStatus();
     if (statuses.empty())
         return statuses;
@@ -8682,7 +8689,13 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         UInt64 initial_bytes = 0;
         {
             std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-            auto & stored = mutation_initial_bytes[status.id];
+            /// A drop since this snapshot may have been this mutation's: re-creating its entry here
+            /// would leave a denominator behind that no later queue transition removes again.
+            MutationScopeInitialBytes transient;
+            auto it = mutation_initial_bytes.find(status.id);
+            if (it == mutation_initial_bytes.end() && mutation_initial_bytes_drops == drops_before_snapshot)
+                it = mutation_initial_bytes.try_emplace(status.id).first;
+            auto & stored = it == mutation_initial_bytes.end() ? transient : it->second;
             for (const auto & [part_name, part_bytes] : sized_parts_to_do)
                 stored.account(MergeTreePartInfo::fromPartName(part_name, format_version), part_bytes);
             /// A finished mutation stays listed until queue cleanup; only its scalar denominator is needed.
@@ -8704,6 +8717,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     /// a mutation (finished and cleaned up, or killed). Pruning them from a reader's snapshot
     /// instead would race: a reader holding an older snapshot would erase the denominator of a
     /// mutation added since, and the next read would restart its progress from the remainder.
+    /// The opposite direction of that race is handled above by `drops_before_snapshot`.
     return statuses;
 }
 
