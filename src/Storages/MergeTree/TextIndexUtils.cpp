@@ -469,6 +469,8 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
     for (size_t i = 0; i < num_cursors; ++i)
         postings_queue.push(postings_merge_cursors[i].impl);
 
+    UInt64 last_row_id_watermark = 0;
+
     while (postings_queue.isValid())
     {
         auto [current_ptr, batch_size] = postings_queue.current();
@@ -476,6 +478,16 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
         auto & cursor = postings_merge_cursors[current->order];
 
         const UInt32 * begin = cursor.rowIds().data() + current->getPos();
+
+        /// Sources must own disjoint row sets.
+        if (begin[0] < last_row_id_watermark)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Source posting lists have overlapping row ids: got row id {} after {}",
+                begin[0], last_row_id_watermark - 1);
+        }
+
+        last_row_id_watermark = static_cast<UInt64>(begin[batch_size - 1]) + 1;
         sink(std::span<const UInt32>(begin, batch_size));
 
         if (!current->isLast(batch_size))
