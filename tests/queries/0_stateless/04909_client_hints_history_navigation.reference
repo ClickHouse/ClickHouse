@@ -7,3 +7,4 @@ incremental_search_down_navigates_history: OK
 edit_after_recall_shows_hints: OK
 paste_no_hints: OK
 unchanged_editor_down_navigates_history: OK
+failing_editor_down_navigates_history: OK

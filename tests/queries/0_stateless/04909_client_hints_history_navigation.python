@@ -281,6 +281,30 @@ def main():
         else:
             os.environ["EDITOR"] = previous_editor
 
+    # 7. An editor that exits unsuccessfully brings the original line back - also a whole-line
+    # programmatic display, and one that happens while the hints of the line typed before the
+    # editor was opened are still live. Down must remain history navigation there too.
+    editor = os.path.join(os.environ["CLICKHOUSE_TMP"], "client_hints_failing_editor.sh")
+    with open(editor, "w") as f:
+        f.write("#!/bin/sh\nexit 1\n")
+    os.chmod(editor, 0o755)
+    previous_editor = os.environ.get("EDITOR")
+    os.environ["EDITOR"] = editor
+    try:
+        history = make_history_file("failing_editor", [])
+        run_with_timeout(
+            base[0],
+            args + [f"--history_file={history}"],
+            "failing_editor_down_navigates_history",
+            [b"SELECT 111 AS rand", b"\x1bE", b"\x1b[B", b"\r"],
+            lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
+        )
+    finally:
+        if previous_editor is None:
+            del os.environ["EDITOR"]
+        else:
+            os.environ["EDITOR"] = previous_editor
+
 
 if __name__ == "__main__":
     # The check lambdas are not picklable, so the subprocesses must be forked (not spawned,
