@@ -246,6 +246,7 @@ namespace ServerSetting
     extern const ServerSettingsBool concurrent_threads_lazy_allocation;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
@@ -1925,6 +1926,15 @@ try
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
+    /// Zero means the number of CPU cores.
+    const size_t shutdown_concurrency = server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        ? server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        : getNumberOfCPUCoresToUse();
+    getDatabaseCatalogShutdownTablesThreadPool().initialize(
+        shutdown_concurrency,
+        0, // Threads are only needed during server shutdown.
+        shutdown_concurrency);
+
     getMergeTreePrefixesDeserializationThreadPool().initialize(
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
@@ -3199,66 +3209,76 @@ try
 
             /// HTTP control endpoints
             port_name = "keeper_server.http_control.port";
-            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-            servers_to_start_before_tables,
-            [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config().getString(port_name, "").empty())
             {
-                auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
+                auto handler_factory = createKeeperHTTPHandlerFactory(
+                    *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory");
+                createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    auto http_context = httpContext();
+                    Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
+                    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+                    http_params->setTimeout(http_context->getReceiveTimeout());
+                    http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(http_context->getReceiveTimeout());
-                socket.setSendTimeout(http_context->getSendTimeout());
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "HTTP Control: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(http_context),
-                        createKeeperHTTPHandlerFactory(
-                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-            });
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(http_context->getReceiveTimeout());
+                    socket.setSendTimeout(http_context->getSendTimeout());
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "HTTP Control: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::move(http_context),
+                            handler_factory,
+                            server_pool,
+                            socket,
+                            http_params));
+                });
+            }
 
             /// HTTPS control endpoints
             port_name = "keeper_server.http_control.secure_port";
-            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-            servers_to_start_before_tables,
-            [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config().getString(port_name, "").empty())
             {
 #if USE_SSL
-                auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
-
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(http_context->getReceiveTimeout());
-                socket.setSendTimeout(http_context->getSendTimeout());
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "HTTPS Control: https://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(http_context),
-                        createKeeperHTTPHandlerFactory(
-                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-#else
-                UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+                auto handler_factory = createKeeperHTTPHandlerFactory(
+                    *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory");
 #endif
-            });
+                createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSL
+                    auto http_context = httpContext();
+                    Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
+                    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+                    http_params->setTimeout(http_context->getReceiveTimeout());
+                    http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                    socket.setReceiveTimeout(http_context->getReceiveTimeout());
+                    socket.setSendTimeout(http_context->getSendTimeout());
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "HTTPS Control: https://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::move(http_context),
+                            handler_factory,
+                            server_pool,
+                            socket,
+                            http_params));
+#else
+                    UNUSED(port);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+                });
+            }
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
@@ -4312,44 +4332,57 @@ void Server::createServers(
         {
             /// HTTP
             port_name = "http_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            /// Handler configuration is parsed outside the callback: anything the callback throws is
+            /// reported as a listener bind failure, and only logged when `listen_try` is set. The port
+            /// check matches the early return in `createServer`.
+            if (!config.getString(port_name, "").empty())
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory");
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
 
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-            });
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                });
+            }
         }
 
         if (server_type.shouldStart(ServerType::Type::HTTPS))
         {
             /// HTTPS
             port_name = "https_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config.getString(port_name, "").empty())
             {
 #if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "https://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-#else
-                UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory");
 #endif
-            });
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSL
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "https://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+#else
+                    UNUSED(port);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+                });
+            }
         }
 
         if (server_type.shouldStart(ServerType::Type::TCP))
@@ -4555,19 +4588,23 @@ void Server::createServers(
 
             const char * handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
 
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config.getString(port_name, "").empty())
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "Prometheus: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, handler_name), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
-            });
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, handler_name);
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "Prometheus: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                });
+            }
         }
     }
 }
