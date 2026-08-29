@@ -1,6 +1,8 @@
+import concurrent.futures
 import gzip
 import os
 import sys
+import threading
 import time
 import uuid
 from threading import Thread
@@ -746,6 +748,115 @@ def test_cancel_while_distinct_transform_output():
     assert len(results) >= 1
     assert results[-1].cancelled == True
     assert not results[-1].HasField("exception"), f"cancel surfaced as an exception: {results[-1].exception}"
+
+
+def test_cancel_latched_timeout_after_distinct_grpc():
+    # The gRPC cancel path (`GRPCServer` recording `CANCELLED_BY_USER` on the query status) only matters
+    # once a BREAK-mode soft timeout has ALREADY latched inside `DistinctTransform`: without a recorded
+    # cancel_reason, `isCancelledBySoftTimeout()` returns true (latched timeout + `UNDEFINED` reason) and
+    # the resumed scan keeps treating the real user cancel as a soft timeout. This test reproduces the
+    # exact scenario over gRPC: the nullable-key prepass pauses at its first 4096-row boundary (via the
+    # `distinct_transform_null_pause` failpoint), the query is held past `max_execution_time` so the
+    # pull loop's soft-timeout poll cancels the pipeline with `cancel_reason` still `UNDEFINED`, and only
+    # then is the real `QueryInfo.cancel` sent, followed by releasing the paused scan. The final response
+    # must be `cancelled` with no exception payload, and the server must have recorded
+    # `cancel_reason = CANCELLED_BY_USER` -- without the gRPC cancel fix the reason stays `UNDEFINED`
+    # and the latched soft timeout makes the resumed scan complete normally (not cancelled), so the
+    # `cancelled` assertion below fails.
+    node.query("CREATE TABLE IF NOT EXISTS null_keys_mt_lc_grpc (k LowCardinality(Nullable(UInt64))) "
+               "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+               "SETTINGS allow_suspicious_low_cardinality_types=1")
+    node.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc_grpc")
+    node.query("INSERT INTO null_keys_mt_lc_grpc SELECT toNullable(0) FROM numbers(1000000)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc SELECT toNullable(1) FROM numbers(100)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc SELECT toNullable(2) FROM numbers(100)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+     WHERE number IN (SELECT k FROM null_keys_mt_lc_grpc)
+     FORMAT Null
+     SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+              max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+
+    ## Only the nullable-key prepass failpoint is armed: after the cancel is recorded and the scan is
+    ## released, the next boundary is reached in the same prepass and the hard-cancel check (which is
+    ## the behaviour under test) fires there. Arming `distinct_transform_lc_pause` as well would pause
+    ## the cancelled scan a second time for no reason.
+    node.query("SYSTEM ENABLE FAILPOINT distinct_transform_null_pause")
+
+    cancel_event = threading.Event()
+    results = []
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(query=query, query_id=query_id)
+        ## Keep the stream half-open until the main test body has observed the latched timeout.
+        ## Note: the initial QueryInfo must not set `next_query_info` — the server's
+        ## `createExternalTables()` (invoked while executing a SELECT) treats that field as a request
+        ## for more input and would block the call thread reading the next message *before* the query
+        ## runs, never reaching the failpoint. The cancel is delivered over the async read that the
+        ## gRPC server already keeps pending for `ExecuteQueryWithStreamIO`.
+        deadline = time.monotonic() + 90
+        while not cancel_event.is_set():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("cancel was not triggered in time")
+            time.sleep(0.05)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+
+    def collect_results():
+        results.extend(list(stub.ExecuteQueryWithStreamIO(send_query_info())))
+
+    results_thread = Thread(target=collect_results)
+    results_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fn, timeout=60):
+        future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {fn} PAUSE")
+        done, _ = concurrent.futures.wait([future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fn} not triggered within {timeout} s"
+        future.result()
+
+    try:
+        ## The nullable-key prepass pauses at its first boundary with rows [0, 4096) committed.
+        wait_failpoint("distinct_transform_null_pause")
+
+        ## Hold the paused scan past `max_execution_time`: the pull loop's `checkTimeLimitSoft` poll
+        ## cancels the pipeline with `CancelledByTimeout` while `cancel_reason` stays `UNDEFINED`, so
+        ## the soft timeout is latched inside the transform.
+        time.sleep(6)
+
+        ## Now send the real gRPC `Cancel` while the soft timeout is already latched, then release the
+        ## paused scan. The recorded `cancel_reason` turns the cancel into a hard abort (the
+        ## `isCancelled() && !isCancelledBySoftTimeout()` check) instead of a soft-timeout continuation.
+        ## Ordering the release right after the cancel is safe: the resumed pre-latched scan takes well
+        ## over a second to consume the remaining rows, while the server observes the cancel within one
+        ## `interactive_delay` poll period of the stream write, so the two always overlap.
+        cancel_event.set()
+
+        node.query("SYSTEM NOTIFY FAILPOINT distinct_transform_null_pause")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT distinct_transform_null_pause")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    results_thread.join(timeout=90)
+    assert not results_thread.is_alive(), "cancelled gRPC query did not terminate within 90 s"
+    assert len(results) >= 1, "no gRPC result received"
+    assert results[-1].cancelled == True, f"gRPC cancel must complete as cancelled, got cancelled={results[-1].cancelled}"
+    assert not results[-1].HasField("exception"), f"cancel surfaced as an exception: {results[-1].exception}"
+
+    node.query("SYSTEM FLUSH LOGS")
+    cancel_reason = node.query(
+        f"SELECT cancel_reason FROM system.query_log WHERE query_id = '{query_id}' "
+        f"ORDER BY event_time DESC LIMIT 1 FORMAT TSV"
+    ).strip()
+    assert cancel_reason == "CANCELLED_BY_USER", (
+        f"expected gRPC cancel after latched timeout to set cancel_reason='CANCELLED_BY_USER', got: {cancel_reason!r}"
+    )
 
 
 def test_compressed_output():
