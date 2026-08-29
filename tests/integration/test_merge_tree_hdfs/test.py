@@ -189,7 +189,7 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
     )
 
 
-def test_remote_host_filter_reload(cluster):
+def test_remote_host_filter_reload_does_not_block_configured_disk(cluster):
     create_table(cluster, "hdfs_test")
     node = cluster.instances["node"]
     node.query("INSERT INTO hdfs_test VALUES ('2020-01-03', 1, 'data')")
@@ -207,7 +207,7 @@ def test_remote_host_filter_reload(cluster):
         reload_before=True,
         reload_after=True,
     ):
-        assert "UNACCEPTABLE_URL" in node.query_and_get_error("SELECT * FROM hdfs_test")
+        assert node.query("SELECT data FROM hdfs_test") == "data\n"
 
 
 def test_alter_table_columns(cluster):
