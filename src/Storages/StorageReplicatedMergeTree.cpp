@@ -8613,18 +8613,23 @@ void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutatio
 {
     std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
     mutation_initial_bytes.erase(mutation_id);
-    /// Counted even when nothing was cached: a reader whose snapshot predates this call may not have
-    /// created the entry yet, and it must not create it afterwards either.
-    ++mutation_initial_bytes_drops;
+    /// Recorded even when nothing was cached: a reader whose snapshot predates this call may not
+    /// have created the entry yet, and it must not create it afterwards either.
+    if (mutation_initial_bytes_readers > 0)
+        mutation_initial_bytes_dropped.insert(mutation_id);
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
-    UInt64 drops_before_snapshot = 0;
     {
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-        drops_before_snapshot = mutation_initial_bytes_drops;
+        ++mutation_initial_bytes_readers;
     }
+    SCOPE_EXIT({
+        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+        if (--mutation_initial_bytes_readers == 0)
+            mutation_initial_bytes_dropped.clear();
+    });
 
     auto statuses = queue.getMutationsStatus();
     if (statuses.empty())
@@ -8691,11 +8696,11 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         UInt64 initial_bytes = 0;
         {
             std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-            /// A drop since this snapshot may have been this mutation's: re-creating its entry here
-            /// would leave a denominator behind that no later queue transition removes again.
+            /// This mutation was removed since the snapshot: re-creating its entry here would leave
+            /// a denominator behind that no later queue transition removes again.
             MutationScopeInitialBytes transient;
             auto it = mutation_initial_bytes.find(status.id);
-            if (it == mutation_initial_bytes.end() && mutation_initial_bytes_drops == drops_before_snapshot)
+            if (it == mutation_initial_bytes.end() && !mutation_initial_bytes_dropped.contains(status.id))
                 it = mutation_initial_bytes.try_emplace(status.id).first;
             auto & stored = it == mutation_initial_bytes.end() ? transient : it->second;
             for (const auto & [part_name, part_bytes] : sized_parts_to_do)
@@ -8719,7 +8724,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     /// a mutation (finished and cleaned up, or killed). Pruning them from a reader's snapshot
     /// instead would race: a reader holding an older snapshot would erase the denominator of a
     /// mutation added since, and the next read would restart its progress from the remainder.
-    /// The opposite direction of that race is handled above by `drops_before_snapshot`.
+    /// The opposite direction of that race is handled above by `mutation_initial_bytes_dropped`.
     return statuses;
 }
 
