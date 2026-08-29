@@ -1806,8 +1806,13 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 continue;
             }
 
+            /// The `_table` and `_database` values of the rows are stamped by the table that
+            /// actually produces the rows. If the child table reads from other tables, its rows
+            /// carry those tables' names, not the child's own name, so pruning the child by its
+            /// name could incorrectly discard the rows the predicate selects. Such children are
+            /// always read, and the predicate is applied to the rows.
             if (storage.get() != storage_merge.get())
-                if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
+                if (!table_filter || storage->readsFromOtherTables() || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
                         if  (!granted_select_on_all_tables)
@@ -2371,7 +2376,7 @@ SELECT * FROM WatchLog;
 
 - `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
 
-    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
+    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read. A table that itself reads from other tables (`Distributed`, `Merge`, `Buffer`, `Alias`) returns rows carrying the name of the table that actually produced them, so such tables are always read and the filter is applied to their rows.
 
 - `_database` — Contains the name of the database from which data was read. Type: [String](/reference/data-types/string).
 
