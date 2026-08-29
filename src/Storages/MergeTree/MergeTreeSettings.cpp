@@ -1149,8 +1149,12 @@ reduce memory usage
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
+Compared against the number of streams a wide part writes, which can greatly exceed its number
+of columns: a `Map` with many buckets, or a deeply nested `Array` or `Tuple`, writes many streams
+for a single column, and one write buffer is allocated per stream.
+
 Possible values:
-- 0 - unlimited
+- 0 - disabled
 - 1 - always enabled
 )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
