@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_codecs 0 -q "ATTACH TABLE t_t64_attach_f
 
 # A safe codec in the same position still works.
 # `send_logs_level=fatal` suppresses the "full table definition is not recommended" warning.
-$CLICKHOUSE_CLIENT --send_logs_level fatal -q "ATTACH TABLE t_t64_attach_full UUID '${UUID}' (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS default_compression_codec = 'ZSTD(3)';"
+$CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level fatal -q "ATTACH TABLE t_t64_attach_full UUID '${UUID}' (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS default_compression_codec = 'ZSTD(3)';"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_t64_attach_full SELECT number FROM numbers(1000);"
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM t_t64_attach_full;"
 

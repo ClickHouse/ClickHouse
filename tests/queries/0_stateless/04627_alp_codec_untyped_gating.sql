@@ -2,9 +2,9 @@
 -- the bytes as floating-point values and throws for any input whose size is not a multiple of that
 -- width, so it cannot reliably compress untyped data and must be rejected everywhere a codec is
 -- resolved without a column type — even with `allow_experimental_codecs` enabled, because this is a
--- data-safety property, not the experimental-codec policy gate.
+-- data-safety property, not the codec gate.
 
-SET allow_experimental_codecs = 1;
+SET enable_alp_codec = 1;
 
 -- The untyped MergeTree compression settings reject it, both directly and inside a chain.
 DROP TABLE IF EXISTS t_alp_s;

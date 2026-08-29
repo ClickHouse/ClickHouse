@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT --allow_suspicious_codecs 0 -q "ATTACH TABLE t_zxc_attach_col
 
 # With the setting enabled, the same full-definition ATTACH works.
 # `send_logs_level=fatal` suppresses the "full table definition is not recommended" warning.
-$CLICKHOUSE_CLIENT --allow_experimental_codecs 1 --send_logs_level fatal -q "ATTACH TABLE t_zxc_attach_column UUID '${UUID}' (x UInt64 CODEC(ZXC)) ENGINE = MergeTree ORDER BY tuple();"
+$CLICKHOUSE_CLIENT --allow_repeated_settings --allow_experimental_codecs 1 --send_logs_level fatal -q "ATTACH TABLE t_zxc_attach_column UUID '${UUID}' (x UInt64 CODEC(ZXC)) ENGINE = MergeTree ORDER BY tuple();"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_zxc_attach_column SELECT number FROM numbers(1000);"
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM t_zxc_attach_column;"
 

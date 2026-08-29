@@ -17,7 +17,7 @@ $CLICKHOUSE_CLIENT -q "ATTACH TABLE t_proj_attach_full UUID '${UUID}' (x UInt64,
 
 # A projection setting from the allow-list works on a full-definition ATTACH.
 # `send_logs_level=fatal` suppresses the "full table definition is not recommended" warning.
-$CLICKHOUSE_CLIENT --send_logs_level fatal -q "ATTACH TABLE t_proj_attach_full UUID '${UUID}' (x UInt64, PROJECTION p (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 555)) ENGINE = MergeTree ORDER BY x;"
+$CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level fatal -q "ATTACH TABLE t_proj_attach_full UUID '${UUID}' (x UInt64, PROJECTION p (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 555)) ENGINE = MergeTree ORDER BY x;"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_proj_attach_full SELECT number FROM numbers(1000);"
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM t_proj_attach_full;"
 

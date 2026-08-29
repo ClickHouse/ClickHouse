@@ -3068,6 +3068,22 @@ The codec accepts an optional variant argument:
 This codec is in beta and requires `SET enable_alp_codec = 1` to use.
 </Note>
 
+### PCO {#pco}
+
+<ExperimentalBadge/>
+
+`PCO(level)` — Lossless compression for sequences of fixed-width numbers, using the [pcodec](https://github.com/pcodec/pcodec) library. Applicable to all numeric types of 1, 2, 4 or 8 bytes (`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64`, and the types backed by them such as `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4`, and `Enum`). `Decimal128`/`Decimal256` and non-numeric types are not supported.
+
+pcodec identifies an approximate structure of the numbers (a "mode", e.g. an approximate common multiplier) and splits each value into "latents" that it then compresses with delta encoding and an interleaved [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) entropy coder. On numeric columns with smooth, multimodal, or high-entropy distributions (measurements, timings, counters, identifiers) it often compresses better than `Gorilla`/`FPC`/`ZSTD`/`ALP`; it has no run-length or match-based path, so constant or low-cardinality columns compress worse. Encoding is several times slower than `ZSTD`; decoding is workload-dependent.
+
+The optional `level` argument sets the compression level from 0 to 12; the default is 8. When a block would not compress (e.g. incompressible data), it is stored uncompressed, so the codec never expands data by more than a small constant per block.
+
+The codec is built as `PCO`-embedded standalone [`.pco`](https://github.com/pcodec/pcodec) streams: the payload of each compression block is wire-compatible with the reference pcodec implementation.
+
+<Note>
+This codec is experimental and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`.
+</Note>
+
 ### FPC {#fpc}
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
