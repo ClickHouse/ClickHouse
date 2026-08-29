@@ -77,7 +77,9 @@ that reads another ClickHouse object:
   itself, here — nothing in the framework does it.
 - `ITableFunction::executeImpl` — constructing the storage. A function whose declared structure is a
   fixed column list still resolves and validates the source table here, so do not conclude from a
-  static `getActualTableStructure` that nothing is derived before `read`.
+  static `getActualTableStructure` that nothing is derived before `read`. Descend into the storage
+  **constructor** it calls: validation placed there (a `dynamic_cast` to `MergeTreeData` and its
+  `BAD_ARGUMENTS`) runs while the surface is being built, ahead of any check in `read`.
 - `IStorage::read` — the read itself.
 - Anything that answers a question about the object without going through `read`: `totalRows`,
   `totalRowsByPartitionPredicate`, `totalBytes`, `totalBytesUncompressed`,
@@ -112,26 +114,36 @@ Surfaces of one family are written from each other's template, so a defect in on
 of them. Grep the family, say which ones you checked, and report the siblings that share the defect.
 Do not assume the family shares one carrier: locate the earliest resolution per function, because
 the entrypoint that leaks differs even between siblings, and a sweep that looks at
-`getActualTableStructure` alone will clear the ones that leak somewhere else. As of this writing,
-every function below reaches its source table through `DatabaseCatalog` with no `SELECT` check at
-that point, but in three different places:
+`getActualTableStructure` alone will clear the ones that leak somewhere else.
 
-- `mergeTreeIndex` and `mergeTreeProjection` (`TableFunctionMergeTreeProjection`, in
-  `TableFunctionProjection.cpp`) — in `getActualTableStructure`, and it throws first:
-  `expected MergeTree table, got: {}` and `There is no projection {} in table {}` respectively.
-- `mergeTreeTextIndex` — **not** in `getActualTableStructure`, which is a fixed column list, but in
-  `executeImpl`, which throws `Got index '{}' of type '{}', expected 'text'` and
-  `expected MergeTree table, got: {}`.
-- `timeSeriesSamples` / `timeSeriesMetrics` / `timeSeriesTags` (`TableFunctionTimeSeriesTarget`) — in
-  `parseArguments`, which calls `getTargetTable` to store the target engine name, so the leak
-  precedes `getActualTableStructure` even though that derives columns from the source too.
-- `timeSeriesSelector` — in `parseArguments`, via `StorageTimeSeriesSelector::getConfiguration`; its
+The illustration below is the `mergeTree*` and `timeSeries*` table functions as of this writing —
+one family, swept deliberately, not an inventory of every table function in the server. Redo the
+sweep rather than trusting this list; the point is the *shape*, which is that the check sits at the
+read while every function resolves its source table before that, in one of three places:
+
+- `getActualTableStructure` — `mergeTreeIndex`, `mergeTreeProjection`
+  (`TableFunctionMergeTreeProjection`, in `TableFunctionProjection.cpp`), and
+  `mergeTreeCodecBlockCounts`. Each throws before returning: `expected MergeTree table, got: {}`,
+  `There is no projection {} in table {}`.
+- `executeImpl` — `mergeTreeTextIndex` and `mergeTreeAnalyzeIndexes`, whose
+  `getActualTableStructure` is a fixed column list that touches no table. `mergeTreeTextIndex`
+  throws `Got index '{}' of type '{}', expected 'text'` there; for `mergeTreeAnalyzeIndexes` the
+  disclosure is one level deeper still, in the `StorageMergeTreeAnalyzeIndexes` **constructor**
+  (`Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}`), which `executeImpl` calls.
+  A storage constructor invoked while building the surface is an entrypoint too.
+- `parseArguments` — `timeSeriesSamples` / `timeSeriesMetrics` / `timeSeriesTags`
+  (`TableFunctionTimeSeriesTarget`), which calls `getTargetTable` to store the target engine name,
+  so the leak precedes `getActualTableStructure` even though that derives columns from the source
+  too; and `timeSeriesSelector`, via `StorageTimeSeriesSelector::getConfiguration`, whose
   `getActualTableStructure` derives columns from the parsed configuration and touches no table.
 
-On the read side the family is split: `StorageMergeTreeIndex::read`,
-`StorageMergeTreeTextIndex::read` and `StorageMergeTreeAnalyzeIndexes::read` check `SELECT` on the
-source table, while `StorageFromMergeTreeProjection` and the `TimeSeries` storages have no such
-check on any path.
+The read side is where the two families diverge. Every `mergeTree*` one checks: `read` in
+`StorageMergeTreeIndex`, `StorageMergeTreeTextIndex`, `StorageMergeTreeCodecBlockCounts` and
+`StorageFromMergeTreeProjection` (which also applies row policies), and `readImpl` in
+`StorageMergeTreeAnalyzeIndexes`. The `TimeSeries` storages have no `SELECT` check on any path. So
+the `mergeTree*` functions all show the same asymmetry — guarded at the read, unguarded at whichever
+earlier entrypoint resolves the table — and that asymmetry, not the absence of a check, is what the
+sweep is looking for.
 
 ### Severity
 
@@ -147,7 +159,9 @@ and questioned its column granularity; the author defended it as intentional, an
 stopped there. Meanwhile `TableFunctionMergeTreeCodecBlockCounts::getActualTableStructure` went
 straight to `DatabaseCatalog`, so `DESCRIBE mergeTreeCodecBlockCounts(db, t)` succeeded for a user
 with no privilege on `db.t`, and its `BAD_ARGUMENTS` message disclosed the table's engine. Neither
-path had a test. Fixed by https://github.com/ClickHouse/ClickHouse/pull/116647.
+path had a test. The fix is https://github.com/ClickHouse/ClickHouse/pull/116647, still open at the
+time of writing, so the structure path is unguarded in `master` — which is why the function appears
+in the sibling list above rather than as a closed case.
 
 ## Native protocol / native format spec sync {#spec-sync}
 
