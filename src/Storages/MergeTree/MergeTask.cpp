@@ -675,12 +675,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->ttl_infos.table_ttl.max = 0;
         for (auto & [column_name, column_info] : global_ctx->new_data_part->ttl_infos.columns_ttl)
             column_info.max = 0;
-        global_ctx->new_data_part->ttl_infos.rows_where_ttl.clear();
         if (ctx->need_remove_expired_values || !global_ctx->ttl_merges_blocker->isCancelled())
         {
             ctx->need_remove_expired_values = true;
             ctx->force_ttl = true;
         }
+
+        /// The rows-WHERE entries are dropped only when something will rebuild them: the TTL step
+        /// on the ordinary path, or the recalculation step on the blocked one. That step is skipped
+        /// for tables with a GROUP BY TTL (it would leave that family unfinished), and clearing
+        /// without a rebuild would leave the merged part with no rows-WHERE bound at all.
+        if (ctx->need_remove_expired_values || !global_ctx->metadata_snapshot->hasAnyGroupByTTL())
+            global_ctx->new_data_part->ttl_infos.rows_where_ttl.clear();
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
