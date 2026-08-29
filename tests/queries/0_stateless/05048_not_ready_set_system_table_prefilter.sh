@@ -26,6 +26,19 @@ read_rows() {
         ORDER BY event_time_microseconds DESC LIMIT 1"
 }
 
+# `ReadFromSystemOneBlock` reads behind the `CreatingSets` gate, so both processors are planned only
+# while the set is still unfilled when the pipeline is built. A build that filled it earlier would
+# plan neither, and would still return the same rows and prune the same way.
+explain_has() {
+    $CLICKHOUSE_CLIENT --query "
+        SELECT count() > 0 FROM (
+            EXPLAIN PIPELINE
+            SELECT name FROM system.databases WHERE name IN (SELECT '${CLICKHOUSE_DATABASE}')
+        ) WHERE explain ILIKE '%$1%'"
+}
+echo -n "set filled inside the pipeline: "; explain_has CreatingSetsTransform
+echo -n "read waits for the set: "; explain_has DelayedPorts
+
 echo -n "rows read for one matching database: "
 read_rows "05048_prune_one_${CLICKHOUSE_DATABASE}" \
     "SELECT name FROM system.databases WHERE name IN (SELECT '${CLICKHOUSE_DATABASE}') FORMAT Null"
@@ -38,9 +51,9 @@ BIG="(SELECT toString(number) FROM numbers(300000000))"
 
 # Report the client's exit status next to the count, so that a query failing for an unrelated reason
 # is distinguishable from one that succeeded.
-# The subquery has to keep reading until the time limit stops it, so the read limit must be lifted:
-# the functional-test profile caps reads at 20M rows, and a read limit, unlike a time limit, still
-# lets the set finish building.
+# The subquery has to keep reading until the time limit stops it, so `max_rows_to_read` must be
+# lifted: the functional-test profile caps it at 20M rows, and a read limit, unlike a time limit,
+# still lets the set finish building.
 check() {
     local out="${CLICKHOUSE_TMP}/05048_${CLICKHOUSE_DATABASE}_$1_${3// /_}.out"
     $CLICKHOUSE_CLIENT --max_rows_to_read 0 --max_execution_time 0.3 --timeout_overflow_mode break \

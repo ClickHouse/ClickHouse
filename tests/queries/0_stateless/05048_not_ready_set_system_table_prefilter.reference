@@ -1,5 +1,7 @@
 1
 0
+set filled inside the pipeline: 1
+read waits for the set: 1
 rows read for one matching database: 2
 rows read for no matching database: 1
 databases IN: 0 ok
