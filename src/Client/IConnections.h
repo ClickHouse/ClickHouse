@@ -31,7 +31,6 @@ public:
 
     virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
-    virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 
     /// Get packet from any replica.
     virtual Packet receivePacket() = 0;

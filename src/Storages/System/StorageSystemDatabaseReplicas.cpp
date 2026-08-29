@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <future>
 #include <memory>
@@ -114,8 +113,10 @@ Chunk SystemDatabaseReplicasSource::generate()
         {
             if (e.code() == ErrorCodes::ABORTED)
             {
-                /// The database has been shut down or dropped, so its row is skipped instead of being reported as an error.
-                LOG_DEBUG(getLogger("StorageSystemDatabaseReplicas"), "Cannot get the status of a database: {}", e.displayText());
+                tryLogCurrentException(
+                    getLogger("table logger"),
+                    "Received the ABORTED error while trying to get the status of a database, this is likely because it has been shut "
+                    "down");
                 continue;
             }
             throw;
@@ -337,6 +338,3 @@ void StorageSystemDatabaseReplicas::readImpl(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabaseReplicas) }

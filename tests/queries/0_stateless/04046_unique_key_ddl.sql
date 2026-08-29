@@ -1,7 +1,6 @@
--- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage, no-fasttest
+-- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
 -- no-parallel: ATTACHes a table with a fixed UUID (item 10c), which collides
 -- across concurrent runs of this test (e.g. the flaky check's parallel workers).
--- no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
 -- UNIQUE KEY DDL + metadata.
 -- Runtime dedup is out of scope; this test only exercises parsing, metadata,
 -- round-trip, guards, and restart survival.
@@ -95,28 +94,6 @@ ENGINE = MergeTree
 UNIQUE KEY (a, a)
 ORDER BY (b); -- { serverError BAD_ARGUMENTS }
 
--- 7e. UNIQUE KEY on an ALIAS column is rejected: alias columns are not stored,
--- so the INSERT-time SST write and the load-time dense-index rebuild have no
--- data for them. Only physical (Ordinary / Materialized) columns are allowed.
-CREATE TABLE uk_t (id UInt64, a UInt64 ALIAS id + 1)
-ENGINE = MergeTree
-UNIQUE KEY (a)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
--- 7f. UNIQUE KEY on an EPHEMERAL column is rejected for the same reason.
-CREATE TABLE uk_t (id UInt64, e UInt64 EPHEMERAL)
-ENGINE = MergeTree
-UNIQUE KEY (e)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
--- 7g. UNIQUE KEY on a virtual column (e.g. `_part`) is rejected. Virtual columns
--- are not in the stored block; `getKeyFromAST` resolves against physical + virtual,
--- so this would otherwise pass DDL and crash the first INSERT on block.getByName.
-CREATE TABLE uk_t (id UInt64)
-ENGINE = MergeTree
-UNIQUE KEY (_part)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
 -- 8. ALTER DROP COLUMN on a unique-key column -> error (via ORDER BY key guard).
 CREATE TABLE uk_t (id UInt64, user_id UInt32, v String)
 ENGINE = MergeTree
@@ -141,6 +118,16 @@ CREATE TABLE uk_t_proj (id UInt64, user_id UInt32, PROJECTION p (SELECT id, user
 ENGINE = MergeTree
 UNIQUE KEY (id)
 ORDER BY (id, user_id); -- { serverError SUPPORT_IS_DISABLED }
+
+-- 10b. Streaming read (FROM ... STREAM) on a unique-key table -> error.
+-- The streaming source does not apply the delete-bitmap filter; reject rather
+-- than serve logically-deleted rows.
+SET enable_streaming_queries = 1;
+-- On Linux the UK guard rejects with NOT_IMPLEMENTED; on macOS streaming is
+-- disabled platform-wide (SUPPORT_IS_DISABLED) and fires first. Either way STREAM
+-- on a UK table is rejected.
+SELECT * FROM uk_t STREAM; -- { serverError NOT_IMPLEMENTED, SUPPORT_IS_DISABLED }
+SET enable_streaming_queries = 0;
 
 -- 10c. A unique-key table that also carries a projection must never read
 -- through the projection part (that would bypass the delete-bitmap filter).

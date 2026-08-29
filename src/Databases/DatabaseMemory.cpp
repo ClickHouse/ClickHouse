@@ -39,7 +39,6 @@ void DatabaseMemory::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    ensurePopulated();
     std::lock_guard lock{mutex};
     attachTableUnlocked(table_name, table);
 
@@ -62,7 +61,6 @@ void DatabaseMemory::dropTable(
     const String & table_name,
     bool /*sync*/)
 {
-    ensurePopulated();
     StoragePtr table;
     {
         std::lock_guard lock{mutex};
@@ -114,7 +112,6 @@ ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 
 ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
-    ensurePopulated();
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
     if (it == create_queries.end() || !it->second)
@@ -157,7 +154,6 @@ void DatabaseMemory::drop(ContextPtr local_context)
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
-    ensurePopulated();
     ASTPtr create_query;
     {
         std::lock_guard lock{mutex};
