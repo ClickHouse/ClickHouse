@@ -230,7 +230,9 @@ bool HadoopSnappyReadBuffer::nextImpl()
                 getExceptionEntryWithFileName(*in));
         }
 
-        decoder->reset();
+        /// Spelled through the reference: `decoder->reset()` is ambiguous between resetting the
+        /// decoder and resetting the pointer (`readability-ambiguous-smartptr-reset-call`).
+        (*decoder).reset();
 
         if (in->eof())
         {
