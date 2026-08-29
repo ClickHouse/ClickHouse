@@ -34,6 +34,10 @@ void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & dir
         std::error_code ec;
         while (!candidate.empty() && candidate != candidate.parent_path() && !fs::is_directory(candidate, ec))
             candidate = candidate.parent_path();
+        /// A relative root walks up to an empty path rather than to "/", and the filesystem it will
+        /// be created on is the working directory's.
+        if (candidate.empty())
+            candidate = fs::current_path(ec);
         if (candidate.empty() || !fs::is_directory(candidate, ec))
             return;
 
