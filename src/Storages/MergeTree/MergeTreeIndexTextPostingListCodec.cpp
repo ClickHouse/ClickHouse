@@ -245,14 +245,34 @@ void PostingListEncoderNone::append(std::span<const UInt32> row_ids, size_t segm
 
     while (!row_ids.empty())
     {
-        auto chunk = row_ids.first(std::min(segment_size - rows_in_current_segment, row_ids.size()));
-        row_ids = row_ids.subspan(chunk.size());
+        size_t chunk_size;
+
+        if (rows_in_current_segment < segment_size)
+        {
+            chunk_size = std::min(segment_size - rows_in_current_segment, row_ids.size());
+        }
+        else
+        {
+            /// The segment reached the target size, but seal it only at the boundary of a Roaring
+            /// container (64K row ids sharing the high 16 bits): segments made of whole containers
+            /// serialize with less overhead, and small tokens whose row ids fall into one container
+            /// stay in a single segment regardless of the configured segment size.
+            const UInt32 current_container_end = last_row_id | 0xFFFF;
+            chunk_size = std::upper_bound(row_ids.begin(), row_ids.end(), current_container_end) - row_ids.begin();
+
+            if (chunk_size == 0)
+            {
+                finishSegment();
+                continue;
+            }
+        }
+
+        auto chunk = row_ids.first(chunk_size);
+        row_ids = row_ids.subspan(chunk_size);
 
         current_segment.addMany(chunk.size(), chunk.data());
-        rows_in_current_segment += chunk.size();
-
-        if (rows_in_current_segment == segment_size)
-            finishSegment();
+        rows_in_current_segment += chunk_size;
+        last_row_id = chunk.back();
     }
 }
 
