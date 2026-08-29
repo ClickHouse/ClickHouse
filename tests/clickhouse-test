@@ -924,44 +924,49 @@ def need_retry(args, stdout, stderr, total_time):
 
 
 def get_processlist_size(args):
+    # The rows are counted client-side: aggregation performs a memory limit check
+    # that a server over its per-user limit cannot pass, and this query has to
+    # answer in exactly that state.
     if args.replicated_database:
-        return int(
+        return len(
             clickhouse_execute(
                 args,
                 """
-                SELECT
-                    count()
+                SELECT 1
                 FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
                 """,
-            ).strip()
+            ).splitlines()
         )
     if args.shared_catalog:
-        return int(
+        return len(
             clickhouse_execute(
                 args,
                 """
-                SELECT
-                    count()
+                SELECT 1
                 FROM clusterAllReplicas('test_cluster_shared_catalog', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
                 """,
-            ).strip()
+            ).splitlines()
         )
-    return int(
+    return len(
         clickhouse_execute(
             args,
             """
-                SELECT
-                    count()
+                SELECT 1
                 FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
             """,
-        ).strip()
+        ).splitlines()
     )
+
+
+# The stacktrace query below is the one hung-check query that cannot avoid
+# aggregating, so it is the only one that needs the per-user limit lifted.
+HUNG_CHECK_QUERY_SETTINGS = {"max_memory_usage_for_user": 0}
 
 
 def get_processlist_with_stacktraces(args):
@@ -987,6 +992,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
             settings={
+                **HUNG_CHECK_QUERY_SETTINGS,
                 "allow_introspection_functions": 1,
             },
             timeout=120,
@@ -1013,6 +1019,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
             settings={
+                **HUNG_CHECK_QUERY_SETTINGS,
                 "allow_introspection_functions": 1,
             },
             timeout=120,
@@ -1034,6 +1041,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
         settings={
+            **HUNG_CHECK_QUERY_SETTINGS,
             "allow_introspection_functions": 1,
         },
         timeout=120,
@@ -1330,21 +1338,20 @@ def print_sql_stacktraces(args) -> None:
     Adds thread_name and query_id to the C-side picture, which is the
     only way to map a stuck thread to the query it was running.
 
-    Self-skips when the liveness check fails, because this dump is another
-    query over the path the check just could not complete.  This keeps
-    callers honest: they can invoke this from any context (per-test
-    timeout, end-of-run hung-check) without first probing the server
-    themselves.
+    No liveness pre-check: this dump goes over native TCP while
+    `check_server_liveness` probes HTTP, and a failed probe does not
+    establish that the server is gone. `get_stacktraces_from_clickhouse` is
+    bounded and never raises, so callers can invoke this from any context.
     """
-    if not check_server_liveness(args, max_retries=1):
-        print("Skipping system.stack_trace query: liveness check failed.")
-        return
     print("\nCollecting stacktraces from system.stack_trace table:")
     bt = get_stacktraces_from_clickhouse(args)
     if bt:
         _append_stacktrace_log(SQL_STACKTRACES_LOG, bt)
         print(trim_for_log(bt, 100))
         print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
+    else:
+        # Distinguish "tried and got nothing" from "never tried".
+        print("Collected no stacks from system.stack_trace.")
 
 
 def get_server_pid(args):
@@ -1965,6 +1972,51 @@ def replace_in_file(filename, what, with_what):
 
 def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
+
+
+# The three messages ever observed for this failure (InstrProfilingFile.c:469, :522, :623).
+# Nothing delimits the trailing strerror(errno) from the test's own output, so where one
+# strerror value extends another the two readings are the very same bytes.
+_STRERROR = {os.strerror(e) for e in range(256)}
+# e.g. `No such device` -> [` or address`]: the tails that would extend it into another.
+_STRERROR_EXTENSIONS = {
+    s: sorted(o[len(s) :] for o in _STRERROR if o != s and o.startswith(s))
+    for s in _STRERROR
+    if not any(s != o and s.startswith(o) for o in _STRERROR)
+}
+_LLVM_PROFILE_ERROR = (
+    rb"LLVM Profile Error: (?:Invalid profile data to merge"
+    rb"|(?:Profile Merging of file [^\n]*? failed"
+    rb'|Failed to write file "[^"\n]*"): (?:'
+    + rb"|".join(
+        re.escape(s.encode())
+        + (
+            rb"(?!" + rb"|".join(re.escape(e.encode()) for e in exts) + rb")"
+            if exts
+            else rb""
+        )
+        for s, exts in sorted(_STRERROR_EXTENSIONS.items())
+    )
+    + rb"))"
+)
+# A line holding nothing else goes away with its newline, but a message glued
+# onto real output (which happens) must lose only the message. An unmatched
+# message is left whole, so a miss shows up in the diff instead of hiding output.
+_LLVM_PROFILE_ERROR_LINE_RE = re.compile(
+    rb"(?m)^(?:" + _LLVM_PROFILE_ERROR + rb")+(?:\n|\Z)"
+)
+_LLVM_PROFILE_ERROR_RE = re.compile(_LLVM_PROFILE_ERROR)
+
+
+def strip_llvm_profile_errors_in_file(filename):
+    with open(filename, "rb") as f:
+        data = f.read()
+    if b"LLVM Profile Error: " not in data:
+        return
+    data = _LLVM_PROFILE_ERROR_LINE_RE.sub(b"", data)
+    with open(filename, "wb") as f:
+        f.write(_LLVM_PROFILE_ERROR_RE.sub(b"", data))
+
 
 def str_to_numeric(v: str):
     vl = v.lower()
@@ -3851,6 +3903,11 @@ class TestCase:
                 r"\1(\4)",
             )
 
+        # A test that merges a client's stderr into its own stdout (2>&1) does so
+        # before the harness sees either stream, so the stderr-side filter above
+        # cannot reach it and the noise is diffed against .reference. See #97020.
+        strip_llvm_profile_errors_in_file(self.stdout_file)
+
         return proc, total_time
 
     def run(self, args, suite, client_options):
@@ -4951,6 +5008,7 @@ def run_tests_array(
                     # server process, and a cause claimed after it loses to any
                     # cause claimed during it.
                     try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
@@ -4959,6 +5017,7 @@ def run_tests_array(
                     )
                 if test_result.reason == FailureReason.LIVENESS_CHECK_FAILED:
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     if not is_concurrent:
                         # Sequential runner owns the main process, so there is no
@@ -5121,7 +5180,7 @@ def check_server_started(args):
 
     sys.stdout.flush()
     retry_count = args.server_check_retries
-    query = "SELECT version(), arrayStringConcat(groupArray(value), ' ') FROM system.build_options WHERE name IN ('GIT_HASH', 'GIT_BRANCH')"
+    query = "SELECT version(), (SELECT value FROM system.build_options WHERE name = 'GIT_HASH'), (SELECT value FROM system.build_options WHERE name = 'GIT_BRANCH')"
     while retry_count > 0:
         try:
             res = (
@@ -5526,6 +5585,7 @@ def do_run_tests(
                     # Claim before collecting: the sweep below can block ~30s per
                     # server process.
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_testing.set()
 
@@ -5865,9 +5925,11 @@ def main(args):
     tests_start_time = time()
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
+        msg = "Server is not responding. Cannot query the server version."
         if args.hung_check:
             print(msg)
+            # The probe that just failed is HTTP; this dump goes over TCP.
+            print_sql_stacktraces(args)
             print_c_stacktraces(args)
         raise TestException(msg)
 

@@ -256,7 +256,8 @@ The ClickHouse workload is in public preview. The limitations below are the curr
 
 ### Access and identity {#access-and-identity}
 
-* **Role changes apply on next open.** Your ClickHouse organization role is mapped from your Fabric workspace role when you open a ClickHouse item. Fabric cannot notify ClickHouse of role changes, so a changed workspace role takes effect the next time you open the item, not immediately.
+* **Role changes apply on next open.** Your ClickHouse organization role is mapped from your Fabric workspace role each time you open a ClickHouse item. Fabric cannot notify ClickHouse of role changes, so a changed workspace role does not take effect immediately.
+* **Removing or downgrading a user in Fabric does not revoke their ClickHouse access.** Because roles are only applied when a user opens a ClickHouse item, a user who is removed from the workspace or downgraded may retain their existing access on the ClickHouse Cloud side, and if they never open the item again that change never propagates at all. To revoke access immediately and reliably, remove the user from the organization in the ClickHouse Cloud console.
 * **Workspace-level access.** Everyone in the workspace can use its ClickHouse items. Granular, per-table permission sync from OneLake is currently not supported.
 * **Console SSO requires an email on your Entra profile.** ClickHouse Cloud users need an email address; if your Microsoft Entra profile has none set, signing in to the Cloud console will fail.
 
