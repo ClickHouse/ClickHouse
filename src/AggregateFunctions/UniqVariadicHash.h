@@ -6,6 +6,8 @@
 #include <Common/assert_cast.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/canonicalizeNegativeZero.h>
+#include <Common/PODArray.h>
 #include <DataTypes/IDataType.h>
 #include <base/normalizeNegativeZero.h>
 
@@ -71,6 +73,16 @@ inline UInt64 ALWAYS_INLINE cityHashValueAt(const IColumn & column, size_t row_n
         return res;
 
     auto value = column.getDataAt(row_num);
+
+    /// The raw bytes of the value can be a sequence of floating point values, e.g. for an
+    /// `Array(Float64)` argument, and they cannot be canonicalized in place - see `rawFloatValueWidth`.
+    if (size_t float_width = rawFloatValueWidth(column))
+    {
+        PODArrayWithStackMemory<char, 64> canonical(value.size());
+        canonicalizeNegativeZeroInRawValue(value, float_width, canonical.data());
+        return CityHash_v1_0_2::CityHash64(canonical.data(), canonical.size());
+    }
+
     return CityHash_v1_0_2::CityHash64(value.data(), value.size());
 }
 

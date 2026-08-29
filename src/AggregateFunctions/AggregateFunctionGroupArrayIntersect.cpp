@@ -240,7 +240,10 @@ public:
             for (size_t i = 0; i < arr_size; ++i)
             {
                 if constexpr (is_plain_column)
-                    set.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
+                    withKeyHolder<true>(*data_column, offset + i, *arena, [&](auto && key_holder)
+                    {
+                        set.emplace(key_holder, it, inserted);
+                    });
                 else
                 {
                     const char * begin = nullptr;
@@ -259,9 +262,14 @@ public:
             {
                 if constexpr (is_plain_column)
                 {
-                    it = set.find(data_column->getDataAt(offset + i));
-                    if (it != nullptr)
-                        new_set.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
+                    withKeyHolder<true>(*data_column, offset + i, *arena, [&](auto && key_holder)
+                    {
+                        it = set.find(keyHolderGetKey(key_holder));
+                        if (it != nullptr)
+                            new_set.emplace(key_holder, it, inserted);
+                        else
+                            keyHolderDiscardKey(key_holder);
+                    });
                 }
                 else
                 {

@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -399,10 +400,24 @@ public:
 
         if constexpr (is_plain_column)
         {
+            /// The raw bytes of the value can contain negative zeros, which have to be canonicalized
+            /// in a copy - see `rawFloatValueWidth`.
+            std::string_view value = columns[0]->getDataAt(row_num);
+            size_t float_width = rawFloatValueWidth(*columns[0]);
+            if (float_width)
+            {
+                char * canonical = arena->alloc(value.size());
+                canonicalizeNegativeZeroInRawValue(value, float_width, canonical);
+                value = {canonical, value.size()};
+            }
+
             if constexpr (is_weighted)
-                set.insert(columns[0]->getDataAt(row_num), columns[1]->getUInt(row_num));
+                set.insert(value, columns[1]->getUInt(row_num));
             else
-                set.insert(columns[0]->getDataAt(row_num));
+                set.insert(value);
+
+            if (float_width)
+                arena->rollback(value.size());
         }
         else
         {

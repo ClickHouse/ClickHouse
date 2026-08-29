@@ -88,10 +88,12 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
 {
     bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena * arena)
     {
-        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
         Set::LookupResult it = nullptr;
         bool inserted = false;
-        history.emplace(key_holder, it, inserted);
+        withKeyHolder<is_plain_column>(*columns[0], row_num, *arena, [&](auto && key_holder)
+        {
+            history.emplace(key_holder, it, inserted);
+        });
 
         return inserted;
     }

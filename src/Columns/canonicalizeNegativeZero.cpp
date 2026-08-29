@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
@@ -16,6 +17,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/normalizeNegativeZero.h>
+#include <base/unaligned.h>
 
 
 namespace DB
@@ -23,6 +25,17 @@ namespace DB
 
 namespace
 {
+
+template <typename T>
+void normalizeNegativeZerosInRawValue(char * data, size_t size)
+{
+    for (size_t offset = 0; offset + sizeof(T) <= size; offset += sizeof(T))
+    {
+        const T value = unalignedLoad<T>(data + offset);
+        if (isNegativeZero(value))
+            unalignedStore<T>(data + offset, T{});
+    }
+}
 
 template <typename T>
 ColumnPtr canonicalizeNegativeZeroInVector(const IColumn & column)
@@ -292,6 +305,42 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column)
     }
 
     return nullptr;
+}
+
+size_t rawFloatValueWidth(const IColumn & column)
+{
+    const IColumn * nested = &column;
+
+    /// A value of an array of fixed size values is represented as the sequence of the values.
+    while (const auto * column_array = typeid_cast<const ColumnArray *>(nested))
+        nested = &column_array->getData();
+
+    /// A value of a `LowCardinality` column is represented as the value in its dictionary.
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(nested))
+        nested = column_low_cardinality->getDictionary().getNestedColumn().get();
+
+    if (typeid_cast<const ColumnFloat64 *>(nested))
+        return sizeof(Float64);
+
+    if (typeid_cast<const ColumnFloat32 *>(nested))
+        return sizeof(Float32);
+
+    if (typeid_cast<const ColumnBFloat16 *>(nested))
+        return sizeof(BFloat16);
+
+    return 0;
+}
+
+void canonicalizeNegativeZeroInRawValue(std::string_view value, size_t width, char * res)
+{
+    memcpy(res, value.data(), value.size());
+
+    if (width == sizeof(Float64))
+        normalizeNegativeZerosInRawValue<Float64>(res, value.size());
+    else if (width == sizeof(Float32))
+        normalizeNegativeZerosInRawValue<Float32>(res, value.size());
+    else if (width == sizeof(BFloat16))
+        normalizeNegativeZerosInRawValue<BFloat16>(res, value.size());
 }
 
 void canonicalizeNegativeZeroInKeyColumns(ColumnRawPtrs & key_columns, Columns & holder)

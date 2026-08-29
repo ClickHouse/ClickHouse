@@ -25,4 +25,18 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column);
 /// The canonicalized columns are appended to `holder`, which has to outlive the usage of `key_columns`.
 void canonicalizeNegativeZeroInKeyColumns(ColumnRawPtrs & key_columns, Columns & holder);
 
+/** A value of a column can be represented in memory as a flat sequence of floating point values of
+  * the same width: a `Float64` value, an `Array(Float32)` row, a `LowCardinality(Float64)` value.
+  * Such a value is used as a hash table key by the raw bytes that `IColumn::getDataAt` returns, and
+  * these bytes cannot be canonicalized in place, so a canonicalized copy has to be made.
+  *
+  * Returns the width of one floating point value in such a representation, or 0 if a value of this
+  * column contains no floating point values, which is by far the most common case.
+  */
+size_t rawFloatValueWidth(const IColumn & column);
+
+/// Copies `value` to `res`, replacing the negative zeros in it with positive zeros.
+/// `width` is what `rawFloatValueWidth` returned for the column that `value` came from.
+void canonicalizeNegativeZeroInRawValue(std::string_view value, size_t width, char * res);
+
 }
