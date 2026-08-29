@@ -1,0 +1,10 @@
+-- the reported case: argMaxIf over LowCardinality(Nullable(String))
+1
+AggregateFunction(argMaxIf, LowCardinality(Nullable(String)), DateTime, Bool)
+-- not specific to argMax, to the -If combinator, or to Nullable
+1
+AggregateFunction(max, LowCardinality(String))	AggregateFunction(uniq, LowCardinality(Nullable(String)))	AggregateFunction(groupArray, LowCardinality(String))
+-- a real state still merges with a default-constructed one
+b
+-- the same default is reachable through a DEFAULT-less column of a plain MergeTree
+3

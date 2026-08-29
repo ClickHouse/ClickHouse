@@ -5,6 +5,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <IO/Operators.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -634,6 +636,36 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
     }
 }
 
+bool ColumnAggregateFunction::hasCompatibleStateType(const String & field_type_name) const
+{
+    /// Fast path: the field was spelled exactly the way this column spells its own state.
+    if (type_string == field_type_name)
+        return true;
+
+    /// One state can be spelled in more than one way, so an unequal name is not yet a mismatch.
+    /// `type_string` is built from `func->getArgumentTypes()`, which `AggregateFunctionFactory::get` has
+    /// already stripped of `LowCardinality`, while a field carrying a declared column type holds
+    /// `DataTypeAggregateFunction::getName()`, which keeps the wrappers as they were written in the DDL.
+    /// Compare the types instead of their printed names.
+    const auto field_type = DataTypeFactory::instance().tryGet(field_type_name);
+    if (!field_type)
+        return false;
+
+    const auto * field_state_type = typeid_cast<const DataTypeAggregateFunction *>(field_type.get());
+    if (!field_state_type)
+        return false;
+
+    const auto this_state_type
+        = std::make_shared<DataTypeAggregateFunction>(func, func->getArgumentTypes(), func->getParameters(), version);
+
+    /// `equals` compares normalized state types and deliberately ignores the serialization version,
+    /// while the states of different versions are not interchangeable. Compare it separately.
+    if (field_state_type->getVersion() != this_state_type->getVersion())
+        return false;
+
+    return field_state_type->equals(*this_state_type);
+}
+
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
@@ -642,7 +674,7 @@ void ColumnAggregateFunction::insert(const Field & x)
             x.getTypeName(), Field::Types::AggregateFunctionState);
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (type_string != field_name)
+    if (!hasCompatibleStateType(field_name))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
                 field_name, type_string);
 

@@ -99,6 +99,11 @@ private:
 
     void insertFromWithOwnership(const IColumn & from, size_t n);
 
+    /// Whether a Field whose state type is spelled `field_type_name` holds a state with the same binary
+    /// representation as this column's, and can therefore be deserialized into it. The spelling need not
+    /// be identical to `type_string` - see the definition.
+    bool hasCompatibleStateType(const String & field_type_name) const;
+
 public:
     ~ColumnAggregateFunction() override;
 
