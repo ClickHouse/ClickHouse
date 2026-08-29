@@ -913,7 +913,10 @@ def test_remote_host_filter_applies_to_lookup_results(pulsar_cluster):
 
     def produce(message):
         # Produce with the broker-local CLI client: the table engine's own
-        # producer would be cut off by the very filter under test.
+        # producer would be cut off by the very filter under test. The client
+        # splits `-m` on the separator (a comma by default, which JSON payloads
+        # contain, and interpreted as a Java regex), so pick a non-special
+        # character that does not occur in the message.
         subprocess.check_call(
             [
                 "docker",
@@ -922,6 +925,8 @@ def test_remote_host_filter_applies_to_lookup_results(pulsar_cluster):
                 "bin/pulsar-client",
                 "produce",
                 "lookup_filter_topic",
+                "-s",
+                ";",
                 "-m",
                 message,
             ]
