@@ -54,6 +54,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char backup_fail_before_writing_metadata[];
+    extern const char backup_fail_lock_file_check_after_creation[];
     extern const char backup_fail_lock_file_removal[];
     extern const char backup_fail_lock_file_write_after_commit[];
     extern const char backup_pause_before_lock_file_creation[];
@@ -277,7 +278,21 @@ void BackupImpl::open()
                 checkBackupDoesntExist();
                 if (!params.is_internal_backup)
                     createLockFile();
-                checkLockFile(true);
+
+                /// `createLockFile` can already have read the lock back and found this attempt's own
+                /// contents in it. Reading it a second time right away cannot make that ownership any
+                /// more certain, and it can fail on its own: that would abort an uncontended backup and
+                /// leave behind a lock nothing can remove, because removal needs a readable lock too.
+                if (!lock_file_verified_on_create)
+                {
+                    fiu_do_on(FailPoints::backup_fail_lock_file_check_after_creation,
+                    {
+                        throw Exception(
+                            ErrorCodes::FAULT_INJECTED,
+                            "Failpoint backup_fail_lock_file_check_after_creation is triggered");
+                    });
+                    checkLockFile(true);
+                }
             }
 
             if (use_archive)
@@ -978,6 +993,8 @@ void BackupImpl::createLockFile()
                 "reported a failure had committed",
                 lock_file_name,
                 backup_name_for_logging);
+            /// The lock has just been read back and it is ours: the caller does not have to check it again.
+            lock_file_verified_on_create = true;
         }
         else
         {
