@@ -2086,7 +2086,8 @@ static constexpr size_t MAX_HELLO_STRING_SIZE = 64 * 1024;
   * secret hash of the query is checked, so bound them.
   */
 static constexpr size_t MAX_EXTRA_ROLES_SIZE = 1024 * 1024;
-static constexpr size_t MAX_EXTRA_ROLES = 65536;
+/// Only read on the interserver path, which is compiled out without SSL.
+[[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLES = 65536;
 
 void TCPHandler::receiveHello()
 {
