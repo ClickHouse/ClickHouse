@@ -2397,19 +2397,43 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
     if (std::optional<Int64> min_version = getMinPartDataVersion())
         done_below = std::min(done_below, *min_version);
 
-    auto end_it = current_mutations_by_version.end();
-    if (done_below != std::numeric_limits<Int64>::max())
-        end_it = current_mutations_by_version.upper_bound(done_below);
-
     const time_t now = time(nullptr);
 
+    /// Fetched lazily: only a transactional entry needs it, since only its completion is decided by
+    /// snapshot visibility rather than by the block-order bound above.
+    std::optional<DataPartsVector> parts_for_visibility;
+
     size_t done_count = 0;
-    for (auto it = current_mutations_by_version.begin(); it != end_it; ++it)
+    for (auto it = current_mutations_by_version.begin(); it != current_mutations_by_version.end(); ++it)
     {
         auto & entry = it->second;
 
-        if (!entry.tid.isNonTransactional())
-            break;
+        if (entry.tid.isNonTransactional())
+        {
+            /// Ordered by version, so once one falls outside the bound, so does every later one.
+            if (done_below == std::numeric_limits<Int64>::max() || static_cast<Int64>(it->first) > done_below)
+                break;
+        }
+        else
+        {
+            /// A transactional mutation rewrites exactly the parts visible to its own snapshot
+            /// (`selectPartsToMutate`), so it is finished once none of them is left below its
+            /// version - the rule `getMutationsStatus` already reports. Stopping at the first such
+            /// entry instead left it permanently unfinished here, so its counters were never
+            /// decremented and `clearOldMutations` could trim neither it nor anything after it.
+            if (!parts_for_visibility)
+                parts_for_visibility = getDataPartsVectorForInternalUsage();
+
+            const auto version = static_cast<Int64>(it->first);
+            const bool visible_part_left = std::any_of(
+                parts_for_visibility->begin(), parts_for_visibility->end(), [&](const auto & part)
+                {
+                    return part->info.getDataVersion() < version
+                        && part->version && part->version->isVisible(entry.tid.start_csn, entry.tid);
+                });
+            if (visible_part_left)
+                continue;
+        }
 
         if (!entry.is_done)
         {
