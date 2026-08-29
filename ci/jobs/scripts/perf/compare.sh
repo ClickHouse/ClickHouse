@@ -541,8 +541,6 @@ function run_tests
                 # Only when the caller explicitly set CHPC_RUNS ("at least N
                 # runs"); otherwise the adaptive run policy decides.
                 ${CHPC_RUNS:+--runs "$CHPC_RUNS"}
-                # Setup queries marked do_not_check_in_pr="$PR_TO_TEST" may fail on the reference server.
-                ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"}
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
 
@@ -1031,8 +1029,7 @@ do
         --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
         --binary left/clickhouse right/clickhouse \
         --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
-        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
-        --max-queries 0 --profile-seconds 0 \
+        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} --max-queries 0 --profile-seconds 0 \
         --queries-to-run $confirm_indexes \
         > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
         2> "analyze-confirm/$confirm_test-err.log"

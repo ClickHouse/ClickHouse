@@ -71,6 +71,24 @@ struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::De
             new_state->bucket_shared_data_structure_states[bucket] = bucket_shared_data_structure_states[bucket] ? bucket_shared_data_structure_states[bucket]->clone() : nullptr;
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (object_structure_state)
+            callback(object_structure_state);
+        if (shared_data_paths_state)
+            callback(shared_data_paths_state);
+        for (const auto & bucket_state : bucket_shared_data_paths_state)
+        {
+            if (bucket_state)
+                callback(bucket_state);
+        }
+        for (const auto & bucket_state : bucket_shared_data_structure_states)
+        {
+            if (bucket_state)
+                callback(bucket_state);
+        }
+    }
 };
 
 void SerializationObjectDistinctPaths::enumerateStreams(
@@ -214,7 +232,8 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
-    IColumn & column,
+    ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -223,10 +242,10 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     if (!state)
         return;
 
-    if (limit == 0)
+    if (rows_offset + limit == 0)
         return;
 
-    auto & array_column = assert_cast<ColumnArray &>(column);
+    auto & array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
     auto & paths_column = assert_cast<ColumnString &>(array_column.getData());
     auto * object_distinct_paths_state = checkAndGetState<DeserializeBinaryBulkStateObjectDistinctPaths>(state);
     auto * object_structure_state = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(object_distinct_paths_state->object_structure_state);
@@ -246,11 +265,14 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     {
         case SerializationObjectSharedData::SerializationVersion::MAP:
         {
-            auto shared_data_paths_column = column.cloneEmpty();
+            ColumnPtr shared_data_paths_column = column->cloneEmpty();
+            auto settings_copy = settings;
+            settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
             shared_data_paths_serialization->deserializeBinaryBulkWithMultipleStreams(
-                *shared_data_paths_column,
+                shared_data_paths_column,
+                rows_offset,
                 limit,
-                settings,
+                settings_copy,
                 object_distinct_paths_state->shared_data_paths_state,
                 cache);
 
@@ -265,9 +287,10 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
             {
                 settings.path.push_back(Substream::Bucket);
                 settings.path.back().bucket = bucket;
-                auto bucket_shared_data_paths_column = column.cloneEmpty();
+                ColumnPtr bucket_shared_data_paths_column = column->cloneEmpty();
                 shared_data_paths_serialization->deserializeBinaryBulkWithMultipleStreams(
-                    *bucket_shared_data_paths_column,
+                    bucket_shared_data_paths_column,
+                    rows_offset,
                     limit,
                     settings,
                     object_distinct_paths_state->bucket_shared_data_paths_state[bucket],
@@ -290,7 +313,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
                 settings.path.back().bucket = bucket;
 
                 auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(object_distinct_paths_state->bucket_shared_data_structure_states[bucket]);
-                auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
+                auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);
                 for (const auto & structure_granule : *structure_granules)
                 {
                     for (const auto & path : structure_granule.all_paths)

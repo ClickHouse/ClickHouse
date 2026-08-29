@@ -21,10 +21,10 @@
       "view",
       "download-pdf",
       {
-        "description": "Setup instructions for the ClickHouse documentation MCP server",
-        "href": "/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+        "description": "Setup instructions for docs MCP server",
+        "href": "https://clickhouse.com/docs#claude-code",
         "icon": "/images/icons/icon-mcp.svg",
-        "title": "Set up the ClickHouse documentation MCP server"
+        "title": "Set up docs MCP server"
       }
     ]
   },
@@ -94,6 +94,9 @@
                 "$ref": "./products/managed-postgres/navigation.json"
               },
               {
+                "$ref": "./clickstack/navigation.json"
+              },
+              {
                 "href": "https://langfuse.com/docs",
                 "icon": "/images/icons/logo-langfuse.svg",
                 "item": "Langfuse"
@@ -102,9 +105,6 @@
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
                 "item": "Open source"
-              },
-              {
-                "$ref": "./clickstack/navigation.json"
               },
               {
                 "$ref": "./products/agentic-data-stack/navigation.json"
@@ -213,9 +213,6 @@
     },
     {
       "src": "/_site/customizations/tab-nav.js"
-    },
-    {
-      "src": "/_site/customizations/webterminal.js"
     },
     {
       "src": "/_site/customizations/nav-icon-preload.js"

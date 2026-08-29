@@ -34,6 +34,12 @@ SELECT
     =
     (SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t_admission GROUP BY k SETTINGS optimize_aggregation_in_order = 0, max_rows_to_group_by = 1000000, group_by_overflow_mode = 'throw', enable_adaptive_aggregator = 1));
 
+SELECT 'Sharded aggregation takes precedence';
+SELECT
+    (SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t_admission GROUP BY k SETTINGS optimize_aggregation_in_order = 0, enable_sharding_aggregator = 1, enable_adaptive_aggregator = 0))
+    =
+    (SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t_admission GROUP BY k SETTINGS optimize_aggregation_in_order = 0, enable_sharding_aggregator = 1, enable_adaptive_aggregator = 1));
+
 SELECT 'Serialized query plan carries the settings';
 SELECT
     (SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t_admission GROUP BY k SETTINGS optimize_aggregation_in_order = 0, serialize_query_plan = 1, enable_adaptive_aggregator = 0))

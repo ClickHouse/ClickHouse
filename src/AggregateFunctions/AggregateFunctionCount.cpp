@@ -308,9 +308,6 @@ You can also use a [projection](/reference/statements/alter/projection) to creat
     {
         "Basic row count",
         R"(
-CREATE TABLE t (num UInt8) ENGINE = Memory;
-INSERT INTO t VALUES (1), (1), (2), (2), (3);
-
 SELECT count() FROM t
         )",
         R"(
@@ -330,9 +327,9 @@ SELECT count(DISTINCT num) FROM t
 ┌─name──────────────────────────┬─value─────┐
 │ count_distinct_implementation │ uniqExact │
 └───────────────────────────────┴───────────┘
-┌─countDistinct(num)─┐
-│                  3 │
-└────────────────────┘
+┌─uniqExact(num)─┐
+│              3 │
+└────────────────┘
         )"
     }
     };

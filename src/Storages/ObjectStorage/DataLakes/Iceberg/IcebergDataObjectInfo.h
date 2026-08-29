@@ -10,7 +10,6 @@
 
 #include <Core/Field.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
-#include <base/types.h>
 
 
 namespace DB::Iceberg
@@ -32,7 +31,6 @@ struct IcebergObjectSerializableInfo
     std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
     std::optional<Int64> record_count;
     std::optional<Int64> file_size_in_bytes;
-    std::optional<UInt64> first_row_id;
     std::vector<std::pair<String, Field>> identity_partition_columns;
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;

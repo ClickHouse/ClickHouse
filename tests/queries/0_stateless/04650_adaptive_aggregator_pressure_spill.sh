@@ -50,6 +50,7 @@ $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET group_by_two_level_threshold = 1000;
 SET collect_hash_table_stats_during_aggregation = 0;
+SET enable_sharding_aggregator = 0;
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 4000000;
 SET adaptive_aggregator_freeze_threshold_bytes = 0;
@@ -75,6 +76,7 @@ $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET group_by_two_level_threshold = 1000;
 SET collect_hash_table_stats_during_aggregation = 0;
+SET enable_sharding_aggregator = 0;
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 4000000;
 SET adaptive_aggregator_freeze_threshold_bytes = 0;

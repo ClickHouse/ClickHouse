@@ -322,7 +322,7 @@ def test_each_explicit_selector_must_match_before_skipping(tmp_path):
     assert suite.explicit_test_selectors_matched == {"00001_existing"}
 
 
-def test_pr_workflow_trims_sanitizer_functional_tests():
+def test_pr_workflow_keeps_full_suite_msan_wasmedge_functional_tests():
     from ci.workflows.pull_request import (
         CORE_BLOCKING_JOB_NAMES,
         SANITIZERS,
@@ -337,17 +337,25 @@ def test_pr_workflow_trims_sanitizer_functional_tests():
         and any(sanitizer in name for sanitizer in SANITIZERS)
     ]
     assert sanitizer_ft_jobs, "no sanitizer functional test jobs in the PR workflow"
+    full_suite_msan_wasmedge_jobs = []
     for name in sanitizer_ft_jobs:
+        if "amd_msan, WasmEdge" in name:
+            full_suite_msan_wasmedge_jobs.append(name)
+            continue
         # The flaky, targeted and azure jobs run their own selection or config.
         assert any(
             marker in name
             for marker in ("selected tests", "flaky check", "targeted", "azure")
         ), f"full-suite sanitizer functional test job in the PR workflow: {name}"
 
+    assert len(full_suite_msan_wasmedge_jobs) == 5
+    assert not any("selected tests" in name for name in full_suite_msan_wasmedge_jobs)
+
     selected_test_jobs = [
         job for job in workflow.jobs if "selected tests" in job.name
     ]
     assert selected_test_jobs
+    assert all(job.digest_config is None for job in selected_test_jobs)
 
     # Every gating job must exist in the workflow - the trimmed jobs replaced
     # the full-suite ones the gate used to name.

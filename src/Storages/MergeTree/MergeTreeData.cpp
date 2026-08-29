@@ -5377,13 +5377,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
-    /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
+    /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
     /// the gate for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
     /// with the query context; applying the resulting metadata (`changeSettings`, e.g. on other replicas)
     /// is not re-checked, so tables that already carry such a codec keep working. The same applies to
     /// `ALTER TABLE ... RESET SETTING`: the post-reset value comes from the current `<merge_tree>` config
-    /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying a
-    /// gated codec must not re-enter the table without the session opting in. The CREATE-time
+    /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying an
+    /// experimental codec must not re-enter the table without the session opting in. The CREATE-time
     /// counterpart of this check lives in `registerStorageMergeTree`.
     std::unique_ptr<MergeTreeSettings> default_settings;
     for (const auto & command : commands)

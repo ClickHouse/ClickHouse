@@ -1034,13 +1034,18 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
 
-            /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
-            /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
-            /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
+            /// `String`/`FixedString` equality compares zero-padded, so a constant of M bytes matches
+            /// the whole family `value` + trailing '\0'*, while the index holds one hash per exact
+            /// stored value. The index is sound only where that family collapses to a single indexed
+            /// value: a `FixedString(N)` index with `N >= M` pads the constant into the one stored
+            /// form, while a `String` index, or a narrower `FixedString`, leaves the family unbounded
+            /// because `convertFieldToType` pads but never truncates.
+            /// The constant type is unwrapped here because `tryGetConstant` peels only an outer
+            /// `Nullable`. `Variant` and `Dynamic` keep their declared wrapper while handing out the
+            /// nested padded value, so an active `FixedString` alternative is indistinguishable from
+            /// a `String` one and both must be treated as possibly padded.
             if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
             {
-                /// A `Variant` or `Dynamic` constant carries the nested padded value under its
-                /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
                 const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
                 const bool constant_may_be_fixed_string
                     = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();

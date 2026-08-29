@@ -310,14 +310,6 @@ private:
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
-    /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
-    /// owe us is that announcement - see `tryCancel`.
-    std::atomic_bool announcement_received = false;
-
-    /// Set when `tryCancel` left a packet undrained, so the destructor knows the connection is
-    /// unsynchronised and must be disconnected rather than returned to the pool.
-    std::atomic_bool drain_was_skipped = false;
-
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
       */
