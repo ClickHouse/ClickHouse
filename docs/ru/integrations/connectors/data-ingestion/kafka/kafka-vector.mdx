@@ -17,7 +17,7 @@ Vector — это не зависящий от поставщика конвей
 
 Руководство по [началу работы](/ru/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse) для Vector с ClickHouse посвящено сценарию работы с логами и чтению событий из файла. Мы используем [пример датасета GitHub](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson), в котором события хранятся в топике Kafka.
 
-Vector использует [sources](https://vector.dev/docs/about/concepts/#sources) для получения данных по модели push или pull. [Sinks](https://vector.dev/docs/about/concepts/#sinks), в свою очередь, выступают пунктом назначения для событий. Поэтому мы используем источник Kafka и приёмник ClickHouse. Обратите внимание: хотя Kafka поддерживается в качестве Sink, источник для ClickHouse недоступен. Поэтому Vector не подходит, если вам нужно передавать данные из ClickHouse в Kafka.
+Vector использует [источники](https://vector.dev/docs/introduction/concepts/#sources) для получения данных по модели push или pull. [Приёмники](https://vector.dev/docs/introduction/concepts/#sinks), в свою очередь, выступают пунктом назначения для событий. Поэтому мы используем источник Kafka и приёмник ClickHouse. Обратите внимание: хотя Kafka поддерживается в качестве приёмника, источник для ClickHouse недоступен. Поэтому Vector не подходит, если вам нужно передавать данные из ClickHouse в Kafka.
 
 Vector также поддерживает [преобразование](https://vector.dev/docs/reference/configuration/transforms/) данных. Это выходит за рамки данного руководства. Если это требуется для вашего датасета, обратитесь к документации Vector.
 

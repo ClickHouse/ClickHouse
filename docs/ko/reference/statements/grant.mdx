@@ -6,7 +6,7 @@ title: 'GRANT 문'
 doc_type: '참고'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 * ClickHouse 사용자 계정 또는 역할에 [권한](#privileges)을 부여합니다.
 * 사용자 계정이나 다른 역할에 역할을 할당합니다.
@@ -191,6 +191,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -267,6 +268,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
   * `SHOW FILESYSTEM CACHES`
   * [`SOURCES`](#sources)
     * `AZURE`
+    * `BIGQUERY`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -284,6 +286,9 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `SQLITE`
     * `URL`
   * [`SYSTEM`](#system)
+    * `SYSTEM BACKGROUND`
+      * `SYSTEM STREAMING ENGINES`
+      * `SYSTEM VIEWS`
     * `SYSTEM CLEANUP`
     * `SYSTEM DROP CACHE`
       * `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -300,7 +305,6 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
       * `SYSTEM DROP S3 CLIENT CACHE`
       * `SYSTEM DROP SCHEMA CACHE`
       * `SYSTEM DROP UNCOMPRESSED CACHE`
-    * `SYSTEM DROP PRIMARY INDEX CACHE`
     * `SYSTEM DROP REPLICA`
     * `SYSTEM FAILPOINT`
     * `SYSTEM FETCHES`
@@ -308,8 +312,6 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
       * `SYSTEM FLUSH ASYNC INSERT QUEUE`
       * `SYSTEM FLUSH LOGS`
     * `SYSTEM JEMALLOC`
-    * `SYSTEM KILL QUERY`
-    * `SYSTEM KILL TRANSACTION`
     * `SYSTEM LISTEN`
     * `SYSTEM LOAD PRIMARY KEY`
     * `SYSTEM MERGES`
@@ -318,6 +320,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -342,7 +345,6 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `SYSTEM TTL MERGES`
     * `SYSTEM UNFREEZE`
     * `SYSTEM UNLOAD PRIMARY KEY`
-    * `SYSTEM VIEWS`
     * `SYSTEM VIRTUAL PARTS UPDATE`
     * `SYSTEM WAIT LOADING PARTS`
   * [`테이블 엔진`](#table-engine)
@@ -353,7 +355,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
 이 계층 구조가 어떻게 취급되는지에 대한 예시는 다음과 같습니다.
 
 * `ALTER` 권한에는 다른 모든 `ALTER*` 권한이 포함됩니다.
-* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT` 및 `ALTER DROP CONSTRAINT` 권한이 포함됩니다.
+* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT`, `ALTER MODIFY CONSTRAINT` 권한이 포함됩니다.
 
 권한은 서로 다른 수준에서 적용됩니다. 각 수준을 알면 해당 권한에 사용할 수 있는 구문을 파악할 수 있습니다.
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`. 수준: `GROUP`. 별칭: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. 수준: `TABLE`. 별칭: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. 수준: `TABLE`. 별칭: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. 수준: `TABLE`. 별칭: `MODIFY CONSTRAINT`
   * `ALTER TTL`. 수준: `TABLE`. 별칭: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. 수준: `TABLE`. 별칭: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. 수준: `TABLE`. 별칭: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 이 계층이 적용되는 방식의 예시는 다음과 같습니다:
 
 * `ALTER` 권한에는 다른 모든 `ALTER*` 권한이 포함됩니다.
-* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT` 및 `ALTER DROP CONSTRAINT` 권한이 포함됩니다.
+* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` 및 `ALTER MODIFY CONSTRAINT` 권한이 포함됩니다.
 
 **참고**
 
@@ -629,7 +632,7 @@ GRANT CLUSTER ON *.* TO <username>
     * `SYSTEM DROP UNCOMPRESSED CACHE`. 수준: `GLOBAL`. 별칭: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`. 수준: `GROUP`
     * `SYSTEM RELOAD CONFIG`. 수준: `GLOBAL`. 별칭: `RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`. 수준: `GLOBAL`. 별칭: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`. 수준: `GLOBAL`. 별칭: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. 수준: `GLOBAL`. 별칭: `RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`. 수준: `TABLE`. 별칭: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`. 수준: `TABLE`. 별칭: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -641,9 +644,14 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM REPLICATION QUEUES`. 수준: `TABLE`. 별칭: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   * `SYSTEM SYNC REPLICA`. 수준: `TABLE`. 별칭: `SYNC REPLICA`
   * `SYSTEM RESTART REPLICA`. 수준: `TABLE`. 별칭: `RESTART REPLICA`
+  * `SYSTEM BACKGROUND`. 수준: `GROUP`
+    * `SYSTEM STREAMING ENGINES`. 수준: `TABLE`
+    * `SYSTEM VIEWS`. 수준: `VIEW`. 별칭: `SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   * `SYSTEM FLUSH`. 수준: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. 수준: `TABLE`. 별칭: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. 수준: `GLOBAL`. 별칭: `FLUSH LOGS`
+
+`SYSTEM UNLOAD DICTIONARY` 및 `SYSTEM UNLOAD DICTIONARIES` 명령은 `SYSTEM RELOAD DICTIONARY` 권한을 재사용하므로, `SYSTEM RELOAD DICTIONARY` 권한이 있는 사용자는 딕셔너리의 로드도 해제할 수 있습니다.
 
 `SYSTEM RELOAD DICTIONARY ON *.*` 권한이 있으면 `SYSTEM RELOAD EMBEDDED DICTIONARIES` 권한도 암묵적으로 부여됩니다.
 
@@ -671,6 +679,7 @@ GRANT CLUSTER ON *.* TO <username>
 가능한 매개변수:
 
 * `AZURE`
+* `BIGQUERY`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -777,9 +786,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`. 별칭: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+* `dictGet`. 별칭: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-사용자가 [dictGet](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/ko/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictIsIn](/ko/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 함수를 실행할 수 있게 합니다.
+사용자가 [dictGet](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/ko/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictGetRoot](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetRoot), [dictGetChildren](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetChildren), [dictGetDescendants](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants), [dictIsIn](/ko/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 함수를 실행할 수 있게 합니다.
 
 권한 수준: `DICTIONARY`.
 
@@ -792,9 +801,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### displaySecretsInShowAndSelect
 </div>
 
-[`display_secrets_in_show_and_select` 서버 설정](/ko/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+[`display_secrets_in_show_and_select` 서버 설정](/ko/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 및
-[`format_display_secrets_in_show_and_select` 포맷 설정](/ko/reference/settings/formats#format_display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` 포맷 설정](/ko/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 이 모두 활성화되어 있으면, `SHOW` 및 `SELECT` 쿼리에서 시크릿을 볼 수 있습니다.
 
 <div id="named-collection-admin">
@@ -822,6 +831,8 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 <div id="table-engine">
   ### 테이블 엔진
 </div>
+
+<CloudNotSupportedBadge />
 
 테이블을 생성할 때 지정된 테이블 엔진을 사용할 수 있도록 허용합니다. [테이블 엔진](/ko/reference/engines/table-engines/index)에 적용됩니다.
 

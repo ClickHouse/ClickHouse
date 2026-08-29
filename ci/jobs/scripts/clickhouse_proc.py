@@ -1,8 +1,7 @@
 import glob
-import json as json_module
 import os
 import platform
-import shutil
+import shlex
 import signal
 import subprocess
 import sys
@@ -42,7 +41,7 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    MINIO_LOG = f"{temp_dir}/minio.log"
+    SEAWEEDFS_LOG = f"{temp_dir}/seaweedfs.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
@@ -56,6 +55,9 @@ class ClickHouseProc:
     # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
     # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
     DUMP_SYSTEM_TABLE_TIMEOUT = 600
+    # Total wall-clock cap for symbolizing the jemalloc profiles of a job (seconds),
+    # for the same reason.
+    JEMALLOC_SYMBOLIZATION_BUDGET = 1200
 
     def __init__(
         self,
@@ -73,6 +75,15 @@ class ClickHouseProc:
         self.run_path0 = f"{temp_dir}/run_r0"
         self.run_path1 = f"{temp_dir}/run_r1"
         self.run_path2 = f"{temp_dir}/run_r2"
+        # Directory the job runs `clickhouse-test` from, if it wants cores of
+        # crashed client processes collected. A client started by a `.sh` test
+        # inherits this directory unless the test changes directory itself, and a
+        # relative `kernel.core_pattern` (the one CI runners use) writes the core
+        # into the dumping process's cwd, so this is where a client core lands.
+        # Jobs differ - `functional_tests.py` runs from the repository root while
+        # `fast_test.py` prefixes `cd {temp_dir}` - so the job declares it instead
+        # of it being guessed here.
+        self.client_core_path = None
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
@@ -97,22 +108,18 @@ class ClickHouseProc:
         self.port = 9000
         self.port_1 = 19000
         self.port_2 = 29000
-        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
-        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --distributed_query.streaming_exchange_port 19223 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --distributed_query.streaming_exchange_port 29223 --macros.shard s2"
         self.proc = None
         self.proc_1 = None
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.minio_proc = None
+        self.seaweedfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
-        # Concrete reason set by create_minio_log_tables() on failure, so the
-        # caller can persist the real detail (e.g. the clickminio restart status)
-        # into the step Result.info / CIDB instead of a generic note.
-        self.minio_setup_error = None
-        # Same idea for prepare_stateful_data(): the failing sub-command + its
-        # ClickHouse error tail, so the re-prepare ERROR row carries the real
+        # The failing sub-command + its ClickHouse error tail from
+        # prepare_stateful_data(), so the re-prepare ERROR row carries the real
         # reason instead of the generic "failed to re-prepare stateful data".
         self.stateful_setup_error = None
         self.debug_artifacts = []
@@ -154,37 +161,51 @@ class ClickHouseProc:
 </clickhouse>
 """)
 
-    def start_minio(self, test_type):
+    def start_seaweedfs(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
-            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             test_type,
             "./tests",
         ]
-        with open(self.MINIO_LOG, "w") as log_file:
-            self.minio_proc = subprocess.Popen(
+        with open(self.SEAWEEDFS_LOG, "w") as log_file:
+            self.seaweedfs_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
+        print(
+            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
+        )
 
-        # Wait for setup_minio.sh to fully exit, not just for the bucket to be
-        # listable: the server's S3 disks authenticate at startup and need the
-        # whole user/policy/ACL setup in place. The minio server is nohup'd and
-        # outlives the script, so waiting on the script is safe. Its internal
-        # waits are bounded (wait_for_it caps at 60s), so pad the timeout.
+        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
+        # be listable: the server's S3 disks authenticate at startup and need
+        # the whole identity/bucket setup in place. The seaweedfs server is
+        # nohup'd and outlives the script, so waiting on the script is safe.
+        # Its internal waits are bounded (60s each), so pad the timeout.
         try:
-            returncode = self.minio_proc.wait(timeout=120)
+            returncode = self.seaweedfs_proc.wait(timeout=240)
         except subprocess.TimeoutExpired:
-            print("Failed to start minio: setup_minio.sh did not finish in time")
-            self.minio_proc.kill()
+            print(
+                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
+            )
+            self.seaweedfs_proc.kill()
             return False
         if returncode != 0:
-            print(f"setup_minio.sh exited with code {returncode}")
+            print(f"setup_seaweedfs.sh exited with code {returncode}")
             return False
 
-        # wait_for_it can exit 0 even if minio is down, so confirm the bucket.
-        if not Shell.check("/mc ls clickminio/test", verbose=False, retries=3):
-            print("Failed to start minio: bucket clickminio/test not reachable")
+        # pass the credentials explicitly: the setup script no longer writes
+        # ~/.aws, and without them the aws cli would sign with the runner's
+        # instance-role credentials, which SeaweedFS does not know
+        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
+        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
+        if not Shell.check(
+            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
+            "AWS_DEFAULT_REGION=us-east-1 "
+            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
+            verbose=False,
+            retries=3,
+        ):
+            print("Failed to start seaweedfs: bucket test not reachable")
             return False
         return True
 
@@ -414,9 +435,11 @@ class ClickHouseProc:
         )
 
         # set profile file for the server (not needed for per-test coverage,
-        # which uses system.coverage_log instead of .profraw files)
+        # which uses system.coverage_log instead of .profraw files).
+        # %c (continuous mode) keeps the profile valid at every instant, so the
+        # SIGTRAP/SIGKILL escalation in stop_server cannot tear an exit-time write.
         if not self.is_per_test_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%m.profraw"
+            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%c%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -487,247 +510,6 @@ class ClickHouseProc:
         self.save_system_metadata_files_from_remote_database_disk()
 
         return res
-
-    _MINIO_LOG_DISK_PATHS = (
-        "/var/lib/clickhouse/disks/minio_audit_logs/",
-        "/var/lib/clickhouse/disks/minio_server_logs/",
-    )
-
-    @staticmethod
-    def _reset_minio_log_disk_dirs():
-        """Remove the minio log tables' pinned disk directories before re-creating them.
-
-        These live outside run_path* (see create_minio_log_tables), so they can
-        survive across restarts; a stale or planted symlink at either path must
-        not be followed - `rm -rf .../` would recurse into whatever it points at.
-        Only a verified real directory (or nothing) is removed.
-        """
-        for path in ClickHouseProc._MINIO_LOG_DISK_PATHS:
-            p = Path(path)
-            if p.is_symlink():
-                print(f"ERROR: refusing to remove {path}: it is a symlink")
-                return False
-            try:
-                if p.exists():
-                    shutil.rmtree(p)
-            except OSError as e:
-                print(f"ERROR: failed to remove {path}: {e}")
-                return False
-        return True
-
-    def create_minio_log_tables(self):
-        self.minio_setup_error = None
-        # Minio log setup is non-fatal (caller continues when this returns
-        # False). Every step MUST stay non-strict: a strict=True step would
-        # raise before we can record the reason and signal failure. Record the
-        # concrete failing sub-step so it reaches CIDB test_context_raw.
-        # These two diagnostic tables must live on LOCAL disk. They record the
-        # MinIO audit/server webhook stream, so storing them on S3 is doubly bad:
-        # (1) every audit-event insert writes parts to S3, which itself generates
-        # more audit events - a feedback loop that inflates the table, and (2) the
-        # post-run `select * ... into outfile` dump reads it all back from S3. On
-        # amd_tsan the JSON-typed audit table grew to ~700k rows / ~1.5 GB and the
-        # dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap, failing the "Scraping
-        # system tables" check.
-        #
-        # An explicit `disk = disk(type = 'local', ...)` pins each table to a
-        # dedicated local disk under custom_local_disks_base_directory
-        # (/var/lib/clickhouse/disks/, from custom_disks_base_path.xml, which is
-        # always installed). We deliberately do NOT use `storage_policy =
-        # 'default'`: in the public repo `default` is a local policy, but in the
-        # private/cloud repo `default` is cloud-based (object storage), so pinning
-        # to it would still put these tables on S3. An explicit local disk is
-        # correct in both. Each table gets its own path so it gets its own disk.
-        setup_steps = [
-            (
-                # start() wipes only run_path*, so each restart destroys these
-                # tables' metadata while their data - pinned below to disks
-                # outside run_path* - would survive it. Both callers run right
-                # after a fresh start() (initial setup and each
-                # bugfix-validation binary swap), so no live table references
-                # the directories; wipe them so a dead incarnation's parts
-                # (~1.5 GB of audit logs on sanitizer s3 runs) are not leaked
-                # on every swap or carried over from a previous run.
-                "reset minio log table disks",
-                self._reset_minio_log_disk_dirs,
-            ),
-            (
-                "create system.minio_audit_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = disk(type = \'local\', path = \'/var/lib/clickhouse/disks/minio_audit_logs/\')"',
-            ),
-            (
-                "create system.minio_server_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = disk(type = \'local\', path = \'/var/lib/clickhouse/disks/minio_server_logs/\')"',
-            ),
-            (
-                "set clickminio logger_webhook config",
-                '/mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
-            ),
-            (
-                "set clickminio audit_webhook config",
-                '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
-            ),
-        ]
-        for what, step in setup_steps:
-            ok = step() if callable(step) else Shell.check(step, verbose=True)
-            if not ok:
-                self.minio_setup_error = f"failed to {what}"
-                print(f"ERROR: Failed to {what}")
-                return False
-
-        return self._restart_minio_to_apply_config()
-
-    def _wait_minio_ready(self, timeout_s):
-        """Poll until the `test` bucket is listable, or `timeout_s` elapses.
-
-        `mc ls` against a down MinIO fails fast (connection refused), so this
-        polls at roughly one-second intervals.
-        """
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if Shell.check("/mc ls clickminio/test", verbose=False):
-                return True
-            time.sleep(1)
-        return False
-
-    @staticmethod
-    def _minio_binary():
-        """Locate the `minio` binary the same way `setup_minio.sh` does.
-
-        The stateless-test docker image ships it at `/minio`, and a local
-        download (`download_minio`) writes it to `$TEMP_DIR` (== `temp_dir`).
-        `setup_minio.sh` finds it via `PATH="/:.:$PATH"` after `cd "$TEMP_DIR"`,
-        which prefers `/minio`; mirror that precedence here. The Python harness
-        only adds `temp_dir` to `PATH`, not `/`, so a bare `minio` would not
-        resolve to the docker binary - use an explicit path instead.
-        """
-        for path in ("/minio", f"{temp_dir}/minio"):
-            if os.path.exists(path):
-                return path
-        return ""
-
-    def _force_restart_minio(self, attempts=3, ready_timeout_s=60):
-        """Kill any running MinIO and start a fresh instance from the same data
-        directory, so it re-reads the webhook config written by `mc admin config
-        set`.
-
-        Retried because (a) a just-killed MinIO can still hold port 11111 for a
-        moment, making the next `minio server` exit immediately, and (b) MinIO
-        startup can take a while on a loaded sanitizer host. Each attempt kills,
-        restarts, and waits for readiness; a dead or too-slow instance is simply
-        killed and started again on the next iteration.
-
-        Returns None on success, or a concrete failure reason so the caller can
-        carry it into minio_setup_error (CIDB test_context_raw).
-        """
-        minio_bin = self._minio_binary()
-        if not minio_bin:
-            reason = (
-                f"cannot find the minio binary (looked for /minio and {temp_dir}/minio)"
-            )
-            print(f"ERROR: {reason}; cannot restart MinIO")
-            return reason
-        # Start MinIO with the same root credentials `setup_minio.sh` used.
-        # Otherwise it comes up with different root credentials and the
-        # `clickminio` alias (clickhouse/clickhouse) can no longer authenticate,
-        # so every readiness check below would fail for all retry attempts.
-        # `setup_minio.sh` resolves these as `${MINIO_ROOT_USER:-clickhouse}`;
-        # do the same so a custom value in the environment is honored too.
-        minio_root_user = os.environ.get("MINIO_ROOT_USER", "clickhouse")
-        minio_root_password = os.environ.get("MINIO_ROOT_PASSWORD", "clickhouse")
-        for attempt in range(1, attempts + 1):
-            Shell.check("pkill -9 -f 'minio server'", verbose=True)
-            # Give the OS time to release port 11111 before rebinding.
-            time.sleep(3)
-            Shell.check(
-                f"MINIO_ROOT_USER={minio_root_user} "
-                f"MINIO_ROOT_PASSWORD={minio_root_password} "
-                f"nohup {minio_bin} server --address :11111 {temp_dir}/minio_data "
-                f">> {self.MINIO_LOG} 2>&1 &",
-                verbose=True,
-            )
-            if self._wait_minio_ready(ready_timeout_s):
-                return None
-            print(
-                f"WARNING: MinIO not ready within {ready_timeout_s}s after restart "
-                f"(attempt {attempt}/{attempts})"
-            )
-        reason = (
-            f"manual MinIO restart did not become ready within {ready_timeout_s}s "
-            f"after {attempts} attempts"
-        )
-        print(f"ERROR: {reason}")
-        return reason
-
-    def _restart_minio_to_apply_config(self):
-        # Restart minio so it picks up the webhook config set above. The clean
-        # `mc admin service restart --wait` can hang forever (see #97647), so it
-        # runs under a timeout and, on timeout, is killed by process group to
-        # avoid orphans blocking communicate() (see #98466). Whenever the clean
-        # restart does not cleanly report success with a servable bucket, fall
-        # back to a manual, retried restart, which is the reliable path on
-        # loaded CI hosts (the clean restart routinely exceeds the timeout there;
-        # see the bugfix-validation env-setup flake in PR #108821).
-        restart_timeout = 60
-        # The clean-restart outcome that pushed us onto the manual fallback, so
-        # the terminal reason names why the reliable path was even attempted.
-        clean_restart_reason = "clean clickminio restart did not report a ready service"
-        try:
-            print(f"Restarting clickminio (timeout {restart_timeout}s)")
-            proc = subprocess.Popen(
-                [
-                    "/mc",
-                    "admin",
-                    "service",
-                    "restart",
-                    "clickminio",
-                    "--wait",
-                    "--json",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,
-            )
-            try:
-                stdout, _ = proc.communicate(timeout=restart_timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.communicate()
-                raise
-            try:
-                status = json_module.loads(stdout).get("status", "")
-            except (json_module.JSONDecodeError, AttributeError):
-                status = stdout.strip()
-            # `--wait` only guarantees the admin API is back, not that the
-            # bucket is servable yet, so confirm readiness before trusting it.
-            if "success" in status and self._wait_minio_ready(30):
-                return True
-            clean_restart_reason = (
-                f"clean clickminio restart did not report a ready service, status: [{status}]"
-            )
-            print(f"WARNING: {clean_restart_reason}")
-        except (subprocess.TimeoutExpired, OSError):
-            clean_restart_reason = (
-                f"clean clickminio restart timed out after {restart_timeout}s"
-            )
-            print(f"WARNING: {clean_restart_reason}")
-
-        print("Falling back to a manual MinIO restart")
-        manual_restart_reason = self._force_restart_minio()
-        if manual_restart_reason is None:
-            return True
-        # Non-fatal, but record the reason so the caller can persist it into the
-        # setup Result (CIDB test_context_raw) instead of leaving minio failures
-        # in the opaque "Cannot start clickhouse-server" bucket. Carry both the
-        # clean-restart status and the manual-restart failure, otherwise the real
-        # reason stays print-only and collapses to a generic CIDB bucket.
-        self.minio_setup_error = (
-            f"failed to restart clickminio ({clean_restart_reason}; "
-            f"manual restart: {manual_restart_reason})"
-        )
-        print(f"ERROR: Failed to restart clickminio: {self.minio_setup_error}")
-        return False
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
@@ -818,7 +600,29 @@ class ClickHouseProc:
                     return False
         return True
 
-    def prepare_stateful_data(self, with_s3_storage, is_db_replicated, build_type=None):
+    # Grace period between the TERM the bound sends and the KILL that follows,
+    # so a client that ignores TERM is still bounded.
+    PREP_STEP_KILL_AFTER_S = 60
+
+    @classmethod
+    def prep_timeout_prefix(cls, step_timeout):
+        """Bound prefix for one prep statement; empty string means unbounded.
+
+        A statement killed by `timeout` exits non-zero, so `set -e` and the prep
+        script's ERR trap name it. `Shell.run(timeout=)` instead SIGTERMs the
+        process group, leaving no exit code for the trap and no stderr line.
+        """
+        if not step_timeout:
+            return ""
+        return (
+            f"timeout --verbose --signal=TERM "
+            f"--kill-after={cls.PREP_STEP_KILL_AFTER_S} {int(step_timeout)}"
+        )
+
+    def prepare_stateful_data(
+        self, with_s3_storage, is_db_replicated, build_type=None, step_timeout=None
+    ):
+        """`step_timeout` bounds each statement, in seconds; None means unbounded."""
         self.stateful_setup_error = None
         if is_db_replicated:
             print("Skip stateful data preparation for db replicated")
@@ -842,45 +646,48 @@ trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINEN
 
 MAX_EXECUTION_TIME=1800
 
-clickhouse-client --query "SHOW DATABASES"
-clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client < ./tests/docker_scripts/create.sql
-bash ./tests/docker_scripts/create_tpcds.sh
-bash ./tests/docker_scripts/create_tpch.sh
-clickhouse-client --query "SHOW TABLES FROM datasets"
-clickhouse-client --query "SHOW TABLES FROM tpcds"
-clickhouse-client --query "SHOW TABLES FROM tpch"
+$PREP_TIMEOUT clickhouse-client --query "SHOW DATABASES"
+$PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
+$PREP_TIMEOUT clickhouse-client < ./tests/docker_scripts/create.sql
+$PREP_TIMEOUT bash ./tests/docker_scripts/create_tpcds.sh
+$PREP_TIMEOUT bash ./tests/docker_scripts/create_tpch.sh
+$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM datasets"
+$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM tpcds"
+$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM tpch"
 
-clickhouse-client --query "CREATE DATABASE test"
-clickhouse-client --query "SHOW TABLES FROM test"
+$PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE test"
+$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
-    clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16, EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32, UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String, RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8, MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16, ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32, SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8, FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32, HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String, HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32, FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32, LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String, OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String, UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64, URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String, ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64), IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8)
+    $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16, EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32, UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String, RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8, MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16, ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32, SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8, FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32, HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String, HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32, FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32, LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String, OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String, UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64, URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String, ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64), IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8)
         ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate)
         ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
-    clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8, VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32, Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String, EndURL String,  LinkURL String,  IsDownload UInt8,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String, AdvEngineID UInt8,  PlaceID Int32,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32), RefererRegions Array(UInt32),  IsYandex UInt8,  GoalReachesDepth Int32,  GoalReachesURL Int32,  GoalReachesAny Int32, SocialSourceNetworkID UInt8,  SocialSourcePage String,  MobilePhoneModel String,  ClientEventTime DateTime,  RegionID UInt32, ClientIP UInt32,  ClientIP6 FixedString(16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  IPNetworkID UInt32, SilverlightVersion3 UInt32,  CodeVersion UInt32,  ResolutionWidth UInt16,  ResolutionHeight UInt16,  UserAgentMajor UInt16, UserAgentMinor UInt16,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  SilverlightVersion2 UInt8,  SilverlightVersion4 UInt16, FlashVersion3 UInt16,  FlashVersion4 UInt16,  ClientTimeZone Int16,  OS UInt8,  UserAgent UInt8,  ResolutionDepth UInt8, FlashMajor UInt8,  FlashMinor UInt8,  NetMajor UInt8,  NetMinor UInt8,  MobilePhone UInt8,  SilverlightVersion1 UInt8, Age UInt8,  Sex UInt8,  Income UInt8,  JavaEnable UInt8,  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8, BrowserLanguage UInt16,  BrowserCountry UInt16,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), Params Array(String),  Goals Nested(ID UInt32, Serial UInt32, EventTime DateTime,  Price Int64,  OrderID String, CurrencyID UInt32), WatchIDs Array(UInt64),  ParamSumPrice Int64,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  ClickLogID UInt64, ClickEventID Int32,  ClickGoodEvent Int32,  ClickEventTime DateTime,  ClickPriorityID Int32,  ClickPhraseID Int32,  ClickPageID Int32, ClickPlaceID Int32,  ClickTypeID Int32,  ClickResourceID Int32,  ClickCost UInt32,  ClickClientIP UInt32,  ClickDomainID UInt32, ClickURL String,  ClickAttempt UInt8,  ClickOrderID UInt32,  ClickBannerID UInt32,  ClickMarketCategoryID UInt32,  ClickMarketPP UInt32, ClickMarketCategoryName String,  ClickMarketPPName String,  ClickAWAPSCampaignName String,  ClickPageName String,  ClickTargetType UInt16, ClickTargetPhraseID UInt64,  ClickContextType UInt8,  ClickSelectType Int8,  ClickOptions String,  ClickGroupBannerID Int32, OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  FirstVisit DateTime, PredLastVisit Date,  LastVisit Date,  TotalVisits UInt32,  TraficSource    Nested(ID Int8,  SearchEngineID UInt16, AdvEngineID UInt8, PlaceID UInt16, SocialSourceNetworkID UInt8, Domain String, SearchPhrase String, SocialSourcePage String),  Attendance FixedString(16), CLID UInt32,  YCLID UInt64,  NormalizedRefererHash UInt64,  SearchPhraseHash UInt64,  RefererDomainHash UInt64,  NormalizedStartURLHash UInt64, StartURLDomainHash UInt64,  NormalizedEndURLHash UInt64,  TopLevelDomain UInt64,  URLScheme UInt64,  OpenstatServiceNameHash UInt64, OpenstatCampaignIDHash UInt64,  OpenstatAdIDHash UInt64,  OpenstatSourceIDHash UInt64,  UTMSourceHash UInt64,  UTMMediumHash UInt64, UTMCampaignHash UInt64,  UTMContentHash UInt64,  UTMTermHash UInt64,  FromHash UInt64,  WebVisorEnabled UInt8,  WebVisorActivity UInt32, ParsedParams    Nested(Key1 String,  Key2 String,  Key3 String,  Key4 String, Key5 String, ValueDouble    Float64), Market Nested(Type UInt8, GoalID UInt32, OrderID String,  OrderPrice Int64,  PP UInt32,  DirectPlaceID UInt32,  DirectOrderID  UInt32, DirectBannerID UInt32,  GoodID String, GoodName String, GoodQuantity Int32,  GoodPrice Int64),  IslandID FixedString(16))
+    $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8, VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32, Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String, EndURL String,  LinkURL String,  IsDownload UInt8,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String, AdvEngineID UInt8,  PlaceID Int32,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32), RefererRegions Array(UInt32),  IsYandex UInt8,  GoalReachesDepth Int32,  GoalReachesURL Int32,  GoalReachesAny Int32, SocialSourceNetworkID UInt8,  SocialSourcePage String,  MobilePhoneModel String,  ClientEventTime DateTime,  RegionID UInt32, ClientIP UInt32,  ClientIP6 FixedString(16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  IPNetworkID UInt32, SilverlightVersion3 UInt32,  CodeVersion UInt32,  ResolutionWidth UInt16,  ResolutionHeight UInt16,  UserAgentMajor UInt16, UserAgentMinor UInt16,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  SilverlightVersion2 UInt8,  SilverlightVersion4 UInt16, FlashVersion3 UInt16,  FlashVersion4 UInt16,  ClientTimeZone Int16,  OS UInt8,  UserAgent UInt8,  ResolutionDepth UInt8, FlashMajor UInt8,  FlashMinor UInt8,  NetMajor UInt8,  NetMinor UInt8,  MobilePhone UInt8,  SilverlightVersion1 UInt8, Age UInt8,  Sex UInt8,  Income UInt8,  JavaEnable UInt8,  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8, BrowserLanguage UInt16,  BrowserCountry UInt16,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), Params Array(String),  Goals Nested(ID UInt32, Serial UInt32, EventTime DateTime,  Price Int64,  OrderID String, CurrencyID UInt32), WatchIDs Array(UInt64),  ParamSumPrice Int64,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  ClickLogID UInt64, ClickEventID Int32,  ClickGoodEvent Int32,  ClickEventTime DateTime,  ClickPriorityID Int32,  ClickPhraseID Int32,  ClickPageID Int32, ClickPlaceID Int32,  ClickTypeID Int32,  ClickResourceID Int32,  ClickCost UInt32,  ClickClientIP UInt32,  ClickDomainID UInt32, ClickURL String,  ClickAttempt UInt8,  ClickOrderID UInt32,  ClickBannerID UInt32,  ClickMarketCategoryID UInt32,  ClickMarketPP UInt32, ClickMarketCategoryName String,  ClickMarketPPName String,  ClickAWAPSCampaignName String,  ClickPageName String,  ClickTargetType UInt16, ClickTargetPhraseID UInt64,  ClickContextType UInt8,  ClickSelectType Int8,  ClickOptions String,  ClickGroupBannerID Int32, OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  FirstVisit DateTime, PredLastVisit Date,  LastVisit Date,  TotalVisits UInt32,  TraficSource    Nested(ID Int8,  SearchEngineID UInt16, AdvEngineID UInt8, PlaceID UInt16, SocialSourceNetworkID UInt8, Domain String, SearchPhrase String, SocialSourcePage String),  Attendance FixedString(16), CLID UInt32,  YCLID UInt64,  NormalizedRefererHash UInt64,  SearchPhraseHash UInt64,  RefererDomainHash UInt64,  NormalizedStartURLHash UInt64, StartURLDomainHash UInt64,  NormalizedEndURLHash UInt64,  TopLevelDomain UInt64,  URLScheme UInt64,  OpenstatServiceNameHash UInt64, OpenstatCampaignIDHash UInt64,  OpenstatAdIDHash UInt64,  OpenstatSourceIDHash UInt64,  UTMSourceHash UInt64,  UTMMediumHash UInt64, UTMCampaignHash UInt64,  UTMContentHash UInt64,  UTMTermHash UInt64,  FromHash UInt64,  WebVisorEnabled UInt8,  WebVisorActivity UInt32, ParsedParams    Nested(Key1 String,  Key2 String,  Key3 String,  Key4 String, Key5 String, ValueDouble    Float64), Market Nested(Type UInt8, GoalID UInt32, OrderID String,  OrderPrice Int64,  PP UInt32,  DirectPlaceID UInt32,  DirectOrderID  UInt32, DirectBannerID UInt32,  GoodID String, GoodName String, GoodQuantity Int32,  GoodPrice Int64),  IslandID FixedString(16))
         ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
         SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 
-    clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=$MAX_INSERT_THREADS"
-    clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=$MAX_INSERT_THREADS"
-    clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
-    clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+    $PREP_TIMEOUT clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=$MAX_INSERT_THREADS"
+    $PREP_TIMEOUT clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=$MAX_INSERT_THREADS"
+    $PREP_TIMEOUT clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
+    $PREP_TIMEOUT clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
     # Note: `tpcds` and `tpch` databases are NOT dropped here as they are used by stateful tests.
 else
-    clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
-    clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
+    $PREP_TIMEOUT clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
+    $PREP_TIMEOUT clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 fi
-clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, ClientIP6 FixedString(16), RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, URLDomain String, RefererDomain String, Refresh UInt8, IsRobot UInt8, RefererCategories Array(UInt16), URLCategories Array(UInt16), URLRegions Array(UInt32), RefererRegions Array(UInt32), ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), UTCEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32, RemoteIP6 FixedString(16), WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming Int32, DNSTiming Int32, ConnectTiming Int32, ResponseStartTiming Int32, ResponseEndTiming Int32, FetchTiming Int32, RedirectTiming Int32, DOMInteractiveTiming Int32, DOMContentLoadedTiming Int32, DOMCompleteTiming Int32, LoadEventStartTiming Int32, LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32, FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, GoalsReached Array(UInt32), OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32, YCLID UInt64, ShareService String, ShareURL String, ShareTitle String, ParsedParams Nested(Key1 String, Key2 String, Key3 String, Key4 String, Key5 String, ValueDouble Float64), IslandID FixedString(16), RequestNum UInt32, RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
+$PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, ClientIP6 FixedString(16), RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, URLDomain String, RefererDomain String, Refresh UInt8, IsRobot UInt8, RefererCategories Array(UInt16), URLCategories Array(UInt16), URLRegions Array(UInt32), RefererRegions Array(UInt32), ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), UTCEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32, RemoteIP6 FixedString(16), WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming Int32, DNSTiming Int32, ConnectTiming Int32, ResponseStartTiming Int32, ResponseEndTiming Int32, FetchTiming Int32, RedirectTiming Int32, DOMInteractiveTiming Int32, DOMContentLoadedTiming Int32, DOMCompleteTiming Int32, LoadEventStartTiming Int32, LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32, FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, GoalsReached Array(UInt32), OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32, YCLID UInt64, ShareService String, ShareURL String, ShareTitle String, ParsedParams Nested(Key1 String, Key2 String, Key3 String, Key4 String, Key5 String, ValueDouble Float64), IslandID FixedString(16), RequestNum UInt32, RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 # AWS S3 is very inefficient, so increase memory even further:
-clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, write_through_distributed_cache=0, max_insert_threads=$MAX_INSERT_THREADS"
+$PREP_TIMEOUT clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, write_through_distributed_cache=0, max_insert_threads=$MAX_INSERT_THREADS"
 
-clickhouse-client --query "CREATE TABLE test.hits_parquet (Title String, URL String, Referer String, SearchPhrase String, WatchID UInt64, UserID UInt64, CounterID UInt32, EventTime DateTime, EventDate Date, RegionID UInt32, ClientIP UInt32) ENGINE = S3('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits_compatible/hits.parquet', NOSIGN)"
+$PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_parquet (Title String, URL String, Referer String, SearchPhrase String, WatchID UInt64, UserID UInt64, CounterID UInt32, EventTime DateTime, EventDate Date, RegionID UInt32, ClientIP UInt32) ENGINE = S3('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits_compatible/hits.parquet', NOSIGN)"
 
-clickhouse-client --query "SHOW TABLES FROM test"
-clickhouse-client --query "SELECT count() FROM test.hits"
-clickhouse-client --query "SELECT count() FROM test.visits"
+$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
+$PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.hits"
+$PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
 """
-        command = f"MAX_INSERT_THREADS={max_insert_threads}\n" + command
+        command = (
+            f"PREP_TIMEOUT={shlex.quote(self.prep_timeout_prefix(step_timeout))}\n"
+            f"MAX_INSERT_THREADS={max_insert_threads}\n"
+        ) + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
         # Run via Shell.run (bash, like Shell.check) but keep a log file so that
@@ -919,11 +726,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     def run_test(self, cmd, timeout=7200):
         """Run a `clickhouse-test` command and return its integer exit code.
 
-        Returns 0 on success, non-zero on failure. In particular, exit code
-        `STOP_TESTING_EXIT_CODE` (2) signals that `clickhouse-test` aborted
-        the run via `StopTesting` (server died, hung check failed, etc.) and
-        is forwarded to `FTResultsProcessor.run` as `runner_exit_code` so it
-        can populate the synthetic "Server died" leaf.
+        Returns 0 on success, non-zero on failure. The code is forwarded
+        verbatim to `FTResultsProcessor.run` as `runner_exit_code`, which
+        distinguishes the abort causes `clickhouse-test` raises `StopTesting`
+        with and names the synthetic leaf accordingly.
         """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:
@@ -967,17 +773,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
 
     def terminate(self, force=False):
-        if self.minio_proc:
-            # remove the webhook so it doesn't spam with errors once we stop ClickHouse
-            Shell.check(
-                "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
-                verbose=True,
-            )
-            Shell.check(
-                "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
-                verbose=True,
-            )
-
         if self.kafka_proc:
             print("Stopping Redpanda broker")
             Shell.check("pkill -f redpanda", verbose=True)
@@ -998,11 +793,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         """Gracefully stop only the ClickHouse server processes.
 
         Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
-        MinIO and its webhooks) running. It is used between bugfix-validation
-        iterations so the server binary can be swapped and restarted without
-        tearing down the rest of the test environment: otherwise a changed test
-        relying on Kafka or MinIO webhooks would pass under the first build type
-        and spuriously "reproduce" a bug under the next one.
+        SeaweedFS) running. It is used between bugfix-validation iterations so the
+        server binary can be swapped and restarted without tearing down the
+        rest of the test environment: otherwise a changed test relying on
+        Kafka or SeaweedFS would pass under the first build type and spuriously
+        "reproduce" a bug under the next one.
         """
         print("Stop ClickHouse processes")
 
@@ -1067,8 +862,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self._collect_core_dumps()
                 res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
-                if Path(self.MINIO_LOG).exists():
-                    res.append(self.MINIO_LOG)
+                if Path(self.SEAWEEDFS_LOG).exists():
+                    res.append(self.SEAWEEDFS_LOG)
                 if Path(self.AZURITE_LOG).exists():
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
@@ -1090,9 +885,37 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
+        # Server cores land in `run_r*` because each server is started with
+        # `cwd=run_path` (see `start`) and is not a daemon, so
+        # `BaseDaemon`'s `chdir` into a `core_path` directory is skipped. Setting
+        # `--daemon` or a `core_path` would move them into `run_rN/cores/` and this
+        # glob would stop finding them.
         result = []
+        # One AES key for the whole job. Artifacts are uploaded under their
+        # basename alone, so a key per directory would emit several different
+        # `aes.key.rsa` files that overwrite each other in the report, leaving the
+        # cores of every directory but the last one undecryptable.
+        aes_key_path = f"{temp_dir}/aes.key"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
-            result.extend(ClickHouseService.collect_cores(run_dir))
+            result.extend(
+                ClickHouseService.collect_cores(
+                    run_dir,
+                    aes_key_path=aes_key_path,
+                    # `core.<comm>.<pid>` collides across replicas running the
+                    # same thread; keep the basenames distinct.
+                    name_prefix=f"{Path(run_dir).name}.",
+                )
+            )
+        # `Path.glob` yields nothing for a missing directory, so a declared path
+        # that does not exist needs no separate guard.
+        if self.client_core_path:
+            result.extend(
+                ClickHouseService.collect_cores(
+                    self.client_core_path,
+                    aes_key_path=aes_key_path,
+                    name_prefix="client.",
+                )
+            )
         return result
 
     @staticmethod
@@ -1152,16 +975,42 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
+        # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
+        # addresses in the profile, and on a coverage build a single jeprof run has taken over an
+        # hour, timing the whole job out here, long after every test had finished (the sibling
+        # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
+        # artifact of the job, not its result, so give them up rather than the job.
+        deadline = time.time() + cls.JEMALLOC_SYMBOLIZATION_BUDGET
+
         chbinary = Shell.get_output("readlink -f $(which clickhouse)")
         for pid, profile in latest_profiles.items():
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+            budget = int(deadline - time.time())
+            if budget <= 0:
+                print(f"WARNING: Out of time to symbolize the profile of process {pid}")
+                continue
+
+            text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
+            if not Shell.check(
+                f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
                 verbose=True,
-            )
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+            ):
+                print(f"WARNING: Failed to symbolize {profile}, dropping {text_report}")
+                Path(text_report).unlink(missing_ok=True)
+
+            budget = int(deadline - time.time())
+            if budget <= 0:
+                print(f"WARNING: Out of time to build the flamegraph of process {pid}")
+                continue
+
+            flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
+            # The whole pipeline is under the timeout: killing jeprof alone would leave
+            # flamegraph.pl to write a truncated graph out of what it had received.
+            if not Shell.check(
+                f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
                 verbose=True,
-            )
+            ):
+                print(f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}")
+                Path(flamegraph).unlink(missing_ok=True)
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
@@ -1208,21 +1057,36 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 return None
             return max(candidates, key=lambda p: p.stat().st_mtime)
 
+        def pick_file_with(pattern: str, needle: str) -> Path | None:
+            # Select the specific log that contains the hit, not merely the most
+            # recently modified one. On multi-server runs (e.g. DatabaseReplicated)
+            # the crashed server stops logging first and so has the OLDEST mtime,
+            # while surviving replicas keep writing - picking by mtime would hand
+            # the parser a log without the crash and yield a bogus "Unknown error".
+            out = Shell.get_output(
+                f"cd {self.log_dir} && grep -la '{needle}' {pattern} 2>/dev/null | head -n 1 || true"
+            ).strip()
+            return Path(self.log_dir) / out if out else None
+
         sanitizer_hits = Shell.get_output(
             f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
             f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
             f'grep -a -v "False positive error reports may follow" | '
             f'grep -a -v "For details see https://github.com/google/sanitizers" | '
+            f'grep -a -v -F -x "Not running the leak check: other threads are still running." | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
             f"cd {self.log_dir} && grep -a '<Fatal>' clickhouse-server*.log 2>/dev/null | head -n 1 || true"
         )
         if sanitizer_hits or fatal_hits:
-            server_log = pick_latest_file(
-                "clickhouse-server*.err.log"
-            ) or pick_latest_file("clickhouse-server*.log")
+            server_log = (
+                pick_file_with("clickhouse-server*.err.log", "<Fatal>")
+                or pick_file_with("clickhouse-server*.log", "<Fatal>")
+                or pick_latest_file("clickhouse-server*.err.log")
+                or pick_latest_file("clickhouse-server*.log")
+            )
             stderr_log = pick_latest_file("stderr*.log")
             if not (server_log or stderr_log):
                 results.append(
@@ -1235,9 +1099,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 )
             else:
                 try:
+                    # Either log may be absent (e.g. a sanitizer report goes
+                    # only to stderr when the server dies before opening its
+                    # log). `str(None)` would become the literal path "None",
+                    # which `FuzzerLogParser.get_stack_trace` then fails to
+                    # open; fall back to whichever log exists instead.
                     log_parser = FuzzerLogParser(
-                        server_log=str(server_log),
-                        stderr_log=str(stderr_log),
+                        server_log=str(server_log or stderr_log),
+                        stderr_log=str(stderr_log or server_log),
                         fuzzer_log="",
                     )
                     name, description, files = log_parser.parse_failure()
@@ -1264,16 +1133,44 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         )
                     )
 
-        results.append(
-            Result.from_commands_run(
-                name="Lost s3 keys",
-                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+        # Both "No such key" checks below run the same scan, so the ignore list is
+        # built once - keep it in sync with check_logs_for_critical_errors() in
+        # tests/docker_scripts/stress_tests.lib. Ignored:
+        #  - "a.myext" is used by 02724_database_s3.sh and does not exist
+        #  - "DistributedCacheTCPHandler" and "caller id: None:DistribCache" happen
+        #    inside the distributed cache server
+        #  - "ReadBuffer is canceled by the exception" is a normal cancellation, the
+        #    message is kept for debugging purposes
+        #  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer",
+        #    "ReadBufferFromS3", "ReadBufferFromAzureBlobStorage" are printed
+        #    internally by a buffer, the exception is rethrown and handled correctly
+        #  - "Error during background download" is printed by the filesystem cache
+        #    background download worker (CacheMetadata): the prefetched object can be
+        #    concurrently removed (DROP, mutation, part removal), the download is just
+        #    marked as failed and the data is re-read from the source later
+        no_such_key_ignores = " ".join(
+            f"-e '{ignore}'"
+            for ignore in (
+                "a.myext",
+                "ReadBuffer is canceled by the exception",
+                "DistributedCacheTCPHandler",
+                "ReadBufferFromDistributedCache",
+                "ReadBufferFromS3",
+                "ReadBufferFromAzureBlobStorage",
+                "AsynchronousBoundedReadBuffer",
+                "Error during background download",
+                "caller id: None:DistribCache",
             )
+        )
+        no_such_key_command = (
+            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
+            f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
+            "| head -n100 | tee /dev/stderr | grep -q ."
         )
         results.append(
             Result.from_commands_run(
-                name="Lost forever for SharedMergeTree",
-                command=f"cd {self.log_dir} && ! grep -a 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+                name="Lost s3 keys",
+                command=no_such_key_command,
             )
         )
         results.append(
@@ -1285,7 +1182,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="S3_ERROR No such key thrown (in clickhouse-server.log or clickhouse-server.err.log)",
-                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception'  -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+                command=no_such_key_command,
             )
         )
         oom_check = self.check_ch_is_oom_killed()
@@ -1307,16 +1204,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             result.set_label(Result.Label.LOG_CHECK)
         return results
 
-    # Exit codes coreutils `timeout` uses on expiry: 124 when the child dies on
-    # the initial SIGTERM, 128+9 = 137 when a SIGTERM-ignoring child is escalated
-    # with SIGKILL after --kill-after. Both mean the dump exceeded its cap.
-    _TIMEOUT_EXIT_CODES = (124, 137)
+    # `timeout --verbose` logs this to stderr when it escalates to SIGKILL
+    # after --kill-after; it proves a 137 came from the wrapper itself rather
+    # than from an external/OOM SIGKILL of `clickhouse local`.
+    _TIMEOUT_KILL_DIAG = "sending signal KILL to command"
+
+    def _timeout_wrapper_expired(self, res, stderr):
+        # 124: the child died on timeout's initial SIGTERM - always an expiry.
+        # 137 (128+9): any SIGKILL death; trust it as an expiry only when
+        # timeout's own KILL diagnostic is present in stderr.
+        return res == 124 or (res == 137 and self._TIMEOUT_KILL_DIAG in stderr)
 
     def _annotate_timeout(self, res, stderr):
-        # If `res` is one of timeout's expiry codes, prepend the "timed out"
-        # annotation so a stuck dump is reported as a timeout rather than an
-        # opaque non-zero failure. Returns the (possibly) annotated stderr.
-        if res in self._TIMEOUT_EXIT_CODES:
+        # Prepend the "timed out" annotation only to proven wrapper expiries,
+        # so a stuck dump is reported as a timeout rather than an opaque
+        # non-zero failure, while an OOM or externally killed dump (bare 137)
+        # keeps its raw stderr. Returns the (possibly) annotated stderr.
+        if self._timeout_wrapper_expired(res, stderr):
             return f"timed out after {self.DUMP_SYSTEM_TABLE_TIMEOUT}s\n{stderr}"
         return stderr
 
@@ -1341,8 +1245,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "error_log",
             "query_metric_log",
             "part_log",
-            "minio_audit_logs",
-            "minio_server_logs",
         ]
         ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
@@ -1369,21 +1271,24 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         #
         command_args_post = "-- --zookeeper.implementation=testkeeper"
 
-        # Bound each dump: a single hanging table (e.g. a huge minio_audit_logs
-        # on s3 runs) must not consume the whole 9000s job budget. On expiry
-        # timeout sends SIGTERM and returns 124; a dump that ignores SIGTERM is
-        # escalated with SIGKILL after --kill-after and returns 128+9 = 137.
-        # Both are timeouts, annotated by _annotate_timeout below.
-        dump_prefix = f"timeout --signal=TERM --kill-after=60 {self.DUMP_SYSTEM_TABLE_TIMEOUT} "
+        # Bound each dump: a single hanging table must not consume the whole
+        # 9000s job budget. On expiry timeout sends SIGTERM and returns 124; a
+        # dump that ignores SIGTERM is escalated with SIGKILL after --kill-after
+        # and returns 128+9 = 137. --verbose makes timeout log its own KILL to
+        # stderr, so _annotate_timeout can tell a wrapper expiry from an
+        # external/OOM SIGKILL of the dump (also 137).
+        dump_prefix = f"timeout --verbose --signal=TERM --kill-after=60 {self.DUMP_SYSTEM_TABLE_TIMEOUT} "
 
         Utils.clean_dir(p_temp_dir / "system_tables")
         res = True
 
         self.restore_system_metadata_files_from_remote_database_disk()
 
+        # Caches created via the disk() function live one level deeper, under
+        # disks/<name>/status.
         cache_status_files = glob.glob(
             f"{self.ch_var_lib_dir}/filesystem_caches/*/status"
-        )
+        ) + glob.glob(f"{self.ch_var_lib_dir}/filesystem_caches/disks/*/status")
         if cache_status_files:
             print(
                 f"WARNING: Server died? Removing cache status files: {cache_status_files}"
@@ -1416,9 +1321,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         f"System table {table} has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
                     )
 
-            if "minio" in table:
-                # minio tables are not replicated
-                continue
             if self.is_shared_catalog or self.is_db_replicated:
                 path_arg = f" --path {self.run_path1}"
                 res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1596,10 +1498,10 @@ if __name__ == "__main__":
                 res = ch.stop_log_exports()
             else:
                 res = True
-        elif command == "start_minio":
+        elif command == "start_seaweedfs":
             param = sys.argv[2]
             assert param in ["stateless"]
-            res = ch.start_minio(param)
+            res = ch.start_seaweedfs(param)
         elif command == "start_azurite":
             res = ch.start_azurite()
         else:

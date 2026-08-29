@@ -18,10 +18,13 @@
 namespace DB
 {
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
+/// `is_rate` divides the accumulated value by the window;
+/// `check_resets` counts resets and clamps extrapolation at zero.
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_, bool check_resets_>
 struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 {
     static constexpr bool is_rate = is_rate_;
+    static constexpr bool check_resets = check_resets_;
 
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
@@ -29,16 +32,17 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
     static String getName()
     {
-        return is_rate ? "timeSeriesRateToGrid" : "timeSeriesDeltaToGrid";
+        if constexpr (is_rate)
+            return "timeSeriesRateToGrid";
+        else if constexpr (check_resets)
+            return "timeSeriesIncreaseToGrid";
+        else
+            return "timeSeriesDeltaToGrid";
     }
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-    /// Per-bucket summary for rate/delta and, once combined over a window, the window summary too: the first and
-    /// last sample, the sample count, and the reset adjustment (the sum of pre-decrease values, `rate` only - a
-    /// decrease between consecutive samples is a reset; `delta`, a gauge, does not count them). `merge` adds a
-    /// summary at the back of the window and `unmerge` drops one from the front, each accounting for the reset
-    /// across the boundary between adjacent buckets, so a window's summary is maintained incrementally in O(1).
+    /// Summary of a bucket or of the whole window: first/last sample, count and reset adjustment.
     struct Summary
     {
         TimestampType first_timestamp = 0;
@@ -57,7 +61,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 *this = added;
                 return;
             }
-            if constexpr (is_rate)
+            if constexpr (check_resets)
             {
                 if (last_value > added.first_value)
                     resets += static_cast<Float64>(last_value);     /// reset across the bucket boundary
@@ -74,7 +78,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             count -= leaving.count;
             if (new_first)
             {
-                if constexpr (is_rate)
+                if constexpr (check_resets)
                 {
                     if (leaving.last_value > new_first->first_value)
                         resets -= static_cast<Float64>(leaving.last_value);     /// drop the cross-boundary reset
@@ -85,13 +89,12 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         }
     };
 
-    /// Sliding aggregator for rate/delta: preaggregates each bucket into a `Summary` and keeps the window's
+    /// Sliding aggregator for rate/increase/delta: preaggregates each bucket into a `Summary` and keeps the window's
     /// summary in a `SlidingSum`. `Summary` is invertible, so the window is maintained with a single running
     /// sum in O(1) per bucket; `getResult` reads its first/last sample, count and resets.
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> temp_buffer;  /// reused sort buffer
 
         /// `Summary::merge` is order-dependent (not commutative), so it must take the invertible running-sum path,
         /// not the two-stacks path which combines values out of time order.
@@ -107,17 +110,15 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
-            /// Preaggregate the bucket's samples (visited in ascending order) into a per-bucket summary; the bucket's
-            /// latest timestamp is the summary's `last_timestamp`.
             Summary summary;
-            samples.forEachSampleSorted([&summary](TimestampType timestamp, ValueType value)
+            samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
             {
                 if (summary.count == 0)
                 {
                     summary.first_timestamp = timestamp;
                     summary.first_value = value;
                 }
-                else if constexpr (is_rate)
+                else if constexpr (check_resets)
                 {
                     if (summary.last_value > value)
                         summary.resets += static_cast<Float64>(summary.last_value);
@@ -125,7 +126,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 summary.last_timestamp = timestamp;
                 summary.last_value = value;
                 ++summary.count;
-            }, temp_buffer);
+            });
             add(std::move(summary), bucket_end_timestamp);
         }
 
@@ -191,7 +192,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             if (duration_to_start >= extrapolation_threshold)
                 duration_to_start = average_duration_between_samples / 2;
 
-            if (is_rate && value_difference > 0 && first_value >= 0)
+            if (check_resets && value_difference > 0 && first_value >= 0)
             {
                 // Counters cannot be negative. If we have any slope at all we can extrapolate the zero point
                 // of the counter; if that is closer than duration_to_start, take it as the start, avoiding
@@ -220,20 +221,23 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 
-/// Aggregate function to calculate extrapolated values (rate and delta) of timeseries on the specified grid
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
+/// Aggregate function to calculate extrapolated values (rate, increase and delta) of timeseries on the specified grid
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_, bool check_resets_>
 class AggregateFunctionTimeseriesExtrapolatedValue final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesExtrapolatedValue<TimestampType_, IntervalType_, ValueType_, is_rate_>,
-        AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_>>
+        AggregateFunctionTimeseriesExtrapolatedValue<TimestampType_, IntervalType_, ValueType_, is_rate_, check_resets_>,
+        AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_, check_resets_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_>;
+    using Traits = AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_, check_resets_>;
 
     static constexpr bool is_rate = Traits::is_rate;
+    static constexpr bool check_resets = Traits::check_resets;
 
     using TimestampType = typename Traits::TimestampType;
     using ValueType = typename Traits::ValueType;
@@ -242,21 +246,21 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
     using Base::Base;
 
-    Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return Aggregator{Base::window, Base::timestamp_scale_multiplier};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 3;
-    static constexpr bool DateTime64Supported = true;
 };
 
-/// Each SQL function as a 3-argument template with its is_rate variant baked in, so registration names the
-/// function directly.
+/// Each SQL function as a 3-argument template with its `is_rate` / `check_resets` variant baked in, so
+/// registration names the function directly.
 template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesRateToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, true>;
+using AggregateFunctionTimeseriesRateToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, /* is_rate = */ true, /* check_resets = */ true>;
 
 template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesDeltaToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, false>;
+using AggregateFunctionTimeseriesIncreaseToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, /* is_rate = */ false, /* check_resets = */ true>;
+
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesDeltaToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, /* is_rate = */ false, /* check_resets = */ false>;
 
 }

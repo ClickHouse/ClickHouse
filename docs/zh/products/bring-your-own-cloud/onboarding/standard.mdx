@@ -42,49 +42,67 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 在您的组织下准备一个全新的 AWS 账户、GCP 项目或 Azure 订阅。
 
 <Steps>
-  <Step>
-    ### 选择云提供商
-
-    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
+  <Step title="选择云提供商" id="choose-cloud-provider">
+    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC 选择云服务提供商" background="black" />
   </Step>
 
-  <Step>
-    ### 账户/项目/订阅设置
+  <Step title="账户/项目/订阅设置" id="account-setup">
+    初始 BYOC 设置可通过 [CloudFormation 模板 (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml)、[Terraform 模块 (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) 或 [Terraform 模块 (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) 完成。该设置会创建一个具有高权限的身份 (IAM role/服务账号/服务主体) ，使 ClickHouse Cloud 中的 BYOC 控制器能够管理您的基础设施。
 
-    初始 BYOC 设置既可通过 [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)，也可通过 [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) 或 [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) 完成。该步骤会创建一个高权限身份 (IAM 角色/服务账号/服务主体) ，使 ClickHouse Cloud 的 BYOC 控制器能够管理您的基础设施。
+    <Warning>
+      **请严格按原样应用 onboarding 制品。** 未经 ClickHouse 明确批准，请勿修改 CloudFormation 模板或 Terraform 模块中的任何内容，包括重命名资源或添加 `PermissionsBoundary` 等参数。ClickHouse 自动化依赖这些制品创建的确切资源；支持的自定义项均以参数形式提供。尤其是在 AWS 上，除非 ClickHouse 已事先明确同意使用其他名称，否则 IAM role 必须保留默认名称 `ClickHouseManagementRole`，不得添加前缀或后缀。Terraform 模块在技术上提供了 `role_name` 输入参数，但 ClickHouse 自动化也必须配置为与其匹配。因此，未经协调便修改该参数 (或重命名 CloudFormation 模板中没有对应参数的 role) 会导致堆栈虽能成功应用，但基础设施配置会失败，因为 ClickHouse 无法 assume 预期的 role。
+    </Warning>
 
-    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="初始化 BYOC 账号" background="black" />
 
     <Note>
-      运行 ClickHouse 所需的存储桶、VPC/VNet、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在下一步中进行预配。
+      运行 ClickHouse 所需的存储桶、VPC/VNet、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在下一步中预配。
     </Note>
 
-    #### 适用于 AWS 的替代 Terraform 模块
+    #### AWS 的 Terraform 模块
 
-    如果您希望在 AWS 部署中使用 Terraform 而非 CloudFormation，我们也提供了一个 [适用于 AWS 的 Terraform 模块](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz)。
-
-    用法：
+    如果您希望在 AWS 部署中使用 Terraform 而非 CloudFormation，请使用 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 模块：
 
     ```hcl
     module "clickhouse_onboarding" {
-      source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-      byoc_env = "production"
+      source      = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id = "<external-id-provided-by-clickhouse>"
     }
     ```
+
+    将 `<version>` 替换为该模块[发布页面](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)中的最新标签——始终使用最新发布版本。
+
+    该模块会输出 `clickhouse_management_role_arn`。在标准流程中，您无需使用此值——Onboarding 会在 ClickHouse Cloud 控制台中继续进行——但请妥善保留：如果您的设置偏离默认配置 (例如需要协调自定义角色名称) ，ClickHouse 会要求您提供此值。
+
+    <Note>
+      此模块此前以 tarball 形式发布在 `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`。该 URL 仍可使用，但已弃用——请改用上述 GitHub 模块。
+    </Note>
+
+    #### AWS 外部 ID
+
+    在 AWS 上，设置期间创建的 IAM 角色会通过[外部 ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) 信任 ClickHouse Cloud，以防范混淆代理攻击。开始 Onboarding 时，ClickHouse Cloud 控制台会为您的 AWS 账户生成外部 ID，并在 CloudFormation 链接中预填该值；如果您使用 Terraform，请将同一值作为 `external_id` 传入。同一 AWS 账户中的所有 BYOC 基础设施共享同一个外部 ID。
+
+    <Note>
+      在引入外部 ID 前完成 Onboarding 的 BYOC 基础设施会使用占位符值 `emptyid`，以保持向后兼容性。当您在已有 legacy 部署的 AWS 账户中添加基础设施时，控制台会显示此值，以确保该账户中的所有基础设施保持一致的信任配置。如果您希望切换为唯一的外部 ID，请联系 ClickHouse 支持团队。
+    </Note>
   </Step>
 
-  <Step>
-    ### 设置 BYOC 基础设施
+  <Step title="配置 BYOC 基础设施" id="setup-byoc-infrastructure">
+    系统将提示您通过 ClickHouse Cloud 控制台设置基础设施，包括对象存储桶、VPC/VNet 和 Kubernetes 集群。某些配置必须在此阶段确定，之后将无法更改。具体如下：
 
-    系统会提示您在 ClickHouse Cloud 控制台中设置基础设施，包括对象存储桶、VPC/VNet 和 Kubernetes 集群。某些配置必须在此阶段确定，因为后续无法更改。具体包括：
+    * **区域**：我们[支持的区域](/zh/products/cloud/reference/supported-regions)文档中列出的所有**公有区域**均可用于 BYOC 部署。目前尚不支持私有区域。
 
-    * **区域**：我们的 [supported regions](/zh/products/cloud/reference/supported-regions) 文档中列出的所有**公共区域**均可用于 BYOC 部署。目前暂不支持私有区域。
+    * **VPC/VNet CIDR 范围**：默认情况下，BYOC VPC (AWS/GCP) 或 VNet (Azure) 的 CIDR 范围为 `10.0.0.0/16`。如果计划与其他账户建立 VPC/VNet 对等连接，请确保 CIDR 范围不重叠。最小范围因云平台而异：
 
-    * **VPC/VNet CIDR 范围**：默认情况下，我们使用 `10.0.0.0/16` 作为 BYOC 的 VPC (AWS/GCP) 或 VNet (Azure) CIDR 范围。如果您计划与另一个账户建立 VPC/VNet peering，请确保 CIDR 范围不重叠。请为 BYOC 分配合适的 CIDR 范围，最小为 `/23`，以容纳所需的工作负载。
+      * **AWS**：`/23`
+      * **Azure**：`/23`
+      * **GCP**：`/20`
 
-    * **Availability Zones**：如果您计划使用 VPC peering，使源账户与 BYOC 账户的可用区对齐，有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户之间可能对应不同的物理可用区 ID。详情请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
+      这些是下限，而非建议值：每个副本都会占用 IP 地址，因此规模较大的部署需要更大的范围。
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background="black" />
+    * **可用区**：如果计划使用 VPC 对等连接，将源账户与 BYOC 账户的可用区对齐有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户中可能对应不同的物理可用区 ID。有关详细信息，请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
+
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="设置 BYOC 基础设施" background="black" />
   </Step>
 </Steps>
 

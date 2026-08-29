@@ -30,17 +30,19 @@ public:
 
     const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
 
+    const MergeTreePartition & getPartition() const override { return data_part->partition; }
+
     Int64 getMinDataVersion() const override
     {
         return data_part->info.isPatch()
-            ? data_part->getSourcePartsSet().getMinDataVersion()
+            ? data_part->getPatchPartIndex().getMinDataVersion()
             : data_part->info.getDataVersion();
     }
 
     Int64 getMaxDataVersion() const override
     {
         return data_part->info.isPatch()
-            ? data_part->getSourcePartsSet().getMaxDataVersion()
+            ? data_part->getPatchPartIndex().getMaxDataVersion()
             : data_part->info.getDataVersion();
     }
 
@@ -58,12 +60,27 @@ public:
 
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
+    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const override { return data_part->tryGetColumn(column_name); }
+
+    bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
+
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
     String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
     {
         return data_part->getColumnNameWithMinimumCompressedSize(available_columns);
     }
+
+    String getParentPartName() const override { return data_part->getParentPartName(); }
+
+    ColumnSize getColumnSize(const String & column_name) const override { return data_part->getColumnSize(column_name); }
+
+    std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override
+    {
+        return data_part->getColumnSizes();
+    }
+
+    ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
@@ -83,21 +100,14 @@ public:
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
-    MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
+    MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
 
-    void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) override
-    {
-        if (read_columns.contains("_distance"))
-            read_hints = read_hints_;
-    }
-
-    const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }
+    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }
 
     size_t getRowCount() const override { return data_part->rows_count; }
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
-    RangesInDataPartReadHints read_hints;
 };
 
 }

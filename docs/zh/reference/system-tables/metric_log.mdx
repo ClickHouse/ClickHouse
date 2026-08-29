@@ -50,6 +50,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_FailedInsertQuery` ([UInt64](/zh/reference/data-types/int-uint)) — 与 FailedQuery 相同，但仅统计 INSERT 查询。
 * `ProfileEvent_FailedAsyncInsertQuery` ([UInt64](/zh/reference/data-types/int-uint)) — 失败的 ASYNC INSERT 查询数。
 * `ProfileEvent_ASTFuzzerQueries` ([UInt64](/zh/reference/data-types/int-uint)) — 服务器端 AST fuzzer 尝试执行的模糊查询数。
+* `ProfileEvent_ASTFuzzerSkippedBackupRestore` ([UInt64](/zh/reference/data-types/int-uint)) — 服务器端 AST fuzzer 跳过而未执行的模糊 BACKUP/RESTORE 查询数。
+* `ProfileEvent_ASTFuzzerSkippedReplicatedDDLInternal` ([UInt64](/zh/reference/data-types/int-uint)) — 由于 Context 中存在正在进行的内部复制数据库 DDL 执行 (活跃的 ZooKeeperMetadataTransaction) ，服务器端 AST fuzzer 跳过模糊测试的次数。
 * `ProfileEvent_QueryTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 所有查询的总耗时。
 * `ProfileEvent_SelectQueryTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — SELECT 查询的总耗时。
 * `ProfileEvent_InsertQueryTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — INSERT 查询的总耗时。
@@ -94,33 +96,48 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_IOBufferAllocBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为 IO 缓冲区 (用于 ReadBuffer/WriteBuffer) 分配的字节数。
 * `ProfileEvent_ArenaAllocChunks` ([UInt64](/zh/reference/data-types/int-uint)) — 为内存 Arena 分配的块数 (用于 GROUP BY 及类似操作)
 * `ProfileEvent_ArenaAllocBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为内存 Arena 分配的字节数 (用于 GROUP BY 及类似操作)
+* `ProfileEvent_FiberStackAllocs` ([UInt64](/zh/reference/data-types/int-uint)) — 为纤程分配的栈数量 (纤程用于与远程副本进行异步通信) 。
+* `ProfileEvent_FiberStackAllocBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为 fiber 栈分配的字节数，包括保护页 (保护页仅用于调试和 sanitizer 构建) 。
+* `ProfileEvent_FiberStackAllocNanoseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分配 fiber 栈所花费的时间。使用纳秒是因为单次分配通常快于一微秒，除非 allocator 或内核存在竞争。
+* `ProfileEvent_FiberStackFreeNanoseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 释放 fiber 栈所花费的时间。
 * `ProfileEvent_FunctionExecute` ([UInt64](/zh/reference/data-types/int-uint)) — SQL 普通函数调用的次数 (SQL 函数按块调用，因此该数字表示块数) 。
 * `ProfileEvent_TableFunctionExecute` ([UInt64](/zh/reference/data-types/int-uint)) — 表函数调用的次数。
 * `ProfileEvent_DefaultImplementationForNullsRows` ([UInt64](/zh/reference/data-types/int-uint)) — 在函数执行中，由用于处理 NULL 值的默认实现处理的行数
 * `ProfileEvent_DefaultImplementationForNullsRowsWithNulls` ([UInt64](/zh/reference/data-types/int-uint)) — 在函数执行中，由用于处理 NULL 值的默认实现处理的、包含 NULL 值的行数
 * `ProfileEvent_MarkCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在标记缓存中命中条目的次数，因此无需加载标记文件。
 * `ProfileEvent_MarkCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在标记缓存中未命中条目的次数，因此必须将标记文件加载到内存中；这是开销较高的操作，会增加查询延迟。
+* `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — DeleteBitmapCache 未命中时，读取并反序列化 UNIQUE KEY delete-bitmap 辅助文件所花费的时间。
+* `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/zh/reference/data-types/int-uint)) — 写入的 UNIQUE KEY delete-bitmap 辅助文件数量 (每次替代 / DELETE 提交写入一个) 。
 * `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在主索引缓存中命中条目的次数，因此无需加载索引文件。
 * `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在主索引缓存中未命中条目的次数，因此必须将索引文件加载到内存中；这是开销较高的操作，会增加查询延迟。
 * `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中命中 Iceberg 元数据文件的次数。
 * `ProfileEvent_IcebergMetadataFilesCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在 Iceberg 元数据缓存中未命中 Iceberg 元数据文件，因此必须从 (远程) 磁盘读取的次数。
 * `ProfileEvent_IcebergMetadataFilesCacheStaleMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中找到了 Iceberg 元数据文件，但被视为已过期，因此必须从 (远程) 磁盘重新读取的次数。
 * `ProfileEvent_IcebergMetadataFilesCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Iceberg 元数据缓存中被淘汰的近似字节数。
+* `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中命中 paimon 元数据文件的次数。
+* `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在 paimon 元数据缓存中未命中 paimon 元数据文件，因此必须从 (远程) 磁盘读取的次数。
+* `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从 paimon 元数据缓存中被淘汰的近似字节数。
 * `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 数据读取器等待 Iceberg 元数据文件被读取并解析所花费的总时间，按所有读取器线程累加。
 * `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中命中 Parquet 元数据的次数。
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中未命中 Parquet 元数据，因此必须从磁盘读取的次数。
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 元数据缓存中被淘汰的近似字节数。
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 同步初始化 Iceberg 数据迭代器所花费的总时间。
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 同步初始化 Iceberg 数据迭代器所花费的总时间。
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 从状态更新 Iceberg 存储元数据 (buildStorageMetadataFromState) 所花费的总时间。
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/zh/reference/data-types/int-uint)) — Iceberg 迭代器返回的对象信息总数。
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在按分区和序列号筛选后符合条件的配对中，经 minmax 分析接受的数据文件-位置删除文件对总数。
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在按分区和序列号筛选后符合条件的配对中，经 minmax 分析接受的数据文件-位置删除文件对总数。
+* `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/zh/reference/data-types/int-uint)) — OneLake catalog 通过 Entra ID 刷新令牌授权发起的访问令牌请求数量。
+* `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/zh/reference/data-types/int-uint)) — OneLake catalog 通过 Entra ID 刷新令牌授权发起的失败访问令牌请求数量 (包括已过期或已撤销的刷新令牌) 。
+* `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — OneLake catalog 通过 Entra ID 刷新令牌授权请求访问令牌所花费的总时间。
+* `ProfileEvent_OneLakeAccessTokenExpirations` ([UInt64](/zh/reference/data-types/int-uint)) — 发现缓存的 OneLake 访问令牌已过期并透明续期的次数。
 * `ProfileEvent_VectorSimilarityIndexCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在向量索引缓存中命中索引粒度的次数。
 * `ProfileEvent_VectorSimilarityIndexCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在向量索引缓存中未命中索引粒度，因此必须从磁盘读取的次数。
 * `ProfileEvent_VectorSimilarityIndexCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从向量索引缓存中被淘汰的近似字节数。
 * `ProfileEvent_TextIndexReadDictionaryBlocks` ([UInt64](/zh/reference/data-types/int-uint)) — 从磁盘读取文本索引字典块的次数。
 * `ProfileEvent_TextIndexTokensCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中命中文本索引标记信息的次数。
 * `ProfileEvent_TextIndexTokensCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中未命中文本索引标记信息的次数。
+* `ProfileEvent_TextIndexTokensCacheNegativeHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中命中不存在的文本索引标记的次数。
+* `ProfileEvent_TextIndexTokensCacheNegativeMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 经字典查找后添加到缓存中的不存在的文本索引标记数量。
 * `ProfileEvent_TextIndexHeaderCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中找到头部的次数。
 * `ProfileEvent_TextIndexHeaderCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中未找到头部的次数。
 * `ProfileEvent_TextIndexPostingsCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中找到文本索引倒排列表的次数。
@@ -128,13 +145,29 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_TextIndexReadSparseIndexBlocks` ([UInt64](/zh/reference/data-types/int-uint)) — 从文本索引中读取稀疏索引块的次数。
 * `ProfileEvent_TextIndexReaderTotalMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 读取文本索引花费的总时间。
 * `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 读取并分析文本索引粒度花费的总时间。
+* `ProfileEvent_TextIndexPositionsDecodeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为短语搜索解码文本索引位置列表 (.pos) 所花费的总时间。
+* `ProfileEvent_TextIndexPhraseMatchMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 roaringish 短语匹配交集操作中花费的总时间。
 * `ProfileEvent_TextIndexReadPostings` ([UInt64](/zh/reference/data-types/int-uint)) — 从文本索引中读取倒排列表的次数。
 * `ProfileEvent_TextIndexUsedEmbeddedPostings` ([UInt64](/zh/reference/data-types/int-uint)) — 使用嵌入字典中的倒排列表的次数。
 * `ProfileEvent_TextIndexUseHint` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引粒度中，将从文本索引直接读取添加为提示且实际使用的次数。
 * `ProfileEvent_TextIndexDiscardHint` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引粒度中，将从文本索引直接读取添加为提示但因选择性低而被丢弃的次数。
+* `ProfileEvent_TextIndexTemporarySegmentsWritten` ([UInt64](/zh/reference/data-types/int-uint)) — 构建文本索引时写入的临时分段数量。
+* `ProfileEvent_TextIndexLazyPackedBlocksDecoded` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下解码的打包块数量。
+* `ProfileEvent_TextIndexLazyAdvanceCount` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下执行的推进操作数量。
+* `ProfileEvent_TextIndexLazySegmentsPrepared` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下准备的分段数量 (从磁盘读取或从缓存获取) 。
+* `ProfileEvent_TextIndexLazySegmentsBuilt` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下实际读取并解码的分段数量 (缓存未命中) 。
+* `ProfileEvent_TextIndexLazyBruteForceIntersections` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下执行的穷举求交次数。
+* `ProfileEvent_TextIndexLazyLeapfrogIntersections` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下执行的跃蛙求交次数。
+* `ProfileEvent_TextIndexLazySegmentsSkippedDense` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下，对完全稠密的分段进行整体填充 (OR 使用 memset，AND 使用递增) 而非解码块的次数。
+* `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下，因输出区域已确定 (OR 为全 1，AND 为全 0) 而跳过的分段数量。
+* `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/zh/reference/data-types/int-uint)) — 在惰性倒排列表模式下，因输出区域已确定 (OR 为全 1，AND 为全 0) 而跳过的打包块数量。
 * `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/zh/reference/data-types/int-uint)) — 在文本索引中，基于模式的字典扫描因待读取的倒排列表数量超过阈值而被丢弃的次数。
+* `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/zh/reference/data-types/int-uint)) — 在文本索引上使用通用排除搜索算法的次数。
+* `ProfileEvent_TextIndexGenericExclusionSearchStepLimitReached` ([UInt64](/zh/reference/data-types/int-uint)) — 文本索引上的通用排除搜索达到 merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps 并在不再进一步拆分的情况下接受剩余标记范围的次数。
 * `ProfileEvent_QueryConditionCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询条件缓存中找到条目的次数 (因此可跳过读取标记) 。仅对设置了 SETTING use&#95;query&#95;condition&#95;cache = 1 的 SELECT 查询更新。
 * `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询条件缓存中未找到条目的次数 (因此无法跳过读取标记) 。仅对设置了 SETTING use&#95;query&#95;condition&#95;cache = 1 的 SELECT 查询更新。
+* `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在加密头缓存中找到加密头字节，因此无需从源读取头部的次数。
+* `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在加密头缓存中未找到加密头字节，因此需要从源读取这些字节的次数。
 * `ProfileEvent_QueryCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询缓存中找到查询结果的次数 (因此避免了查询计算) 。仅对设置了 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
 * `ProfileEvent_QueryCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询缓存中未找到查询结果的次数 (因此需要执行查询计算) 。仅对设置了 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
 * `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询缓存中已找到缓存条目的总存活时间 (单位为秒) 。命中和未命中时都会设置该值。
@@ -233,6 +266,19 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_AllUsersThrottlerSleepMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询为符合 &#39;max&#95;network&#95;bandwidth&#95;for&#95;all&#95;users&#39; 限流而休眠的总时间。
 * `ProfileEvent_QueryRemoteReadThrottlerBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 通过 &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39; 限流器的字节数。
 * `ProfileEvent_QueryRemoteReadThrottlerSleepMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询为符合 &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39; 限流而休眠的总时间。
+* `ProfileEvent_ReaderExecutorSourceRequests` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 在源端发起的请求数 (不包括对实时缓冲区的复用) 。
+* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 在所有缓存层级均未命中后向源端发起读取的物理字节数 (包括前台和后台预取，以及后续丢弃导致浪费的预取字节) ；不包括提供给消费者的字节数——参见 ReaderExecutorDeliveredBytes。
+* `ProfileEvent_ReaderExecutorDeliveredBytes` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 交付给读取请求的有效字节数 (即请求窗口的载荷，不包括超额读取和缓存回写) 。这是建模每字节成本 KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes) 的分母。
+* `ProfileEvent_ReaderExecutorCacheGetRequests` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 中 ICacheHandle::get 的调用次数。在引入 ReaderExecutor 缓存层级之前，该值为零。
+* `ProfileEvent_ReaderExecutorCachePopulateRequests` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 中调用 ICacheHandle::put 的次数。在引入 ReaderExecutor 缓存层级之前，该值为零。
+* `ProfileEvent_ReaderExecutorIncompleteConnections` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 在将源连接读取至其右边界前丢弃的源连接数；这些连接无法由连接池复用，必须重新建立。在引入 ReaderExecutor 在线源缓冲区复用之前，该值为零。
+* `ProfileEvent_ReaderExecutorWorkMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 ReaderExecutor::readNextWindow 中花费的总挂钟时间 (包括打开、寻道和读取所提供的窗口) 。直接影响查询读取延迟。
+* `ProfileEvent_ReaderExecutorDecryptMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 原地解密所提供载荷所花费的时间 (CTR、可按位置寻址) 。对于未加密读取以及不含 SSL 的构建，该值为零。
+* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 读取的建模 I/O 成本：衡量读取路径最优性的合成代理 KPI，并非实测延迟。按启发式 S3 权重对上述计数器求加权和：每个源请求 30ms + 每个不完整连接 5ms + 每从源传输 1 MiB 20ms (有效载荷加过度读取) + 每次缓存 put 0.1ms + 每次缓存 get 0.05ms。除以 ReaderExecutorDeliveredBytes 可得到与负载无关的每字节成本。Experimental，用于跟踪 Experimental ReaderExecutor。
+* `ProfileEvent_ReaderExecutorLongConnectionOpened` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 为优化顺序读取而打开的长源连接数。
+* `ProfileEvent_ReaderExecutorLongConnectionHits` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 通过读取已打开的长源连接来提供的窗口数。
+* `ProfileEvent_ReaderExecutorLongConnectionFallbacks` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 需要长连接但因没有可用 slot 而回退到一次性读取的次数。
+* `ProfileEvent_ReaderExecutorLongConnectionBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 通过长源连接读取的总字节数。
 * `ProfileEvent_QueryRemoteWriteThrottlerBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 通过 &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39; 限流器的字节数。
 * `ProfileEvent_QueryRemoteWriteThrottlerSleepMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询为符合 &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39; 限流而休眠的总时间。
 * `ProfileEvent_QueryLocalReadThrottlerBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 通过 &#39;max&#95;local&#95;read&#95;bandwidth&#39; 限流器的字节数。
@@ -250,6 +296,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中已应用的补丁分区片段总数
 * `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 Merge 模式应用的补丁分区片段总数
 * `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 Join 模式应用的补丁分区片段总数
+* `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 MergeOnKey 模式 (v2) 应用的补丁分区片段总数
 * `ProfileEvent_PatchesReadRows` ([UInt64](/zh/reference/data-types/int-uint)) — 从补丁分区片段中读取的行总数
 * `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从补丁分区片段中读取的未压缩字节总数
 * `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/zh/reference/data-types/int-uint)) — 以 Join 模式应用补丁分区片段时添加到哈希表中的行总数
@@ -257,6 +304,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 读取补丁分区片段所花费的总时间
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为以 Merge 模式应用补丁分区片段构建索引所花费的总时间
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为以 Join 模式应用补丁分区片段构建索引和哈希表所花费的总时间
+* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 applyPatchesMergeOnKey 排序键合并循环中花费的总时间
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分析补丁分区片段索引所花费的总时间
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/zh/reference/data-types/int-uint)) — 在读取时动态应用了任意变更的读取任务总数
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中在读取时动态应用的变更总数
@@ -299,6 +347,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_SelfDuplicatedAsyncInserts` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ReplicatedMergeTree 表 INSERT 的块中，发生自去重的异步插入次数。
 * `ProfileEvent_DuplicatedAsyncInserts` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ReplicatedMergeTree 表 INSERT 的块中，被去重的异步插入次数。
 * `ProfileEvent_DuplicationElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 检查向 *MergeTree 表 INSERT 的块是否重复所耗费的总时间 (微秒) 。
+* `ProfileEvent_DuplicationDataHashComputations` ([UInt64](/zh/reference/data-types/int-uint)) — 对向 *MergeTree 表 INSERT 的块执行去重时，按列计算数据哈希的次数 (统一去重哈希中的缓存未命中) 。
 * `ProfileEvent_ZooKeeperInit` ([UInt64](/zh/reference/data-types/int-uint)) — 与 ZooKeeper 建立连接的次数。
 * `ProfileEvent_ZooKeeperTransactions` ([UInt64](/zh/reference/data-types/int-uint)) — ZooKeeper 操作的次数，包括读操作、写操作以及多事务。
 * `ProfileEvent_ZooKeeperList` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发起 &#39;list&#39; (getChildren) 请求的次数。
@@ -317,6 +366,21 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ZooKeeperClose` ([UInt64](/zh/reference/data-types/int-uint)) — 与 ZooKeeper 的连接被主动关闭的次数。
 * `ProfileEvent_ZooKeeperGetACL` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发出的 `getACL` 请求次数。
 * `ProfileEvent_ZooKeeperWatchResponse` ([UInt64](/zh/reference/data-types/int-uint)) — 从 ZooKeeper 收到 watch 通知的次数。
+* `ProfileEvent_ZooKeeperWatchCallbackDurationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 ZooKeeper watch 回调 (网络线程) 中花费的总时间。
+* `ProfileEvent_ZooKeeperWatchCallbackErrors` ([UInt64](/zh/reference/data-types/int-uint)) — ZooKeeper watch 回调抛出的异常次数。
+* `ProfileEvent_ZooKeeperWatchTriggeredOther` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给未分类回调的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeLog` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 ReplicatedMergeTree 日志条目的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeMutations` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 ReplicatedMergeTree 变更的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 ReplicatedMergeTree leader 选举/副本锁的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync` ([UInt64](/zh/reference/data-types/int-uint)) — 等待副本处理日志条目 (SYNC REPLICA、ALTER、变更) 时分派的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredDistributedDDL` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 DDLWorker 队列的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedAccessControl` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 ReplicatedAccessStorage 的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredUserDefinedSQLObjects` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 UserDefinedSQLObjectsZooKeeperStorage 的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredWorkloadEntity` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 WorkloadEntityKeeperStorage 的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredBackupCoordination` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给备份/恢复协调的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredObjectStorageQueue` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 ObjectStorageQueue/S3Queue 的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredClusterDiscovery` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 ClusterDiscovery 的 watch 通知数量。
+* `ProfileEvent_ZooKeeperWatchTriggeredMaterializedViewRefresh` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 MaterializedView 刷新协调的 watch 通知数量。
 * `ProfileEvent_ZooKeeperUserExceptions` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 ZooKeeper 时与数据相关的异常次数 (如节点不存在、版本错误等) 。
 * `ProfileEvent_ZooKeeperHardwareExceptions` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 ZooKeeper 时与网络相关的异常次数 (如连接丢失等) 。
 * `ProfileEvent_ZooKeeperOtherExceptions` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 ZooKeeper 时，除 ZooKeeperUserExceptions 和 ZooKeeperHardwareExceptions 之外的其他异常次数。
@@ -330,6 +394,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedConnectionStaleReplica` ([UInt64](/zh/reference/data-types/int-uint)) — 在分布式查询中，由于查询所需的某个表的复制延迟高于配置阈值而拒绝某个副本的次数。
 * `ProfileEvent_DistributedConnectionSkipReadOnlyReplica` ([UInt64](/zh/reference/data-types/int-uint)) — 向 Distributed 表执行 INSERT 时，由于副本处于只读状态而被跳过的副本数。
 * `ProfileEvent_DistributedConnectionFailAtAll` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式连接在所有重试结束后仍失败的总次数。
+* `ProfileEvent_DistributedShardsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 启用 `skip_unavailable_shards` 时，对 Distributed 表 (或 remote/cluster 表函数) 的查询中被静默跳过的分片数，原因可能是分片不可用，或分片引发了 `skip_unavailable_shards_mode` 覆盖的异常。
 * `ProfileEvent_Shards` ([UInt64](/zh/reference/data-types/int-uint)) — 查询中涉及的分片数量，对所有分布式表和表函数求和。如果同一个 host 出现在多个表中，则会被重复计数。该值统计的是预期分片总数，其中包括在 `skip_unavailable_shards` 设置下被跳过的分片。
 * `ProfileEvent_HedgedRequestsChangeReplica` ([UInt64](/zh/reference/data-types/int-uint)) — 对冲请求中，切换副本的 timeout 到期的总次数。
 * `ProfileEvent_SuspendSendingQueryToShard` ([UInt64](/zh/reference/data-types/int-uint)) — 启用 async&#95;query&#95;sending&#95;for&#95;remote 时，向分片发送查询被暂停的总次数。
@@ -337,6 +402,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_CompiledFunctionExecute` ([UInt64](/zh/reference/data-types/int-uint)) — 已编译函数的执行次数。
 * `ProfileEvent_CompileExpressionsMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将表达式编译为 LLVM 代码所花费的总时间。
 * `ProfileEvent_CompileExpressionsBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 表达式编译所使用的字节数。
+* `ProfileEvent_CompileRegexpFunction` ([UInt64](/zh/reference/data-types/int-uint)) — 将正则表达式 JIT 编译为机器代码的次数。
 * `ProfileEvent_ExecuteShellCommand` ([UInt64](/zh/reference/data-types/int-uint)) — shell 命令的执行次数。
 * `ProfileEvent_ExternalProcessingCompressedBytesTotal` ([UInt64](/zh/reference/data-types/int-uint)) — 外部处理 (排序/聚合/连接) 写入的压缩字节数
 * `ProfileEvent_ExternalProcessingUncompressedBytesTotal` ([UInt64](/zh/reference/data-types/int-uint)) — 外部处理 (排序/聚合/连接) 写入的数据量 (未压缩，即压缩前)
@@ -368,6 +434,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_JoinReorderMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 JOIN 重排序算法所花费的总时间。
 * `ProfileEvent_JoinOptimizeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 JOIN 查询计划优化所花费的总时间。
 * `ProfileEvent_QueryPlanOptimizeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行查询计划优化所花费的总时间。
+* `ProfileEvent_QueryParseMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将查询文本解析为 AST 所花费的总时间。
+* `ProfileEvent_QueryAnalysisMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 构建查询树并执行分析器遍历所花费的总时间 (解析标识符、类型和表达式) 。
+* `ProfileEvent_QueryPlanBuildMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 根据已分析的查询树构建 QueryPlan 所花费的总时间。
+* `ProfileEvent_QueryPipelineBuildMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 根据已优化的 QueryPlan 构建 QueryPipeline 所花费的总时间。
 * `ProfileEvent_DeltaLakePartitionPrunedFiles` ([UInt64](/zh/reference/data-types/int-uint)) — DeltaLake 分区裁剪期间跳过的文件数。
 * `ProfileEvent_DeltaLakeSnapshotInitializations` ([UInt64](/zh/reference/data-types/int-uint)) — DeltaLake 表快照初始化的次数 (从对象存储加载) 。
 * `ProfileEvent_DeltaLakeScannedFiles` ([UInt64](/zh/reference/data-types/int-uint)) — DeltaLake 扫描回调期间扫描的文件数。
@@ -375,6 +445,12 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ReadBackoff` ([UInt64](/zh/reference/data-types/int-uint)) — 由于慢读而降低查询处理线程数的次数。
 * `ProfileEvent_ReplicaPartialShutdown` ([UInt64](/zh/reference/data-types/int-uint)) — 由于 ZooKeeper 中的会话过期，Replicated 表不得不解除初始化其状态的次数。每当 ZooKeeper 再次可用时，该状态都会重新初始化。
 * `ProfileEvent_IndexAnalysisRounds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询中执行索引分析的次数。
+* `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 `UniqueKeyIndexCache::Lookup` 和 `UniqueKeyIndexCache::Insert` 内部所花费的挂钟时间 (用于 RocksDB 块缓存的 ClickHouse 端 `CacheBase` 适配器) 。
+* `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在 UNIQUE KEY 索引缓存中找到条目的次数，因此无需加载 SST 块。
+* `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在 UNIQUE KEY 索引缓存中未找到条目的次数，因此必须从磁盘加载 SST 块。
+* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — `SSTIndexWriter` 生命周期内所花费的挂钟总时间——包括 SST `Open`、每次 `addEncoded` Put，以及在 `finalizeToStorage` 中执行的 `Finish` + `WriteBuffer` 收尾操作 (SST 字节会直接流式写入数据分区片段存储的 `WriteBuffer`) 。不包括构造写入器前静态辅助函数执行的工作 (编码和非前缀路径排序) 。每个写入器发出一次。
+* `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/zh/reference/data-types/int-uint)) — 在刷写前崩溃窗口后于加载时重建 `unique_key_index.sst` 的 UNIQUE KEY 数据分区片段数量。
+* `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在加载时重建 `unique_key_index.sst` 所花费的总时间 (顺序读取 UK 列 + 写入 SST) 。
 * `ProfileEvent_SelectedParts` ([UInt64](/zh/reference/data-types/int-uint)) — 从 MergeTree 表中选中进行读取的数据分区片段数。
 * `ProfileEvent_SelectedPartsTotal` ([UInt64](/zh/reference/data-types/int-uint)) — 在从 MergeTree 表中筛选要读取哪些数据分区片段之前，数据分区片段的总数。
 * `ProfileEvent_SelectedRanges` ([UInt64](/zh/reference/data-types/int-uint)) — 从 MergeTree 表中选中进行读取的所有数据分区片段中的 (非相邻) 范围数。
@@ -477,7 +553,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_MergeTreeDataWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块排序所花费的时间
 * `ProfileEvent_MergeTreeDataWriterMergingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 合并输入块所花费的时间 (适用于特殊的 MergeTree 引擎)
 * `ProfileEvent_MergeTreeDataWriterProjectionsCalculationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 计算投影所花费的时间
-* `ProfileEvent_MergeTreeDataProjectionWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块排序所花费的时间 (对于投影，其键可能与表的排序键不同)
+* `ProfileEvent_MergeTreeDataProjectionWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块排序所花费的时间 (对于投影，其键可能与表&#39;的排序键不同)
 * `ProfileEvent_MergeTreeDataProjectionWriterMergingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 合并块所花费的时间
 * `ProfileEvent_InsertedWideParts` ([UInt64](/zh/reference/data-types/int-uint)) — 以 Wide 格式插入的 parts 数量。
 * `ProfileEvent_InsertedCompactParts` ([UInt64](/zh/reference/data-types/int-uint)) — 以 Compact 格式插入的 parts 数量。
@@ -496,6 +572,15 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_RegexpLocalCacheMiss` ([UInt64](/zh/reference/data-types/int-uint)) — 未能从本地缓存中拉取已编译正则表达式的次数。
 * `ProfileEvent_ContextLock` ([UInt64](/zh/reference/data-types/int-uint)) — 获取 Context 锁或尝试获取该锁的次数。这是一个全局锁。
 * `ProfileEvent_ContextLockWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Context 锁等待时间 (微秒)
+* `ProfileEvent_RowPolicyCacheRecalculations` ([UInt64](/zh/reference/data-types/int-uint)) — 行策略缓存为所有当前生效的已启用集合重新组合过滤器的次数。每个访问实体通知批次最多合并为一次。
+* `ProfileEvent_RowPolicyCacheRecalculationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 RowPolicyCache 互斥锁之外为所有当前生效的已启用集合重新组合行策略过滤器所花费的总时间 (因此不会阻塞 ContextAccess 构建路径) 。
+* `ProfileEvent_RoleCacheRecalculations` ([UInt64](/zh/reference/data-types/int-uint)) — Role 缓存重新计算所有当前生效的已启用集合的次数。每个访问实体通知批次最多合并为一次。
+* `ProfileEvent_RoleCacheRecalculationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 重新计算所有当前生效的已启用 Role 集合所花费的总时间 (在 ContextAccess 构建路径也会获取的缓存互斥锁保护下执行) 。
+* `ProfileEvent_SettingsProfileCacheRecalculations` ([UInt64](/zh/reference/data-types/int-uint)) — 设置 profile 缓存为所有当前生效的已启用集合重新合并设置和约束的次数。每个访问实体通知批次最多合并为一次。
+* `ProfileEvent_SettingsProfileCacheRecalculationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为所有当前生效的已启用集合重新合并设置和约束所花费的总时间 (持有缓存 mutex 期间；ContextAccess build path 也会获取该 mutex) 。
+* `ProfileEvent_QuotaCacheRecalculations` ([UInt64](/zh/reference/data-types/int-uint)) — 配额缓存为所有当前生效的已启用集合重新选择配额的次数。每批访问实体通知合并为一次。
+* `ProfileEvent_QuotaCacheRecalculationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为所有当前生效的已启用集合重新选择配额所花费的总时间 (持有缓存 mutex 期间；ContextAccess build path 也会获取该 mutex) 。
+* `ProfileEvent_FileProgressCallbackInvocations` ([UInt64](/zh/reference/data-types/int-uint)) — 每个查询的 `FileProgressCallback` 被调用的次数 (统计通过原生 TCP 或 `clickhouse-local` 传递给客户端的每个按文件计的 `FileProgress` 事件) 。
 * `ProfileEvent_StorageBufferFlush` ([UInt64](/zh/reference/data-types/int-uint)) — &#39;Buffer&#39; 表中的缓冲区被刷写的次数。
 * `ProfileEvent_StorageBufferErrorOnFlush` ([UInt64](/zh/reference/data-types/int-uint)) — 由于写入目标表时出错，&#39;Buffer&#39; 表中的缓冲区无法刷写的次数。
 * `ProfileEvent_StorageBufferPassedAllMinThresholds` ([UInt64](/zh/reference/data-types/int-uint)) — 达到所有最小阈值条件，从而刷写 &#39;Buffer&#39; 表中缓冲区的次数。
@@ -508,18 +593,18 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_StorageBufferLayerLockReadersWaitMilliseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 读取时等待 Buffer 层的时间。
 * `ProfileEvent_StorageBufferLayerLockWritersWaitMilliseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待 Buffer 层空闲以便写入的时间 (可用于调优 Buffer 层) 。
 * `ProfileEvent_SystemLogErrorOnFlush` ([UInt64](/zh/reference/data-types/int-uint)) — 任意系统日志刷新到对应系统表失败的次数。刷新操作会重复尝试。
-* `ProfileEvent_DictCacheKeysRequested` ([UInt64](/zh/reference/data-types/int-uint)) — 为 `cache` 类型的字典从数据源请求的键数量。
-* `ProfileEvent_DictCacheKeysRequestedMiss` ([UInt64](/zh/reference/data-types/int-uint)) — 为 `cache` 类型的字典从数据源请求、但未在数据源中找到的键数量。
-* `ProfileEvent_DictCacheKeysRequestedFound` ([UInt64](/zh/reference/data-types/int-uint)) — 为 `cache` 类型的字典从数据源请求并在数据源中找到的键数量。
-* `ProfileEvent_DictCacheKeysExpired` ([UInt64](/zh/reference/data-types/int-uint)) — 在 `cache` 类型的字典中查找、且在缓存中命中但已过时的键数量。
-* `ProfileEvent_DictCacheKeysNotFound` ([UInt64](/zh/reference/data-types/int-uint)) — 在 `cache` 类型的字典中查找但未找到的键数量。
-* `ProfileEvent_DictCacheKeysHit` ([UInt64](/zh/reference/data-types/int-uint)) — 在 `cache` 类型的字典中查找并在缓存中命中的键数量。
-* `ProfileEvent_DictCacheRequestTimeNs` ([UInt64](/zh/reference/data-types/int-uint)) — 为 `cache` 类型的字典查询外部数据源所花费的纳秒数。
-* `ProfileEvent_DictCacheRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 为 `cache` 类型的字典向外部数据源发起的批量请求次数。
-* `ProfileEvent_DictCacheLockWriteNs` ([UInt64](/zh/reference/data-types/int-uint)) — 为更新 `cache` 类型字典中的数据而等待写锁所花费的纳秒数。
-* `ProfileEvent_DictCacheLockReadNs` ([UInt64](/zh/reference/data-types/int-uint)) — 为查找 `cache` 类型字典中的数据而等待读锁所花费的纳秒数。
-* `ProfileEvent_DistributedSyncInsertionTimeoutExceeded` ([UInt64](/zh/reference/data-types/int-uint)) — 在同步插入 Distributed 表期间，等待分片时超时的次数 (`distributed_foreground_insert` = 1)
-* `ProfileEvent_DistributedAsyncInsertionFailures` ([UInt64](/zh/reference/data-types/int-uint)) — 异步插入 Distributed 表失败的次数 (`distributed_foreground_insert` = 0)
+* `ProfileEvent_DictCacheKeysRequested` ([UInt64](/zh/reference/data-types/int-uint)) — 为 &#39;cache&#39; 类型的字典从数据源请求的键数量。
+* `ProfileEvent_DictCacheKeysRequestedMiss` ([UInt64](/zh/reference/data-types/int-uint)) — 为 &#39;cache&#39; 类型的字典从数据源请求、但未在数据源中找到的键数量。
+* `ProfileEvent_DictCacheKeysRequestedFound` ([UInt64](/zh/reference/data-types/int-uint)) — 为 &#39;cache&#39; 类型的字典从数据源请求并在数据源中找到的键数量。
+* `ProfileEvent_DictCacheKeysExpired` ([UInt64](/zh/reference/data-types/int-uint)) — 在 &#39;cache&#39; 类型的字典中查找、且在缓存中命中但已过时的键数量。
+* `ProfileEvent_DictCacheKeysNotFound` ([UInt64](/zh/reference/data-types/int-uint)) — 在 &#39;cache&#39; 类型的字典中查找但未找到的键数量。
+* `ProfileEvent_DictCacheKeysHit` ([UInt64](/zh/reference/data-types/int-uint)) — 在 &#39;cache&#39; 类型的字典中查找并在缓存中命中的键数量。
+* `ProfileEvent_DictCacheRequestTimeNs` ([UInt64](/zh/reference/data-types/int-uint)) — 为 &#39;cache&#39; 类型的字典查询外部数据源所花费的纳秒数。
+* `ProfileEvent_DictCacheRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 为 &#39;cache&#39; 类型的字典向外部数据源发起的批量请求次数。
+* `ProfileEvent_DictCacheLockWriteNs` ([UInt64](/zh/reference/data-types/int-uint)) — 为更新 &#39;cache&#39; 类型字典中的数据而等待写锁所花费的纳秒数。
+* `ProfileEvent_DictCacheLockReadNs` ([UInt64](/zh/reference/data-types/int-uint)) — 为查找 &#39;cache&#39; 类型字典中的数据而等待读锁所花费的纳秒数。
+* `ProfileEvent_DistributedSyncInsertionTimeoutExceeded` ([UInt64](/zh/reference/data-types/int-uint)) — 在同步插入 Distributed 表期间，等待分片时超时的次数 (&#39;distributed&#95;foreground&#95;insert&#39; = 1)
+* `ProfileEvent_DistributedAsyncInsertionFailures` ([UInt64](/zh/reference/data-types/int-uint)) — 异步插入 Distributed 表失败的次数 (&#39;distributed&#95;foreground&#95;insert&#39; = 0)
 * `ProfileEvent_DataAfterMergeDiffersFromReplica` ([UInt64](/zh/reference/data-types/int-uint)) — 合并后的数据与其他副本上的数据在字节级不完全一致的次数。可能有以下几个原因：
   1. 服务器更新后使用了更新版本的压缩库。
   2. 使用了另一种压缩方法。
@@ -532,10 +617,6 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
   9. 与 part 格式相关的设置 (如 &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;) 在不同副本上不一致。
      服务器已成功检测到这种情况，并将从副本下载合并后的 part，以强制获得字节级完全一致的结果。
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/zh/reference/data-types/int-uint)) — 变更后的数据与其他副本上的数据在字节级别不完全一致的次数。除 &#39;DataAfterMergeDiffersFromReplica&#39; 中所述原因外，也可能是由非确定性变更导致的。
-* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/zh/reference/data-types/int-uint)) — 已添加到 &#39;pointInPolygon&#39; 函数缓存 (pool) 中的多边形数量。
-* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为添加到 &#39;pointInPolygon&#39; 函数缓存 (pool) 中的多边形分配的字节数。
-* `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/zh/reference/data-types/int-uint)) — 已加载的朴素贝叶斯分类器模型数量。
-* `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为朴素贝叶斯分类器模型分配的字节数。
 * `ProfileEvent_USearchAddCount` ([UInt64](/zh/reference/data-types/int-uint)) — 添加到 usearch 索引中的向量数量。
 * `ProfileEvent_USearchAddVisitedMembers` ([UInt64](/zh/reference/data-types/int-uint)) — 向 usearch 索引添加向量时访问的节点数量。
 * `ProfileEvent_USearchAddComputedDistances` ([UInt64](/zh/reference/data-types/int-uint)) — 向 usearch 索引添加向量时计算距离的次数。
@@ -576,6 +657,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasReadUnassignedMarks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有副本中，被调度的未分配标记总数
 * `ProfileEvent_ParallelReplicasReadAssignedForStealingMarks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有副本中，通过一致性哈希分配用于窃取的已调度标记总数
 * `ProfileEvent_ParallelReplicasReadMarks` ([UInt64](/zh/reference/data-types/int-uint)) — 给定副本读取的标记数量
+* `ProfileEvent_ReadPoolRangeRefinerDroppedMarks` ([UInt64](/zh/reference/data-types/int-uint)) — MergeTree 读取池中范围细化器从读取任务中丢弃的标记数量 (例如被投影索引完全过滤掉的标记)
+* `ProfileEvent_ReadPoolRangeRefinerDroppedCuts` ([UInt64](/zh/reference/data-types/int-uint)) — MergeTree 读取池从某个数据分区片段切出的范围被范围细化器完全丢弃、因而未为其创建读取任务的次数
 * `ProfileEvent_ParallelReplicasStealingByHashMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 收集用于按哈希窃取的分段所花费的时间
 * `ProfileEvent_ParallelReplicasProcessingPartsMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 处理数据分区片段所花费的时间
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 收集遗留分段所花费的时间
@@ -690,6 +773,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_WriteBufferFromS3RequestsErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 S3 时发生的异常次数。
 * `ProfileEvent_WriteBufferFromS3WaitInflightLimitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 当当前请求数达到 s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file 定义的限制时，等待其中部分请求完成所花费的时间。
 * `ProfileEvent_QueryMemoryLimitExceeded` ([UInt64](/zh/reference/data-types/int-uint)) — 查询超出内存限制的次数。
+* `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/zh/reference/data-types/int-uint)) — 超出全局内存限制的次数。
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/zh/reference/data-types/int-uint)) — 未检查内存约束即分配内存的次数。
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 未检查内存约束即分配的字节数。
 * `ProfileEvent_AzureGetObject` ([UInt64](/zh/reference/data-types/int-uint)) — Azure API GetObject 调用次数。
@@ -726,9 +810,11 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_CachedReadBufferPredownloadedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存源读取的字节数。缓存分段会作为一个整体按从左到右的顺序读取，因此可能需要预下载与当前任务无关的某个分段部分，才能获取所需数据
 * `ProfileEvent_CachedReadBufferCacheWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从源 (远程文件系统等) 写入文件系统缓存的字节数
 * `ProfileEvent_CachedReadBufferCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将数据写入文件系统缓存所花费的时间
+* `ProfileEvent_CachedReadBufferCacheWriteStopped` ([UInt64](/zh/reference/data-types/int-uint)) — 下载过程中将 File 段写入文件系统缓存被中止的次数 (空间预留或缓存写入失败) ，之后读取会绕过缓存继续进行
 * `ProfileEvent_CachedReadBufferCreateBufferMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 准备缓冲区所花费的时间
 * `ProfileEvent_CachedWriteBufferCacheWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从源 (远程文件系统等) 写入文件系统缓存的字节数
 * `ProfileEvent_CachedWriteBufferCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将数据写入文件系统缓存所花费的时间
+* `ProfileEvent_CachedWriteBufferCacheWriteStopped` ([UInt64](/zh/reference/data-types/int-uint)) — 写穿缓存被中止的次数 (空间预留或缓存写入失败，或覆盖该范围的分段正在被淘汰) ，之后写入会继续进行但不填充缓存
 * `ProfileEvent_FilesystemCacheLoadMetadataMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 加载文件系统缓存元数据所花费的时间
 * `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存中淘汰的字节数
 * `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的键目录数量
@@ -740,21 +826,29 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 因处于移动状态而跳过淘汰的 File 段数量
 * `ProfileEvent_FilesystemCacheEvictionTries` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存淘汰尝试次数
 * `ProfileEvent_FilesystemCacheEvictionReusedIterator` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存迭代器复用次数
+* `ProfileEvent_FilesystemCacheOvercommitCandidatesIterationSteps` ([UInt64](/zh/reference/data-types/int-uint)) — 为弥补预留空间不足，overcommit 淘汰循环在首次遍历后执行的外层迭代次数
 * `ProfileEvent_FilesystemCacheLockKeyMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 锁定缓存键所花费的时间
 * `ProfileEvent_FilesystemCacheLockMetadataMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 锁定文件系统缓存元数据所花费的时间
+* `ProfileEvent_FilesystemCacheLockOriginPoolMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 锁定文件系统缓存共享源池所花费的时间
 * `ProfileEvent_FilesystemCachePriorityWriteLockMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为写入优先队列而锁定文件系统缓存所花费的时间
 * `ProfileEvent_FilesystemCachePriorityReadLockMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为从优先队列读取而锁定文件系统缓存所花费的时间
 * `ProfileEvent_FilesystemCacheStateLockMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 获取状态锁时锁定文件系统缓存所花费的时间
 * `ProfileEvent_FilesystemCacheReserveMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 预留文件系统缓存空间所花费的时间
 * `ProfileEvent_FilesystemCacheReserveAttempts` ([UInt64](/zh/reference/data-types/int-uint)) — 预留文件系统缓存空间的尝试次数
+* `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存空间预留失败的尝试次数。
 * `ProfileEvent_FilesystemCacheEvictMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存淘汰所花费的时间
 * `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存 `getOrSet()` 所花费的时间
 * `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存 `get()` 所花费的时间
 * `ProfileEvent_FilesystemCacheBackgroundEvictedFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 由后台线程驱逐的 File 段数量
 * `ProfileEvent_FilesystemCacheBackgroundEvictedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 由后台线程驱逐的字节数
+* `ProfileEvent_FilesystemCacheIdleClientEvictions` ([UInt64](/zh/reference/data-types/int-uint)) — 由于在 `idle_client_ttl_sec` 内未发生访问而清除空闲分布式缓存客户端 (`user_id`) 所有缓存条目的次数。
+* `ProfileEvent_FilesystemCacheBackgroundRemovedInvalidatedEntries` ([UInt64](/zh/reference/data-types/int-uint)) — 后台清理线程清除的已失效 (延迟删除) 优先队列条目数量
+* `ProfileEvent_FilesystemCacheClientsMapLockWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 overcommit 缓存策略中，等待发生竞争的按客户端 (`user_id`) 使用情况映射分片锁所花费的时间
+* `ProfileEvent_FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 后台线程执行已失效优先队列条目清理任务的耗时
 * `ProfileEvent_FilesystemCacheCheckCorrectness` ([UInt64](/zh/reference/data-types/int-uint)) — 调用 FileCache::assertCacheCorrectness 的次数
 * `ProfileEvent_FilesystemCacheCheckCorrectnessMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — FileCache::assertCacheCorrectness 的耗时
 * `ProfileEvent_FileSegmentWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 处于 DOWNLOADING 状态时的等待耗时
+* `ProfileEvent_FileSegmentWaitTimeouts` ([UInt64](/zh/reference/data-types/int-uint)) — 等待处于 DOWNLOADING 状态的 File 段超时的次数 (参见 `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 * `ProfileEvent_FileSegmentCompleteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存中 FileSegment::complete() 的耗时
 * `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 锁定 File 段的耗时
 * `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — File 段执行 write() 的耗时
@@ -768,6 +862,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheUnusedHoldFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 被持有但未使用的文件系统缓存 File 段数量 (例如由于寻道或 LIMIT n 等原因)
 * `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadRun` ([UInt64](/zh/reference/data-types/int-uint)) — 后台线程执行空闲空间维护任务的次数
 * `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 后台线程执行空闲空间维护任务的耗时
+* `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 后台可用空间维护任务在收集、移除或完成期间捕获的异常数量
 * `ProfileEvent_FilesystemCacheFailedEvictionCandidates` ([UInt64](/zh/reference/data-types/int-uint)) — 在动态文件系统缓存驱逐期间，意外未能被驱逐的 File 段数量
 * `ProfileEvent_RemoteFSSeeks` ([UInt64](/zh/reference/data-types/int-uint)) — 异步缓冲区的寻道总次数
 * `ProfileEvent_RemoteFSPrefetches` ([UInt64](/zh/reference/data-types/int-uint)) — 从远程文件系统异步读取时进行的预取次数
@@ -808,7 +903,23 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 在 RemoteReadBufferCache 中从本地缓存缓冲区读取的字节数
 * `ProfileEvent_MainConfigLoads` ([UInt64](/zh/reference/data-types/int-uint)) — 重新加载主配置的次数。
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/zh/reference/data-types/int-uint)) — 为聚合在哈希表中预分配的元素数量。
+* `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在冻结阈值处冻结的本地哈希表数量。
+* `ProfileEvent_AdaptiveAggregationGiveUps` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合中，因其流包含的不同键较少而放弃冻结的线程数量。
+* `ProfileEvent_AdaptiveAggregationPressureStandDowns` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合中，因内存压力超过外部聚合阈值而永久退出学习阶段的线程数量；这些线程的本地表将通过常规外部聚合落盘。
+* `ProfileEvent_AdaptiveAggregationThaws` ([UInt64](/zh/reference/data-types/int-uint)) — 由于暂存流被证实以重复记录为主，自适应聚合解冻本地表的次数。
+* `ProfileEvent_AdaptiveAggregationProbeBypasses` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合中，因几乎没有行命中冻结的本地表而停止探测该表的线程数量。
+* `ProfileEvent_AdaptiveAggregationStagedRecords` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在去重前暂存的延迟记录数量。
+* `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在发布和封存时合并并去除的重复键暂存记录数量。
+* `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合为在合并时排空而暂存的键字节数。
+* `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合从缓冲的暂存批次中封存的合并块数量。
+* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/zh/reference/data-types/int-uint)) — 由于缓冲批次在某个参数位置的表示不一致，自适应聚合在封存时对列表示进行归一化的次数。
+* `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在合并时排空到共享表中的延迟记录数量。
+* `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合因内存压力而提前排空暂存记录的次数。
+* `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在内存压力下提前排空的暂存记录数量。
+* `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/zh/reference/data-types/int-uint)) — 两级桶在其合并和转换完成后、整个合并结束前立即释放工作内存 (Arena 插槽、暂存块引用) 的数量。
+* `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/zh/reference/data-types/int-uint)) — 通过桶本地 Top-K 选择 (aggregationBucketTopK 查询计划优化) 转换的两级桶数量。
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 为聚合初始化为两级结构的哈希表数量。
+* `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 在运行时将单级聚合哈希表转换为两级结构的次数。
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/zh/reference/data-types/int-uint)) — 有多少个块应用了键相等范围优化
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/zh/reference/data-types/int-uint)) — 为哈希 join 在哈希表中预分配的元素数量。
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/zh/reference/data-types/int-uint)) — 对象存储元数据请求在未向 Keeper 发出请求的情况下直接由缓存响应的次数
@@ -890,10 +1001,14 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperReadRequestQueueLockWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待获取 Keeper 读取请求队列锁的耗时
 * `ProfileEvent_KeeperProcessAndResponsesLockWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待获取 Keeper 处理与响应锁的耗时
 * `ProfileEvent_KeeperCommitWaitElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待特定日志提交完成的耗时
-* `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/zh/reference/data-types/int-uint)) — 批次大小受数量限制的次数
-* `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/zh/reference/data-types/int-uint)) — 批次大小受总字节数限制的次数
+* `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/zh/reference/data-types/int-uint)) — 达到 max&#95;requests&#95;batch&#95;size 限制的批次数
+* `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/zh/reference/data-types/int-uint)) — 达到 max&#95;requests&#95;batch&#95;bytes&#95;size 限制的批次数
+* `ProfileEvent_KeeperBatchMaxReadCount` ([UInt64](/zh/reference/data-types/int-uint)) — 达到 max&#95;read&#95;batch&#95;size 限制的批次数
+* `ProfileEvent_KeeperBatchMaxReadTotalSize` ([UInt64](/zh/reference/data-types/int-uint)) — 达到 max&#95;read&#95;batch&#95;bytes&#95;size 限制的批次数
 * `ProfileEvent_KeeperReadBatchCount` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 处理的读取请求批次数
 * `ProfileEvent_KeeperReadBatchTotalRequests` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 以批次方式处理的读取请求总数
+* `ProfileEvent_KeeperWriteBatchCount` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 处理的写入请求批次数
+* `ProfileEvent_KeeperWriteBatchTotalRequests` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 以批次方式处理的写入请求总数
 * `ProfileEvent_KeeperCommits` ([UInt64](/zh/reference/data-types/int-uint)) — 成功提交的次数
 * `ProfileEvent_KeeperCommitsFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 提交失败的次数
 * `ProfileEvent_KeeperSnapshotCreations` ([UInt64](/zh/reference/data-types/int-uint)) — 创建快照的次数
@@ -903,6 +1018,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperReadSnapshot` ([UInt64](/zh/reference/data-types/int-uint)) — 已完成的快照读取次数
 * `ProfileEvent_KeeperReadSnapshotObject` ([UInt64](/zh/reference/data-types/int-uint)) — 发送给跟随者的快照对象数量
 * `ProfileEvent_KeeperReadSnapshotFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 快照读取失败次数
+* `ProfileEvent_KeeperReadSnapshotDeferred` ([UInt64](/zh/reference/data-types/int-uint)) — 因请求的快照在本地已不可用而延后的快照读取次数；NuRaft 将重试最新快照。
 * `ProfileEvent_KeeperSnapshotRemoteLoaderErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 向跟随者提供快照时，RemoteSnapshotLoader 中发生的远程读取错误次数
 * `ProfileEvent_KeeperSaveSnapshotObject` ([UInt64](/zh/reference/data-types/int-uint)) — 从 leader 接收的快照对象数量
 * `ProfileEvent_KeeperSaveSnapshotFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 快照保存失败次数
@@ -924,7 +1040,14 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperCheckWatchRequest` ([UInt64](/zh/reference/data-types/int-uint)) — remove watches 请求次数
 * `ProfileEvent_KeeperRequestRejectedDueToSoftMemoryLimitCount` ([UInt64](/zh/reference/data-types/int-uint)) — 因超出软内存限制而被拒绝的请求数量
 * `ProfileEvent_KeeperStaleRequestsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 因会话已失效而被跳过的 Keeper 请求数量
+* `ProfileEvent_KeeperTTLRemoveRequestsEnqueued` ([UInt64](/zh/reference/data-types/int-uint)) — 成功加入队列的 TTL 删除请求数量
+* `ProfileEvent_KeeperTTLRemoveRequestsDropped` ([UInt64](/zh/reference/data-types/int-uint)) — 因队列已满而丢弃的 TTL 删除请求数量
 * `ProfileEvent_KeeperLiveSessionsLockWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待获取 Keeper 活跃会话锁所耗费的时间
+* `ProfileEvent_KeeperWatchesTriggered` ([UInt64](/zh/reference/data-types/int-uint)) — watch 触发次数
+* `ProfileEvent_KeeperWatchTriggeredNodeCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 由 `CREATE` 操作触发 watch 的次数
+* `ProfileEvent_KeeperWatchTriggeredNodeDeleted` ([UInt64](/zh/reference/data-types/int-uint)) — 由 `DELETE` 操作触发 watch 的次数
+* `ProfileEvent_KeeperWatchTriggeredNodeDataChanged` ([UInt64](/zh/reference/data-types/int-uint)) — 由更改操作触发 watch 的次数
+* `ProfileEvent_KeeperWatchTriggeredNodeChildrenChanged` ([UInt64](/zh/reference/data-types/int-uint)) — 由子节点更改操作触发 watch 的次数
 * `ProfileEvent_OverflowBreak` ([UInt64](/zh/reference/data-types/int-uint)) — 在设置 &#39;*&#95;overflow&#95;mode&#39; = &#39;break&#39; 时，因查询复杂度限制而中止数据处理且结果不完整的次数。
 * `ProfileEvent_OverflowThrow` ([UInt64](/zh/reference/data-types/int-uint)) — 在设置 &#39;*&#95;overflow&#95;mode&#39; = &#39;throw&#39; 时，因查询复杂度限制而中止数据处理并抛出异常的次数。
 * `ProfileEvent_OverflowAny` ([UInt64](/zh/reference/data-types/int-uint)) — 近似 GROUP BY 生效的次数：即仅对前 &#39;max&#95;rows&#95;to&#95;group&#95;by&#39; 个唯一键执行聚合，而由于 &#39;group&#95;by&#95;overflow&#95;mode&#39; = &#39;any&#39;，其余键被忽略。
@@ -951,6 +1074,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/zh/reference/data-types/int-uint)) — 作为 after&#95;processing = tag 的一部分被添加标签的对象数量
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/zh/reference/data-types/int-uint)) — 插入迭代次数
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 将文件提交为失败或已处理状态的 keeper 请求数
+* `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/zh/reference/data-types/int-uint)) — 在 S3(Azure)Queue 中检测到存储桶锁所有权丢失的次数。非零值表示 persistent&#95;processing&#95;node&#95;ttl&#95;seconds 过小或存在 bug
+* `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/zh/reference/data-types/int-uint)) — S3(Azure)Queue 中成功刷新存储桶锁的次数
 * `ProfileEvent_ObjectStorageQueueSuccessfulCommits` ([UInt64](/zh/reference/data-types/int-uint)) — 成功的 keeper commit 次数
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/zh/reference/data-types/int-uint)) — 失败的 keeper commit 次数
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/zh/reference/data-types/int-uint)) — StorageS3(Azure)Queue 中已取消的文件数
@@ -997,6 +1122,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_MergerMutatorSelectRangePartsCount` ([UInt64](/zh/reference/data-types/int-uint)) — 所选合并 range 中 parts 的数量
 * `ProfileEvent_ConnectionPoolIsFullMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待连接池中可用 slot 的总时间。
 * `ProfileEvent_AsyncLoaderWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询等待异步加载器作业的总时间。
+* `ProfileEvent_AsyncLoaderSpawnFailures` ([UInt64](/zh/reference/data-types/int-uint)) — 由于全局线程池无法提供线程，异步加载器无法创建工作线程的次数。随后，排队的作业由线程池中已有的工作线程执行：正在运行的工作线程，或从等待另一线程池作业的状态中恢复的工作线程。
 * `ProfileEvent_DistrCacheServerSwitches` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。在读/写穿透缓存中，分布式缓存服务器之间切换的次数
 * `ProfileEvent_DistrCacheReadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。从分布式缓存读取所花费的时间
 * `ProfileEvent_DistrCacheFallbackReadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。从后备缓冲区而非分布式缓存读取所花费的时间
@@ -1006,28 +1132,41 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheRangeChange` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。因寻道/last&#95;position 变化而更改读取范围的次数
 * `ProfileEvent_DistrCacheRangeResetBackward` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。因寻道/last&#95;position 变化而重置读取范围的次数
 * `ProfileEvent_DistrCacheRangeResetForward` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。因寻道/last&#95;position 变化而重置读取范围的次数
-* `ProfileEvent_DistrCacheReconnectsAfterTimeout` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。超时后的重连次数
+* `ProfileEvent_DistrCacheReadRequestRetries` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。发生可重试错误后读取请求的重试次数 (包括初始请求创建时的重试)
 * `ProfileEvent_DistrCacheServerUpdates` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 事件。读取或写入期间，由于哈希选中的服务器发生变化 (例如服务器被注销) 而导致的服务器切换次数
-* `ProfileEvent_DistrCacheReadErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。读取期间发生的分布式缓存错误次数
-* `ProfileEvent_DistrCacheWriteErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入期间发生的分布式缓存错误次数
-* `ProfileEvent_DistrCacheWriteReconnectsAfterTimeout` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。超时后的重连次数
+* `ProfileEvent_DistrCacheReadErrors` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。读取请求期间发生的分布式缓存错误总数 (等于 DistrCacheReadErrorsRetriable + DistrCacheReadErrorsNonRetriable)
+* `ProfileEvent_DistrCacheReadErrorsRetriable` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。读取请求期间发生的可重试分布式缓存错误数量 (每次发生都会计数，包括通过重试恢复的错误)
+* `ProfileEvent_DistrCacheReadErrorsNonRetriable` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。读取请求期间发生的不可重试分布式缓存错误数量
+* `ProfileEvent_DistrCacheReadRequestRetriesExhausted` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。可重试读取错误在读取请求重试次数限制内未能成功的次数
+* `ProfileEvent_DistrCacheWriteErrors` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。写入请求期间发生的分布式缓存错误总数 (等于 DistrCacheWriteErrorsRetriable + DistrCacheWriteErrorsNonRetriable) 。服务器发起的写穿透缓存 `Stop` 属于流量控制而非错误，因此不计入此指标
+* `ProfileEvent_DistrCacheWriteErrorsRetriable` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。写入请求期间发生的可重试分布式缓存错误数量 (每次发生都会计数，包括通过重试恢复的错误)
+* `ProfileEvent_DistrCacheWriteErrorsNonRetriable` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。写入请求期间发生的不可重试分布式缓存错误数量
+* `ProfileEvent_DistrCacheWriteRequestRetriesExhausted` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。可重试写入错误在写入请求重试次数限制内未能成功的次数
+* `ProfileEvent_DistrCacheWriteRequestRetries` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。发生可重试错误后写入请求的重试次数
 * `ProfileEvent_DistrCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。在 `WriteBufferFromDistributedCache::writeToFileSegment` 中花费的时间
 * `ProfileEvent_DistrCacheWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入分布式缓存的字节数
 * `ProfileEvent_DistrCacheObjectStorageWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入对象存储所花费的时间
 * `ProfileEvent_DistrCacheObjectStorageWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入对象存储的字节数
+* `ProfileEvent_DistrCacheBackgroundWrites` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。在后台线程中执行的缓存写入次数 (已获取后台写入插槽)
+* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。在调用线程中以内联方式执行的缓存写入次数 (没有可用的后台写入插槽，或该写入用于临时数据)
 * `ProfileEvent_DistrCacheGetResponseMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。等待分布式缓存响应所花费的时间
+* `ProfileEvent_DistrCacheConnectErrors` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。在发起请求前连接分布式缓存服务器失败的次数 (每个请求仅计一次，在所有连接尝试均耗尽后计数；不同于按每次尝试计数的 DistrCacheUnsuccessfulConnectAttempts) 。等待连接池中空闲连接时发生的超时也计入此处。请求创建期间重新连接失败则计入 DistrCacheMakeRequestErrors
 * `ProfileEvent_DistrCacheMakeRequestErrors` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。发起请求时发生的分布式缓存错误次数
 * `ProfileEvent_DistrCacheReceiveResponseErrors` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。接收请求响应时发生的分布式缓存错误次数
+* `ProfileEvent_DistrCacheSystemTablesErrors` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。查询内部信息系统表 (system.distributed&#95;cache、system.distributed&#95;cache&#95;metrics、system.distributed&#95;cache&#95;events) 时发生的分布式缓存错误次数。这些请求不会重试，因此可重试和不可重试错误会一并统计
 * `ProfileEvent_DistrCacheReceivedDataPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Data 数据包总数
 * `ProfileEvent_DistrCacheReceivedDataPacketsBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Data 数据包字节总数
 * `ProfileEvent_DistrCacheReceivedOkPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Ok 数据包总数
-* `ProfileEvent_DistrCacheReceivedErrorPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。从分布式缓存接收到的 Error 数据包总数
-* `ProfileEvent_DistrCacheReceivedCredentialsRefreshPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。从分布式缓存接收到的 RefreshCredentials 数据包总数
-* `ProfileEvent_DistrCacheReceivedStopPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。从分布式缓存接收到的 Stop 数据包总数
-* `ProfileEvent_DistrCacheSentDataPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。发送到分布式缓存的 Data 数据包总数
+* `ProfileEvent_DistrCacheReceivedErrorPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Error 数据包总数
+* `ProfileEvent_DistrCacheReceivedCredentialsRefreshPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 RefreshCredentials 数据包总数
+* `ProfileEvent_DistrCacheReceivedStopPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Stop 数据包总数
+* `ProfileEvent_DistrCacheReceivedSlowDownPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 SlowDown 数据包总数 (由于该客户端相对于其权重打开的连接过多，服务器拒绝了新连接)
+* `ProfileEvent_DistrCacheSentDataPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。发送到分布式缓存的 Data 数据包总数
 * `ProfileEvent_DistrCacheSentDataPacketsBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。发送到分布式缓存的 Data 数据包字节数
 * `ProfileEvent_DistrCacheUnusedPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。从分布式缓存跳过的未使用数据包数量
 * `ProfileEvent_DistrCacheUnusedDataPacketsBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。被忽略的 Data 数据包字节数
+* `ProfileEvent_DistrCacheUnusedDataPacketsBytesUnknownRequest` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。被忽略的 Data 数据包中 (属于 DistrCacheUnusedDataPacketsBytes) 对应的字节数；这些数据包到达时，其对应请求已不再由客户端跟踪 (例如，服务器已发送更多数据后，通过 EndRequest 停止读取)
+* `ProfileEvent_DistrCacheUnusedDataPacketsBytesReadRangeIdChanged` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。被忽略的 Data 数据包中 (属于 DistrCacheUnusedDataPacketsBytes) 对应的字节数；这些数据包到达时对应的请求仍在跟踪，但读取范围 ID 已过期 (同一请求上已请求更新的读取范围)
 * `ProfileEvent_DistrCacheUnusedPacketsBufferAllocations` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。无法复用现有缓冲区时额外分配缓冲区的次数
 * `ProfileEvent_DistrCacheLockRegistryMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache registry 事件。获取 DistributedCacheRegistry 锁所花费的时间
 * `ProfileEvent_DistrCacheRegistryUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache registry 事件。更新分布式缓存 registry 所花费的时间
@@ -1064,6 +1203,11 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheServerCachedReadBufferObjectStorageReadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 服务器事件。从文件系统缓存读取时，分布式缓存从对象存储读取的字节数
 * `ProfileEvent_DistrCacheServerCachedReadBufferCachePredownloadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 服务器事件。从文件系统缓存读取时，分布式缓存为预下载而从对象存储读取的字节数
 * `ProfileEvent_DistrCacheServerSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 服务器事件。由于先前连接尝试失败而跳过 Distributed Cache 服务器的次数
+* `ProfileEvent_DistrCacheServerShutdownConnectionsMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 服务器事件。服务器关闭期间，在 shutdownAllConnections 中等待活动连接完成 (或被强制关闭) 所耗费的时间
+* `ProfileEvent_DistrCacheServerConnectionsDroppedOverLimit` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 服务器事件。因连接数超过限制而关闭的连接数 (从相对于其权重拥有最多连接数的客户端关闭)
+* `ProfileEvent_DistrCacheServerConnectionsRejectedOverLimit` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 服务器事件。由于连接客户端超出其连接配额而通过 SlowDown 数据包拒绝的新连接数
+* `ProfileEvent_DistrCacheServerConnectionRegistryLockWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 服务器事件。发生竞争时等待全局连接 registry 互斥锁所花费的时间 (需要重新索引或移除 bucket 时执行 identify、setClientWeight、驱逐和注销)
+* `ProfileEvent_DistrCacheServerConnectionRegistryClientLockWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 服务器事件。发生竞争时等待每个客户端连接 bucket 互斥锁所花费的时间 (注册/注销/identify/驱逐)
 * `ProfileEvent_LogTest` ([UInt64](/zh/reference/data-types/int-uint)) — 级别为 Test 的日志消息数量
 * `ProfileEvent_LogTrace` ([UInt64](/zh/reference/data-types/int-uint)) — 级别为 Trace 的日志消息数量
 * `ProfileEvent_LogDebug` ([UInt64](/zh/reference/data-types/int-uint)) — 级别为 Debug 的日志消息数量
@@ -1087,6 +1231,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasUsedCount` ([UInt64](/zh/reference/data-types/int-uint)) — 使用基于任务的并行副本执行查询时所使用的副本数
 * `ProfileEvent_ParallelReplicasAvailableCount` ([UInt64](/zh/reference/data-types/int-uint)) — 使用基于任务的并行副本执行查询时可用的副本数
 * `ProfileEvent_ParallelReplicasUnavailableCount` ([UInt64](/zh/reference/data-types/int-uint)) — 使用基于任务的并行副本执行查询时，被选中但在查询执行期间发现不可用的副本数
+* `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时分派给远程工作线程的任务数。非零值表示该查询实际以分布式方式执行。
+* `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/zh/reference/data-types/int-uint)) — 当 make&#95;distributed&#95;plan 查询通过本地执行器 (distributed&#95;plan&#95;execute&#95;locally) 在进程内执行，而非分派给远程工作线程时，设为 1。
+* `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时，至少被分配一个任务的不同主机数量。
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/zh/reference/data-types/int-uint)) — 虚拟分区片段更新次数
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/zh/reference/data-types/int-uint)) — 由 leader 执行的虚拟分区片段更新
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 虚拟分区片段更新耗时 (微秒)
@@ -1119,6 +1266,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdateTaskRuns` ([UInt64](/zh/reference/data-types/int-uint)) — updateReplicaSetTask 的运行次数
 * `ProfileEvent_SharedMergeTreeOptimizeAsync` ([UInt64](/zh/reference/data-types/int-uint)) — 已执行的异步 OPTIMIZE 查询数量
 * `ProfileEvent_SharedMergeTreeOptimizeSync` ([UInt64](/zh/reference/data-types/int-uint)) — 已执行的同步 OPTIMIZE 查询数量
+* `ProfileEvent_SharedMergeTreePartitionOperationRetries` ([UInt64](/zh/reference/data-types/int-uint)) — 因并发变更而必须重试 Keeper 多写入的分区级操作 (DROP/MOVE/REPLACE/CLONE/TRUNCATE PARTITION) 次数
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJob` ([UInt64](/zh/reference/data-types/int-uint)) — 调用 scheduleDataProcessingJob 的次数
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJobNothingToScheduled` ([UInt64](/zh/reference/data-types/int-uint)) — 调用 scheduleDataProcessingJob 但没有可调度任务的次数
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJobMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — scheduleDataProcessingJob 的执行时间
@@ -1149,11 +1297,21 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 为更新副本集而发起的 ZooKeeper 请求总数
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 更新副本集所花费的时间
 * `ProfileEvent_KeeperLogsEntryReadFromLatestCache` ([UInt64](/zh/reference/data-types/int-uint)) — 从最新日志缓存中读取的 Keeper 日志条目数
-* `ProfileEvent_KeeperLogsEntryReadFromCommitCache` ([UInt64](/zh/reference/data-types/int-uint)) — 从提交日志缓存中读取的 Keeper 日志条目数
 * `ProfileEvent_KeeperLogsEntryReadFromFile` ([UInt64](/zh/reference/data-types/int-uint)) — 直接从更新日志文件中读取的 Keeper 日志条目数
-* `ProfileEvent_KeeperLogsPrefetchedEntries` ([UInt64](/zh/reference/data-types/int-uint)) — 从更新日志文件中预拉取的 Keeper 日志条目数
+* `ProfileEvent_KeeperLogsReadAheadFillReopens` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 预读取填充任务重新打开或对更新日志文件寻道的次数
+* `ProfileEvent_KeeperLogsReadAheadFillDecodedEntries` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 预读取填充任务解码的日志条目数
+* `ProfileEvent_KeeperLogsReadAheadCursorsInstalled` ([UInt64](/zh/reference/data-types/int-uint)) — 加入 Keeper 更新日志预读取读取器 (peer 或 commit) 队列、且填充任务尚未覆盖的新填充游标数量
+* `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/zh/reference/data-types/int-uint)) — 因并发 write&#95;at 截断在服务前使其失效而被丢弃的 Keeper 更新日志读取计划数量
+* `ProfileEvent_KeeperLogsReadAheadScheduleRejected` ([UInt64](/zh/reference/data-types/int-uint)) — 由于预读取线程池队列已满而无法创建 Keeper 更新日志预读取读取器的次数；调用方会回退到直接读取
+* `ProfileEvent_KeeperLogsReadAheadReadersCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 创建的 Keeper 更新日志预读取读取器 (及其填充任务) 数量；跨文件边界保持不变表示读取器被复用，而非销毁后重新创建
+* `ProfileEvent_KeeperLogsReadAheadTimeoutFallbacks` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 更新日志预读取服务请求等待填充任务超时后，回退为直接读取剩余尾部的次数
+* `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/zh/reference/data-types/int-uint)) — 从 commit 预读取读取器的解码窗口提供给 commit 线程的日志条目数 (快速路径弹出或窗口首项排空弹出)
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 更新日志的字节数
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 更新日志执行 fsync 所花费的时间 (仅限未压缩日志)
+* `ProfileEvent_KeeperChangelogStartupReadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 启动期间并行读取更新日志所花费的墙钟时间
+* `ProfileEvent_KeeperChangelogStartupStitchMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将按文件并行启动读取结果拼接到 LogEntryStorage 状态所花费的墙钟时间
+* `ProfileEvent_KeeperChangelogStartupReadEntries` ([UInt64](/zh/reference/data-types/int-uint)) — 并行 Keeper 启动读取器验证的更新日志记录数
+* `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 并行 Keeper 启动读取器从更新日志文件读取的物理字节数 (校验和 + 头部 + blob)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 快照文件的字节数
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 快照文件执行 fsync 所花费的时间
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 为存储后端创建的连接数
@@ -1191,10 +1349,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_WriteBufferFromHTTPRequestsSent` ([UInt64](/zh/reference/data-types/int-uint)) — WriteBufferFromHTTP 发送的 HTTP 请求数量
 * `ProfileEvent_WriteBufferFromHTTPBytes` ([UInt64](/zh/reference/data-types/int-uint)) — WriteBufferFromHTTP 接收和发送的载荷字节总大小。不包括 HTTP 请求头。
 * `ProfileEvent_ConcurrencyControlSlotsGranted` ([UInt64](/zh/reference/data-types/int-uint)) — 按照每个查询保证 1 个线程的规则，以及对设置 &#39;use&#95;concurrency&#95;control&#39; = 0 的查询授予的 CPU 插槽数量
-* `ProfileEvent_ConcurrencyControlSlotsDelayed` ([UInt64](/zh/reference/data-types/int-uint)) — 初始未获授予、需要等待空闲 CPU 插槽的 CPU 插槽数量
+* `ProfileEvent_ConcurrencyControlSlotsDelayed` ([UInt64](/zh/reference/data-types/int-uint)) — 因容量压力而在分配时未获授予的 CPU 插槽数量。不包括因延迟分配而暂不分配的插槽。
 * `ProfileEvent_ConcurrencyControlSlotsAcquired` ([UInt64](/zh/reference/data-types/int-uint)) — 已获取的 CPU 插槽总数
 * `ProfileEvent_ConcurrencyControlSlotsAcquiredNonCompeting` ([UInt64](/zh/reference/data-types/int-uint)) — 已获取的非竞争 CPU 插槽总数
-* `ProfileEvent_ConcurrencyControlQueriesDelayed` ([UInt64](/zh/reference/data-types/int-uint)) — 需要等待 CPU 插槽扩容的 CPU 插槽分配 (查询) 总数
+* `ProfileEvent_ConcurrencyControlQueriesDelayed` ([UInt64](/zh/reference/data-types/int-uint)) — 因 CPU 插槽容量压力而延迟的查询数量。该指标反映竞争情况，不包括无竞争服务器上延迟扩容的等待。
 * `ProfileEvent_ConcurrencyControlWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询等待 CPU 插槽资源请求的总时间。
 * `ProfileEvent_ConcurrencyControlPreemptedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询因 CPU 插槽被抢占而等待的总时间
 * `ProfileEvent_ConcurrencyControlPreemptions` ([UInt64](/zh/reference/data-types/int-uint)) — CPU 抢占的总次数
@@ -1202,6 +1360,12 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ConcurrencyControlDownscales` ([UInt64](/zh/reference/data-types/int-uint)) — CPU 缩容事件的总次数
 * `ProfileEvent_ConcurrentQuerySlotsAcquired` ([UInt64](/zh/reference/data-types/int-uint)) — 已获取的查询插槽总数
 * `ProfileEvent_ConcurrentQueryWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询等待获取查询插槽的总时间
+* `ProfileEvent_MemoryReservationAdmitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询等待初始内存预留获准的总时间
+* `ProfileEvent_MemoryReservationIncreaseMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询等待增加内存预留获批的总时间
+* `ProfileEvent_MemoryReservationIncreases` ([UInt64](/zh/reference/data-types/int-uint)) — 已获批的内存预留增加请求总数
+* `ProfileEvent_MemoryReservationDecreases` ([UInt64](/zh/reference/data-types/int-uint)) — 已获批的内存预留减少请求总数
+* `ProfileEvent_MemoryReservationKilled` ([UInt64](/zh/reference/data-types/int-uint)) — 内存预留终止信号总数
+* `ProfileEvent_MemoryReservationFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 失败的内存预留总数
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorUpdateCount` ([UInt64](/zh/reference/data-types/int-uint)) — 合并协调器更新的总次数
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 更新合并协调器状态所花费的总时间
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorFetchMetadataMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 合并协调器内部拉取最新元数据所花费的总时间
@@ -1219,6 +1383,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_CoordinatedMergesMergeAssignmentResponseMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在合并分配处理程序中花费的总时间
 * `ProfileEvent_SharedDatabaseCatalogFailedToApplyState` ([UInt64](/zh/reference/data-types/int-uint)) — SharedDatabaseCatalog 中应用新状态失败的次数
 * `ProfileEvent_SharedDatabaseCatalogStateApplicationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 SharedDatabaseCatalog 中应用新状态所花费的总时间
+* `ProfileEvent_SharedCatalogStateFetchFullFallback` ([UInt64](/zh/reference/data-types/int-uint)) — Shared Catalog 状态的增量拉取连续失败次数过多后，改为执行完整状态拉取的次数
 * `ProfileEvent_MemoryWorkerRun` ([UInt64](/zh/reference/data-types/int-uint)) — MemoryWorker 在后台运行的次数
 * `ProfileEvent_MemoryWorkerRunElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — MemoryWorker 执行后台工作的总耗时
 * `ProfileEvent_ParquetFetchWaitTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待解码线程 (非预取线程) 读取 Parquet 文件所耗费的时间
@@ -1228,8 +1393,18 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 WebAssembly 代码所花费的时间
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的 WebAssembly 隔离区数量
 * `ProfileEvent_WasmMemoryAllocated` ([UInt64](/zh/reference/data-types/int-uint)) — 为 WebAssembly 隔离区分配的内存总量
+* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/zh/reference/data-types/int-uint)) — 可执行和 executable&#95;pool 用户自定义函数的调用次数。
+* `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 executable 和 executable&#95;pool 用户自定义函数所花费的挂钟时间，单位为微秒。
+* `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数子进程消耗的用户态 CPU 时间，单位为微秒。
+* `ProfileEvent_ExecutableUserDefinedFunctionSystemTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数子进程消耗的内核态 CPU 时间，单位为微秒。
+* `ProfileEvent_ExecutableUserDefinedFunctionPeakMemoryByteSeconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数子进程每进程峰值内存按挂钟时间积分后的值，单位为字节秒。
+* `ProfileEvent_ExecutableUserDefinedFunctionInputBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 executable 和 executable&#95;pool 用户自定义函数子进程 stdin 的总字节数。
+* `ProfileEvent_ExecutableUserDefinedFunctionOutputBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从 executable 和 executable&#95;pool 用户自定义函数子进程 stdout 读取的总字节数。
+* `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable&#95;pool 用户自定义函数池耗尽时，等待 tryBorrowObject 所花费的时间，单位为微秒。
 * `ProfileEvent_ParquetReadRowGroups` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 数据中读取的行组总数
 * `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 数据中被剪枝的行组总数
+* `ProfileEvent_ParquetReadPages` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 数据中读取的数据页总数
+* `ProfileEvent_ParquetPrunedPages` ([UInt64](/zh/reference/data-types/int-uint)) — 通过列索引从 Parquet 数据中剪枝的页总数
 * `ProfileEvent_ParquetDecodingTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 由 Parquet reader 发出的任务数
 * `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/zh/reference/data-types/int-uint)) — 由 Parquet reader 发送到线程池的任务批次
 * `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/zh/reference/data-types/int-uint)) — `DB::Parquet::Prefetcher` 使用 `ReadMode::RandomRead` 的读取总次数
@@ -1242,6 +1417,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_QueryPreempted` ([UInt64](/zh/reference/data-types/int-uint)) — 由于 `priority` 设置导致任务被暂停并等待的次数
 * `ProfileEvent_IndexBinarySearchAlgorithm` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引标记上使用二分查找算法的次数
 * `ProfileEvent_IndexGenericExclusionSearchAlgorithm` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引标记上使用通用排除搜索算法的次数
+* `ProfileEvent_IndexGenericExclusionSearchStepLimitReached` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引标记上执行通用排除搜索时，达到 merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps 并接受剩余标记范围、不再继续拆分的次数
 * `ProfileEvent_ParallelReplicasQueryCount` ([UInt64](/zh/reference/data-types/int-uint)) — 单次查询执行期间，使用并行副本执行的 (子) 查询数量
 * `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式查询执行期间，与其他服务器重新建立连接的次数。当从连接池中获取到过期连接时，可能会发生这种情况
 * `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式查询执行期间，与其他服务器建立连接的次数。当建立新连接而不是使用连接池中的现有连接时，就会发生这种情况。
@@ -1273,12 +1449,35 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/zh/reference/data-types/int-uint)) — 由 JOIN 运行时过滤器检查的行数
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/zh/reference/data-types/int-uint)) — 通过 JOIN 运行时过滤器的行数 (即未被其过滤掉的行数)
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 块中被 JOIN 运行时过滤器跳过的行数
+* `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/zh/reference/data-types/int-uint)) — JOIN 运行时过滤器为读取时剪枝而检查的粒度数
+* `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/zh/reference/data-types/int-uint)) — JOIN 运行时过滤器在读取时剪枝的粒度数
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 构建 JOIN 右侧后所执行后处理步骤的耗时
 * `ProfileEvent_AIInputTokens` ([UInt64](/zh/reference/data-types/int-uint)) — 查询中所有 AI 函数调用消耗的 prompt 标记总数
 * `ProfileEvent_AIOutputTokens` ([UInt64](/zh/reference/data-types/int-uint)) — 查询中所有 AI 函数调用消耗的补全标记总数
 * `ProfileEvent_AIAPICalls` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 AI 提供商的 HTTP 请求数
 * `ProfileEvent_AIRowsProcessed` ([UInt64](/zh/reference/data-types/int-uint)) — 获得 AI 结果的行数
 * `ProfileEvent_AIRowsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 因配额限制或错误而获得默认值的行数
+* `ProfileEvent_StatelessWorkerRequested` ([UInt64](/zh/reference/data-types/int-uint)) — 查询为分布式查询执行请求的无状态工作线程数量。
+* `ProfileEvent_StatelessWorkerProvided` ([UInt64](/zh/reference/data-types/int-uint)) — 为分布式查询执行向查询提供的无状态工作线程数量。
+* `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询等待无状态工作线程完成预配所花费的总时间。
+* `ProfileEvent_StatelessWorkerProvisioningWaits` ([UInt64](/zh/reference/data-types/int-uint)) — 查询必须等待无状态工作线程发现服务提供工作线程的次数。
+* `ProfileEvent_StatelessWorkerCreateLeaseRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 向无状态工作线程发现服务发送以获取工作线程的 create&#95;lease 请求数量。
+* `ProfileEvent_StatelessWorkerCreateLeaseMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 向无状态工作线程发现服务发起 create&#95;lease 请求所花费的总时间。
+* `ProfileEvent_StatelessWorkerCreateLeaseErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 向无状态工作线程发现服务发起 create&#95;lease 请求失败的次数 (任意错误或超时) 。
+* `ProfileEvent_StatelessWorkerGetLeaseRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 向无状态工作线程发现服务发送以刷新已租用工作线程列表的 get&#95;lease 请求数量。
+* `ProfileEvent_StatelessWorkerGetLeaseMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 向无状态工作线程发现服务发起 get&#95;lease 请求所花费的总时间。
+* `ProfileEvent_StatelessWorkerGetLeaseErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程发现服务的 get&#95;lease 请求失败次数 (包括任何错误或超时) 。
+* `ProfileEvent_StatelessWorkerUpdateLeaseRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 为续订工作线程租约而发送到无状态工作线程发现服务的 update&#95;lease 请求数量。
+* `ProfileEvent_StatelessWorkerUpdateLeaseMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 向无状态工作线程发现服务发送 update&#95;lease 请求所花费的总时间。
+* `ProfileEvent_StatelessWorkerUpdateLeaseErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程发现服务的 update&#95;lease 请求失败次数 (包括任何错误或超时) 。
+* `ProfileEvent_StatelessWorkerServerRegisterRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程向无状态工作线程发现服务发送的注册请求数量。
+* `ProfileEvent_StatelessWorkerServerRegisterMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程向无状态工作线程发现服务注册所花费的总时间。
+* `ProfileEvent_StatelessWorkerServerRegisterErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程向无状态工作线程发现服务发送的注册请求失败次数 (包括任何错误或超时) 。
+* `ProfileEvent_StatelessWorkerServerHeartbeatRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程向无状态工作线程发现服务发送心跳的次数。
+* `ProfileEvent_StatelessWorkerServerHeartbeatMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程向无状态工作线程发现服务发送心跳所花费的总时间。
+* `ProfileEvent_StatelessWorkerServerHeartbeatErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程向无状态工作线程发现服务发送心跳失败的次数 (包括任何错误或超时) 。
+* `ProfileEvent_StatelessWorkerServerTenantBindings` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程被分配给租户以处理其查询的次数。
+* `ProfileEvent_StatelessWorkerServerLeasesLost` ([UInt64](/zh/reference/data-types/int-uint)) — 无状态工作线程的租约结束并开始等待关闭的次数。
 * `CurrentMetric_Query` ([Int64](/zh/reference/data-types/int-uint)) — 正在执行的查询数
 * `CurrentMetric_ASTFuzzerAccumulatedFragments` ([Int64](/zh/reference/data-types/int-uint)) — 服务器端 AST fuzzer 为后续变更累积的 AST 片段数量
 * `CurrentMetric_QueryNonInternal` ([Int64](/zh/reference/data-types/int-uint)) — 正在执行的非内部查询数 (由用户发起的查询，不包括 ClickHouse 的内部查询)
@@ -1306,6 +1505,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_BackgroundDistributedSchedulePoolSize` ([Int64](/zh/reference/data-types/int-uint)) — BackgroundDistributedSchedulePool 中任务数量上限
 * `CurrentMetric_BackgroundMessageBrokerSchedulePoolTask` ([Int64](/zh/reference/data-types/int-uint)) — 用于消息流式传输的 BackgroundMessageBrokerSchedulePool 中活跃任务的数量
 * `CurrentMetric_BackgroundMessageBrokerSchedulePoolSize` ([Int64](/zh/reference/data-types/int-uint)) — 用于消息流式传输的 BackgroundMessageBrokerSchedulePool 中任务数量上限
+* `CurrentMetric_BackgroundStreamingSchedulePoolTask` ([Int64](/zh/reference/data-types/int-uint)) — 用于流式查询任务的 BackgroundStreamingSchedulePool 中活跃任务的数量
+* `CurrentMetric_BackgroundStreamingSchedulePoolSize` ([Int64](/zh/reference/data-types/int-uint)) — 用于流式查询任务的 BackgroundStreamingSchedulePool 中任务数量上限
 * `CurrentMetric_CacheDictionaryUpdateQueueBatches` ([Int64](/zh/reference/data-types/int-uint)) — CacheDictionaries 中更新队列里“批次” (一组键) 的数量。
 * `CurrentMetric_CacheDictionaryUpdateQueueKeys` ([Int64](/zh/reference/data-types/int-uint)) — CacheDictionaries 中更新队列里键的精确数量。
 * `CurrentMetric_DiskSpaceReservedForMerge` ([Int64](/zh/reference/data-types/int-uint)) — 为当前正在运行的后台合并预留的磁盘空间。它略大于当前正在合并的 parts 总大小。
@@ -1330,6 +1531,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_TemporaryFilesUnknown` ([Int64](/zh/reference/data-types/int-uint)) — 在用途未知的情况下创建的临时 File 数量
 * `CurrentMetric_Read` ([Int64](/zh/reference/data-types/int-uint)) — 正在进行中的读 (read、pread、io&#95;getevents 等) 系统调用数量
 * `CurrentMetric_RemoteRead` ([Int64](/zh/reference/data-types/int-uint)) — 正在进行中的远程读取操作数量
+* `CurrentMetric_ReaderExecutorActive` ([Int64](/zh/reference/data-types/int-uint)) — 存活的 ReaderExecutor 实例数量。
+* `CurrentMetric_ReaderExecutorChainedBufferBytes` ([Int64](/zh/reference/data-types/int-uint)) — 当前由存活的 ReaderExecutor 链式缓冲区 (OwnedChainedBuffer) 持有的字节数——即正在进行的读取所占用的内存，而非累计总量。
+* `CurrentMetric_ReaderExecutorLongConnections` ([Int64](/zh/reference/data-types/int-uint)) — ReaderExecutor 为顺序读取优化而当前保持打开的长源连接数量。
 * `CurrentMetric_Write` ([Int64](/zh/reference/data-types/int-uint)) — 正在进行中的写 (write、pwrite、io&#95;getevents 等) 系统调用数量
 * `CurrentMetric_NetworkReceive` ([Int64](/zh/reference/data-types/int-uint)) — 从网络接收数据的线程数。仅包括与 ClickHouse 相关的网络交互，不包括第三方库的交互。
 * `CurrentMetric_NetworkSend` ([Int64](/zh/reference/data-types/int-uint)) — 向网络发送数据的线程数。仅包括与 ClickHouse 相关的网络交互，不包括第三方库的交互。
@@ -1445,6 +1649,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_AsynchronousInsertThreads` ([Int64](/zh/reference/data-types/int-uint)) — AsynchronousInsert 线程池中的线程数量。
 * `CurrentMetric_AsynchronousInsertThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — AsynchronousInsert 线程池中正在运行任务的线程数量。
 * `CurrentMetric_AsynchronousInsertThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — AsynchronousInsert 线程池中已排队或正在运行的作业数量。
+* `CurrentMetric_QueryRunnerThreads` ([Int64](/zh/reference/data-types/int-uint)) — QueryRunner 线程池中的线程数量。
+* `CurrentMetric_QueryRunnerThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — QueryRunner 线程池中正在运行任务的线程数量。
+* `CurrentMetric_QueryRunnerThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — QueryRunner 线程池中已排队或正在运行的作业数量。
 * `CurrentMetric_AsynchronousInsertQueueSize` ([Int64](/zh/reference/data-types/int-uint)) — AsynchronousInsert 队列中待处理任务的数量。
 * `CurrentMetric_AsynchronousInsertQueueBytes` ([Int64](/zh/reference/data-types/int-uint)) — AsynchronousInsert 队列中待处理字节数。
 * `CurrentMetric_StartupSystemTablesThreads` ([Int64](/zh/reference/data-types/int-uint)) — StartupSystemTables 线程池中的线程数量。
@@ -1486,9 +1693,18 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_IcebergCatalogThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — IcebergCatalog 线程池中排队或活跃的作业数量。
 * `CurrentMetric_IcebergSchedulePoolTask` ([Int64](/zh/reference/data-types/int-uint)) — Iceberg 表的后台调度池中的任务数量。
 * `CurrentMetric_IcebergSchedulePoolSize` ([Int64](/zh/reference/data-types/int-uint)) — Iceberg 表的后台调度池中的任务数量上限。
+* `CurrentMetric_IcebergCompactionThreads` ([Int64](/zh/reference/data-types/int-uint)) — IcebergCompaction 线程池中的线程数量。
+* `CurrentMetric_IcebergCompactionThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — IcebergCompaction 线程池中正在运行任务的线程数量。
+* `CurrentMetric_IcebergCompactionThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — IcebergCompaction 线程池中已排队或正在运行的作业数量。
+* `CurrentMetric_IcebergCompactionSnapshots` ([Int64](/zh/reference/data-types/int-uint)) — Iceberg 合并整理次数。
+* `CurrentMetric_IcebergCompactionMerge` ([Int64](/zh/reference/data-types/int-uint)) — 正在执行的后台 Iceberg 合并整理合并操作数量。
+* `CurrentMetric_IcebergCompactionSourceFiles` ([Int64](/zh/reference/data-types/int-uint)) — 参与当前正在执行的 Iceberg 合并整理合并操作的输入源文件数量 (数据文件和位置删除文件) 。
 * `CurrentMetric_ParallelWithQueryThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于处理 PARALLEL WITH 查询的线程池中的线程数量。
 * `CurrentMetric_ParallelWithQueryActiveThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于处理 PARALLEL WITH 查询的线程池中的活跃线程数量。
 * `CurrentMetric_ParallelWithQueryScheduledThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于处理 PARALLEL WITH 查询的线程池中排队或活跃的作业数量。
+* `CurrentMetric_UDFDriverInvokerThreads` ([Int64](/zh/reference/data-types/int-uint)) — 处理可执行 UDF 驱动命令管道的线程池中的线程数量。
+* `CurrentMetric_UDFDriverInvokerThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 处理可执行 UDF 驱动命令管道的线程池中的活跃线程数量。
+* `CurrentMetric_UDFDriverInvokerThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 处理可执行 UDF 驱动命令管道的线程池中已排队或活跃的作业数量。
 * `CurrentMetric_DiskPlainRewritableAzureDirectoryMapSize` ([Int64](/zh/reference/data-types/int-uint)) — AzureObjectStorage 的 &#39;plain&#95;rewritable&#39; 内存映射中本地到远程路径条目的数量。
 * `CurrentMetric_DiskPlainRewritableAzureFileCount` ([Int64](/zh/reference/data-types/int-uint)) — AzureObjectStorage 的 &#39;plain&#95;rewritable&#39; 内存映射中文件条目的数量。
 * `CurrentMetric_DiskPlainRewritableLocalDirectoryMapSize` ([Int64](/zh/reference/data-types/int-uint)) — LocalObjectStorage 的 &#39;plain&#95;rewritable&#39; 内存映射中本地到远程路径条目的数量。
@@ -1549,6 +1765,14 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_KeeperReadThreads` ([Int64](/zh/reference/data-types/int-uint)) — Keeper server 读取线程池中的线程数。
 * `CurrentMetric_KeeperReadThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — Keeper server 读取线程池中的活跃线程数。
 * `CurrentMetric_KeeperReadThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — Keeper server 读取线程池中已排队或处于活跃状态的作业数。该指标没有实际意义，因为此线程池中的实际读取任务是通过另一种机制调度的。
+* `CurrentMetric_KeeperChangelogReadAheadThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志预读填充任务的线程池中的线程数。
+* `CurrentMetric_KeeperChangelogReadAheadThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志预读填充任务的线程池中的活跃线程数。
+* `CurrentMetric_KeeperChangelogReadAheadThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志预读填充任务的线程池中已排队或处于活跃状态的作业数。
+* `CurrentMetric_KeeperChangelogStartupReadThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志启动时并行读取的线程池中的线程数。
+* `CurrentMetric_KeeperChangelogStartupReadThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志启动时并行读取的线程池中的活跃线程数。
+* `CurrentMetric_KeeperChangelogStartupReadThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志启动时并行读取的线程池中已排队或处于活跃状态的作业数。
+* `CurrentMetric_KeeperBlockCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — Keeper 存储块缓存中所有块的总大小 (以字节为单位) 。
+* `CurrentMetric_KeeperBlockCacheBlocks` ([Int64](/zh/reference/data-types/int-uint)) — Keeper 存储块缓存中的块数量。
 * `CurrentMetric_DistributedBytesToInsert` ([Int64](/zh/reference/data-types/int-uint)) — Distributed 表异步插入中待处理的字节数。会汇总每个分片的字节数。
 * `CurrentMetric_BrokenDistributedBytesToInsert` ([Int64](/zh/reference/data-types/int-uint)) — Distributed 表异步插入中已标记为损坏的字节数。会汇总每个分片的字节数。
 * `CurrentMetric_DistributedFilesToInsert` ([Int64](/zh/reference/data-types/int-uint)) — Distributed 表异步插入中待处理的文件数。会汇总每个分片的文件数。
@@ -1573,6 +1797,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_PartsCompact` ([Int64](/zh/reference/data-types/int-uint)) — 紧凑格式 parts。
 * `CurrentMetric_MMappedFiles` ([Int64](/zh/reference/data-types/int-uint)) — 内存映射文件总数。
 * `CurrentMetric_MMappedFileBytes` ([Int64](/zh/reference/data-types/int-uint)) — 内存映射文件区域的总大小。
+* `CurrentMetric_FiberStacks` ([Int64](/zh/reference/data-types/int-uint)) — 当前已分配的 fiber 栈数量 (fiber 用于与远程副本进行异步通信) 。
+* `CurrentMetric_FiberStackBytes` ([Int64](/zh/reference/data-types/int-uint)) — 当前已分配的 fiber 栈总大小。
 * `CurrentMetric_AsynchronousReadWait` ([Int64](/zh/reference/data-types/int-uint)) — 等待异步读取的线程数。
 * `CurrentMetric_PendingAsyncInsert` ([Int64](/zh/reference/data-types/int-uint)) — 等待刷盘的异步插入数。
 * `CurrentMetric_KafkaConsumers` ([Int64](/zh/reference/data-types/int-uint)) — 活跃 Kafka 消费者数量。
@@ -1595,14 +1821,23 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_FilesystemCacheDelayedCleanupElements` ([Int64](/zh/reference/data-types/int-uint)) — 后台清理队列中的文件系统缓存元素。
 * `CurrentMetric_FilesystemCacheHoldFileSegments` ([Int64](/zh/reference/data-types/int-uint)) — 当前被保留且不可释放的文件系统缓存 File 段数量。
 * `CurrentMetric_FilesystemCacheKeys` ([Int64](/zh/reference/data-types/int-uint)) — 文件系统缓存中的键数量。
+* `CurrentMetric_FilesystemCacheOvercommitUsers` ([Int64](/zh/reference/data-types/int-uint)) — 由 overcommit 文件系统缓存淘汰策略跟踪的用户数量
 * `CurrentMetric_FilesystemCacheReserveThreads` ([Int64](/zh/reference/data-types/int-uint)) — 尝试在缓存中预留空间的线程数。
+* `CurrentMetric_FilesystemCacheEvictionThreads` ([Int64](/zh/reference/data-types/int-uint)) — 文件系统缓存后台淘汰 (移除) 池中的线程数
+* `CurrentMetric_FilesystemCacheEvictionThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 文件系统缓存后台淘汰池中正在运行任务的线程数
+* `CurrentMetric_FilesystemCacheEvictionThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 文件系统缓存后台淘汰池中已排队或正在运行的作业数
+* `CurrentMetric_FilesystemCacheDropCacheThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于通过 SYSTEM DROP FILESYSTEM CACHE 并行移除键的文件系统缓存池中的线程数
+* `CurrentMetric_FilesystemCacheDropCacheThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 文件系统缓存键移除池中正在运行任务的线程数
+* `CurrentMetric_FilesystemCacheDropCacheThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 文件系统缓存键移除池中已排队或正在运行的作业数
 * `CurrentMetric_AsyncInsertCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — 缓存中 async insert 哈希 ID 的数量
 * `CurrentMetric_IcebergMetadataFilesCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — Iceberg 元数据缓存的大小 (以字节为单位)
 * `CurrentMetric_IcebergMetadataFilesCacheFiles` ([Int64](/zh/reference/data-types/int-uint)) — Iceberg 元数据缓存中已缓存文件的数量
+* `CurrentMetric_PaimonMetadataFilesCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — Paimon 元数据缓存的大小 (以字节为单位)
+* `CurrentMetric_PaimonMetadataFilesCacheFiles` ([Int64](/zh/reference/data-types/int-uint)) — Paimon 元数据缓存中已缓存文件的数量
 * `CurrentMetric_ParquetMetadataCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — Parquet 元数据缓存的大小 (以字节为单位)
 * `CurrentMetric_ParquetMetadataCacheFiles` ([Int64](/zh/reference/data-types/int-uint)) — Parquet 元数据缓存中已缓存文件的数量
 * `CurrentMetric_AvroSchemaCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — Avro schema 缓存的大小 (以字节为单位)
-* `CurrentMetric_AvroSchemaCacheCells` ([Int64](/zh/reference/data-types/int-uint)) — 已缓存的 Avro schema 数量
+* `CurrentMetric_AvroSchemaCacheCells` ([Int64](/zh/reference/data-types/int-uint)) — 已缓存的 Avro schema 数量，包括已注册和已拉取的 schema。
 * `CurrentMetric_AvroSchemaRegistryCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — Avro Schema Registry 缓存的大小 (以字节为单位)
 * `CurrentMetric_AvroSchemaRegistryCacheCells` ([Int64](/zh/reference/data-types/int-uint)) — Avro Schema Registry 缓存中的条目数量
 * `CurrentMetric_HiveFilesCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — Hive 缓存的大小 (以字节为单位)
@@ -1617,14 +1852,21 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_TextIndexHeaderCacheCells` ([Int64](/zh/reference/data-types/int-uint)) — 文本索引头部缓存中的条目数量
 * `CurrentMetric_TextIndexPostingsCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — 文本索引倒排列表缓存的大小 (以字节为单位)
 * `CurrentMetric_TextIndexPostingsCacheCells` ([Int64](/zh/reference/data-types/int-uint)) — 文本索引倒排列表缓存中的条目数量
+* `CurrentMetric_PointInPolygonCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — `pointInPolygon` 函数的预处理常量多边形缓存大小 (以字节为单位)
+* `CurrentMetric_PointInPolygonCacheCells` ([Int64](/zh/reference/data-types/int-uint)) — `pointInPolygon` 函数缓存中的预处理常量多边形数量
+* `CurrentMetric_PointInPolygonCacheSizeLimit` ([Int64](/zh/reference/data-types/int-uint)) — `pointInPolygon` 函数的预处理常量多边形缓存最大大小 (以字节为单位)  (`point_in_polygon_cache_size` 服务器设置的应用值)
 * `CurrentMetric_DNSHostsCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — DNS 主机缓存的大小 (以字节为单位)
 * `CurrentMetric_DNSHostsCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — 已缓存 DNS 主机的数量
 * `CurrentMetric_DNSAddressesCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — DNS 地址缓存的大小 (以字节为单位)
 * `CurrentMetric_DNSAddressesCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — 已缓存 DNS 地址的数量
 * `CurrentMetric_MarkCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — 标记缓存的总大小 (字节)
 * `CurrentMetric_MarkCacheFiles` ([Int64](/zh/reference/data-types/int-uint)) — 标记缓存中已缓存的标记文件总数
+* `CurrentMetric_UniqueKeyIndexCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — UNIQUE KEY 索引缓存的总大小 (字节)
+* `CurrentMetric_UniqueKeyIndexCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — 已缓存的 UNIQUE KEY 索引块总数
+* `CurrentMetric_DeleteBitmapCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — UNIQUE KEY delete-bitmap 缓存的总大小 (字节)
+* `CurrentMetric_DeleteBitmapCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — 已缓存的 UNIQUE KEY delete-bitmap 总数
 * `CurrentMetric_NamedCollection` ([Int64](/zh/reference/data-types/int-uint)) — 命名集合的数量
-* `CurrentMetric_PrimaryIndexCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — 主索引缓存的总大小 (字节)
+* `CurrentMetric_PrimaryIndexCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — 主索引缓存的总大小 (字节)。当 `primary_key_lazy_load=1` 和 `use_primary_key_cache=1` 时，存储按需加载的主键索引。启用专用 MergeTree 元数据 Arena 池时 (使用 jemalloc 且 `jemalloc_merge_tree_arenas` &gt; 0) ，即使索引列归此缓存所有，也会在该池中分配 (`jemalloc.mergetree_arena.*`) 。绝不与 `system.parts.primary_key_bytes_in_memory[_allocated]` 重叠——某个 part 的索引要么位于此缓存中 (在此处统计) ，要么位于 part 本身中 (在彼处统计) ，绝不会同时存在于两者中。要获取所有 parts 的主索引内存总量，请将两者相加。
 * `CurrentMetric_PrimaryIndexCacheFiles` ([Int64](/zh/reference/data-types/int-uint)) — 主索引缓存中已缓存的索引文件总数
 * `CurrentMetric_PageCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — 用户态页缓存的总大小 (字节)
 * `CurrentMetric_PageCacheCells` ([Int64](/zh/reference/data-types/int-uint)) — 用户态页缓存中的条目总数
@@ -1639,8 +1881,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_QueryCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — 查询缓存中的条目总数
 * `CurrentMetric_QueryConditionCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — 查询条件缓存的总大小 (字节)
 * `CurrentMetric_QueryConditionCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — 查询条件缓存中的条目总数
-* `CurrentMetric_CompiledExpressionCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — JIT 编译代码缓存占用的总字节数
-* `CurrentMetric_CompiledExpressionCacheCount` ([Int64](/zh/reference/data-types/int-uint)) — JIT 编译代码缓存中的条目总数
+* `CurrentMetric_EncryptionHeaderCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — 加密头缓存的总大小 (字节)
+* `CurrentMetric_EncryptionHeaderCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — 加密头缓存中的条目总数
+* `CurrentMetric_CompiledExpressionCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — `JITModuleMemoryManager` 为缓存的 JIT 编译函数的可执行代码段和数据段保留的页块容量 (按 2 倍超额预留系数向上取整到整页) 。这并非实际使用的机器代码字节数 (实际值更小) 。内存通过 `posix_memalign` 分配，该调用会被拦截至 jemalloc，因此此值计入专用 JIT Arena，且是 `jemalloc.jit_arena.active_bytes` 的子集。
+* `CurrentMetric_CompiledExpressionCacheCount` ([Int64](/zh/reference/data-types/int-uint)) — JIT 编译机器代码缓存中的条目总数。
 * `CurrentMetric_SerializationCacheBytesInMemoryAllocated` ([Int64](/zh/reference/data-types/int-uint)) — 序列化缓存的总大小 (字节) ，包括键以及空槽位带来的额外开销
 * `CurrentMetric_SerializationCacheBytesInMemory` ([Int64](/zh/reference/data-types/int-uint)) — 序列化缓存的总大小 (字节) ，仅包括值
 * `CurrentMetric_SerializationCacheCount` ([Int64](/zh/reference/data-types/int-uint)) — 序列化缓存中的条目总数
@@ -1649,9 +1893,15 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_BcryptCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — bcrypt 身份验证缓存的总大小 (以字节为单位)
 * `CurrentMetric_BcryptCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — bcrypt 身份验证缓存中的条目总数
 * `CurrentMetric_ColumnsDescriptionsCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — ColumnsDescriptions 缓存大小 (每表缓存)
+* `CurrentMetric_SharedPartSerializationsCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — 跨数据分区片段共享的不同序列化映射数量 (对每表缓存求和)
+* `CurrentMetric_SharedPartSerializationGroupsCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — 跨数据分区片段共享的不同逐列序列化组数量 (对每表缓存求和)
+* `CurrentMetric_SharedPartColumnsSubstreamsCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — 跨数据分区片段共享的不同列子流列表数量 (对每表缓存求和)
+* `CurrentMetric_SharedPartColumnSubstreamsEntriesCacheSize` ([Int64](/zh/reference/data-types/int-uint)) — 数据分区片段间共享的不同列子流条目数 (按每表缓存求和)
 * `CurrentMetric_S3Requests` ([Int64](/zh/reference/data-types/int-uint)) — S3 请求数
 * `CurrentMetric_KeeperAliveConnections` ([Int64](/zh/reference/data-types/int-uint)) — 存活连接数
 * `CurrentMetric_KeeperOutstandingRequests` ([Int64](/zh/reference/data-types/int-uint)) — 未完成请求数
+* `CurrentMetric_KeeperTTLNodes` ([Int64](/zh/reference/data-types/int-uint)) — 当前存储在 Keeper 中且设置了 TTL 的节点数。
+* `CurrentMetric_KeeperContainerNodes` ([Int64](/zh/reference/data-types/int-uint)) — 当前存储在 Keeper 中的容器节点数。
 * `CurrentMetric_ThreadsInOvercommitTracker` ([Int64](/zh/reference/data-types/int-uint)) — OvercommitTracker 中等待的线程数
 * `CurrentMetric_IOUringPendingEvents` ([Int64](/zh/reference/data-types/int-uint)) — 等待提交的 io&#95;uring SQE 数量
 * `CurrentMetric_IOUringInFlightEvents` ([Int64](/zh/reference/data-types/int-uint)) — 传输中的 io&#95;uring SQE 数量
@@ -1708,6 +1958,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_BlobCopierThreads` ([Int64](/zh/reference/data-types/int-uint)) — object storage disk 后台复制进程的线程池中的线程数
 * `CurrentMetric_BlobCopierThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — object storage disk 后台复制进程的线程池中正在执行任务的线程数
 * `CurrentMetric_BlobCopierThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — object storage disk 后台复制进程的线程池中已排队或正在执行的任务数
+* `CurrentMetric_DiskObjectStorageCopyObjectThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于并行执行对象存储磁盘事务中 copyObjectToAnotherObjectStorage 调用的线程池中的线程数
+* `CurrentMetric_DiskObjectStorageCopyObjectThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 对象存储磁盘复制线程池中正在执行任务的线程数
+* `CurrentMetric_DiskObjectStorageCopyObjectThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 对象存储磁盘复制线程池中已排队或正在执行的任务数
 * `CurrentMetric_HTTPConnectionsStored` ([Int64](/zh/reference/data-types/int-uint)) — HTTP 主机的会话池中已存储的会话总数
 * `CurrentMetric_HTTPConnectionsTotal` ([Int64](/zh/reference/data-types/int-uint)) — HTTP 主机的会话总数：包括池中存储的会话以及当前正在使用的会话
 * `CurrentMetric_AddressesActive` ([Int64](/zh/reference/data-types/int-uint)) — 可用于通过连接池创建连接的地址总数
@@ -1721,6 +1974,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_ConcurrencyControlPreempted` ([Int64](/zh/reference/data-types/int-uint)) — 等待 CPU 插槽的被抢占线程总数
 * `CurrentMetric_ConcurrentQueryScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 当前正在调度的查询插槽请求总数
 * `CurrentMetric_ConcurrentQueryAcquired` ([Int64](/zh/reference/data-types/int-uint)) — 已获取的查询插槽总数
+* `CurrentMetric_MemoryReservationApproved` ([Int64](/zh/reference/data-types/int-uint)) — 当前已分配 (已批准) 的内存预留字节总数
+* `CurrentMetric_MemoryReservationDemand` ([Int64](/zh/reference/data-types/int-uint)) — 内存预留中待处理的增加请求字节总数
 * `CurrentMetric_DiskS3NoSuchKeyErrors` ([Int64](/zh/reference/data-types/int-uint)) — 通过 ClickHouse 磁盘从 S3 云存储读取数据时发生的 `NoSuchKey` 错误数。
 * `CurrentMetric_SharedCatalogStateApplicationThreads` ([Int64](/zh/reference/data-types/int-uint)) — Shared Catalog 中用于状态应用的线程池中的线程数。
 * `CurrentMetric_SharedCatalogStateApplicationThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — Shared Catalog 中用于状态应用的线程池中的活动线程数。
@@ -1744,6 +1999,12 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_StatelessWorkerThreads` ([Int64](/zh/reference/data-types/int-uint)) — 无状态工作线程池中的线程数。
 * `CurrentMetric_StatelessWorkerThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 无状态工作线程池中正在执行任务的线程数。
 * `CurrentMetric_StatelessWorkerThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 无状态工作线程池中已排队或活动中的作业数。
+* `CurrentMetric_StatelessWorkerInUse` ([Int64](/zh/reference/data-types/int-uint)) — 当前正被运行中查询使用的无状态工作线程数量。
+* `CurrentMetric_StatelessWorkerIdle` ([Int64](/zh/reference/data-types/int-uint)) — 当前由服务器保留但未被任何运行中查询使用的无状态工作线程数量。
+* `CurrentMetric_StatelessWorkerServerActiveTasks` ([Int64](/zh/reference/data-types/int-uint)) — 当前在无状态工作线程上活跃的查询执行任务数量 (已从租户接收但尚未释放) 。
+* `CurrentMetric_ExchangeServerThreads` ([Int64](/zh/reference/data-types/int-uint)) — 分布式 exchange server 握手线程池中的线程数量。
+* `CurrentMetric_ExchangeServerThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 分布式 exchange server 握手线程池中正在执行任务的线程数量。
+* `CurrentMetric_ExchangeServerThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 分布式 exchange server 握手线程池中已排队或活动中的作业数量。
 * `CurrentMetric_ReadonlyDisks` ([Int64](/zh/reference/data-types/int-uint)) — 在磁盘检查期间被标记为只读的磁盘数。
 * `CurrentMetric_BrokenDisks` ([Int64](/zh/reference/data-types/int-uint)) — 在磁盘检查期间被标记为损坏的磁盘数。
 * `CurrentMetric_TaskTrackerThreads` ([Int64](/zh/reference/data-types/int-uint)) — 分布式查询远程任务跟踪器使用的线程数量。
@@ -1756,6 +2017,11 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_MergeTreeSnapshotCommitThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于提交快照的线程数量
 * `CurrentMetric_MergeTreeSnapshotCommitThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 用于提交快照的活跃线程数量
 * `CurrentMetric_MergeTreeSnapshotCommitThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 用于提交快照的已调度线程数量
+* `histograms.metric` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 此行中快照的直方图系列名称。
+* `histograms.labels` ([Array(Map(LowCardinality(String), LowCardinality(String)))](/zh/reference/data-types/array)) — 每个条目的标记 Map。
+* `histograms.histogram` ([Array(Map(Float64, UInt64))](/zh/reference/data-types/array)) — 按上限作为键的每个条目的累计 bucket 计数；+Inf 为最后一个条目，其值等于 count。
+* `histograms.count` ([Array(UInt64)](/zh/reference/data-types/array)) — 每个条目的观测总数。
+* `histograms.sum` ([Array(Float64)](/zh/reference/data-types/array)) — 每个条目的观测值总和。
 
 {/*AUTOGENERATED_END*/}
 
@@ -1774,7 +2040,6 @@ hostname:                                                        clickhouse.eu-c
 event_date:                                                      2020-09-05
 event_time:                                                      2020-09-05 16:22:33
 event_time_microseconds:                                         2020-09-05 16:22:33.196807
-milliseconds:                                                    196
 ProfileEvent_Query:                                              0
 ProfileEvent_SelectQuery:                                        0
 ProfileEvent_InsertQuery:                                        0
@@ -1819,7 +2084,7 @@ LIMIT 1;
   ## 另请参阅
 </div>
 
-* [metric&#95;log 设置](/zh/reference/settings/server-settings/settings#metric_log) — 启用和禁用此设置。
+* [metric&#95;log 设置](/zh/reference/settings/server-settings/settings/other#metric_log) — 启用和禁用此设置。
 * [system.asynchronous&#95;metrics](/zh/reference/system-tables/asynchronous_metrics) — 包含定期计算的指标。
 * [system.events](/zh/reference/system-tables/events) — 包含若干已发生的事件。
 * [system.metrics](/zh/reference/system-tables/metrics) — 包含实时计算的指标。

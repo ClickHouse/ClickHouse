@@ -7,11 +7,15 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
-import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="AWS PrivateLink" />
 
 [AWS PrivateLink](https://aws.amazon.com/privatelink/)를 사용하면 트래픽을 공용 인터넷에 노출하지 않고 VPC, AWS 서비스, 온프레미스 시스템, ClickHouse Cloud 간에 안전한 연결을 설정할 수 있습니다. 이 문서에서는 AWS PrivateLink를 사용해 ClickHouse Cloud에 연결하는 단계를 안내합니다.
+
+<Warning>
+  AWS PrivateLink는 AWS VPC에서 ClickHouse Cloud로 시작되는 연결만 지원합니다. [비공개 데이터베이스](#connecting-to-a-remote-database)와 같이 ClickHouse Cloud에서 VPC 내 서비스로 시작되는 연결에는 사용할 수 없습니다.
+</Warning>
 
 ClickHouse Cloud 서비스에 대한 액세스를 AWS PrivateLink 주소로만 제한하려면 ClickHouse Cloud [IP 액세스 목록](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)의 안내를 따르십시오.
 
@@ -38,6 +42,7 @@ ClickHouse Cloud 서비스에 대한 액세스를 AWS PrivateLink 주소로만 �
   * ap-northeast-2
   * ap-northeast-3
   * ap-south-1
+  * ap-southeast-5
   * ap-southeast-4
   * ap-southeast-3
   * ap-south-2
@@ -47,7 +52,10 @@ ClickHouse Cloud 서비스에 대한 액세스를 AWS PrivateLink 주소로만 �
   * us-west-1
   * us-east-2
   * us-east-1
-    가격 관련 참고: AWS는 교차 리전 데이터 전송에 대해 요금을 부과합니다. 가격은 [여기](https://aws.amazon.com/privatelink/pricing/)에서 확인하십시오.
+</Note>
+
+<Note>
+  AWS는 교차 리전 데이터 전송에 대해 요금을 부과합니다. 자세한 내용은 [AWS PrivateLink 요금](https://aws.amazon.com/privatelink/pricing/)을 참조하십시오.
 </Note>
 
 **AWS PrivateLink를 활성화하려면 다음 작업을 완료하십시오**:
@@ -155,11 +163,13 @@ jq .result
 
 AWS 콘솔을 열고 **VPC** → **Endpoints** → **Create endpoints**로 이동하세요.
 
-**Endpoint services that use NLBs and GWLBs**를 선택한 다음, **Service Name** 필드에 [Endpoint &quot;Service name&quot; 가져오기 ](#obtain-endpoint-service-info) 단계에서 얻은 `Service name`<sup>console</sup> 또는 `endpointServiceId`<sup>API</sup>를 입력하세요. 그런 다음 **Verify service**를 클릭하세요.
+**Endpoint services that use NLBs and GWLBs**를 선택한 다음, **Service Name** 필드에 [엔드포인트 &quot;Service name&quot; 확인 ](#obtain-endpoint-service-info) 단계에서 얻은 `Service name`<sup>console</sup> 또는 `endpointServiceId`<sup>API</sup>를 입력하세요. **Verify service**를 클릭하세요.
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink 엔드포인트 설정" border />
 
-PrivateLink를 통해 리전 간 연결을 설정하려면 &quot;Cross region endpoint&quot; 체크박스를 선택하고 서비스 리전을 지정하세요. 서비스 리전은 ClickHouse 인스턴스가 실행 중인 리전입니다.
+<Note>
+  리전 간 연결의 경우 **Cross region endpoint** 체크박스를 선택하고 ClickHouse 서비스가 실행 중인 서비스 리전을 지정하세요.
+</Note>
 
 &quot;Service name couldn&#39;t be verified.&quot; 오류가 발생하면 지원되는 리전 목록에 새 리전을 추가하도록 고객 지원팀에 문의하십시오.
 
@@ -167,10 +177,10 @@ PrivateLink를 통해 리전 간 연결을 설정하려면 &quot;Cross region en
 
 <Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="VPC 및 서브넷 선택" border />
 
-선택 사항으로 보안 그룹/태그를 할당하세요.
+선택 사항으로 Security Group/태그를 할당하세요.
 
 <Note>
-  보안 그룹에서 `443`, `8443`, `9440`, `3306` 포트가 허용되어 있는지 확인하세요.
+  Security Group에서 `443`, `8443`, `9440`, `3306` 포트가 허용되어 있는지 확인하세요.
 </Note>
 
 VPC 엔드포인트를 생성한 후 `Endpoint ID` 값을 기록해 두세요. 다음 단계에서 필요합니다.
@@ -419,10 +429,8 @@ jq .result.privateEndpointIds
   ### 원격 데이터베이스에 연결하기
 </div>
 
-ClickHouse Cloud에서 [MySQL](/ko/reference/functions/table-functions/mysql) 또는 [PostgreSQL](/ko/reference/functions/table-functions/postgresql) 테이블 함수를 사용해 Amazon Web Services (AWS) VPC에 호스팅된 데이터베이스에 연결하려는 상황을 가정해 보겠습니다. 이 연결을 안전하게 설정하는 데는 AWS PrivateLink를 사용할 수 없습니다. PrivateLink는 단방향 연결입니다. 내부 네트워크 또는 Amazon VPC에서 ClickHouse Cloud로는 안전하게 연결할 수 있지만, ClickHouse Cloud에서 내부 네트워크로 연결할 수는 없습니다.
+[AWS PrivateLink documentation](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html)에 따르면 다음과 같습니다.
 
-[AWS PrivateLink documentation](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html)에는 다음과 같이 설명되어 있습니다.
+> 하나 이상의 소비자 VPC에서 서비스 제공자 VPC의 특정 서비스 또는 인스턴스 집합에 단방향으로 액세스할 수 있도록 하려는 클라이언트/서버 구성인 경우 AWS PrivateLink를 사용하십시오. 연결은 소비자 VPC의 클라이언트만 서비스 제공자 VPC의 서비스로 시작할 수 있습니다.
 
-> 하나 이상의 consumer VPC가 service provider VPC의 특정 서비스 또는 인스턴스 집합에 단방향으로 액세스하도록 허용하려는 클라이언트/서버 구성에서는 AWS PrivateLink를 사용하십시오. consumer VPC의 클라이언트만 service provider VPC의 서비스에 대한 연결을 시작할 수 있습니다.
-
-이렇게 하려면 AWS Security Group을 구성하여 ClickHouse Cloud에서 내부 프라이빗 데이터베이스 서비스로의 연결을 허용하십시오. [ClickHouse Cloud 리전의 기본 egress IP 주소](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)와 [사용 가능한 고정 IP 주소](https://api.clickhouse.cloud/static-ips.json)를 함께 확인하십시오.
+ClickHouse Cloud에서 [MySQL](/ko/reference/functions/table-functions/mysql) 또는 [PostgreSQL](/ko/reference/functions/table-functions/postgresql) 테이블 함수를 AWS VPC에 호스팅된 데이터베이스에 연결하려면, ClickHouse Cloud로부터의 연결을 허용하도록 AWS Security Group을 구성하십시오. [ClickHouse Cloud 리전의 기본 egress IP 주소](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)와 [사용 가능한 고정 IP 주소](https://api.clickhouse.cloud/static-ips.json)도 함께 확인하십시오.

@@ -2,23 +2,23 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: '扩缩容'
 title: '扩缩容'
-description: '借助灵活的 VM 类型和独立资源扩缩容能力，对由 ClickHouse 托管的 Postgres 实例进行垂直扩缩容'
+description: '借助灵活的 VM 类型和独立资源扩缩容能力，对您的 ClickHouse Managed Postgres 实例进行垂直扩缩容'
 keywords: ['Postgres 扩缩容', '垂直扩缩容', 'VM 类型', 'NVMe 扩缩容', '实例类型', '性能扩缩容']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-Managed Postgres 提供灵活扩缩容选项，以满足您的工作负载需求。提供 50 多种采用 NVMe 的实例类型，您可以独立对 CPU、内存和存储进行扩缩容，从而根据具体用例优化性能和成本。
+ClickHouse Managed Postgres 提供灵活扩缩容选项，以满足您的工作负载需求。提供 50 多种采用 NVMe 的实例类型，您可以独立对 CPU、内存和存储进行扩缩容，从而根据具体用例优化性能和成本。
 
 <div id="instance-types">
   ## 实例类型与灵活性
 </div>
 
-Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特征进行优化：
+ClickHouse Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特征进行优化：
 
 * **提供 50 多种实例类型**，涵盖计算优化、内存优化和存储优化等配置
 * 所有实例类型均配备 **基于 NVMe 的存储**，可提供稳定、高性能的磁盘 I/O
@@ -46,7 +46,7 @@ Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特
   ## 扩缩容的工作原理
 </div>
 
-当您更改实例类型时，Managed Postgres 会执行垂直扩缩容操作，创建新的基础设施资源，并在将停机时间降到最低的情况下迁移您的数据库。
+当您更改实例类型时，ClickHouse Managed Postgres 会执行垂直扩缩容操作，创建新的基础设施资源，并在将停机时间降到最低的情况下迁移您的数据库。
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="扩缩容设置" size="md" border />
 
@@ -95,7 +95,7 @@ Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特
   ### 使用 WAL-G 并行恢复
 </div>
 
-Managed Postgres 使用 [WAL-G](https://github.com/wal-g/wal-g) 在扩缩容期间加速备份恢复。值得一提的是，WAL-G 的创建者是我们合作伙伴 Ubicloud 团队的成员，这也为恢复过程带来了深厚的专业经验。
+ClickHouse Managed Postgres 使用 [WAL-G](https://github.com/wal-g/wal-g) 在扩缩容期间加速备份恢复。值得一提的是，WAL-G 的创建者是我们合作伙伴 Ubicloud 团队的成员，这也为恢复过程带来了深厚的专业经验。
 
 WAL-G 提供：
 
@@ -110,7 +110,7 @@ WAL-G 提供：
   ### 发起扩缩容操作
 </div>
 
-如需扩缩容您的 Managed Postgres 实例：
+如需扩缩容您的 ClickHouse Managed Postgres 实例：
 
 1. 前往实例的 **Settings** 选项卡
 2. 在 **Scaling** 部分中，向下滚动到 **Service size**
@@ -125,7 +125,7 @@ WAL-G 提供：
   ### 垂直扩缩容
 </div>
 
-垂直扩缩容 (更改实例类型) 是 Managed Postgres 中调整资源的主要方式。这种方式可提供：
+垂直扩缩容 (更改实例类型) 是 ClickHouse Managed Postgres 中调整资源的主要方式。这种方式可提供：
 
 * **精细控制**：可从 50 多种实例类型中选择，精细调整 CPU、内存和存储
 * **工作负载优化**：可选择针对特定工作负载优化的配置 (计算密集型、内存密集型或存储密集型)
@@ -159,10 +159,50 @@ WAL-G 提供：
   ## 自动扩缩容
 </div>
 
-当磁盘使用率达到 90% 时，实例类型将自动调整为更大的实例类型。
+ClickHouse Managed Postgres 会监控磁盘使用率并自动扩展存储空间，避免您的实例磁盘空间耗尽：
+
+* **磁盘使用率达到 85%**：您会通过 Cloud Console 和电子邮件收到[通知](/zh/products/managed-postgres/monitoring/notifications)。
+* **磁盘使用率达到 90%**：自动扩缩容开始。存储容量将扩展至您的实例家族可用的下一个更大规格。CPU 和内存保持不变；但如果当前实例规格不支持更大磁盘，实例规格也会随之提升。[只读副本](/zh/products/managed-postgres/read-replicas)会与主节点一同扩缩容。
+* **磁盘使用率达到 95%**：切换会跳过任何已配置的维护窗口，并在新服务器就绪后立即执行。
+
+如果您的实例已处于最大可用配置，自动扩缩容将无法继续扩展。请释放磁盘空间或联系[支持](https://clickhouse.com/support/program)。
+
+<div id="autoscaling-cutover">
+  ### 切换与连接
+</div>
+
+存储不会原地调整大小。自动扩缩容遵循与手动更改实例类型相同的[扩缩容流程](#scaling-process)：预配一台具有更多存储空间的替换服务器，从最新备份恢复，追赶 WAL，然后通过受控切换将其提升为新的主节点。启用了[高可用性](/zh/products/managed-postgres/high-availability)的实例也会在同一操作中获得采用新规格的替换备用实例。
+
+切换是唯一会导致停机的步骤，通常不到一分钟。如果配置了[维护窗口](/zh/products/managed-postgres/upgrades#maintenance-windows)，切换会等待该窗口，除非磁盘使用率达到 95%。切换期间，现有连接会断开，进行中的事务会回滚。连接字符串不会改变：DNS 会更新为指向新的主节点，具有标准重连逻辑的应用程序会自动恢复。
+
+<div id="autoscaling-read-only">
+  ### 只读模式
+</div>
+
+如果写入导致磁盘空间耗尽的速度快于自动扩缩容完成的速度，实例将进入只读模式，以防止磁盘被完全占满。触发条件取决于剩余可用空间：
+
+| 磁盘总容量      | 低于此值时进入只读模式 | 高于此值时恢复写入  |
+| ---------- | ----------- | ---------- |
+| 不超过 64 GB  | 1 GB 可用空间   | 2 GB 可用空间  |
+| 不超过 128 GB | 5 GB 可用空间   | 7 GB 可用空间  |
+| 不超过 512 GB | 7 GB 可用空间   | 10 GB 可用空间 |
+| 超过 512 GB  | 2% 可用空间     | 3% 可用空间    |
+
+读取仍可正常进行，而写入会因标准 Postgres 错误 `cannot execute INSERT in a read-only transaction` 而失败。如果可用空间继续减少，现有连接将被终止，以确保每个会话都采用只读设置；客户端重新连接后，读取即可恢复正常。可用空间恢复后，系统会自动解除只读模式，通常是在扩容切换完成后立即解除。
+
+<div id="autoscaling-example">
+  ### 示例
+</div>
+
+一个存储容量为 1024 GB 的实例运行写入密集型工作负载：
+
+1. 已使用 870 GB (85%) 时，您会收到存储空间通知。
+2. 已使用 922 GB (90%) 时，自动扩缩容启动。系统会预配一台存储容量为 2048 GB 的替换服务器，并从最新备份恢复数据，同时您的实例继续处理流量。
+3. 替换服务器追赶完成后，系统将执行切换；如果配置了维护窗口，则会在该窗口内执行。连接会中断不到一分钟，您的应用会重新连接到同一主机名，使用率将回落至约 45%。
+4. 如果在切换完成前可用空间降至 2% 以下 (约 20 GB) ，实例将进入只读模式。完成向更大磁盘的切换后，写入会自动恢复。
 
 <div id="resources">
-  ## 更多资源
+  ## 其他资源
 </div>
 
 * [设置和配置](/zh/products/managed-postgres/settings)

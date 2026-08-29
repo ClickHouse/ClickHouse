@@ -52,6 +52,7 @@ add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 
 if (USE_MUSL)
     add_contrib (musl-cmake musl)
+    add_contrib (libucontext-cmake libucontext)
 endif()
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
@@ -96,6 +97,7 @@ add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
+add_contrib (zxc-cmake zxc)
 add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
@@ -112,7 +114,6 @@ add_contrib (libarchive-cmake libarchive)
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
-add_contrib (wasmedge-cmake wasmedge)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -183,6 +184,13 @@ add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
+option(ENABLE_CHINESE_TOKENIZER "Enable the Chinese tokenizer (jieba-style segmentation in contrib/Jieba-CPP)" ${ENABLE_LIBRARIES})
+if (ENABLE_CHINESE_TOKENIZER)
+    # The dictionary ships little- and big-endian variants and is #embed-ed per host byte order, so no s390x guard is needed.
+    add_contrib (darts-clone-cmake darts-clone)
+    add_contrib (Jieba-CPP-cmake Jieba-CPP)
+endif()
+
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
 if (USE_MONGODB)
     add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib
@@ -196,6 +204,11 @@ if (ENABLE_NLP)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
     add_contrib (cld2-cmake cld2)
+endif()
+
+option(ENABLE_MECAB "Enable MeCab (Japanese morphological analyzer) support" ${ENABLE_LIBRARIES})
+if (ENABLE_MECAB)
+    add_contrib (MeCab-cmake MeCab)
 endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
@@ -229,7 +242,9 @@ add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 
-add_contrib (google-benchmark-cmake google-benchmark)
+if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
+    add_contrib (google-benchmark-cmake google-benchmark)
+endif ()
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
