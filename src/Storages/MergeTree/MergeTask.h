@@ -209,6 +209,9 @@ private:
         MergeTreeDataMergerMutator * mutator{nullptr};
         PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
+        /// GROUP BY entries a patched merge must carry across the recalculation step, which would
+        /// otherwise rebuild them without their `ttl_finished` bit. See `prepare()`.
+        std::optional<TTLInfoMap> preserved_group_by_ttl;
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};

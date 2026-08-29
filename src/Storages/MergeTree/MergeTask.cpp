@@ -685,20 +685,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// on the ordinary path, or the recalculation step on the blocked one. That step is skipped
         /// for tables with a GROUP BY TTL (it would leave that family unfinished), and clearing
         /// without a rebuild would leave the merged part with no rows-WHERE bound at all.
-        if (ctx->need_remove_expired_values || !global_ctx->metadata_snapshot->hasAnyGroupByTTL())
-            global_ctx->new_data_part->ttl_infos.rows_where_ttl.clear();
+        global_ctx->new_data_part->ttl_infos.rows_where_ttl.clear();
 
         /// The MOVE and RECOMPRESS maps are the only record the background mover and the
-        /// recompression selector ever read, so they are dropped under the same condition as the
-        /// rows-WHERE ones: only when a rebuild will refill them. Emptying them with no rebuild
-        /// would not defer the action, it would delete the metadata that schedules it. The
-        /// placement and codec decisions taken during this merge do not read them either way -
-        /// those already ignore pre-patch infos.
-        if (ctx->need_remove_expired_values || !global_ctx->metadata_snapshot->hasAnyGroupByTTL())
-        {
-            global_ctx->new_data_part->ttl_infos.moves_ttl.clear();
-            global_ctx->new_data_part->ttl_infos.recompression_ttl.clear();
-        }
+        /// recompression selector ever read, so a pre-patch entry there is acted on rather than
+        /// merely reported - and dropping them without a rebuild would delete the schedule
+        /// entirely. Both are therefore invalidated here and rebuilt by the step below, which now
+        /// runs on every patched merge.
+        global_ctx->new_data_part->ttl_infos.moves_ttl.clear();
+        global_ctx->new_data_part->ttl_infos.recompression_ttl.clear();
+
+        /// GROUP BY is the one family the rebuild cannot produce correctly: it recomputes bounds
+        /// without `ttl_finished`, which would put an already-expired part back into the TTL
+        /// selectors forever (the shape 04501 pins). Its pre-patch entries are carried across the
+        /// rebuild instead - stale, but finished-correct and still schedulable.
+        if (global_ctx->metadata_snapshot->hasAnyGroupByTTL())
+            global_ctx->preserved_group_by_ttl = global_ctx->new_data_part->ttl_infos.group_by_ttl;
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
@@ -2404,6 +2406,15 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
+    /// Put the carried GROUP BY entries back over whatever the recalculation step wrote for them,
+    /// so that family keeps its pre-patch (finished-correct) state while every other one is rebuilt.
+    if (global_ctx->preserved_group_by_ttl)
+    {
+        global_ctx->new_data_part->ttl_infos.group_by_ttl = *global_ctx->preserved_group_by_ttl;
+        for (const auto & [name, info] : global_ctx->new_data_part->ttl_infos.group_by_ttl)
+            global_ctx->new_data_part->ttl_infos.updatePartMinMaxTTL(info);
+    }
+
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);
     else
@@ -3575,7 +3586,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
     }
-    else if (ctx->recalculate_ttl_for_patches && !global_ctx->metadata_snapshot->hasAnyGroupByTTL())
+    else if (ctx->recalculate_ttl_for_patches)
     {
         /// TTL removal is blocked but the merge carries patches: the merged part still must not
         /// keep pre-patch infos, or a later TTLDrop can drop rows a patch un-expired.
