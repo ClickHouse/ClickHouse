@@ -130,6 +130,26 @@ Valores posibles:
 
 * Cualquier entero positivo.
 
+<div id="merge_tree_min_bytes_per_read_stream">
+  ## merge_tree_min_bytes_per_read_stream
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="65536" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "65536"},{"label": "Nueva configuración para limitar el número de flujos en exploraciones locales no ordenadas de columnas estrechas de `MergeTree` ordinarias mediante un modelo de coste de raíz cuadrada, lo que reduce la sobrecarga por flujo en máquinas con muchos núcleos. previous_value=0 (deshabilitado), por lo que `compatibility` con versiones anteriores a la 26.8 restaura el número de flujos existente anteriormente."}]}]} />
+
+Coste de sobrecarga por flujo expresado como equivalente en bytes. Controla el número máximo de flujos de lectura creados para exploraciones locales no ordenadas de `MergeTree` ordinarias. Las lecturas ordenadas, con `FINAL`, por capas y de réplicas paralelas no se modifican. El límite basado en el volumen es `ceil(sqrt(estimated_read_bytes / this_setting))`. ClickHouse también mantiene al menos 16 flujos y al menos una cuarta parte de los flujos solicitados antes de aplicar este límite, por lo que el número efectivo de flujos es `min(requested_streams, max(volume_based_cap, 16, floor(requested_streams / 4)))`. Estos límites mínimos preservan el paralelismo posterior para expresiones y agregaciones con uso intensivo de CPU, cuyo coste no se refleja en `estimated_read_bytes`.
+
+`estimated_read_bytes` es el tamaño sin comprimir de las columnas que se leen en los rangos de marcas restantes tras la poda de índices y particiones. Se utiliza el tamaño sin comprimir porque la sobrecarga por flujo se contrapone al trabajo realizado por cada flujo, que escala según el número de valores procesados, no según su grado de compresión.
+
+El límite no se aplica cuando el volumen de lectura no puede estimarse de forma conservadora; por ejemplo, cuando una parte antigua necesita otras columnas físicas para evaluar una columna `DEFAULT` añadida recientemente, o cuando un rango seleccionado lee solo una parte de una columna de ancho variable.
+
+El valor predeterminado de 64 KB se deriva del modelo de coste `T(N) = W/N + F + V·N`, donde `W` es el trabajo útil, `F` es la sobrecarga fija de la canalización y `V` es el coste variable por flujo. El número óptimo de flujos es `sqrt(W/V)`. Al expresar `W` en bytes mediante el rendimiento, se obtiene `C = throughput · V ≈ 400 MB/s · 0.17 ms ≈ 64 KB`. Aumentar este valor reduce el número de flujos (es más conservador); reducirlo permite más flujos. Establézcalo en 0 para deshabilitar esta optimización.
+
+Valores posibles:
+
+* Entero no negativo.
+
 <div id="merge_tree_min_bytes_per_task_for_remote_reading">
   ## merge_tree_min_bytes_per_task_for_remote_reading
 </div>
