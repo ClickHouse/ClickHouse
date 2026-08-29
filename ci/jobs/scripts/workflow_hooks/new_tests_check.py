@@ -129,8 +129,10 @@ def per_arch_validation_states():
 
 
 def describe_per_arch_validation(states):
-    """Render the observed per-arch state, one line per job, with the job's own
-    `info` when it has one. The `info` is what tells apart a `SKIPPED` that
+    """Render the observed per-arch state, one line per job, with the reason the job
+    recorded for itself: its own `info`, then every note attached to it. A job dropped
+    behind a failed dependency carries an empty `info` and names the upstream job that
+    failed in a note instead. The `info` is what tells apart a `SKIPPED` that
     `filter_job` produced because this PR changed no test of that type from a
     `SKIPPED` the validator produced because the test still passed on master HEAD.
     """
@@ -141,7 +143,16 @@ def describe_per_arch_validation(states):
         )
     lines = ["Bugfix validation as seen by this check:"]
     for sub in states:
-        reason = " | ".join(part.strip() for part in sub.info.splitlines() if part.strip())
+        recorded = [sub.info] + [
+            str(note.get("message", ""))
+            for note in ((sub.ext or {}).get("notes") or [])
+        ]
+        reason = " | ".join(
+            part.strip()
+            for chunk in recorded
+            for part in chunk.splitlines()
+            if part.strip()
+        )
         lines.append(f"  {sub.name}: {sub.status}" + (f" ({reason})" if reason else ""))
     return "\n".join(lines)
 
