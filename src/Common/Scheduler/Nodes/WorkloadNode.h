@@ -947,11 +947,11 @@ private:
         return selected;
     }
 
-    void clearFittingIncreaseForHandoff(const IncreaseRequest & request) override
+    void clearFittingIncreaseForHandoff() override
     {
         if (!child)
             return;
-        child->clearFittingIncreaseForHandoff(request);
+        child->clearFittingIncreaseForHandoff();
         increase = child->increase;
     }
 

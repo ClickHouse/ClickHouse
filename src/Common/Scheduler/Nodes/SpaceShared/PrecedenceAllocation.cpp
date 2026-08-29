@@ -196,26 +196,22 @@ IncreaseRequest * PrecedenceAllocation::selectFittingIncreaseForHandoff(Resource
         return nullptr;
     IncreaseRequest * selected = increase_child->selectFittingIncreaseForHandoff(max_size);
     if (selected)
+    {
+        fitting_handoff_child = increase_child;
         increase = selected;
+    }
     return selected;
 }
 
-void PrecedenceAllocation::clearFittingIncreaseForHandoff(const IncreaseRequest & request)
+void PrecedenceAllocation::clearFittingIncreaseForHandoff()
 {
-    ISpaceSharedNode * handoff_child = nullptr;
-    for (ISchedulerNode * node = &request.allocation.queue; node && node->parent; node = node->parent)
-    {
-        if (node->parent == this)
-        {
-            handoff_child = static_cast<ISpaceSharedNode *>(node);
-            handoff_child->clearFittingIncreaseForHandoff(request);
-            break;
-        }
-    }
-    if (handoff_child)
-        setIncrease(*handoff_child, handoff_child->increase, false);
-    else
-        updateIncreaseSelection();
+    if (!fitting_handoff_child)
+        return;
+
+    ISpaceSharedNode * handoff_child = fitting_handoff_child;
+    fitting_handoff_child = nullptr;
+    handoff_child->clearFittingIncreaseForHandoff();
+    setIncrease(*handoff_child, handoff_child->increase, false);
 }
 
 void PrecedenceAllocation::notifyUnusedCapacityReclaimStarted()
@@ -264,6 +260,8 @@ void PrecedenceAllocation::approveIncrease()
     SCHED_DBG("{} -- approveIncrease(child={}, id={}, size={})",
         getPath(), increase_child->basename, increase->allocation.id, increase->size);
     apply(*increase);
+    if (fitting_handoff_child == increase_child)
+        fitting_handoff_child = nullptr;
     if (!increase_child->isRunning()) // We are adding the first allocation
         running_children.insert(*increase_child);
     increase = nullptr;
@@ -353,6 +351,21 @@ bool PrecedenceAllocation::updateIncreaseSelection(const ISpaceSharedNode * igno
 {
     // Update current increase request
     IncreaseRequest * old_increase = increase;
+    if (fitting_handoff_child)
+    {
+        if (fitting_handoff_child != ignored_child
+            && fitting_handoff_child->increase
+            && !fitting_handoff_child->increase->allocation.isIncreaseSuspended())
+        {
+            increase_child = fitting_handoff_child;
+            increase = fitting_handoff_child->increase;
+            return old_increase != increase;
+        }
+
+        ISpaceSharedNode * stale_child = fitting_handoff_child;
+        fitting_handoff_child = nullptr;
+        stale_child->clearFittingIncreaseForHandoff();
+    }
     auto eligible = std::find_if(increasing_children.begin(), increasing_children.end(), [](const ISpaceSharedNode & child)
     {
         return child.increase && !child.increase->allocation.isIncreaseSuspended();

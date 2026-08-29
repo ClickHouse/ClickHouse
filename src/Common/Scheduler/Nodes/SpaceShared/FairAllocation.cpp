@@ -171,12 +171,11 @@ void FairAllocation::expireUnusedCapacityReclaimBeneficiariesExcept(const Increa
 
 IncreaseRequest * FairAllocation::selectFittingIncreaseForHandoff(ResourceCost max_size)
 {
-    if (fitting_handoff
-        && increase_child
-        && increase_child->increase == fitting_handoff
-        && !fitting_handoff->allocation.isIncreaseSuspended()
-        && fitting_handoff->size <= max_size)
-        return fitting_handoff;
+    if (fitting_handoff_child
+        && fitting_handoff_child->increase
+        && !fitting_handoff_child->increase->allocation.isIncreaseSuspended()
+        && fitting_handoff_child->increase->size <= max_size)
+        return fitting_handoff_child->increase;
 
     auto select_from = [max_size](auto & candidates, bool beneficiary_only)
     {
@@ -193,7 +192,7 @@ IncreaseRequest * FairAllocation::selectFittingIncreaseForHandoff(ResourceCost m
                 continue;
             if (beneficiary_only && !candidate.isUnusedCapacityReclaimBeneficiary(*selected))
             {
-                candidate.clearFittingIncreaseForHandoff(*selected);
+                candidate.clearFittingIncreaseForHandoff();
                 continue;
             }
             return std::pair<ISpaceSharedNode *, IncreaseRequest *>{&candidate, selected};
@@ -220,29 +219,20 @@ IncreaseRequest * FairAllocation::selectFittingIncreaseForHandoff(ResourceCost m
     updateKey(*selected.first, selected.first->increase, false);
     increase_child = selected.first;
     increase = selected.second;
-    fitting_handoff = increase;
+    fitting_handoff_child = selected.first;
     return increase;
 }
 
-void FairAllocation::clearFittingIncreaseForHandoff(const IncreaseRequest & request)
+void FairAllocation::clearFittingIncreaseForHandoff()
 {
-    if (fitting_handoff == &request)
-    {
-        ISpaceSharedNode * handoff_child = nullptr;
-        for (ISchedulerNode * node = &request.allocation.queue; node && node->parent; node = node->parent)
-        {
-            if (node->parent == this)
-            {
-                handoff_child = static_cast<ISpaceSharedNode *>(node);
-                handoff_child->clearFittingIncreaseForHandoff(request);
-                break;
-            }
-        }
-        if (handoff_child)
-            updateKey(*handoff_child, handoff_child->increase, false);
-        fitting_handoff = nullptr;
-        updateIncreaseSelection();
-    }
+    if (!fitting_handoff_child)
+        return;
+
+    ISpaceSharedNode * handoff_child = fitting_handoff_child;
+    fitting_handoff_child = nullptr;
+    handoff_child->clearFittingIncreaseForHandoff();
+    updateKey(*handoff_child, handoff_child->increase, false);
+    updateIncreaseSelection();
 }
 
 void FairAllocation::notifyUnusedCapacityReclaimStarted()
@@ -264,8 +254,8 @@ void FairAllocation::approveIncrease()
     chassert(increase);
     SCHED_DBG("{} -- approveIncrease(child={}, id={}, size={})",
         getPath(), increase_child->basename, increase->allocation.id, increase->size);
-    if (fitting_handoff == increase)
-        fitting_handoff = nullptr;
+    if (fitting_handoff_child == increase_child)
+        fitting_handoff_child = nullptr;
     apply(*increase);
     increase = nullptr;
     increase_child->approveIncrease();
@@ -331,32 +321,24 @@ bool FairAllocation::updateIncreaseSelection(const ISpaceSharedNode * ignored_ch
     // Update current increase request
     // To avoid thrashing we first server running allocation increase requests, then pending ones
     IncreaseRequest * old_increase = increase;
-    if (fitting_handoff)
+    if (fitting_handoff_child)
     {
-        /// Unrelated child updates cannot steal an exact one-selection handoff. If its request was
-        /// cancelled, changed policy path, or suspended, drop the pin and resume ordinary Fair order.
-        if (increase_child
-            && increase_child != ignored_child
-            && increase_child->increase == fitting_handoff
-            && !fitting_handoff->allocation.isIncreaseSuspended())
+        /// Unrelated updates cannot steal this level's one queued turn. The path, rather than a
+        /// request object, owns the pin so cancellation cannot leave a dangling pointer.
+        if (fitting_handoff_child != ignored_child
+            && fitting_handoff_child->increase
+            && !fitting_handoff_child->increase->allocation.isIncreaseSuspended())
         {
-            increase = fitting_handoff;
+            increase_child = fitting_handoff_child;
+            increase = fitting_handoff_child->increase;
             return old_increase != increase;
         }
-        IncreaseRequest * stale_handoff = fitting_handoff;
-        fitting_handoff = nullptr;
-        for (ISchedulerNode * node = &stale_handoff->allocation.queue; node && node->parent; node = node->parent)
-        {
-            if (node->parent == this)
-            {
-                auto * stale_child = static_cast<ISpaceSharedNode *>(node);
-                stale_child->clearFittingIncreaseForHandoff(*stale_handoff);
-                /// removeChild() has already unlinked `ignored_child` from every intrusive set.
-                /// Never reinsert that same child while unwinding its stale handoff.
-                updateKey(*stale_child, stale_child->increase, stale_child == ignored_child);
-                break;
-            }
-        }
+        ISpaceSharedNode * stale_child = fitting_handoff_child;
+        fitting_handoff_child = nullptr;
+        stale_child->clearFittingIncreaseForHandoff();
+        /// removeChild() has already unlinked `ignored_child` from every intrusive set.
+        /// Never reinsert that same child while unwinding its stale handoff.
+        updateKey(*stale_child, stale_child->increase, stale_child == ignored_child);
     }
     auto eligible = [](const ISpaceSharedNode & child)
     {

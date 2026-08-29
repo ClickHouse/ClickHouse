@@ -39,7 +39,6 @@ bool MemorySpillScheduler::checkAndSpill(IProcessor * processor)
 
         auto & state = it->second;
         state.stats = stats;
-        state.runnable = true;
 
         /// Forced recovery belongs to the query. The first runnable processor that can actually
         /// spill claims the epoch. The processor table is populated before pressure begins, so

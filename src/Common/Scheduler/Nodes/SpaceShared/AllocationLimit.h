@@ -75,7 +75,6 @@ private:
     /// A reclaim probe is deferred to a scheduler activation so it never re-enters a queue whose
     /// mutex is held by the update currently reaching this limit.
     UnusedCapacityReclaimState unused_capacity_reclaim_state = UnusedCapacityReclaimState::Idle;
-    IncreaseRequest * unused_capacity_reclaim_request = nullptr;
     DecreaseRequest * unused_capacity_reclaim_decrease = nullptr;
     /// True after this node returned `local_demand` and an ancestor is waiting for a durable
     /// decrease or explicit completion. This is distinct from the deferred policy Start event.

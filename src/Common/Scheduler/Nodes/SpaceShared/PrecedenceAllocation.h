@@ -28,7 +28,7 @@ public:
     void notifyUnusedCapacityReclaimStarted() override;
     void notifyUnusedCapacityReclaimCompleted() override;
     IncreaseRequest * selectFittingIncreaseForHandoff(ResourceCost max_size) override;
-    void clearFittingIncreaseForHandoff(const IncreaseRequest & request) override;
+    void clearFittingIncreaseForHandoff() override;
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override;
     void approveIncrease() override;
     void approveDecrease() override;
@@ -52,6 +52,7 @@ private:
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`
     ISpaceSharedNode * decrease_child = nullptr; /// Child that requested the current `decrease`
+    ISpaceSharedNode * fitting_handoff_child = nullptr; /// Node-owned path for one released-capacity turn.
     std::unordered_map<String, SpaceSharedNodePtr> children; // basename -> child
 };
 

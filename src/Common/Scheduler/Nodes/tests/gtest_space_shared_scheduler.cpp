@@ -22,6 +22,7 @@
 #include <future>
 #include <functional>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <thread>
@@ -2570,13 +2571,14 @@ TEST(SchedulerSpaceShared, CancelledBeneficiaryDoesNotTransferCreditToLargerRepl
         continue_after_exact_release_future.wait();
     });
 
-    std::promise<String> first_approval;
-    auto first_approval_future = first_approval.get_future();
+    auto first_approval = std::make_shared<std::promise<String>>();
+    auto first_approval_once = std::make_shared<std::once_flag>();
+    auto first_approval_future = first_approval->get_future();
     std::promise<void> release_first_approval;
     auto release_first_approval_future = release_first_approval.get_future().share();
-    external->runOnNextApproval([&]
+    external->runOnNextApproval([first_approval, first_approval_once, release_first_approval_future]
     {
-        first_approval.set_value("external");
+        std::call_once(*first_approval_once, [&] { first_approval->set_value("external"); });
         release_first_approval_future.wait();
     });
 
@@ -2607,9 +2609,9 @@ TEST(SchedulerSpaceShared, CancelledBeneficiaryDoesNotTransferCreditToLargerRepl
         local->removeAsync();
         replacement = std::make_unique<ManualAllocation>(
             local_queue_ptr, "replacement", 2000, /* wait_for_admission = */ false);
-        replacement->runOnNextApproval([&]
+        replacement->runOnNextApproval([first_approval, first_approval_once, release_first_approval_future]
         {
-            first_approval.set_value("replacement");
+            std::call_once(*first_approval_once, [&] { first_approval->set_value("replacement"); });
             release_first_approval_future.wait();
         });
         replacement_created.set_value();

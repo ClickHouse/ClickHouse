@@ -89,7 +89,6 @@ UnusedCapacityReclaimResult AllocationLimit::reclaimUnusedCapacity(
     /// against the first decrease amount: more releases and newly exposed work may arrive before
     /// this level's one scheduler turn. Actual aggregate accounting is the source of truth.
     unused_capacity_reclaim_state = UnusedCapacityReclaimState::InFlight;
-    unused_capacity_reclaim_request = nullptr;
     unused_capacity_reclaim_decrease = reclaimed.decrease;
     unused_capacity_reclaim_start_pending = true;
     unused_capacity_reclaim_waiter = true;
@@ -109,7 +108,7 @@ bool AllocationLimit::hasUnusedCapacityReclaimPending() const
 bool AllocationLimit::isUnusedCapacityReclaimBeneficiary(const IncreaseRequest & request) const
 {
     const bool local_beneficiary = unused_capacity_reclaim_state == UnusedCapacityReclaimState::Beneficiary
-        && unused_capacity_reclaim_request == &request;
+        && increase == &request;
     const bool descendant_beneficiary = increase == &request
         && child
         && child->increase == &request
@@ -127,7 +126,7 @@ void AllocationLimit::expireUnusedCapacityReclaimBeneficiariesExcept(const Incre
 {
     bool changed = false;
     if (unused_capacity_reclaim_state == UnusedCapacityReclaimState::Beneficiary
-        && unused_capacity_reclaim_request != &selected)
+        && increase != &selected)
     {
         resetUnusedCapacityReclaim();
         changed = true;
@@ -286,7 +285,6 @@ void AllocationLimit::approveDecrease()
         /// exactly one policy pass using current aggregate accounting. Further releases coalesce
         /// into that same pass instead of extending its lifetime.
         unused_capacity_reclaim_state = UnusedCapacityReclaimState::Queued;
-        unused_capacity_reclaim_request = nullptr;
         unused_capacity_reclaim_decrease = nullptr;
         unused_capacity_reclaim_waiting_on_child = false;
     }
@@ -374,8 +372,6 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
     bool detached_suspended_subtree = false;
-    bool detached_reclaim_request = false;
-    bool detached_reclaim_decrease = false;
     if (update.detached && suspended_growth)
     {
         for (ISchedulerNode * node = &suspended_growth->allocation.queue; node; node = node->parent)
@@ -387,25 +383,6 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
             }
         }
     }
-    if (update.detached)
-    {
-        auto is_inside_detached = [&](const ResourceAllocation * allocation)
-        {
-            if (!allocation)
-                return false;
-            for (ISchedulerNode * node = &allocation->queue; node; node = node->parent)
-            {
-                if (node == update.detached)
-                    return true;
-            }
-            return false;
-        };
-        detached_reclaim_request = unused_capacity_reclaim_request
-            && is_inside_detached(&unused_capacity_reclaim_request->allocation);
-        detached_reclaim_decrease = unused_capacity_reclaim_decrease
-            && is_inside_detached(&unused_capacity_reclaim_decrease->allocation);
-    }
-
     const bool reclaim_round_waited = unused_capacity_reclaim_waiter
         || (!unused_capacity_reclaim_start_pending
             && (unused_capacity_reclaim_state == UnusedCapacityReclaimState::Scheduled
@@ -418,36 +395,18 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     if (update.detached)
     {
         bool completed_probe = false;
-        if (detached_reclaim_decrease)
+        if (unused_capacity_reclaim_state == UnusedCapacityReclaimState::InFlight)
         {
-            if (unused_capacity_reclaim_state == UnusedCapacityReclaimState::InFlight)
-            {
-                /// Detaching the donor changes aggregate capacity exactly like an approved release.
-                /// Keep the same one queued local turn; do not manufacture or transfer a byte credit.
-                unused_capacity_reclaim_state = UnusedCapacityReclaimState::Queued;
-                unused_capacity_reclaim_request = nullptr;
-                unused_capacity_reclaim_decrease = nullptr;
-                scheduleActivation();
-            }
-            else
-            {
-                completed_probe = reclaim_round_waited;
-                resetUnusedCapacityReclaim();
-            }
+            /// A detach changes aggregate capacity exactly like an approved release. Keep one
+            /// queued local turn and forget the request/decrease objects owned by that subtree.
+            unused_capacity_reclaim_state = UnusedCapacityReclaimState::Queued;
+            unused_capacity_reclaim_decrease = nullptr;
+            scheduleActivation();
         }
-        else if (detached_reclaim_request)
+        else if (unused_capacity_reclaim_state == UnusedCapacityReclaimState::Beneficiary)
         {
-            if (unused_capacity_reclaim_state == UnusedCapacityReclaimState::InFlight)
-            {
-                /// The committed release is still in flight. Forget only the vanished consumer;
-                /// approval of the exact decrease will enqueue this level's ordinary one turn.
-                unused_capacity_reclaim_request = nullptr;
-            }
-            else
-            {
-                completed_probe = reclaim_round_waited;
-                resetUnusedCapacityReclaim();
-            }
+            completed_probe = reclaim_round_waited;
+            resetUnusedCapacityReclaim();
         }
         // The victim referenced by `allocation_to_kill` might be anywhere inside the detached
         // subtree, and `purgeQueue` will fail its owner via `fail_reason` without driving a
@@ -513,22 +472,6 @@ bool AllocationLimit::setIncrease(
     if (suspended_growth && !suspended_growth->allocation.increasing_hook.is_linked())
         clearMemoryGrowthSuspension();
 
-    /// The exact claimant can disappear while a separate suspended-growth retry is active. Drop
-    /// the raw request before the retry barrier hides child selections; the already-committed
-    /// ordinary decrease remains the durable wakeup and is donated through normal accounting.
-    if (unused_capacity_reclaim_state == UnusedCapacityReclaimState::InFlight
-        && unused_capacity_reclaim_request
-        && new_increase != unused_capacity_reclaim_request)
-    {
-        if (child && unused_capacity_reclaim_request)
-            child->clearFittingIncreaseForHandoff(*unused_capacity_reclaim_request);
-        unused_capacity_reclaim_state = UnusedCapacityReclaimState::Idle;
-        unused_capacity_reclaim_request = nullptr;
-        unused_capacity_reclaim_decrease = nullptr;
-        unused_capacity_reclaim_waiter = false;
-        unused_capacity_reclaim_start_pending = false;
-    }
-
     /// A retry is a FIFO barrier across every child queue. Child activations may update their
     /// cached selection during the pass, but this limit must not expose, suspend, or kill from a
     /// partial view. Phase two below evaluates the final child selection exactly once.
@@ -539,19 +482,9 @@ bool AllocationLimit::setIncrease(
         return old_increase != increase;
     }
 
-    if (new_increase != unused_capacity_reclaim_request
-        && unused_capacity_reclaim_state != UnusedCapacityReclaimState::InFlight
-        && unused_capacity_reclaim_state != UnusedCapacityReclaimState::Queued)
-    {
-        const bool completed_probe = resetUnusedCapacityReclaim();
-        unused_capacity_reclaim_request = new_increase;
-        if (completed_probe && notify_reclaim_completion)
-            ISpaceSharedNode::notifyUnusedCapacityReclaimCompleted();
-    }
-
-    /// A limit or sibling decrease can make the tracked request fit before its queued probe runs.
-    /// Complete that round now so ancestors do not keep waiting on a marker whose work is done.
-    if (new_increase && new_increase == unused_capacity_reclaim_request
+    /// A limit or sibling decrease can make the current request fit before its queued probe runs.
+    /// Complete that round now so ancestors do not keep waiting on work which is already runnable.
+    if (new_increase
         && unused_capacity_reclaim_state == UnusedCapacityReclaimState::Scheduled
         && allocated + new_increase->size <= max_allocated)
     {
@@ -609,10 +542,7 @@ bool AllocationLimit::setIncrease(
             /// Demand grew after the local handoff was granted. The old grant is spent; start one
             /// new exact reclaim round instead of retaining an open-ended preference.
             if (unused_capacity_reclaim_state == UnusedCapacityReclaimState::Beneficiary)
-            {
                 resetUnusedCapacityReclaim();
-                unused_capacity_reclaim_request = new_increase;
-            }
 
             // Limit would be violated, so we have to reclaim resource.
             // Do not select a victim while a decrease is pending below: `allocated` still contains
@@ -732,10 +662,10 @@ void AllocationLimit::processActivation()
         suspended_growth_retry_pending = false;
         IncreaseRequest * local_request = child ? child->increase : nullptr;
         if (unused_capacity_reclaim_state == UnusedCapacityReclaimState::Beneficiary
-            && unused_capacity_reclaim_request != local_request)
+            && (!local_request || allocated + local_request->size > max_allocated))
         {
-            /// The selected request disappeared during the retry pass. Drop its one-turn marker;
-            /// actual aggregate accounting remains available to ordinary policy.
+            /// The selected path disappeared or no longer fits during the retry pass. The turn is
+            /// spent; actual accounting remains available to ordinary policy.
             resetUnusedCapacityReclaim();
         }
 
@@ -744,7 +674,6 @@ void AllocationLimit::processActivation()
             && allocated + local_request->size <= max_allocated)
         {
             unused_capacity_reclaim_state = UnusedCapacityReclaimState::Beneficiary;
-            unused_capacity_reclaim_request = local_request;
             unused_capacity_reclaim_decrease = nullptr;
         }
         if (setIncrease(local_request, true, /* notify_reclaim_completion = */ false) && parent)
@@ -767,7 +696,6 @@ void AllocationLimit::processActivation()
         if (local_request)
         {
             unused_capacity_reclaim_state = UnusedCapacityReclaimState::Beneficiary;
-            unused_capacity_reclaim_request = local_request;
             unused_capacity_reclaim_decrease = nullptr;
             if (setIncrease(local_request, true, /* notify_reclaim_completion = */ false) && parent)
                 propagate(Update().setIncrease(increase));
@@ -792,7 +720,7 @@ void AllocationLimit::processActivation()
         return;
 
     IncreaseRequest * request = child ? child->increase : nullptr;
-    if (!request || request != unused_capacity_reclaim_request)
+    if (!request)
     {
         const bool completed_probe = resetUnusedCapacityReclaim();
         if (completed_probe)
@@ -840,10 +768,9 @@ bool AllocationLimit::resetUnusedCapacityReclaim()
         || (!unused_capacity_reclaim_start_pending
             && (unused_capacity_reclaim_state == UnusedCapacityReclaimState::Scheduled
                 || unused_capacity_reclaim_state == UnusedCapacityReclaimState::InFlight));
-    if (child && unused_capacity_reclaim_request)
-        child->clearFittingIncreaseForHandoff(*unused_capacity_reclaim_request);
+    if (child)
+        child->clearFittingIncreaseForHandoff();
     unused_capacity_reclaim_state = UnusedCapacityReclaimState::Idle;
-    unused_capacity_reclaim_request = nullptr;
     unused_capacity_reclaim_decrease = nullptr;
     unused_capacity_reclaim_waiter = false;
     unused_capacity_reclaim_start_pending = false;

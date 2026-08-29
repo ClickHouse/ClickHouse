@@ -140,9 +140,9 @@ public:
             : nullptr;
     }
 
-    /// Clears a transient selection installed by selectFittingIncreaseForHandoff(). Cancellation
-    /// or growth spends that level's turn instead of transferring it to another job.
-    virtual void clearFittingIncreaseForHandoff(const IncreaseRequest &) {}
+    /// Clears a transient selection installed by selectFittingIncreaseForHandoff(). The path is
+    /// node-owned, so cancellation never has to dereference a request which may already be gone.
+    virtual void clearFittingIncreaseForHandoff() {}
 
     /// Ask allocations in this subtree to release already-charged capacity they no longer use.
     /// `allow_local_handoff` lets an enclosing dependency graph use one release-driven turn for a
