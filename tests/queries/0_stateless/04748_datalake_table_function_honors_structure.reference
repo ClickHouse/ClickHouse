@@ -94,6 +94,15 @@ String	881
 ['0','1000']
 ['0','1000']
 ['0','1000']
+-- iceberg: a retyped identity partition column is read as declared
+['10','2']
+['ten','two']
+['ten','two']
+[2,10]
+[2]
+-- iceberg: a retyped date identity partition column reads as the date, not as its day count
+['2024-01-02','2024-01-10']
+['2024-01-02','2024-01-10']
 -- iceberg cluster: DESC and SELECT report the same declared type
 c0 LowCardinality(String)
 LowCardinality(String)

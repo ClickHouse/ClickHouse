@@ -392,6 +392,31 @@ SELECT '-- paimon: a retyped partition key is not pruned against the metadata-ty
 SELECT groupArray(f_bigint_nn) FROM (SELECT f_bigint_nn FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn String') WHERE f_bigint_nn < '2' ORDER BY f_bigint_nn) SETTINGS use_paimon_partition_pruning = 1, parallel_replicas_for_cluster_engines = 0;
 SELECT groupArray(f_bigint_nn) FROM (SELECT f_bigint_nn FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn String') WHERE f_bigint_nn < '2' ORDER BY f_bigint_nn) SETTINGS use_paimon_partition_pruning = 0, parallel_replicas_for_cluster_engines = 0;
 SELECT groupArray(s) FROM (SELECT toString(f_bigint_nn) AS s FROM paimonLocal('${PAIMONP}') WHERE toString(f_bigint_nn) < '2' ORDER BY s);
+SELECT '-- iceberg: a retyped identity partition column is read as declared';
+-- An identity-partitioned file need not store the partition column, so its value comes from the
+-- manifest and is injected as a constant. The value is extracted at the metadata type, and the two
+-- arms below reach the injection separately: returning the column without a filter injects it into the
+-- read, while filtering on it without returning it substitutes it into the filter instead. Ids 2 and
+-- 10 order differently as numbers and as strings, so both rows are below '4' but only one is below 4.
+CREATE TABLE ice25 (id Int64, data String) ENGINE = IcebergLocal('${ICE}25/', 'Parquet') PARTITION BY id;
+INSERT INTO ice25 VALUES (2, 'two');
+INSERT INTO ice25 VALUES (10, 'ten');
+SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}25/', 'Parquet', 'id String, data String') ORDER BY id);
+SELECT groupArray(data) FROM (SELECT data FROM icebergLocal('${ICE}25/', 'Parquet', 'id String, data String') WHERE id < '4' ORDER BY data);
+SELECT groupArray(data) FROM (SELECT data FROM icebergLocal('${ICE}25/', 'Parquet', 'id String, data String') PREWHERE id < '4' ORDER BY data);
+-- Reading it with no declaration, and with one that agrees, are the pair: both must be unchanged, or
+-- the arms above could pass with the partition value dropped rather than converted.
+SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}25/', 'Parquet') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${ICE}25/', 'Parquet', 'id Int64, data String') WHERE id < 4 ORDER BY id);
+SELECT '-- iceberg: a retyped date identity partition column reads as the date, not as its day count';
+-- A date partition value is held as a day count, so rendering it instead of converting it would give
+-- that number. Only a date fixture separates the two, since an integer column renders the same either
+-- way. The undeclared read is the pair, and shows which date each day count denotes.
+CREATE TABLE ice26 (d Date, data String) ENGINE = IcebergLocal('${ICE}26/', 'Parquet') PARTITION BY d;
+INSERT INTO ice26 VALUES ('2024-01-02', 'a');
+INSERT INTO ice26 VALUES ('2024-01-10', 'b');
+SELECT groupArray(d) FROM (SELECT d FROM icebergLocal('${ICE}26/', 'Parquet', 'd String, data String') ORDER BY d);
+SELECT groupArray(d) FROM (SELECT d FROM icebergLocal('${ICE}26/', 'Parquet') ORDER BY d);
 SELECT '-- iceberg cluster: DESC and SELECT report the same declared type';
 DESC icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet', 'c0 LowCardinality(String)') ${DESCFMT};
 SELECT DISTINCT toTypeName(c0) FROM icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet', 'c0 LowCardinality(String)');
@@ -451,4 +476,4 @@ SELECT count(), sum(zzz) FROM s3('http://localhost:11111/test/${CLICKHOUSE_DATAB
 SELECT groupArray(zzz) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'zzz UInt64 DEFAULT 42'); -- { serverError INCORRECT_DATA }
 DROP TABLE IF EXISTS ice14;
 SQL
-rm -rf "${PAIMON}" "${PAIMONP}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18" "${ICE}20" "${ICE}21" "${ICE}22" "${ICE}23" "${ICE}24"
+rm -rf "${PAIMON}" "${PAIMONP}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18" "${ICE}20" "${ICE}21" "${ICE}22" "${ICE}23" "${ICE}24" "${ICE}25" "${ICE}26"

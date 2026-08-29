@@ -282,8 +282,30 @@ static bool filterCannotPruneAgainst(const Block & current_types, const Block & 
     return false;
 }
 
+/// A partition value is extracted from the manifest at the type the lake gives the column, so a read
+/// planned on a different type has to convert it rather than reinterpret it: a `Date` partition value
+/// is a day count, which taken as a `String` would be that number instead of the date it denotes.
+static const ActionsDAG::Node & addIdentityPartitionConstant(
+    ActionsDAG & dag,
+    const String & name,
+    const Field & value,
+    const DataTypePtr & target_type,
+    const NamesAndTypesList & lake_types,
+    const ContextPtr & context)
+{
+    auto lake_column = lake_types.tryGetByName(name);
+    if (!lake_column || lake_column->type->equals(*target_type))
+        return dag.addColumn(target_type->createColumnConst(0, value), target_type, name);
+
+    const auto & constant = dag.addColumn(lake_column->type->createColumnConst(0, value), lake_column->type, name);
+    return dag.addCast(constant, target_type, name, context);
+}
+
 static ActionsDAG substituteIdentityPartitionColumns(
-    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+    const ActionsDAG & dag,
+    const std::vector<std::pair<String, Field>> & identity_partition_columns,
+    const NamesAndTypesList & lake_types,
+    const ContextPtr & context)
 {
     std::unordered_map<std::string_view, const Field *> values_by_name;
     for (const auto & [name, value] : identity_partition_columns)
@@ -297,7 +319,7 @@ static ActionsDAG substituteIdentityPartitionColumns(
             continue;
 
         const auto & constant
-            = substitution.addColumn(required.type->createColumnConst(0, *it->second), required.type, required.name);
+            = addIdentityPartitionConstant(substitution, required.name, *it->second, required.type, lake_types, context);
         substitution.getOutputs().push_back(&substitution.materializeNode(constant));
     }
 
@@ -305,7 +327,10 @@ static ActionsDAG substituteIdentityPartitionColumns(
 }
 
 static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
-    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+    const Block & header,
+    const std::vector<std::pair<String, Field>> & identity_partition_columns,
+    const NamesAndTypesList & lake_types,
+    const ContextPtr & context)
 {
     std::unordered_map<std::string_view, const Field *> values_by_name;
     for (const auto & [name, value] : identity_partition_columns)
@@ -327,7 +352,8 @@ static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
             continue;
         }
 
-        const auto & constant = dag.addColumn(column.type->createColumnConst(1, *it->second), column.type, column.name);
+        const auto & constant
+            = addIdentityPartitionConstant(dag, column.name, *it->second, column.type, lake_types, context);
         outputs.push_back(&dag.materializeNode(constant));
     }
     return dag;
@@ -1181,9 +1207,23 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             schema_changed = true;
         }
         std::vector<std::pair<String, Field>> identity_partition_columns;
+        /// The schema those values were extracted under is this file's own, which is the current one
+        /// unless the file predates a schema change; `initial_header` holds it only in the latter case,
+        /// and a declared `structure` replaces it in the former, so it is looked up rather than reused.
+        NamesAndTypesList identity_partition_lake_types;
 #if USE_AVRO
         if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+        {
             identity_partition_columns = iceberg_info->info.identity_partition_columns;
+            const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(configuration->getExternalMetadata());
+            if (!identity_partition_columns.empty() && iceberg_metadata)
+            {
+                const auto & schema_processor = iceberg_metadata->getPersistentComponents().schema_processor;
+                const auto schema_id = iceberg_info->info.underlying_format_read_schema_id;
+                if (schema_processor->hasClickHouseTableSchemaById(schema_id))
+                    identity_partition_lake_types = *schema_processor->getClickHouseTableSchemaById(schema_id);
+            }
+        }
 #endif
 
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
@@ -1231,8 +1271,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (row_level_filter && readsIdentityPartitionColumn(row_level_filter->actions, identity_partition_columns))
                 {
                     auto substituted = std::make_shared<FilterDAGInfo>();
-                    substituted->actions
-                        = substituteIdentityPartitionColumns(row_level_filter->actions, identity_partition_columns);
+                    substituted->actions = substituteIdentityPartitionColumns(
+                        row_level_filter->actions, identity_partition_columns, identity_partition_lake_types, context_);
                     substituted->column_name = row_level_filter->column_name;
                     substituted->do_remove_column = row_level_filter->do_remove_column;
                     row_level_filter = std::move(substituted);
@@ -1241,8 +1281,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (prewhere_info && readsIdentityPartitionColumn(prewhere_info->prewhere_actions, identity_partition_columns))
                 {
                     auto substituted = std::make_shared<PrewhereInfo>();
-                    substituted->prewhere_actions
-                        = substituteIdentityPartitionColumns(prewhere_info->prewhere_actions, identity_partition_columns);
+                    substituted->prewhere_actions = substituteIdentityPartitionColumns(
+                        prewhere_info->prewhere_actions, identity_partition_columns, identity_partition_lake_types, context_);
                     substituted->prewhere_column_name = prewhere_info->prewhere_column_name;
                     substituted->remove_prewhere_column = prewhere_info->remove_prewhere_column;
                     substituted->need_filter = prewhere_info->need_filter;
@@ -1443,7 +1483,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!identity_partition_columns.empty())
         {
-            if (auto dag = buildIdentityPartitionColumnsDag(builder.getHeader(), identity_partition_columns))
+            if (auto dag = buildIdentityPartitionColumnsDag(
+                    builder.getHeader(), identity_partition_columns, identity_partition_lake_types, context_))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*dag));
                 builder.addSimpleTransform([&](const SharedHeader & header)
