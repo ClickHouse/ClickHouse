@@ -90,7 +90,7 @@ CREATE TABLE table
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
                                             | jsonPathValues[(max_token_bytes)]
-                                -- Optional parameters:
+                                -- Optional parameters (not supported by jsonPathValues):
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
@@ -130,7 +130,7 @@ ALTER TABLE table
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
                                             | jsonPathValues[(max_token_bytes)]
-                                -- Optional parameters:
+                                -- Optional parameters (not supported by jsonPathValues):
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
