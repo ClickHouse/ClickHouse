@@ -149,6 +149,8 @@ public:
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
+    /// Both write the null map byte and then, for a value that is not NULL, the nested value.
+    bool serializedValueMatchesHashStream() const override { return getNestedColumn().serializedValueMatchesHashStream(); }
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;

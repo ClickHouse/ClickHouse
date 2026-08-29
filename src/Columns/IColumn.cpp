@@ -981,6 +981,13 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 }
 
 template <typename Derived, typename Parent>
+bool IColumnHelper<Derived, Parent>::serializedValueMatchesHashStream() const
+{
+    /// A fixed-size value is serialized as its raw bytes, and those are exactly the bytes it hashes.
+    return std::is_base_of_v<ColumnFixedSizeHelper, Derived>;
+}
+
+template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);

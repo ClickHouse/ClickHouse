@@ -221,6 +221,10 @@ public:
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
+    /// Both write the string size (including the trailing zero byte), the characters, and the
+    /// trailing zero byte itself.
+    bool serializedValueMatchesHashStream() const override { return true; }
+
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 

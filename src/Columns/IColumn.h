@@ -364,6 +364,15 @@ public:
     /// cannot be used and serializeValueIntoArena should be used instead,
     virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
 
+    /// Whether, with SerializationSettings::createForAggregationState, serializeValueIntoMemory
+    /// writes exactly the bytes that updateHashWithValue feeds to the hash. A caller that has to
+    /// hash a whole row can then lay the row out in one buffer, using getSerializedValueSize to
+    /// size it, and hash it with a single call instead of a chain of small updates per column -
+    /// arriving at the very same hash value. Only overridden to true where both implementations
+    /// were checked to agree; false is always safe and only means the caller keeps hashing column
+    /// by column.
+    virtual bool serializedValueMatchesHashStream() const { return false; }
+
     virtual void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & /* memories */, const SerializationSettings * settings) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
@@ -1117,6 +1126,8 @@ private:
 
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+
+    bool serializedValueMatchesHashStream() const override;
 
     std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;

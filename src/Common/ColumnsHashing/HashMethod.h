@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <bit>
@@ -681,6 +682,74 @@ private:
     bool usable = false;
 };
 
+/// Lays a row's key columns out contiguously and hashes it with a single hash call.
+///
+/// `hash128` walks the key columns of a row and lets each one update the hash with the pieces of
+/// its value - for a `String` that is three `SipHash::update` calls per column per row, each
+/// re-entering the buffering the hash does for a partial word. A column that serializes to exactly
+/// the bytes it hashes can instead be written into a buffer holding the whole row, which is then
+/// hashed in one call: the very same 128-bit value for less work.
+///
+/// The buffer holds one row and is reused by all of them, so it stays in L1. Laying out a whole
+/// block of keys at once would be cheaper per row, but the layout is read back exactly once, and
+/// for anything but the narrowest keys it would leave the cache before that happens.
+class ContiguousRowHasher
+{
+public:
+    /// `updateHashWithValue` of a `String` hashes the trailing zero byte, so the serialized form
+    /// has to carry it as well.
+    static constexpr IColumn::SerializationSettings serialization_settings{.serialize_string_with_zero_byte = true};
+
+    /// The buffer grows to the widest row it has seen, so a bound is needed on how much of a key
+    /// is worth holding on to. A row past it is hashed piece by piece, exactly as before.
+    static constexpr size_t max_row_bytes = 64 * 1024;
+
+    bool ALWAYS_INLINE isEnabled() const { return !columns.empty(); }
+
+    /// Enabled when every key column serializes to the bytes it hashes.
+    void prepare(const ColumnRawPtrs & key_columns)
+    {
+        for (const auto * column : key_columns)
+            if (!column->serializedValueMatchesHashStream())
+                return;
+
+        columns = key_columns;
+    }
+
+    UInt128 hash(size_t row) const
+    {
+        size_t row_size = 0;
+        for (const auto * column : columns)
+        {
+            /// A column that does not know its serialized size up front cannot be laid out. The
+            /// hash of the row is the same whichever way it is computed.
+            auto column_size = column->getSerializedValueSize(row, &serialization_settings);
+            if (!column_size)
+                return hash128(row, columns.size(), columns);
+            row_size += *column_size;
+        }
+
+        if (row_size > max_row_bytes)
+            return hash128(row, columns.size(), columns);
+
+        if (buffer.size() < row_size)
+            buffer.resize(row_size);
+
+        char * pos = buffer.data();
+        for (const auto * column : columns)
+            pos = column->serializeValueIntoMemory(row, pos, &serialization_settings);
+        chassert(pos == buffer.data() + row_size);
+
+        SipHash hash;
+        hash.update(buffer.data(), row_size);
+        return hash.get128();
+    }
+
+private:
+    ColumnRawPtrs columns;
+    mutable PODArray<char> buffer;
+};
+
 /// For the case when the key is a 128-bit hash of all key columns (the fallback method for
 /// keys with no fixed-width packed representation, e.g. a `Tuple` column).
 template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
@@ -698,6 +767,8 @@ struct HashMethodHashed
 
     ColumnRawPtrs key_columns;
 
+    ContiguousRowHasher contiguous_row_hasher;
+
     /// The consecutive-keys cache alone cannot skip the key calculation for this method: its
     /// check needs the key, and here the key is the hash itself. Clustered inputs (e.g. sorted
     /// by a primary key prefix) arrive in runs of equal consecutive rows, so additionally
@@ -712,10 +783,13 @@ struct HashMethodHashed
     {
         if constexpr (use_cache)
             key_slices = FixedSizeKeySlices(key_columns);
+        contiguous_row_hasher.prepare(key_columns);
     }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
+        if (contiguous_row_hasher.isEnabled())
+            return contiguous_row_hasher.hash(row);
         return hash128(row, key_columns.size(), key_columns);
     }
 

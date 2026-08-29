@@ -1,0 +1,28 @@
+split keys
+ab	c	2	20
+		5	50
+zero bytes in keys
+1	10
+2	20
+wide keys
+50	1225	1225
+low cardinality against plain
+290	14355	14355
+nullable against plain
+242	11977	11942
+nullable against nullable
+211	10423	10423
+array and tuple keys
+290
+same result as full sorting merge
+1
+anti join same result as full sorting merge
+1
+in set
+2857
+distinct matches uniqExact
+1
+array uniq matches array distinct
+97
+array enumerate uniq
+[1,1,2]

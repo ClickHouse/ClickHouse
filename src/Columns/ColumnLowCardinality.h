@@ -116,6 +116,9 @@ public:
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
+    /// Both go to the dictionary value at the row's index.
+    bool serializedValueMatchesHashStream() const override { return getDictionary().serializedValueMatchesHashStream(); }
+
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash &) const override;

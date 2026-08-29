@@ -15,6 +15,8 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <base/sort.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -460,6 +462,16 @@ void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
 
     for (const auto & column : columns)
         column->skipSerializedInArena(in);
+}
+
+bool ColumnTuple::serializedValueMatchesHashStream() const
+{
+    /// Both write the elements one after another - except for a tuple of no elements at all,
+    /// which serializes as a single zero byte but hashes as nothing.
+    if (columns.empty())
+        return false;
+
+    return std::ranges::all_of(columns, [](const auto & column) { return column->serializedValueMatchesHashStream(); });
 }
 
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
