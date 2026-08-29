@@ -148,7 +148,6 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    bool isExperimental() const override { return true; }
     /// Built without a column type, ALP falls back to the `Float64` element width, reinterprets the
     /// bytes as floating-point values and throws for any input whose size is not a multiple of that
     /// width, so it cannot reliably compress untyped data (decompression is unaffected: it reads the

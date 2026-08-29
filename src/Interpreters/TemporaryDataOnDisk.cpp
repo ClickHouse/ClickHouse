@@ -88,15 +88,15 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     /// (e.g. `PCO`) would otherwise be accepted here and only fail later, at the first external
     /// sort/join/aggregation spill, with a confusing message. Reject such codecs up front, mirroring
     /// the validation of the `marks_compression_codec` / `primary_key_compression_codec` MergeTree
-    /// settings, which are likewise applied to untyped streams. Experimental codecs are a session-gated
-    /// policy: they are allowed when the session that set `temporary_files_codec` enabled that very codec
-    /// (its dedicated `enable_<family>_codec` setting, or the blanket `allow_experimental_codecs`). The
-    /// decision is carried in the settings because the query settings are no longer available at spill
-    /// time; see `spillCodecAuthorizedBySession`.
-    if (codec->isExperimental() && !settings.spill_codec_authorized)
+    /// settings, which are likewise applied to untyped streams. A gated codec (experimental or beta) is a
+    /// session-gated policy: it is allowed when the session that set `temporary_files_codec` enabled that
+    /// very codec (its dedicated `enable_<family>_codec` setting, or - for an experimental one - the
+    /// blanket `allow_experimental_codecs`). The decision is carried in the settings because the query
+    /// settings are no longer available at spill time; see `spillCodecAuthorizedBySession`.
+    if (CompressionCodecFactory::isCodecStringGated(settings.compression_codec) && !settings.spill_codec_authorized)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Setting 'temporary_files_codec' cannot use the experimental codec {}: the session did not enable it with the "
+            "Setting 'temporary_files_codec' cannot use the codec {}: the session did not enable it with the "
             "codec's 'enable_<family>_codec' setting (or with 'allow_experimental_codecs')",
             settings.compression_codec);
     if (codec->requiresColumnTypeToCompress())
@@ -111,7 +111,7 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
 
 }
 
-bool temporaryFilesCodecIsExperimental(const String & compression_codec)
+bool temporaryFilesCodecIsGated(const String & compression_codec)
 {
     if (compression_codec.empty())
         return false;
@@ -121,14 +121,14 @@ bool temporaryFilesCodecIsExperimental(const String & compression_codec)
     /// This can run while a plan is being serialized, for a query that may never spill, so it must
     /// classify rather than throw. A codec that cannot compress untyped data at all (`SZ3`, `PCO`, ...)
     /// makes the spill itself fail with the same `getCodec` error on every peer, with and without the
-    /// experimental opt-in - there is nothing to communicate, and resolving it via `get` below would throw
-    /// right here. The same goes for a codec string `get` cannot resolve at all: the spill fails with the
+    /// session opt-in - there is nothing to communicate, and classifying it below would be pointless.
+    /// The same goes for a codec string that cannot be resolved at all: the spill fails with the
     /// identical error wherever the plan runs.
     try
     {
         if (!factory.getReasonUnsafeForUntypedData(compression_codec).empty())
             return false;
-        return factory.get(compression_codec)->isExperimental();
+        return CompressionCodecFactory::isCodecStringGated(compression_codec);
     }
     catch (const Exception &)
     {
@@ -138,12 +138,12 @@ bool temporaryFilesCodecIsExperimental(const String & compression_codec)
 
 bool spillCodecAuthorizedBySession(const Settings & settings)
 {
-    return CompressionCodecFactory::instance().areExperimentalCodecsEnabled(settings[Setting::temporary_files_codec], settings);
+    return CompressionCodecFactory::areCodecGatesSatisfied(settings[Setting::temporary_files_codec], settings);
 }
 
 bool spillCodecAuthorizationMustBeSerialized(bool spill_is_reachable, bool spill_codec_authorized, const String & compression_codec)
 {
-    return spill_is_reachable && spill_codec_authorized && temporaryFilesCodecIsExperimental(compression_codec);
+    return spill_is_reachable && spill_codec_authorized && temporaryFilesCodecIsGated(compression_codec);
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)

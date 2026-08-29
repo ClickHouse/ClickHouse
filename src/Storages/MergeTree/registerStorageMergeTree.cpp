@@ -916,15 +916,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
 
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
-        /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use, so an
-        /// experimental codec (e.g. `ZXC`) could slip in through `SETTINGS default_compression_codec = ...`.
+        /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
+        /// could slip in through `SETTINGS default_compression_codec = ...`.
         /// For freshly introduced definitions (`is_fresh_definition` above) the merged value (explicit or
         /// inherited from the current `<merge_tree>` config defaults) is checked against
-        /// the experimental-codec gate. For stored definitions values written in the stored `SETTINGS`
-        /// clause were already gated when they were introduced and are exempt, so existing tables
+        /// the codec gate (`validateCodecString` handles the per-tier `enable_<family>_codec` settings and the
+        /// `allow_experimental_codecs` umbrella). For stored definitions values written in the stored
+        /// `SETTINGS` clause were already gated when they were introduced and are exempt, so existing tables
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
-        /// introduce an experimental codec into existing tables via a config default plus a restart, without
+        /// introduce a gated codec into existing tables via a config default plus a restart, without
         /// anyone enabling that codec (at startup the check runs against the default
         /// profile, which is where such a config default can be legitimately allowed). Because such values
         /// are not persisted into the table metadata, a session-level opt-in is not durable: the table

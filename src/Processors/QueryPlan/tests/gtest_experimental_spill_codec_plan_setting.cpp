@@ -32,7 +32,7 @@ namespace
 {
 
 /// `ZXC` is experimental, usable on untyped spill data (unlike `PCO` and `ALP`, which require a column
-/// type and so cannot compress temporary files at all - see `temporaryFilesCodecIsExperimental`), and,
+/// type and so cannot compress temporary files at all - see `temporaryFilesCodecIsGated`), and,
 /// unlike `PCO`, always compiled in.
 const String experimental_codec = "ZXC";
 const String plain_codec = "LZ4";

@@ -1,12 +1,13 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
+#include <Core/SettingsTierType.h>
 #include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
 #include <Common/Documentation.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Parsers/IAST_fwd.h>
-#include <Columns/IColumn_fwd.h>
 
 #include <functional>
 #include <memory>
@@ -43,9 +44,9 @@ struct CodecValidationSettings
     /// An already accepted codec must not be re-judged by the current session, or existing tables could fail to load.
     static CodecValidationSettings trusted() { return {}; }
 
-    /// Enforce the experimental-codec gate, but skip the suspicious-codec sanity checks. For the escape
+    /// Enforce the codec gate, but skip the suspicious-codec sanity checks. For the escape
     /// hatches that only relax validation (e.g. `allow_suspicious_ttl_expressions`): relaxing the checks
-    /// must not silently enable an experimental codec.
+    /// must not silently enable a gated codec.
     static CodecValidationSettings withoutSanityCheck(const Settings & settings_)
     {
         CodecValidationSettings result(settings_);
@@ -55,8 +56,8 @@ struct CodecValidationSettings
 
     static CodecValidationSettings withoutSanityCheck(Settings &&) = delete;
 
-    /// nullptr on trusted paths (every experimental / suspicious codec is accepted).
-    /// Otherwise an experimental codec is enabled by its `enable_<family>_codec` setting.
+    /// nullptr on trusted paths (every gated / suspicious codec is accepted).
+    /// Otherwise a gated codec must be enabled by its dedicated setting.
     const Settings * settings = nullptr;
 
     /// Skip the suspicious-codec sanity checks even though `settings` is set. See `withoutSanityCheck`.
@@ -74,6 +75,7 @@ protected:
     using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
+
     using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType>;
     using CompressionCodecsCodeDictionary = UnorderedMapWithMemoryTracking<uint8_t, CreatorWithType>;
 
@@ -106,20 +108,22 @@ public:
     /// fail later, at the first mark / primary key / part write. `setting_name` is only used in the message.
     void checkCodecStringSafeForUntypedData(const String & compression_codec, std::string_view setting_name) const;
 
-    /// Name of the dedicated setting that enables the experimental codec family `family_name`.
-    static String experimentalCodecEnableSettingName(const String & family_name);
+    /// Whether the codec family `family_name` is gated behind a dedicated `enable_<family>_codec`
+    /// setting, i.e. it is not generally available. An unknown or ungated family is not gated.
+    static bool isCodecFamilyGated(const String & family_name);
 
-    /// Whether `settings` enable the experimental codec family `family_name`: its dedicated
-    /// `enable_<family>_codec` setting, or the blanket `allow_experimental_codecs` escape hatch.
-    /// Throws `LOGICAL_ERROR` if the family declares no dedicated setting.
-    static bool isExperimentalCodecEnabled(const String & family_name, const Settings & settings);
+    /// Whether any codec family in the chain `compression_codec` (a codec name or chain such as
+    /// `"PCO, LZ4"`) is gated. Classifies instead of throwing: a string that cannot be parsed as a
+    /// codec chain is reported as ungated and fails later, where the codec is actually resolved.
+    static bool isCodecStringGated(const String & compression_codec);
 
-    /// Whether `settings` enable every experimental codec in the chain `compression_codec` (a codec name
-    /// or chain such as `"PCO, LZ4"`). Unlike `validateCodecString` this classifies instead of throwing:
-    /// it is meant for callers that record the session's authorization long before the codec is resolved
-    /// (the `temporary_files_codec` spill settings), so an unresolvable or untyped-unsafe codec string is
-    /// reported as authorized here and fails later, where it is actually used, with a precise message.
-    bool areExperimentalCodecsEnabled(const String & compression_codec, const Settings & settings) const;
+    /// Whether `settings` satisfy the gate of every codec in the chain `compression_codec`: each gated
+    /// codec's dedicated `enable_<family>_codec` setting, or - for an experimental one - the blanket
+    /// `allow_experimental_codecs` escape hatch. Unlike `validateCodecString` this classifies instead of
+    /// throwing: it is meant for callers that record the session's authorization long before the codec is
+    /// resolved (the `temporary_files_codec` spill settings), so an unresolvable codec string is reported
+    /// as authorized here and fails later, where it is actually used, with a precise message.
+    static bool areCodecGatesSatisfied(const String & compression_codec, const Settings & settings);
 
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
@@ -173,6 +177,8 @@ public:
     /// a `current_default` obtained from the same normal default selection, so the alias does not
     /// silently resolve to the factory's hardcoded fallback codec.
     static bool containsDefaultCodecAlias(const ASTPtr & codec_ast);
+    /// Names of the dedicated settings gating registered codec families.
+    Strings getGateSettingNames() const;
 
     /// Insert codec information into MutableColumns to show in the system table
     void fillCodecDescriptions(MutableColumns & res_columns) const;
@@ -207,8 +213,18 @@ private:
     /// would fail to resolve, and `getReasonUnsafeForUntypedData` would throw instead of classifying it.
     static void upperCaseCodecFamilyNames(const ASTPtr & codec_ast);
 
+    /// The codec family names of a chain string such as `"PCO, LZ4"`, in order. Throws if the string
+    /// cannot be parsed as a codec chain; the classifying callers above catch that.
+    static Strings getCodecFamilyNamesOfChain(const String & compression_codec);
+
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
+
+    /// Name of the gate setting: `enable_<lowercase family>_codec`.
+    static String getGateSettingName(const String & family_name);
+
+    /// Get setting tier of a codec. nullopt when the codec is ungated or the setting is obsolete (-> codec is GA)
+    static std::optional<SettingsTierType> getGateTier(const String & gate_setting_name);
 
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;

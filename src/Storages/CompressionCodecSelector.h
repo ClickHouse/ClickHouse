@@ -97,9 +97,9 @@ public:
             /// and `primary_key_compression_codec` settings are validated — so a misconfiguration is
             /// reported when the server configuration is loaded. A lossy codec (e.g. `SZ3`) is rejected
             /// by `get` itself while resolving without a column type.
-            /// An experimental codec is rejected as well, unless the server-level policy (the default
-            /// profile) enables it: the selected codec becomes the default codec of every new part, so
-            /// putting an experimental codec there must be as explicit an opt-in as using one in a query.
+            /// A gated codec (experimental or beta) is rejected as well, unless the server-level policy
+            /// (the default profile) enables it: the selected codec becomes the default codec of every new
+            /// part, so putting a gated codec there must be as explicit an opt-in as using one in a query.
             auto codec = factory.get(element.family_name, element.level);
             if (codec->requiresColumnTypeToCompress())
                 throw Exception(
@@ -108,7 +108,7 @@ public:
                     " to untyped data",
                     config_prefix,
                     element.family_name);
-            if (codec->isExperimental())
+            if (CompressionCodecFactory::isCodecFamilyGated(element.family_name))
             {
                 try
                 {
@@ -117,7 +117,7 @@ public:
                 catch (Exception & e)
                 {
                     e.addMessage(
-                        "while checking the '{}' configuration: an experimental codec can only be used there when it is"
+                        "while checking the '{}' configuration: a gated codec can only be used there when it is"
                         " enabled in the default profile",
                         config_prefix);
                     throw;

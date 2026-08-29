@@ -101,10 +101,6 @@ public:
 
     virtual bool isLossyCompression() const { return false; }
 
-    /// It is a codec available only for evaluation purposes and not meant to be used in production.
-    /// It will not be allowed to use unless the user will turn off the safety switch.
-    virtual bool isExperimental() const { return false; }
-
     /// If the codec needs the column data type to compress (e.g. `PCO`, which depends on the element
     /// width and whether it is float/signed/unsigned). Such a codec cannot be used in the untyped
     /// compression settings (`marks_compression_codec`, `primary_key_compression_codec`,

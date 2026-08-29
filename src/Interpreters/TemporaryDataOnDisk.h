@@ -71,12 +71,12 @@ struct TemporaryDataOnDiskSettings
 };
 
 /// Whether `compression_codec` (a `temporary_files_codec` value; empty means the default `LZ4`)
-/// resolves to an experimental codec, i.e. spilling with it requires the session's authorization.
-bool temporaryFilesCodecIsExperimental(const String & compression_codec);
+/// resolves to a gated codec, i.e. spilling with it requires the session's authorization.
+bool temporaryFilesCodecIsGated(const String & compression_codec);
 
 /// Whether `settings` authorize the `temporary_files_codec` they configure as a spill codec: it is not
-/// experimental, or the session enabled it (its dedicated `enable_<family>_codec` setting, or the blanket
-/// `allow_experimental_codecs`). Computed where the query settings still exist, because the spill happens
+/// gated, or the session enabled it (its dedicated `enable_<family>_codec` setting, or - for an
+/// experimental codec - the blanket `allow_experimental_codecs`). Computed where the query settings still exist, because the spill happens
 /// long afterwards; the result travels as `TemporaryDataOnDiskSettings::spill_codec_authorized`.
 bool spillCodecAuthorizedBySession(const Settings & settings);
 

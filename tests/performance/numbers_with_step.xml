@@ -1,0 +1,11 @@
+<test>
+    <settings><max_threads>1</max_threads></settings>
+
+    <!-- `numbers` and `generate_series` with a step other than 1 fill their result blocks with a
+         different loop than the unit-step forms, which the existing `numbers(N)` tests cover.
+         Single threaded so the fill, and not thread scheduling, dominates the measurement. -->
+
+    <query>SELECT count() FROM numbers(0, 3000000000, 3) FORMAT Null</query>
+    <query>SELECT sum(number) FROM numbers(0, 3000000000, 3) FORMAT Null</query>
+    <query>SELECT count() FROM generate_series(0, 2999999999, 3) FORMAT Null</query>
+</test>
