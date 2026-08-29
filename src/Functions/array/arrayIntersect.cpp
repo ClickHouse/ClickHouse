@@ -722,7 +722,10 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     else
                     {
                         const char * data = nullptr;
-                        value = findOrInsertSerialized<fill_map>(map, *arena, column->serializeValueIntoArena(i, *arena, data, nullptr));
+                        /// The serialized value is used as a key in a hash table,
+                        /// so negative zeros are canonicalized - see `canonicalizeNegativeZero`.
+                        static constexpr auto settings = IColumn::SerializationSettings::createForHashTableKey();
+                        value = findOrInsertSerialized<fill_map>(map, *arena, column->serializeValueIntoArena(i, *arena, data, &settings));
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
@@ -833,7 +836,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 {
                     const char * data = nullptr;
                     /// Only a lookup - the serialized key is not kept, see `findOrInsertSerialized`.
-                    const std::string_view key = columns[0]->serializeValueIntoArena(i, *arena, data, nullptr);
+                    /// The same settings as when the map was filled.
+                    static constexpr auto settings = IColumn::SerializationSettings::createForHashTableKey();
+                    const std::string_view key = columns[0]->serializeValueIntoArena(i, *arena, data, &settings);
                     pair = map.find(key);
                     arena->rollback(key.size());
                 }

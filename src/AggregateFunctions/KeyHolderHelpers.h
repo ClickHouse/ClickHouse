@@ -23,7 +23,10 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
     else
     {
         const char * begin = nullptr;
-        auto settings = IColumn::SerializationSettings::createForAggregationState();
+        /// The serialized value is used as a key in a hash table, so negative zeros are canonicalized:
+        /// otherwise the deduplication would disagree with the `equals` function
+        /// for the values that contain floating point zeros.
+        static constexpr auto settings = IColumn::SerializationSettings::createForAggregationStateKey();
         auto serialized = column.serializeValueIntoArena(row_num, arena, begin, &settings);
         chassert(!serialized.empty());
         return SerializedKeyHolder{serialized, arena};

@@ -119,7 +119,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
         std::string_view value;
         for (size_t i = 0; i < columns_num; ++i)
         {
-            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            /// See the comment in `getKeyHolder`.
+            static constexpr auto settings = IColumn::SerializationSettings::createForAggregationStateKey();
             auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin, &settings);
             value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }

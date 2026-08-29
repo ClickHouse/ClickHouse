@@ -407,7 +407,8 @@ public:
         else
         {
             const char * begin = nullptr;
-            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            /// The serialized value is used as a key in a hash table - see `getKeyHolder`.
+            static constexpr auto settings = IColumn::SerializationSettings::createForAggregationStateKey();
             auto str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin, &settings);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));

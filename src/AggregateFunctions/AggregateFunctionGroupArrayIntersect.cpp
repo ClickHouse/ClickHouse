@@ -244,7 +244,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    /// The serialized value is used as a key in a hash table - see `getKeyHolder`.
+                    static constexpr auto settings = IColumn::SerializationSettings::createForAggregationStateKey();
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
                     chassert(!serialized.empty());
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
@@ -265,7 +266,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    /// The serialized value is used as a key in a hash table - see `getKeyHolder`.
+                    static constexpr auto settings = IColumn::SerializationSettings::createForAggregationStateKey();
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
                     chassert(!serialized.empty());
                     it = set.find(serialized);

@@ -8,6 +8,7 @@
 #include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
+#include <base/normalizeNegativeZero.h>
 #include <base/unaligned.h>
 
 #include <bit>
@@ -289,6 +290,26 @@ public:
     std::string_view getDataAt(size_t n) const override
     {
         return std::string_view(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+    }
+
+    /// This is the only place where the values of this column are written to a serialized representation:
+    /// the methods of `IColumnHelper` that serialize into an arena or into memory all funnel here.
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override
+    {
+        /// Negative zero is equal to positive zero, but has a different binary representation,
+        /// so it has to be canonicalized when the serialized value is used as a key in a hash table.
+        if constexpr (is_floating_point<T>)
+        {
+            if (settings && settings->canonicalize_negative_zero)
+            {
+                const T value = normalizeNegativeZero(data[n]);
+                memcpy(memory, &value, sizeof(value));
+                return memory + sizeof(value);
+            }
+        }
+
+        memcpy(memory, &data[n], sizeof(T));
+        return memory + sizeof(T);
     }
 
     bool isDefaultAt(size_t n) const override
