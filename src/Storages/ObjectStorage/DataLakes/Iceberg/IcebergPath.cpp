@@ -48,16 +48,21 @@ IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
 
     auto strip_leading_slash = [](std::string_view str) { return str.starts_with('/') ? str.substr(1) : str; };
 
-    /// Adopt only when the declared location denotes that same directory, whatever its spelling.
-    /// A leading slash is outside the comparison: the storage path may be absolute while `location`
-    /// carries a URI authority, whose last character then sits where a separator would be.
+    /// Adopt only when the declared location denotes that same directory. It may differ from the
+    /// storage path by a leading slash and by a `<scheme>://<authority>/` prefix, both of which
+    /// still name that directory; a prefix carrying a path component names a different one.
     auto location = strip_leading_slash(trimTrailingSlashes(table_location));
     auto tail = strip_leading_slash(candidate);
     if (tail.empty())
         return {queried_path, RootRelation::Unknown};
-    const bool location_agrees = location == tail
-        || (location.size() > tail.size() && location.ends_with(tail)
-            && location[location.size() - tail.size() - 1] == '/');
+    bool location_agrees = location == tail;
+    if (!location_agrees && location.size() > tail.size() && location.ends_with(tail)
+        && location[location.size() - tail.size() - 1] == '/')
+    {
+        auto prefix = location.substr(0, location.size() - tail.size());
+        auto scheme_end = prefix.find("://");
+        location_agrees = scheme_end != std::string_view::npos && prefix.find('/', scheme_end + 3) == prefix.size() - 1;
+    }
     if (!location_agrees)
         return {queried_path, RootRelation::Unknown};
 

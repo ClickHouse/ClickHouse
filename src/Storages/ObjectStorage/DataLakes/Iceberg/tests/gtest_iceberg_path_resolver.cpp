@@ -37,14 +37,53 @@ TEST(IcebergDeriveTableRoot, AbsoluteStoragePath)
         "/warehouse/tbl/metadata/v2.metadata.json",
         "/warehouse/tbl", IcebergPathResolver::RootRelation::AdoptedDescendant});
 
-    /// The document sits somewhere other than where its own `location` says; the root is still the
-    /// directory it sits in, and it is still inside the queried path.
-    check({"moved document", "hdfs://h:9000/other/warehouse/tbl", "/warehouse",
-        "/warehouse/tbl/metadata/v2.metadata.json",
-        "/warehouse/tbl", IcebergPathResolver::RootRelation::AdoptedDescendant});
-
     /// The tail matches only mid-component, so the two paths name different directories.
     check({"tail is not component-aligned", "hdfs://h:9000/xwarehouse/tbl", "/warehouse",
+        "/warehouse/tbl/metadata/v2.metadata.json",
+        "/warehouse", IcebergPathResolver::RootRelation::Unknown});
+}
+
+/// Every spelling in which a backend names one directory: what `location` carries in front of the
+/// storage path is a scheme and an authority, which name a host rather than a directory.
+TEST(IcebergDeriveTableRoot, LocationDiffersOnlyByAuthority)
+{
+    check({"hdfs", "hdfs://host:9000/tbl/UUIDDIR", "/tbl", "/tbl/UUIDDIR/metadata/v2.metadata.json",
+        "/tbl/UUIDDIR", IcebergPathResolver::RootRelation::AdoptedDescendant});
+
+    check({"abfss", "abfss://container@account.dfs.core.windows.net/tbl/UUIDDIR", "tbl",
+        "tbl/UUIDDIR/metadata/v2.metadata.json",
+        "tbl/UUIDDIR", IcebergPathResolver::RootRelation::AdoptedDescendant});
+
+    check({"virtual-hosted s3", "https://mybucket.s3.amazonaws.com/tbl/UUIDDIR", "tbl",
+        "tbl/UUIDDIR/metadata/v2.metadata.json",
+        "tbl/UUIDDIR", IcebergPathResolver::RootRelation::AdoptedDescendant});
+
+    check({"no scheme", "/tbl/UUIDDIR", "tbl", "tbl/UUIDDIR/metadata/v2.metadata.json",
+        "tbl/UUIDDIR", IcebergPathResolver::RootRelation::AdoptedDescendant});
+
+    check({"s3", "s3://warehouse/tbl/UUIDDIR", "tbl", "tbl/UUIDDIR/metadata/v2.metadata.json",
+        "tbl/UUIDDIR", IcebergPathResolver::RootRelation::AdoptedDescendant});
+
+    /// A Spark warehouse of many tables, queried at the warehouse instead of at one table.
+    check({"spark warehouse", "s3a://spark-bucket/warehouse/db/spark_table", "warehouse",
+        "warehouse/db/spark_table/metadata/v2.metadata.json",
+        "warehouse/db/spark_table", IcebergPathResolver::RootRelation::AdoptedDescendant});
+}
+
+/// `location` ending with the document's own directory is a coincidence once a directory of its own
+/// precedes it: the table then lives under a different prefix, and the queried path, which does
+/// hold the document, stays the root that every file already resolves against.
+TEST(IcebergDeriveTableRoot, LocationHasUnmatchedPathComponent)
+{
+    check({"stale copied location", "s3://old/backup/warehouse/db/t", "warehouse",
+        "warehouse/db/t/metadata/v2.metadata.json",
+        "warehouse", IcebergPathResolver::RootRelation::Unknown});
+
+    check({"no scheme", "/backup/warehouse/db/t", "warehouse",
+        "warehouse/db/t/metadata/v2.metadata.json",
+        "warehouse", IcebergPathResolver::RootRelation::Unknown});
+
+    check({"absolute storage path", "hdfs://h:9000/other/warehouse/tbl", "/warehouse",
         "/warehouse/tbl/metadata/v2.metadata.json",
         "/warehouse", IcebergPathResolver::RootRelation::Unknown});
 }
