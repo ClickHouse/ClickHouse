@@ -12,8 +12,22 @@ echo "$error" | grep -qF 'Maybe you meant' && echo 'the message suggests the clo
 echo "$error" | grep -qF 'DiskAzureCommitBlockList' && echo 'the suggestions contain the closest name'
 echo "$error" | grep -qF 'out_of_range' && echo 'FAIL: std::out_of_range leaked into the message'
 
-# Spaces around the names and a trailing comma are allowed.
-$CLICKHOUSE_CLIENT --trace_profile_events 1 --trace_profile_events_list ' Query, SelectQuery, ' --query "SELECT 2"
+# Spaces around the names and a trailing comma are allowed, and only the named events are traced.
+query_id_listed="listed-$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --query_id "$query_id_listed" --trace_profile_events 1 --trace_profile_events_list ' Query, SelectQuery, ' --query "SELECT 2 FORMAT Null"
 
-# A list of only separators and spaces means "trace everything", as an empty list does.
-$CLICKHOUSE_CLIENT --trace_profile_events 1 --trace_profile_events_list ' , ' --query "SELECT 3"
+# A list of only separators and spaces means "trace everything", exactly as an empty list does.
+query_id_normalized_empty="normalized-empty-$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --query_id "$query_id_normalized_empty" --trace_profile_events 1 --trace_profile_events_list ' , ' --query "SELECT 3 FORMAT Null"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS trace_log"
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT countIf(event = 'Query') > 0, uniqExact(event) <= 2
+    FROM system.trace_log
+    WHERE event_date >= yesterday() AND query_id = '$query_id_listed' AND trace_type = 'ProfileEvent'"
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT countIf(event = 'Query') > 0, uniqExact(event) > 2
+    FROM system.trace_log
+    WHERE event_date >= yesterday() AND query_id = '$query_id_normalized_empty' AND trace_type = 'ProfileEvent'"
