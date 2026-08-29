@@ -398,6 +398,12 @@ namespace Net
         int socketError();
         /// Returns the value of the SO_ERROR socket option.
 
+        void throwSocketError(const std::string & arg);
+        /// Throws the exception matching the error pending on the socket,
+        /// naming `arg`, and does nothing when no error is pending. For
+        /// callers that run their own non-blocking connect loop and so
+        /// cannot let connect() report the address for them.
+
         poco_socket_t sockfd() const;
         /// Returns the socket descriptor for the
         /// underlying native socket.

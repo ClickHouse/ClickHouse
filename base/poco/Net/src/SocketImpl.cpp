@@ -961,6 +961,13 @@ int SocketImpl::socketError()
 }
 
 
+void SocketImpl::throwSocketError(const std::string& arg)
+{
+	int err = socketError();
+	if (err != 0) error(err, arg);
+}
+
+
 void SocketImpl::init(int af)
 {
 #ifdef SOCK_CLOEXEC
