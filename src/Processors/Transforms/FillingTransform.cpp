@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
@@ -448,6 +449,22 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
 static void checkIntervalStepFillCanReachFillTo(const FillColumnDescription & descr, int direction)
 {
     if (!descr.step_kind || descr.fill_from.isNull() || descr.fill_to.isNull() || !descr.fill_staleness.isNull())
+        return;
+
+    /// Both failure modes need a value below TO to step across the boundary of the representable range:
+    /// stagnation happens at the calendar boundary and wraparound at the boundary of the storage type. The
+    /// calendar arithmetic is monotonic, so probing one step from TO itself covers every value the walk visits:
+    /// when the probe advances in the fill direction and stays within the representable range, no value below
+    /// TO can reach the boundary, and the walk provably finds nothing - skip it. An ordinary fill over a big
+    /// span with a fine-grained step (a dashboard fill of a month by minutes) is skipped here; the walk runs
+    /// only when TO is within one step of the boundary.
+    Field probe = descr.fill_to;
+    descr.step_func(probe, 1);
+    const bool probe_advances = less(descr.fill_to, probe, direction);
+    const bool probe_representable = descr.fill_representable_min.isNull()
+        || (direction > 0 ? !accurateLess(descr.fill_representable_max, probe)
+                          : !accurateLess(probe, descr.fill_representable_min));
+    if (probe_advances && probe_representable)
         return;
 
     static constexpr size_t walk_budget = 65536;
