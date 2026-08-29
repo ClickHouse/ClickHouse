@@ -1,5 +1,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
@@ -120,6 +121,10 @@ std::vector<String> parseRemoteDescription(
     size_t max_addresses,
     const RemoteDescriptionCaller & caller)
 {
+    /// Nested braces are parsed recursively, and `max_addresses` bounds the number of generated
+    /// addresses, not the nesting depth: `{{{{...,...}}}}` recurses once per level.
+    checkStackSize();
+
     std::vector<String> res;
     std::vector<String> cur;
 
