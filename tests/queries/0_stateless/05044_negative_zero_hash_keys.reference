@@ -53,3 +53,40 @@ bloom filter does not skip granules with zeros of the other sign
 nan is not equal to zero and is still grouped with itself
 0	0	0
 2
+variant, dynamic and json keys
+1
+1
+1
+1
+1
+1
+1
+the values in the shared variant of a Dynamic column and in the shared data of a JSON column are stored in binary format
+1
+1
+map keys
+1
+aggregate functions that deduplicate values by their serialized representation
+[[0]]
+[[0]]
+[(0,1)]
+[0]
+[[0]]
+1
+[[0]]	[[0]]
+[[0]]
+[0]
+[[0]]	[(0,1)]
+the values are not canonicalized when they are not used as a key
+[[0],[-0]]
+values hashed by their generic binary representation
+1	[1,2]	[1,1]
+1	1	1	1	1
+1
+transform
+zero	zero
+42
+zero
+found	c
+the complex key of a dictionary
+1	zero
