@@ -14,6 +14,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/SSHWrapper.h>
+#include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
@@ -712,6 +713,37 @@ namespace
                 auto value = config.getString(interval_config + "." + type_info.name, "0");
                 if (value != "0")
                     limits.max[static_cast<size_t>(quota_type)] = type_info.stringToValue(value);
+            }
+
+            /// Any other tag inside the interval defines a limit over the profile event with
+            /// that name, e.g. <S3GetObject>1000</S3GetObject>. Like for the predefined
+            /// resource types, 0 means "unlimited".
+            Poco::Util::AbstractConfiguration::Keys limit_keys;
+            config.keys(interval_config, limit_keys);
+            for (const String & limit_key : limit_keys)
+            {
+                if (limit_key == "duration" || limit_key == "randomize" || limit_key.starts_with('@'))
+                    continue;
+
+                bool is_predefined = false;
+                for (auto quota_type : collections::range(QuotaType::MAX))
+                    is_predefined |= (QuotaTypeInfo::get(quota_type).name == limit_key);
+                if (is_predefined)
+                    continue;
+
+                if (!ProfileEvents::tryGetByName(limit_key))
+                {
+                    /// Unknown tags inside the interval have always been ignored, so a typo can't
+                    /// break the server startup; but it deserves a warning.
+                    LOG_WARNING(getLogger("UsersConfigParser"),
+                        "Quota {}: unknown limit {}: neither a predefined resource type nor a profile event (see the `system.events` table). This limit is ignored",
+                        backQuote(quota_name), backQuote(limit_key));
+                    continue;
+                }
+
+                auto value = config.getUInt64(interval_config + "." + limit_key, 0);
+                if (value)
+                    limits.profile_events_max[limit_key] = value;
             }
         }
 

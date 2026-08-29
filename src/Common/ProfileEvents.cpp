@@ -1973,7 +1973,7 @@ const std::string_view & getDocumentation(Event event)
 }
 
 /// Get ProfileEvent by its name
-Event getByName(std::string_view name)
+static const std::unordered_map<std::string_view, Event> & getNameToEventMap()
 {
     static std::unordered_map<std::string_view, Event> map =
     {
@@ -1982,7 +1982,21 @@ Event getByName(std::string_view name)
 #undef M
     };
 
-    return map.at(name);
+    return map;
+}
+
+Event getByName(std::string_view name)
+{
+    return getNameToEventMap().at(name);
+}
+
+std::optional<Event> tryGetByName(std::string_view name)
+{
+    const auto & map = getNameToEventMap();
+    auto it = map.find(name);
+    if (it == map.end())
+        return std::nullopt;
+    return it->second;
 }
 
 void Counters::setTraceProfileEvent(Event event)

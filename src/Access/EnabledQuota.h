@@ -2,6 +2,7 @@
 
 #include <Access/Common/QuotaDefs.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/ProfileEvents.h>
 #include <Core/UUID.h>
 #include <Poco/Net/IPAddress.h>
 #include <boost/container/flat_set.hpp>
@@ -69,6 +70,22 @@ public:
     /// on every progress/result chunk.
     void usedForQuery(UInt64 normalized_query_hash, std::initializer_list<std::pair<QuotaType, QuotaValue>> usages, bool check_exceeded = true) const;
 
+    /// Returns whether any of the governing quotas defines a limit over a profile event.
+    /// This is a single atomic flag maintained by `QuotaCache`, so the check is cheap; callers
+    /// use it to avoid taking a snapshot of the query's profile events counters when no quota
+    /// needs it, keeping the feature close to zero-cost when unused.
+    bool hasProfileEventLimits() const { return has_profile_event_limits.load(std::memory_order_relaxed); }
+
+    /// Tracks consumption of profile events against every governing quota that defines limits
+    /// over profile events. `counters` are the counters accumulated by one finished query, so
+    /// this is called once per query at its end. If a quota is exceeded and
+    /// `check_exceeded == true`, throws an exception.
+    void usedProfileEvents(UInt64 normalized_query_hash, const ProfileEvents::Counters::Snapshot & counters, bool check_exceeded) const;
+
+    /// Checks if any of the governing quotas is exceeded for any of the profile events it
+    /// defines limits over. If so, throws an exception.
+    void checkExceededProfileEvents(UInt64 normalized_query_hash) const;
+
     /// Checks if any of the governing quotas is exceeded. If so, throws an exception.
     void checkExceeded() const;
     void checkExceeded(QuotaType quota_type) const;
@@ -92,8 +109,32 @@ private:
 
     struct Interval
     {
+        /// A limit over a single profile event. Unlike the predefined counters, profile events
+        /// are tracked sparsely: an interval only carries entries for the events its quota
+        /// explicitly mentions, so the common case (no such limits) costs nothing.
+        struct ProfileEventLimit
+        {
+            ProfileEvents::Event event = ProfileEvents::Event(0);
+            QuotaValue max = 0; /// 0 means "no limit, track only", same as for the predefined counters.
+            mutable std::atomic<QuotaValue> used{0};
+
+            ProfileEventLimit() = default;
+            ProfileEventLimit(const ProfileEventLimit & src) { *this = src; }
+            ProfileEventLimit & operator =(const ProfileEventLimit & src)
+            {
+                event = src.event;
+                max = src.max;
+                used.store(src.used.load());
+                return *this;
+            }
+        };
+
         mutable std::atomic<QuotaValue> used[static_cast<size_t>(QuotaType::MAX)];
         QuotaValue max[static_cast<size_t>(QuotaType::MAX)]{};
+
+        /// Limits over profile events; empty unless the quota defines them.
+        std::vector<ProfileEventLimit> profile_event_limits;
+
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
         mutable std::atomic<std::chrono::system_clock::duration> end_of_interval;
@@ -161,6 +202,7 @@ private:
     const Params params;
     boost::atomic_shared_ptr<const Quotas> quotas; /// atomically changed by QuotaCache when quotas change
     std::atomic<bool> empty = false; /// Use a separate flag to avoid loading `quotas`, which is way more expensive than an atomic bool
+    std::atomic<bool> has_profile_event_limits = false; /// Whether any governing quota defines a limit over a profile event; maintained by QuotaCache.
 };
 
 }

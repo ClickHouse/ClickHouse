@@ -733,6 +733,26 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         .pipeline_dump = std::move(pipeline_dump)};
 }
 
+/// Accounts the profile events accumulated by a finished (or failed) query against the quotas
+/// defining limits over profile events. Called once per query at its end. When no governing
+/// quota defines such limits, the cost is one atomic load: no snapshot of the counters is taken.
+static void usedQuotaProfileEvents(const std::shared_ptr<const EnabledQuota> & quota, const ContextPtr & context, UInt64 normalized_query_hash)
+{
+    if (!quota || !quota->hasProfileEventLimits())
+        return;
+
+    QueryStatusPtr process_list_elem = context->getProcessListElement();
+    if (!process_list_elem)
+        return;
+
+    auto counters = process_list_elem->getInfo(false, /* get_profile_events= */ true).profile_counters;
+    /// `check_exceeded == false`: the query has already done its work, so it is allowed to
+    /// finish; the quota, now exhausted, rejects the following queries.
+    if (counters)
+        quota->usedProfileEvents(normalized_query_hash, *counters, /* check_exceeded = */ false);
+}
+
+
 static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -2907,6 +2927,7 @@ static BlockIO executeQueryImpl(
                 quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
                 quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
                 quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                quota->checkExceededProfileEvents(normalized_query_hash);
 
                 /// Track per-normalized-query-hash quota limits (works for all key types).
                 quota->usedPerNormalizedHash(normalized_query_hash);
@@ -3092,6 +3113,7 @@ static BlockIO executeQueryImpl(
                             quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
                         quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
                         quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                        quota->checkExceededProfileEvents(normalized_query_hash);
 
                         /// Track per-normalized-query-hash quota limits (works for all key types).
                         quota->usedPerNormalizedHash(normalized_query_hash);
@@ -3252,6 +3274,11 @@ static BlockIO executeQueryImpl(
                 return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
 
+            /// Shared by the finish and the exception callbacks: if a finish callback throws
+            /// half-way, `onException` may run after `onFinish`, and the consumption of the query
+            /// must not be counted twice.
+            auto quota_profile_events_accounted = std::make_shared<std::atomic_bool>(false);
+
             /// The finish callback logs the query result
             auto finish_callback = [elem,
                                     context,
@@ -3260,10 +3287,16 @@ static BlockIO executeQueryImpl(
                                     internal,
                                     log_as_internal,
                                     implicit_tcl_executor,
+                                    my_quota(quota),
+                                    normalized_query_hash,
+                                    quota_profile_events_accounted,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
+                if (!internal && !quota_profile_events_accounted->exchange(true))
+                    usedQuotaProfileEvents(my_quota, context, normalized_query_hash);
+
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
@@ -3273,7 +3306,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, quota_profile_events_accounted, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3289,6 +3322,10 @@ static BlockIO executeQueryImpl(
                 {
                     if (my_quota)
                         my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+
+                    /// The resources the failed query consumed count against the quota as well.
+                    if (!quota_profile_events_accounted->exchange(true))
+                        usedQuotaProfileEvents(my_quota, context, normalized_query_hash);
                 }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);

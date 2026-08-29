@@ -1,0 +1,24 @@
+-- unknown profile event name is rejected
+SYNTAX_ERROR
+SYNTAX_ERROR
+-- SHOW CREATE QUOTA round trip
+CREATE QUOTA quota1_05048_db FOR INTERVAL 100 year MAX queries = 100, Query = 2, SelectedRows = 1000 TO user1_05048_db
+-- system.quota_limits
+100	{'Query':2,'SelectedRows':1000}
+-- the third query crosses the limit and still finishes, the fourth is rejected
+q1
+q2
+q3
+QUOTA_EXCEEDED
+-- current consumption is reported in system.quotas_usage
+3	2
+-- raising the limit lets the queries pass again and keeps the counter
+q5
+4	10
+-- lowering the limit below the kept consumption blocks the queries
+QUOTA_EXCEEDED
+-- a resource-metering event: SelectedRows
+105
+105
+QUOTA_EXCEEDED
+30	20

@@ -4,6 +4,7 @@
 #include <Access/Common/QuotaDefs.h>
 #include <Access/RolesOrUsersSet.h>
 #include <chrono>
+#include <map>
 #include <optional>
 
 
@@ -13,6 +14,9 @@ namespace DB
 /** Quota for resources consumption for specific interval.
   * Used to limit resource usage by user.
   * Quota is applied "softly" - could be slightly exceed, because it is checked usually only on each block of processed data.
+  * Besides the predefined counters (`QuotaType`), limits can be defined over arbitrary profile events;
+  * those are accounted once per query, at the moment the query finishes (successfully or with an error),
+  * so a query that crosses such a limit still finishes and the subsequent queries are rejected.
   * Accumulated values are not persisted and are lost on server restart.
   * Quota is local to server,
   *  but for distributed queries, accumulated values for read rows and bytes
@@ -24,6 +28,13 @@ struct Quota : public IAccessEntity
     struct Limits
     {
         std::optional<QuotaValue> max[static_cast<size_t>(QuotaType::MAX)];
+
+        /// Limits over arbitrary profile events, keyed by the event name (e.g. "S3GetObject").
+        /// Events are kept by name rather than by `ProfileEvents::Event` so that a quota
+        /// referencing an event unknown to this build (e.g. after a downgrade) still loads;
+        /// such limits are preserved but have no effect.
+        std::map<String, QuotaValue> profile_events_max;
+
         std::chrono::seconds duration = std::chrono::seconds::zero();
 
         /// Intervals can be randomized (to avoid DoS if intervals for many users end at one time).
