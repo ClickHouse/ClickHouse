@@ -1,0 +1,13 @@
+400000	800000
+400001	800002
+400002	800004
+400000	800000
+400001	800002
+400002	800004
+400000	800000
+400001	800002
+400002	800004
+query	trimmed_read	pr_used
+05052_read_in_order_skip_offset_automatic_parallel_replicas_query_0	1	0
+05052_read_in_order_skip_offset_automatic_parallel_replicas_query_1	1	0
+05052_read_in_order_skip_offset_automatic_parallel_replicas_query_2	0	0
