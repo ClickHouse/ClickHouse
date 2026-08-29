@@ -7492,7 +7492,10 @@ MergeTreeData::PartsSize MergeTreeData::calculateTableSizeForLimits(const DataPa
     }
 
     /// Inactive (outdated) parts are counted as well because the purpose of the limits is to restrict disk usage.
-    /// They are removed in the background, so the total size can decrease over time.
+    /// They are removed in the background, so the total size can decrease over time. Parts in the `Deleting`
+    /// state are counted for the same reason: `clearOldPartsFromFilesystem` moves a part to `Deleting` before
+    /// its files are removed from the disk, and only `removePartsFinally` erases it from `data_parts_indexes`
+    /// afterwards, so until then its bytes still occupy the disk.
     ///
     /// The limits apply to the set of data parts of the table, which is not exactly the same as the instantaneous
     /// number of bytes occupied on the disks. In-flight copies of data are not counted: a temporary part being
@@ -7503,7 +7506,7 @@ MergeTreeData::PartsSize MergeTreeData::calculateTableSizeForLimits(const DataPa
     /// no part in that state is ever reachable through `getDataPartsStateRange`. This is not a hole in the
     /// accounting: the moved part itself is still counted through its new copy, and the extra space is bounded
     /// by the size of the data being moved or merged and is released without any user action.
-    for (auto state : {DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated})
+    for (auto state : {DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated, DataPartState::Deleting})
     {
         for (const auto & part : getDataPartsStateRange(state))
         {
