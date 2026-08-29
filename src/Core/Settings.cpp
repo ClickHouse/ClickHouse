@@ -8944,7 +8944,7 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
-Enable Kusto Query Language (KQL) - an alternative to SQL.
+Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
