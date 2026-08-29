@@ -1,8 +1,8 @@
 <test>
-    <create_query>
+    <create_query do_not_check_in_pr="113479">
         CREATE TABLE adaptive_codec_merge (x UInt64)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS allow_experimental_adaptive_codec_selection = 1
+        SETTINGS enable_adaptive_codec_selection = 1
     </create_query>
 
     <!-- The default codec wins every block -->
