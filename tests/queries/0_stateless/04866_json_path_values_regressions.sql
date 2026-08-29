@@ -323,7 +323,7 @@ INSERT INTO json_index_tokens_analyzer_matrix VALUES
     (2, '{"s":"beta-suffix","other":"none","n":20,"tags":["red"]}', '{"value":42.0,"text":42}'),
     (3, concat('{"s":"', repeat('x', 100), '-tail","other":"none","n":30,"tags":["blue"]}'), '{"value":"42","unsupported":[1]}'),
     (4, '{"s":"","other":"none","n":40,"tags":[]}', '{}'),
-    (5, '{"s":"unrelated","other":"Alpha-needle","n":50,"tags":["green"]}', '{"value":43}'),
+    (5, '{"s":"10%","other":"Alpha-needle","n":50,"tags":["green"]}', '{"value":43}'),
     (6, '{"s":"Äpfel-東京","other":"none","n":60,"tags":["東京"]}', '{"value":-0.0}');
 
 SELECT 'exact predicates';
@@ -353,6 +353,13 @@ SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE mu
 SETTINGS force_data_skipping_indices = 'data_tokens';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE multiSearchAnyUTF8(data.s, ['Äpf', '東京'])
 SETTINGS force_data_skipping_indices = 'data_tokens';
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '10|%' ESCAPE '|';
+SELECT count() FROM
+(
+    EXPLAIN indexes = 1
+    SELECT * FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '10|%' ESCAPE '|'
+)
+WHERE explain LIKE '%data_tokens%';
 
 SELECT 'path and boolean composition';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.other LIKE '%needle%'

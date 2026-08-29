@@ -309,6 +309,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
     out.json_path = json_info.path;
 
     const String function_name = function_node.getFunctionName();
+    if ((function_name == "like" || function_name == "ilike") && function_node.getArgumentsSize() == 3)
+        return false;
+
     const bool has_multiple_needles = function_name == "multiSearchAny" || function_name == "multiSearchAnyUTF8";
     if (function_name != "equals"
         && function_name != "has"
