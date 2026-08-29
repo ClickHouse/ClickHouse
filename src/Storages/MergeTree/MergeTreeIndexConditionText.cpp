@@ -5,6 +5,8 @@
 #include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
@@ -43,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace Setting
@@ -634,43 +637,58 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
     if (node.isFunction())
     {
-        const auto function = node.toFunctionNode();
-        auto function_name = function.getFunctionName();
-        size_t function_arguments_size = function.getArgumentsSize();
-
-        if (traverseMapElementKeyNode(function, out))
-            return true;
-
-        if (traverseJSONSubcolumnKeyNode(function, out))
-            return true;
-
-        if (function_arguments_size != 2)
-            return false;
-
-        auto lhs_argument = function.getArgumentAt(0);
-        auto rhs_argument = function.getArgumentAt(1);
-
-        if ((function_name == "in" || function_name == "globalIn")
-            && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
+        try
         {
-            out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
-            return true;
+            const auto function = node.toFunctionNode();
+            const auto function_name = function.getFunctionName();
+            const size_t function_arguments_size = function.getArgumentsSize();
+
+            if (traverseMapElementKeyNode(function, out))
+                return true;
+
+            if (traverseJSONSubcolumnKeyNode(function, out))
+                return true;
+
+            if (function_arguments_size != 2)
+                return false;
+
+            auto lhs_argument = function.getArgumentAt(0);
+            auto rhs_argument = function.getArgumentAt(1);
+
+            if ((function_name == "in" || function_name == "globalIn")
+                && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
+            {
+                out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
+                return true;
+            }
+            else if (isSupportedFunction(function_name))
+            {
+                Field const_value;
+                DataTypePtr const_type;
+
+                if (rhs_argument.tryGetConstant(const_value, const_type))
+                {
+                    if (traverseFunctionNode(function, lhs_argument, const_type, const_value, out))
+                        return true;
+                }
+                else if (lhs_argument.tryGetConstant(const_value, const_type) && function_name == "equals")
+                {
+                    if (traverseFunctionNode(function, rhs_argument, const_type, const_value, out))
+                        return true;
+                }
+            }
         }
-        else if (isSupportedFunction(function_name))
+        catch (const Exception & e)
         {
-            Field const_value;
-            DataTypePtr const_type;
+            if (e.code() != ErrorCodes::TOO_LARGE_STRING_SIZE)
+                throw;
 
-            if (rhs_argument.tryGetConstant(const_value, const_type))
-            {
-                if (traverseFunctionNode(function, lhs_argument, const_type, const_value, out))
-                    return true;
-            }
-            else if (lhs_argument.tryGetConstant(const_value, const_type) && function_name == "equals")
-            {
-                if (traverseFunctionNode(function, rhs_argument, const_type, const_value, out))
-                    return true;
-            }
+            out.text_search_queries.clear();
+            LOG_WARNING(
+                getLogger("MergeTreeIndexConditionText"),
+                "Skipping text index condition because the preprocessor cannot process a query constant: {}",
+                e.message());
+            return false;
         }
     }
 

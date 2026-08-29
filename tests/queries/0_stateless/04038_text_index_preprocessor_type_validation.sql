@@ -97,11 +97,7 @@ DROP TABLE tab;
 SELECT 'Other CAST directions';
 
 SELECT '-- String + CAST to FixedString';
-CREATE TABLE tab (id UInt64, val String, INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(val, 'FixedString(3)'))) ENGINE = MergeTree ORDER BY id;
-INSERT INTO tab VALUES (1, 'foo'), (2, 'bar'), (3, 'baz');
-SELECT count() FROM tab WHERE hasAllTokens(val, 'foo');
-SELECT count() FROM tab WHERE hasAllTokens(val, 'xyz');
-DROP TABLE tab;
+CREATE TABLE tab (id UInt64, val String, INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(val, 'FixedString(3)'))) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
 
 SELECT '-- String + CAST to LowCardinality(String)';
 CREATE TABLE tab (id UInt64, val String, INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(val, 'LowCardinality(String)'))) ENGINE = MergeTree ORDER BY id;
@@ -118,18 +114,10 @@ SELECT count() FROM tab WHERE hasAllTokens(val, 'xyz');
 DROP TABLE tab;
 
 SELECT '-- String + CAST to LowCardinality(Nullable(FixedString))';
-CREATE TABLE tab (id UInt64, val String, INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(val, 'LowCardinality(Nullable(FixedString(3)))'))) ENGINE = MergeTree ORDER BY id;
-INSERT INTO tab VALUES (1, 'foo'), (2, 'bar'), (3, 'baz');
-SELECT count() FROM tab WHERE hasAllTokens(val, 'foo');
-SELECT count() FROM tab WHERE hasAllTokens(val, 'xyz');
-DROP TABLE tab;
+CREATE TABLE tab (id UInt64, val String, INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(val, 'LowCardinality(Nullable(FixedString(3)))'))) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
 
 SELECT '-- LowCardinality(String) + CAST to Nullable(FixedString)';
-CREATE TABLE tab (id UInt64, val LowCardinality(String), INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(val, 'Nullable(FixedString(3))'))) ENGINE = MergeTree ORDER BY id;
-INSERT INTO tab VALUES (1, 'foo'), (2, 'bar'), (3, 'baz');
-SELECT count() FROM tab WHERE hasAllTokens(val, 'foo');
-SELECT count() FROM tab WHERE hasAllTokens(val, 'xyz');
-DROP TABLE tab;
+CREATE TABLE tab (id UInt64, val LowCardinality(String), INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(val, 'Nullable(FixedString(3))'))) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
 
 SELECT 'Type-preserving preprocessor (lower)';
 

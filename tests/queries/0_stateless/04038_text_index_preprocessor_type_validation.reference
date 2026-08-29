@@ -36,8 +36,6 @@ CAST on Nullable types
 0
 Other CAST directions
 -- String + CAST to FixedString
-1
-0
 -- String + CAST to LowCardinality(String)
 1
 0
@@ -45,11 +43,7 @@ Other CAST directions
 1
 0
 -- String + CAST to LowCardinality(Nullable(FixedString))
-1
-0
 -- LowCardinality(String) + CAST to Nullable(FixedString)
-1
-0
 Type-preserving preprocessor (lower)
 -- Nullable(String) + lower
 1
