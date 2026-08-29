@@ -5185,9 +5185,13 @@ class HungCheckMonitor:
     # sanitizer builds, short enough to stay well inside a job's own budget.
     # A server that really is deadlocked is still reported, just later.
     GRACE_WITH_LIVE_PROCESS = 600.0
-    # How often to re-probe inside that grace.  The re-probe is a single
-    # attempt, so without a gate a server refusing connections instantly would
-    # be probed at the caller loop's own 10 Hz.
+    # How often to probe, in any state.  Inside the grace the re-probe is a
+    # single attempt, so without a gate a server refusing connections instantly
+    # would be probed at the caller loop's own 10 Hz; while the server answers
+    # every probe also reads the listener identity from /proc/net, whose tables
+    # grow with every connection the tests open.  The gate adds at most one
+    # interval to noticing a stall - noise next to the failing probe's own
+    # ~165 s retry budget.
     RETRY_INTERVAL = 10.0
 
     def __init__(self, args):
@@ -5200,10 +5204,11 @@ class HungCheckMonitor:
         self.grace_holder_inodes = None
         # Socket inodes of the listener seen while the probe was answering -
         # the only server a grace may be granted to; None when it cannot be
-        # told.  Refreshed on the interval, not per call: the tables under
-        # /proc/net grow with every connection the tests open.
+        # told.  Read together with every answered probe: an identity promoted
+        # on a schedule of its own can lag behind the listener that actually
+        # answered, and a restart answering inside that lag would then read as
+        # an unseen swap on the next failed probe.
         self.answering_holder_inodes = None
-        self.last_identity_refresh_at = 0.0
 
     @staticmethod
     def _listener_changed(
@@ -5221,15 +5226,12 @@ class HungCheckMonitor:
     def is_hung(self) -> bool:
         """Probe the server once; True when the silence should abort the run.
 
-        Safe to call from a tight loop: while the server answers this costs one
-        successful query, exactly as before, and while it does not the probes
-        are interval-gated.
+        Safe to call from a tight loop: the probes are interval-gated in every
+        state, so the caller's own cadence buys neither extra queries nor extra
+        /proc/net reads.
         """
         now = time()
-        if (
-            self.unresponsive_since is not None
-            and now - self.last_probe_at < self.RETRY_INTERVAL
-        ):
+        if now - self.last_probe_at < self.RETRY_INTERVAL:
             return False
         self.last_probe_at = now
 
@@ -5262,9 +5264,10 @@ class HungCheckMonitor:
                 self.unresponsive_since = None
                 self.grace_holder_inodes = None
                 self.answering_holder_inodes = inodes
-                self.last_identity_refresh_at = time()
-            elif now - self.last_identity_refresh_at >= self.RETRY_INTERVAL:
-                self.last_identity_refresh_at = now
+            else:
+                # Captured with the answer it belongs to, so the identity can
+                # never be stale relative to the last answered probe: whoever
+                # answered is whoever may later be granted a grace.
                 _, _, self.answering_holder_inodes = probed_server_process(self.args)
             return False
 

@@ -106,11 +106,13 @@ def _env(monkeypatch):
 
 
 def test_healthy_server_is_never_hung_and_keeps_the_full_probe_budget(env):
-    """While the server answers, nothing changes: one full-budget probe per call."""
-    for _ in range(5):
+    """While the server answers, each probe keeps its full retry budget, and
+    the probes are interval-gated so the caller loop's own 10 Hz cadence does
+    not hammer the server."""
+    for _ in range(101):  # 10 s of the caller loop's own cadence
         assert env["monitor"].is_hung() is False
         env["clock"].advance(0.1)
-    assert env["probes"] == [10] * 5
+    assert env["probes"] == [10, 10]
 
 
 def test_dead_process_aborts_on_the_first_failed_probe(env):
@@ -219,19 +221,54 @@ def test_a_server_replaced_inside_the_first_failed_probe_still_fails_fast(env):
     env["alive"] = False
     env["probe_cost"] = 165.0
     env["process"] = (True, 999, frozenset({"7777"}))  # re-bound mid-probe
+    env["clock"].advance(_ct.HungCheckMonitor.RETRY_INTERVAL)
     assert env["monitor"].is_hung() is True
     assert env["probes"] == [10, 10]
 
 
-def test_the_answering_identity_is_refreshed_on_the_interval(env):
-    """While the server answers, the listener identity is kept fresh so a
-    legitimate restart is not mistaken for a mid-probe swap - but reading
-    /proc/net is interval-gated, not per 0.1 s caller turn."""
-    for _ in range(101):  # 10 s of the caller loop's own cadence
+def test_the_answering_identity_is_captured_with_every_answer(env):
+    """The listener identity is read together with the probe it belongs to.
+
+    No more often - the probes are interval-gated, so /proc/net is not read per
+    0.1 s caller turn - and no less often: an identity promoted on a schedule
+    of its own could lag a stale interval behind the listener that actually
+    answered."""
+    for _ in range(305):  # ~30 s of the caller loop's own cadence
         assert env["monitor"].is_hung() is False
         env["clock"].advance(0.1)
-    # One read on the first call, one when the interval elapses.
-    assert env["process_reads"] == 2
+    # One /proc read per answered probe: 4 probes in ~30 s, not one per call.
+    assert env["process_reads"] == len(env["probes"]) == 4
+
+
+def test_a_restart_answering_before_the_next_refresh_still_earns_the_grace(env):
+    """A restart that answered a probe must be promoted with that very answer.
+
+    With the identity promoted on a lagging schedule instead, the recorded
+    listener stays the old one for up to an interval, and a replacement that
+    answers and then stalls inside that window reads as an unseen swap on the
+    next failed probe - aborting the run at the old latency for a server that
+    was seen answering."""
+    assert env["monitor"].is_hung() is False  # the original is seen answering
+
+    env["process"] = (True, 999, frozenset({"7777"}))  # restart 5 s later
+    env["clock"].advance(5.0)
+
+    # Drive the caller loop until the replacement has answered one probe.
+    probes = len(env["probes"])
+    while len(env["probes"]) == probes:
+        assert env["monitor"].is_hung() is False
+        env["clock"].advance(0.1)
+
+    # ... and it stalls right after that answer.
+    env["alive"] = False
+    env["probe_cost"] = 165.0
+    probes, verdicts = len(env["probes"]), []
+    while len(env["probes"]) == probes:
+        verdicts.append(env["monitor"].is_hung())
+        env["clock"].advance(0.1)
+    # The failed probe grants the grace instead of reporting a swap.
+    assert verdicts[-1] is False
+    assert env["monitor"].grace_holder_inodes == frozenset({"7777"})
 
 
 def test_a_replacement_server_answering_does_not_resume_the_run(env):
