@@ -31,12 +31,15 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
     if (ttl_update_field == TTLUpdateField::ROWS_WHERE_TTL)
         where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
-    for (size_t i = 0; i < block.rows(); ++i)
+    const size_t rows = block.rows();
+    PaddedPODArray<Int64> timestamps;
+    extractTimestamps(ttl_column.get(), timestamps);
+
+    for (size_t i = 0; i < rows; ++i)
     {
         if (where_column && !where_column->getBool(i))
             continue;
-        Int64 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);
-        new_ttl_info.update(cur_ttl);
+        new_ttl_info.update(timestamps[i]);
     }
 }
 
