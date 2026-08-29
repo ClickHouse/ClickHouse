@@ -166,6 +166,7 @@
                 "reference/statements/select/join",
                 "reference/statements/select/limit-by",
                 "reference/statements/select/limit",
+                "reference/statements/select/limit-shuffle",
                 "reference/statements/select/offset",
                 "reference/statements/select/order-by",
                 "reference/statements/select/pipe-operators",

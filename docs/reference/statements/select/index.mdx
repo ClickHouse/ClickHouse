@@ -26,7 +26,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [QUALIFY expr]
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
-[LIMIT [offset_value, ]n [WITH TIES] | LIMIT n SHUFFLE]
+[LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION  ...]
 [INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
@@ -54,7 +54,6 @@ The expression list immediately after `SELECT` is required; all other clauses ar
 - [ORDER BY clause](/reference/statements/select/order-by)
 - [LIMIT BY clause](/reference/statements/select/limit-by)
 - [LIMIT clause](/reference/statements/select/limit)
-- [LIMIT SHUFFLE clause](/reference/statements/select/limit-shuffle)
 - [OFFSET clause](/reference/statements/select/offset)
 - [UNION clause](/reference/statements/select/union)
 - [INTERSECT clause](/reference/statements/select/intersect)

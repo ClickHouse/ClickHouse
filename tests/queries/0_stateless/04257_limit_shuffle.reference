@@ -1,3 +1,4 @@
+SELECT number FROM numbers(10) LIMIT 1 SHUFFLE
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
   SelectQuery (children 3)
@@ -10,37 +11,10 @@ SelectWithUnionQuery (children 1)
        ExpressionList (children 1)
         Literal UInt64_10
    Literal UInt64_1
-SELECT number
-FROM numbers(10)
-LIMIT 1 SHUFFLE
-INSERT INTO limit_shuffle_insert_sink
-SETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1
-SELECT number
-FROM numbers(10)
-LIMIT 1 SHUFFLE
-SETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1
-INSERT INTO limit_shuffle_insert_sink
-SETTINGS enable_analyzer = 1
-SELECT *
-FROM limit_shuffle_view
-SETTINGS enable_analyzer = 1
-INSERT INTO limit_shuffle_insert_sink
-SETTINGS enable_analyzer = 1
-SELECT *
-FROM limit_shuffle_final_view(equals(n, 10))
-FINAL
-SETTINGS enable_analyzer = 1
-INSERT INTO limit_shuffle_insert_sink
-SETTINGS enable_analyzer = 1
-SELECT *
-FROM
-(
-    SELECT number
-    FROM numbers(_CAST(10, \'UInt64\'))
-    LIMIT 1 SHUFFLE
-    SETTINGS allow_experimental_shuffle_query = 1
-) AS limit_shuffle_parameterized_view
-SETTINGS enable_analyzer = 1
+INSERT INTO limit_shuffle_insert_sink\nSETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1\nSELECT number\nFROM numbers(10)\nLIMIT 1 SHUFFLE\nSETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1
+INSERT INTO limit_shuffle_insert_sink\nSETTINGS enable_analyzer = 1\nSELECT *\nFROM limit_shuffle_view\nSETTINGS enable_analyzer = 1
+INSERT INTO limit_shuffle_insert_sink\nSETTINGS enable_analyzer = 1\nSELECT *\nFROM limit_shuffle_final_view(equals(n, 10))\nFINAL\nSETTINGS enable_analyzer = 1
+INSERT INTO limit_shuffle_insert_sink\nSETTINGS enable_analyzer = 1\nSELECT *\nFROM\n(\n    SELECT number\n    FROM numbers(_CAST(10, \'UInt64\'))\n    LIMIT 1 SHUFFLE\n    SETTINGS allow_experimental_shuffle_query = 1\n) AS limit_shuffle_parameterized_view\nSETTINGS enable_analyzer = 1
 SELECT number
 FROM numbers(10)
 LIMIT 3 SHUFFLE
