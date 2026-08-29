@@ -4,6 +4,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -223,27 +224,27 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
         /// The key is hashed as a value of the key type of the map, while the constant in the query can have
         /// a different type: e.g. a map with `Enum` keys is indexed by the name of the enum value, which is a
         /// `String`. Convert the key to the key type of the index; if it is not representable in that type,
-        /// the key cannot be present in the map, but the index cannot be used to prove it either, because
-        /// `arrayElement` returns the default value for a missing key.
+        /// decline the whole predicate: the key cannot be present in the map, but the index cannot be used
+        /// to prove it either, because `arrayElement` returns the default value for a missing key, and for
+        /// an `Enum` key it throws `UNKNOWN_ELEMENT_OF_ENUM` instead. Probing the `mapValues` index alone
+        /// would be unsound: it could prune the granules before `arrayElement` runs and silently replace
+        /// that exception by an empty result.
         const auto & index_type = header.getByPosition(*keys_position).type;
         const auto & key_type = assert_cast<const DataTypeArray &>(*index_type).getNestedType();
         Field converted_key_field = tryConvertFieldToType(key_field, *key_type, nullptr, {}, /* strict */ true);
 
-        if (!converted_key_field.isNull())
-        {
-            info.key_field = converted_key_field;
-            info.has_keys_index = true;
-            info.keys_index_position = *keys_position;
-        }
+        if (converted_key_field.isNull())
+            return std::nullopt;
+
+        info.key_field = converted_key_field;
+        info.has_keys_index = true;
+        info.keys_index_position = *keys_position;
     }
     if (values_position)
     {
         info.has_values_index = true;
         info.values_index_position = *values_position;
     }
-
-    if (!info.has_keys_index && !info.has_values_index)
-        return std::nullopt;
 
     return info;
 }
@@ -831,25 +832,43 @@ static Field convertConstantForArrayIndexFunction(
 }
 
 static ColumnPtr createColumnFromConstantArray(
-    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool coerce_like_search_function)
+    const Field & value_field,
+    const DataTypePtr & value_type,
+    const DataTypePtr & actual_type,
+    bool coerce_like_search_function,
+    bool coerce_enum_by_name)
 {
     if (value_field.getType() != Field::Types::Array)
         return nullptr;
 
-    DataTypePtr element_type;
-    if (coerce_like_search_function && value_type)
+    DataTypePtr constant_element_type;
+    if (value_type)
         if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
-            element_type = value_array_type->getNestedType();
+            constant_element_type = value_array_type->getNestedType();
+
+    DataTypePtr element_type;
+    if (coerce_like_search_function)
+        element_type = constant_element_type;
+
+    /// A constant `Array(Enum)` searched over a `String`-like indexed column is compared by the name of the
+    /// enum value, because that is the common type of `Enum` and `String` (arrayIndex.h `executeConst`).
+    /// The names are therefore what has to be hashed; hashing the numeric payload would prune granules that
+    /// actually match.
+    const IDataTypeEnum * enum_element_type = nullptr;
+    if (coerce_enum_by_name && constant_element_type && isStringOrFixedString(actual_type))
+        enum_element_type = dynamic_cast<const IDataTypeEnum *>(removeLowCardinalityAndNullable(constant_element_type).get());
 
     const bool coerce = element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();
     const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
     auto mutable_column = actual_type->createColumn();
 
-    for (const auto & f : value_field.safeGet<Array>())
+    for (const auto & element : value_field.safeGet<Array>())
     {
-        if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
+        if ((element.isNull() && !is_nullable) || element.isDecimal(element.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
+
+        const Field f = enum_element_type && !element.isNull() ? enum_element_type->castToName(element) : element;
 
         /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast.
         /// An over-wide value therefore cannot match a narrower `FixedString` scalar, but
@@ -1018,7 +1037,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 /// `has(<constant array>, <indexed scalar>)` compares `Field`s directly
                 /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion.
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ false);
+                ColumnPtr column = createColumnFromConstantArray(
+                    value_field, value_type, actual_type, /*coerce_like_search_function=*/ false, /*coerce_enum_by_name=*/ true);
 
                 if (!column)
                     return false;
@@ -1033,7 +1053,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return false;
 
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ true);
+            ColumnPtr column = createColumnFromConstantArray(
+                value_field, value_type, actual_type, /*coerce_like_search_function=*/ true, /*coerce_enum_by_name=*/ false);
 
             if (!column)
                 return false;

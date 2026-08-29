@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -1223,13 +1224,22 @@ private:
         /// `String` argument is the name of an enum value, so a direct comparison of the fields never matches.
         /// The common type of `Enum` and `String` is `String`, hence `equals` (and the non-constant code path
         /// below, which casts both arguments to the common type) compares them by the name of the enum value.
-        /// Do the same here by replacing the values of the constant array by their names.
+        /// Do the same here by replacing the values of the constant array by their names, and by casting the
+        /// searched value to `String` as well: a `FixedString` is padded with zero bytes, which the cast to
+        /// the common type removes, so comparing its raw bytes with a name would disagree with `equals`.
+        ColumnPtr searched_value_holder;
         const auto * enum_type = getEnumToCompareByName(arguments);
         if (enum_type)
         {
             for (auto & element : arr)
                 if (!element.isNull())
                     element = enum_type->castToName(element);
+
+            if (!isString(arguments[1].type))
+            {
+                searched_value_holder = castColumn(arguments[1], std::make_shared<DataTypeString>());
+                item_arg = searched_value_holder.get();
+            }
         }
 
         if (isColumnConst(*item_arg))

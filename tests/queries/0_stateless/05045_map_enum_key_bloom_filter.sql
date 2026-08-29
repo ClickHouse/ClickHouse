@@ -41,3 +41,27 @@ SELECT id FROM t_map_enum_bf WHERE m['a'] = 10 ORDER BY id;
 SELECT id FROM t_map_enum_bf WHERE m[1] = 10 ORDER BY id;
 
 DROP TABLE t_map_enum_bf;
+
+-- With both a `mapKeys` and a `mapValues` index, a key that is not in the `Enum` must not be probed
+-- by the values index alone: that could prune the granules before `arrayElement` runs and silently
+-- replace the exception by an empty result.
+SET optimize_functions_to_subcolumns = 0;
+
+DROP TABLE IF EXISTS t_map_enum_bf_keys_values;
+
+CREATE TABLE t_map_enum_bf_keys_values
+(
+    id UInt64,
+    m Map(Enum8('a' = 1, 'b' = 2, 'c' = 3), Int64),
+    INDEX idx_keys mapKeys(m) TYPE bloom_filter GRANULARITY 1,
+    INDEX idx_values mapValues(m) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_map_enum_bf_keys_values VALUES (1, map('a', 10, 'c', 30)), (2, map('b', 20));
+
+SELECT id FROM t_map_enum_bf_keys_values WHERE m['nonexistent'] = 999 ORDER BY id; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id FROM t_map_enum_bf_keys_values WHERE m['a'] = 10 ORDER BY id;
+SELECT id FROM t_map_enum_bf_keys_values WHERE m['b'] = 20 ORDER BY id;
+
+DROP TABLE t_map_enum_bf_keys_values;

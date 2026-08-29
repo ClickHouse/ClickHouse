@@ -21,3 +21,7 @@ a LowCardinality needle
 1	0
 indexOfAssumeSorted
 1	3	0
+a FixedString needle
+1	0	2
+the same over a materialized array
+1	0	2

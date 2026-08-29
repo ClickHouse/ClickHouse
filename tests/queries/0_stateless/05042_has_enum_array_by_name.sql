@@ -41,3 +41,11 @@ SELECT has(e, toLowCardinality('a')), has(e, toLowCardinality('b'));
 SELECT 'indexOfAssumeSorted';
 WITH CAST(['a', 'b', 'c'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3))') AS e
 SELECT indexOfAssumeSorted(e, 'a'), indexOfAssumeSorted(e, 'c'), indexOfAssumeSorted(e, 'zzz');
+
+SELECT 'a FixedString needle';
+WITH CAST(['a', 'c'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3))') AS e
+SELECT has(e, toFixedString('a', 2)), has(e, toFixedString('b', 2)), indexOf(e, toFixedString('c', 4));
+
+SELECT 'the same over a materialized array';
+WITH materialize(CAST(['a', 'c'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3))')) AS e
+SELECT has(e, toFixedString('a', 2)), has(e, toFixedString('b', 2)), indexOf(e, toFixedString('c', 4));
