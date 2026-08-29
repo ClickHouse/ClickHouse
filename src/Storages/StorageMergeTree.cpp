@@ -984,11 +984,13 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         if (part->info.getDataVersion() < version)
         {
-            /// A part of a still-open transaction may be rolled back and never enter the real
-            /// scope; it joins the byte weight only once its creation is committed - except the
-            /// mutation's own transaction's parts, which it already sees and rewrites.
-            if (part->version && !part->version->getInfo().isCreated()
-                && part->version->getInfo().creation_tid != prepared.entry.tid)
+            /// The denominator must match the scope `selectPartsToMutate` will really rewrite: a
+            /// transactional mutation takes the parts visible to its own snapshot, everything else
+            /// takes the committed ones (an uncommitted part may be rolled back and never join).
+            const bool in_scope = prepared.entry.tid.isNonTransactional()
+                ? (!part->version || part->version->getInfo().isCreated())
+                : (part->version && part->version->isVisible(prepared.entry.tid.start_csn, prepared.entry.tid));
+            if (!in_scope)
                 continue;
             prepared.entry.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
         }
@@ -1405,42 +1407,28 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
 std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationCommands() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
-    std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
-    /// Same split as `getMutationsStatus`: a part of a still-open transaction is only work for a
-    /// mutation of that same transaction, so it is kept aside with its tid rather than counted here.
-    std::vector<std::pair<Int64, TransactionID>> uncommitted_part_versions;
-    for (const auto & part : data_parts)
-    {
-        if (part->version && !part->version->getInfo().isCreated())
-        {
-            uncommitted_part_versions.emplace_back(part->info.getDataVersion(), part->version->getInfo().creation_tid);
-            continue;
-        }
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
-    }
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
 
     std::map<std::string, MutationCommands> result;
 
     const Int64 lowest_uncommitted_insert_block = getLowestUncommittedNewPartBlockNum();
     for (const auto & [mutation_version, entry] : current_mutations_by_version)
     {
-        const PartVersionWithName needle{static_cast<Int64>(mutation_version), ""};
-        auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
-
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
-
-        /// A non-transactional mutation's scope is every lower block number, so an uncommitted one
-        /// can still commit a part into it; a transactional mutation only ever rewrites the parts
-        /// visible to its own snapshot, and its own transaction's parts are among them.
+        /// Scope membership follows `getMutationsStatus`: a non-transactional mutation rewrites
+        /// every committed lower-version part (and an uncommitted one may still join it), while a
+        /// transactional mutation rewrites exactly the lower-version parts visible to its snapshot.
         const bool scope_is_block_ordered = entry.tid.isNonTransactional();
-        for (const auto & [version, creation_tid] : uncommitted_part_versions)
-            if (version < static_cast<Int64>(mutation_version)
-                && (scope_is_block_ordered || creation_tid == entry.tid))
+        size_t parts_to_do = 0;
+        for (const auto & part : data_parts)
+        {
+            if (part->info.getDataVersion() >= static_cast<Int64>(mutation_version))
+                continue;
+            const bool in_scope = scope_is_block_ordered
+                ? (!part->version || part->version->getInfo().isCreated())
+                : (part->version && part->version->isVisible(entry.tid.start_csn, entry.tid));
+            if (in_scope)
                 ++parts_to_do;
+        }
 
         const bool waiting_for_lower_block
             = scope_is_block_ordered && static_cast<Int64>(mutation_version) > lowest_uncommitted_insert_block;
@@ -1457,32 +1445,19 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     if (current_mutations_by_version.empty())
         return {};
 
-    std::vector<PartVersionWithName> part_versions_with_names;
-    struct UncommittedPart
+    /// A part's membership in a mutation's scope depends on the mutation, so the parts are kept
+    /// together here and classified per entry below.
+    struct PartWithVersion
     {
         PartVersionWithName part;
-        TransactionID creation_tid;
+        DataPartPtr data_part;
     };
-    std::vector<UncommittedPart> uncommitted_parts;
+    std::vector<PartWithVersion> all_parts;
     auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
+    all_parts.reserve(data_parts.size());
     for (const auto & part : data_parts)
-    {
-        /// Same rule as `startMutation`: a still-open transaction's part stays out of every
-        /// mutation's visible scope - and out of the byte denominator - until it is committed.
-        /// Its existence is still pending work, though: kept aside with its transaction, so a
-        /// mutation of the same transaction counts it as known scope (it already sees and
-        /// rewrites it) while every other mutation reports neither done nor a definite progress.
-        if (part->version && !part->version->getInfo().isCreated())
-        {
-            uncommitted_parts.push_back(
-                {PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info},
-                 part->version->getInfo().creation_tid});
-            continue;
-        }
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info});
-    }
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+        all_parts.push_back(
+            {PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info}, part});
 
     /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
     /// The merge list has its own mutex, no lock ordering issue with the mutex held above.
@@ -1504,10 +1479,6 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     {
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
-        const PartVersionWithName needle{mutation_version, ""};
-        auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
-
         Names parts_in_progress_names;
         for (const auto &[part, future_version] : currently_mutating_part_future_versions)
         {
@@ -1515,14 +1486,41 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 parts_in_progress_names.push_back(part->name);
         }
 
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        /// A non-transactional mutation rewrites every committed part below its version, and an
+        /// uncommitted lower-version one - whose committing-block holder `MergeTreeSink::commitPart`
+        /// already released - is pending work of unknown size, so nothing-left does not mean done.
+        /// A transactional mutation is scoped by its own snapshot instead: `selectPartsToMutate`
+        /// only touches parts `isVisible` to its tid, which admits its own transaction's parts and
+        /// excludes both other transactions' uncommitted parts and those committed after its
+        /// snapshot. Using the same predicate here keeps the reported scope equal to the real one.
+        const bool scope_is_block_ordered = entry.tid.isNonTransactional();
         Names parts_to_do_names;
-        parts_to_do_names.reserve(parts_to_do);
         UInt64 bytes_to_do = 0;
         Float64 bytes_in_flight_done = 0;
-        for (size_t i = 0; i < parts_to_do; ++i)
+        bool has_uncommitted_part_in_scope = false;
+        for (const auto & [part_version, data_part] : all_parts)
         {
-            const auto & part_version = part_versions_with_names[i];
+            if (part_version.version >= mutation_version)
+                continue;
+
+            const bool committed = !data_part->version || data_part->version->getInfo().isCreated();
+            bool in_scope;
+            if (scope_is_block_ordered)
+            {
+                if (!committed)
+                {
+                    has_uncommitted_part_in_scope = true;
+                    continue;
+                }
+                in_scope = true;
+            }
+            else
+            {
+                in_scope = data_part->version && data_part->version->isVisible(entry.tid.start_csn, entry.tid);
+            }
+            if (!in_scope)
+                continue;
+
             parts_to_do_names.push_back(part_version.name);
             bytes_to_do += part_version.bytes_on_disk;
             /// Scope discovered after the entry was created (e.g. a part committed under an
@@ -1535,33 +1533,6 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 continue;
             if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
-        }
-
-        /// A non-transactional mutation's scope is "every lower block number", so an uncommitted
-        /// lower block - or another transaction's lower-version part, whose committing-block holder
-        /// `MergeTreeSink::commitPart` already released - is pending work of unknown size, and
-        /// nothing-visible-left does not mean done yet. A transactional mutation is scoped by its
-        /// own snapshot instead (`selectPartsToMutate` only mutates parts visible to its tid), so
-        /// other transactions' parts are outside its contract; its own transaction's parts are
-        /// visible to it and join the counted scope like any committed part.
-        const bool scope_is_block_ordered = entry.tid.isNonTransactional();
-        bool has_uncommitted_part_in_scope = false;
-        for (const auto & uncommitted : uncommitted_parts)
-        {
-            if (uncommitted.part.version >= mutation_version)
-                continue;
-            if (!scope_is_block_ordered && uncommitted.creation_tid == entry.tid)
-            {
-                parts_to_do_names.push_back(uncommitted.part.name);
-                bytes_to_do += uncommitted.part.bytes_on_disk;
-                entry.initial_bytes_to_do.account(uncommitted.part.info, uncommitted.part.bytes_on_disk);
-                if (std::find(parts_in_progress_names.begin(), parts_in_progress_names.end(), uncommitted.part.name)
-                        != parts_in_progress_names.end())
-                    if (auto it = mutating_part_progress.find(uncommitted.part.name); it != mutating_part_progress.end())
-                        bytes_in_flight_done += static_cast<Float64>(uncommitted.part.bytes_on_disk) * it->second;
-            }
-            else if (scope_is_block_ordered)
-                has_uncommitted_part_in_scope = true;
         }
 
         /// The denominator is the byte weight the mutation's scope had when each part entered
@@ -1754,19 +1725,22 @@ void StorageMergeTree::loadMutations()
         /// Re-snapshot the denominators for byte-weighted progress from what remains: the byte
         /// weight of the parts finished before the restart is not recoverable. Parts of
         /// transactions still open across the reload stay out, as everywhere else.
-        std::vector<std::tuple<Int64, UInt64, MergeTreePartInfo>> version_bytes_info;
-        for (const auto & part : getDataPartsVectorForInternalUsage())
-        {
-            if (part->version && !part->version->getInfo().isCreated())
-                continue;
-            version_bytes_info.emplace_back(part->info.getDataVersion(), part->getBytesOnDisk(), part->info);
-        }
+        auto reload_parts = getDataPartsVectorForInternalUsage();
         for (auto & mutation : current_mutations_by_version)
         {
-            for (const auto & [data_version, bytes, info] : version_bytes_info)
+            const bool scope_is_block_ordered = mutation.second.tid.isNonTransactional();
+            for (const auto & part : reload_parts)
             {
-                if (data_version < static_cast<Int64>(mutation.first))
-                    mutation.second.initial_bytes_to_do.account(info, bytes);
+                if (part->info.getDataVersion() >= static_cast<Int64>(mutation.first))
+                    continue;
+                /// Same scope rule as the live read path, so a restart does not change the
+                /// denominator: committed parts for a plain mutation, snapshot-visible ones for a
+                /// transactional mutation still open across the reload.
+                const bool in_scope = scope_is_block_ordered
+                    ? (!part->version || part->version->getInfo().isCreated())
+                    : (part->version && part->version->isVisible(mutation.second.tid.start_csn, mutation.second.tid));
+                if (in_scope)
+                    mutation.second.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
             }
         }
     }
