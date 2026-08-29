@@ -7,11 +7,40 @@
 
 #include <atomic>
 #include <filesystem>
+#include <mutex>
+#include <optional>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+
+namespace
+{
+    /// One slot, since every probe reports under the same warning type and the last write wins
+    /// there anyway. Guarded on its own so recording never touches the context's lock.
+    std::mutex pending_warning_mutex;
+    std::optional<PreformattedMessage> pending_warning;
+
+    void recordWarning(PreformattedMessage message)
+    {
+        std::lock_guard lock(pending_warning_mutex);
+        pending_warning = std::move(message);
+    }
+}
+
+void flushExt4CorruptionKernelBugWarning(const Context & context)
+{
+    std::optional<PreformattedMessage> message;
+    {
+        std::lock_guard lock(pending_warning_mutex);
+        message.swap(pending_warning);
+    }
+    /// Taken rather than copied: publishing stores it, so re-publishing on every read would be
+    /// wasted work. A probe that fires later simply refills the slot.
+    if (message)
+        context.addOrUpdateWarningMessage(Context::WarningType::LINUX_KERNEL_EXT4_CORRUPTION_BUG, *message);
+}
 
 void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & directory, [[maybe_unused]] const String & description)
 {
@@ -22,10 +51,6 @@ void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & dir
         return linux_version >= VersionNumber{4, 16, 0} && linux_version < VersionNumber{4, 16, 4};
     }();
     if (!affected_kernel)
-        return;
-
-    auto context = Context::getGlobalContextInstance();
-    if (!context)
         return;
 
     try
@@ -47,22 +72,18 @@ void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & dir
         if (fs_type == "ext4")
         {
             reported_ext4 = true;
-            context->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_KERNEL_EXT4_CORRUPTION_BUG,
-                PreformattedMessage::create(
-                    "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and {} ({}) resides on ext4. "
-                    "Consider upgrading the kernel.",
-                    description, directory));
+            recordWarning(PreformattedMessage::create(
+                "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and {} ({}) resides on ext4. "
+                "Consider upgrading the kernel.",
+                description, directory));
         }
         else if (fs_type.empty() && !reported_ext4)
         {
             /// An unreadable /proc/self/mounts must not trade the false alarm for a blind spot.
-            context->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_KERNEL_EXT4_CORRUPTION_BUG,
-                PreformattedMessage::create(
-                    "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and the filesystem of {} ({}) "
-                    "could not be determined. Consider upgrading the kernel.",
-                    description, directory));
+            recordWarning(PreformattedMessage::create(
+                "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and the filesystem of {} ({}) "
+                "could not be determined. Consider upgrading the kernel.",
+                description, directory));
         }
     }
     catch (...) /// Ok: a failed probe must not break disk construction. // NOLINT(bugprone-empty-catch)

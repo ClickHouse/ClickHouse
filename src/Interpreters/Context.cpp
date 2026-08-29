@@ -1655,6 +1655,10 @@ void Context::dropStorageCacheEntry(const StorageID & id) const
 
 std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const
 {
+    /// Disk probes cannot publish from where they run, since they are reached from constructors
+    /// that may already hold `shared->mutex`; drained here, before this function takes it.
+    flushExt4CorruptionKernelBugWarning(*this);
+
     std::unordered_map<Context::WarningType, PreformattedMessage> common_warnings;
     {
         SharedLockGuard lock(shared->mutex);
