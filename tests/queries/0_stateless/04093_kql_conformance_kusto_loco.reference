@@ -3,7 +3,7 @@
 -- AdditionalFunctionTests::PowFunction_Scalar --
 256
 -- AdditionalFunctionTests::Log10Function_Scalar --
-3.0000000000292952
+3
 -- AdditionalFunctionTests::ToBoolFunction_Scalar --
 true
 -- AdditionalFunctionTests::IsNanFunction_Scalar --

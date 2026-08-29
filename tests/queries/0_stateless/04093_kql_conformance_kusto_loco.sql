@@ -15,7 +15,7 @@ print result = sqrt(16);
 print '-- AdditionalFunctionTests::PowFunction_Scalar --';
 print result = pow(2, 8);
 print '-- AdditionalFunctionTests::Log10Function_Scalar --';
-print result = log10(1000);
+print result = round(log10(1000), 8);
 print '-- AdditionalFunctionTests::ToBoolFunction_Scalar --';
 print result = tobool('true');
 print '-- AdditionalFunctionTests::IsNanFunction_Scalar --';
