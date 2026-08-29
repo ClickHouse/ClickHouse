@@ -127,7 +127,7 @@ struct SpaceSharedSchedulerSnapshot
     bool decrease_pending = false;
 };
 
-std::optional<SpaceSharedSchedulerSnapshot> getSchedulerSnapshot(
+static std::optional<SpaceSharedSchedulerSnapshot> getSchedulerSnapshot(
     SpaceSharedTest & t, AllocationQueue & queue, std::chrono::milliseconds timeout = std::chrono::seconds(5))
 {
     auto promise = std::make_shared<std::promise<SpaceSharedSchedulerSnapshot>>();
@@ -629,7 +629,7 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
 struct ManualAllocation : public ResourceAllocation
 {
-    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, bool wait_for_admission = true)
+    ManualAllocation(IAllocationQueue * queue_, const String & name_, ResourceCost initial_size, bool wait_for_admission = true)
         : ResourceAllocation(*queue_, name_)
     {
         if (initial_size > 0)
@@ -1148,9 +1148,9 @@ TEST(SchedulerSpaceShared, DonorRegrowthUsesOnlyUnclaimedCapacity)
             return;
         }
         if (auto next = weak_watcher.lock())
-            t.scheduler.event_queue.enqueue(*next);
+            t.scheduler.event_queue.enqueue(EventQueue::Task(*next));
     };
-    t.scheduler.event_queue.enqueue(*watcher);
+    t.scheduler.event_queue.enqueue(EventQueue::Task(*watcher));
     start_scheduler.set_value();
 
     const auto reclaim_status = reclaim_published_future.wait_for(std::chrono::seconds(5));
@@ -1267,9 +1267,9 @@ TEST(SchedulerSpaceShared, ReleaseDuringPendingReservationIncreaseBecomesReclaim
             return;
         }
         if (auto next = weak_watcher.lock())
-            t.scheduler.event_queue.enqueue(*next);
+            t.scheduler.event_queue.enqueue(EventQueue::Task(*next));
     };
-    t.scheduler.event_queue.enqueue(*watcher);
+    t.scheduler.event_queue.enqueue(EventQueue::Task(*watcher));
     start_scheduler.set_value();
 
     if (increase_published_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
@@ -1624,7 +1624,7 @@ TEST(SchedulerSpaceShared, ReleasedCapacityTraversesWorkloadHierarchy)
     ResourceLink oversized_link = oversized_workload->getLink();
     ResourceLink fitting_link = fitting_workload->getLink();
     ResourceLink external_link = external_workload->getLink();
-    AllocationQueue * donor_queue = donor_link.allocation_queue;
+    IAllocationQueue * donor_queue = donor_link.allocation_queue;
 
     r.root_node = outer;
     external_workload.reset();
@@ -2175,9 +2175,9 @@ TEST(SchedulerSpaceShared, LocalDemandArrivingBeforeReleaseApprovalGetsCredit)
             return;
         }
         if (auto next = weak_watcher.lock())
-            t.scheduler.event_queue.enqueue(*next);
+            t.scheduler.event_queue.enqueue(EventQueue::Task(*next));
     };
-    t.scheduler.event_queue.enqueue(*watcher);
+    t.scheduler.event_queue.enqueue(EventQueue::Task(*watcher));
     start_scheduler.set_value();
 
     if (reclaim_published_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
@@ -2769,9 +2769,9 @@ TEST(SchedulerSpaceShared, DestroyedInFlightClaimantCannotTransferCredit)
             return;
         }
         if (auto next = weak_watcher.lock())
-            t.scheduler.event_queue.enqueue(*next);
+            t.scheduler.event_queue.enqueue(EventQueue::Task(*next));
     };
-    t.scheduler.event_queue.enqueue(*watcher);
+    t.scheduler.event_queue.enqueue(EventQueue::Task(*watcher));
     start_scheduler.set_value();
 
     if (reclaim_published_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
