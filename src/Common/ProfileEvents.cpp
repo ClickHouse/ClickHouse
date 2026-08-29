@@ -1972,7 +1972,6 @@ const std::string_view & getDocumentation(Event event)
     return docs[event];
 }
 
-/// Get ProfileEvent by its name
 static const std::unordered_map<std::string_view, Event> & getNameToEventMap()
 {
     static std::unordered_map<std::string_view, Event> map =
@@ -1985,6 +1984,7 @@ static const std::unordered_map<std::string_view, Event> & getNameToEventMap()
     return map;
 }
 
+/// Get ProfileEvent by its name
 Event getByName(std::string_view name)
 {
     return getNameToEventMap().at(name);

@@ -8388,6 +8388,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     *max_value = quota_maxes[fuzz_rand() % std::size(quota_maxes)];
                 }
             }
+            /// Fuzz the maximums of the limits defined over profile events the same way.
+            for (auto & [_, max_value] : limits.profile_events_max)
+            {
+                if (fuzz_rand() % 10 == 0)
+                {
+                    static const UInt64 quota_maxes[] = {0, 1, 1000, std::numeric_limits<UInt64>::max()};
+                    max_value = quota_maxes[fuzz_rand() % std::size(quota_maxes)];
+                }
+            }
         }
     }
     else if (auto * drop_access = typeid_cast<ASTDropAccessEntityQuery *>(ast.get()))
