@@ -61,7 +61,6 @@ def get_json_from_api(path):
         "/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15",
         "/api/v1/series?match[]=cpu_usage",
         "/api/v1/labels",
-        "/api/v1/label/host/values",
         "/api/v1/metadata",
     ],
 )
