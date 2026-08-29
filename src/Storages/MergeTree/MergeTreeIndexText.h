@@ -171,12 +171,10 @@ private:
 
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
 
-/// A token paired with its posting/position builder views.
 struct SortedToken
 {
     std::string_view token;
     PostingListBuilder * postings = nullptr;
-    PositionListBuilder * positions = nullptr;
 };
 
 using SortedTokens = std::vector<SortedToken>;
@@ -337,8 +335,7 @@ struct TextIndexSerialization
         const PostingListBuildContext & context,
         MergeTreeIndexWriterStream & dictionary_stream,
         MergeTreeIndexWriterStream & postings_stream,
-        MergeTreeIndexWriterStream * positions_stream,
-        PositionListBuilder * positions);
+        MergeTreeIndexWriterStream * positions_stream);
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);

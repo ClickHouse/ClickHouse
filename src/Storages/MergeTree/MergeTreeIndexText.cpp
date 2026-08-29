@@ -939,8 +939,7 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
     const PostingListBuildContext & context,
     MergeTreeIndexWriterStream & dictionary_stream,
     MergeTreeIndexWriterStream & postings_stream,
-    MergeTreeIndexWriterStream * positions_stream,
-    PositionListBuilder * positions)
+    MergeTreeIndexWriterStream * positions_stream)
 {
     using enum PostingsSerialization::Flags;
 
@@ -965,10 +964,12 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
 
         if (large.values.empty())
         {
+            chassert(large.encoder);
             info.cardinality = static_cast<UInt32>(large.encoder->cardinality());
         }
         else
         {
+            chassert(!large.encoder);
             info.cardinality = static_cast<UInt32>(large.values.size());
             raw_values = {large.values.data(), info.cardinality};
         }
@@ -976,6 +977,7 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
 
     if (positions_stream)
     {
+        auto * positions = postings.getPositions();
         chassert(positions);
         positions->finalizeOrdering();
         const auto & position_entries = positions->getEntries();
@@ -1381,8 +1383,7 @@ DictionarySparseIndex serializeTokensAndPostings(
                 context,
                 dictionary_stream,
                 postings_stream,
-                positions_stream,
-                entry.positions);
+                positions_stream);
         }
     }
 
@@ -1697,7 +1698,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
         std::string_view token = key;
         if (mapped.isFiltered())
             return;
-        sorted_tokens.push_back(SortedToken{token, &mapped, mapped.getPositions()});
+        sorted_tokens.push_back(SortedToken{token, &mapped});
     });
 
     std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
