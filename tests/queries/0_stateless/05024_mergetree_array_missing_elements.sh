@@ -38,15 +38,23 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "
 # Empty the elements file of `a`, keeping its sizes file: the column is not recorded as partially
 # read, so nothing refills it. The checksums are recalculated on the next load.
 # `path` from `system.parts` ends with a slash.
+# On a case-insensitive filesystem (e.g. macOS) every stream file is stored under the hash of its
+# name (`replaceFileNameToHashIfNeeded`), so try both the plain name and the hashed one.
 PART_DIR=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'corrupted' AND active")
-if [ ! -f "${PART_DIR}a.bin" ]
+ELEMENTS_HASH=$(${CLICKHOUSE_LOCAL} --query "SELECT lower(hex(reverse(sipHash128('a'))))")
+ELEMENTS_FILE=""
+for CANDIDATE in "a.bin" "${ELEMENTS_HASH}.bin"
+do
+    [ -f "${PART_DIR}${CANDIDATE}" ] && ELEMENTS_FILE="${PART_DIR}${CANDIDATE}"
+done
+if [ -z "${ELEMENTS_FILE}" ]
 then
-    echo "no a.bin in the active part of table corrupted, parts:" >&2
+    echo "no a.bin or ${ELEMENTS_HASH}.bin in the active part of table corrupted, parts:" >&2
     ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT name, part_type, active, path FROM system.parts WHERE table = 'corrupted'" >&2
     find "${WORKING_DIR}" -type f >&2
     exit 1
 fi
-: > "${PART_DIR}a.bin"
+: > "${ELEMENTS_FILE}"
 rm -f "${PART_DIR}checksums.txt"
 
 ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT a FROM corrupted ORDER BY k" 2>&1 | grep -c -F 'INCORRECT_DATA'
