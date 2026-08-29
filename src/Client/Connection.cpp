@@ -251,8 +251,11 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                         throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
                 }
 
+                /// Name the dialled address, like `SocketImpl::connect` does on its own deferred
+                /// path: this loop walks several resolved addresses, so a bare error loses the
+                /// one that actually failed.
                 if (auto err = socket->impl()->socketError())
-                    socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
+                    socket->impl()->error(err, it->toString()); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
 
                 socket->setBlocking(true);
             }
@@ -426,6 +429,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
+        /// Connect errors name the dialled address themselves now, so the description is appended
+        /// only when it adds something the message does not already carry (typically a hostname).
+        if (e.displayText().contains(getDescription(/*with_extra*/ true)))
+            throw NetException(ErrorCodes::NETWORK_ERROR, "{}", e.displayText());
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
     }
     catch (Poco::TimeoutException & e)
