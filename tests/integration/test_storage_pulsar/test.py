@@ -820,3 +820,75 @@ def test_table_comment_is_preserved(pulsar_cluster):
     instance.query("DETACH TABLE test.pulsar_reader")
     instance.query("ATTACH TABLE test.pulsar_reader")
     check()
+
+
+def test_empty_messages_are_skipped(pulsar_cluster):
+    # Zero-length messages carry no rows for the input format, so the consumer
+    # skips over them (acknowledging each) until it finds a payload. The skip
+    # must be iterative: a single poll can return a whole batch of empty
+    # messages, and recursing once per skipped message could exhaust the stack.
+    # The REST producer does not create the topic on demand, so create it
+    # before the engine's consumers get a chance to auto-create it.
+    subprocess.check_call(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "bin/pulsar-admin",
+            "topics",
+            "create",
+            "persistent://public/default/empty_msgs_topic",
+        ]
+    )
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(
+        pulsar_table(
+            "test.pulsar_reader",
+            "empty_msgs_topic",
+            "empty_msgs_group",
+            extra_settings=", pulsar_poll_max_batch_size = 1000",
+        )
+    )
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    # A long run of empty messages followed by a single real one, published in
+    # one batch through the broker's REST producer (`pulsar-client produce`
+    # rejects an empty `-m`). With `pulsar_poll_max_batch_size = 1000` a single
+    # poll can return the entire run.
+    empty_messages = ", ".join('{"payload": ""}' for _ in range(300))
+    body = (
+        '{"valueSchema": "{\\"type\\":\\"STRING\\",\\"schema\\":\\"\\",\\"properties\\":{}}",'
+        f' "messages": [{empty_messages},'
+        ' {"payload": "{\\"key\\":7,\\"value\\":7}"}]}'
+    )
+    subprocess.check_call(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "curl",
+            "-sf",
+            "-X",
+            "POST",
+            "http://localhost:8080/topics/persistent/public/default/empty_msgs_topic",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            body,
+        ]
+    )
+
+    # Delivery is at-least-once, so tolerate duplicate rows.
+    wait_query_result("7\t7", "SELECT DISTINCT key, value FROM test.view")
+

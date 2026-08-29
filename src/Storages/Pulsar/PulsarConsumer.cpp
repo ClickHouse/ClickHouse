@@ -20,19 +20,22 @@ PulsarConsumer::PulsarConsumer(LoggerPtr logger_) : log(logger_), next_message(p
 
 ReadBufferPtr PulsarConsumer::getNextMessage()
 {
-    if (next_message == polled_messages.end())
-        return nullptr;
-    const auto * data = reinterpret_cast<const unsigned char *>(next_message->getData());
-    size_t size = next_message->getLength();
+    /// Empty messages are skipped iteratively: a single poll can return the whole batch of them,
+    /// and recursing once per skipped message could overflow the stack.
+    while (next_message != polled_messages.end())
+    {
+        const auto * data = reinterpret_cast<const unsigned char *>(next_message->getData());
+        size_t size = next_message->getLength();
 
-    /// The message is acknowledged only after the block it belongs to is durably written (see commit).
-    pending_acks.emplace_back(next_message->getMessageId());
-    ++next_message;
+        /// The message is acknowledged only after the block it belongs to is durably written (see commit).
+        pending_acks.emplace_back(next_message->getMessageId());
+        ++next_message;
 
-    if (size != 0)
-        return std::make_shared<ReadBufferFromMemory>(data, size);
+        if (size != 0)
+            return std::make_shared<ReadBufferFromMemory>(data, size);
+    }
 
-    return getNextMessage();
+    return nullptr;
 }
 
 ReadBufferPtr PulsarConsumer::consume()
