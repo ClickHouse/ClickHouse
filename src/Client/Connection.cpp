@@ -428,10 +428,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
-        /// Connect errors name the dialled address themselves now, so the description is appended
-        /// only when it adds something the message does not already carry (typically a hostname).
-        if (e.displayText().contains(getDescription(/*with_extra*/ true)))
-            throw NetException(ErrorCodes::NETWORK_ERROR, "{}", e.displayText());
+        /// The suffix is appended unconditionally even though connect errors now name the dialled
+        /// address themselves: it is a stable part of the message that callers match on, and
+        /// suppressing it when it looks redundant costs more than the repetition saves.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
     }
     catch (Poco::TimeoutException & e)
