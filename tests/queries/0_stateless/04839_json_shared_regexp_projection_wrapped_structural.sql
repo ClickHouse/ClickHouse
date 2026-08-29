@@ -27,8 +27,8 @@ ALTER TABLE wrapped_tuple_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync
 
 -- The regression: both rules must survive on their own element through the materialize() wrapper.
 SELECT
-    'materialize(tuple(j1,j2)) retains both elements'' own provenance',
-    countIf(position(type, '^tag_a') > 0 AND position(type, '^tag_b') > 0)
+    'materialize(tuple(j1,j2)) type',
+    type
 FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='wrapped_tuple_04839' AND column != 'id' AND active;
 
@@ -64,7 +64,7 @@ ALTER TABLE wrapped_lambda_body_04839
 ALTER TABLE wrapped_lambda_body_04839 MATERIALIZE PROJECTION pm SETTINGS mutations_sync=1;
 
 SELECT 'arrayMap materialize(tuple(x,y)) slots carry their own policies',
-       countIf(position(type, '^a_') > 0 AND position(type, '^b_') > 0 AND position(type, '^a_') < position(type, '^b_'))
+       type
 FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='wrapped_lambda_body_04839' AND name = 'p' AND column LIKE 'arrayMap%' AND active;
 

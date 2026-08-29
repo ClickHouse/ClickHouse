@@ -1,5 +1,6 @@
-tuple(j1,j2) retains both elements\' own provenance	1
+tuple(j1,j2) type	Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
 map(j1,j2) type	Map(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
-arrayZip(arr1,arr2) retains both elements\' own provenance	1
+arrayZip(arr1,arr2) type	Array(Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\')))
 arrayZipUnaligned(arr1,arr2) type	Array(Tuple(Nullable(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\')), Nullable(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))))
-single aligned donor keeps both slots\' rules	2
+single aligned donor	arrayElement(arr, 1)	Tuple(a JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), b JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
+single aligned donor	assumeNotNull(t)	Tuple(a JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), b JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))

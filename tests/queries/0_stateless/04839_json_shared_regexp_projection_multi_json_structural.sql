@@ -24,10 +24,11 @@ ALTER TABLE tuple_two_json_04839 MODIFY COLUMN j2 JSON(max_dynamic_paths=5);
 ALTER TABLE tuple_two_json_04839 ADD PROJECTION p (SELECT id, tuple(j1, j2) WHERE id > 0 ORDER BY id);
 ALTER TABLE tuple_two_json_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
 
--- Both rules must survive, each on its own tuple element -- not both dropped by the ambiguity guard.
+-- Each element must keep only its own rule: print the type so a union onto one element, a copy
+-- onto both, or a swap is visible, not only the case where both rules disappear.
 SELECT
-    'tuple(j1,j2) retains both elements'' own provenance',
-    countIf(position(type, '^tag_a') > 0 AND position(type, '^tag_b') > 0)
+    'tuple(j1,j2) type',
+    type
 FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='tuple_two_json_04839' AND column='tuple(j1, j2)' AND active;
 
@@ -80,10 +81,10 @@ ALTER TABLE arrayzip_two_json_04839 MODIFY COLUMN arr2 Array(JSON(max_dynamic_pa
 ALTER TABLE arrayzip_two_json_04839 ADD PROJECTION p (SELECT id, arrayZip(arr1, arr2) WHERE id > 0 ORDER BY id);
 ALTER TABLE arrayzip_two_json_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
 
--- Same as tuple(j1,j2), just wrapped in Array: both rules must survive on their own element.
+-- Same as tuple(j1,j2), just wrapped in Array: each element keeps only its own rule.
 SELECT
-    'arrayZip(arr1,arr2) retains both elements'' own provenance',
-    countIf(position(type, '^tag_a') > 0 AND position(type, '^tag_b') > 0)
+    'arrayZip(arr1,arr2) type',
+    type
 FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='arrayzip_two_json_04839' AND column='arrayZip(arr1, arr2)' AND active;
 
@@ -140,10 +141,12 @@ ALTER TABLE single_donor_two_json_04839 ADD PROJECTION p (SELECT id, arrayElemen
 ALTER TABLE single_donor_two_json_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
 
 SELECT
-    'single aligned donor keeps both slots'' rules',
-    countIf(position(type, '^tag_a') > 0 AND position(type, '^tag_b') > 0 AND position(type, '^tag_a') < position(type, '^tag_b'))
+    'single aligned donor',
+    column,
+    type
 FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='single_donor_two_json_04839' AND active
-    AND column IN ('arrayElement(arr, 1)', 'assumeNotNull(t)');
+    AND column IN ('arrayElement(arr, 1)', 'assumeNotNull(t)')
+ORDER BY column;
 
 DROP TABLE single_donor_two_json_04839;

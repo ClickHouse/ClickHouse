@@ -25,8 +25,10 @@ ALTER TABLE arraymap_tuple_04839
     ADD PROJECTION p (SELECT id, arrayMap((x, y) -> tuple(x, y), arr1, arr2) WHERE id > 0 ORDER BY id);
 ALTER TABLE arraymap_tuple_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
 
+-- Print the type: a union of both rules onto one slot, or a copy onto both, still satisfies a
+-- presence-and-order check but breaks the element-wise contract above.
 SELECT 'slots carry their own policies',
-       countIf(position(type, '^a_') > 0 AND position(type, '^b_') > 0 AND position(type, '^a_') < position(type, '^b_'))
+       type
 FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='arraymap_tuple_04839' AND name = 'p' AND column LIKE 'arrayMap%' AND active;
 
