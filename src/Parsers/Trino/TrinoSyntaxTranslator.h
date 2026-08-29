@@ -27,6 +27,10 @@ namespace DB
   * - `LIMIT ALL`                         -> removed
   * - `VALUES row, row, ...` statement    -> `SELECT * FROM SQLStandardValues(row, row, ...)`
   * - `SET SESSION name = value`          -> `SET name = value`
+  * - `length`, `substr`, `substring`, `lpad`, `rpad` over a syntactically
+  *   recognizable VARBINARY expression -> the byte-based ClickHouse functions
+  *   (the VARCHAR overloads count code points and are mapped to the UTF8
+  *   variants by TrinoFunctionMapper)
   * - backslashes in string literals are escaped, because in Trino a backslash is
   *   a regular character while ClickHouse processes escape sequences
   *

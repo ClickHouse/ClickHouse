@@ -8,8 +8,10 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <set>
+#include <utility>
 
 namespace DB
 {
@@ -66,9 +68,12 @@ enum class UnnestKind : uint8_t
     Standalone,       /// FROM UNNEST(...) - no table on the left
 };
 
-/// The column aliases of a joined UNNEST, by table alias:
-/// `CROSS JOIN UNNEST(a) AS t (x)` binds `t.x`.
-using JoinedUnnestAliases = std::map<String, std::set<String>>;
+/// The column aliases of a joined UNNEST, by the query scope that introduced
+/// them and the table alias: `CROSS JOIN UNNEST(a) AS t (x)` binds `t.x`.
+/// The scope is the token index of the opening parenthesis of the innermost
+/// enclosing subquery (or SIZE_MAX at the top level), so that a nested
+/// subquery or CTE reusing the same table alias is not affected.
+using JoinedUnnestAliases = std::map<std::pair<size_t, String>, std::set<String>>;
 
 class Translator
 {
@@ -83,6 +88,23 @@ public:
         , source_end(source_end_)
         , known_unnest_aliases(std::move(known_unnest_aliases_))
     {
+        /// For every token, the opening parenthesis of the innermost enclosing
+        /// subquery: a '(' immediately followed by SELECT, WITH or VALUES.
+        enclosing_subquery_scope.resize(tokens.size(), TOP_LEVEL_SCOPE);
+        std::vector<size_t> scope_stack{TOP_LEVEL_SCOPE};
+        for (size_t j = 0; j < tokens.size(); ++j)
+        {
+            if (tokens[j].type == TokenType::ClosingRoundBracket && scope_stack.size() > 1)
+                scope_stack.pop_back();
+            enclosing_subquery_scope[j] = scope_stack.back();
+            if (tokens[j].type == TokenType::OpeningRoundBracket)
+            {
+                bool is_subquery = j + 1 < tokens.size()
+                    && (tokenIsKeyword(tokens[j + 1], "SELECT") || tokenIsKeyword(tokens[j + 1], "WITH")
+                        || tokenIsKeyword(tokens[j + 1], "VALUES"));
+                scope_stack.push_back(is_subquery ? j : scope_stack.back());
+            }
+        }
     }
 
     const JoinedUnnestAliases & getJoinedUnnestAliases() const { return joined_unnest_aliases; }
@@ -131,6 +153,9 @@ private:
     JoinedUnnestAliases joined_unnest_aliases;
     JoinedUnnestAliases known_unnest_aliases;
 
+    static constexpr size_t TOP_LEVEL_SCOPE = std::numeric_limits<size_t>::max();
+    std::vector<size_t> enclosing_subquery_scope;
+
     [[noreturn]] void throwNotSupported(const Token & token, std::string_view what, std::string_view hint) const
     {
         throw Exception(
@@ -169,6 +194,63 @@ private:
             }
         }
         return tokens.size();
+    }
+
+    /// Returns whether the expression starting at token `idx` (the first
+    /// argument of a function call) is syntactically recognizable as VARBINARY:
+    /// a call to a binary-producing function, a CAST/TRY_CAST to VARBINARY, or
+    /// a byte-preserving string function over such an expression.
+    bool isBinaryExpressionAt(size_t idx) const
+    {
+        while (idx < tokens.size() && tokens[idx].type == TokenType::OpeningRoundBracket)
+            ++idx;
+        if (idx >= tokens.size() || tokens[idx].type != TokenType::BareWord || !isTypeAt(idx + 1, TokenType::OpeningRoundBracket))
+            return false;
+        const Token & token = tokens[idx];
+
+        static constexpr std::string_view binary_producers[] =
+        {
+            "to_utf8", "from_hex", "from_base64", "from_base64url", "from_big_endian_32", "from_big_endian_64",
+            "to_ieee754_32", "to_ieee754_64", "md5", "sha1", "sha256", "sha512",
+            "hmac_md5", "hmac_sha1", "hmac_sha256", "hmac_sha512",
+            "spooky_hash_v2_32", "spooky_hash_v2_64", "xxhash64", "murmur3",
+        };
+        for (std::string_view name : binary_producers)
+            if (tokenIsKeyword(token, name))
+                return true;
+
+        /// Byte-preserving functions: binary in, binary out.
+        static constexpr std::string_view binary_preserving[] = {"substr", "substring", "lpad", "rpad", "reverse", "concat"};
+        for (std::string_view name : binary_preserving)
+            if (tokenIsKeyword(token, name))
+                return isBinaryExpressionAt(idx + 2);
+
+        if (tokenIsKeyword(token, "CAST") || tokenIsKeyword(token, "TRY_CAST"))
+        {
+            const size_t open = idx + 1;
+            const size_t close = findMatchingParen(open);
+            if (close == tokens.size())
+                return false;
+            /// The last top-level AS separates the expression from the type.
+            size_t depth = 0;
+            size_t as_idx = tokens.size();
+            for (size_t j = open + 1; j < close; ++j)
+            {
+                TokenType type = tokens[j].type;
+                if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+                    ++depth;
+                else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+                {
+                    if (depth > 0)
+                        --depth;
+                }
+                else if (depth == 0 && tokenIsKeyword(tokens[j], "AS"))
+                    as_idx = j;
+            }
+            return as_idx != tokens.size() && isKeywordAt(as_idx + 1, "VARBINARY");
+        }
+
+        return false;
     }
 
     void emitText(std::string_view text)
@@ -350,7 +432,7 @@ private:
             && isTypeAt(i + 1, TokenType::Dot)
             && (isTypeAt(i + 2, TokenType::BareWord) || isTypeAt(i + 2, TokenType::QuotedIdentifier)))
         {
-            auto it = known_unnest_aliases.find(String(token.begin, token.size()));
+            auto it = known_unnest_aliases.find({enclosing_subquery_scope[i], String(token.begin, token.size())});
             if (it != known_unnest_aliases.end() && it->second.contains(String(tokens[i + 2].begin, tokens[i + 2].size())))
             {
                 changed = true;
@@ -379,6 +461,34 @@ private:
         {
             translateTypeWord(i, end_idx);
             return;
+        }
+
+        /// The VARBINARY overloads of the character functions operate on bytes,
+        /// while the VARCHAR overloads count code points (and are mapped to the
+        /// UTF8 variants by TrinoFunctionMapper). When the first argument is a
+        /// syntactically recognizable VARBINARY expression, the byte-based
+        /// ClickHouse function is emitted here instead; its name is left intact
+        /// by the function mapper because it is not a Trino function name.
+        if (isTypeAt(i + 1, TokenType::OpeningRoundBracket))
+        {
+            static constexpr std::pair<std::string_view, std::string_view> binary_variants[] =
+            {
+                {"length", "OCTET_LENGTH"},
+                {"substr", "byteSlice"},
+                {"substring", "byteSlice"},
+                {"lpad", "leftPad"},
+                {"rpad", "rightPad"},
+            };
+            for (const auto & [trino_name, byte_name] : binary_variants)
+            {
+                if (tokenIsKeyword(token, trino_name) && isBinaryExpressionAt(i + 2))
+                {
+                    changed = true;
+                    emitText(byte_name);
+                    ++i;
+                    return;
+                }
+            }
         }
 
         if ((tokenIsKeyword(token, "TRY_CAST") || tokenIsKeyword(token, "CAST")) && isTypeAt(i + 1, TokenType::OpeningRoundBracket))
@@ -1342,6 +1452,7 @@ private:
     void translateUnnest(size_t & i, size_t end_idx, UnnestKind kind)
     {
         const Token & unnest_token = tokens[i];
+        const size_t unnest_scope = enclosing_subquery_scope[i];
         size_t open = i + 1;
         size_t close = findMatchingParen(open);
         if (close == tokens.size())
@@ -1458,7 +1569,7 @@ private:
         /// Trino (`t.x`), while an ARRAY JOIN alias is unqualified: remember the
         /// alias so that the qualified references are rewritten (see translateOne).
         if (!table_alias.empty())
-            joined_unnest_aliases[table_alias].insert(columns.begin(), columns.end());
+            joined_unnest_aliases[{unnest_scope, table_alias}].insert(columns.begin(), columns.end());
 
         /// ARRAY JOIN attaches to the table on the left.
         const bool is_left = kind == UnnestKind::LeftArrayJoin;
