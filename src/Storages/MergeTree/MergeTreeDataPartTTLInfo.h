@@ -106,8 +106,11 @@ struct MergeTreeDataPartTTLInfos
 
     bool empty() const
     {
-        /// part_min_ttl in minimum of rows, rows_where and group_by TTLs
-        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
+        /// part_min_ttl in minimum of rows, rows_where and group_by TTLs.
+        /// An epoch-only rows TTL leaves all the bounds at zero (the "unset" sentinel), but
+        /// `has_epoch_timestamps` is TTL state that must be persisted in `ttl.txt`: without it the part
+        /// would look TTL-uncalculated after a reload and force a needless TTL recalculation on merge.
+        return !part_min_ttl && !table_ttl.has_epoch_timestamps && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
     }
 };
 

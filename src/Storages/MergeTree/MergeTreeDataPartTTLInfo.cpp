@@ -142,8 +142,9 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         if (table.has("finished"))
             table_ttl.ttl_finished = table["finished"].getUInt();
 
+        /// NB the value is a JSON boolean (`true`); `getUInt` would silently parse it as 0.
         if (table.has("has_epoch_timestamps"))
-            table_ttl.has_epoch_timestamps = table["has_epoch_timestamps"].getUInt();
+            table_ttl.has_epoch_timestamps = table["has_epoch_timestamps"].getBool();
 
         if (table.has("expression"))
             table_ttl_expression = table["expression"].getString();
