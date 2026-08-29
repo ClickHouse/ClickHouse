@@ -63,8 +63,8 @@ def zk_rmr_with_retries(zk, path):
 
 
 # Retry only when clickhouse-client could not open its connection to this node's own
-# server (NETWORK_ERROR with "Connection refused (<node ip>:9000)"). In that case the
-# query never reached any server, so it is safe to retry even non-idempotent statements.
+# server (NETWORK_ERROR refusing this node's own endpoint). In that case the query
+# never reached any server, so it is safe to retry even non-idempotent statements.
 # A server-side or downstream "Connection refused" (remote shard / Keeper) carries a
 # different address and is re-raised immediately, so an already-enqueued ON CLUSTER DDL
 # or a partially-applied INSERT is never resubmitted.
