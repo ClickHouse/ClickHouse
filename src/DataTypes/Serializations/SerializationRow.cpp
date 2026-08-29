@@ -273,8 +273,8 @@ void SerializationRow::serializeBinaryBulkWithMultipleStreams(
     const size_t num_fields = field_serializations.size();
     const FormatSettings format_settings;
 
-    /// Layout per row: [VarUInt row_size][fields...]. The size prefix lets the
-    /// reader skip rows_offset rows without deserializing them.
+    /// Layout per row: [VarUInt row_size][fields...]. The size prefix lets a
+    /// reader skip a row without deserializing its fields.
     WriteBufferFromOwnString row_buf;
     for (size_t row = offset; row < end; ++row)
     {
@@ -289,8 +289,7 @@ void SerializationRow::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr &,
@@ -303,8 +302,7 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
     if (!stream)
         return;
 
-    auto mutable_column = column->assumeMutable();
-    auto & tuple = assert_cast<ColumnTuple &>(*mutable_column);
+    auto & tuple = assert_cast<ColumnTuple &>(column);
     const size_t num_fields = field_serializations.size();
 
     /// Must not use settings.format_settings: it is uninitialised on the MergeTree
@@ -315,13 +313,6 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
         for (size_t i = 0; i < num_fields; ++i)
             tuple.getColumn(i).reserve(tuple.getColumn(i).size() + limit);
 
-    for (size_t skipped = 0; skipped < rows_offset && !stream->eof(); ++skipped)
-    {
-        UInt64 size = 0;
-        readVarUInt(size, *stream);
-        stream->ignore(size);
-    }
-
     /// Deserialize fields straight from the stream (fields are self-delimiting,
     /// so the row_size prefix is read but unused here).
     for (size_t read = 0; read < limit && !stream->eof(); ++read)
@@ -330,8 +321,6 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
         readVarUInt(size, *stream);
         readRowFields(tuple, field_serializations, format_settings, *stream);
     }
-
-    column = std::move(mutable_column);
 }
 
 }
