@@ -812,6 +812,12 @@ void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
     {
         writeChunk(mono_chunk, PortKind::Main);
         mono_chunk.clear();
+
+        /// The squashed chunk is written by the background thread, long after `work` has done its
+        /// own `auto_flush`. Without flushing here, the rendered table stays in the output buffer
+        /// until the query finishes - which is exactly what the squashing is supposed to avoid.
+        if (auto_flush)
+            flushImpl();
     }
 }
 
