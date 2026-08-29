@@ -1,0 +1,4 @@
+--- JSONEachPacketString is rejected for SQLInsert schema with a non-UTF-8 type name
+is not compatible with the output format SQLInsert
+--- EventStream base64-encodes SQLInsert schema with a non-UTF-8 type name
+SQLInsert schema payload with a non-UTF-8 type name round-trips

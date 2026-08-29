@@ -354,19 +354,6 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d 'SELECT 1 AS `a\xFFb` FORMAT SQLInsert' \
     | grep -o -m1 'is not compatible with the output format SQLInsert'
 
-echo '--- JSONEachPacketString is rejected for SQLInsert schema with a non-UTF-8 type name'
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
-    -d "SELECT CAST(1 AS Enum8('x\xFFy' = 1)) AS c FORMAT SQLInsert SETTINGS output_format_sql_insert_include_table_schema = 1" \
-    | grep -o -m1 'is not compatible with the output format SQLInsert'
-
-echo '--- EventStream base64-encodes SQLInsert schema with a non-UTF-8 type name'
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
-    -d "SELECT CAST(1 AS Enum8('x\xFFy' = 1)) AS c FORMAT SQLInsert SETTINGS output_format_sql_insert_include_table_schema = 1" \
-    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
-    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" \
-        -d "SELECT CAST(1 AS Enum8('x\xFFy' = 1)) AS c FORMAT SQLInsert SETTINGS output_format_sql_insert_include_table_schema = 1") \
-    && echo 'SQLInsert schema payload with a non-UTF-8 type name round-trips' || echo 'MISMATCH'
-
 echo '--- EventStream base64-encodes SQLInsert with a non-UTF-8 column name'
 ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
     -d 'SELECT 1 AS `a\xFFb` FORMAT SQLInsert'
