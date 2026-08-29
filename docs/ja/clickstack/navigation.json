@@ -7,32 +7,34 @@
       "expanded": true,
       "group": "はじめに",
       "pages": [
+        "ja/clickstack/overview",
         {
           "expanded": true,
           "group": "クイックスタート",
           "pages": [
+            "ja/clickstack/getting-started/index",
             "ja/clickstack/getting-started/managed",
             "ja/clickstack/getting-started/oss"
-          ],
-          "root": "ja/clickstack/getting-started/index"
+          ]
         },
         {
           "group": "サンプルデータセット",
           "pages": [
+            "ja/clickstack/example-datasets/index",
             "ja/clickstack/example-datasets/sample-data",
             "ja/clickstack/example-datasets/kubernetes",
             "ja/clickstack/example-datasets/local-data",
             "ja/clickstack/example-datasets/remote-demo-data",
             "ja/clickstack/example-datasets/session-replay",
             "ja/clickstack/example-datasets/chrome-extension",
-            "ja/clickstack/example-datasets/otelgen"
-          ],
-          "root": "ja/clickstack/example-datasets/index"
+            "ja/clickstack/example-datasets/otelgen",
+            "ja/clickstack/example-datasets/telemetrygen",
+            "ja/clickstack/example-datasets/instrument-application"
+          ]
         },
         "ja/clickstack/architecture",
         "ja/clickstack/faq"
-      ],
-      "root": "ja/clickstack/overview"
+      ]
     },
     {
       "group": "機能",
@@ -40,9 +42,11 @@
         {
           "group": "デプロイメント",
           "pages": [
+            "ja/clickstack/deployment/overview",
             {
               "group": "オープンソース",
               "pages": [
+                "ja/clickstack/deployment/oss",
                 "ja/clickstack/deployment/all-in-one",
                 {
                   "group": "Helm",
@@ -50,22 +54,22 @@
                     {
                       "group": "v2.x",
                       "pages": [
+                        "ja/clickstack/deployment/helm",
                         "ja/clickstack/deployment/helm-configuration",
                         "ja/clickstack/deployment/helm-deployment-options",
                         "ja/clickstack/deployment/helm-cloud",
                         "ja/clickstack/deployment/helm-additional-manifests",
                         "ja/clickstack/deployment/helm-upgrade"
-                      ],
-                      "root": "ja/clickstack/deployment/helm"
+                      ]
                     },
                     {
                       "group": "v1.x（非推奨）",
                       "pages": [
+                        "ja/clickstack/deployment/helm-v1",
                         "ja/clickstack/deployment/helm-configuration-v1",
                         "ja/clickstack/deployment/helm-deployment-options-v1",
                         "ja/clickstack/deployment/helm-cloud-v1"
-                      ],
-                      "root": "ja/clickstack/deployment/helm-v1"
+                      ]
                     }
                   ]
                 },
@@ -73,22 +77,20 @@
                 "ja/clickstack/deployment/hyperdx-only",
                 "ja/clickstack/deployment/local-mode-only",
                 "ja/clickstack/deployment/clickhouse-embedded"
-              ],
-              "root": "ja/clickstack/deployment/oss"
+              ]
             },
             "ja/clickstack/deployment/managed"
-          ],
-          "root": "ja/clickstack/deployment/overview"
+          ]
         },
         "ja/clickstack/features/search",
         {
           "group": "ダッシュボード",
           "pages": [
+            "ja/clickstack/features/dashboards/overview",
             "ja/clickstack/features/dashboards/dashboard-templates",
             "ja/clickstack/features/dashboards/sql-visualizations",
             "ja/clickstack/features/dashboards/row-click-drilldowns"
-          ],
-          "root": "ja/clickstack/features/dashboards/overview"
+          ]
         },
         "ja/clickstack/notebooks",
         "ja/clickstack/text-to-chart",
@@ -98,14 +100,21 @@
         "ja/clickstack/service-maps",
         "ja/clickstack/features/session-replay",
         "ja/clickstack/mcp",
+        "ja/clickstack/url-parameters",
         {
           "group": "デモデイズ",
           "pages": [
+            "ja/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
+                "ja/clickstack/demo-days/2026/2026-07-31",
+                "ja/clickstack/demo-days/2026/2026-07-24",
+                "ja/clickstack/demo-days/2026/2026-07-17",
                 "ja/clickstack/demo-days/2026/2026-07-10",
                 "ja/clickstack/demo-days/2026/2026-07-02",
+                "ja/clickstack/demo-days/2026/2026-06-26",
+                "ja/clickstack/demo-days/2026/2026-06-18",
                 "ja/clickstack/demo-days/2026/2026-06-12",
                 "ja/clickstack/demo-days/2026/2026-06-05",
                 "ja/clickstack/demo-days/2026/2026-05-29",
@@ -117,8 +126,7 @@
                 "ja/clickstack/demo-days/2026/2026-04-03"
               ]
             }
-          ],
-          "root": "ja/clickstack/demo-days/index"
+          ]
         }
       ]
     },
@@ -126,6 +134,7 @@
       "expanded": true,
       "group": "ClickStack の管理",
       "pages": [
+        "ja/clickstack/managing/overview",
         "ja/clickstack/managing/admin",
         "ja/clickstack/managing/config",
         "ja/clickstack/managing/estimating-resources",
@@ -134,15 +143,16 @@
         "ja/clickstack/managing/production",
         "ja/clickstack/managing/rbac",
         "ja/clickstack/managing/ttl"
-      ],
-      "root": "ja/clickstack/managing/overview"
+      ]
     },
     {
       "group": "ガイド",
       "pages": [
         {
+          "expanded": true,
           "group": "データの取り込み",
           "pages": [
+            "ja/clickstack/ingesting-data/index",
             "ja/clickstack/ingesting-data/overview",
             "ja/clickstack/ingesting-data/opentelemetry",
             "ja/clickstack/ingesting-data/vector",
@@ -153,6 +163,7 @@
             {
               "group": "インテグレーション",
               "pages": [
+                "ja/clickstack/integration-examples/index",
                 "ja/clickstack/integration-examples/nginx-logs",
                 "ja/clickstack/integration-examples/nginx-traces",
                 "ja/clickstack/integration-examples/redis-logs",
@@ -178,12 +189,12 @@
                 "ja/clickstack/integration-examples/cloudflare",
                 "ja/clickstack/integration-examples/kafka-logs",
                 "ja/clickstack/integration-examples/mongodb-logs"
-              ],
-              "root": "ja/clickstack/integration-examples/index"
+              ]
             },
             {
-              "group": "各言語向け SDK",
+              "group": "言語別 SDK",
               "pages": [
+                "ja/clickstack/ingesting-data/sdks/index",
                 "ja/clickstack/ingesting-data/sdks/browser",
                 "ja/clickstack/ingesting-data/sdks/nodejs",
                 "ja/clickstack/ingesting-data/sdks/python",
@@ -196,19 +207,19 @@
                 "ja/clickstack/ingesting-data/sdks/nextjs",
                 "ja/clickstack/ingesting-data/sdks/react-native",
                 "ja/clickstack/ingesting-data/sdks/aws-lambda"
-              ],
-              "root": "ja/clickstack/ingesting-data/sdks/index"
+              ]
             }
-          ],
-          "root": "ja/clickstack/ingesting-data/index"
+          ]
         },
         {
           "expanded": true,
           "group": "移行ガイド",
           "pages": [
+            "ja/clickstack/migration/index",
             {
               "group": "Elastic からの移行",
               "pages": [
+                "ja/clickstack/migration/elastic/index",
                 "ja/clickstack/migration/elastic/intro",
                 "ja/clickstack/migration/elastic/concepts",
                 "ja/clickstack/migration/elastic/types",
@@ -216,12 +227,10 @@
                 "ja/clickstack/migration/elastic/migrating-data",
                 "ja/clickstack/migration/elastic/migrating-agents",
                 "ja/clickstack/migration/elastic/migrating-sdks"
-              ],
-              "root": "ja/clickstack/migration/elastic/index"
+              ]
             },
             "ja/clickstack/migration/datadog/index"
-          ],
-          "root": "ja/clickstack/migration/index"
+          ]
         }
       ]
     },
@@ -229,10 +238,11 @@
       "expanded": true,
       "group": "インテグレーションパートナー",
       "pages": [
+        "ja/clickstack/integration-partners/index",
         "ja/clickstack/integration-partners/bindplane",
+        "ja/clickstack/integration-partners/bitdrift",
         "ja/clickstack/integration-partners/odigos"
-      ],
-      "root": "ja/clickstack/integration-partners/index"
+      ]
     },
     {
       "expanded": true,

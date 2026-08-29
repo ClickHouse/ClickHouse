@@ -1,14 +1,16 @@
 #include <QueryPipeline/Pipe.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/IProcessor.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/Sinks/EmptySink.h>
-#include <Processors/Transforms/ExtremesTransform.h>
+#include <Processors/Transforms/DroppingTransform.h>
+#include <Processors/Transforms/ExtremesOnlyTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Streaming/CalibrateWatermarksProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Chain.h>
@@ -51,25 +53,22 @@ static OutputPort * uniteExtremes(const OutputPortRawPtrs & ports, SharedHeader 
     /// Here we calculate extremes for extremes in case we unite several pipelines.
     /// Example: select number from numbers(2) union all select number from numbers(3)
 
-    /// ->> Resize -> Extremes --(output port)----> Empty
-    ///                        --(extremes port)--> ...
+    /// ->> Resize -> ExtremesOnly --(extremes port)--> ...
 
+    /// This consumer must not be childless; see `DroppingTransform`.
     auto resize = std::make_shared<ResizeProcessor>(header, ports.size(), 1);
-    auto extremes = std::make_shared<ExtremesTransform>(header);
-    auto sink = std::make_shared<EmptySink>(header);
+    auto extremes = std::make_shared<ExtremesOnlyTransform>(header);
 
-    auto * extremes_port = &extremes->getExtremesPort();
+    auto * extremes_port = &extremes->getOutputPort();
 
     auto in = resize->getInputs().begin();
     for (const auto & port : ports)
         connect(*port, *(in++));
 
     connect(resize->getOutputs().front(), extremes->getInputPort());
-    connect(extremes->getOutputPort(), sink->getPort());
 
     processors.emplace_back(std::move(resize));
     processors.emplace_back(std::move(extremes));
-    processors.emplace_back(std::move(sink));
 
     return extremes_port;
 }
@@ -403,29 +402,35 @@ void Pipe::addExtremesSource(ProcessorPtr source)
     processors->emplace_back(std::move(source));
 }
 
-static void dropPort(OutputPort *& port, Processors & processors, Processors * collected_processors)
-{
-    if (port == nullptr)
-        return;
-
-    auto null_sink = std::make_shared<NullSink>(port->getSharedHeader());
-    connect(*port, null_sink->getPort());
-
-    if (collected_processors)
-        collected_processors->emplace_back(null_sink);
-
-    processors.emplace_back(std::move(null_sink));
-    port = nullptr;
-}
-
 void Pipe::dropTotals()
 {
-    dropPort(totals_port, *processors, collected_processors);
+    dropStreams(totals_port != nullptr, false);
 }
 
 void Pipe::dropExtremes()
 {
-    dropPort(extremes_port, *processors, collected_processors);
+    dropStreams(false, extremes_port != nullptr);
+}
+
+void Pipe::dropTotalsAndExtremes()
+{
+    dropStreams(totals_port != nullptr, extremes_port != nullptr);
+}
+
+void Pipe::dropStreams(bool drop_totals, bool drop_extremes)
+{
+    if (!drop_totals && !drop_extremes)
+        return;
+
+    /// Must not discard with a childless node here; see `DroppingTransform`.
+    auto dropping = std::make_shared<DroppingTransform>(
+        header,
+        output_ports.size(),
+        drop_totals ? totals_port->getSharedHeader() : nullptr,
+        drop_extremes ? extremes_port->getSharedHeader() : nullptr);
+    auto * totals_in = drop_totals ? dropping->getTotalsPort() : nullptr;
+    auto * extremes_in = drop_extremes ? dropping->getExtremesPort() : nullptr;
+    addTransform(std::move(dropping), totals_in, extremes_in);
 }
 
 void Pipe::addTransform(ProcessorPtr transform)
@@ -651,8 +656,7 @@ void Pipe::addChains(VectorWithMemoryTracking<Chain> chains)
             output_ports.size(),
             chains.size());
 
-    dropTotals();
-    dropExtremes();
+    dropTotalsAndExtremes();
 
     size_t max_parallel_streams_for_chains = 0;
 
@@ -789,6 +793,14 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
         resize = std::make_shared<ResizeProcessor>(getSharedHeader(), numOutputPorts(), num_streams);
 
     addTransform(std::move(resize));
+}
+
+void Pipe::calibrateWatermarks(size_t num_streams)
+{
+    if (output_ports.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calibrate watermarks of an empty Pipe");
+
+    addTransform(std::make_shared<CalibrateWatermarksProcessor>(getSharedHeader(), numOutputPorts(), num_streams));
 }
 
 void Pipe::setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter)

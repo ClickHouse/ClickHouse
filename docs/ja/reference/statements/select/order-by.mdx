@@ -12,8 +12,8 @@ doc_type: 'reference'
 * `SELECT` 句内のカラムを参照する番号のリスト (例: `ORDER BY 2, 1`)
 * `SELECT` 句のすべてのカラムを意味する `ALL` (例: `ORDER BY ALL`)
 
-カラム番号によるソートを無効にするには、設定 [enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings#enable_positional_arguments) = 0 を指定します。
-`ALL` によるソートを無効にするには、設定 [enable&#95;order&#95;by&#95;all](/ja/reference/settings/session-settings#enable_order_by_all) = 0 を指定します。
+カラム番号によるソートを無効にするには、設定 [enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) = 0 を指定します。
+`ALL` によるソートを無効にするには、設定 [enable&#95;order&#95;by&#95;all](/ja/reference/settings/session-settings/enable#enable_order_by_all) = 0 を指定します。
 
 `ORDER BY` 句には、ソート方向を決定する `DESC` (降順) または `ASC` (昇順) の修飾子を付けることができます。
 明示的にソート順を指定しない場合は、デフォルトで `ASC` が使用されます。
@@ -256,7 +256,7 @@ RAM が不足している場合は、外部メモリを使ってソートを実�
   ## Data の読み取りの最適化
 </div>
 
-`ORDER BY` 式にテーブルの sorting key と一致するプレフィックスがある場合は、[optimize&#95;read&#95;in&#95;order](/ja/reference/settings/session-settings#optimize_read_in_order) 設定を使用してクエリを最適化できます。
+`ORDER BY` 式にテーブルの sorting key と一致するプレフィックスがある場合は、[optimize&#95;read&#95;in&#95;order](/ja/reference/settings/session-settings/optimize#optimize_read_in_order) 設定を使用してクエリを最適化できます。
 
 `optimize_read_in_order` 設定が有効な場合、ClickHouse server はテーブルの索引を使用し、`ORDER BY` キーの順序でデータを読み取ります。これにより、[LIMIT](/ja/reference/statements/select/limit) が指定されている場合に、すべてのデータを読み取らずに済みます。そのため、少ない limit で大規模なデータを対象とするクエリは、より高速に処理されます。
 

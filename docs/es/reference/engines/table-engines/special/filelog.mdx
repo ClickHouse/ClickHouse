@@ -44,9 +44,9 @@ Argumentos del motor:
 
 Parámetros opcionales:
 
-* `poll_timeout_ms` - Tiempo de espera para una sola operación de sondeo del archivo de registro. Predeterminado: [stream&#95;poll&#95;timeout&#95;ms](/es/reference/settings/session-settings#stream_poll_timeout_ms).
-* `poll_max_batch_size` — Número máximo de registros que se pueden sondear en una sola operación. Predeterminado: [max&#95;block&#95;size](/es/reference/settings/session-settings#max_block_size).
-* `max_block_size` — Tamaño máximo del lote (en registros) para el sondeo. Predeterminado: [max&#95;insert&#95;block&#95;size](/es/reference/settings/session-settings#max_insert_block_size).
+* `poll_timeout_ms` - Tiempo de espera para una sola operación de sondeo del archivo de registro. Predeterminado: [stream&#95;poll&#95;timeout&#95;ms](/es/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `poll_max_batch_size` — Número máximo de registros que se pueden sondear en una sola operación. Predeterminado: [max&#95;block&#95;size](/es/reference/settings/session-settings/max#max_block_size).
+* `max_block_size` — Tamaño máximo del lote (en registros) para el sondeo. Predeterminado: [max&#95;insert&#95;block&#95;size](/es/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `max_threads` - Número máximo de hilos para analizar archivos; el valor predeterminado es 0, lo que significa que el número será max(1, physical&#95;cpu&#95;cores / 4).
 * `poll_directory_watch_events_backoff_init` - Valor de espera inicial para el hilo de supervisión del directorio. Predeterminado: `500`.
 * `poll_directory_watch_events_backoff_max` - Valor de espera máximo para el hilo de supervisión del directorio. Predeterminado: `32000`.
