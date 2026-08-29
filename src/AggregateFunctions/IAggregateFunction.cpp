@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -15,6 +16,14 @@ extern const int NOT_IMPLEMENTED;
 DataTypePtr IAggregateFunction::getStateType() const
 {
     return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters);
+}
+
+DataTypePtr IAggregateFunction::getStateTypeWithVersionOf(const IAggregateFunction & nested) const
+{
+    std::optional<size_t> version;
+    if (const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(nested.getStateType().get()))
+        version = nested_state->getVersionIfExplicit();
+    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
 }
 
 DataTypePtr IAggregateFunction::getNormalizedStateType() const

@@ -5,9 +5,32 @@
 -- desynchronizes the written payload from the later read (the nested `uniq` falls back to its
 -- default version 0 on write, but the read expects the version 1 flags byte).
 
--- A fresh state does not spell a version out, and so keeps the default version 0 on the wire.
+-- A fresh state spells the nested function's current state version out in the type name, just like
+-- plain `uniqState` does. Otherwise local serialization round trips of the column (`groupArray`
+-- over the states, sorting, views) would fall back to the legacy version 0 and lose the 64-bit sample.
 SELECT toTypeName(uniqForEachState([1, 2]));
 SELECT toTypeName(uniqMapState(map(1, 2)));
+
+-- The same holds for every pass-through wrapper of a versioned function: the `Nullable` adaptor,
+-- `-If`, `-Array`, `-Distinct`, `-OrNull` / `-OrDefault`, `-ArgMin` / `-ArgMax` and `-Resample`.
+-- A wrapper of an unversioned function stays unversioned.
+SELECT toTypeName(uniqState(toNullable(1)));
+SELECT toTypeName(uniqIfState(1, 1));
+SELECT toTypeName(uniqArrayState([1]));
+SELECT toTypeName(uniqDistinctState(1));
+SELECT toTypeName(uniqOrNullState(1));
+SELECT toTypeName(uniqOrDefaultState(1));
+SELECT toTypeName(uniqArgMinState(1, 1));
+SELECT toTypeName(uniqResampleState(1, 1, 1)(1, 1));
+SELECT toTypeName(uniqExactState(toNullable(1)));
+SELECT toTypeName(sumMapState(map(1, 2)));
+
+-- A `groupArray` round trip of fresh states serializes each state into an arena and back;
+-- the version must survive it, so the merged estimate must match the direct one.
+SELECT uniqForEachMerge(arrayJoin(states))
+FROM (SELECT groupArray(state) AS states FROM (SELECT uniqForEachState([number % 3, number]) AS state FROM numbers(100000)));
+SELECT uniqMapMerge(arrayJoin(states))
+FROM (SELECT groupArray(state) AS states FROM (SELECT uniqMapState(map(number % 2, number)) AS state FROM numbers(100000)));
 
 DROP TABLE IF EXISTS uniq_foreach_v1;
 CREATE TABLE uniq_foreach_v1 (state AggregateFunction(uniqForEach, Array(UInt64))) ENGINE = MergeTree ORDER BY tuple();

@@ -1,5 +1,17 @@
-AggregateFunction(uniqForEach, Array(UInt8))
-AggregateFunction(uniqMap, Map(UInt8, UInt8))
+AggregateFunction(1, uniqForEach, Array(UInt8))
+AggregateFunction(1, uniqMap, Map(UInt8, UInt8))
+AggregateFunction(1, uniq, Nullable(UInt8))
+AggregateFunction(1, uniqIf, UInt8, UInt8)
+AggregateFunction(1, uniqArray, Array(UInt8))
+AggregateFunction(1, uniqDistinct, UInt8)
+AggregateFunction(1, uniqOrNull, UInt8)
+AggregateFunction(1, uniqOrDefault, UInt8)
+AggregateFunction(1, uniqArgMin, UInt8, UInt8)
+AggregateFunction(1, uniqResample(1, 1, 1), UInt8, UInt8)
+AggregateFunction(uniqExact, Nullable(UInt8))
+AggregateFunction(sumMap, Map(UInt8, UInt8))
+[3,100315]
+{0:50000,1:50000}
 AggregateFunction(1, uniqForEach, Array(UInt64))
 [3,100315]
 [3,100315]

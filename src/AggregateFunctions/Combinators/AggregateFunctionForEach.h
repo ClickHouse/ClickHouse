@@ -200,6 +200,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     template <bool up_to_state>
     void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
