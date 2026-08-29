@@ -4,6 +4,7 @@
 #include <tuple>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
@@ -20,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -27,7 +29,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/Streaming/CursorPromoter.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
 #include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
@@ -38,6 +40,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -353,7 +356,7 @@ public:
         const VolumePtr & volume,
         const String & part_dir,
         const ReadSettings & read_settings,
-        bool part_may_exist_on_disk = true) const;
+        PartDirIntent intent) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -574,8 +577,11 @@ public:
 
     bool supportsTTL() const override { return true; }
 
+    bool supportsStatistics() const override { return true; }
+
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
+    bool supportsPinnedSnapshot() const override { return true; }
 
     bool supportsLightweightDelete() const override;
 
@@ -870,7 +876,10 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const;
+    /// With allow_delay = false, only the throw checks are performed and the function never sleeps:
+    /// this is for a check on the query thread before the insert pipeline is built, where a sleep
+    /// would run once per parallel sink stream instead of once per query.
+    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
@@ -1153,7 +1162,7 @@ public:
         return column_sizes;
     }
 
-    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
@@ -1336,12 +1345,16 @@ public:
     size_t getTotalMergesWithTTLInMergeList() const;
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
+
     /// `metadata_snapshot` must come from the source part being covered
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
+    /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
+    /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn) const;
+        const MergeTreeTransactionPtr & txn,
+        std::optional<PatchPartIndex> patch_part_index) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1482,6 +1495,20 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
+    /// Removes a temporary part directory, keeping shared zero-copy blobs that other replicas may
+    /// still reference (same rule for the background cleaner and for the reclaim below).
+    void removeSharedTemporaryDirectory(const DiskPtr & disk, const String & relative_path) const;
+
+    /// Removes a leftover of an interrupted operation at `relative_data_path / part_dir_name`, if any.
+    /// The name must be claimed, and temporary (starts with "tmp", no '/'), so payload directories such
+    /// as "detached/<dir>" can never be reclaimed by mistake. Runs before the part storage is built.
+    void reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const;
+
+    /// Claims the name (exclusive, throws a `LOGICAL_ERROR` exception if already claimed), reclaims a
+    /// leftover, and returns the guard releasing the claim. Callers that know the name is collision-free
+    /// (e.g. from a Keeper-allocated block number) pass `may_have_leftover = false` to skip the probe.
+    scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
+
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
@@ -1489,7 +1516,11 @@ public:
     void triggerBackgroundOperations();
 
     /// Returns cached metadata snapshot of a patch part that contains the following columns.
-    StorageMetadataPtr getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const;
+    PatchPartMetadata getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
+
+    /// Returns the effective sorting key for applying a v2 patch part:
+    /// the longest common prefix of the patch's persisted sorting key and the table's current sorting key.
+    std::shared_ptr<const KeyDescription> getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const;
 
     static MergingParams getMergingParamsForPatchParts();
 
@@ -1563,22 +1594,43 @@ protected:
     }
 
 private:
-    struct NamesAndTypesListHash
+    /// `SharedPartColumns::describeColumns` of the stored columns, plus the `share_nested_offsets` value
+    /// the bundle was built with (readers compare its descriptions against the live setting).
+    struct SharedPartColumnsCacheKey
     {
-        size_t operator()(const NamesAndTypesList & list) const noexcept;
+        std::reference_wrapper<const String> interning_key;
+        bool collect_nested;
     };
-    struct ColumnsDescriptionCache
+    struct SharedPartColumnsCacheKeyHash
     {
-        std::shared_ptr<const ColumnsDescription> original;
-        std::shared_ptr<const ColumnsDescription> with_collected_nested;
+        size_t operator()(const SharedPartColumnsCacheKey & key) const noexcept;
     };
-    mutable AggregatedMetrics::GlobalSum columns_descriptions_metric_handle;
-    mutable std::mutex columns_descriptions_cache_mutex;
-    mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
+    struct SharedPartColumnsCacheKeyEqual
+    {
+        bool operator()(const SharedPartColumnsCacheKey & lhs, const SharedPartColumnsCacheKey & rhs) const
+        {
+            return lhs.collect_nested == rhs.collect_nested && lhs.interning_key.get() == rhs.interning_key.get();
+        }
+    };
+    mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;
+    mutable SharedMutex shared_part_columns_cache_mutex;
+    /// Interning cache for the schema-derived metadata shared across data parts (see SharedPartColumns.h).
+    /// The key references the `interning_key` member of the bundle it maps to, so it is stored only once
+    /// per entry; the bundle is always alive while its entry exists because the cache holds a strong
+    /// reference.
+    mutable std::unordered_map<SharedPartColumnsCacheKey, SharedPartColumnsPtr, SharedPartColumnsCacheKeyHash, SharedPartColumnsCacheKeyEqual>
+        shared_part_columns_cache TSA_GUARDED_BY(shared_part_columns_cache_mutex);
+
+    /// Returns the interned reference to the cache entry to be evicted when no part uses it anymore.
+    /// Only `SharedPartColumnsHolder` may call it, so the reference accounting cannot be bypassed.
+    void releaseSharedPartColumns(SharedPartColumnsPtr shared_part_columns) const;
+    friend class SharedPartColumnsHolder;
 
 public:
-    ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
-    void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
+    /// Returns a holder of the shared metadata bundle for parts storing exactly these columns,
+    /// building and interning it on first request. The holder returns the reference to the cache
+    /// when it is destroyed or reassigned, so unused entries are evicted (see SharedPartColumns.h).
+    SharedPartColumnsHolder getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:
@@ -1661,11 +1713,16 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    /// A cache for metadata snapshots for patch parts.
-    /// The key is a partition id of patch part.
-    /// Patch parts in one partition always have the same structure.
+    /// Cached metadata used to read patch parts, by the structure hash from their partition id.
+    /// Bounded by the number of distinct structures of patch parts.
     mutable std::mutex patch_parts_metadata_mutex;
-    mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
+    mutable std::unordered_map<String, PatchPartMetadata> patch_parts_metadata_cache;
+
+    /// Cached effective sorting keys for applying v2 patch parts.
+    /// An effective key is a prefix of the table's current sorting key, so it is identified by its size.
+    /// Invalidated on ALTER: the effective key depends on the table's current sorting key.
+    mutable std::mutex patch_parts_sorting_keys_mutex;
+    mutable std::map<size_t, std::shared_ptr<const KeyDescription>> patch_parts_sorting_keys_cache;
 
     MergeTreePartsMover parts_mover;
 
@@ -2043,7 +2100,14 @@ protected:
 
     std::vector<LoadPartResult> loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load);
 
-    QueryPipeline updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context);
+    struct LightweightUpdateResult
+    {
+        QueryPipeline pipeline;
+        PatchPartMetadata patch_metadata;
+    };
+
+    /// Builds a pipeline that reads the updated rows and the metadata of the new patch part.
+    LightweightUpdateResult updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context);
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 

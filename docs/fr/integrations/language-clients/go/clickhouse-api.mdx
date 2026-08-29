@@ -247,7 +247,7 @@ Enfin, notez qu’il est possible de passer un `Context` aux méthodes `Query` e
   ## Insertion asynchrone
 </div>
 
-Les insertions asynchrones sont prises en charge par la méthode Async. Cela permet à l’utilisateur d’indiquer si le client doit attendre que le serveur termine l’insertion ou si celui-ci peut répondre dès réception des données. Cela contrôle en pratique le paramètre [wait&#95;for&#95;async&#95;insert](/fr/reference/settings/session-settings#wait_for_async_insert).
+Les insertions asynchrones sont prises en charge par la méthode Async. Cela permet à l’utilisateur d’indiquer si le client doit attendre que le serveur termine l’insertion ou si celui-ci peut répondre dès réception des données. Cela contrôle en pratique le paramètre [wait&#95;for&#95;async&#95;insert](/fr/reference/settings/session-settings/wait-for#wait_for_async_insert).
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)
