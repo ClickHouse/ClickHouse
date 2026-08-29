@@ -11,18 +11,28 @@
         row laid out contiguously instead of over a stream of small pieces - a `String` column used
         to feed the hash three times per row. With swap pinned off the large table is the probe
         side, so each query hashes 20M probe rows against a 4M-row build side.
+
+        The probe loop also starts the load of the cell a row will land in some rows before it
+        reaches that row, which it does now for a single `String` or `FixedString` key as well as
+        for the `hashed` method. The last two queries are those two key methods: a build side well
+        past the cache is what the prefetch is for, so both are sized accordingly.
     -->
 
     <create_query>CREATE TABLE hashed_key_build (a String, b String, c UInt64, w UInt64) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE hashed_key_probe (a String, b String, c UInt64, v UInt64) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE wide_key_build (a String, b String, w UInt64) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE wide_key_probe (a String, b String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE fixed_key_build (a FixedString(16), w UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE fixed_key_probe (a FixedString(16), v UInt64) ENGINE = Memory</create_query>
 
     <fill_query>INSERT INTO hashed_key_build SELECT leftPad(toString(number), 16, '0'), leftPad(toString(number % 977), 12, '0'), number, number FROM numbers_mt(4000000)</fill_query>
     <fill_query>INSERT INTO hashed_key_probe SELECT leftPad(toString(number % 4000000), 16, '0'), leftPad(toString(number % 977), 12, '0'), number % 4000000, number FROM numbers_mt(20000000)</fill_query>
     <!-- Wider keys, where hashing is nearly all of the query. -->
     <fill_query>INSERT INTO wide_key_build SELECT leftPad(toString(number), 256, '0'), leftPad(toString(number % 977), 256, '1'), number FROM numbers_mt(500000)</fill_query>
     <fill_query>INSERT INTO wide_key_probe SELECT leftPad(toString(number % 500000), 256, '0'), leftPad(toString(number % 977), 256, '1'), number FROM numbers_mt(2000000)</fill_query>
+    <!-- 2M distinct FixedString keys, hit by every one of the 8M probe rows. -->
+    <fill_query>INSERT INTO fixed_key_build SELECT toFixedString(leftPad(toString(number), 16, '0'), 16), number FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO fixed_key_probe SELECT toFixedString(leftPad(toString(number % 2000000), 16, '0'), 16), number FROM numbers_mt(8000000)</fill_query>
 
     <!-- Two String key columns: six hash updates per row on the old path, one on the new one. -->
     <query>SELECT count() FROM hashed_key_probe AS l INNER JOIN hashed_key_build AS r ON l.a = r.a AND l.b = r.b FORMAT Null</query>
@@ -35,8 +45,15 @@
 
     <query>SELECT count() FROM wide_key_probe AS l INNER JOIN wide_key_build AS r ON l.a = r.a AND l.b = r.b FORMAT Null</query>
 
+    <!-- A single `String` key: the `key_string` method, which prefetches the probe now. -->
+    <query>SELECT count() FROM hashed_key_probe AS l INNER JOIN hashed_key_build AS r ON l.a = r.a FORMAT Null</query>
+    <!-- A single `FixedString` key: the `key_fixed_string` method, same. -->
+    <query>SELECT count() FROM fixed_key_probe AS l INNER JOIN fixed_key_build AS r ON l.a = r.a FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS hashed_key_build</drop_query>
     <drop_query>DROP TABLE IF EXISTS hashed_key_probe</drop_query>
     <drop_query>DROP TABLE IF EXISTS wide_key_build</drop_query>
     <drop_query>DROP TABLE IF EXISTS wide_key_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fixed_key_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fixed_key_probe</drop_query>
 </test>

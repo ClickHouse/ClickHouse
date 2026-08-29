@@ -26,3 +26,7 @@ array uniq matches array distinct
 97
 array enumerate uniq
 [1,1,2]
+prefetching the probe finds the same rows
+1	1	1
+and the same rows that are missing
+1

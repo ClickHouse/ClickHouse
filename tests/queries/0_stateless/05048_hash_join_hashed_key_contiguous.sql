@@ -146,3 +146,65 @@ SELECT 'array enumerate uniq';
 SELECT arrayEnumerateUniq(['a\0', 'a', 'a\0'], ['', 'b\0', '']);
 
 DROP TABLE t_keys;
+
+-- The probe loop starts the load of the hash-table cell a row will land in some rows before it
+-- reaches that row. It does so only once the build side is past the cache, and for three key
+-- methods: `hashed` here, and a single `String` or `FixedString` key. Whether the loop runs ahead
+-- of itself must not change a single row it finds.
+DROP TABLE IF EXISTS t_probe;
+DROP TABLE IF EXISTS t_build;
+
+CREATE TABLE t_probe (a String, b String, f FixedString(24), v UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_build (a String, b String, f FixedString(24), w UInt64) ENGINE = MergeTree ORDER BY tuple();
+
+-- Enough distinct keys that the hash table is larger than the cache the prefetch is there to miss.
+INSERT INTO t_build SELECT
+    leftPad(toString(number), 24, '0'),
+    leftPad(toString(number % 331), 12, '0'),
+    toFixedString(leftPad(toString(number), 24, '0'), 24),
+    number
+FROM numbers(300000);
+
+INSERT INTO t_probe SELECT
+    leftPad(toString(number % 400000), 24, '0'),
+    leftPad(toString(number % 331), 12, '0'),
+    toFixedString(leftPad(toString(number % 400000), 24, '0'), 24),
+    number
+FROM numbers(600000);
+
+SELECT 'prefetching the probe finds the same rows';
+SELECT
+(
+    SELECT sum(cityHash64(l.v, r.w)) FROM t_probe AS l INNER JOIN t_build AS r ON l.a = r.a AND l.b = r.b
+    SETTINGS enable_software_prefetch_in_join = 1
+) = (
+    SELECT sum(cityHash64(l.v, r.w)) FROM t_probe AS l INNER JOIN t_build AS r ON l.a = r.a AND l.b = r.b
+    SETTINGS enable_software_prefetch_in_join = 0
+) AS hashed_key,
+(
+    SELECT sum(cityHash64(l.v, r.w)) FROM t_probe AS l INNER JOIN t_build AS r ON l.a = r.a
+    SETTINGS enable_software_prefetch_in_join = 1
+) = (
+    SELECT sum(cityHash64(l.v, r.w)) FROM t_probe AS l INNER JOIN t_build AS r ON l.a = r.a
+    SETTINGS enable_software_prefetch_in_join = 0
+) AS string_key,
+(
+    SELECT sum(cityHash64(l.v, r.w)) FROM t_probe AS l INNER JOIN t_build AS r ON l.f = r.f
+    SETTINGS enable_software_prefetch_in_join = 1
+) = (
+    SELECT sum(cityHash64(l.v, r.w)) FROM t_probe AS l INNER JOIN t_build AS r ON l.f = r.f
+    SETTINGS enable_software_prefetch_in_join = 0
+) AS fixed_string_key;
+
+SELECT 'and the same rows that are missing';
+SELECT
+(
+    SELECT sum(l.v) FROM t_probe AS l LEFT ANTI JOIN t_build AS r ON l.a = r.a AND l.b = r.b
+    SETTINGS enable_software_prefetch_in_join = 1
+) = (
+    SELECT sum(l.v) FROM t_probe AS l LEFT ANTI JOIN t_build AS r ON l.a = r.a AND l.b = r.b
+    SETTINGS enable_software_prefetch_in_join = 0
+);
+
+DROP TABLE t_probe;
+DROP TABLE t_build;
