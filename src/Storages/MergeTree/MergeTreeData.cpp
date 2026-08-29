@@ -4217,9 +4217,6 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         }
     }
 
-    /// The parts are out of the set now, so nothing can resolve them and nothing will consult what
-    /// the unique-key bitmap store still has indexed under their names. Outside the lock above,
-    /// because the store must not be entered under the exclusive side of `data_parts_mutex`.
     dropUniqueKeyBitmaps(parts);
 
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
@@ -7243,6 +7240,8 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
+
+    dropUniqueKeyBitmaps({part});
 }
 
 

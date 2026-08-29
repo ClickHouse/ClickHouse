@@ -147,34 +147,32 @@ void MergeTreeBitmapStore::dropPart(const IMergeTreeDataPart & part)
         std::lock_guard lock(entries_mutex);
         if (const auto it = entries.find(part.info); it != entries.end())
         {
-            /// Held past the erase so the check below runs with `entries_mutex` released: nothing in
-            /// this file nests an entry lock inside it.
             dropped = it->second;
             entries.erase(it);
         }
     }
 
+    std::vector<MergeTreePartInfo> owed;
     if (dropped)
     {
         std::lock_guard entry_lock(dropped->mutex);
-        /// Reaching here with bitmaps still owed means the settle guard in
-        /// `MergeTreeData::clearEmptyParts` missed this part. Its directory is already deleted by
-        /// this point (`clearPartsFromFilesystemImpl` runs before `removePartsFinally`), so warn
-        /// rather than throw -- the kills are unrecoverable either way, and the operator needs the
-        /// part's name.
-        if (!dropped->staged_for.empty())
-        {
-            Strings targets;
-            targets.reserve(dropped->staged_for.size());
-            for (const auto & target : dropped->staged_for)
-                targets.push_back(target.getPartNameV1());
+        owed = dropped->staged_for;
+    }
 
-            LOG_WARNING(log,
-                "Part '{}' left the part set still owing staged delete bitmaps for {} target(s) "
-                "({}), and its directory is already removed, so the kills those bitmaps carried are "
-                "lost. Such a part should have been held back until its bitmaps settled",
-                partNameV1(part), targets.size(), fmt::join(targets, ", "));
-        }
+    if (!owed.empty())
+    {
+        forgetStagedBitmaps(part.info, owed);
+
+        Strings targets;
+        targets.reserve(owed.size());
+        for (const auto & target : owed)
+            targets.push_back(target.getPartNameV1());
+
+        LOG_WARNING(log,
+            "Part '{}' left the part set still owing staged delete bitmaps for {} target(s) ({}). "
+            "Those targets have been unlinked from it and no longer apply the kills those bitmaps "
+            "carried. Such a part should have been held back until its bitmaps settled",
+            partNameV1(part), targets.size(), fmt::join(targets, ", "));
     }
 
     if (cache)
