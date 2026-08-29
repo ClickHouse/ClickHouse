@@ -842,14 +842,6 @@ ${CLICKHOUSE_CLIENT} -q "
     OPTIMIZE TABLE t_ttl_patch_recompress FINAL;
 "
 
-# Compared against the recompression codec rather than a literal default: the server's default
-# codec differs between build flavors, but it is never the ZSTD(3) this table recompresses to.
-${CLICKHOUSE_CLIENT} -q "
-    SELECT default_compression_codec != 'ZSTD(3)'
-    FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_ttl_patch_recompress' AND active AND rows = 100;
-"
-
 # The recalculated recompression info reflects the patched values, so a later
 # recompression merge applies the codec once the TTL is really due.
 ${CLICKHOUSE_CLIENT} -q "

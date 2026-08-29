@@ -3557,10 +3557,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
     }
-    else if (ctx->recalculate_ttl_for_patches)
+    else if (ctx->recalculate_ttl_for_patches && !global_ctx->metadata_snapshot->hasAnyGroupByTTL())
     {
         /// TTL removal is blocked but the merge carries patches: the merged part still must not
         /// keep pre-patch infos, or a later TTLDrop can drop rows a patch un-expired.
+        /// Tables with a GROUP BY TTL are left out: this step rebuilds every family through
+        /// `TTLUpdateInfoAlgorithm`, which never sets `ttl_finished`, so an already-expired
+        /// GROUP BY entry would come back unfinished and the part would be reselected for TTL
+        /// forever - the shape 04501 pins. That family keeps its pre-patch entry instead.
         auto ttl_calc_step = std::make_unique<TTLCalcStep>(
             merge_parts_query_plan.getCurrentHeader(),
             global_ctx->context,
