@@ -22,4 +22,11 @@ CREATE TABLE t_vcmt_errors (key UInt64, version UInt64, a Nullable(UInt64)) ENGI
 -- Columns to coalesce cannot be a part of the sorting key.
 CREATE TABLE t_vcmt_errors (key UInt64, version UInt64, a Nullable(UInt64)) ENGINE = VersionedCoalescingMergeTree(version, (key)) ORDER BY key; -- { serverError BAD_ARGUMENTS }
 
+-- The version column cannot be a part of the sorting key.
+CREATE TABLE t_vcmt_errors (key UInt64, version UInt64, a Nullable(UInt64)) ENGINE = VersionedCoalescingMergeTree(version) ORDER BY (key, version); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_vcmt_errors (key UInt64, version UInt64, a Nullable(UInt64)) ENGINE = VersionedCoalescingMergeTree(version) ORDER BY (key, intHash32(version)); -- { serverError BAD_ARGUMENTS }
+
+-- The version column cannot be a part of the partition key.
+CREATE TABLE t_vcmt_errors (key UInt64, version UInt64, a Nullable(UInt64)) ENGINE = VersionedCoalescingMergeTree(version) PARTITION BY intDiv(version, 100) ORDER BY key; -- { serverError BAD_ARGUMENTS }
+
 SELECT 'OK';

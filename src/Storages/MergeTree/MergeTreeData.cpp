@@ -869,6 +869,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * p
     desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "Persisted mask created by lightweight delete that show whether row exists or is deleted");
     desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "Persisted original number of block that was assigned at insert");
     desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "Persisted original number of row in block that was assigned at insert");
+    desc.addPersistent(ColumnVersionsColumn::name, ColumnVersionsColumn::type, nullptr, "Persisted per-column versions of VersionedCoalescingMergeTree, holding only the columns whose value is older than the version column");
 
     return desc;
 }
@@ -1877,7 +1878,9 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
 
     if (!columns_to_sum.empty() && mode != MergingParams::Summing && mode != MergingParams::Coalescing
         && mode != MergingParams::VersionedCoalescing)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to sum for MergeTree cannot be specified in all modes except Summing.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "List of columns to sum for MergeTree cannot be specified "
+                        "in modes except Summing, Coalescing or VersionedCoalescing.");
 
     /// Check that if the sign column is needed, it exists and is of type Int8.
     auto check_sign_column = [this, & columns](bool is_optional, const std::string & storage)
@@ -2054,6 +2057,22 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                             "The version column ({}) cannot be listed in the columns to coalesce", version_column);
 
         check_version_column(false, "VersionedCoalescingMergeTree");
+
+        /// A version column in the sorting key would split rows with different versions into different
+        /// merge groups, and in the partition key it would split them into different partitions,
+        /// so the version-based resolution would silently never happen.
+        auto check_version_not_in_key = [&](bool is_defined, const KeyDescription & key, const char * key_name)
+        {
+            if (!is_defined)
+                return;
+            const auto key_columns = key.expression->getRequiredColumns();
+            if (std::find(key_columns.begin(), key_columns.end(), version_column) != key_columns.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The version column ({}) cannot be a part of the {} key", version_column, key_name);
+        };
+
+        check_version_not_in_key(metadata.isSortingKeyDefined(), metadata.getSortingKey(), "sorting");
+        check_version_not_in_key(metadata.isPartitionKeyDefined(), metadata.getPartitionKey(), "partition");
     }
 
     if (allow_tuple_element_aggregation)

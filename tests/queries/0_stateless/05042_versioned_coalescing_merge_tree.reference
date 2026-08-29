@@ -17,7 +17,8 @@ explicit list of columns to coalesce
 1	2	7
 non-Nullable columns keep the value of the row with the maximum version
 1	5	v5
-optimize_on_insert merges rows of a single INSERT
+rows of a single INSERT are not merged at insert time
+2
 1	2	42	first
 tuple element aggregation
 1	2	(42,'y1')

@@ -125,7 +125,7 @@ SELECT * FROM t_vcmt_plain;
 
 DROP TABLE t_vcmt_plain;
 
-SELECT 'optimize_on_insert merges rows of a single INSERT';
+SELECT 'rows of a single INSERT are not merged at insert time';
 
 DROP TABLE IF EXISTS t_vcmt_insert;
 
@@ -143,6 +143,8 @@ SET optimize_on_insert = 1;
 INSERT INTO t_vcmt_insert VALUES (1, 2, 42, NULL), (1, 1, 10, 'first');
 SET optimize_on_insert = 0;
 
+SELECT count() FROM t_vcmt_insert;
+OPTIMIZE TABLE t_vcmt_insert FINAL;
 SELECT * FROM t_vcmt_insert;
 
 DROP TABLE t_vcmt_insert;

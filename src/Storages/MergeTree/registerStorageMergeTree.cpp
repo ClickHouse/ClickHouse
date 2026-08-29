@@ -3417,12 +3417,16 @@ For a description of request parameters, see [request description](/reference/st
 
 #### version {#version}
 
-`version` — The name of the column with the version. Required. The column must be of an integer type or of type `Date`/`DateTime`/`DateTime64` and must not be `Nullable`.
+`version` — The name of the column with the version. Required. The column must be of an integer type or of type `Date`/`DateTime`/`DateTime64`, must not be `Nullable`, and must not be a part of the sorting or partition key.
 
 For each group of rows with the same sorting key:
 
 - Every coalesced column keeps the non-NULL value from the row with the maximum version. Rows with equal versions are ranked by insertion order, the later row wins — the same tie-breaking rule as in `ReplacingMergeTree`.
 - The version column of the resulting row is the maximum version of the group.
+
+Values of different columns of the resulting row may come from rows with different versions. The engine remembers the version of every value in a hidden `_column_versions` column of the data part, so a value is only replaced by a value with a version not lower than its own — regardless of the order of inserts and merges. A late insert therefore resolves correctly even after rows with newer versions have already been merged.
+
+Columns of type `AggregateFunction` and `SimpleAggregateFunction` keep their own aggregation semantics, the same as in `SummingMergeTree` and `CoalescingMergeTree`: their states are combined across all rows of the group, and the version does not apply to them.
 
 #### columns {#columns}
 

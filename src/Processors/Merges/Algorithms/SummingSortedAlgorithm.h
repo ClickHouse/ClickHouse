@@ -82,6 +82,14 @@ public:
         SharedHeader origin_header;
 
         bool allow_tuple_element_aggregation = false;
+
+        /// For versioned coalescing: positions of the version column and of the per-column
+        /// versions map in the header, the index of the version column's description,
+        /// and whether versions must be compared as signed values.
+        std::optional<size_t> version_column_number;
+        std::optional<size_t> column_versions_number;
+        std::optional<size_t> version_desc_number;
+        bool version_is_signed = false;
     };
 
     /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.

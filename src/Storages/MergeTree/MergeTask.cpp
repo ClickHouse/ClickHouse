@@ -828,6 +828,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
+    /// Merges of VersionedCoalescingMergeTree read and write the per-column versions.
+    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCoalescing)
+        addMergingColumn(global_ctx, ColumnVersionsColumn::name, ColumnVersionsColumn::type);
+
     if (!patch_parts.empty())
     {
         LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
