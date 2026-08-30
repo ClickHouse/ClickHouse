@@ -549,9 +549,10 @@ FOR_TYPES_OF_TYPE(DISPATCH)
 #undef DISPATCH
 #undef FOR_TYPES_OF_TYPE
 
-/// Whether the two types make an expression compute the same values, and a hash consistent with it.
-/// Finer than `equals`, which ignores the `DateTime` time zone that a date or time function reads
-/// from its argument. The declared name may still differ, because a zone may be left out of it.
+/// Whether the two types are `equals`-equal and agree on the time zone a date or time function
+/// reads from its argument, and a hash consistent with that. `equals` ignores that zone. Only a
+/// zone on the type itself is compared; one reachable only through a wrapper is left to the
+/// declared name, which cannot see a zone that was left out of it.
 bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs);
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
 

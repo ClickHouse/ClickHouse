@@ -46,6 +46,26 @@ SELECT 'chain of inequalities',
 FROM (SELECT materialize(0)::UInt32 AS x)
 SETTINGS optimize_min_inequality_conjunction_chain_length = 3;
 
+-- Three terms in one zone are one chain and become one NOT IN. The same three across two zones are
+-- two shorter chains, so neither reaches the length that is rewritten.
+SELECT 'chain of inequalities in one zone is rewritten', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT (toHour(toDateTime(0, 'UTC') + x) != 5)
+        AND (toHour(toDateTime(0, 'UTC') + x) != 9)
+        AND (toHour(toDateTime(0, 'UTC') + x) != 7)
+    FROM (SELECT materialize(0)::UInt32 AS x)
+    SETTINGS optimize_min_inequality_conjunction_chain_length = 3
+) WHERE explain ILIKE '%notIn%';
+
+SELECT 'chain of inequalities across zones is not rewritten', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT (toHour(toDateTime(0, 'UTC') + x) != 5)
+        AND (toHour(toDateTime(0, 'Asia/Tokyo') + x) != 9)
+        AND (toHour(toDateTime(0, 'UTC') + x) != 7)
+    FROM (SELECT materialize(0)::UInt32 AS x)
+    SETTINGS optimize_min_inequality_conjunction_chain_length = 3
+) WHERE explain ILIKE '%notIn%';
+
 SELECT 'and of two true terms, sub-second precision',
     (toHour(toDateTime64(0, 3, 'UTC') + x) = 0) AND (toHour(toDateTime64(0, 3, 'Asia/Tokyo') + x) = 9)
 FROM (SELECT materialize(0)::UInt32 AS x)
@@ -168,6 +188,16 @@ SELECT 'aggregate projection is still read in its own zone', count() FROM (
     SETTINGS optimize_use_projections = 1
 ) WHERE explain ILIKE '%ReadFromMergeTree (pr_utc_hour)%';
 
+-- A projection keyed on one zone answers a query that omits the zone only while the session resolves
+-- to that same zone. The stored hour is the hour of the projection's zone, not of the session's.
+SELECT 'omitted zone against a projection on another zone', toHour(toDateTime(0) + x), count()
+FROM tz_projection GROUP BY toHour(toDateTime(0) + x)
+SETTINGS optimize_use_projections = 1, session_timezone = 'Asia/Tokyo';
+
+SELECT 'omitted zone against a projection on that same zone', toHour(toDateTime(0) + x), count()
+FROM tz_projection GROUP BY toHour(toDateTime(0) + x)
+SETTINGS optimize_use_projections = 1, session_timezone = 'UTC';
+
 DROP TABLE tz_projection;
 
 -- A time zone left out of the type means the session time zone, so leaving it out and spelling it out
@@ -179,6 +209,14 @@ SETTINGS session_timezone = 'UTC';
 
 SELECT 'implicit and explicit zone under one alias, non-UTC session', toDateTime(0) AS a, toDateTime(0, 'Asia/Tokyo') AS a
 SETTINGS session_timezone = 'Asia/Tokyo';
+
+-- One expression is also one hash key, so the two spellings collapse into a single sort key.
+SELECT 'an omitted zone and that zone spelled out are one sort key', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY toDateTime(0), toDateTime(0, 'UTC')
+) WHERE explain ILIKE '%SORT id%'
+SETTINGS session_timezone = 'UTC';
 
 -- Two zones under one alias are two expressions, so the alias is ambiguous. Before this change the
 -- query returned a different value in each column while claiming both were the same expression.
@@ -210,9 +248,19 @@ SELECT 'a custom name under one alias',
     toDateTime(0, 'UTC')::SimpleAggregateFunction(any, DateTime('UTC')) AS a, toDateTime(0, 'UTC') AS a
 SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
+-- The everyday member of that class: `Bool` is `UInt8` with a name of its own, so the two spellings
+-- of the number one are two expressions.
+SELECT 'a declared name under one alias', true AS a, toUInt8(1) AS a; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+
 SELECT 'a custom name is its own sort key', count() FROM (
     EXPLAIN QUERY TREE
     SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
     ORDER BY toDateTime(0, 'UTC')::SimpleAggregateFunction(any, DateTime('UTC')), toDateTime(0, 'UTC')
 ) WHERE explain ILIKE '%SORT id%'
 SETTINGS session_timezone = 'UTC';
+
+SELECT 'a declared name is its own sort key', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY true, toUInt8(1)
+) WHERE explain ILIKE '%SORT id%';

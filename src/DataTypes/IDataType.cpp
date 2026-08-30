@@ -68,16 +68,18 @@ bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
     if (!lhs.equals(rhs))
         return false;
 
+    /// A declared name of its own is an identity of its own, and it is part of the hash.
+    if (lhs.hasCustomName() != rhs.hasCustomName())
+        return false;
+    if (lhs.hasCustomName() && lhs.getName() != rhs.getName())
+        return false;
+
     /// A time zone left out of the type means the session time zone, so it is the same expression as
-    /// that zone spelled out, while two different zones differ however they are spelled. That is the
-    /// only difference excused here: a custom name is a declared identity of its own.
-    if (!lhs.hasCustomName() && !rhs.hasCustomName())
-    {
-        const auto * lhs_time_zone = dynamic_cast<const TimezoneMixin *>(&lhs);
-        const auto * rhs_time_zone = dynamic_cast<const TimezoneMixin *>(&rhs);
-        if (lhs_time_zone && rhs_time_zone)
-            return getDateLUTTimeZone(lhs_time_zone->getTimeZone()) == getDateLUTTimeZone(rhs_time_zone->getTimeZone());
-    }
+    /// that zone spelled out, while two different zones differ however they are spelled.
+    const auto * lhs_time_zone = dynamic_cast<const TimezoneMixin *>(&lhs);
+    const auto * rhs_time_zone = dynamic_cast<const TimezoneMixin *>(&rhs);
+    if (lhs_time_zone && rhs_time_zone)
+        return getDateLUTTimeZone(lhs_time_zone->getTimeZone()) == getDateLUTTimeZone(rhs_time_zone->getTimeZone());
 
     return lhs.getName() == rhs.getName();
 }
@@ -86,13 +88,10 @@ void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
 {
     type.updateHash(hash);
 
-    if (!type.hasCustomName())
+    if (const auto * time_zone = dynamic_cast<const TimezoneMixin *>(&type))
     {
-        if (const auto * time_zone = dynamic_cast<const TimezoneMixin *>(&type))
-        {
-            hash.update(getDateLUTTimeZone(time_zone->getTimeZone()));
-            return;
-        }
+        hash.update(getDateLUTTimeZone(time_zone->getTimeZone()));
+        return;
     }
 
     hash.update(type.getName());

@@ -3,6 +3,8 @@ and of a true and a false term	0
 and of two ranges	1
 and of an equality and an inequality	1
 chain of inequalities	0
+chain of inequalities in one zone is rewritten	1
+chain of inequalities across zones is not rewritten	0
 and of two true terms, sub-second precision	1
 time zone inside a tuple	1
 and of two true terms over a table	1
@@ -21,6 +23,10 @@ array join	0
 aggregate projection in another zone	9	1
 aggregate projection is not read in another zone	0
 aggregate projection is still read in its own zone	1
+omitted zone against a projection on another zone	9	1
+omitted zone against a projection on that same zone	0	1
 implicit and explicit zone under one alias	1970-01-01 00:00:00	1970-01-01 00:00:00
 implicit and explicit zone under one alias, non-UTC session	1970-01-01 09:00:00	1970-01-01 09:00:00
+an omitted zone and that zone spelled out are one sort key	1
 a custom name is its own sort key	2
+a declared name is its own sort key	2
