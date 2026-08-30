@@ -71,6 +71,14 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot serialize a query plan with execution limits for serialization version {}; version {} or newer is required",
+            version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+
     writeVarUInt(version, out);
 
     SerializationFlags flags;
@@ -81,6 +89,14 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot serialize a query plan with execution limits for serialization version {}; version {} or newer is required",
+            version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+
     writeVarUInt(version, out);
 
     SerializationFlags flags;
@@ -93,6 +109,12 @@ void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_suppor
 void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) const
 {
     checkInitialized();
+
+    if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
+    {
+        writeVarUInt(max_threads, out);
+        writeBinary(concurrency_control, out);
+    }
 
     SerializedSetsRegistry registry;
 
@@ -206,6 +228,12 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     std::stack<Frame> stack;
 
     QueryPlan plan;
+    if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
+    {
+        readVarUInt(plan.max_threads, in);
+        readBinary(plan.concurrency_control, in);
+    }
+
     stack.push(Frame{.to_fill = plan.root});
 
     while (!stack.empty())

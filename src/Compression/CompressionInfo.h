@@ -6,6 +6,13 @@
 
 constexpr uint64_t DBMS_MAX_COMPRESSED_SIZE = 0x40000000ULL;    /// 1GB
 
+/** The decompressed size of a block is taken from the block header, and the buffer for it is
+  * allocated before the block is decompressed, so it has to be bounded as well: a block that
+  * declares a huge decompressed size makes the reader allocate that much from a tiny payload.
+  * Blocks are written with `max_compress_block_size`, which is 1 MB by default.
+  */
+constexpr uint64_t DBMS_MAX_DECOMPRESSED_SIZE = 0x40000000ULL;  /// 1GB
+
 /** one byte for method, 4 bytes for compressed size, 4 bytes for uncompressed size */
 constexpr uint8_t COMPRESSED_BLOCK_HEADER_SIZE = 9;
 
