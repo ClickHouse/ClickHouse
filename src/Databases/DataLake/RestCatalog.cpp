@@ -17,6 +17,11 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/StorageCredentials.h>
+#include <Databases/DataLake/IcebergCatalog/Models/IcebergRestCatalogConfig.h>
+#include <Databases/DataLake/IcebergCatalog/Models/IcebergRestCredentialsConfig.h>
+#include <Databases/DataLake/IcebergCatalog/Models/IcebergRestNamespace.h>
+#include <Databases/DataLake/IcebergCatalog/Models/IcebergRestOAuth.h>
+#include <Databases/DataLake/IcebergCatalog/Models/IcebergRestTable.h>
 
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
@@ -147,17 +152,17 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
-String encodeNamespaceForURI(const String & namespace_name)
+AccessToken accessTokenFromOAuthResponse(const IcebergRestModels::OAuthTokenResponse & response)
 {
-    String encoded;
-    for (const auto & ch : namespace_name)
+    AccessToken token;
+    token.token = response.access_token;
+    if (response.expires_in.has_value())
     {
-        if (ch == '.')
-            encoded += "%1F";
-        else
-            encoded.push_back(ch);
+        /// Use 90% of the token lifetime as the validity window so that short-lived tokens
+        /// (e.g. expires_in=300) still get a sensible buffer instead of going non-positive.
+        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(*response.expires_in * 9 / 10);
     }
-    return encoded;
+    return token;
 }
 
 std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
@@ -255,32 +260,15 @@ RestCatalog::Config RestCatalog::loadConfig(const CatalogState & catalog_state, 
 
     LOG_DEBUG(log, "Received catalog configuration settings: {}", json_str);
 
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    const auto config_response = IcebergRestModels::parseCatalogConfigResponse(json_str);
+    const auto settings = config_response.merged();
 
     Config result;
-
-    auto defaults_object = object->get("defaults").extract<Poco::JSON::Object::Ptr>();
-    parseCatalogConfigurationSettings(defaults_object, result);
-
-    auto overrides_object = object->get("overrides").extract<Poco::JSON::Object::Ptr>();
-    parseCatalogConfigurationSettings(overrides_object, result);
+    result.prefix = settings.prefix;
+    result.default_base_location = settings.default_base_location;
 
     LOG_DEBUG(log, "Parsed catalog configuration settings: {}", result.toString());
     return result;
-}
-
-void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result)
-{
-    if (!object)
-        return;
-
-    if (object->has("prefix"))
-        result.prefix = object->get("prefix").extract<String>();
-
-    if (object->has("default-base-location"))
-        result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
 void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
@@ -826,28 +814,21 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
             "OAuth token request failed with status {} ({}): {}",
             static_cast<int>(response.getStatus()), response.getReason(), json_str);
 
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var res_json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
-
-    if (!object->has("access_token"))
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "OAuth token response has no `access_token` field: {}",
-            json_str);
-
-    AccessToken token;
-    token.token = object->getValue<String>("access_token");
-
-    if (object->has("expires_in"))
+    try
     {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        /// Use 90% of the token lifetime as the validity window so that short-lived tokens
-        /// (e.g. expires_in=300) still get a sensible buffer instead of going non-positive.
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
+        return accessTokenFromOAuthResponse(IcebergRestModels::parseOAuthTokenResponse(json_str));
     }
-
-    return token;
+    catch (const DB::Exception & e)
+    {
+        if (e.code() == DB::ErrorCodes::BAD_ARGUMENTS)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "OAuth token response has no `access_token` field: {}",
+                json_str);
+        }
+        throw;
+    }
 }
 
 AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogState & catalog_state) const
@@ -943,25 +924,12 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
             static_cast<int>(response.getStatus()), error, error_description);
     }
 
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var res_json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
-
-    AccessToken token;
-    token.token = object->get("access_token").extract<String>();
-
-    if (object->has("expires_in"))
-    {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
-    }
-
     /// The response also carries a rotated `refresh_token`. It is deliberately ignored:
     /// only the token provided in CREATE/ALTER is stored and persisted, and Entra ID does
     /// not revoke it on use, so it stays valid for its full lifetime (90 days by default).
     /// Once it expires, the user rotates it with `ALTER DATABASE ... MODIFY SETTING`.
     success = true;
-    return token;
+    return accessTokenFromOAuthResponse(IcebergRestModels::parseOAuthTokenResponse(json_str));
 }
 
 BigLakeCatalog::BigLakeCatalog(
@@ -1129,35 +1097,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     LOG_DEBUG(log, "Received Google Cloud token response from metadata service");
 
-    Poco::JSON::Parser parser;
-    auto object = parser.parse(token_json_raw).extract<Poco::JSON::Object::Ptr>();
-
-    if (!object->has("access_token") || !object->has("expires_in") || !object->has("token_type"))
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected structure of Google Cloud token response. Response should have fields: 'access_token', 'expires_in', 'token_type'");
-    }
-
-    auto token_type = object->getValue<String>("token_type");
-    if (token_type != "Bearer")
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected token type in Google Cloud response. Expected Bearer token, got {}",
-            token_type);
-    }
-
-    AccessToken token;
-    token.token = object->getValue<String>("access_token");
-
-    if (object->has("expires_in"))
-    {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
-    }
-
-    return token;
+    return accessTokenFromOAuthResponse(IcebergRestModels::parseOAuthTokenResponse(token_json_raw, /* require_bearer_type */ true));
 }
 
 std::optional<StorageType> RestCatalog::getStorageType() const
@@ -1327,18 +1267,7 @@ void RestCatalog::getNamespacesRecursive(
 
 Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::string & base_namespace) const
 {
-    std::vector<std::string_view> parts;
-    splitInto<'.'>(parts, base_namespace);
-    std::string parent_param;
-    for (const auto & part : parts)
-    {
-        /// 0x1F is a unit separator
-        /// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
-        if (!parent_param.empty())
-            parent_param += static_cast<char>(0x1F);
-        parent_param += part;
-    }
-    return {{"parent", parent_param}};
+    return IcebergRestModels::createParentNamespaceQueryParams(base_namespace);
 }
 
 bool RestCatalog::hasFlatNamespaces() const
@@ -1441,63 +1370,13 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
     try
     {
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var json = parser.parse(json_str);
-        if (json.type() == typeid(Poco::JSON::Object::Ptr))
-        {
-            const Poco::JSON::Object::Ptr & obj = json.extract<Poco::JSON::Object::Ptr>();
-            if (obj->size() == 0)
-                return {};
-        }
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+        IcebergRestModels::NamespaceListParseOptions options;
+        options.skip_subnamespaces_when_parent_non_empty = hasFlatNamespaces();
+        options.suppress_pagination_when_all_entries_skipped = hasFlatNamespaces();
 
-        auto namespaces_object = object->get("namespaces").extract<Poco::JSON::Array::Ptr>();
-        if (!namespaces_object)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
-
-        Namespaces namespaces;
-        for (size_t i = 0; i < namespaces_object->size(); ++i)
-        {
-            auto current_namespace_array = namespaces_object->get(static_cast<int>(i)).extract<Poco::JSON::Array::Ptr>();
-            if (current_namespace_array->size() == 0)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Expected namespace array to be non-empty");
-
-            const int idx = static_cast<int>(current_namespace_array->size()) - 1;
-            const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-            /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
-            /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
-            /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
-            /// return other top-level namespaces instead. Skip all sub-namespace results to avoid
-            /// constructing fake multi-level paths like "ns1.ns2" (and, for BigLake, an HTTP 400) and,
-            /// in turn, the unbounded recursion that fake children would cause in getNamespacesRecursive.
-            if (hasFlatNamespaces() && !base_namespace.empty())
-            {
-                continue;
-            }
-            const auto full_namespace = base_namespace.empty()
-                ? current_namespace
-                : base_namespace + "." + current_namespace;
-
-            namespaces.push_back(full_namespace);
-        }
-
-        /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
-        /// Empty / null / missing token all mean "no more pages".
-        ///
-        /// Flat-namespace short-circuit: when the skip above drops every returned entry (because a
-        /// flat-namespace catalog ignores `parent` and returns unrelated top-level namespaces),
-        /// continuing pagination just burns O(pages) REST calls per parent namespace without ever
-        /// contributing to the result. Treat the first page as terminal by leaving `next_page_token`
-        /// empty (already cleared at function entry) so the outer `listChildNamespaces` loop returns immediately.
-        const bool flat_namespace_drops_all_entries = hasFlatNamespaces() && !base_namespace.empty();
-        if (!flat_namespace_drops_all_entries
-            && object->has("next-page-token")
-            && !object->isNull("next-page-token"))
-        {
-            next_page_token = object->get("next-page-token").extract<String>();
-        }
-
-        return namespaces;
+        const auto page = IcebergRestModels::parseNamespaceListPage(json_str, base_namespace, options);
+        next_page_token = page.next_page_token;
+        return page.namespaces;
     }
     catch (DB::Exception & e)
     {
@@ -1510,7 +1389,7 @@ DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace,
 {
     const auto state_snapshot = state.get();
 
-    auto encoded_namespace = encodeNamespaceForURI(base_namespace);
+    auto encoded_namespace = IcebergRestModels::encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
     DB::Names tables;
@@ -1579,36 +1458,9 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
 
     try
     {
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var json = parser.parse(json_str);
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-        auto identifiers_object = object->get("identifiers").extract<Poco::JSON::Array::Ptr>();
-        if (!identifiers_object)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
-
-        DB::Names tables;
-        for (size_t i = 0; i < identifiers_object->size(); ++i)
-        {
-            const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-            /// If table has encoded sequence (like 'foo%2Fbar')
-            /// catalog returns decoded character instead of sequence ('foo/bar')
-            /// Here name encoded back to 'foo%2Fbar' format
-            const auto table_name_raw = current_table_json->get("name").extract<String>();
-            std::string table_name;
-            Poco::URI::encode(table_name_raw, "/", table_name);
-
-            tables.push_back(base_namespace + "." + table_name);
-            if (limit && tables.size() >= limit)
-                break;
-        }
-
-        /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
-        /// Empty / null / missing token all mean "no more pages".
-        if (object->has("next-page-token") && !object->isNull("next-page-token"))
-            next_page_token = object->get("next-page-token").extract<String>();
-
-        return tables;
+        const auto page = IcebergRestModels::parseTableIdentifiersPage(json_str, base_namespace, limit);
+        next_page_token = page.next_page_token;
+        return page.tables;
     }
     catch (DB::Exception & e)
     {
@@ -1676,7 +1528,7 @@ bool RestCatalog::getTableMetadataImpl(
     }
 
     const auto state_snapshot = state.get();
-    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / IcebergRestModels::encodeNamespaceForURI(namespace_name) / "tables" / table_name;
     auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
 
     if (buf->eof())
@@ -1694,13 +1546,8 @@ bool RestCatalog::getTableMetadataImpl(
     LOG_DEBUG(log, "Received metadata for table {}: {}", table_name, json_str);
 #endif
 
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-    auto metadata_object = object->get("metadata").extract<Poco::JSON::Object::Ptr>();
-    if (!metadata_object)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
+    const auto response = IcebergRestModels::parseLoadTableResponse(json_str);
+    const auto metadata_object = response.metadata;
 
     std::string location;
     if (result.requiresLocation())
@@ -1727,12 +1574,9 @@ bool RestCatalog::getTableMetadataImpl(
         result.setSchema(*schema);
     }
 
-    if (result.isDefaultReadableTable() && result.requiresCredentials() && object->has("config"))
+    if (result.isDefaultReadableTable() && result.requiresCredentials() && response.config)
     {
-        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
-        if (!config_object)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse config result");
-        auto [parsed_credentials, parsed_endpoint] = getCredentialsAndEndpoint(config_object, location);
+        auto [parsed_credentials, parsed_endpoint] = getCredentialsAndEndpoint(response.config, location);
         if (parsed_credentials)
             result.setStorageCredentials(parsed_credentials);
         if (!parsed_endpoint.empty())
@@ -1741,15 +1585,15 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresDataLakeSpecificProperties())
     {
-        if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
+        if (response.metadata_location.has_value())
         {
-            auto metadata_location = object->get("metadata-location").extract<String>();
-            result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
+            result.setDataLakeSpecificProperties(
+                DataLakeSpecificProperties{ .iceberg_metadata_file_location = response.metadata_location.value() });
         }
     }
 
-    if (metadata_object->has("table-uuid"))
-        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
+    if (response.table_uuid.has_value())
+        result.setTableUUID(response.table_uuid.value());
 
     return true;
 }
@@ -1809,7 +1653,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     /// Check existence first: creation may be denied to a principal that is still
     /// allowed to use a pre-provisioned namespace.
     const std::string check_endpoint
-        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / IcebergRestModels::encodeNamespaceForURI(namespace_name)).generic_string();
     try
     {
         sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
@@ -1822,18 +1666,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     }
 
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
-
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        request_body->set("namespace", namespaces);
-    }
-    {
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("location", location);
-        request_body->set("properties", properties);
-    }
+    auto request_body = IcebergRestModels::buildCreateNamespaceRequest(namespace_name, location);
 
     try
     {
@@ -1850,34 +1683,9 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
 {
     const auto state_snapshot = state.get();
-    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
+    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / IcebergRestModels::encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    request_body->set("name", table_name);
-    if (!managesTableLocation())
-        request_body->set("location", metadata_content->getValue<String>("location"));
-    {
-        Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
-        Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
-        initial_schema->set("identifier-field-ids", identifier_fields);
-        request_body->set("schema", initial_schema);
-    }
-    request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));
-
-    {
-        Poco::JSON::Object::Ptr write_order = new Poco::JSON::Object;
-        write_order->set("order-id", 0);
-        Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-        write_order->set("fields", fields);
-        request_body->set("write-order", write_order);
-    }
-    request_body->set("stage-create", false);
-    Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-
-    if (metadata_content->has("format-version"))
-        properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
-
-    request_body->set("properties", properties);
+    auto request_body = IcebergRestModels::buildCreateTableRequest(table_name, metadata_content, !managesTableLocation());
 
     try
     {
@@ -1893,58 +1701,9 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
     const auto state_snapshot = state.get();
-    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / IcebergRestModels::encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
-
-        request_body->set("identifier", identifier);
-    }
-
-    {
-        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-        requirement->set("type", "assert-ref-snapshot-id");
-        requirement->set("ref", "main");
-
-        if (new_snapshot->has("parent-snapshot-id"))
-        {
-            auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
-            if (parent_snapshot_id != -1)
-                requirement->set("snapshot-id", parent_snapshot_id);
-        }
-
-        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-        requirements->add(requirement);
-
-        request_body->set("requirements", requirements);
-    }
-
-    {
-        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-
-        {
-            Poco::JSON::Object::Ptr add_snapshot = new Poco::JSON::Object;
-            add_snapshot->set("action", "add-snapshot");
-            add_snapshot->set("snapshot", new_snapshot);
-            updates->add(add_snapshot);
-        }
-
-        {
-            Poco::JSON::Object::Ptr set_snapshot = new Poco::JSON::Object;
-            set_snapshot->set("action", "set-snapshot-ref");
-            set_snapshot->set("ref-name", "main");
-            set_snapshot->set("type", "branch");
-            set_snapshot->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
-
-            updates->add(set_snapshot);
-        }
-        request_body->set("updates", updates);
-    }
+    auto request_body = IcebergRestModels::buildUpdateMetadataRequest(namespace_name, table_name, new_snapshot);
 
     try
     {
@@ -1977,48 +1736,9 @@ bool RestCatalog::updateSchema(
     Int32 previous_schema_id) const
 {
     const auto state_snapshot = state.get();
-    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / IcebergRestModels::encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
-
-        request_body->set("identifier", identifier);
-    }
-
-    {
-        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-        requirement->set("type", "assert-current-schema-id");
-        requirement->set("current-schema-id", previous_schema_id);
-
-        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-        requirements->add(requirement);
-        request_body->set("requirements", requirements);
-    }
-
-    {
-        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-
-        {
-            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
-            add_schema->set("action", "add-schema");
-            add_schema->set("schema", new_schema);
-            updates->add(add_schema);
-        }
-
-        {
-            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
-            set_current_schema->set("action", "set-current-schema");
-            set_current_schema->set("schema-id", -1);
-            updates->add(set_current_schema);
-        }
-
-        request_body->set("updates", updates);
-    }
+    auto request_body = IcebergRestModels::buildUpdateSchemaRequest(namespace_name, table_name, new_schema, previous_schema_id);
 
     try
     {
@@ -2050,63 +1770,30 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
 
 std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const
 {
+    const auto vended = IcebergRestModels::parseVendedStorageConfig(object);
     auto storage_type = parseStorageTypeFromLocation(location);
     switch (storage_type)
     {
         case StorageType::S3:
         {
-            static constexpr auto gcs_token_str = "gcs.oauth2.token";
-            static constexpr auto access_key_id_str = "s3.access-key-id";
-            static constexpr auto secret_access_key_str = "s3.secret-access-key";
-            static constexpr auto session_token_str = "s3.session-token";
-            static constexpr auto storage_endpoint_str = "s3.endpoint";
-
-            if (object->has(gcs_token_str))
+            if (vended.gcs_oauth2_token.has_value())
             {
-                auto gcs_token = object->get(gcs_token_str).extract<String>();
                 LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
-                return {std::make_shared<GCSCredentials>(gcs_token), ""};
+                return {std::make_shared<GCSCredentials>(vended.gcs_oauth2_token.value()), ""};
             }
 
-            std::string access_key_id;
-            std::string secret_access_key;
-            std::string session_token;
-            std::string storage_endpoint;
-            if (object->has(access_key_id_str))
-                access_key_id = object->get(access_key_id_str).extract<String>();
-            if (object->has(secret_access_key_str))
-                secret_access_key = object->get(secret_access_key_str).extract<String>();
-            if (object->has(session_token_str))
-                session_token = object->get(session_token_str).extract<String>();
-            if (object->has(storage_endpoint_str))
-                storage_endpoint = object->get(storage_endpoint_str).extract<String>();
-
             LOG_DEBUG(log, "get tokens for location {}", location);
-            return {std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token), storage_endpoint};
+            return {
+                std::make_shared<S3Credentials>(
+                    vended.s3_access_key_id.value_or(""),
+                    vended.s3_secret_access_key.value_or(""),
+                    vended.s3_session_token.value_or("")),
+                vended.s3_endpoint.value_or("")};
         }
         case StorageType::Azure:
         {
-            /// Azure ADLS Gen2 vended credentials use SAS tokens.
-            /// The config keys follow the pattern: adls.sas-token.<account_name>
-            /// or adls.sas-token.<account_name>.dfs.core.windows.net
-            /// We look for any key starting with "adls.sas-token." and use the first one found.
-            String sas_token;
-            std::vector<std::string> names;
-            object->getNames(names);
-            for (const auto & name : names)
-            {
-                if (name.starts_with("adls.sas-token."))
-                {
-                    sas_token = object->get(name).extract<String>();
-                    LOG_DEBUG(log, "Found Azure SAS token with key: {}", name);
-                    break;
-                }
-            }
-
-            if (!sas_token.empty())
-            {
-                return {std::make_shared<AzureCredentials>(sas_token), ""};
-            }
+            if (vended.adls_sas_token.has_value())
+                return {std::make_shared<AzureCredentials>(vended.adls_sas_token.value()), ""};
             break;
         }
         default:
@@ -2127,7 +1814,7 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         const auto state_snapshot = state.get();
         const auto & table = storage_id.getTableName();
         auto [namespace_name, table_name] = DataLake::parseTableName(table);
-        const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
+        const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / IcebergRestModels::encodeNamespaceForURI(namespace_name) / "tables" / table_name;
         auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
 
         if (buf->eof())
@@ -2139,35 +1826,20 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var json = parser.parse(json_str);
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-        if (!object->has("config"))
+        const auto response = IcebergRestModels::parseLoadTableResponse(json_str);
+        if (!response.config)
         {
             LOG_DEBUG(log, "No 'config' in response for table {} – catalog does not support credential vending", table_name);
             return nullptr;
         }
 
-        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
-        if (!config_object)
-        {
-            LOG_DEBUG(log, "Empty 'config' in response for table {}", table_name);
-            return nullptr;
-        }
-
-        std::string location;
-        if (object->has("metadata-location"))
-        {
-            location = object->get("metadata-location").extract<String>();
-            LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
-        }
-        else
-        {
+        if (!response.metadata_location.has_value())
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot read table {}, because no 'metadata-location' in response", table_name);
-        }
 
-        auto [new_credentials, _] = getCredentialsAndEndpoint(config_object, location);
+        const auto & location = response.metadata_location.value();
+        LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
+
+        auto [new_credentials, _] = getCredentialsAndEndpoint(response.config, location);
         return new_credentials;
     };
 }

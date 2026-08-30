@@ -246,6 +246,7 @@ if (TARGET ch_contrib::hdfs)
 endif()
 
 add_headers_and_sources(dbms Databases/DataLake)
+add_headers_and_sources(dbms Databases/DataLake/IcebergCatalog/Models)
 
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Local)
