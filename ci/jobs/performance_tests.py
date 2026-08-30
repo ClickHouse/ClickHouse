@@ -13,6 +13,9 @@ from datetime import datetime
 from pathlib import Path
 from threading import Thread
 
+import yaml
+
+from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import download_and_extract_datasets
 from ci.praktika.info import Info
@@ -472,6 +475,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     CONFIGURE = "configure"
     RESTART = "restart"
     TEST = "queries"
+    EXPORT_LOGS = "export_logs"
     REPORT = "report"
     # TODO: stage implement code from the old script as is - refactor and remove
     CHECK_RESULTS = "check_results"
@@ -779,6 +783,190 @@ def get_check_start_time():
     return datetime.now().isoformat(sep=" ").split(".")[0]
 
 
+# --- Export of the system logs to the CI Logs cluster ----------------------
+# Both servers export their `system.*_log` tables the way every other check
+# does it: a materialized view per log table pushes the rows into a
+# `Distributed` table, which sends them to the CI Logs cluster in the
+# background (see ci/jobs/scripts/log_export.py). The only difference is that
+# the sends are held back while the queries are measured - writing the rows
+# into the local files of the `Distributed` tables is cheap, sending them over
+# the network is not - and everything accumulated is sent after the last test,
+# see export_system_logs below.
+#
+# Both servers write into the same destination tables and the extra columns
+# have no field for the server, so the two are told apart by a suffix in
+# `check_name`: '<job name> (left)' is the reference build and
+# '<job name> (right)' is the patched one.
+
+# `system.build_options` reports the full git hash of the build; it is empty
+# only for a build made without git information available (cmake/git.cmake).
+GIT_HASH_RE = re.compile(r"[0-9a-f]{7,40}")
+
+
+def get_server_commit_sha(server):
+    """The commit of the build a server runs, or an empty string if it cannot
+    be read."""
+    sha = (
+        server.ask("SELECT value FROM system.build_options WHERE name = 'GIT_HASH'")
+        or ""
+    ).strip()
+    return sha if GIT_HASH_RE.fullmatch(sha) else ""
+
+
+def write_ci_logs_sender_user(config_dir, binary):
+    """Write the `ci_logs_sender` user, which the export views run as, into a
+    server's users.d - without the settings that build does not know.
+
+    A setting a build does not know is not ignored in a profile: the server
+    refuses to start with `Setting ... is neither a builtin setting nor ...`.
+    The reference server runs an older build, so the first setting added to the
+    shared file would otherwise take the whole check down with it (the same
+    reason the job strips new settings from `keeper_port.xml`).
+    """
+    known_settings = set(
+        Shell.get_output(
+            f'{binary} local --query "SELECT name FROM system.settings"', strict=True
+        ).split()
+    )
+    config = yaml.safe_load(Path(log_export.CI_LOGS_SENDER_USER_CONFIG).read_text())
+    profile = config["profiles"]["ci_logs_sender"]
+    constraints = profile.get("constraints", {})
+    unknown = sorted(
+        {
+            name
+            for name in list(profile) + list(constraints)
+            if name != "constraints" and name not in known_settings
+        }
+    )
+    if unknown:
+        print(
+            f"WARNING: The build of [{binary}] does not know {unknown} - "
+            "dropping them from the ci_logs_sender profile"
+        )
+        for name in unknown:
+            profile.pop(name, None)
+            constraints.pop(name, None)
+    target = Path(config_dir) / "users.d" / "ci_logs_sender.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        f"# Generated from {log_export.CI_LOGS_SENDER_USER_CONFIG}\n"
+        + yaml.dump(config, default_flow_style=False)
+    )
+    return True
+
+
+def create_log_export_configs():
+    """Add the CI Logs cluster, and the user the export views run as, to the
+    config of both servers. Must run before they are started."""
+    if Info().is_local_run:
+        print("Local run - the system logs will not be exported")
+        return True
+    try:
+        host, password = log_export.get_credentials()
+        for config_dir, binary in (
+            (perf_left_config, f"{perf_left}/clickhouse"),
+            (perf_right_config, f"{perf_right}/clickhouse"),
+        ):
+            if not log_export.create_config(config_dir, host, password):
+                print(f"WARNING: Failed to write the log export config into [{config_dir}]")
+                continue
+            write_ci_logs_sender_user(config_dir, binary)
+    except Exception:
+        # Best effort: a job that cannot export its system logs still runs.
+        traceback.print_exc()
+    return True
+
+
+def start_log_export(servers):
+    """Create the export views on both servers and hold the sends back until
+    the tests are over.
+
+    The reference server is skipped when the commit of its build cannot be
+    read: `commit_sha` is what attributes its rows to a build, and the rows
+    would be of no use in the CI Logs cluster without it.
+
+    A server whose export cannot be held back has it torn down instead: the
+    export costs this job its logs when it fails, never its measurements.
+    """
+    info = Info()
+    try:
+        host, password = log_export.get_credentials()
+    except Exception:
+        traceback.print_exc()
+        print("WARNING: No CI Logs cluster credentials, the system logs will not be exported")
+        return True
+    check_start_time = int(os.environ["CHPC_CHECK_START_TIMESTAMP"])
+    for node_name, server in servers:
+        # The patched server runs the build of the commit this check reports
+        # for, like every other check; the reference server runs an older
+        # build and names its own commit.
+        if server.is_left:
+            commit_sha = get_server_commit_sha(server)
+            if not commit_sha:
+                print(
+                    "WARNING: Cannot read the build commit of the reference server, "
+                    "its system logs will not be exported"
+                )
+                continue
+        else:
+            commit_sha = info.sha
+        try:
+            if not log_export.start(
+                check_start_time,
+                host=host,
+                password=password,
+                port=server.port,
+                check_name_suffix=f" ({node_name})",
+                commit_sha=commit_sha,
+            ):
+                print(
+                    f"WARNING: Failed to set up the system log export on the [{node_name}] server"
+                )
+                continue
+            # After the setup, which is what creates the tables the sends are
+            # stopped for.
+            if not log_export.stop_distributed_sends(server.port):
+                # Fail closed. The measured numbers are what this job is for,
+                # the logs are a by-product: an export that cannot be held
+                # back has to go, or it would ship rows over the network while
+                # the queries are measured.
+                print(
+                    f"WARNING: Cannot hold back the log export of the [{node_name}] server "
+                    "for the measured window - tearing the export down, "
+                    "this server will not export its system logs"
+                )
+                log_export.stop(server.port)
+        except Exception:
+            traceback.print_exc()
+            # The same, for a failure raised rather than reported: whatever the
+            # export is in the middle of, it must not outlive this stage.
+            try:
+                log_export.stop(server.port)
+            except Exception:
+                traceback.print_exc()
+    return True
+
+
+def export_system_logs(servers):
+    """Send what the servers accumulated while the tests were running to the
+    CI Logs cluster, and drop the export views.
+
+    Best effort throughout: the measurements are over by now, and a server
+    whose export was torn down in `start_log_export` has nothing left to send.
+    The `SYSTEM FLUSH DISTRIBUTED` of `log_export.stop` sends the accumulated
+    files whatever came of the `START` above (`processFiles(force = true)` does
+    not consult the send lock), so the rows are not lost if it did not take.
+    """
+    for node_name, server in servers:
+        print(f"Export the system logs of the [{node_name}] server")
+        try:
+            log_export.start_distributed_sends(server.port)
+            log_export.stop(server.port)
+        except Exception:
+            traceback.print_exc()
+    return True
+
+
 def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release):
     """Upload one entry from REPORT_UPLOADS to the play cluster.
 
@@ -937,6 +1125,7 @@ class CHServer:
         self.log_file = log_file
         self.port = server_port
         self.server_path = serever_path
+        self.is_left = is_left
         self.name = "Reference" if is_left else "Patched"
 
         # On x86_64 pin both servers to one hyperthread per physical core (the
@@ -1636,6 +1825,12 @@ def main():
     res = True
     results = []
 
+    # Fix the check start time once, for the whole job: the system log export,
+    # `compare.sh` and the report uploads must all stamp the same run identity,
+    # otherwise the exported `system.*_log` rows cannot be correlated with the
+    # perf report of the same shard on `check_start_time`.
+    os.environ.setdefault("CHPC_CHECK_START_TIMESTAMP", str(int(Utils.timestamp())))
+
     # add right CH location to PATH
     Utils.add_to_PATH(perf_right)
     # TODO:
@@ -1781,6 +1976,10 @@ def main():
             f'echo "ATTACH DATABASE default ENGINE=Ordinary" > {db_path}/metadata/default.sql',
             f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
+            # Not to disable `text_log` - it is enabled (see
+            # tests/performance/scripts/config/config.d/zzz-perf-comparison-tweaks-config.xml)
+            # and exported - only to keep its default flush interval instead of
+            # the shorter one this file sets.
             f"rm {perf_right_config}/config.d/text_log.xml ||:",
             # May slow down the server
             f"rm {perf_right_config}/config.d/memory_profiler.yaml ||:",
@@ -1809,12 +2008,15 @@ def main():
             # On x86_64, cap max_threads at the number of pinned physical
             # cores (must run after the right->left config copy above).
             write_max_threads_override,
+            # Same: the CI Logs cluster must be in the config of both servers.
+            create_log_export_configs,
         ]
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
     rightCH = CHServer(is_left=False)
+    log_export_servers = (("left", leftCH), ("right", rightCH))
 
     if res and JobStages.RESTART in stages:
         print("Start Servers")
@@ -1855,6 +2057,19 @@ def main():
             if Path(leftCH.log_file).is_file():
                 logs.append(leftCH.log_file)
             results[-1].set_files(logs)
+
+    if res and JobStages.RESTART in stages and not info.is_local_run:
+        # After both servers are up and before anything is measured: from here
+        # on their system log records are picked up by the export views, and
+        # kept locally until the Export system logs stage below.
+        results.append(
+            Result.from_commands_run(
+                name="Start system log export",
+                command=start_log_export,
+                command_args=[log_export_servers],
+                with_info=True,
+            )
+        )
 
     if res and JobStages.RESTART in stages:
         print("Populate datasets")
@@ -1917,6 +2132,22 @@ def main():
         results.append(Result.from_commands_run(name="Tests", command=commands))
         res = results[-1].is_ok()
 
+    if JobStages.EXPORT_LOGS in stages and not info.is_local_run:
+        # Release the system log records the two servers accumulated while the
+        # tests were running. Strictly after the Tests stage, so that sending
+        # them does not affect the measurements, and before the Report stage,
+        # which stops the servers (compare.sh::get_profiles). Runs even if the
+        # tests failed - the logs are the most valuable then. Best effort: it
+        # must never fail the job.
+        results.append(
+            Result.from_commands_run(
+                name="Export system logs",
+                command=export_system_logs,
+                command_args=[log_export_servers],
+                with_info=True,
+            )
+        )
+
     # TODO: refactor to use native Praktika report from Result and remove
     if res and JobStages.REPORT in stages:
         print("Build Report")
@@ -1930,7 +2161,8 @@ def main():
             Utils.normalize_string(info.job_name)
         )
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME"] = info.job_name
-        os.environ["CHPC_CHECK_START_TIMESTAMP"] = str(int(Utils.timestamp()))
+        # `CHPC_CHECK_START_TIMESTAMP` is initialized once at the start of the
+        # job - do not reset it here, the export stage has already used it.
 
         commands = [
             f"PR_TO_TEST={info.pr_number} "
