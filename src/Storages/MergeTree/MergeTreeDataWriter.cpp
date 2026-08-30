@@ -1468,6 +1468,57 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                     target.insert(target.end(), pair_names.begin(), pair_names.end());
                 }
             }
+            else if ((function->name == "if" && args.size() == 3)
+                     || (function->name == "multiIf" && args.size() >= 3 && args.size() % 2 == 1))
+            {
+                /// A conditional picks one branch per row, so slot i of the result is fed by slot i of
+                /// every branch. Union the branches slot-wise rather than leaving the flat candidate
+                /// list to the self-only fallback, which drops every donor once the output holds more
+                /// than one JSON node.
+                ASTs branches;
+                if (function->name == "if")
+                {
+                    branches.push_back(args[1]);
+                    branches.push_back(args[2]);
+                }
+                else
+                {
+                    for (size_t i = 1; i + 1 < args.size(); i += 2)
+                        branches.push_back(args[i]);
+                    branches.push_back(args.back());
+                }
+
+                std::vector<const ASTFunction *> branch_tuples;
+                size_t arity = 0;
+                for (const auto & branch : branches)
+                {
+                    const auto * branch_tuple = unwrapTransparentProjectionExpression(*branch)->as<ASTFunction>();
+                    if (!branch_tuple || branch_tuple->name != "tuple" || !branch_tuple->arguments
+                        || branch_tuple->arguments->children.size() < 2
+                        || (arity && branch_tuple->arguments->children.size() != arity))
+                    {
+                        branch_tuples.clear();
+                        break;
+                    }
+                    arity = branch_tuple->arguments->children.size();
+                    branch_tuples.push_back(branch_tuple);
+                }
+
+                if (!branch_tuples.empty())
+                {
+                    provenance.tuple_element_candidates.resize(arity);
+                    for (const auto * branch_tuple : branch_tuples)
+                    {
+                        for (size_t slot = 0; slot != arity; ++slot)
+                        {
+                            IdentifierNameSet slot_names
+                                = collectValueCarryingIdentifierNames(*branch_tuple->arguments->children[slot]);
+                            auto & target = provenance.tuple_element_candidates[slot];
+                            target.insert(target.end(), slot_names.begin(), slot_names.end());
+                        }
+                    }
+                }
+            }
             else if (function->name == "mapApply" && args.size() == 2)
             {
                 /// mapApply((k, v) -> (key_expr, value_expr), m) rebuilds the map slot-wise. Its lambda
