@@ -629,9 +629,13 @@ class ClickHouseProc:
             return True
         # Fewer insert threads on sanitizer binaries: their baseline RSS sits
         # near max_server_memory_usage, so 16 parallel insert pipelines trip the
-        # total limit (Code 241). Same data is loaded, just a smaller peak.
-        is_sanitizer = build_type is not None and any(
-            san in build_type for san in ("asan", "tsan", "msan", "ubsan")
+        # total limit (Code 241) or OOM-kill the server. Same data is loaded,
+        # just a smaller peak. On regular (non-bugfix-validation) runs build_type
+        # is not passed, so fall back to the job name to detect the sanitizer,
+        # mirroring the limit_source pattern in functional_tests.py::run_tests.
+        sanitizer_source = build_type if build_type is not None else Info().job_name
+        is_sanitizer = any(
+            san in sanitizer_source for san in ("asan", "tsan", "msan", "ubsan")
         )
         max_insert_threads = 4 if is_sanitizer else 16
         command = """
