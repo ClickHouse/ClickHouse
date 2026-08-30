@@ -6,6 +6,9 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Formats/Impl/SQLInsertRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -45,6 +48,24 @@ bool isMergeTreePersistentVirtualColumn(const String & column_name)
         || column_name == BlockOffsetColumn::name;
 }
 
+void validateSQLInsertTableName(const String & table_name, size_t max_parser_depth)
+{
+    ParserCompoundIdentifier parser(/*table_name_with_optional_uuid=*/ true);
+    const auto identifier = parseQuery(
+        parser,
+        table_name,
+        "table name in `output_format_sql_insert_table_name`",
+        0,
+        max_parser_depth,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    if (identifier->as<const ASTTableIdentifier &>().has_uuid)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `output_format_sql_insert_table_name` cannot contain a UUID clause when "
+            "`output_format_sql_insert_include_table_schema` is enabled");
+}
+
 }
 
 SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
@@ -57,6 +78,8 @@ SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHea
 
     if (format_settings.sql_insert.include_table_schema)
     {
+        validateSQLInsertTableName(format_settings.sql_insert.table_name, format_settings.max_parser_depth);
+
         NameSet unique_column_names;
         for (const auto & column_name : column_names)
         {
