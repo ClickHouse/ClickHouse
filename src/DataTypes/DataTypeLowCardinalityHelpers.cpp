@@ -159,7 +159,9 @@ static ColumnPtr recursiveRemoveLowCardinalityImpl(const ColumnPtr & column, boo
     else if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
     {
         const auto & nested = column_replicated->getNestedColumn();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        /// The nested column must follow the same rule: materializing the non-native representation
+        /// must not touch a genuine LowCardinality(T) column, or the result stops matching its data type.
+        auto nested_no_lc = recursiveRemoveLowCardinalityImpl(nested, remove_native);
         if (nested.get() != nested_no_lc.get())
             res = ColumnReplicated::create(nested_no_lc, column_replicated->getIndexesColumn());
     }
