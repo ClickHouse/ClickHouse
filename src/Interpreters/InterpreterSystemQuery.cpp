@@ -528,6 +528,10 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
+        case Type::CLEAR_SKIPPING_INDEX_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
+            system_context->clearSkippingIndexCache();
+            break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
             system_context->clearTextIndexTokensCache();
@@ -2836,6 +2840,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            break;
+        case Type::CLEAR_SKIPPING_INDEX_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
             break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);

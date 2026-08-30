@@ -11,6 +11,8 @@ namespace DB
 {
 
 class VectorSimilarityIndexCache;
+class SkippingIndexCache;
+struct SkippingIndexCacheCell;
 
 class MergeTreeIndexReader
 {
@@ -25,6 +27,7 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
+        SkippingIndexCache * skipping_index_cache,
         MergeTreeReaderSettings settings_);
     virtual ~MergeTreeIndexReader();
 
@@ -43,7 +46,15 @@ private:
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
     VectorSimilarityIndexCache * vector_similarity_index_cache;
+    SkippingIndexCache * skipping_index_cache;
     MergeTreeReaderSettings settings;
+
+    /// Set in the constructor and never changed afterwards: switching to the uncached path mid-way
+    /// would deserialize into a granule that is shared with the cache.
+    bool use_skipping_index_cache = false;
+    String skipping_index_cache_key_prefix;
+    size_t current_block_number = 0;
+    std::shared_ptr<SkippingIndexCacheCell> current_block;
 
     StreamMap streams;
     std::vector<std::unique_ptr<MergeTreeReaderStream>> stream_holders;
@@ -52,6 +63,8 @@ private:
     size_t stream_mark = 0;
 
     void initStreamIfNeeded();
+    void loadGranule(MergeTreeIndexGranulePtr & res, size_t mark, const IMergeTreeIndexCondition * condition, const MarkRanges * readable_ranges);
+    MergeTreeIndexGranules loadBlockOfGranules(size_t block_number);
 };
 
 }

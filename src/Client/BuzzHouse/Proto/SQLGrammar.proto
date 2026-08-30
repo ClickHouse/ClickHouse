@@ -2468,6 +2468,7 @@ message SystemCommand {
         bool drop_text_index_postings_cache = 74;
         bool drop_text_index_caches = 75;
         bool reset_ddl_worker = 76;
+        bool drop_skipping_index_cache = 77;
         bool drop_parquet_metadata_cache = 77;
         string wait_failpoint = 78;
         string notify_failpoint = 79;

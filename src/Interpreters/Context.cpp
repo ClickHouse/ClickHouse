@@ -61,6 +61,7 @@
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
+#include <Storages/MergeTree/SkippingIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/AsynchronousReader.h>
@@ -633,6 +634,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable bool index_uncompressed_cache_enabled TSA_GUARDED_BY(mutex) = false;      /// Whether index_uncompressed_cache should be used.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
+    mutable SkippingIndexCachePtr skipping_index_cache TSA_GUARDED_BY(mutex);                          /// Cache of deserialized skipping index granules.
     mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
@@ -5035,6 +5037,48 @@ void Context::clearVectorSimilarityIndexCache() const
         shared->vector_similarity_index_cache->clear();
 }
 
+void Context::setSkippingIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->skipping_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Skipping index cache has been already created.");
+
+    shared->skipping_index_cache = std::make_shared<SkippingIndexCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateSkippingIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->skipping_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Skipping index cache was not created yet.");
+
+    size_t size = config.getUInt64("skipping_index_cache_size", DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("skipping_index_cache_max_entries", DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->skipping_index_cache->setMaxSizeInBytes(size);
+    shared->skipping_index_cache->setMaxCount(max_entries);
+}
+
+SkippingIndexCachePtr Context::getSkippingIndexCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->skipping_index_cache;
+}
+
+void Context::clearSkippingIndexCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->skipping_index_cache)
+        shared->skipping_index_cache->clear();
+}
+
 void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -5497,6 +5541,8 @@ void Context::clearCaches() const
 
     if (shared->vector_similarity_index_cache)
         shared->vector_similarity_index_cache->clear();
+    if (shared->skipping_index_cache)
+        shared->skipping_index_cache->clear();
 
     if (shared->text_index_tokens_cache)
         shared->text_index_tokens_cache->clear();

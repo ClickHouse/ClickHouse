@@ -281,6 +281,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
+    extern const ServerSettingsString skipping_index_cache_policy;
+    extern const ServerSettingsUInt64 skipping_index_cache_size;
+    extern const ServerSettingsUInt64 skipping_index_cache_max_entries;
+    extern const ServerSettingsDouble skipping_index_cache_size_ratio;
     extern const ServerSettingsString text_index_tokens_cache_policy;
     extern const ServerSettingsUInt64 text_index_tokens_cache_size;
     extern const ServerSettingsUInt64 text_index_tokens_cache_max_entries;
@@ -2491,6 +2495,17 @@ try
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_entries, vector_similarity_index_cache_size_ratio);
 
+    String skipping_index_cache_policy = server_settings[ServerSetting::skipping_index_cache_policy];
+    size_t skipping_index_cache_size = server_settings[ServerSetting::skipping_index_cache_size];
+    size_t skipping_index_cache_max_entries = server_settings[ServerSetting::skipping_index_cache_max_entries];
+    double skipping_index_cache_size_ratio = server_settings[ServerSetting::skipping_index_cache_size_ratio];
+    if (skipping_index_cache_size > max_cache_size)
+    {
+        skipping_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
+    }
+    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_entries, skipping_index_cache_size_ratio);
+
     String text_index_tokens_cache_policy = server_settings[ServerSetting::text_index_tokens_cache_policy];
     size_t text_index_tokens_cache_size = server_settings[ServerSetting::text_index_tokens_cache_size];
     size_t text_index_tokens_cache_max_count = server_settings[ServerSetting::text_index_tokens_cache_max_entries];
@@ -3060,6 +3075,7 @@ try
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateVectorSimilarityIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateSkippingIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateTextIndexTokensCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateTextIndexHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateTextIndexPostingsCacheConfiguration(config(), max_cache_size_in_bytes);

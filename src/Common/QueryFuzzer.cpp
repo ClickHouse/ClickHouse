@@ -7907,6 +7907,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 Type::CLEAR_INDEX_MARK_CACHE,
                 Type::CLEAR_INDEX_UNCOMPRESSED_CACHE,
                 Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
+                Type::CLEAR_SKIPPING_INDEX_CACHE,
                 Type::CLEAR_TEXT_INDEX_TOKENS_CACHE,
                 Type::CLEAR_TEXT_INDEX_HEADER_CACHE,
                 Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE,

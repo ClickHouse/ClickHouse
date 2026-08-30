@@ -5267,6 +5267,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "DROP VECTOR SIMILARITY INDEX CACHE";
             can_set_cluster = true;
             break;
+        case CmdType::kDropSkippingIndexCache:
+            ret += "DROP SKIPPING INDEX CACHE";
+            can_set_cluster = true;
+            break;
         case CmdType::kReloadDictionary: SystemCommandOnCluster(ret, "RELOAD DICTIONARY", cmd, cmd.reload_dictionary()); break;
         case CmdType::kUnloadDictionary: SystemCommandOnCluster(ret, "UNLOAD DICTIONARY", cmd, cmd.unload_dictionary()); break;
         case CmdType::kUnloadDictionaries:
