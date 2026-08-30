@@ -2354,10 +2354,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"stream_poll_timeout_ms", CHSetting(timeoutMillisRange, {}, false)},
              {"tcp_keep_alive_timeout", CHSetting(timeoutSecondsRange, {}, false)},
              {"timeout_before_checking_execution_speed", CHSetting(timeoutSecondsRange, {}, false)},
-             {"wait_for_async_insert_timeout", CHSetting(timeoutSecondsRange, {}, false)},
-             {"wait_for_window_view_fire_signal_timeout", CHSetting(timeoutSecondsRange, {}, false)},
-             {"window_view_clean_interval", CHSetting(timeoutSecondsRange, {}, false)},
-             {"window_view_heartbeat_interval", CHSetting(timeoutSecondsRange, {}, false)}});
+             {"wait_for_async_insert_timeout", CHSetting(timeoutSecondsRange, {}, false)}});
     }
     if (fc.enable_force_settings)
     {
