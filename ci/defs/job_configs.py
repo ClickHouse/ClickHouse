@@ -273,7 +273,12 @@ class JobConfigs:
                 "./tests/ci/ssh.py",
                 "./tests/ci/compress_files.py",
                 "./tests/ci/env_helper.py",
-            ]
+            ],
+            exclude_paths=[
+                # Settings.TEMP_DIR is inside ./ci and praktika fills it while the
+                # workflow runs, so it is not an input of this job.
+                "./ci/tmp",
+            ],
         ),
     )
     fast_test = Job.Config(
