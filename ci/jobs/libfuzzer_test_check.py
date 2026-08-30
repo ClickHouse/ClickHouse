@@ -14,6 +14,7 @@
 # to S3 for future runs. All discovered failures will be reported along with coverage stats.
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -258,6 +259,70 @@ def read_status(status_path: Path):
     return result
 
 
+def read_stats(stats_path: Path) -> dict:
+    if not stats_path.exists():
+        return {}
+    with open(stats_path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def format_fuzzing_stats(stats: dict) -> list:
+    """Turn the numbers `runner.py` scraped out of the libFuzzer output into report lines.
+
+    Without these the report only says OK or FAIL, so a target that spends its
+    whole budget replaying its corpus, or that stopped executing inputs at all,
+    is indistinguishable from a healthy one.
+    """
+    lines = []
+
+    last = stats.get("last", {})
+    if last:
+        summary = [f"executed {last.get('executed', 0)} inputs"]
+        for key in ("exec/s", "cov", "ft", "corp", "rss"):
+            if key in last:
+                summary.append(f"{key}: {last[key]}")
+        lines.append(", ".join(summary))
+
+    input_files = stats.get("input_files", {})
+    if input_files:
+        lines.append(
+            "input directories: "
+            + ", ".join(f"{name} ({count} files)" for name, count in input_files.items())
+        )
+
+    inited = stats.get("inited", {})
+    total = last.get("executed", 0)
+    if inited and total:
+        replayed = inited.get("executed", 0)
+        lines.append(
+            f"replaying the initial corpus took {replayed} of {total} executed inputs "
+            f"({replayed * 100 // total}%), leaving {total - replayed} mutations"
+        )
+
+    before = stats.get("corpus_size_before")
+    after = stats.get("corpus_size_after")
+    if before is not None and after is not None:
+        lines.append(
+            f"{stats.get('new_units', 0)} new corpus units ({before} -> {after})"
+        )
+
+    return lines
+
+
+def format_minimization_stats(stats: dict) -> list:
+    if not stats:
+        return []
+    return [
+        "corpus {} -> {} units ({}%), processed {}, not processed {}".format(
+            stats.get("original_corpus_size"),
+            stats.get("minimized_corpus_size"),
+            stats.get("reduction_percent"),
+            stats.get("processed"),
+            stats.get("not_processed"),
+        )
+    ]
+
+
 def process_results(result_path: Path):
     test_results = []
     oks = 0
@@ -283,31 +348,29 @@ def process_results(result_path: Path):
                 duration=float(status_mini[2]),
             )
 
+            raw_logs += format_minimization_stats(
+                read_stats(fuzzer_result_dir / "stats_mini.txt")
+            )
+
+            if file_path_out_mini.exists():
+                log_files.append(str(file_path_out_mini))
+            if file_path_stdout_mini.exists():
+                log_files.append(str(file_path_stdout_mini))
+
             if status_mini[0] == "ERROR":
                 errors += 1
                 raw_logs.append("Corpus minimization FAILED.")
-                if file_path_out_mini.exists():
-                    err = process_error(file_path_out_mini, fuzzer_result_dir)
-                    if len(err):
-                        raw_logs.append("Possible regressions:")
-                        for line in err:
-                            raw_logs.append("\t".join(s for s in line))
 
-                if file_path_out_mini.exists():
-                    log_files.append(str(file_path_out_mini))
-                if file_path_stdout_mini.exists():
-                    log_files.append(str(file_path_stdout_mini))
-            else:
-                if file_path_out_mini.exists():
-                    err = process_error(file_path_out_mini, fuzzer_result_dir)
-                    if len(err):
-                        raw_logs.append("Regressions:")
-                        for line in err:
-                            raw_logs.append("\t".join(s for s in line))
-                        if file_path_out_mini.exists():
-                            log_files.append(str(file_path_out_mini))
-                        if file_path_stdout_mini.exists():
-                            log_files.append(str(file_path_stdout_mini))
+            if file_path_out_mini.exists():
+                err = process_error(file_path_out_mini, fuzzer_result_dir)
+                if len(err):
+                    raw_logs.append(
+                        "Possible regressions:"
+                        if status_mini[0] == "ERROR"
+                        else "Regressions:"
+                    )
+                    for line in err:
+                        raw_logs.append("\t".join(s for s in line))
 
             # Collect all crash, timeout and trace files
             for file in list(fuzzer_result_dir.glob("mini-crash-*")):
@@ -331,15 +394,19 @@ def process_results(result_path: Path):
 
         status = read_status(file_path_status)
         result = Result(fuzzer, status[0], duration=float(status[2]))
+
+        raw_logs += format_fuzzing_stats(read_stats(fuzzer_result_dir / "stats.txt"))
+
+        if file_path_out.exists():
+            log_files.append(str(file_path_out))
+        if file_path_stdout.exists():
+            log_files.append(str(file_path_stdout))
+
         if status[0] == "OK":
             oks += 1
         elif status[0] == "ERROR":
             errors += 1
             raw_logs.append("Fuzzing FAILED.")
-            if file_path_out.exists():
-                log_files.append(str(file_path_out))
-            if file_path_stdout.exists():
-                log_files.append(str(file_path_stdout))
         else:
             fails += 1
             if file_path_out.exists():
@@ -352,10 +419,6 @@ def process_results(result_path: Path):
                     raw_logs.append(
                         "No stack traces found - this is unusual - check output files"
                     )
-                if file_path_out.exists():
-                    log_files.append(str(file_path_out))
-                if file_path_stdout.exists():
-                    log_files.append(str(file_path_stdout))
 
         # Collect all crash-, timeout-, slow-unit-, oom- and .trace files
         for file in list(fuzzer_result_dir.glob("crash-*")):
