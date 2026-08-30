@@ -6,7 +6,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event HashJoinDirectGatheredRows;
+    extern const Event HashJoinDirectGatheredValues;
 }
 
 namespace DB
@@ -106,7 +106,7 @@ void gatherColumnDirect(
             break;
     }
 
-    ProfileEvents::increment(ProfileEvents::HashJoinDirectGatheredRows, rows_to_add);
+    ProfileEvents::increment(ProfileEvents::HashJoinDirectGatheredValues, rows_to_add);
 }
 
 template void gatherColumnDirect<false>(IColumn &, const DirectGatherColumn &, const UInt64 *, const UInt64 *, size_t);

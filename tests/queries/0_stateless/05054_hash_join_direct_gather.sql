@@ -183,12 +183,13 @@ FROM dg_probe LEFT JOIN dg_nullable USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     log_comment = 'dg_arm6_nullable', ast_fuzzer_runs = 0;
 
--- Arm 7: an upstream `arrayJoin` wraps every right column wider than 8 bytes in `ColumnReplicated`,
--- which does not implement `getRawData`. This arm fails with NOT_IMPLEMENTED if that test is not the
--- first one the emit table applies.
+-- Arm 7: lazy replication under an upstream `arrayJoin` wraps the right columns wider than 8 bytes
+-- (`u`, `w`, `d`) in `ColumnReplicated`, which `isFixedAndContiguous` refuses, leaving `i` as the only
+-- gathered column; `isColumnConst` is needed beside it because a const column passes that same test.
+-- The two key ranges overlap, so all 45 rows reach the probe emit path: 1 gathered column by 45 rows.
 SELECT 'arm7 replicated', count(), sum(cityHash64(*)) FROM
 (
-    SELECT number AS k FROM numbers(10, 10)
+    SELECT number AS k FROM numbers(1, 9)
 ) AS l
 RIGHT JOIN
 (
@@ -198,7 +199,8 @@ RIGHT JOIN
     FROM numbers(10)
 ) AS r USING (k)
 SETTINGS enable_lazy_columns_replication = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0,
-    join_use_nulls = 0, log_comment = 'dg_arm7_replicated', ast_fuzzer_runs = 0;
+    join_use_nulls = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
+    joined_block_split_single_row = 0, log_comment = 'dg_arm7_replicated', ast_fuzzer_runs = 0;
 
 -- Arm 8: the row store and the gather coexisting. A ratio of zero admits the row store without
 -- consulting any row-count estimate; `USING` saves no right key, so `n1` and `n2` are the two
@@ -244,9 +246,9 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     replaceOne(log_comment, 'dg_', '') AS arm,
-    if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval', 'dg_arm8_row_store'),
-       toString(max(ProfileEvents['HashJoinDirectGatheredRows'])),
-       toString(max(ProfileEvents['HashJoinDirectGatheredRows']) > 0)) AS gathered
+    if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval', 'dg_arm7_replicated', 'dg_arm8_row_store'),
+       toString(max(ProfileEvents['HashJoinDirectGatheredValues'])),
+       toString(max(ProfileEvents['HashJoinDirectGatheredValues']) > 0)) AS gathered
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'dg_arm%'
 GROUP BY log_comment
