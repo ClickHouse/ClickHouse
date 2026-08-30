@@ -4,7 +4,9 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -152,4 +154,32 @@ TEST(DistinctTransformSkipNullKeys, ConstNullKeyEmitsNothing)
     /// without it the constant-columns-only special case returns a single row.
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ true), 0u);
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ false), 1u);
+}
+
+TEST(DistinctTransformSkipNullKeys, DropsLowCardinalityNullableNullRows)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+    const auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(type, "k")});
+
+    auto make_chunks = [&]
+    {
+        auto column = type->createColumn();
+        column->insertData("a", 1);
+        column->insertDefault(); /// NULL
+        column->insertData("b", 1);
+        column->insertData("a", 1);
+        column->insertDefault(); /// NULL
+
+        Columns columns;
+        columns.emplace_back(std::move(column));
+        Chunks chunks;
+        chunks.push_back(Chunk(std::move(columns), 5));
+        return chunks;
+    };
+
+    /// The NULL rows of a LowCardinality(Nullable) key are the rows referencing the dictionary's NULL
+    /// entry; with the skipping they are dropped entirely, without it NULL is one distinct value.
+    EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ true), 2u);
+    EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ false), 3u);
 }
