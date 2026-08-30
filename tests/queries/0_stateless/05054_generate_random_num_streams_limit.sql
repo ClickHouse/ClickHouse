@@ -18,6 +18,20 @@ SELECT n FROM generateRandom('n UInt8') LIMIT 16
 SETTINGS max_block_size = 16, preferred_block_size_bytes = 0, max_threads = 4,
     max_streams_to_max_threads_ratio = 288230376151711744; -- { serverError PARAMETER_OUT_OF_BOUND }
 
+-- `num_streams * max_block_size` wraps here too, but to a value still above the `LIMIT`, so the
+-- reduction does apply and a single source serves the read.
+SELECT count() FROM (SELECT n FROM generateRandom('n UInt8') LIMIT 17)
+SETTINGS optimize_trivial_count_query = 0, max_block_size = 17, preferred_block_size_bytes = 0,
+    max_threads = 4, parallelize_output_from_storages = 0,
+    max_streams_to_max_threads_ratio = 288230376151711744;
+
+-- The rounded-up source count for this `LIMIT` and block size is above the maximum, so the read is
+-- refused. The two values are chosen so that `query_limit + max_block_size - 1` is exactly 2^64: a
+-- ceiling computed in that form wraps to zero sources and answers an empty result instead.
+SELECT count() FROM (SELECT n FROM generateRandom('n UInt8') LIMIT 18446744069414584833)
+SETTINGS optimize_trivial_count_query = 0, max_block_size = 4294966784, preferred_block_size_bytes = 0,
+    max_threads = 4, max_streams_to_max_threads_ratio = 1073741952; -- { serverError PARAMETER_OUT_OF_BOUND }
+
 -- The same request without the downstream resize.
 SELECT n FROM generateRandom('n UInt8') LIMIT 16
 SETTINGS max_block_size = 16, preferred_block_size_bytes = 0, max_threads = 4,
