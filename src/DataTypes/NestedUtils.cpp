@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/NullableUtils.h>
@@ -16,6 +17,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
@@ -141,6 +143,20 @@ static std::pair<ColumnPtr, DataTypePtr> distributeParentNullMapToElement(
 {
     if (elem_type->canBeInsideNullable())
         return {ColumnNullable::create(elem_col, parent_null_map_ptr), makeNullable(elem_type)};
+
+    /// A non-nullable `LowCardinality(T)` cannot sit inside `Nullable`; it represents NULL only once
+    /// promoted to `LowCardinality(Nullable(T))`. Promoting before the null-free early return below
+    /// keeps the result type driven by the declared schema rather than by the null map contents.
+    if (elem_type->lowCardinality() && removeLowCardinality(elem_type)->canBeInsideNullable())
+    {
+        auto mutable_col = assert_cast<const ColumnLowCardinality &>(*elem_col).cloneNullable();
+        if (parent_has_nulls)
+        {
+            const auto & null_map = assert_cast<const ColumnUInt8 &>(*parent_null_map_ptr).getData();
+            applyParentNullMapToExtractedSubcolumn(*mutable_col, null_map, 0, 0);
+        }
+        return {std::move(mutable_col), makeNullableOrLowCardinalityNullableSafe(elem_type)};
+    }
 
     if (!parent_has_nulls)
         return {elem_col, elem_type};

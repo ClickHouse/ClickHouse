@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
@@ -296,4 +297,57 @@ GTEST_TEST(NestedUtils, convertToSubcolumnsPrefersColumnOverSubcolumn)
             remapped_onto_nested = isNested(name_type.getTypeInStorage());
     }
     ASSERT_TRUE(remapped_onto_nested);
+}
+
+/// A `LowCardinality(T)` element cannot sit inside `Nullable`, so the parent struct null map has to
+/// go into its dictionary as `LowCardinality(Nullable(T))`. That is the same policy the direct
+/// subcolumn path applies via `makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe`, and
+/// `applyParentNullMapToExtractedSubcolumn` accepts exactly that representation.
+GTEST_TEST(NestedUtils, extractLowCardinalityLeafFromNullableTupleBecomesLowCardinalityNullable)
+{
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+    DataTypePtr lc_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
+    /// Nullable(Tuple(lc LowCardinality(String), v UInt32))
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{lc_string, uint_type}, Strings{"lc", "v"});
+    DataTypePtr nullable_tuple = std::make_shared<DataTypeNullable>(outer_tuple);
+
+    /// Empty block (0 rows): the schema-planning / sample-block case must plan the same type as a
+    /// null-carrying block below.
+    Block empty_block;
+    empty_block.insert({nullable_tuple->createColumn(), nullable_tuple, "t"});
+    NestedColumnExtractHelper empty_extractor(empty_block, /*case_insentive_=*/false);
+
+    auto planned_lc = empty_extractor.extractColumn("t.lc");
+    ASSERT_TRUE(planned_lc.has_value());
+    ASSERT_EQ(planned_lc->type->getName(), "LowCardinality(Nullable(String))");
+
+    /// Data-carrying counterpart: row 1 has the parent struct NULL, and it carries a non-default
+    /// payload so a lost null map surfaces as 'zz' or '' rather than NULL.
+    auto column = nullable_tuple->createColumn();
+    column->insert(Tuple{"a", 1u});
+    column->insert(Tuple{"zz", 99u});
+    assert_cast<ColumnNullable &>(*column).getNullMapData()[1] = 1;
+    column->insert(Tuple{"c", 3u});
+
+    Block block;
+    block.insert({std::move(column), nullable_tuple, "t"});
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
+
+    auto col_lc = extractor.extractColumn("t.lc");
+    ASSERT_TRUE(col_lc.has_value());
+    ASSERT_EQ(col_lc->type->getName(), "LowCardinality(Nullable(String))");
+    ASSERT_EQ(col_lc->column->size(), 3u);
+    ASSERT_FALSE(col_lc->column->isNullAt(0));
+    ASSERT_TRUE(col_lc->column->isNullAt(1));
+    ASSERT_FALSE(col_lc->column->isNullAt(2));
+    ASSERT_EQ(std::string(col_lc->column->getDataAt(0)), "a");
+    ASSERT_EQ(std::string(col_lc->column->getDataAt(2)), "c");
+
+    /// The sibling scalar leaf keeps the plain Nullable promotion.
+    auto col_v = extractor.extractColumn("t.v");
+    ASSERT_TRUE(col_v.has_value());
+    ASSERT_EQ(col_v->type->getName(), "Nullable(UInt32)");
+    ASSERT_TRUE(col_v->column->isNullAt(1));
 }
