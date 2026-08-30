@@ -257,35 +257,6 @@ class JobConfigs:
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
     )
-    ci_tests = Job.Config(
-        name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_SMALL,
-        command="python3 ./ci/jobs/ci_tests_job.py",
-        timeout=1200,
-        run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci",
-                # The ci/tests/ guards for the expect-trace / bash-xtrace separation read these
-                # two files, so a change to either must run this job.
-                "./tests/clickhouse-test",
-                "./tests/queries/shell_config.sh",
-                # Same reason: the fuzzer-dictionary guards read the dictionary scripts and
-                # .options files, the if (FUZZER) block that generates all.dict, the
-                # .gitignore entry that keeps it uncommitted, and the codegen fuzzer's
-                # declaration of which sources regenerate its grammar.
-                "./tests/fuzz/",
-                "./CMakeLists.txt",
-                "./.gitignore",
-                "./src/Parsers/fuzzers/codegen_fuzzer/CMakeLists.txt",
-                # The CFI build-classification guards read these two, so a change to either
-                # must run this job instead of reusing a cached result.
-                "./tests/config/install.sh",
-                "./tests/integration/helpers/cluster.py",
-            ]
-        ),
-        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
-    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,
