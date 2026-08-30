@@ -468,8 +468,8 @@ def main():
 
     # The binary tests need nothing but `/packages/clickhouse`, and they need around 7 GiB
     # of disk for it, more than twice as much as any other test here. The runners hand the
-    # job as little as 4 GiB of free space, so run these tests once every package has been
-    # deleted, which is worth 7 GiB on its own.
+    # job as little as 4 GiB of free space, so run these tests last, once the job's own
+    # packages have been deleted.
     print("Test the binary")
     if args.deb:
         test_results.extend(
