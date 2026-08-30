@@ -986,6 +986,15 @@ def lambda_handler(event, context):
 
     workflow = _build_workflow(action, payload, event_ts)
     if workflow:
+        # TODO: ordering hazard. We treat this payload as the newest PR state, but
+        # the only ordering signal is Lambda receive time (event_ts), not whether
+        # the payload still matches the PR's current head. A delayed or redelivered
+        # older `synchronize` for commit A arriving after newer head B writes a
+        # newer cancel-before marker for A, so sweep_cancel can cancel the running
+        # B workflow; for external PRs `_handle_external_pr` also overwrites the
+        # saved approval state with A. Fix: refetch the PR here and drop the event
+        # unless `pull_request.head.sha` still matches the current head before
+        # canceling/enqueuing.
         if action == "synchronize":
             _cancel_runs_before(
                 workflow["pr_number"], event_ts, workflow.get("head_sha", "")
