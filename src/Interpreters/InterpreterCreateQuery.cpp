@@ -44,7 +44,6 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -55,7 +54,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
-#include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -66,6 +64,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -205,25 +204,6 @@ namespace fs = std::filesystem;
 namespace
 {
 
-void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
-{
-    if (auto * function = ast->as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
-        function->name = "toTimeWithFixedDate";
-
-    for (auto & child : ast->children)
-        replaceLegacyToTimeInCreateQuery(child);
-
-    /// A TTL element keeps these outside `children`, so they need the same walk `FunctionNameNormalizer`
-    /// gives them: a GROUP BY key rewritten inconsistently with the primary key stops being its prefix.
-    if (auto * ttl_element = ast->as<ASTTTLElement>())
-    {
-        for (auto & group_by_key : ttl_element->group_by_key)
-            replaceLegacyToTimeInCreateQuery(group_by_key);
-        for (auto & group_by_assignment : ttl_element->group_by_assignments)
-            replaceLegacyToTimeInCreateQuery(group_by_assignment);
-    }
-}
-
 /// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
 /// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
 /// engine with a function body. Key expressions live in several places (storage, a view's inner
@@ -257,7 +237,7 @@ void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & conte
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         substituteUserDefinedFunctionsOutsideEngines(query, context);
-    replaceLegacyToTimeInCreateQuery(query);
+    replaceLegacyToTime(*query);
 }
 
 }
@@ -1467,7 +1447,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
         setNullDictionarySourceIfExternal(create);
 
-    if (create.is_dictionary || create.is_ordinary_view || create.is_window_view)
+    if (create.is_dictionary || create.is_ordinary_view)
         return;
 
     if (create.isTemporary())
@@ -1538,9 +1518,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 qualified_name,
                 as_create.getTargetTableID(ViewTarget::To).getFullTableName());
         }
-
-        if (as_create.is_window_view)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Window View", qualified_name);
 
         if (as_create.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Dictionary", qualified_name);
@@ -1941,7 +1918,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
-                create.is_materialized_view ? "MATERIALIZED VIEW" : (create.is_window_view ? "WINDOW VIEW" : "VIEW"));
+                create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor::visit(*create.select);
@@ -1982,22 +1959,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
     /// definition (short attach, metadata load, backup restore) already records its spelling.
     if (!create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
-        && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+        && getContext()->getSettingsRef()[Setting::use_legacy_to_time]
+        && replaceLegacyToTime(*query_ptr))
     {
-        replaceLegacyToTimeInCreateQuery(query_ptr);
-
         /// `properties` was derived before the rewrite, and the live table below is built from it while
         /// the metadata written to disk comes from the rewritten query. `CREATE TABLE ... AS src` copies
-        /// the source column expressions verbatim, so without re-deriving them a `DEFAULT`, `MATERIALIZED`,
-        /// `ALIAS` or column `TTL` mentioning `toTime` would keep the source spelling in memory while the
-        /// metadata records `toTimeWithFixedDate`, and the same insert would produce different values
-        /// before and after a reload.
-        if (create.columns_list && create.columns_list->columns)
+        /// the source column expressions verbatim, so a `DEFAULT`, `MATERIALIZED`, `ALIAS` or column
+        /// `TTL` mentioning `toTime` would keep the source spelling in memory while the metadata records
+        /// `toTimeWithFixedDate`, and the same insert would produce different values before and after a
+        /// reload. The expressions are rewritten in place: re-deriving the whole `ColumnsDescription`
+        /// is not idempotent for the `AS SELECT` / `AS src` branches — `getColumnsDescription` would
+        /// flatten `Nested` columns that those branches deliberately keep intact.
+        for (const auto & column : properties.columns)
         {
-            const bool check_defaults_over_virtual_columns
-                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
-            properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+            if (column.default_desc.expression)
+                replaceLegacyToTime(*column.default_desc.expression);
+            if (column.ttl)
+                replaceLegacyToTime(*column.ttl);
         }
 
         /// Constraints need the same treatment: `MergeTree` reparses them from the rewritten AST, but most
@@ -2105,7 +2083,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// retry used to report `TABLE_ALREADY_EXISTS` instead of the access error). This reuses the same
     /// create-temporary-then-publish machinery as CREATE OR REPLACE (doCreateOrReplaceTable). On non-Atomic
     /// databases (getUUID() == Nil, e.g. Ordinary) we keep the previous behavior: the table is created first
-    /// and an orphan is left if the INSERT SELECT fails. Materialized/window views are excluded (they can own
+    /// and an orphan is left if the INSERT SELECT fails. Materialized views are excluded (they can own
     /// an inner table and carry source-view dependencies, so they keep the previous behavior for now).
     ///
     /// As a consequence, the final table name is only registered by the publishing RENAME, so the populating
@@ -2116,7 +2094,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// visible only once fully populated) is covered by
     /// `04547_create_as_select_destination_not_visible_during_populate`.
     if (create.isCreateQueryWithImmediateInsertSelect()
-        && !create.is_materialized_view && !create.is_window_view
+        && !create.is_materialized_view
         && database && database->getUUID() != UUIDHelpers::Nil)
     {
         chassert(!ddl_guard);
@@ -3066,13 +3044,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
     {
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        if (create.is_window_view)
-        {
-            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
-            insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
-        }
-        else
-            insert->select = create.select->clone();
+        insert->select = create.select->clone();
 
         InterpreterInsertQuery interpreter(
             insert,
@@ -3087,7 +3059,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
-        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+        && (!create.is_materialized_view || create.is_populate))
     {
         String as_database_name = getContext()->resolveDatabase(as_database_saved);
 
@@ -3133,7 +3105,7 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
     /// swap (and with the old view's still-live subscription) is not handled here, so those queries keep
     /// the legacy non-atomic population; only the plain CREATE flow is atomic.
     bool applies = create.isCreateQueryWithImmediateInsertSelect()
-        && create.is_materialized_view && !create.is_window_view && !create.is_clone_as && !internal
+        && create.is_materialized_view && !create.is_clone_as && !internal
         && !create.replace_table && !create.replace_view
         && getContext()->getSettingsRef()[Setting::materialized_views_populate_atomically];
 

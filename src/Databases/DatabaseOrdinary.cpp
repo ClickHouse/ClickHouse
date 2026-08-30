@@ -444,7 +444,7 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
         return false;
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
-        || query.isParameterizedView() || query.is_window_view)
+        || query.isParameterizedView())
         return false;
 
     /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
