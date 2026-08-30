@@ -185,8 +185,7 @@
             "ar/reference/statements/truncate",
             "ar/reference/statements/undrop",
             "ar/reference/statements/update",
-            "ar/reference/statements/use",
-            "ar/reference/statements/watch"
+            "ar/reference/statements/use"
           ]
         },
         {

@@ -821,9 +821,6 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START VIEWS"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
-    # Issue #21004, window views are experimental, so let's just suppress it
-    call_with_retry(make_query_command("KILL QUERY WHERE upper(query) LIKE 'WATCH %'"))
-
     # Kill other queries which known to be slow
     # It's query from 01232_preparing_sets_race_condition_long,
     # it may take up to 1000 seconds in slow builds
