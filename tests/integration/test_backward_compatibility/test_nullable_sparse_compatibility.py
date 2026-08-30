@@ -48,7 +48,8 @@ def test_nullable_json_typed_path_old_client_compatible(start_cluster):
         CREATE TABLE test_sparse_nullable_json
         (
             id UInt64,
-            j Nullable(JSON(x Nullable(String), max_dynamic_paths = 0))
+            j Nullable(JSON(x Nullable(String), max_dynamic_paths = 0)),
+            a Array(JSON(x Nullable(String), max_dynamic_paths = 0))
         )
         ENGINE = MergeTree
         ORDER BY id
@@ -64,14 +65,16 @@ def test_nullable_json_typed_path_old_client_compatible(start_cluster):
         SELECT
             number,
             CAST(multiIf(number = 0, '{"x":"rare"}', number = 1, NULL, '{}'),
-                'Nullable(JSON(x Nullable(String), max_dynamic_paths = 0))')
+                'Nullable(JSON(x Nullable(String), max_dynamic_paths = 0))'),
+            CAST([if(number = 0, '{"x":"rare"}', '{}')],
+                'Array(JSON(x Nullable(String), max_dynamic_paths = 0))')
         FROM numbers(100)
         """
     )
 
     assert old_node.query(
         f"""
-        SELECT count(), countIf(j.x = 'rare')
+        SELECT count(), countIf(j.x = 'rare'), countIf(a.x = ['rare'])
         FROM remote('{upstream_node.ip_address}', default, test_sparse_nullable_json)
         """
-    ) == "100\t1\n"
+    ) == "100\t1\t1\n"
