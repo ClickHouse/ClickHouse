@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryOracles/OracleSettings.h>
+#include <Interpreters/QueryOracles/OracleRegistry.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -43,7 +44,15 @@
 namespace ProfileEvents
 {
 extern const Event ASTFuzzerOracleChecks;
+extern const Event ASTFuzzerOracleTLPWhereChecks;
+extern const Event ASTFuzzerOracleNoRECChecks;
 extern const Event ASTFuzzerOracleTLPAggregateChecks;
+extern const Event ASTFuzzerOracleTLPDistinctChecks;
+extern const Event ASTFuzzerOracleTLPGroupByChecks;
+extern const Event ASTFuzzerOracleTLPHavingChecks;
+extern const Event ASTFuzzerOracleDQPChecks;
+extern const Event ASTFuzzerOracleIdentityWhereChecks;
+extern const Event ASTFuzzerOracleSubqueryWrapChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2097,10 +2106,11 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         return false;
 
     ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
-    /// Dedicated counter so a test can prove this specific oracle path ran —
-    /// with `ast_fuzzer_runs > 0` the mutated query may lose the aggregate
-    /// shape, so a plain "query succeeded" assertion proves nothing.
-    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleTLPAggregateChecks);
+    /// The dedicated per-oracle counter (`ASTFuzzerOracleTLPAggregateChecks`, and one
+    /// per oracle) is incremented uniformly by the OracleRegistry adapter when this
+    /// method returns true — see OracleRegistry.cpp. A test can prove this specific
+    /// oracle path ran because with `ast_fuzzer_runs > 0` a mutation may lose the
+    /// aggregate shape, so a plain "query succeeded" assertion proves nothing.
 
     LOG_TRACE(logger, "TLP Aggregate oracle: reference query: {}", ref_sql);
     LOG_TRACE(logger, "TLP Aggregate oracle: metamorphic query: {}", metamorphic_sql);
@@ -2545,49 +2555,33 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     bool any_check_performed = false;
 
-    /// Run one oracle under a uniform guard: its own mismatch
-    /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
-    /// reproduction settings by the outer handler below; any other execution
-    /// error means the rewrite was not comparable on this query (e.g. a
-    /// function the rewrite cannot analyse), so it is swallowed and the
-    /// remaining oracles still run. `name` reproduces the per-oracle log wording.
-    auto run_oracle = [&](std::string_view name, auto && check_fn)
-    {
-        try
-        {
-            if (check_fn())
-                any_check_performed = true;
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                throw;
-            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
-        }
-        catch (...)
-        {
-            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
-        }
-    };
-
+    /// Dispatch over the ordered registry instead of a hand-written try/catch ladder, so
+    /// adding an oracle is one registry line. Each oracle's own mismatch
+    /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the reproduction
+    /// settings by the outer handler below; any other execution error means the rewrite
+    /// was not comparable on this query (e.g. a function the rewrite cannot analyse), so
+    /// it is swallowed and the remaining oracles still run.
     try
     {
-        run_oracle("TLP WHERE", [&] { return checkTLPWhere(*select, context); });
-        run_oracle("NoREC", [&] { return checkNoREC(*select, context); });
-        /// TLP Aggregate oracle (uses State/Merge combinators for any aggregate).
-        run_oracle("TLP Aggregate", [&] { return checkTLPAggregate(*select, context); });
-        /// TLP DISTINCT oracle (uses UNION DISTINCT instead of UNION ALL).
-        run_oracle("TLP DISTINCT", [&] { return checkTLPDistinct(*select, context); });
-        /// TLP GROUP BY oracle (set comparison for non-aggregate GROUP BY).
-        run_oracle("TLP GROUP BY", [&] { return checkTLPGroupBy(*select, context); });
-        /// TLP HAVING oracle (partitions on HAVING instead of WHERE).
-        run_oracle("TLP HAVING", [&] { return checkTLPHaving(*select, context); });
-        /// DQP oracle (differential query plans — same query, different optimizer settings).
-        run_oracle("DQP", [&] { return checkDQP(*select, context); });
-        /// Identity WHERE oracle (rewrites WHERE into equivalent forms — NOT(NOT p), p AND 1, p OR 0).
-        run_oracle("Identity WHERE", [&] { return checkIdentityWhere(*select, context); });
-        /// Subquery wrap oracle (wraps original as subquery and verifies identical result).
-        run_oracle("Subquery wrap", [&] { return checkSubqueryWrap(*select, context); });
+        for (const auto & oracle : OracleRegistry::instance().oracles())
+        {
+            const auto & name = oracle->traits().name;
+            try
+            {
+                if (oracle->run(*this, *select, context))
+                    any_check_performed = true;
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                    throw;
+                LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
+            }
+            catch (...)
+            {
+                LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
+            }
+        }
     }
     catch (Exception & e)
     {

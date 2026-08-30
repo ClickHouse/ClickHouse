@@ -30,7 +30,10 @@ public:
     /// Throws `AST_FUZZER_ORACLE_MISMATCH` on oracle mismatch.
     bool check(const ASTPtr & query_ast, const ContextMutablePtr & context);
 
-private:
+    /// The individual oracles. Public because `OracleRegistry` dispatches over member
+    /// pointers to them (phase-0 adapters); prefer `check` for direct use. Each returns
+    /// true iff it performed a comparison and throws `AST_FUZZER_ORACLE_MISMATCH` on a
+    /// real mismatch.
     bool checkTLPWhere(const ASTSelectQuery & select, const ContextMutablePtr & context);
     bool checkTLPDistinct(const ASTSelectQuery & select, const ContextMutablePtr & context);
     bool checkTLPGroupBy(const ASTSelectQuery & select, const ContextMutablePtr & context);
@@ -53,8 +56,7 @@ private:
     /// Tests predicate pushdown through subqueries.
     bool checkSubqueryWrap(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
-    /// Try to insert random data into the table referenced by the SELECT query.
-
+private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
 
