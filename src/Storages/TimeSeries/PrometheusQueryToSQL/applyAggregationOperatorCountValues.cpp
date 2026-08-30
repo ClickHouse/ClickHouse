@@ -330,8 +330,6 @@ SQLQueryPiece applyAggregationOperatorCountValues(
                 make_intrusive<ASTIdentifier>(count_pairs_column))));
         builder.select_list.back()->setAlias(counts_column);
 
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-
         packed_counts_query = builder.getSelectQuery();
     }
 

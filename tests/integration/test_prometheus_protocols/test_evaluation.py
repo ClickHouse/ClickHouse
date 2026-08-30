@@ -4611,6 +4611,47 @@ def test_aggregation_operators():
     )
 
 
+def test_count_values_range_query():
+    do_range_query_test(
+        'count_values("value", {__name__=~"foo|bar",shape="triangle"})',
+        110,
+        130,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"value": "8"}, "values": [[110, "2"], [120, "1"], [130, "1"]]}, {"metric": {"value": "80"}, "values": [[120, "1"], [130, "1"]]}]}',
+        [
+            ["[('value','8')]", "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1)]"],
+            ["[('value','80')]", "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1)]"],
+        ],
+    )
+
+    do_range_query_test(
+        'count_values("value", last_over_time(foo{shape="circle"}[1s]))',
+        100,
+        160,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"value": "16"}, "values": [[110, "1"], [130, "1"], [150, "1"]]}]}',
+        [["[('value','16')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:10.000',1),('1970-01-01 00:02:30.000',1)]"]],
+    )
+
+    do_range_query_test(
+        'count_values("value", nonexistent_metric)',
+        100,
+        160,
+        10,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+
+def test_count_values_without_value_label():
+    do_query_test(
+        'count_values("value", {__name__=~"foo|bar",shape="triangle"}) without (shape,size,value)',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "2"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 2]],
+    )
+
+
 def test_histogram_quantile():
     # The classic histogram `http_request_duration_seconds_bucket` has cumulative counts at t=300:
     #   le=0.1  -> 10   (10 observations in (-Inf, 0.1])
