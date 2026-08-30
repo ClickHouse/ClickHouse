@@ -43,20 +43,29 @@ def test_table_replaced_in_place(started_cluster_iceberg_no_spark):
     # in place would leave it. The first incarnation's data files are deliberately left
     # behind and only the metadata is replaced, so that reading the stale metadata still
     # resolves and returns the previous table's rows instead of raising.
-    instance.exec_in_container(
+    #
+    # Every path below is passed as a separate argv element rather than interpolated into a
+    # shell command line, so no part of a generated name can be taken for shell syntax. Only
+    # the two steps that genuinely need a shell - the glob and the pipeline - go through
+    # `bash -c`, and they take their paths and names from positional arguments.
+    relocate = [
+        ["bash", "-c", 'set -e; mv -- "$1"/data/* "$2"/data/', "_", second_root, first_root],
+        ["rm", "-rf", "--", f"{first_root}/metadata"],
+        ["mv", "--", f"{second_root}/metadata", f"{first_root}/metadata"],
+        ["rm", "-rf", "--", second_root],
         [
             "bash",
             "-c",
-            f"set -e; "
-            f"mv {second_root}/data/* {first_root}/data/; "
-            f"rm -rf {first_root}/metadata; "
-            f"mv {second_root}/metadata {first_root}/metadata; "
-            f"rm -rf {second_root}; "
-            f"LC_ALL=C grep -rla '{second_table}' {first_root} "
-            f"| xargs -r sed -i 's/{second_table}/{first_table}/g'",
+            'set -e -o pipefail; LC_ALL=C grep -rla -- "$1" "$3" '
+            '| xargs -r -I{} sed -i "s/$1/$2/g" {}',
+            "_",
+            second_table,
+            first_table,
+            first_root,
         ],
-        user="root",
-    )
+    ]
+    for command in relocate:
+        instance.exec_in_container(command, user="root")
 
     assert instance.query(f"SELECT x, y FROM {first_table} ORDER BY y").strip() == "new\t2\nnew\t3"
 
