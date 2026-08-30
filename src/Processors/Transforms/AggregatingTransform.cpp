@@ -219,10 +219,11 @@ public:
 
         /// Groups the two-level bucket merge has converted so far; a throw-mode group limit is
         /// checked against this running total, taken from the bucket tables rather than from
-        /// the converted chunks, which the bucket-local Top-K conversion truncates. For the
-        /// adaptive aggregator this is the only enforcement the staged keys ever get: the
-        /// frozen tables are bounded and the staged cardinality is unknown until the merge.
-        /// The buckets partition the key space, so the sum counts every group exactly once.
+        /// the converted chunks, which the bucket-local Top-K conversion truncates. For an
+        /// adaptive run that finishes in memory this is the only enforcement the staged keys
+        /// ever get: the frozen tables are bounded and the staged cardinality is unknown until
+        /// the merge. The buckets partition the key space, so the sum counts every group
+        /// exactly once.
         std::atomic<size_t> two_level_merged_groups = 0;
 
         SharedData()
@@ -1510,8 +1511,14 @@ void AggregatingTransform::initGenerate()
             ReadableSize(uncompressed_size));
 
         auto pipe = Pipe::unitePipes(std::move(pipes));
+
+        /// The spilled parts partition the groups by bucket, but each part was checked against
+        /// the group limit only on its own (the producers' tables and the drained tables one by
+        /// one), so parts that individually stay under a throw-mode limit can merge into a
+        /// result above it. The merged totals are the union, counted here.
+        auto merged_groups = std::make_shared<std::atomic<size_t>>(0);
         addMergingAggregatedMemoryEfficientTransform(
-            pipe, params, temporary_data_merge_threads, /*should_produce_results_in_order_of_bucket_number=*/true);
+            pipe, params, temporary_data_merge_threads, /*should_produce_results_in_order_of_bucket_number=*/true, merged_groups);
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }

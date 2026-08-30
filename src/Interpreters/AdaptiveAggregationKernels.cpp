@@ -1469,12 +1469,12 @@ size_t Aggregator::drainStagedBatch(
                 drained += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
                     method, table.aggregates_pools.at(b).get(), chunks, b, records, places_scratch, is_cancelled);
 
-                /// This drain feeds the external path, which never runs the merge-time group
-                /// accounting, so `max_rows_to_group_by` is held against the drain table as it
-                /// grows, bucket by bucket. The table holds deduplicated keys, so its size is
-                /// a lower bound on the final group count and a throw-mode crossing is
-                /// definite; checking per bucket makes the query abort within one bucket's
-                /// worth of records past the limit instead of after a whole floor-sized batch.
+                /// The external merge checks the group limit only against its merged totals at
+                /// the very end of the query, so `max_rows_to_group_by` is also held against
+                /// the drain table as it grows, bucket by bucket: the table holds deduplicated
+                /// keys, so its size is a lower bound on the final group count, a throw-mode
+                /// crossing is definite, and the query aborts within one bucket's worth of
+                /// records past the limit instead of after staging and spilling everything.
                 checkLimits(table.size(), no_more_keys);
             }
         });

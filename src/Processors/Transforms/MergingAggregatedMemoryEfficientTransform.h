@@ -9,6 +9,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/HashTable/HashSet.h>
 
+#include <atomic>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -124,7 +125,8 @@ public:
     explicit MergingAggregatedBucketTransform(
         AggregatingTransformParamsPtr params,
         const SortDescription & required_sort_description_ = {},
-        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_ = nullptr,
+        std::shared_ptr<std::atomic<size_t>> merged_groups_ = nullptr);
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
 protected:
@@ -134,6 +136,11 @@ private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
     RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
+
+    /// Groups merged so far across all the merge's buckets, shared by the sibling transforms;
+    /// a throw-mode `max_rows_to_group_by` is checked against this running total. Null when the
+    /// caller does not account the merged groups.
+    std::shared_ptr<std::atomic<size_t>> merged_groups;
 };
 
 /// Has several inputs and single output.
@@ -180,10 +187,13 @@ struct ChunksToMerge : public ChunkInfoCloneable<ChunksToMerge>
 class Pipe;
 
 /// Adds processors to pipe which performs memory efficient merging of partially aggregated data from several sources.
+/// `merged_groups`, when non-null, accumulates the merged group count across the bucket merges,
+/// and a throw-mode `max_rows_to_group_by` is checked against the running total.
 void addMergingAggregatedMemoryEfficientTransform(
     Pipe & pipe,
     AggregatingTransformParamsPtr params,
     size_t num_merging_processors,
-    bool should_produce_results_in_order_of_bucket_number);
+    bool should_produce_results_in_order_of_bucket_number,
+    std::shared_ptr<std::atomic<size_t>> merged_groups = nullptr);
 }
 

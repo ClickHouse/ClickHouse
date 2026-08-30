@@ -481,6 +481,7 @@ private:
     friend class ConvertingAggregatedToChunksWithMergingSource;
     friend class ConvertingAggregatedToChunksByPartitionMergingSource;
     friend class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap;
+    friend class MergingAggregatedBucketTransform;
     friend class AggregatingInOrderTransform;
 
     /// Positions of aggregation key columns in the header.

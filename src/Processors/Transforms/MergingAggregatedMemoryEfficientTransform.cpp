@@ -401,11 +401,13 @@ void GroupingAggregatedTransform::work()
 MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
     AggregatingTransformParamsPtr params_,
     const SortDescription & required_sort_description_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_,
+    std::shared_ptr<std::atomic<size_t>> merged_groups_)
     : ISimpleTransform({}, params_->getHeader(), false)
     , params(std::move(params_))
     , required_sort_description(required_sort_description_)
     , dataflow_cache_updater(std::move(dataflow_cache_updater_))
+    , merged_groups(std::move(merged_groups_))
 {
     setInputNotNeededAfterRead(true);
 }
@@ -460,6 +462,17 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     }
 
     size_t num_rows = agg_chunk.chunk.getNumRows();
+
+    /// The buckets partition the key space, so the running sum counts every merged group
+    /// exactly once.
+    if (merged_groups && params->params.max_rows_to_group_by != 0
+        && params->params.group_by_overflow_mode == OverflowMode::THROW)
+    {
+        bool no_more_keys = false;
+        const size_t total = merged_groups->fetch_add(num_rows) + num_rows;
+        params->aggregator.checkLimits(total, no_more_keys);
+    }
+
     chunk.setColumns(agg_chunk.chunk.detachColumns(), num_rows);
 }
 
@@ -639,14 +652,19 @@ IProcessor::Status SortingAggregatedTransform::prepare()
 
 
 void addMergingAggregatedMemoryEfficientTransform(
-    Pipe & pipe, AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number)
+    Pipe & pipe,
+    AggregatingTransformParamsPtr params,
+    size_t num_merging_processors,
+    bool should_produce_results_in_order_of_bucket_number,
+    std::shared_ptr<std::atomic<size_t>> merged_groups)
 {
     pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
 
     if (num_merging_processors <= 1)
     {
         /// --> GroupingAggregated --> MergingAggregatedBucket -->
-        pipe.addTransform(std::make_shared<MergingAggregatedBucketTransform>(params));
+        pipe.addTransform(std::make_shared<MergingAggregatedBucketTransform>(
+            params, SortDescription{}, /*dataflow_cache_updater_=*/nullptr, merged_groups));
         return;
     }
 
@@ -656,9 +674,10 @@ void addMergingAggregatedMemoryEfficientTransform(
 
     pipe.resize(num_merging_processors);
 
-    pipe.addSimpleTransform([params](const SharedHeader &)
+    pipe.addSimpleTransform([params, merged_groups](const SharedHeader &)
     {
-        return std::make_shared<MergingAggregatedBucketTransform>(params);
+        return std::make_shared<MergingAggregatedBucketTransform>(
+            params, SortDescription{}, /*dataflow_cache_updater_=*/nullptr, merged_groups);
     });
 
     if (should_produce_results_in_order_of_bucket_number)

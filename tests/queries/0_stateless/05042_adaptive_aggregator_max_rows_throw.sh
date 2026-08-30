@@ -12,8 +12,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # materialize: as the bucket-parallel merge converts buckets. The dropping modes (break, any)
 # stay rejected. Both external thresholds are pinned off because the ratio threshold defaults
 # to a half of the memory limit: a pressured runner could spill, and a spilled run merges
-# externally, where the limit is checked as the spill drains build their tables (its own cell
-# below).
+# externally, where the limit is checked as the spill drains build their tables and against
+# the external merge's totals (their own cells below).
 # The two-level thresholds are pinned high so the baseline spill branch stays out of the way.
 # The test runs in one `clickhouse-local` process per cell, so the `system.events` counters
 # belong to that cell alone.
@@ -83,6 +83,16 @@ SET max_bytes_before_external_group_by = 1;
 SELECT count() FROM (SELECT number % 1300000 AS g, count() AS c FROM numbers_mt(2600000) GROUP BY g SETTINGS max_rows_to_group_by = 100000);
 " 2>&1 | grep -oE "has [0-9]+ rows, maximum: 100000" | head -1 | \
     awk '{ print ($2 > 100000 && $2 < 150000) ? "aborted near the limit" : "aborted at " $2 }'
+
+# A limit above the detach floor cannot fire at the drains: every detached table stays under it
+# individually, and only their union crosses it. The union first exists at the external merge,
+# whose running total of merged groups is what must raise the throw.
+echo "A spilling run hits a limit only the merged union crosses"
+$CLICKHOUSE_LOCAL --query "
+$SETTINGS_COMMON
+SET max_bytes_before_external_group_by = 1;
+SELECT count() FROM (SELECT number % 2600000 AS g, count() AS c FROM numbers_mt(5200000) GROUP BY g SETTINGS max_rows_to_group_by = 1500000);
+" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -1
 
 # The dropping modes are still rejected: a break-mode query must run on the baseline (no freeze
 # ever happens), because they leave part of the input unaggregated once a table fills, which
