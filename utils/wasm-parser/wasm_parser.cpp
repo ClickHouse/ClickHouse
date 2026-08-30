@@ -6,11 +6,11 @@
 ///   uint32_t  ch_features()                    - what this build can do, see CH_FEATURE_* below
 ///   uint8_t * ch_alloc(uint32_t size)          - allocate a buffer to write the query into
 ///   void      ch_free(uint8_t * ptr)           - release it
-///   int       ch_check(const char *, uint32_t) - parse; 1 = ok, 0 = syntax error
+///   int       ch_parse(const char *, uint32_t) - parse; 1 = ok, 0 = error, and the result is
+///                                                always a JSON document with the AST, the
+///                                                highlights, and the error
 ///   int       ch_format(const char *, uint32_t, int one_line)
 ///                                              - parse, then format; 1 = ok, 0 = parse error
-///   int       ch_parse(const char *, uint32_t) - parse; the result is always a JSON document
-///                                                with the AST, the highlights, and the error
 ///   int       ch_format_json(const char *, uint32_t, int one_line)
 ///                                              - take AST JSON (the "ast" object of `ch_parse`,
 ///                                                or `parseQueryToJSON` on a server) and format
@@ -149,6 +149,7 @@ void writeHighlights(const DB::ParserDiagnostics & diagnostics, const char * que
     out << ']';
 }
 
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
 /// What a `chParserProtectedCall` body is handed. `one_line` is only read by `formatBody`.
 struct Request
 {
@@ -157,25 +158,9 @@ struct Request
     int one_line;
 };
 
-/// The bodies run below the boundary, so they answer exactly what `ch_check` and `ch_format`
-/// answer - 1 for a query that parses, 0 for one that does not - and leave the throwing case,
+/// The bodies run below the boundary, so they answer exactly what their entry points answer -
+/// 1 for a query that parses and formats, 0 for one that does not - and leave the throwing case,
 /// which does not return here at all, to their callers.
-extern "C" int checkBody(void * argument)
-{
-    const auto & request = *static_cast<const Request *>(argument);
-
-    std::string error;
-    if (!parse(request.query, request.size, error))
-    {
-        result() = std::move(error);
-        return 0;
-    }
-
-    result().clear();
-    return 1;
-}
-
-#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
 extern "C" int formatBody(void * argument)
 {
     const auto & request = *static_cast<const Request *>(argument);
@@ -252,9 +237,8 @@ extern "C" int serializeBody(void * argument)
     *request.json = DB::serializeASTToJSON(*request.ast);
     return 1;
 }
-#endif
 
-/// Turns the boundary's `CH_PARSER_THREW` into the same answer a syntax error gets, with the
+/// Turns the boundary's `CH_PARSER_THREW` into the same answer a parse error gets, with the
 /// message of the exception that ended the call.
 int finish(int protected_call_result)
 {
@@ -266,6 +250,7 @@ int finish(int protected_call_result)
 
     return protected_call_result;
 }
+#endif
 
 }
 
@@ -303,12 +288,6 @@ uint8_t * ch_alloc(uint32_t size)
 void ch_free(uint8_t * ptr)
 {
     ::operator delete(ptr);
-}
-
-int ch_check(const char * query, uint32_t size)
-{
-    Request request{query, size, /*one_line=*/0};
-    return finish(chParserProtectedCall(checkBody, &request));
 }
 
 #if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)

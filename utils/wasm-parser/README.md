@@ -36,9 +36,8 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 | export | meaning |
 | --- | --- |
 | `ch_alloc(size)` / `ch_free(ptr)` | allocate a buffer to write the query into |
-| `ch_check(ptr, size)` | parse; 1 = ok, 0 = syntax error |
+| `ch_parse(ptr, size)` | parse; 1 = ok, 0 = error; the result is always a JSON document - see below |
 | `ch_format(ptr, size, one_line)` | parse and format; 1 = ok, 0 = parse error |
-| `ch_parse(ptr, size)` | parse; the result is always a JSON document - see below |
 | `ch_format_json(ptr, size, one_line)` | format AST JSON back into SQL; 1 = ok, 0 = error |
 | `ch_result_data()` / `ch_result_size()` | the formatted query, the JSON document, or the error message |
 | `ch_features()` | bit 0: `ch_format` is exported; bit 1: DCL parses; bit 2: AST JSON |
@@ -50,9 +49,9 @@ reports which of them a given module was built with.
 
 ## The JSON API
 
-`ch_check` answers yes or no, and `ch_format` returns text; a UI needs more - what to color,
-and where exactly an error is. `ch_parse` answers everything a parse can say, in one JSON
-document. For a query that parses (`SELECT 1`):
+A UI needs more than yes-or-no and formatted text - what to color, and where exactly an error
+is. `ch_parse` answers everything a parse can say, in one JSON document. For a query that
+parses (`SELECT 1`):
 
 ```json
 {"ast": {"type": "SelectWithUnionQuery", "union_mode": "UNION_DEFAULT", "list_of_selects": {...}},
@@ -138,10 +137,10 @@ with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 2052687 | 632911 | 467253 | 496306 |
-| `-DENABLE_DCL=OFF` | 1851007 | 565377 | 418415 | 443970 |
-| `-DENABLE_FORMATTING=OFF` | 985808 | 318617 | 244777 | 262037 |
-| both off | 809844 | 260071 | 201964 | 216269 |
+| everything | 2052426 | 632776 | 467840 | 496186 |
+| `-DENABLE_DCL=OFF` | 1850746 | 565398 | 418495 | 443946 |
+| `-DENABLE_FORMATTING=OFF` | 985486 | 318608 | 244854 | 261874 |
+| both off | 809522 | 259966 | 201885 | 216148 |
 
 Formatting builds carry the AST JSON machinery, which is most of their weight: `writeJSON` and
 `readJSON` for every node, `Poco::JSON` and `Poco::Dynamic::Var` cost about 715 KB raw and
@@ -171,15 +170,15 @@ Sorted by brotli, which is what a browser negotiates:
 | [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, JS | 1128583 | 196944 | 153347 | 161974 |
 | [`libpg-query`](https://github.com/launchql/libpg-query-node) 17.7.4, wasm | 1150984 | 229158 | 168575 | 176785 |
 | — its emscripten glue, on top of that | 58903 | 16679 | 14888 | 15718 |
-| **this, both off** | 809844 | 260071 | 201964 | 216269 |
+| **this, both off** | 809522 | 259966 | 201885 | 216148 |
 | [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
 | `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
-| **this, everything** | 2052687 | 632911 | 467253 | 496306 |
+| **this, everything** | 2052426 | 632776 | 467840 | 496186 |
 | [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
 compiled to WebAssembly rather than reimplemented. With its glue it is 183463 brotli against this
-build's 201964 — the same ballpark, for a grammar of comparable size. The full build is not that
+build's 201885 — the same ballpark, for a grammar of comparable size. The full build is not that
 comparison: none of the others ship an AST-as-JSON interface in both directions, which is what
 separates its row from the minimal one.
 
@@ -297,7 +296,7 @@ the order of drift to expect:
 
 | left out | bytes | gzip -9 |
 | --- | ---: | ---: |
-| DCL (`-DENABLE_DCL=OFF`) | 201680 | 67534 |
+| DCL (`-DENABLE_DCL=OFF`) | 201680 | 67378 |
 | `CREATE TABLE` / `VIEW` / `DATABASE` | 56533 | 16731 |
 | functions, workloads, resources, named collections, indexes | 45644 | 13070 |
 | `ALTER` | 35978 | 7857 |

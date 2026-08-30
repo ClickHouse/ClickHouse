@@ -8,7 +8,7 @@ const bytes = await readFile(process.argv[2] ?? 'tmp/wasmexp/parser_stripped.was
 const { instance } = await WebAssembly.instantiate(bytes, wasi.getImportObject());
 wasi.initialize(instance);
 
-const { memory, ch_features, ch_alloc, ch_free, ch_check, ch_format, ch_parse, ch_format_json, ch_result_data, ch_result_size } = instance.exports;
+const { memory, ch_features, ch_alloc, ch_free, ch_format, ch_parse, ch_format_json, ch_result_data, ch_result_size } = instance.exports;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -29,8 +29,11 @@ function call(sql, entry) {
 }
 
 function format(sql, oneLine = 0) {
-    if (!canFormat)
-        return call(sql, ch_check);
+    if (!canFormat) {
+        /// No formatter: drive the same cases through ch_parse and show the message from its JSON.
+        const r = call(sql, ch_parse);
+        return { ok: r.ok, out: r.ok ? sql : (JSON.parse(r.out).error?.message ?? r.out) };
+    }
     return call(sql, (ptr, len) => ch_format(ptr, len, oneLine));
 }
 

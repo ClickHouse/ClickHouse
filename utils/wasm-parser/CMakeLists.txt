@@ -270,7 +270,7 @@ target_compile_options (parser PRIVATE
 # The one file outside the LTO unit, and the only one that may call `setjmp`; see wasm_sjlj.c.
 set_source_files_properties (wasm_sjlj.c PROPERTIES COMPILE_OPTIONS "-mllvm;-wasm-enable-sjlj")
 
-set (EXPORTS ch_features ch_check ch_parse ch_alloc ch_free ch_result_data ch_result_size)
+set (EXPORTS ch_features ch_parse ch_alloc ch_free ch_result_data ch_result_size)
 if (ENABLE_FORMATTING)
     list (APPEND EXPORTS ch_format ch_format_json)
 endif ()

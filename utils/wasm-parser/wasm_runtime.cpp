@@ -329,7 +329,7 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 /// and `src/Parsers` contains no `catch` at all, which a style check enforces. But a handful of
 /// checks in the parser still report an invalid query by throwing (`Frame start cannot be
 /// UNBOUNDED FOLLOWING`, for one), and stopping the module on an ordinary user mistake is not
-/// acceptable. So `ch_check` and `ch_format` arm a `setjmp` boundary and a throw returns to it,
+/// acceptable. So every exported entry point arms a `setjmp` boundary and a throw returns to it,
 /// with the message, as a parse failure.
 ///
 /// The unwinding this replaces would have run destructors; `longjmp` does not, so a throw leaks
