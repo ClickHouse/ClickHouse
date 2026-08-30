@@ -474,16 +474,16 @@ FROM otel_logs
   ### 型に注意
 </div>
 
-上記の materialized view は暗黙的なキャストに依存しています。特に `LogAttributes` map を使用する場合はその傾向が顕著です。ClickHouse は多くの場合、抽出した値をターゲットテーブルの型に透過的にキャストしてくれるため、必要な構文を減らせます。ただし、ビューの `SELECT` ステートメントを、同じスキーマを持つターゲットテーブルに対する [`INSERT INTO`](/ja/reference/statements/insert-into) ステートメントと組み合わせて、必ずビューをテストすることを推奨します。これにより、型が正しく処理されていることを確認できます。特に次のケースに注意してください。
+上記の materialized view は暗黙的なキャストに依存しています。特に `LogAttributes` マップ を使用する場合はその傾向が顕著です。ClickHouse は多くの場合、抽出した値をターゲットテーブルの型に透過的にキャストしてくれるため、必要な構文を減らせます。ただし、ビューの `SELECT` ステートメントを、同じスキーマを持つターゲットテーブルに対する [`INSERT INTO`](/ja/reference/statements/insert-into) ステートメントと組み合わせて、必ずビューをテストすることを推奨します。これにより、型が正しく処理されていることを確認できます。特に次のケースに注意してください。
 
-* map にキーが存在しない場合は、空文字列が返されます。数値型の場合は、これを適切な値にマッピングする必要があります。これは [条件関数](/ja/reference/functions/regular-functions/conditional-functions) を使って実現できます。たとえば `if(LogAttributes['status'] = ", 200, LogAttributes['status'])` や、デフォルト値を許容できる場合は [キャスト関数](/ja/reference/functions/regular-functions/type-conversion-functions) を使います。たとえば `toUInt8OrDefault(LogAttributes['status'] )`
+* マップ にキーが存在しない場合は、空文字列が返されます。数値型の場合は、これを適切な値にマッピングする必要があります。これは [条件関数](/ja/reference/functions/regular-functions/conditional-functions) を使って実現できます。たとえば `if(LogAttributes['status'] = ", 200, LogAttributes['status'])` や、デフォルト値を許容できる場合は [キャスト関数](/ja/reference/functions/regular-functions/type-conversion-functions) を使います。たとえば `toUInt8OrDefault(LogAttributes['status'] )`
 * 型によっては常にキャストされるとは限りません。たとえば、数値の文字列表現は enum 値にはキャストされません。
 * JSON 抽出関数は、値が見つからない場合、その型のデフォルト値を返します。これらの値が妥当かどうかを確認してください。
 
 <Info>
   **Nullable を避ける**
 
-  オブザーバビリティデータでは、ClickHouse で [Nullable](/ja/reference/data-types/nullable) を使用しないでください。空文字列と NULL を区別する必要が logs や traces で生じることは、ほとんどありません。この機能は追加のストレージオーバーヘッドを伴い、クエリ性能にも悪影響を与えます。詳しくは [こちら](/ja/guides/clickhouse/data-modelling/schema-design#optimizing-types) を参照してください。
+  オブザーバビリティデータでは、ClickHouse で [Nullable](/ja/reference/data-types/nullable) を使用しないでください。空文字列と NULL を区別する必要が ログ や トレース で生じることは、ほとんどありません。この機能は追加のストレージオーバーヘッドを伴い、クエリ性能にも悪影響を与えます。詳しくは [こちら](/ja/guides/clickhouse/data-modelling/schema-design#optimizing-types) を参照してください。
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
