@@ -3284,8 +3284,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     else if (kind == TypeIndex::Dynamic)
     {
         chassert(output_info.nested_columns.size() == 2);
-        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[1], num_rows);
-        MutableColumnPtr value = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
+        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
+        MutableColumnPtr value = formOutputColumn(row_subgroup, output_info.nested_columns[1], num_rows);
 
         res = output_info.input_type->createColumn();
         res->reserve(num_rows);

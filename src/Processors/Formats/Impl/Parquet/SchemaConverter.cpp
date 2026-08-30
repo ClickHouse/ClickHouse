@@ -738,7 +738,11 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
 
         processSubtree(subnode);
         has_metadata |= subnode.name == node.name + ".metadata";
+        if (subnode.name == node.name + ".metadata")
+            idx_in_output_tuple = 0;
         has_value |= subnode.name == node.name + ".value";
+        if (subnode.name == node.name + ".value")
+            idx_in_output_tuple = 1;
         auto element_idx = subnode.output_idx;
 
         if (element_requested)
