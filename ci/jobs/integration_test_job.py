@@ -2101,8 +2101,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # container's client raises `Connection reset by peer`, `_mark_infrastructure_errors` relabels
     # that `SKIPPED`, and `SKIPPED` is a successful status.
     dmesg = b""
-    # Whether the file exists, which an empty buffer does not answer: a successful dump can
-    # legitimately be empty, and only this path creates the file.
+    # Whether this dump succeeded. Neither the buffer nor the path answers that: a successful
+    # dump can legitimately be empty, and a failed one still leaves the redirect's empty file.
     dmesg_dumped = False
     if not info.is_local_run:
         print("Dumping dmesg")
@@ -2173,7 +2173,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if (
             attach_dmesg
             or has_error
-            or any(not r.is_ok() for r in test_results)
+            # The synthetic session-timeout row is not a failure on its own: it is stripped below
+            # and the run can still report OK or best-effort SKIPPED. A real failure leaves its own.
+            or any(not r.is_ok() for r in test_results if r.name != "Timeout")
             # Mirrors `empty_harness_failure` below, which reports ERROR without setting `has_error`.
             or ((is_flaky_check or is_targeted_check) and not test_results and not timed_out)
             # Mirrors `had_infra_or_error` below: it reports ERROR off the `INFRA` label alone,
