@@ -22,6 +22,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/DNSResolver.h>
 #include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
@@ -37,6 +38,9 @@
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/PortsProbe.h>
+#include <Common/NetException.h>
+#include <Core/Defines.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
@@ -73,7 +77,10 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int AUTHENTICATION_FAILED;
     extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
@@ -333,6 +340,13 @@ void Client::initialize(Poco::Util::Application & self)
     for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())
     {
         String name{setting};
+        /// The `format` config key is owned by the client-side `--format` option, which in
+        /// `clickhouse-client` is output-only: it is mirrored into the `output_format` setting by
+        /// `setDefaultFormatsAndCompressionFromConfiguration` (see `mappedFormatOptionSetting`).
+        /// Feeding it into the bidirectional `format` setting here would make `--format` override
+        /// the `FORMAT` clause of `INSERT` queries on the input side.
+        if (name == "format")
+            continue;
         if (config().has(name))
             client_context->setSetting(name, config().getString(name));
     }
@@ -420,6 +434,7 @@ try
             {
                 asked_password = true;
                 config().setBool("ask-password", true);
+                preserve_announced_endpoint_for_retry = true;
                 continue;
             }
 
@@ -433,6 +448,7 @@ try
                     config().setString("password", connection_parameters.password);
                 config().setBool("ask-password", false);
                 config().setBool("ask-password-2fa", true);
+                preserve_announced_endpoint_for_retry = true;
                 continue;
             }
 
@@ -533,6 +549,12 @@ void Client::login()
 
 void Client::connect()
 {
+    /// Only the immediate password or 2FA retry may reuse the previous announcement. Any later
+    /// reconnect is a separate attempt and must announce its endpoint, even if an earlier reconnect failed.
+    if (!preserve_announced_endpoint_for_retry)
+        announced_endpoint.clear();
+    preserve_announced_endpoint_for_retry = false;
+
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
@@ -548,8 +570,12 @@ void Client::connect()
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
-        UInt16 port = ConnectionParameters::getPortFromConfig(config(), host);
-        hosts_and_ports.emplace_back(HostAndPort{host, port});
+        /// Keep the port unset when the configuration does not specify it: this enables the automatic
+        /// choice between the plain and the secure port below.
+        std::optional<UInt16> port;
+        if (config().has("port"))
+            port = static_cast<UInt16>(config().getInt("port"));
+        hosts_and_ports.emplace_back(HostAndPort{host, port, {}, {}, false});
     }
 
     for (size_t attempted_address_index = 0; attempted_address_index < hosts_and_ports.size(); ++attempted_address_index)
@@ -562,35 +588,319 @@ void Client::connect()
             connection_parameters = ConnectionParameters(
                 config(), host, database, hosts_and_ports[attempted_address_index].port);
 
+            /// Reuse the transport that already worked for this address (see below), so that a reconnect
+            /// does not have to probe the ports again.
+            if (hosts_and_ports[attempted_address_index].secure.has_value())
+                connection_parameters.security
+                    = *hosts_and_ports[attempted_address_index].secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+
 #if USE_JWT_CPP && USE_SSL
             connection_parameters.jwt_provider = jwt_provider;
 #endif
 
-            if (is_interactive)
-                output_stream << "Connecting to "
-                          << (!connection_parameters.default_database.empty()
-                                  ? "database " + connection_parameters.default_database + " at "
-                                  : "")
-                          << connection_parameters.host << ":" << connection_parameters.port
-                          << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
-
-            connection = Connection::createConnection(connection_parameters, client_context);
-
-            if (max_client_network_bandwidth)
+            /// Candidate endpoints for the connection, in the order of preference. Normally there is a
+            /// single candidate, resolved by `ConnectionParameters`. But when neither the port nor the TLS
+            /// mode is specified explicitly, both the plain and the secure default ports are probed
+            /// concurrently, and the one that answers first is used, with TLS enabled automatically when
+            /// it is the secure one. The probing is concurrent because waiting for a connection attempt to
+            /// time out first would take too long (for example, play.clickhouse.com serves TLS on 9440
+            /// while the plain port is silently firewalled).
+            struct Candidate
             {
-                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-                connection->setThrottler(throttler);
+                UInt16 port;
+                Protocol::Secure security;
+
+                /// The address to start from on this port, if any: the host can resolve to several
+                /// addresses, and the connection has to start with the right one, or it pays a whole
+                /// connection timeout for every unresponsive address in front of the working one.
+                std::optional<Poco::Net::SocketAddress> address;
+
+                /// The connection the probe has established, if it is this candidate that the probe chose.
+                /// It is taken over by the `Connection` instead of opening a second one, so that the
+                /// automatic choice does not leave a short-lived session on the server for every client
+                /// connection. Only the chosen candidate carries it: by the time a fallback candidate is
+                /// tried, the first one has spent an unbounded amount of time failing (a TLS handshake can
+                /// wait out `handshake_timeout_ms`), and the server drops a connection that has not
+                /// finished its handshake within `handshake_timeout_milliseconds`, so a connection the
+                /// probe left idle in the meantime is not safe to reuse.
+                std::optional<Poco::Net::StreamSocket> socket;
+            };
+
+            std::vector<Candidate> candidates;
+
+            const bool port_unspecified = !hosts_and_ports[attempted_address_index].port.has_value() && !config().has("port");
+            const bool secure_unspecified = !hosts_and_ports[attempted_address_index].secure.has_value() && !config().has("secure")
+                && !config().has("no-secure") && !isCloudEndpoint(host.toUnderType());
+
+            /// Without TLS support in the build there is nothing to choose between: probing the secure port
+            /// would only replace a working plain connection with `SUPPORT_IS_DISABLED`, which
+            /// `Connection::connect` throws for every secure connection in such a build.
+#if USE_SSL
+            const bool build_supports_tls = true;
+#else
+            const bool build_supports_tls = false;
+#endif
+            const bool detect_transport = port_unspecified && secure_unspecified && build_supports_tls;
+
+            if (detect_transport)
+            {
+                const auto plain_port = connection_parameters.port;
+                const auto secure_port = static_cast<UInt16>(config().getInt("tcp_port_secure", DBMS_DEFAULT_SECURE_PORT));
+
+                /// The addresses of a port are attempted one at a time, this much apart, so that a host
+                /// that resolves to several reachable backends is not connected to on all of them at once
+                /// (see `probePlainAndSecurePorts`). This is the default of RFC 8305 (Happy Eyeballs).
+                static const Poco::Timespan address_attempt_delay(0, 250000);
+
+                PortsProbeResult probe;
+                try
+                {
+                    probe = probePlainAndSecurePorts(
+                        connection_parameters.host,
+                        connection_parameters.bind_host,
+                        plain_port,
+                        secure_port,
+                        connection_parameters.timeouts.connection_timeout,
+                        address_attempt_delay);
+                }
+                catch (...)
+                {
+                    /// The probe runs before any `Connection` is created, so it has to drop possibly stale
+                    /// DNS cache entries on its own: `Connection::connect` does it for every connect-level
+                    /// failure, and without it a later reconnect or failover would reuse the same dead
+                    /// addresses instead of resolving the host again.
+                    DNSResolver::instance().removeHostFromCache(connection_parameters.host);
+                    throw;
+                }
+
+                if (probe.endpoint)
+                {
+                    const bool secure = probe.endpoint->secure;
+                    candidates.push_back(
+                        {secure ? secure_port : plain_port,
+                         secure ? Protocol::Secure::Enable : Protocol::Secure::Disable,
+                         probe.endpoint->address,
+                         probe.endpoint->socket});
+
+                    /// The port that answered the probe is not necessarily the port that works: the
+                    /// connection to it can still fail at the native protocol level, e.g. when a proxy in
+                    /// front of the server accepts TCP on the plain port but serves only TLS there, or when
+                    /// the certificate of the automatically chosen secure port is not trusted. The other
+                    /// port is then worth a try before giving up.
+                    ///
+                    /// It matters the most for the secure port: TLS was not requested, it was chosen
+                    /// automatically, so a secure port that turns out to be unusable must not make the
+                    /// client fail. The plain port is what it would have connected to if there were no
+                    /// automatic choice at all, so falling back to it takes nothing away from the user. The
+                    /// common case is a server whose secure port has a self-signed or otherwise untrusted
+                    /// certificate, which every client that does not pass `--accept-invalid-certificate`
+                    /// rejects.
+                    ///
+                    /// The fallback starts from the other port of the address that answered, because the
+                    /// same backend is the best guess for where that port is; it keeps the fallback from
+                    /// walking the resolved addresses again and paying a whole connection timeout for every
+                    /// unresponsive one in front of it.
+                    const UInt16 other_port = secure ? plain_port : secure_port;
+                    candidates.push_back(
+                        {other_port,
+                         secure ? Protocol::Secure::Disable : Protocol::Secure::Enable,
+                         Poco::Net::SocketAddress(probe.endpoint->address.host(), other_port),
+                         {}});
+                }
+                else
+                {
+                    /// See above: no connection was made, so the resolved addresses may be stale.
+                    DNSResolver::instance().removeHostFromCache(connection_parameters.host);
+                    throw NetException(
+                        probe.timed_out ? ErrorCodes::SOCKET_TIMEOUT : ErrorCodes::NETWORK_ERROR,
+                        "Cannot connect to {} on port {} or on the secure port {}: {}",
+                        connection_parameters.host,
+                        plain_port,
+                        secure_port,
+                        probe.failure_reason);
+                }
+            }
+            else
+            {
+                candidates.push_back(
+                    {connection_parameters.port,
+                     connection_parameters.security,
+                     hosts_and_ports[attempted_address_index].address,
+                     {}});
             }
 
-            connection->getServerVersion(
-                connection_parameters.timeouts,
-                server_name,
-                server_version_major,
-                server_version_minor,
-                server_version_patch,
-                server_revision);
+            /// Names a candidate the way the messages below refer to it.
+            auto describe = [&](const Candidate & candidate)
+            {
+                return fmt::format(
+                    "{}:{}{}",
+                    connection_parameters.host,
+                    candidate.port,
+                    candidate.security == Protocol::Secure::Enable ? " with TLS" : "");
+            };
+
+            /// The failure of the candidate that was tried first, when the connection moved on to the next.
+            std::exception_ptr first_error;
+            size_t first_error_index = 0;
+
+            for (size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index)
+            {
+                const auto & candidate = candidates[candidate_index];
+
+                connection_parameters.port = candidate.port;
+                connection_parameters.security = candidate.security;
+                connection_parameters.preferred_address = candidate.address;
+                connection_parameters.adopted_socket = candidate.socket;
+
+                const bool secure_auto_detected = secure_unspecified && candidate.security == Protocol::Secure::Enable;
+
+                if (is_interactive)
+                {
+                    const auto announcement = fmt::format(
+                        "Connecting to {}{}:{}{}{}.",
+                        connection_parameters.default_database.empty()
+                            ? ""
+                            : "database " + connection_parameters.default_database + " at ",
+                        connection_parameters.host,
+                        connection_parameters.port,
+                        secure_auto_detected ? " (secure)" : "",
+                        connection_parameters.user.empty() ? "" : " as user " + connection_parameters.user);
+
+                    /// The same endpoint can be attempted more than once before the connection is
+                    /// established: a server that requires a password rejects the first attempt, and the
+                    /// client prompts for the password and attempts the very same endpoint again. Repeating
+                    /// the announcement tells the user nothing and reads as if the client had connected
+                    /// twice, so announce an endpoint only when it differs from the one announced last.
+                    if (announcement != announced_endpoint)
+                    {
+                        announced_endpoint = announcement;
+                        output_stream << announcement << std::endl;
+                    }
+                }
+
+                try
+                {
+                    connection = Connection::createConnection(connection_parameters, client_context);
+                    /// The connection has taken the probed socket over; do not keep a handle to it here.
+                    connection_parameters.adopted_socket.reset();
+
+                    if (max_client_network_bandwidth)
+                    {
+                        ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+                        connection->setThrottler(throttler);
+                    }
+
+                    connection->getServerVersion(
+                        connection_parameters.timeouts,
+                        server_name,
+                        server_version_major,
+                        server_version_minor,
+                        server_version_patch,
+                        server_revision);
+
+                    break;
+                }
+                catch (Exception & e)
+                {
+                    /// The port accepted the TCP connection, but the connection itself failed: e.g. a proxy
+                    /// in front of the server accepts TCP on the plain port but only serves TLS there, or
+                    /// the certificate of the automatically chosen secure port is not trusted. Try the other
+                    /// port before giving up, but only for connection-level failures.
+                    ///
+                    /// A TLS-only listener on the plain port answers the native `Hello` with a TLS
+                    /// alert record, whose first byte the client reads as an unexpected packet type,
+                    /// so `Connection::receiveHello` throws `UNEXPECTED_PACKET_FROM_SERVER`; that is
+                    /// the normal outcome of the "plain port serves TLS" case and must be retriable.
+                    ///
+                    /// A timeout is not retriable, in contrast: a port that accepts the connection and then
+                    /// does not answer belongs to a server that is unresponsive rather than to a listener of
+                    /// the wrong protocol, and the other port of the same server is not going to answer
+                    /// either. Retrying it would double the time the client waits before it reports the
+                    /// failure, which is exactly the delay this feature is supposed to avoid.
+                    const bool is_connection_error = e.code() == ErrorCodes::NETWORK_ERROR
+                        || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+                        || e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER
+                        || e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER;
+                    const bool is_transport_error = is_connection_error || e.code() == ErrorCodes::SOCKET_TIMEOUT;
+
+                    if (candidate_index + 1 < candidates.size() && is_connection_error)
+                    {
+                        first_error = std::current_exception();
+                        first_error_index = candidate_index;
+                        if (is_interactive)
+                            std::cerr << "Connection to " << describe(candidate) << " failed, trying "
+                                      << describe(candidates[candidate_index + 1]) << "." << std::endl;
+                        continue;
+                    }
+
+                    if (first_error && is_transport_error)
+                    {
+                        /// Both candidates failed at the connection level. Report the failure of the plain
+                        /// port as the primary error, whichever order the two were tried in: that is the
+                        /// port the client would have used if there were no automatic choice.
+                        const auto & other = candidates[first_error_index];
+                        auto note = [](const String & endpoint, const String & message)
+                        {
+                            return fmt::format("(also failed to connect to {}: {})", endpoint, message);
+                        };
+
+                        if (candidate.security == Protocol::Secure::Disable)
+                        {
+                            String first_message;
+                            try
+                            {
+                                std::rethrow_exception(first_error);
+                            }
+                            catch (Exception & first_e)
+                            {
+                                first_message = first_e.message();
+                            }
+                            e.addMessage(note(describe(other), first_message));
+                            throw;
+                        }
+
+                        const auto message = e.message();
+                        try
+                        {
+                            std::rethrow_exception(first_error);
+                        }
+                        catch (Exception & first_e)
+                        {
+                            first_e.addMessage(note(describe(candidate), message));
+                            throw;
+                        }
+                    }
+
+                    throw;
+                }
+            }
+
             config().setString("host", connection_parameters.host);
-            config().setInt("port", connection_parameters.port);
+
+            /// Remember the endpoint that has worked, so that a reconnect to the same address does not
+            /// probe the ports again. It is remembered for this address only, and not in the global
+            /// configuration: otherwise a failover to another address would be forced to the same port
+            /// and the same TLS mode, e.g. a session with `--host secure-only --host plain-only` would
+            /// keep connecting to the plain-only address on the secure port after the first address
+            /// answered on it.
+            hosts_and_ports[attempted_address_index].port = connection_parameters.port;
+            hosts_and_ports[attempted_address_index].secure = connection_parameters.security == Protocol::Secure::Enable;
+            if (detect_transport)
+                hosts_and_ports[attempted_address_index].transport_auto_detected = true;
+            if (hosts_and_ports[attempted_address_index].transport_auto_detected)
+            {
+                /// Remember the address that has answered as well, and not only the port and the TLS mode:
+                /// the ports are not probed again on a reconnect, and without the address the connection
+                /// would start from the first address of the host once more and pay a whole connection
+                /// timeout for every unresponsive address in front of the one that works.
+                ///
+                /// The address is refreshed after every successful connect, and not only when the ports
+                /// were probed: a reconnect can fall through from the remembered address to another
+                /// resolved address of the same host when the old one stopped answering, and keeping
+                /// the dead address would make every following reconnect wait out a whole connection
+                /// timeout on it before falling through to the working one again.
+                hosts_and_ports[attempted_address_index].address = assert_cast<Connection &>(*connection).getResolvedAddress();
+            }
 
             settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
@@ -598,6 +908,20 @@ void Client::connect()
         }
         catch (Exception & e)
         {
+            /// Forget an automatically chosen transport after a failed connection attempt: it was only
+            /// valid for the endpoints this host resolved to when the ports were probed. `Connection::connect`
+            /// drops the `DNSResolver` cache entries for the host on a connect-level failure, so the next
+            /// attempt can resolve to another backend, e.g. a secure-only backend can be replaced by a
+            /// plain-only one; keeping the remembered port, TLS mode and address would make the client
+            /// retry the secure port forever and never rediscover the healthy plain port.
+            if (hosts_and_ports[attempted_address_index].transport_auto_detected)
+            {
+                hosts_and_ports[attempted_address_index].port.reset();
+                hosts_and_ports[attempted_address_index].secure.reset();
+                hosts_and_ports[attempted_address_index].address.reset();
+                hosts_and_ports[attempted_address_index].transport_auto_detected = false;
+            }
+
             /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
                 throw;
@@ -936,7 +1260,7 @@ void Client::processOptions(
         std::string host = host_and_port_options["host"].as<std::string>();
         std::optional<UInt16> port
             = !host_and_port_options["port"].empty() ? std::make_optional(host_and_port_options["port"].as<UInt16>()) : std::nullopt;
-        hosts_and_ports.emplace_back(HostAndPort{host, port});
+        hosts_and_ports.emplace_back(HostAndPort{host, port, {}, {}, false});
     }
 
     send_external_tables = true;
@@ -1131,6 +1455,22 @@ void Client::processConfig()
     rainbow_parentheses = config().getBool("rainbow_parentheses", true);
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
+    /// `default_database` may have come from a config file (or a named connection in that file)
+    /// rather than the `--database` CLI option. The `database` setting needs to know either
+    /// way, so it ships with every query the client runs.
+    if (!default_database.empty() && !cmd_settings->isChanged("database"))
+    {
+        cmd_settings->set("database", default_database);
+        /// `processConfig` runs after `processOptions` already copied `cmd_settings` into `global_context`
+        /// and `client_context`, and the later TCP sends read `client_context->getSettingsRef()[database]`,
+        /// not `cmd_settings`. Apply the mirrored value to the live contexts too (mirroring what
+        /// `setDefaultFormatsAndCompressionFromConfiguration` now does for the format settings), so a
+        /// config / named-connection `database` is not overridden by a stale profile value in `executeQuery`.
+        if (global_context)
+            global_context->setSetting("database", default_database);
+        if (client_context)
+            client_context->setSetting("database", default_database);
+    }
     inline_insert_data = config().getBool("inline-insert-data", false);
 
     if (inline_insert_data)

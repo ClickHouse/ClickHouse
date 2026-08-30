@@ -811,16 +811,7 @@ class GH:
             os.unlink(temp_file_path)
 
     @classmethod
-    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
-        requested = set(team_slugs)
-        if not requested:
-            return True
-
-        if not repo:
-            repo = _Environment.get().REPOSITORY
-        if not pr:
-            pr = _Environment.get().PR_NUMBER
-
+    def _get_requested_team_reviews(cls, pr, repo):
         cmd = (
             f'gh api -H "Accept: application/vnd.github.v3+json" '
             f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
@@ -845,9 +836,32 @@ class GH:
                 f"Unexpected team review request response for pull request [{pr}]"
             )
 
-        teams_to_request = sorted(requested - set(requested_teams))
+        return set(requested_teams)
+
+    @classmethod
+    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
+        requested = set(team_slugs)
+        if not requested:
+            return True
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        teams_to_request = sorted(
+            requested - cls._get_requested_team_reviews(pr, repo)
+        )
         if teams_to_request:
             cls._submit_team_review_requests(teams_to_request, pr, repo)
+            missing_teams = set(teams_to_request) - cls._get_requested_team_reviews(
+                pr, repo
+            )
+            if missing_teams:
+                raise RuntimeError(
+                    "Failed to verify team review requests for pull request "
+                    f"[{pr}], missing teams [{', '.join(sorted(missing_teams))}]"
+                )
 
         return True
 
@@ -1058,14 +1072,26 @@ class GH:
         """Merge PR #`pr`. With `admin`, merge right away with administrator
         privileges: required checks are not awaited and the merge queue on the
         base branch is bypassed. Only for automation that has already decided
-        the change must land immediately, such as reverting a broken merge."""
+        the change must land immediately, such as reverting a broken merge.
+
+        `admin` never asks `gh` to delete the branch, whatever `keep_branch`
+        says, because `gh` refuses the two together -- see the comment below."""
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
         extra_args = ""
-        if not keep_branch:
+        # `gh` rejects `--delete-branch` outright whenever the base branch has a
+        # merge queue enabled -- "Cannot use `-d` or `--delete-branch` when merge
+        # queue enabled" -- and it rejects it even next to `--admin`, which is the
+        # flag that bypasses that very queue: the check looks at the branch setting
+        # and not at what the merge is about to do. Asking for both fails the merge
+        # itself, so an `admin` merge does not ask. Nothing is lost by that: the
+        # merge is immediate rather than queued, and GitHub removes the head branch
+        # on its own wherever the repository has `delete_branch_on_merge` set, which
+        # is where this is used.
+        if not keep_branch and not admin:
             extra_args += " --delete-branch"
         if squash:
             extra_args += " --squash"

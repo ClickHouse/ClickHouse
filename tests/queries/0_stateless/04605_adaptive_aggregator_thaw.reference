@@ -1,0 +1,16 @@
+Thaw: general aggregate (sum)
+1
+Thaw: pure count (value-staged records)
+1
+Thaw: multi-argument aggregate (argMin) with compacted staging
+1
+Thaw: String key and String aggregate state
+1
+Thaw under WITH TOTALS
+1
+Give-up: repeat-dominated stream below the freeze threshold
+1
+Analytic guard: thaw shape
+20000	2000000	1999999000000
+Analytic guard: give-up shape
+50	2000000	100000

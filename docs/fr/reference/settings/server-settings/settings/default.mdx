@@ -27,9 +27,14 @@ Définit le type de mot de passe utilisé automatiquement dans les requêtes tel
 Les valeurs acceptées sont :
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **Par défaut :** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -40,6 +45,8 @@ Les valeurs acceptées sont :
 </div>
 
 Profil de paramètres par défaut. Les profils de paramètres se trouvent dans le fichier indiqué par le paramètre `user_config`.
+
+* **Par défaut :** `default`
 
 **Exemple**
 
@@ -52,6 +59,8 @@ Profil de paramètres par défaut. Les profils de paramètres se trouvent dans l
 </div>
 
 Expiration de session par défaut, en secondes.
+
+* **Par défaut :** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>

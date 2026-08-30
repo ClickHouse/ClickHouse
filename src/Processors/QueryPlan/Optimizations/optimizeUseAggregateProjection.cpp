@@ -730,7 +730,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     auto query_index = buildDAGIndex(*dag.dag);
     candidates.has_filter = dag.filter_node;
 
-    const auto & keys = distinct.getColumnNames();
+    /// The header is passed through, so a replacement must reproduce all of it, positions included.
+    const Names keys = distinct.getOutputHeader()->getNames();
 
     /// Prefer the user specified projection if any.
     auto it = std::find_if(
@@ -749,7 +750,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());
 
-    /// Only select the projection where distinct columns are a subset of projection columns.
+    /// Only select a projection that can compute every column of the output header.
     for (const auto * projection : agg_projections)
     {
         /// Skip projections whose WHERE condition is not implied by the query's filter.
@@ -1128,17 +1129,8 @@ std::optional<String> optimizeUseAggregateProjections(
 
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
 
-        std::vector<char> state(agg_count->sizeOfData());
-        AggregateDataPtr place = state.data();
-        agg_count->create(place);
-        SCOPE_EXIT_MEMORY_SAFE(agg_count->destroy(place));
-        AggregateFunctionCount::set(place, exact_count);
-
-        auto column = ColumnAggregateFunction::create(agg_count);
-        column->insertFrom(place);
-
         Block block_with_count{
-            {std::move(column),
+            {createSingleCountStateColumn(agg_count, exact_count),
              std::make_shared<DataTypeAggregateFunction>(agg_count, DataTypes{}, Array{}),
              candidates.only_count_column}};
 
