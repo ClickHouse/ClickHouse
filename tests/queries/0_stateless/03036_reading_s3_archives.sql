@@ -43,3 +43,13 @@ SELECT id, date FROM s3Cluster('test_shard_localhost', s3_conn, filename='{date=
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive*.zip :: example2.csv') WHERE _path = 'test/03036_archive1.zip::example2.csv' ORDER BY (id, _file, _path);
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive*.zip :: example2.csv') WHERE _path IN ('test/03036_archive1.zip::example2.csv', 'test/03036_archive2.zip::example2.csv') ORDER BY (id, _file, _path);
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive*.tar* :: example{2..3}.csv') WHERE _path = 'test/03036_archive3.tar.gz::example2.csv' ORDER BY (id, _file, _path);
+
+-- A glob in the archive member name must not disable hive partition inference either: the partition columns
+-- live in the directory part of the outer archive path, which is known without opening the archive (only the
+-- member name needs enumeration, and `parseHivePartitioningKeysAndValues` ignores the file name part anyway).
+-- So a missing archive must fail with the storage error for that object rather than lose the `date` column and
+-- throw UNKNOWN_IDENTIFIER during analysis. The cluster variant infers the columns on a remote node, which is
+-- a separate code path, and a pure brace expansion of the archive paths must work the same way.
+SELECT id, date FROM s3(s3_conn, filename='date=2026-08-21/03036_missing_archive.zip :: *.csv', format='CSV', structure='id UInt64') SETTINGS use_hive_partitioning = 1; -- { serverError S3_ERROR }
+SELECT id, date FROM s3Cluster('test_shard_localhost', s3_conn, filename='date=2026-08-21/03036_missing_archive.zip :: *.csv', format='CSV', structure='id UInt64') SETTINGS use_hive_partitioning = 1; -- { serverError S3_ERROR }
+SELECT id, date FROM s3(s3_conn, filename='{date=2026-08-21/03036_missing_archive.zip,date=2026-08-22/03036_missing_archive2.zip} :: *.csv', format='CSV', structure='id UInt64') SETTINGS use_hive_partitioning = 1; -- { serverError S3_ERROR }
