@@ -1772,7 +1772,7 @@ For each index granule, stores the bounding box of a geometry column, allowing g
 INDEX name column TYPE spatial_bbox GRANULARITY n
 ```
 
-The index must be defined on a single plain column (not a computed expression) of type `Point` (`Tuple(Float64, Float64)`), `Ring`, `Polygon`, `MultiPolygon`, or any column whose innermost element type is `Tuple(Float64, Float64)`.
+The index must be defined on a single plain column (not a computed expression) of type `Point` (`Tuple(Float64, Float64)`), `Ring`, `Polygon`, `MultiPolygon`, or any column of up to three `Array` levels over `Tuple(Float64, Float64)`.
 
 It is used to skip granules for `pointInPolygon` and other spatial predicate functions, including [WebAssembly user-defined functions](/sql-reference/functions/wasm_udf) marked with the `is_spatial_predicate` setting.
 
