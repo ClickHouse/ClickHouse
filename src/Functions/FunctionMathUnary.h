@@ -214,31 +214,40 @@ struct UnaryFunctionVectorized
 
 /// Whole-column vectorized unary math impl over a `void (const double *, size_t, double *)` kernel.
 /// Always returns Float64, matching the historical behavior of these functions.
-template <typename Name, void (*Kernel)(const double *, size_t, double *)>
+/// `ReadsSrcAfterWritingDst` must be set for kernels that re-read `src` after writing `dst`
+/// (e.g. the `libm` fallback in `FastTrig`); it makes the callers keep the source in a buffer
+/// separate from the destination instead of running the kernel in place.
+template <typename Name, void (*Kernel)(const double *, size_t, double *), bool ReadsSrcAfterWritingDst = false>
 struct VectorizedFloat64Impl
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 0;
     static constexpr bool always_returns_float64 = true;
-    /// E.g. the `libm` fallback in `FastTrig` re-reads the original arguments after the first pass.
-    static constexpr bool reads_src_after_writing_dst = true;
+    static constexpr bool reads_src_after_writing_dst = ReadsSrcAfterWritingDst;
 
+    /// No `__restrict`: in-place-capable kernels are called with `src == dst` on the Decimal path.
     template <typename T>
-    static void execute(const T * __restrict src, size_t size, Float64 * __restrict dst)
+    static void execute(const T * src, size_t size, Float64 * dst)
     {
         if constexpr (std::is_same_v<T, Float64>)
         {
             Kernel(src, size, dst);
         }
-        else
+        else if constexpr (ReadsSrcAfterWritingDst)
         {
             /// Integer inputs already arrive as Float64, so this only runs for Float32/BFloat16 columns.
-            /// The kernels may re-read `src` after writing `dst` (e.g. the `libm` fallback in `FastTrig`),
-            /// so the promoted values must live in a buffer separate from `dst`.
+            /// The kernel re-reads `src` after writing `dst`, so the promoted values must live in a
+            /// buffer separate from `dst`.
             PODArray<Float64> promoted(size);
             for (size_t i = 0; i < size; ++i)
                 promoted[i] = static_cast<Float64>(src[i]);
             Kernel(promoted.data(), size, dst);
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = static_cast<Float64>(src[i]);
+            Kernel(dst, size, dst);
         }
     }
 };

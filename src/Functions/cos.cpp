@@ -8,7 +8,7 @@ namespace
 {
 
 struct CosName { static constexpr auto name = "cos"; };
-using FunctionCos = FunctionMathUnary<VectorizedFloat64Impl<CosName, FastTrig::cos>>;
+using FunctionCos = FunctionMathUnary<VectorizedFloat64Impl<CosName, FastTrig::cos, /*ReadsSrcAfterWritingDst*/ true>>;
 
 }
 

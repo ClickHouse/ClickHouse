@@ -8,7 +8,7 @@ namespace
 {
 
 struct TanName { static constexpr auto name = "tan"; };
-using FunctionTan = FunctionMathUnary<VectorizedFloat64Impl<TanName, FastTrig::tan>>;
+using FunctionTan = FunctionMathUnary<VectorizedFloat64Impl<TanName, FastTrig::tan, /*ReadsSrcAfterWritingDst*/ true>>;
 
 }
 

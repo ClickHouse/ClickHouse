@@ -8,7 +8,7 @@ namespace
 {
 
 struct SinName { static constexpr auto name = "sin"; };
-using FunctionSin = FunctionMathUnary<VectorizedFloat64Impl<SinName, FastTrig::sin>>;
+using FunctionSin = FunctionMathUnary<VectorizedFloat64Impl<SinName, FastTrig::sin, /*ReadsSrcAfterWritingDst*/ true>>;
 
 }
 

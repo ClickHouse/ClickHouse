@@ -91,3 +91,7 @@ SELECT isNaN(sin(inf)) AND isNaN(cos(-inf)) AND isNaN(tan(nan));
 SELECT abs(sin(toUInt32(1)) - 0.8414709848078965) < 1e-15, toTypeName(cos(toFloat32(1))), abs(tan(toInt8(1)) - 1.5574077246549023) < 1e-15;
 -- Float32 and Decimal inputs are promoted into a separate buffer, so the libm fallback still sees the original values.
 SELECT abs(sin(toFloat32(1e9)) - 0.5458434494486996) < 1e-15, abs(cos(toDecimal64(-1e9, 0)) - 0.8378871813639024) < 1e-15, isNaN(sin(toFloat32(inf)));
+
+-- exp2/exp10/log2/log10 run in place over Decimal and Float32 inputs converted into the result column.
+SELECT abs(exp2(toDecimal64(3, 2)) - 8) < 1e-9 AND abs(log2(toDecimal32(1024, 0)) - 10) < 1e-9 AND abs(exp10(toDecimal64(2, 3)) - 100) / 100 < 1e-9 AND abs(log10(toDecimal64(1000, 1)) - 3) / 3 < 1e-9;
+SELECT abs(log2(toFloat32(1024)) - 10) < 1e-9 AND abs(log10(toFloat32(1000)) - 3) / 3 < 1e-9 AND abs(exp10(toFloat32(2)) - 100) / 100 < 1e-9;
