@@ -110,7 +110,7 @@ struct TableFixture
     /// A real part in the Active set, under the name the caller asks for. Every settle and every
     /// sweep resolves its parts through `getPartIfExists`, so those paths cannot be reached from a
     /// fixture whose part set is empty -- unlike the index-only tests, which never leave the store.
-    DataPartPtr addPart(const std::string & part_name, UInt64 first_id, size_t rows)
+    DataPartPtr addPart(const std::string & part_name, UInt64 first_id, size_t rows) const
     {
         auto id_column = ColumnUInt64::create();
         for (size_t i = 0; i < rows; ++i)
