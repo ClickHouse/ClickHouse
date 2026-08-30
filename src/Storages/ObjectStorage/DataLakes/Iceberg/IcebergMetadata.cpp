@@ -941,6 +941,10 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const
 {
     IcebergDataSnapshotPtr data_snapshot;
+    /// The pinned file is content-cached only under the UUID this cell has validated it against.
+    /// A concurrent query may have moved the trusted UUID to a table that replaced this one in
+    /// place, and a replacement can put a different file at the very same path, so keying the
+    /// cache with the moved UUID could hand the pinned query the wrong table's metadata.
     auto metadata_object = getMetadataJSONObject(
         table_state_snapshot.metadata_file_path,
         object_storage,
@@ -948,7 +952,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         local_context,
         log,
         persistent_components.metadata_compression_method,
-        persistent_components.getTableUuid());
+        persistent_components.trusted_table_uuid->getForValidatedFile(table_state_snapshot.metadata_file_path));
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(

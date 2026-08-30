@@ -39,6 +39,24 @@ public:
         return uuid;
     }
 
+    /// The `table-uuid` under which `metadata_file_path` may be used as a metadata *content*
+    /// cache key, or `std::nullopt` when it may not be.
+    ///
+    /// A `TableStateSnapshot` pins one metadata file from analysis through execution, and the
+    /// content read for it at execution time must be the content of the incarnation that was
+    /// analyzed. The trusted UUID is shared and mutable, so by then a concurrent query may have
+    /// moved it to a table that replaced the analyzed one in place - and a replacement can put a
+    /// different file at the very same path. Probing the cache with the moved UUID would then
+    /// return the wrong table's metadata, so the file is only cache-keyed while it is still the
+    /// one this cell has validated; otherwise the caller reads it from storage.
+    std::optional<String> getForValidatedFile(const String & metadata_file_path) const
+    {
+        SharedLockGuard lock(mutex);
+        if (!last_validated.has_value() || last_validated->path != metadata_file_path)
+            return std::nullopt;
+        return uuid;
+    }
+
     /// Commit the `table-uuid` that was just read from the metadata file at
     /// {`metadata_version`, `metadata_file_path`}, and record that file as validated.
     ///

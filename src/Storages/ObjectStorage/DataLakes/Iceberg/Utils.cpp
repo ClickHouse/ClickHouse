@@ -232,7 +232,7 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         .version = parseMetadataVersion(version_str, file_name),
         .path = path,
         .compression_method = getCompressionMethodFromMetadataFile(path),
-        /// The name alone says nothing about the file's size or modification time.
+        /// The name alone says nothing about the content of the file.
         .identity = std::nullopt};
 }
 
@@ -1181,13 +1181,12 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 continue;
             auto [version, metadata_file_path, compression_method, _] = getMetadataFileAndVersion(path);
 
-            /// A storage that cannot report a modification time gives no way to tell this file
-            /// apart from a later rewrite of itself, so it reports no identity at all rather than
-            /// an identity that compares equal across a rewrite.
+            /// A storage that reports no strong `etag` gives no way to tell this file apart from
+            /// a later rewrite of itself, so it reports no identity at all rather than an identity
+            /// that could compare equal across a rewrite.
             std::optional<Iceberg::MetadataFileIdentity> identity;
-            if (file->metadata && file->metadata->is_size_known && file->metadata->is_last_modified_known)
-                identity = Iceberg::MetadataFileIdentity{
-                    file->metadata->size_bytes, file->metadata->last_modified.epochMicroseconds()};
+            if (file->metadata && file->metadata->isEtagUsableAsCacheKey())
+                identity = Iceberg::MetadataFileIdentity{file->metadata->etag};
 
             if (need_all_metadata_files_parsing)
             {
