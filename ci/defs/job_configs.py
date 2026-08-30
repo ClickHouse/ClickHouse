@@ -1227,7 +1227,7 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # why it's master only?
+    # Consumed only by ReleaseBranchCI, not by MasterCI.
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1235,7 +1235,10 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (4,)
+            # 4 batches do not fit session_timeout_parallel: on AMD_MEDIUM the job
+            # gets 3 workers, so a batch has 7200 * 3 worker-seconds while a quarter
+            # of the corpus is ~22000, i.e. over 100% of the budget.
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
