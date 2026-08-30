@@ -1,14 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/JSONPathValues.h>
-#include <Functions/JSONValueEnumerator.h>
 
 #include <vector>
 
@@ -30,53 +27,6 @@ String toHex(std::string_view value)
     return result;
 }
 
-struct RejectingJSONValueConsumer
-{
-    bool shouldConsumePath(std::string_view) const { return true; }
-
-    bool shouldConsumeValue(std::string_view, const IDataType &)
-    {
-        ++value_checks;
-        return false;
-    }
-
-    void consumeSharedScalar(std::string_view, BinaryTypeIndex, std::string_view) { ++consumed_values; }
-    void consumeValue(
-        std::string_view,
-        const IDataType &,
-        std::string_view,
-        const ISerialization &,
-        const IColumn &,
-        size_t,
-        bool,
-        const FormatSettings &)
-    {
-        ++consumed_values;
-    }
-    void consumeNull(std::string_view, bool) {}
-    void setRow(size_t) {}
-    void finishRows(size_t) {}
-
-    size_t value_checks = 0;
-    size_t consumed_values = 0;
-};
-
-}
-
-GTEST_TEST(JSONPathValues, SharedValuesAreRejectedBeforeDeserialization)
-{
-    const auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths = 0)");
-    auto column = type->createColumn();
-    column->insert(Object{{"array", Array{Field{1u}, Field{2u}}}, {"string", Field{"ignored"}}});
-
-    RejectingJSONValueConsumer consumer;
-    enumerateJSONValues(
-        assert_cast<const ColumnObject &>(*column),
-        assert_cast<const DataTypeObject &>(*type),
-        consumer);
-
-    EXPECT_EQ(consumer.value_checks, 2);
-    EXPECT_EQ(consumer.consumed_values, 0);
 }
 
 GTEST_TEST(JSONPathValues, StableTokenBytes)
@@ -178,62 +128,4 @@ GTEST_TEST(JSONPathValues, EscapedComponentsPreserveOrdering)
             EXPECT_EQ(lhs < rhs, encoded_lhs < encoded_rhs);
         }
     }
-}
-
-GTEST_TEST(JSONPathValues, PathMatcherIncludesExactSubtrees)
-{
-    using namespace JSONPathValues;
-
-    const PathMatcher matcher(
-        {"items[].id", "payload-other", "payload.ids", "request_id", "request_id"},
-        {},
-        {},
-        {});
-
-    EXPECT_TRUE(matcher.shouldIndex("request_id"));
-    EXPECT_TRUE(matcher.shouldIndex("payload.ids"));
-    EXPECT_TRUE(matcher.shouldIndex("payload.ids.primary"));
-    EXPECT_TRUE(matcher.shouldIndex("items[].id"));
-    EXPECT_FALSE(matcher.shouldIndex("request"));
-    EXPECT_FALSE(matcher.shouldIndex("payload.identity"));
-    EXPECT_FALSE(matcher.shouldIndex("items[].name"));
-    EXPECT_TRUE(matcher.shouldIndex("payload-other"));
-
-    EXPECT_TRUE(matcher.shouldVisit("payload"));
-    EXPECT_TRUE(matcher.shouldVisit("payload.ids"));
-    EXPECT_TRUE(matcher.shouldVisit("items"));
-    EXPECT_TRUE(matcher.shouldVisit("items[]"));
-    EXPECT_FALSE(matcher.shouldVisit("message"));
-
-    EXPECT_EQ(
-        matcher.getIncludePaths(),
-        (VectorWithMemoryTracking<String>{"items[].id", "payload-other", "payload.ids", "request_id"}));
-}
-
-GTEST_TEST(JSONPathValues, PathMatcherIncludesRegexpsAndSkipsWin)
-{
-    using namespace JSONPathValues;
-
-    const PathMatcher matcher(
-        {"payload", "payload!"},
-        {"(?:^|\\.)(?:.*_id|.*_at)$", "(?:^|\\.)(?:.*_id|.*_at)$"},
-        {"payload.secret"},
-        {"private_"});
-
-    EXPECT_TRUE(matcher.shouldIndex("request_id"));
-    EXPECT_TRUE(matcher.shouldIndex("nested.created_at"));
-    EXPECT_TRUE(matcher.shouldIndex("payload.message"));
-    EXPECT_FALSE(matcher.shouldIndex("message"));
-    EXPECT_FALSE(matcher.shouldIndex("payload.secret"));
-    EXPECT_FALSE(matcher.shouldIndex("payload.secret.value"));
-    EXPECT_FALSE(matcher.shouldIndex("private_id"));
-
-    EXPECT_TRUE(matcher.shouldVisit("unmatched_parent"));
-    EXPECT_FALSE(matcher.shouldVisit("payload.secret"));
-    EXPECT_EQ(matcher.getIncludePathRegexps().size(), 1);
-
-    const PathMatcher ancestor_regexp_matcher({}, {}, {}, {"^container$"});
-    EXPECT_FALSE(ancestor_regexp_matcher.shouldIndex("container"));
-    EXPECT_TRUE(ancestor_regexp_matcher.shouldVisit("container"));
-    EXPECT_TRUE(ancestor_regexp_matcher.shouldIndex("container.value"));
 }

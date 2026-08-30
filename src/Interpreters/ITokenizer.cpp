@@ -8,7 +8,6 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <Functions/JSONPathValues.h>
 #include <Functions/Regexps.h>
 
 #include <limits>
@@ -44,52 +43,15 @@ namespace ErrorCodes
 #endif
 }
 
-JSONPathValuesTokenizer::JSONPathValuesTokenizer(
-    size_t max_token_bytes_,
-    VectorWithMemoryTracking<String> include_paths,
-    VectorWithMemoryTracking<String> include_path_regexps,
-    VectorWithMemoryTracking<String> skip_paths,
-    VectorWithMemoryTracking<String> skip_path_regexps)
+JSONPathValuesTokenizer::JSONPathValuesTokenizer(size_t max_token_bytes_)
     : ITokenizerHelper(Type::JSONPathValues)
     , max_token_bytes(max_token_bytes_)
-    , path_matcher(std::make_shared<JSONPathValues::PathMatcher>(
-        std::move(include_paths),
-        std::move(include_path_regexps),
-        std::move(skip_paths),
-        std::move(skip_path_regexps)))
 {
 }
 
 String JSONPathValuesTokenizer::getDescription() const
 {
-    if (path_matcher->getIncludePaths().empty()
-        && path_matcher->getIncludePathRegexps().empty()
-        && path_matcher->getSkipPaths().empty()
-        && path_matcher->getSkipPathRegexps().empty())
-        return fmt::format("{}({})", getName(), max_token_bytes);
-
-    auto append_array = [](String & result, const auto & values)
-    {
-        bool first = true;
-        for (const auto & value : values)
-        {
-            if (!first)
-                result += ", ";
-            first = false;
-            result += quoteString(value);
-        }
-    };
-
-    String result = fmt::format("{}(max_token_bytes = {}, include_paths = [", getName(), max_token_bytes);
-    append_array(result, path_matcher->getIncludePaths());
-    result += "], include_paths_regexp = [";
-    append_array(result, path_matcher->getIncludePathRegexps());
-    result += "], skip_paths = [";
-    append_array(result, path_matcher->getSkipPaths());
-    result += "], skip_paths_regexp = [";
-    append_array(result, path_matcher->getSkipPathRegexps());
-    result += "])";
-    return result;
+    return fmt::format("{}({})", getName(), max_token_bytes);
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const

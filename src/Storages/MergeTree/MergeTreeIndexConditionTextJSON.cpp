@@ -847,9 +847,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
     {
         auto map_json_info = tryMatchJSONSubcolumn(
             map_column_name, json_path_values_configuration->column_name);
-        if (!map_json_info
-            || !json_path_values_configuration->path_matcher->shouldIndex(map_json_info->path)
-            || hasUnindexedJSONPathValuesTypedAncestor(object_type, map_json_info->path))
+        if (!map_json_info || hasUnindexedJSONPathValuesTypedAncestor(object_type, map_json_info->path))
             return std::nullopt;
         const auto map_type = json_path_values_configuration->json_type->tryGetSubcolumnType(map_json_info->path);
         if (!isSupportedJSONPathValuesMap(map_type))
@@ -899,9 +897,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
             0, node.getColumnName().size() - map_keys_suffix.size());
         auto map_json_info = tryMatchJSONSubcolumn(
             map_column_name, json_path_values_configuration->column_name);
-        if (map_json_info
-            && json_path_values_configuration->path_matcher->shouldIndex(map_json_info->path)
-            && !hasUnindexedJSONPathValuesTypedAncestor(object_type, map_json_info->path))
+        if (map_json_info && !hasUnindexedJSONPathValuesTypedAncestor(object_type, map_json_info->path))
         {
             const auto map_type = json_path_values_configuration->json_type->tryGetSubcolumnType(map_json_info->path);
             if (isSupportedJSONPathValuesMap(map_type))
@@ -936,8 +932,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
         node.getColumnName(), json_path_values_configuration->column_name);
     if (json_info)
     {
-        if (!json_path_values_configuration->path_matcher->shouldIndex(json_info->path)
-            || hasUnindexedJSONPathValuesTypedAncestor(object_type, json_info->path))
+        if (hasUnindexedJSONPathValuesTypedAncestor(object_type, json_info->path))
             return std::nullopt;
         return JSONPathValuesNodeInfo{
             .subcolumn = std::move(*json_info),
