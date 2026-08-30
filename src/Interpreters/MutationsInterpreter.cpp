@@ -120,9 +120,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
-namespace
-{
-
 /// Returns whether the analyzer should be used for mutations.
 /// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
 /// The override is parsed once per config reload in `Server.cpp` and stored on the shared context,
@@ -132,8 +129,6 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     if (auto override_value = context->getMutationsUseAnalyzerOverride())
         return *override_value;
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
-}
-
 }
 
 /// A mutation command's predicate and `UPDATE` expressions are stored as serialized SQL text and
@@ -364,6 +359,19 @@ IsStorageTouched isStorageTouchedByMutations(
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
                 partition_matches = (partition_id == source_part->info.getPartitionId());
             }
+            else if (alter->partitions)
+            {
+                partition_matches = false;
+                for (const auto & partition_ast : alter->partitions->children)
+                {
+                    const String partition_id = storage_from_part->getPartitionIDFromQuery(partition_ast, context);
+                    if (partition_id == source_part->info.getPartitionId())
+                    {
+                        partition_matches = true;
+                        break;
+                    }
+                }
+            }
 
             if (partition_matches)
             {
@@ -440,7 +448,29 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-    if (alter && alter->partition)
+    if (alter && alter->partitions)
+    {
+        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+
+        auto func = makeASTFunction("in");
+        func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
+        auto tuple_func = makeASTFunction("tuple");
+        for (const auto & partition_ast : alter->partitions->children)
+        {
+            String partition_id;
+            if (storage_merge_tree)
+                partition_id = storage_merge_tree->getPartitionIDFromQuery(partition_ast, context);
+            else if (storage_from_merge_tree_data_part)
+                partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(partition_ast, context);
+            else
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
+            tuple_func->arguments->children.push_back(make_intrusive<ASTLiteral>(partition_id));
+        }
+        func->arguments->children.push_back(std::move(tuple_func));
+        partition_predicate_as_ast_func = std::move(func);
+    }
+    else if (alter && alter->partition)
     {
         String partition_id;
 
@@ -468,7 +498,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ASTPtr predicate_ast(predicate);
     normalizeSetOperations(predicate_ast, context);
 
-    if (alter->partition)
+    if (alter->partition || alter->partitions)
         return makeASTOperator("and", std::move(predicate_ast), std::move(partition_predicate_as_ast_func));
     return predicate_ast;
 }

@@ -1061,6 +1061,58 @@ and increases ClickHouse boot time. Most often this is a consequence of an
 incorrect design (mistakes when choosing a partitioning strategy - too small
 partitions).
 )", 0) \
+    DECLARE(UInt64, max_table_size_rows, 0, R"(
+If the total number of rows in active data parts of the table exceeds this
+value, an `INSERT` is interrupted with the `Table size limit exceeded`
+exception. The limit is checked at the beginning of `INSERT` and when new
+data parts are committed to the working set, including the results of
+background merges and mutations (so a mutation that increases the table size
+beyond the limit will be retried without finishing). Inserts done by
+materialized views are also checked. The limit is not checked on replicated
+fetches, which permits a race condition when parallel inserts into multiple
+replicas overdraft the limit. Committing empty data parts is always allowed,
+so the data can be removed from a table that exceeds the limit, e.g. with
+`TRUNCATE` or `ALTER TABLE ... DROP PARTITION`.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
+    DECLARE(UInt64, max_table_size_bytes_compressed, 0, R"(
+If the total number of compressed bytes (the size on disk) across all active
+and inactive data parts of the table exceeds this value, an `INSERT` is
+interrupted with the `Table size limit exceeded` exception. Inactive parts
+are counted as well because the purpose of this setting is to limit disk
+usage. Note that inactive parts are removed in the background (see the
+`old_parts_lifetime` setting), so the observed size can decrease over time.
+The limit is checked at the beginning of `INSERT` and when new data parts
+are committed to the working set, including the results of background merges
+and mutations. Inserts done by materialized views are also checked. The
+limit is not checked on replicated fetches, which permits a race condition
+when parallel inserts into multiple replicas overdraft the limit. Committing
+empty data parts is always allowed, so the data can be removed from a table
+that exceeds the limit, e.g. with `TRUNCATE` or `ALTER TABLE ... DROP
+PARTITION`.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
+    DECLARE(UInt64, max_table_size_bytes_uncompressed, 0, R"(
+The same as `max_table_size_bytes_compressed`, but the limit is applied to
+the total number of uncompressed bytes across all active and inactive data
+parts of the table.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
     DECLARE(Bool, async_insert, false, R"(
 If true, data from INSERT query is stored in queue and later flushed to
 table in background.
