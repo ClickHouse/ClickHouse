@@ -249,9 +249,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
                 if (removed_processors.contains(removed_proc) || !distinct_removed.insert(removed_proc.get()).second)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Processor {} is listed more than once for removal. Graph: {}",
-                        removed_proc->getName(),
-                        dump(false));
+                        "Processor {} is listed more than once for removal",
+                        removed_proc->getName());
 
                 if (const auto * node = processors_map.at(removed_proc.get()))
                     if (node->last_processor_status != IProcessor::Status::Finished)
