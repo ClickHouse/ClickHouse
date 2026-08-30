@@ -5,7 +5,10 @@
 
 DROP TABLE IF EXISTS t;
 
-CREATE TABLE t (k UInt64, f Float64) ENGINE = MergeTree ORDER BY k;
+-- The implicit min-max index on `f` hits the pre-existing NaN defect of the minmax skip index
+-- (https://github.com/ClickHouse/ClickHouse/issues/106948): it would prune the NaN granules for the
+-- negated predicates below regardless of the statistics-based part pruning under test, so opt out.
+CREATE TABLE t (k UInt64, f Float64) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t SELECT number, if(number < 13, nan, 1.5) FROM numbers(100000);
 OPTIMIZE TABLE t FINAL; -- builds the column statistics for the merged part
 
