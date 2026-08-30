@@ -56,6 +56,13 @@ public:
         return false;
     }
 
+    bool isVolumeReducing() const override
+    {
+        if constexpr (requires { Impl::is_volume_reducing; })
+            return Impl::is_volume_reducing;
+        return false;
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])

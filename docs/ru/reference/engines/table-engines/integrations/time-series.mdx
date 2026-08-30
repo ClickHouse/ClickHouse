@@ -115,7 +115,7 @@ CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSer
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 Если обе формы используются в одном операторе `CREATE TABLE`, объявленные типы должны совпадать.
@@ -151,7 +151,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | `value`     | [x]          | `Float64`             | `Float32` или `Float64` | Значение, связанное с `timestamp`               |
 
 Столбцы, которые движок создаёт самостоятельно, используют кодеки сжатия временных рядов:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` и `value CODEC(Gorilla, ZSTD(1))`. Почти монотонные временные метки плохо
+`timestamp CODEC(DoubleDelta, ZSTD(1))` и `value CODEC(ZSTD(3))`. Почти монотонные временные метки плохо
 сжимаются универсальными кодеками и в противном случае могут составлять основную часть размера таблицы samples на диске.
 См. также [Настройка типов столбцов](#adjusting-column-types).
 
@@ -216,7 +216,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla, ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
@@ -250,7 +250,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -306,7 +306,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 Указание внутренних столбцов без кодеков означает использование для них кодека по умолчанию:

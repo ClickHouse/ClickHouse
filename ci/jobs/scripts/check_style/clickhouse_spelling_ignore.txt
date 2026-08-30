@@ -13,10 +13,10 @@
 # The check, this list and the rule in the style guide have to spell out the misspellings they
 # are about.
 ci/jobs/scripts/check_style/clickhouse_spelling_ignore.txt
-# This focused checker test uses misspellings as fixtures.
-ci/tests/test_clickhouse_spelling_check.py
+ci/jobs/scripts/check_style/clickhouse_spelling.py
+# The changelog editing skill spells out the misspellings this check rejects.
+.claude/skills/edit-changelog/SKILL.md	`Clickhouse`
 ci/jobs/check_style.py	`Clickhouse`
-ci/jobs/check_style.py	`ClickhouseBuffer`
 ci/jobs/check_style.py	`click_house`
 docs/resources/develop-contribute/contribute/style.mdx	Not `Clickhouse`
 

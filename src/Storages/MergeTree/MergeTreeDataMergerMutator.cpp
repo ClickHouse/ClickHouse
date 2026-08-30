@@ -7,6 +7,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/quoteString.h>
 #include <Common/WeightedRandomSampling.h>
+#include <Common/formatReadable.h>
 
 #include <Interpreters/Context.h>
 
