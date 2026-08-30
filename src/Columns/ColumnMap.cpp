@@ -40,11 +40,11 @@ ColumnMap::ColumnMap(MutableColumnPtr && nested_, const StatisticsPtr & statisti
 {
     const auto * column_array = typeid_cast<const ColumnArray *>(nested.get());
     if (!column_array)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples bp0");
 
     const auto * column_tuple = typeid_cast<const ColumnTuple *>(column_array->getDataPtr().get());
     if (!column_tuple)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples bp1");
 
     if (column_tuple->getColumns().size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap should contain only 2 subcolumns: keys and values");
