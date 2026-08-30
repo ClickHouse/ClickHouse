@@ -14,9 +14,9 @@ SELECT count() FROM big, small WHERE bid = sid SETTINGS log_comment = '04511_run
 
 SET make_distributed_plan = 0;
 
--- The probe-scan tasks (stage_0) hold only the filter that arrived over the exchange, and a probe
--- task cannot finish before consuming the filter stream, so its stats line proves the partials were
--- delivered, merged and registered.
+-- The probe-scan tasks (stage_0) hold only the filter that arrived over the exchange, so a stats
+-- line in their contexts proves the partials were delivered, merged and registered. The build side
+-- is tiny, so the filter arrives while the probe tasks still run.
 SYSTEM FLUSH LOGS query_log, text_log;
 SELECT count() > 0 FROM system.text_log
 WHERE logger_name = 'RuntimeFilter' AND query_id IN (
