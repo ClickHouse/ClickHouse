@@ -1364,6 +1364,26 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
         scope_to_resolve_alias_expression->popExpressionNode();
 
+        /** The niladic-function fallback of `tryResolveIdentifier` is gated on the initial context, so that
+          * it stays the last resort of the whole scope walk instead of firing at every parent scope. Here the
+          * walk for the alias body is over, so the fallback applies: a bare identifier bound to an alias
+          * resolves the same way the identifier itself would (`WITH currentDatabase AS n SELECT n`), matching
+          * the resolution of identifiers inside `FUNCTION` alias bodies.
+          */
+        if (!lookup_result.resolved_identifier
+            && alias_identifier_lookup.isExpressionLookup()
+            && identifier_resolve_context.allow_to_resolve_niladic_functions)
+        {
+            auto function_resolver = FunctionFactory::instance().tryGet(identifier.getFullName(), scope_to_resolve_alias_expression->context);
+            if (function_resolver && function_resolver->allowsOmittingParentheses())
+            {
+                auto function_node = std::make_shared<FunctionNode>(identifier.getFullName());
+                function_node->resolveAsFunction(function_resolver->build({}));
+                lookup_result.resolved_identifier = std::move(function_node);
+                lookup_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
+            }
+        }
+
         if (!lookup_result.resolved_identifier)
         {
             // Resolve may succeed in another place or scope
