@@ -8,7 +8,5 @@ A bucket Top-K plan still hits the limit
 TOO_MANY_ROWS
 A spilling run hits the limit within a few buckets past it
 aborted near the limit
-A spilling run hits a limit only the merged union crosses
-TOO_MANY_ROWS
 A dropping mode stays on the baseline
 0

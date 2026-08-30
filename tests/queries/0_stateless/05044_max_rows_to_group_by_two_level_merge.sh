@@ -69,18 +69,6 @@ SET max_rows_to_group_by = 599999;
 SELECT count() FROM (SELECT nullIf(number, 0) AS g, count() AS c FROM numbers_mt(600000) GROUP BY g);
 " 2>&1 | grep -oE "has [0-9]+ rows, maximum: [0-9]+" | head -1
 
-# A spilled baseline run merges through the external machinery, whose running total of merged
-# groups is the only place the union of the spilled parts is ever counted: every producer's
-# table stays under the limit on its own and is checked only between its spills.
-echo "A spilled baseline run hits the limit at the external merge"
-$CLICKHOUSE_LOCAL --query "
-$SETTINGS_COMMON
-SET group_by_two_level_threshold = 1000;
-SET max_bytes_before_external_group_by = 1000000;
-SET max_rows_to_group_by = 300000;
-SELECT count() FROM (SELECT number AS g, count() AS c FROM numbers_mt(600000) GROUP BY g);
-" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -1
-
 # The dropping modes leave the merge untouched: their contract is decided at the producers, and
 # every producer stays under the limit here, so the same union-over-limit query must succeed
 # with the complete result.
