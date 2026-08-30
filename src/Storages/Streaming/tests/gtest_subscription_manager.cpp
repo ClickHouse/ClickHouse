@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
 #include <Storages/Streaming/SubscriptionManager.h>
 
 #include <gtest/gtest.h>
