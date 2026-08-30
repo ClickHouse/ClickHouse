@@ -176,7 +176,6 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
     ).strip().splitlines()
     assert len(files) == 3
 
-    node1.query("system start distributed sends dist")
     with pytest.raises(QueryRuntimeException, match="ARGUMENT_OUT_OF_BOUND"):
         node1.query(
             "system flush distributed dist settings function_range_max_elements_in_block=1"
