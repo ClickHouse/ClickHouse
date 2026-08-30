@@ -1488,31 +1488,71 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                     branches.push_back(args.back());
                 }
 
-                std::vector<const ASTFunction *> branch_tuples;
+                /// Slots only line up if every branch rebuilds the output the same structural way,
+                /// so a mix of shapes - or any shape without slot-wise handling - falls through to
+                /// the flat candidates.
+                auto branch_kind = [](const ASTFunction & branch_function) -> std::string_view
+                {
+                    if (branch_function.name == "tuple")
+                        return "tuple";
+                    /// arrayZipUnaligned shares arrayZip's Array(Tuple(...)) contract, as above.
+                    if (branch_function.name == "arrayZip" || branch_function.name == "arrayZipUnaligned")
+                        return "arrayZip";
+                    if (branch_function.name == "map")
+                        return "map";
+                    return {};
+                };
+
+                std::vector<const ASTFunction *> branch_functions;
+                std::string_view kind;
                 size_t arity = 0;
                 for (const auto & branch : branches)
                 {
-                    const auto * branch_tuple = unwrapTransparentProjectionExpression(*branch)->as<ASTFunction>();
-                    if (!branch_tuple || branch_tuple->name != "tuple" || !branch_tuple->arguments
-                        || branch_tuple->arguments->children.size() < 2
-                        || (arity && branch_tuple->arguments->children.size() != arity))
+                    const auto * branch_function = unwrapTransparentProjectionExpression(*branch)->as<ASTFunction>();
+                    if (!branch_function || !branch_function->arguments)
                     {
-                        branch_tuples.clear();
+                        branch_functions.clear();
                         break;
                     }
-                    arity = branch_tuple->arguments->children.size();
-                    branch_tuples.push_back(branch_tuple);
+                    const std::string_view this_kind = branch_kind(*branch_function);
+                    const size_t branch_arity = branch_function->arguments->children.size();
+                    /// tuple/arrayZip are read slot by slot, so their arity has to agree across
+                    /// branches; map unions its two halves, so only an even count matters.
+                    const bool arity_ok = (this_kind == "map") ? (branch_arity % 2 == 0) : (!arity || branch_arity == arity);
+                    if (this_kind.empty() || branch_arity < 2 || !arity_ok || (!kind.empty() && this_kind != kind))
+                    {
+                        branch_functions.clear();
+                        break;
+                    }
+                    kind = this_kind;
+                    arity = branch_arity;
+                    branch_functions.push_back(branch_function);
                 }
 
-                if (!branch_tuples.empty())
+                if (!branch_functions.empty() && kind == "map")
                 {
+                    provenance.is_map = true;
+                    for (const auto * branch_function : branch_functions)
+                    {
+                        const auto & branch_args = branch_function->arguments->children;
+                        for (size_t i = 0; i != branch_args.size(); ++i)
+                        {
+                            IdentifierNameSet pair_names = collectValueCarryingIdentifierNames(*branch_args[i]);
+                            auto & target = (i % 2 == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
+                            target.insert(target.end(), pair_names.begin(), pair_names.end());
+                        }
+                    }
+                }
+                else if (!branch_functions.empty())
+                {
+                    provenance.is_array_zip = (kind == "arrayZip");
                     provenance.tuple_element_candidates.resize(arity);
-                    for (const auto * branch_tuple : branch_tuples)
+                    for (const auto * branch_function : branch_functions)
                     {
                         for (size_t slot = 0; slot != arity; ++slot)
                         {
                             IdentifierNameSet slot_names
-                                = collectValueCarryingIdentifierNames(*branch_tuple->arguments->children[slot]);
+                                = collectValueCarryingIdentifierNames(*branch_function->arguments->children[slot]);
                             auto & target = provenance.tuple_element_candidates[slot];
                             target.insert(target.end(), slot_names.begin(), slot_names.end());
                         }
