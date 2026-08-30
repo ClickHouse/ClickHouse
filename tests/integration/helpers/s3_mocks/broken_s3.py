@@ -326,7 +326,7 @@ class _ServerRuntime:
     class BrokenPipeAction:
         def inject_error(self, request_handler):
             # partial read
-            self.rfile.read(50)
+            request_handler.rfile.read(50)
 
             time.sleep(1)
             request_handler.connection.setsockopt(
@@ -469,11 +469,22 @@ def get_random_string(length):
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
+    # Speak HTTP/1.1 with keep-alive, like real S3. With the default HTTP/1.0
+    # every response closes the connection, so a client that works at full
+    # speed opens a new connection per request and the resulting connection
+    # storm causes sporadic connect timeouts and resets, which the tests
+    # then observe as extra `S3WriteRequestsErrors` on top of the injected
+    # ones. Keep-alive lets the client reuse connections and keeps the error
+    # counters deterministic. Every response must carry `Content-Length`
+    # (or close the connection deliberately, as the error actions do).
+    protocol_version = "HTTP/1.1"
+
     throttler = _runtime.throttler
 
     def _ok(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", "2")
         self.end_headers()
         self.wfile.write(b"OK")
 
@@ -502,6 +513,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         url = f"http://{host}:{port}{self.path}"
         self.log_message("redirect to %s", url)
         self.send_header("Location", url)
+        self.send_header("Content-Length", "10")
         self.end_headers()
         self.wfile.write(b"Redirected")
 
@@ -768,6 +780,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
 class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
+
+    # With keep-alive a thread lives as long as its connection: do not let
+    # idle connections block the server shutdown.
+    daemon_threads = True
+
+    # A client uploading many parts concurrently opens its connections all at
+    # once; the default listen backlog of 5 drops the excess connection
+    # attempts, and they surface as connect timeouts counted on top of the
+    # injected errors.
+    request_queue_size = 128
 
     def set_upstream(self, upstream_host, upstream_port):
         self.upstream_host = upstream_host
