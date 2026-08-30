@@ -54,10 +54,9 @@
 #include <Parsers/queryNormalization.h>
 #include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Formats/FormatFactory.h>
@@ -117,6 +116,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Common/QueryFuzzer.h>
+#include <Interpreters/QueryOracleChecker.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <base/getFQDNOrHostName.h>
@@ -167,11 +167,12 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
+    extern const SettingsBool ast_fuzzer_oracle;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
@@ -271,6 +272,7 @@ namespace ErrorCodes
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
+    extern const int AST_FUZZER_ORACLE_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
@@ -2287,11 +2289,20 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
+            const char * kql_pos = begin;
             if (!settings[Setting::allow_experimental_kusto_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
-            ParserKQLStatement parser(end, settings[Setting::allow_settings_after_format_in_insert]);
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            {
+                /// A plain `SET` passes even when the gate is off, so a session that is
+                /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
+                /// (or turn the gate back on) instead of being stranded until reconnect.
+                out_ast = tryParseKQLSetStatement(
+                    kql_pos, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                if (!out_ast)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+            }
+            else
+                out_ast = parseKQLQuery(
+                    kql_pos, end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
@@ -3436,6 +3447,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
+            fuzzer->oracle_mode = context->getSettingsRef()[Setting::ast_fuzzer_oracle];
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
             fuzzed_query_params = fuzzer->getLastQueryParameters();
@@ -3570,52 +3582,100 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// Run the fuzzed query on its own thread group, so that code reading the query context
             /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
             /// sees the fuzz context and the limits pinned above instead of the outer query's.
+            /// The oracle's nested queries run on `fuzz_context` too, so keep the switcher alive
+            /// across them as well.
             ThreadGroupSwitcher thread_group_switcher(
                 ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
-            auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
-
-            if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pushing())
-                {
-                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
-                    result.second.pipeline.cancel();
-                }
-                else
-                {
-                    if (result.second.pipeline.pulling())
-                    {
-                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
-                    }
-                    CompletedPipelineExecutor executor(result.second.pipeline);
+                /// Inner scope so `result`'s `finish_callbacks`/`exception_callbacks`
+                /// are destroyed BEFORE the oracle runs. Those callbacks captured
+                /// shared_ptrs (context, implicit_tcl_executor, query_span, ...) that
+                /// the oracle's nested `executeQuery` may release/transfer ownership of.
+                /// Letting them outlive the inner execution caused UAFs in `~$_2` /
+                /// `~$_3` lambda destructors (#105741). The callbacks are never invoked
+                /// by `executeASTFuzzerQueries` itself, so destroying them earlier loses
+                /// nothing.
+                auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
-                    /// A single in-flight fuzzed query (e.g. a heavy INSERT) only checks its own
-                    /// time limit between pipeline tasks, so without a cancel callback it ignores the
-                    /// outer query's KILL/timeout and server shutdown and can run for minutes, tripping
-                    /// the stress test hung check. Poll the same conditions the loop guard uses, plus a
-                    /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
-                    Stopwatch fuzzed_query_watch;
-                    executor.setCancelCallback(
-                        [&fuzzed_query_watch, &process_list_element]()
+                if (result.second.pipeline.initialized())
+                {
+                    if (result.second.pipeline.pushing())
+                    {
+                        /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                        result.second.pipeline.cancel();
+                    }
+                    else
+                    {
+                        if (result.second.pipeline.pulling())
                         {
-                            if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
-                                return true;
-                            if (process_list_element && !process_list_element->checkTimeLimitSoft())
-                                return true;
-                            return fuzzed_query_watch.elapsedMilliseconds() > 30000;
-                        },
-                        /*interactive_timeout_ms=*/100);
-                    executor.execute();
+                            result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                        }
+                        CompletedPipelineExecutor executor(result.second.pipeline);
+
+                        /// A single in-flight fuzzed query (e.g. a heavy INSERT) only checks its own
+                        /// time limit between pipeline tasks, so without a cancel callback it ignores the
+                        /// outer query's KILL/timeout and server shutdown and can run for minutes, tripping
+                        /// the stress test hung check. Poll the same conditions the loop guard uses, plus a
+                        /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
+                        Stopwatch fuzzed_query_watch;
+                        executor.setCancelCallback(
+                            [&fuzzed_query_watch, &process_list_element]()
+                            {
+                                if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
+                                    return true;
+                                if (process_list_element && !process_list_element->checkTimeLimitSoft())
+                                    return true;
+                                return fuzzed_query_watch.elapsedMilliseconds() > 30000;
+                            },
+                            /*interactive_timeout_ms=*/100);
+                        executor.execute();
+                    }
+                }
+            } /// ~result here — inner BlockIO callbacks released before oracle runs.
+
+            /// Run oracle checks on the successfully-executed fuzzed query.
+            if (context->getSettingsRef()[Setting::ast_fuzzer_oracle])
+            {
+                try
+                {
+                    QueryOracleChecker oracle_checker;
+                    oracle_checker.check(fuzzed_ast, fuzz_context);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                    {
+                        LOG_FATAL(logger,
+                            "AST Fuzzer oracle mismatch detected!\n"
+                            "Fuzzed query: {}\n"
+                            "{}",
+                            fuzzed_query, e.message());
+                        /// Rethrow with the final server-side fuzzed query attached: the
+                        /// client only sees this exception's message, and with
+                        /// `ast_fuzzer_runs > 0` its own seed query differs from the query
+                        /// that actually triggered the mismatch, so without this the CI
+                        /// artifact (`fuzzer.log`) would omit the real reproducer.
+                        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+                            "{}\nServer-side fuzzed query (the actual reproducer): {}",
+                            e.message(), fuzzed_query);
+                    }
+                    LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", e.message());
+                }
+                catch (...)
+                {
+                    LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", getCurrentExceptionMessage(false));
                 }
             }
 
             finish_iteration(/*succeeded=*/true);
             base_ast = fuzzed_ast;
         }
-        catch (...)
+        catch (const Exception & e)
         {
             finish_iteration(/*succeeded=*/false);
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
     }
@@ -3704,8 +3764,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                     {
                         executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
                     }
-                    catch (...)
+                    catch (const Exception & e)
                     {
+                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                            throw; /// Oracle mismatch — propagate to abort the server
                         tryLogCurrentException("ASTFuzzer");
                     }
                 });
@@ -4431,6 +4493,12 @@ void executeQuery(
                 try
                 {
                     executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                        throw; /// Oracle mismatch — propagate so CI sees it
+                    tryLogCurrentException("ASTFuzzer");
                 }
                 catch (...)
                 {
