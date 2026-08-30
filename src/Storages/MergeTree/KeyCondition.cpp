@@ -61,6 +61,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_key_condition_coalesce_rewrite;
+    extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
@@ -1534,6 +1535,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , multiple_key_columns_per_condition(context->getSettingsRef()[Setting::analyze_index_with_multiple_key_columns_per_condition])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -2080,8 +2082,12 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     if (value.isNull())
         return {};
 
-    auto chains
-        = collectKeyWrappingChains(node.getTreeContext().getQueryContext(), expr_name, info, std::move(allow_key_function));
+    /// With the multiple-key-columns analysis disabled, only the first key-wrapping chain is even
+    /// collected; if pushing the constant through it fails, no candidate is produced.
+    const bool first_match_only = !multiple_key_columns_per_condition;
+
+    auto chains = collectKeyWrappingChains(
+        node.getTreeContext().getQueryContext(), expr_name, info, first_match_only, std::move(allow_key_function));
 
     if (chains.empty())
         return {};
@@ -2128,11 +2134,10 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 /// This is not limited to a linear function chain; the extracted sub-DAG can represent any
 /// deterministic expression over `expr_name` (e.g. nested functions or tuples), as long as it does
 /// not depend on other inputs. For example, for `ORDER BY left(key, length(key) - length(substringIndex(key, '-', -1)) - 1)`
-///
-/// This variant collects ALL matching key columns (not just the first).
 std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingDags(
     const String & expr_name,
-    const BuildInfo & info) const
+    const BuildInfo & info,
+    bool first_match_only) const
 {
     const auto & dag = info.key_expr->getActionsDAG();
     const auto & sample_block = info.key_expr->getSampleBlock();
@@ -2220,6 +2225,9 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
             .key_column_num = it->second,
             .key_column_type = sample_block.getByName(key_node.result_name).type,
             .dag = std::move(transform_dag)});
+
+        if (first_match_only)
+            break;
     }
 
     return result;
@@ -2549,7 +2557,11 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     if (value.isNull())
         return {};
 
-    auto dags = collectKeyWrappingDags(expr_name, info);
+    /// With the multiple-key-columns analysis disabled, only the first key-wrapping sub-DAG is
+    /// even extracted; if pushing the constant through it fails, no candidate is produced.
+    const bool first_match_only = !multiple_key_columns_per_condition;
+
+    auto dags = collectKeyWrappingDags(expr_name, info, first_match_only);
     if (dags.empty())
         return {};
 
@@ -2642,7 +2654,10 @@ KeyCondition::SetIndexAnalysisResult KeyCondition::analyzePredicateExpressionFor
             result.args_count = arg_tuple.getArgumentsSize();
             /// Keep the packed tuple mapping in addition to the per-component mappings. The
             /// former can use a key such as `tuple(a, b)`, while the latter can use `a` and `b`.
-            get_key_tuple_position_mapping(arg, 0, true);
+            /// The packed mapping is an extra atom for the same leaf, so it is subject to the
+            /// `analyze_index_with_multiple_key_columns_per_condition` setting.
+            if (multiple_key_columns_per_condition)
+                get_key_tuple_position_mapping(arg, 0, true);
             for (size_t i = 0; i < result.args_count; ++i)
                 get_key_tuple_position_mapping(arg_tuple.getArgumentAt(i), i);
         }
@@ -2843,9 +2858,9 @@ std::vector<std::pair<size_t, String>> exprNamesForWrappedSetAtoms(
     const RPNBuilderTreeNode & key_arg,
     const NameSet & key_subexpr_names,
     size_t args_count,
-    bool allow_constant_transformation)
+    bool allow_wrapped_set_atoms)
 {
-    if (!allow_constant_transformation)
+    if (!allow_wrapped_set_atoms)
         return {};
 
     std::vector<std::pair<size_t, String>> result;
@@ -2874,7 +2889,7 @@ void KeyCondition::extractSetAtomsForKeyArgument(
     const Columns & set_columns,
     const DataTypes & set_types,
     SetIndexAnalysisResult analysis,
-    bool allow_constant_transformation,
+    bool allow_wrapped_set_atoms,
     RPN & out)
 {
     chassert(set_types.size() == set_columns.size());
@@ -2972,9 +2987,9 @@ void KeyCondition::extractSetAtomsForKeyArgument(
     /// tuple component of the predicate expression (of the expression itself for a scalar), by
     /// transforming that component of the set elements.
     for (const auto & [component, expr_name] :
-         exprNamesForWrappedSetAtoms(key_arg, info.key_subexpr_names, analysis.args_count, allow_constant_transformation))
+         exprNamesForWrappedSetAtoms(key_arg, info.key_subexpr_names, analysis.args_count, allow_wrapped_set_atoms))
     {
-        auto candidates = collectKeyWrappingDags(expr_name, info);
+        auto candidates = collectKeyWrappingDags(expr_name, info, /*first_match_only*/ false);
 
         for (auto & candidate : candidates)
         {
@@ -3035,12 +3050,16 @@ void KeyCondition::tryPrepareSetAtomsForIn(
 
     auto analysis = analyzePredicateExpressionForSetIndex(left_arg, info);
 
+    /// Wrapped-set atoms are extra atoms for the same predicate leaf, so building them requires
+    /// both the relaxed-atom permission and the multiple-key-columns-per-condition analysis.
+    const bool allow_wrapped_set_atoms = allow_constant_transformation && multiple_key_columns_per_condition;
+
     /// If no direct key mapping was found AND the wrapped-candidates pass of
     /// `extractSetAtomsForKeyArgument` cannot produce anything either, return early to
     /// avoid building the set unnecessarily.
     if (analysis.indexes_mapping.empty()
         && analysis.whole_tuple_indexes_mapping.empty()
-        && exprNamesForWrappedSetAtoms(left_arg, info.key_subexpr_names, analysis.args_count, allow_constant_transformation).empty())
+        && exprNamesForWrappedSetAtoms(left_arg, info.key_subexpr_names, analysis.args_count, allow_wrapped_set_atoms).empty())
         return;
 
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
@@ -3069,7 +3088,7 @@ void KeyCondition::tryPrepareSetAtomsForIn(
     const auto set_columns = prepared_set->getSetElements();
     const auto set_types = future_set->getTypes();
 
-    extractSetAtomsForKeyArgument(left_arg, info, set_columns, set_types, std::move(analysis), allow_constant_transformation, out);
+    extractSetAtomsForKeyArgument(left_arg, info, set_columns, set_types, std::move(analysis), allow_wrapped_set_atoms, out);
 }
 
 /// Under the default `optimize_rewrite_has_to_in = 1`, `has(const_array, x)` is rewritten into
@@ -3096,12 +3115,16 @@ void KeyCondition::tryPrepareSetAtomsForHas(
 
     auto analysis = analyzePredicateExpressionForSetIndex(key_arg, info);
 
+    /// Wrapped-set atoms are extra atoms for the same predicate leaf, so building them requires
+    /// both the relaxed-atom permission and the multiple-key-columns-per-condition analysis.
+    const bool allow_wrapped_set_atoms = allow_constant_transformation && multiple_key_columns_per_condition;
+
     /// If no direct key mapping was found AND the wrapped-candidates pass of
     /// `extractSetAtomsForKeyArgument` cannot produce anything either, return early. This mirrors
     /// the guard of `tryPrepareSetAtomsForIn`.
     if (analysis.indexes_mapping.empty()
         && analysis.whole_tuple_indexes_mapping.empty()
-        && exprNamesForWrappedSetAtoms(key_arg, info.key_subexpr_names, analysis.args_count, allow_constant_transformation).empty())
+        && exprNamesForWrappedSetAtoms(key_arg, info.key_subexpr_names, analysis.args_count, allow_wrapped_set_atoms).empty())
         return;
 
     /// Check if array argument is usable
@@ -3153,7 +3176,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
-    extractSetAtomsForKeyArgument(key_arg, info, set_columns, set_types, std::move(analysis), allow_constant_transformation, out);
+    extractSetAtomsForKeyArgument(key_arg, info, set_columns, set_types, std::move(analysis), allow_wrapped_set_atoms, out);
 }
 
 
@@ -3489,6 +3512,7 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
     ContextPtr context,
     const String & expr_name,
     const BuildInfo & info,
+    bool first_match_only,
     std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
 {
     const auto & sample_block = info.key_expr->getSampleBlock();
@@ -3643,6 +3667,9 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
                 {
                     candidate.chain_is_positive = chain_is_positive;
                     result.push_back(std::move(candidate));
+
+                    if (first_match_only)
+                        return result;
                 }
             }
         }
@@ -3681,12 +3708,11 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicKeyFunctions(
             return false;
     }
 
-    auto dags = collectKeyWrappingDags(expr_name, info);
+    /// The set-tuple mapping needs exactly one key column per tuple component, so only
+    /// the first match is collected.
+    auto dags = collectKeyWrappingDags(expr_name, info, /*first_match_only*/ true);
     if (dags.empty())
         return false;
-
-    /// The set-tuple mapping needs exactly one key column per tuple component, so keep
-    /// the first match only.
     out_key_column_num = dags.front().key_column_num;
     out_key_res_column_type = std::move(dags.front().key_column_type);
     out_transform = std::move(dags.front().dag);
@@ -4436,6 +4462,15 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
 
     /// Candidates are collected from three sources in priority order. The emission loop
     /// below keeps the first candidate per key column, so the order is observable.
+    ///
+    /// When `analyze_index_with_multiple_key_columns_per_condition` is disabled, the leaf keeps at
+    /// most one candidate: the sources are consulted in the same priority order, but only until
+    /// one of them contributes, and the transform sources collect only their first key-wrapping
+    /// recipe (see `transformConstantByMonotonicKeyFunctions` and
+    /// `transformConstantByDeterministicKeyFunctions`), so no discarded candidates are ever
+    /// computed. If the transform of that recipe or the normalization of the single candidate
+    /// fails, the leaf produces no atom rather than falling back to another candidate.
+    const auto source_may_contribute = [&] { return multiple_key_columns_per_condition || candidates.empty(); };
 
     /// 1. The direct key match handles `func(key_expr, const)` where `key_expr` is a
     /// (possibly monotonic) wrapping of a key column.
@@ -4468,7 +4503,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
     /// complement-producing function (see `no_relaxed_atom_functions`) would become
     /// stricter instead and could prune matching rows, which is why this source is
     /// gated.
-    if (allow_constant_transformation)
+    if (allow_constant_transformation && source_may_contribute())
     {
         auto transformed_candidates = transformConstantByMonotonicKeyFunctions(
             key_arg,
@@ -4562,7 +4597,8 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
     /// never prunes.
     /// `isNotDistinctFrom` with a non-NULL constant matches the same rows as `equals` (the NULL
     /// constant case never reaches here), so it translates the same way.
-    if (func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
+    if ((func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
+        && source_may_contribute())
     {
         auto transformed_candidates = transformConstantByDeterministicKeyFunctions(
             key_arg, info, const_value, const_type);

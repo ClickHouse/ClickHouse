@@ -631,10 +631,12 @@ private:
     /// `always_monotonic`-approved functions through which that key column computes
     /// from the key subexpression `expr_name`. Each chain records whether it preserves
     /// or reverses comparison order (see `KeyWrappingChain::chain_is_positive`).
+    /// When `first_match_only` is set, the search stops at the first collected chain.
     std::vector<KeyWrappingChain> collectKeyWrappingChains(
         ContextPtr context,
         const String & expr_name,
         const BuildInfo & info,
+        bool first_match_only,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     /// For every key column that is computed from the predicate expression `node` by a
@@ -642,7 +644,8 @@ private:
     /// applies that chain to the constant once and returns the transformed constant.
     /// The resulting atoms compare against the key columns directly, but they are
     /// always relaxed, because monotonicity preserves order rather than exact
-    /// membership.
+    /// membership. With `multiple_key_columns_per_condition` disabled, only the first
+    /// such key column is considered.
     std::vector<TransformedConstant> transformConstantByMonotonicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
@@ -650,7 +653,8 @@ private:
         const DataTypePtr & type,
         std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
-    /// This is the same transformation, but through arbitrary deterministic
+    /// This is the same transformation (including the single-key-column behavior of
+    /// `multiple_key_columns_per_condition`), but through arbitrary deterministic
     /// key-expression DAGs. It is only valid for equality predicates (see the caller),
     /// because `x = c` implies `f(x) = f(c)` for any deterministic `f`, while order
     /// comparisons are not preserved.
@@ -671,10 +675,12 @@ private:
     };
 
     /// The returned vector contains a deterministic sub-DAG for every key column that
-    /// can be computed from `expr_name`.
+    /// can be computed from `expr_name`. When `first_match_only` is set, the search
+    /// stops at the first collected sub-DAG.
     std::vector<DeterministicKeyDag> collectKeyWrappingDags(
         const String & expr_name,
-        const BuildInfo & info) const;
+        const BuildInfo & info,
+        bool first_match_only) const;
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
@@ -733,15 +739,16 @@ private:
 
     /// The shared core of set-atom extraction for IN and `has`: given the membership
     /// predicate's key-side expression, the materialized set columns and the analyzed
-    /// key mapping, appends the direct set atom and one wrapped-set atom per remaining
-    /// key column that is a deterministic function of the expression.
+    /// key mapping, appends the direct set atom and, when `allow_wrapped_set_atoms` is
+    /// set, one wrapped-set atom per remaining key column that is a deterministic
+    /// function of the expression.
     void extractSetAtomsForKeyArgument(
         const RPNBuilderTreeNode & key_arg,
         const BuildInfo & info,
         const Columns & set_columns,
         const DataTypes & set_types,
         SetIndexAnalysisResult analysis,
-        bool allow_constant_transformation,
+        bool allow_wrapped_set_atoms,
         RPN & out);
 
     /// Checks that the index can not be used.
@@ -829,6 +836,13 @@ private:
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
+
+    /// Holds the value of the `analyze_index_with_multiple_key_columns_per_condition` setting.
+    /// When false, atom extraction keeps at most one key column per predicate leaf: the candidate
+    /// sources of `extractComparisonAtomsForKeyArgument` are consulted in priority order until one
+    /// of them matches, and the set analysis builds only the direct set atom. Multi-atom groups
+    /// then never form.
+    bool multiple_key_columns_per_condition = true;
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
