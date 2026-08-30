@@ -1744,6 +1744,10 @@ def main():
             f'echo "ATTACH DATABASE default ENGINE=Ordinary" > {db_path}/metadata/default.sql',
             f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
+            # Not to disable `text_log` - it is enabled (see
+            # tests/performance/scripts/config/config.d/zzz-perf-comparison-tweaks-config.xml)
+            # and exported - only to keep its default flush interval instead of
+            # the shorter one this file sets.
             f"rm {perf_right_config}/config.d/text_log.xml ||:",
             # May slow down the server
             f"rm {perf_right_config}/config.d/memory_profiler.yaml ||:",
