@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/deployment/local-mode-only
+title: 'Local mode only'
+description: 'Deploying ClickStack with Local mode only - The ClickHouse Observability Stack'
+doc_type: 'guide'
+keywords: ['clickstack', 'deployment', 'setup', 'configuration', 'observability']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+import JSONSupport from '/snippets/_json_support.mdx';
+
+Similar to the [all-in-one image](/clickstack/deployment/docker-compose), this comprehensive Docker image bundles all ClickStack components:
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) collector** (exposing OTLP on ports `4317` and `4318`)
+* **MongoDB** (for persistent application state)
+
+**However, user authentication is disabled for this distribution of HyperDX**
+
+### Suitable for {#suitable-for}
+
+* Demos
+* Debugging
+* Development where HyperDX is used
+
+## Deployment steps {#deployment-steps}
+<br/>
+
+<Steps>
+<Step title="Deploy with Docker" id="deploy-with-docker">
+
+Local mode deploys the HyperDX UI on port 8080.
+
+```shell
+docker run -p 8080:8080 clickhouse/clickstack-local:latest
+```
+</Step>
+<Step title="Navigate to the HyperDX UI" id="navigate-to-hyperdx-ui">
+
+Visit [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
+
+**You won't be prompted to create a user, as authentication isn't enabled in this deployment mode.**
+
+Connect to your own external ClickHouse cluster e.g. ClickHouse Cloud.
+
+<Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Create login" size="md"/>
+
+Create a source, retain all default values, and complete the `Table` field with the value `otel_logs`. All other settings should be auto-detected, allowing you to click `Save New Source`.
+
+<Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Create logs source" size="md"/>
+</Step>
+</Steps>
+
+<JSONSupport/>

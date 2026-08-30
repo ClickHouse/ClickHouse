@@ -1,0 +1,537 @@
+---
+title: 'Comparaison de ClickHouse Cloud et de BigQuery'
+slug: /migrations/bigquery/biquery-vs-clickhouse-cloud
+description: 'Les différences entre BigQuery et ClickHouse Cloud'
+keywords: ['BigQuery']
+show_related_blogs: true
+sidebarTitle: 'Vue d’ensemble'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="resource-organization">
+  ## Organisation des ressources
+</div>
+
+L’organisation des ressources dans ClickHouse Cloud est similaire à la [hiérarchie des ressources de BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). Nous décrivons ci-dessous les différences propres à ClickHouse Cloud à partir du schéma suivant, qui présente sa hiérarchie des ressources :
+
+<Image img="/images/migrations/bigquery-1.webp" size="md" alt="Organisation des ressources" />
+
+<div id="organizations">
+  ### Organisations
+</div>
+
+Comme dans BigQuery, les organisations constituent les nœuds racines de la hiérarchie des ressources de ClickHouse Cloud. Le premier utilisateur que vous configurez dans votre compte ClickHouse Cloud est automatiquement rattaché à une organisation dont il est propriétaire. Cet utilisateur peut inviter d&#39;autres utilisateurs dans l&#39;organisation.
+
+<div id="bigquery-projects-vs-clickhouse-cloud-services">
+  ### Projets BigQuery vs services ClickHouse Cloud
+</div>
+
+Au sein des organisations, vous pouvez créer des services globalement équivalents aux projets BigQuery, car les données stockées dans ClickHouse Cloud sont associées à un service. Il existe [plusieurs types de services](/fr/products/cloud/features/cloud-tiers) dans ClickHouse Cloud. Chaque service ClickHouse Cloud est déployé dans une région spécifique et comprend :
+
+1. Un groupe de nœuds de calcul (actuellement, 2 nœuds pour un service du tier Development et 3 pour un service du tier Production). Pour ces nœuds, ClickHouse Cloud [prend en charge la mise à l&#39;échelle verticale et horizontale](/fr/products/cloud/features/autoscaling/overview#how-scaling-works-in-clickhouse-cloud), manuellement ou automatiquement.
+2. Un répertoire de stockage d&#39;objets dans lequel le service stocke toutes les données.
+3. Un endpoint (ou plusieurs endpoints créés via la console UI de ClickHouse Cloud)  - une URL de service que vous utilisez pour vous connecter au service (par exemple, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
+
+<div id="bigquery-datasets-vs-clickhouse-cloud-databases">
+  ### Jeux de données BigQuery vs bases de données ClickHouse Cloud
+</div>
+
+ClickHouse organise logiquement les tables en bases de données. Comme les jeux de données BigQuery, les bases de données ClickHouse sont des conteneurs logiques qui organisent les données des tables et en contrôlent l’accès.
+
+<div id="bigquery-folders">
+  ### Dossiers BigQuery
+</div>
+
+ClickHouse Cloud ne dispose actuellement d’aucun équivalent aux dossiers BigQuery.
+
+<div id="bigquery-slot-reservations-and-quotas">
+  ### Réservations de slots BigQuery et quotas
+</div>
+
+Comme pour les réservations de slots BigQuery, vous pouvez [configurer l’autoscaling vertical et horizontal](/fr/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling) dans ClickHouse Cloud. Pour l’autoscaling vertical, vous pouvez définir la taille minimale et maximale de la mémoire et des cœurs CPU des nœuds de calcul d’un service. Le service s’adaptera ensuite selon les besoins dans ces limites. Ces paramètres sont également disponibles lors de la création initiale du service. Chaque nœud de calcul du service a la même taille. Vous pouvez modifier le nombre de nœuds de calcul d’un service grâce à la [mise à l’échelle horizontale](/fr/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling).
+
+De plus, à l’instar des quotas BigQuery, ClickHouse Cloud offre un contrôle de la concurrence, des limites d’utilisation de la mémoire et une planification des E/S, ce qui vous permet d’isoler les requêtes dans des classes de charge de travail. En définissant des limites sur les ressources partagées (cœurs CPU, DRAM, E/S disque et réseau) pour des classes de charge de travail spécifiques, vous vous assurez que ces requêtes n’affectent pas d’autres requêtes métier critiques. Le contrôle de la concurrence évite le surabonnement des threads dans les scénarios comportant un grand nombre de requêtes concurrentes.
+
+ClickHouse suit la taille en octets des allocations de mémoire au niveau du serveur, de l’utilisateur et de la requête, ce qui permet d’appliquer des limites d’utilisation de la mémoire flexibles. La surallocation de mémoire permet aux requêtes d’utiliser davantage de mémoire libre au-delà de la mémoire garantie, tout en garantissant des limites mémoire pour les autres requêtes. De plus, l’utilisation de la mémoire pour les clauses d’agrégation, de tri et de jointure peut être limitée, ce qui permet de basculer vers des algorithmes externes lorsque la limite mémoire est dépassée.
+
+Enfin, la planification des E/S vous permet de restreindre les accès aux disques locaux et distants pour les classes de charge de travail en fonction de la bande passante maximale, des requêtes en cours et de la politique.
+
+<div id="permissions">
+  ### Autorisations
+</div>
+
+ClickHouse Cloud contrôle l&#39;accès des utilisateurs à deux niveaux : via la [console Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) et via la [base de données](/fr/products/cloud/guides/security/cloud-access-management/manage-database-users). L&#39;accès à la console est géré via l&#39;interface utilisateur [clickhouse.cloud](https://console.clickhouse.cloud). L&#39;accès à la base de données est géré via des comptes d&#39;utilisateurs de base de données et des rôles. En outre, des rôles peuvent être accordés aux utilisateurs de la console dans la base de données afin de leur permettre d&#39;interagir avec celle-ci via notre [SQL Console](/fr/integrations/connectors/sql-clients/sql-console).
+
+<div id="data-types">
+  ## Types de données
+</div>
+
+ClickHouse offre une granularité de précision plus fine pour les valeurs numériques. Par exemple, BigQuery propose les types numériques [`INT64`, `NUMERIC`, `BIGNUMERIC` et `FLOAT64`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types). À l’inverse, ClickHouse propose plusieurs niveaux de précision pour les décimaux, les flottants et les entiers. Grâce à ces types de données, vous pouvez optimiser le stockage et réduire la surcharge mémoire, ce qui se traduit par des requêtes plus rapides et une consommation de ressources moindre. Ci-dessous, nous indiquons la correspondance entre chaque type BigQuery et son type ClickHouse équivalent :
+
+| BigQuery                                                                                                 | ClickHouse                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#array_type)             | [Array(t)](/fr/reference/data-types/array)                                                                                                                                                             |
+| [NUMERIC](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#decimal_types)        | [Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S)](/fr/reference/data-types/decimal)                                                                                                           |
+| [BIG NUMERIC](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#decimal_types)    | [Decimal256(S)](/fr/reference/data-types/decimal)                                                                                                                                                      |
+| [BOOL](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#boolean_type)            | [Bool](/fr/reference/data-types/boolean)                                                                                                                                                               |
+| [BYTES](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#bytes_type)             | [FixedString](/fr/reference/data-types/fixedstring)                                                                                                                                                    |
+| [DATE](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#date_type)               | [Date32](/fr/reference/data-types/date32) (avec une plage plus restreinte)                                                                                                                             |
+| [DATETIME](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#datetime_type)       | [DateTime](/fr/reference/data-types/datetime), [DateTime64](/fr/reference/data-types/datetime64) (plage plus restreinte, précision supérieure)                                                            |
+| [FLOAT64](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#floating_point_types) | [Float64](/fr/reference/data-types/float)                                                                                                                                                              |
+| [GEOGRAPHY](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#geography_type)     | [Geo Data Types](/fr/reference/data-types/float)                                                                                                                                                       |
+| [INT64](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types)          | [UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/fr/reference/data-types/int-uint)                                                                        |
+| [INTERVAL](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types)       | NA - [pris en charge comme expression](/fr/reference/data-types/special-data-types/interval#usage-remarks) ou [via des fonctions](/fr/reference/functions/regular-functions/date-time-functions#addYears) |
+| [JSON](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#json_type)               | [JSON](/fr/guides/clickhouse/data-formats/json/inference)                                                                                                                                              |
+| [STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#string_type)           | [String (octets)](/fr/reference/data-types/string)                                                                                                                                                     |
+| [STRUCT](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#constructing_a_struct) | [Tuple](/fr/reference/data-types/tuple), [Nested](/fr/reference/data-types/nested-data-structures/index)                                                                                                  |
+| [TIME](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#time_type)               | [DateTime64](/fr/reference/data-types/datetime64)                                                                                                                                                      |
+| [TIMESTAMP](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#timestamp_type)     | [DateTime64](/fr/reference/data-types/datetime64)                                                                                                                                                      |
+
+Lorsque plusieurs options existent pour les types ClickHouse, tenez compte de la plage réelle des données et choisissez le type le plus petit qui convienne. Pensez également à utiliser des [codecs appropriés](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) pour améliorer encore la compression.
+
+<div id="query-acceleration-techniques">
+  ## Techniques d’accélération des requêtes
+</div>
+
+<div id="primary-and-foreign-keys-and-primary-index">
+  ### Clés primaires, clés étrangères et index primaire
+</div>
+
+Dans BigQuery, une table peut avoir des [contraintes de clé primaire et de clé étrangère](https://cloud.google.com/bigquery/docs/information-schema-table-constraints). En général, les clés primaires et étrangères sont utilisées dans les bases de données relationnelles pour garantir l&#39;intégrité des données. Une valeur de clé primaire est normalement unique pour chaque ligne et n&#39;est pas `NULL`. Chaque valeur de clé étrangère d&#39;une ligne doit être présente dans la colonne de clé primaire de la table référencée, ou être `NULL`. Dans BigQuery, ces contraintes ne sont pas appliquées, mais l&#39;optimiseur de requêtes peut utiliser ces informations pour optimiser davantage les requêtes.
+
+Dans ClickHouse, une table peut également avoir une clé primaire. Comme dans BigQuery, ClickHouse n&#39;impose pas l&#39;unicité des valeurs de la colonne de clé primaire d&#39;une table. Contrairement à BigQuery, les données d&#39;une table sont stockées sur disque [triées](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) selon les colonnes de la clé primaire. L&#39;optimiseur de requêtes exploite cet ordre de tri pour éviter de retrier les données, réduire l&#39;utilisation de la mémoire pour les jointures et permettre un arrêt anticipé avec les clauses LIMIT. Contrairement à BigQuery, ClickHouse crée automatiquement [un index primaire (sparse)](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) à partir des valeurs des colonnes de la clé primaire. Cet index est utilisé pour accélérer toutes les requêtes qui contiennent des filtres sur les colonnes de la clé primaire. ClickHouse ne prend actuellement pas en charge les contraintes de clé étrangère.
+
+<div id="secondary-indexes-only-available-in-clickhouse">
+  ## Index secondaires (disponibles uniquement dans ClickHouse)
+</div>
+
+En plus de l’index primaire créé à partir des valeurs des colonnes de la clé primaire d’une table, ClickHouse vous permet de créer des index secondaires sur des colonnes autres que celles de la clé primaire. ClickHouse propose plusieurs types d’index secondaires, chacun étant adapté à différents types de requêtes :
+
+* [**Index Bloom Filter**](/fr/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter):
+  * Utilisé pour accélérer les requêtes avec des conditions d’égalité (par ex. : =, IN).
+  * Utilise des structures de données probabilistes pour déterminer si une valeur existe dans un bloc de données.
+* [**Index Token Bloom Filter**](/fr/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter):
+  * Semblable à un index Bloom Filter, mais utilisé pour les chaînes tokenisées et adapté aux requêtes de recherche en texte intégral.
+* [**Index Min-Max**](/fr/reference/engines/table-engines/mergetree-family/mergetree#minmax):
+  * Conserve les valeurs minimale et maximale d’une colonne pour chaque part de données.
+  * Permet d’éviter la lecture des parts de données qui ne se situent pas dans la plage spécifiée.
+
+<div id="search-indexes">
+  ## Index de recherche
+</div>
+
+À l’instar des [index de recherche](https://cloud.google.com/bigquery/docs/search-index) dans BigQuery, des [index de texte intégral](/fr/reference/engines/table-engines/mergetree-family/textindexes) peuvent être créés sur les colonnes de type chaîne des tables ClickHouse.
+
+<div id="vector-indexes">
+  ## Index vectoriels
+</div>
+
+BigQuery a récemment introduit les [index vectoriels](https://cloud.google.com/bigquery/docs/vector-index) en tant que fonctionnalité pré-GA. De même, ClickHouse propose une prise en charge expérimentale des [index pour accélérer](/fr/reference/engines/table-engines/mergetree-family/annindexes) les cas d’usage de la recherche vectorielle.
+
+<div id="partitioning">
+  ## Partitionnement
+</div>
+
+À l’instar de BigQuery, ClickHouse utilise le partitionnement des tables pour améliorer les performances et la gestion des grandes tables en les divisant en éléments plus petits et plus faciles à gérer, appelés partitions. Nous décrivons en détail le partitionnement dans ClickHouse [ici](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
+
+<div id="clustering">
+  ## Clustering
+</div>
+
+Avec le clustering, BigQuery trie automatiquement les données d&#39;une table en fonction des valeurs de quelques colonnes spécifiées et les regroupe dans des blocs de taille optimale. Le clustering améliore les performances des requêtes, ce qui permet à BigQuery de mieux estimer le coût d&#39;exécution d&#39;une requête. Avec des colonnes utilisées pour le clustering, les requêtes évitent également de parcourir des données inutiles.
+
+Dans ClickHouse, les données sont automatiquement [regroupées sur disque](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) selon les colonnes de clé primaire d&#39;une table, puis organisées logiquement en blocs que les requêtes exploitant la structure de données de l&#39;index primaire peuvent rapidement localiser ou élaguer.
+
+<div id="materialized-views">
+  ## Vues matérialisées
+</div>
+
+BigQuery comme ClickHouse prennent en charge les vues matérialisées — des résultats précalculés issus d&#39;une requête de transformation appliquée à une table de base, afin d&#39;améliorer les performances et l&#39;efficacité.
+
+<div id="querying-materialized-views">
+  ## Interroger les vues matérialisées
+</div>
+
+Les vues matérialisées BigQuery peuvent être interrogées directement ou utilisées par l&#39;optimiseur pour traiter des requêtes sur les tables de base. Si des modifications apportées aux tables de base risquent d&#39;invalider la vue matérialisée, les données sont lues directement depuis les tables de base. Si ces modifications n&#39;invalident pas la vue matérialisée, le reste des données est alors lu depuis la vue matérialisée, et seules les modifications sont lues depuis les tables de base.
+
+Dans ClickHouse, les vues matérialisées peuvent uniquement être interrogées directement. En revanche, contrairement à BigQuery (où les vues matérialisées sont automatiquement actualisées dans les 5 minutes suivant une modification des tables de base, mais pas plus fréquemment que [toutes les 30 minutes](https://cloud.google.com/bigquery/docs/materialized-views-manage#refresh)), les vues matérialisées sont toujours synchronisées avec la table de base.
+
+**Mise à jour des vues matérialisées**
+
+BigQuery actualise périodiquement et intégralement les vues matérialisées en exécutant la requête de transformation de la vue sur la table de base. Entre deux actualisations, BigQuery combine les données de la vue matérialisée avec les nouvelles données de la table de base afin de fournir des résultats de la requête cohérents tout en continuant à utiliser la vue matérialisée.
+
+Dans ClickHouse, les vues matérialisées sont mises à jour de façon incrémentielle. Ce mécanisme de mise à jour incrémentielle offre une grande évolutivité et de faibles coûts de calcul : les vues matérialisées mises à jour de façon incrémentielle sont spécialement conçues pour les scénarios dans lesquels les tables de base contiennent des milliards, voire des billions, de lignes. Au lieu d&#39;interroger sans cesse la table de base, dont le volume ne cesse d&#39;augmenter, pour actualiser la vue matérialisée, ClickHouse calcule simplement un résultat partiel à partir (uniquement) des valeurs des lignes nouvellement insérées dans la table de base. Ce résultat partiel est fusionné de manière incrémentielle avec le résultat partiel précédemment calculé en arrière-plan. Cela se traduit par des coûts de calcul nettement inférieurs à ceux d&#39;une actualisation répétée de la vue matérialisée à partir de l&#39;ensemble de la table de base.
+
+<div id="transactions">
+  ## Transactions
+</div>
+
+Contrairement à ClickHouse, BigQuery prend en charge les transactions multi-instructions au sein d&#39;une seule requête, ou sur plusieurs requêtes lors de l&#39;utilisation de sessions. Une transaction multi-instructions vous permet d&#39;effectuer des opérations de mutation, comme l&#39;insertion ou la suppression de lignes dans une ou plusieurs tables, puis soit de valider les modifications, soit de les annuler de façon atomique. Les transactions multi-instructions figurent sur la [roadmap de ClickHouse pour 2024](https://github.com/ClickHouse/ClickHouse/issues/58392).
+
+<div id="aggregate-functions">
+  ## Fonctions d’agrégation
+</div>
+
+Par rapport à BigQuery, ClickHouse intègre nettement plus de fonctions d’agrégation :
+
+* BigQuery propose [18 fonctions d’agrégation](https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions) et [4 fonctions d’agrégation approximatives](https://cloud.google.com/bigquery/docs/reference/standard-sql/approximate_aggregate_functions).
+* ClickHouse dispose de plus de [150 fonctions d’agrégation prêtes à l’emploi](/fr/reference/functions/aggregate-functions/reference-index), ainsi que de puissants [combinateurs d’agrégation](/fr/reference/functions/aggregate-functions/combinators) pour [étendre](https://www.youtube.com/watch?v=7ApwD0cfAFI) le comportement des fonctions d’agrégation prêtes à l’emploi. Par exemple, vous pouvez appliquer plus de 150 fonctions d’agrégation prêtes à l’emploi à des tableaux plutôt qu’à des lignes d’une table, simplement en les appelant avec le suffixe [-Array](/fr/reference/functions/aggregate-functions/combinators#-array). Avec le suffixe [-Map](/fr/reference/functions/aggregate-functions/combinators#-map), vous pouvez appliquer n’importe quelle fonction d’agrégation à des maps. Et avec le suffixe [-ForEach](/fr/reference/functions/aggregate-functions/combinators#-foreach), vous pouvez appliquer n’importe quelle fonction d’agrégation à des tableaux imbriqués.
+
+<div id="data-sources-and-file-formats">
+  ## Sources de données et formats de fichiers
+</div>
+
+Par rapport à BigQuery, ClickHouse prend en charge nettement plus de formats de fichiers et de sources de données :
+
+* ClickHouse prend nativement en charge le chargement de données dans plus de 90 formats de fichiers à partir de pratiquement n&#39;importe quelle source de données
+* BigQuery prend en charge 5 formats de fichiers et 19 sources de données
+
+<div id="sql-language-features">
+  ## Fonctionnalités du langage SQL
+</div>
+
+ClickHouse offre un SQL standard avec de nombreuses extensions et améliorations qui le rendent plus pratique pour les traitements analytiques. Par exemple, ClickHouse SQL [prend en charge les fonctions lambda](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda) et les fonctions d’ordre supérieur, ce qui évite d’avoir à désimbriquer/exploser les tableaux pour leur appliquer des transformations. C’est un avantage majeur par rapport à d’autres systèmes comme BigQuery.
+
+<div id="arrays">
+  ## Tableaux
+</div>
+
+Par rapport aux 8 fonctions de tableau de BigQuery, ClickHouse propose plus de 80 [fonctions de tableau intégrées](/fr/reference/functions/regular-functions/array-functions) pour modéliser et résoudre avec élégance et simplicité un large éventail de problèmes.
+
+Dans ClickHouse, un modèle de conception courant consiste à utiliser la fonction d’agrégation [`groupArray`](/fr/reference/functions/aggregate-functions/groupArray) pour transformer (temporairement) certaines valeurs de lignes d’une table en tableau. Ce tableau peut ensuite être traité facilement à l’aide de fonctions de tableau, puis le résultat peut être reconverti en lignes individuelles de la table via la fonction [`arrayJoin`](/fr/reference/functions/regular-functions/array-join).
+
+Comme ClickHouse SQL prend en charge les [fonctions lambda d’ordre supérieur](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda), de nombreuses opérations avancées sur les tableaux peuvent être réalisées simplement en appelant l’une des fonctions de tableau d’ordre supérieur intégrées, au lieu de reconvertir temporairement les tableaux en tables, comme c’est souvent [nécessaire](https://cloud.google.com/bigquery/docs/arrays) dans BigQuery, par exemple pour le [filtrage](https://cloud.google.com/bigquery/docs/arrays#filtering_arrays) ou la [combinaison](https://cloud.google.com/bigquery/docs/arrays#zipping_arrays) de tableaux. Dans ClickHouse, ces opérations se résument à un simple appel aux fonctions d’ordre supérieur [`arrayFilter`](/fr/reference/functions/regular-functions/array-functions#arrayFilter) et [`arrayZip`](/fr/reference/functions/regular-functions/array-functions#arrayZip), respectivement.
+
+Ci-dessous, nous proposons une correspondance des opérations sur les tableaux entre BigQuery et ClickHouse :
+
+| BigQuery                                                                                                                 | ClickHouse                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| [ARRAY&#95;CONCAT](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_concat)           | [arrayConcat](/fr/reference/functions/regular-functions/array-functions#arrayConcat)                         |
+| [ARRAY&#95;LENGTH](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_length)           | [length](/fr/reference/functions/regular-functions/array-functions#length)                                   |
+| [ARRAY&#95;REVERSE](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_reverse)         | [arrayReverse](/fr/reference/functions/regular-functions/array-functions#arrayReverse)                       |
+| [ARRAY&#95;TO&#95;STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_to_string) | [arrayStringConcat](/fr/reference/functions/regular-functions/splitting-merging-functions#arrayStringConcat) |
+| [GENERATE&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_array)       | [range](/fr/reference/functions/regular-functions/array-functions#range)                                     |
+
+**Créer un tableau avec un élément pour chaque ligne d’une sous-requête**
+
+*BigQuery*
+
+[Fonction ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array)
+
+```sql
+SELECT ARRAY
+  (SELECT 1 UNION  ALL
+   SELECT 2 UNION ALL
+   SELECT 3) AS new_array;
+
+/*-----------*
+ | new_array |
+ +-----------+
+ | [1, 2, 3] |
+ *-----------*/
+```
+
+*ClickHouse*
+
+[groupArray](/fr/reference/functions/aggregate-functions/groupArray) fonction d’agrégation
+
+```sql
+SELECT groupArray(*) AS new_array
+FROM
+(
+    SELECT 1
+    UNION ALL
+    SELECT 2
+    UNION ALL
+    SELECT 3
+)
+```
+
+```response
+   ┌─new_array─┐
+1. │ [1,2,3]   │
+   └───────────┘
+```
+
+**Convertir un tableau en lignes**
+
+*BigQuery*
+
+Opérateur [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator)
+
+```sql
+SELECT *
+FROM UNNEST(['foo', 'bar', 'baz', 'qux', 'corge', 'garply', 'waldo', 'fred'])
+  AS element
+WITH OFFSET AS offset
+ORDER BY offset;
+
+/*----------+--------*
+ | element  | offset |
+ +----------+--------+
+ | foo      | 0      |
+ | bar      | 1      |
+ | baz      | 2      |
+ | qux      | 3      |
+ | corge    | 4      |
+ | garply   | 5      |
+ | waldo    | 6      |
+ | fred     | 7      |
+ *----------+--------*/
+```
+
+*ClickHouse*
+
+clause [ARRAY JOIN](/fr/reference/statements/select/array-join)
+
+```sql
+WITH ['foo', 'bar', 'baz', 'qux', 'corge', 'garply', 'waldo', 'fred'] AS values
+SELECT element, num-1 AS offset
+FROM (SELECT values AS element) AS subquery
+ARRAY JOIN element, arrayEnumerate(element) AS num;
+
+/*----------+--------*
+ | element  | offset |
+ +----------+--------+
+ | foo      | 0      |
+ | bar      | 1      |
+ | baz      | 2      |
+ | qux      | 3      |
+ | corge    | 4      |
+ | garply   | 5      |
+ | waldo    | 6      |
+ | fred     | 7      |
+ *----------+--------*/
+```
+
+**Retourner un tableau de dates**
+
+*BigQuery*
+
+fonction [GENERATE&#95;DATE&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_date_array)
+
+```sql
+SELECT GENERATE_DATE_ARRAY('2016-10-05', '2016-10-08') AS example;
+
+/*--------------------------------------------------*
+ | example                                          |
+ +--------------------------------------------------+
+ | [2016-10-05, 2016-10-06, 2016-10-07, 2016-10-08] |
+ *--------------------------------------------------*/
+```
+
+Fonctions [range](/fr/reference/functions/regular-functions/array-functions#range) + [arrayMap](/fr/reference/functions/regular-functions/array-functions#arrayMap)
+
+*ClickHouse*
+
+```sql
+SELECT arrayMap(x -> (toDate('2016-10-05') + x), range(toUInt32((toDate('2016-10-08') - toDate('2016-10-05')) + 1))) AS example
+```
+
+```response
+   ┌─example───────────────────────────────────────────────┐
+1. │ ['2016-10-05','2016-10-06','2016-10-07','2016-10-08'] │
+   └───────────────────────────────────────────────────────┘
+```
+
+**Retourner un tableau de timestamps**
+
+*BigQuery*
+
+[GENERATE&#95;TIMESTAMP&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_timestamp_array) fonction
+
+```sql
+SELECT GENERATE_TIMESTAMP_ARRAY('2016-10-05 00:00:00', '2016-10-07 00:00:00',
+                                INTERVAL 1 DAY) AS timestamp_array;
+
+/*--------------------------------------------------------------------------*
+ | timestamp_array                                                          |
+ +--------------------------------------------------------------------------+
+ | [2016-10-05 00:00:00+00, 2016-10-06 00:00:00+00, 2016-10-07 00:00:00+00] |
+ *--------------------------------------------------------------------------*/
+```
+
+*ClickHouse*
+
+fonctions [range](/fr/reference/functions/regular-functions/array-functions#range) + [arrayMap](/fr/reference/functions/regular-functions/array-functions#arrayMap)
+
+```sql
+SELECT arrayMap(x -> (toDateTime('2016-10-05 00:00:00') + toIntervalDay(x)), range(dateDiff('day', toDateTime('2016-10-05 00:00:00'), toDateTime('2016-10-07 00:00:00')) + 1)) AS timestamp_array
+```
+
+```response
+Query id: b324c11f-655b-479f-9337-f4d34fd02190
+
+   ┌─timestamp_array─────────────────────────────────────────────────────┐
+1. │ ['2016-10-05 00:00:00','2016-10-06 00:00:00','2016-10-07 00:00:00'] │
+   └─────────────────────────────────────────────────────────────────────┘
+```
+
+**Filtrage des Arrays**
+
+*BigQuery*
+
+Nécessite de reconvertir temporairement les arrays en tables via l&#39;opérateur [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator)
+
+```sql
+WITH Sequences AS
+  (SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+   UNION ALL SELECT [2, 4, 8, 16, 32] AS some_numbers
+   UNION ALL SELECT [5, 10] AS some_numbers)
+SELECT
+  ARRAY(SELECT x * 2
+        FROM UNNEST(some_numbers) AS x
+        WHERE x < 5) AS doubled_less_than_five
+FROM Sequences;
+
+/*------------------------*
+ | doubled_less_than_five |
+ +------------------------+
+ | [0, 2, 2, 4, 6]        |
+ | [4, 8]                 |
+ | []                     |
+ *------------------------*/
+```
+
+*ClickHouse*
+
+fonction [arrayFilter](/fr/reference/functions/regular-functions/array-functions#arrayFilter)
+
+```sql
+WITH Sequences AS
+    (
+        SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+        UNION ALL
+        SELECT [2, 4, 8, 16, 32] AS some_numbers
+        UNION ALL
+        SELECT [5, 10] AS some_numbers
+    )
+SELECT arrayMap(x -> (x * 2), arrayFilter(x -> (x < 5), some_numbers)) AS doubled_less_than_five
+FROM Sequences;
+```
+
+```response
+   ┌─doubled_less_than_five─┐
+1. │ [0,2,2,4,6]            │
+   └────────────────────────┘
+   ┌─doubled_less_than_five─┐
+2. │ []                     │
+   └────────────────────────┘
+   ┌─doubled_less_than_five─┐
+3. │ [4,8]                  │
+   └────────────────────────┘
+```
+
+**Appariement de tableaux**
+
+*BigQuery*
+
+Nécessite de reconvertir temporairement les tableaux en tables à l’aide de l’opérateur [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator)
+
+```sql
+WITH
+  Combinations AS (
+    SELECT
+      ['a', 'b'] AS letters,
+      [1, 2, 3] AS numbers
+  )
+SELECT
+  ARRAY(
+    SELECT AS STRUCT
+      letters[SAFE_OFFSET(index)] AS letter,
+      numbers[SAFE_OFFSET(index)] AS number
+    FROM Combinations
+    CROSS JOIN
+      UNNEST(
+        GENERATE_ARRAY(
+          0,
+          LEAST(ARRAY_LENGTH(letters), ARRAY_LENGTH(numbers)) - 1)) AS index
+    ORDER BY index
+  );
+
+/*------------------------------*
+ | pairs                        |
+ +------------------------------+
+ | [{ letter: "a", number: 1 }, |
+ |  { letter: "b", number: 2 }] |
+ *------------------------------*/
+```
+
+*ClickHouse*
+
+fonction [arrayZip](/fr/reference/functions/regular-functions/array-functions#arrayZip)
+
+```sql
+WITH Combinations AS
+    (
+        SELECT
+            ['a', 'b'] AS letters,
+            [1, 2, 3] AS numbers
+    )
+SELECT arrayZip(letters, arrayResize(numbers, length(letters))) AS pairs
+FROM Combinations;
+```
+
+```response
+   ┌─pairs─────────────┐
+1. │ [('a',1),('b',2)] │
+   └───────────────────┘
+```
+
+**Agrégation de tableaux**
+
+*BigQuery*
+
+Nécessite de reconvertir les tableaux en tables à l’aide de l’opérateur [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator)
+
+```sql
+WITH Sequences AS
+  (SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+   UNION ALL SELECT [2, 4, 8, 16, 32] AS some_numbers
+   UNION ALL SELECT [5, 10] AS some_numbers)
+SELECT some_numbers,
+  (SELECT SUM(x)
+   FROM UNNEST(s.some_numbers) AS x) AS sums
+FROM Sequences AS s;
+
+/*--------------------+------*
+ | some_numbers       | sums |
+ +--------------------+------+
+ | [0, 1, 1, 2, 3, 5] | 12   |
+ | [2, 4, 8, 16, 32]  | 62   |
+ | [5, 10]            | 15   |
+ *--------------------+------*/
+```
+
+*ClickHouse*
+
+[arraySum](/fr/reference/functions/regular-functions/array-functions#arraySum), [arrayAvg](/fr/reference/functions/regular-functions/array-functions#arrayAvg), ... comme fonction, ou l’un des plus de 90 noms de fonctions d’agrégation existants en argument de la fonction [arrayReduce](/fr/reference/functions/regular-functions/array-functions#arrayReduce)
+
+```sql
+WITH Sequences AS
+    (
+        SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+        UNION ALL
+        SELECT [2, 4, 8, 16, 32] AS some_numbers
+        UNION ALL
+        SELECT [5, 10] AS some_numbers
+    )
+SELECT
+    some_numbers,
+    arraySum(some_numbers) AS sums
+FROM Sequences;
+```
+
+```response
+   ┌─some_numbers──┬─sums─┐
+1. │ [0,1,1,2,3,5] │   12 │
+   └───────────────┴──────┘
+   ┌─some_numbers──┬─sums─┐
+2. │ [2,4,8,16,32] │   62 │
+   └───────────────┴──────┘
+   ┌─some_numbers─┬─sums─┐
+3. │ [5,10]       │   15 │
+   └──────────────┴──────┘
+```

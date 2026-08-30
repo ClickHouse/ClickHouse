@@ -1,0 +1,76 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: 'Пример использования комбинатора Resample с функцией avg'
+keywords: ['avg', 'Resample', 'комбинатор', 'примеры', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`Resample`](/ru/reference/functions/aggregate-functions/combinators#-resample)
+можно применять к агрегатной функции [`count`](/ru/reference/functions/aggregate-functions/count),
+чтобы подсчитывать значения в указанном ключевом столбце для фиксированного числа
+интервалов (`N`).
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="basic-example">
+  ### Базовый пример
+</div>
+
+Рассмотрим пример. Мы создадим таблицу с именем, возрастом и
+зарплатой сотрудников и вставим в неё несколько записей:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+Давайте найдём среднюю зарплату людей, возраст которых лежит в интервалах `[30,60)`
+и `[60,75)` (`[` — не включая границу, а `)` — включая её). Поскольку возраст у нас представлен целыми числами,
+получаем интервалы возрастов `[30, 59]` и `[60,74]`.
+Для этого применим комбинатор `Resample` к агрегатной функции `avg`.
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`count`](/ru/reference/functions/aggregate-functions/count)
+* [`Комбинатор Resample`](/ru/reference/functions/aggregate-functions/combinators#-resample)

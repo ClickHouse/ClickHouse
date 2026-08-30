@@ -16,6 +16,8 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
+#include <base/arithmeticOverflow.h>
+
 #include <algorithm>
 #include <limits>
 
@@ -272,8 +274,14 @@ static std::vector<UInt8> autoAssignNumberForEnum(const ASTPtr & arguments, bool
         if (child->as<ASTLiteral>())
         {
             assign_count += !is_first_child;
-            const Int64 assigned_value = literal_child_assign_num + assign_count;
-            ASTPtr func = makeASTOperator("equals", child, make_intrusive<ASTLiteral>(assigned_value));
+            /// Keep the addition signed and checked: Int64 + size_t would run unsigned (negative
+            /// base wraps to a huge UInt64), and a plain signed add overflows near Int64 max.
+            Int64 assign_num = 0;
+            if (common::addOverflow(literal_child_assign_num, static_cast<Int64>(assign_count), assign_num))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Auto-assigned value for Enum element overflows Int64 (base {} + offset {})",
+                    literal_child_assign_num, assign_count);
+            ASTPtr func = makeASTOperator("equals", child, make_intrusive<ASTLiteral>(assign_num));
             assign_number_child.emplace_back(func);
             if (allow_relative)
                 relative_flags.push_back(leading_implicit);
@@ -327,6 +335,18 @@ static DataTypePtr createExact(const ASTPtr & arguments, bool is_add = false, bo
     {
         const auto literals = getEnumElementLiterals(child);
         const String & field_name = literals.name_literal->value.safeGet<String>();
+
+        /// safeGet<FieldType>() reinterprets the stored bits as Int64, so a UInt64 literal above
+        /// Int64 max becomes negative (e.g. 18446744073709551615 -> -1) and would slip past the
+        /// range check below. Reject such a value up front against the Enum's range.
+        if (literals.value_literal->value.getType() == Field::Types::UInt64)
+        {
+            const UInt64 unsigned_value = literals.value_literal->value.safeGet<UInt64>();
+            if (unsigned_value > static_cast<UInt64>(std::numeric_limits<FieldType>::max()))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
+                    toString(unsigned_value), field_name, EnumName<FieldType>::value);
+        }
+
         const auto value = literals.value_literal->value.safeGet<FieldType>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
@@ -585,9 +605,9 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 
 Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` or in the range `-32768 ... 32767` for `Enum16`. All the strings and numbers must be different. An empty string is allowed. If this type is specified (in a table definition), numbers can be in an arbitrary order. However, the order does not matter.
 
-Neither the string nor the numeric value in an `Enum` can be [NULL](../../sql-reference/syntax.md).
+Neither the string nor the numeric value in an `Enum` can be [NULL](/reference/syntax).
 
-An `Enum` can be contained in [Nullable](../../sql-reference/data-types/nullable.md) type. So if you create a table using the query
+An `Enum` can be contained in [Nullable](/reference/data-types/nullable) type. So if you create a table using the query
 
 ```sql
 CREATE TABLE t_enum_nullable
@@ -620,6 +640,29 @@ Enum values are also convertible to numeric types using the `toT` function, wher
 The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
+
+## ADD ENUM VALUES {#add-enum-values}
+
+There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](/reference/statements/alter/column#modify-column-add-enum-values)
+
+```sql
+CREATE TABLE enum
+(
+    x Enum('One' = 1, 'Two', 'Three')
+) ENGINE = Memory;
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES ('Zero' = 0, 'Four' = 4);
+SHOW CREATE TABLE enum;
+```
+
+```text
+┌─statement────────────────────────────────────────────────────────────────┐
+│CREATE TABLE default.enum                                                 │
+│(                                                                         │
+│    `x` Enum8('Zero' = 0, 'One' = 1, 'Two' = 2, 'Three' = 3, 'Four' = 4)  │
+│)                                                                         │
+│ENGINE = Memory                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```
 )DOCS_MD",
             .syntax = "Enum(...)",
             .related = {"Enum8", "Enum16"},

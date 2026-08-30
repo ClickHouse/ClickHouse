@@ -32,7 +32,6 @@ public:
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
-        const ContextPtr & query_context_,
         ThreadPool & thread_pool_,
         const std::function<void()> & after_task_callback_);
 
@@ -63,7 +62,6 @@ public:
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
     void addDataRestoreTask(DataRestoreTask && new_task);
-    void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
     /// Returns the list of access entities to restore.
     AccessEntitiesToRestore getAccessEntitiesToRestore(const String & data_path_in_backup) const;

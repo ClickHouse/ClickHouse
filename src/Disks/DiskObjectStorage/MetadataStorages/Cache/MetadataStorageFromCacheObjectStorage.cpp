@@ -44,9 +44,24 @@ bool MetadataStorageFromCacheObjectStorage::supportsEmptyFilesWithoutBlobs() con
     return underlying->supportsEmptyFilesWithoutBlobs();
 }
 
+bool MetadataStorageFromCacheObjectStorage::supportsInlineData() const
+{
+    return underlying->supportsInlineData();
+}
+
+bool MetadataStorageFromCacheObjectStorage::appliesOperationsEagerly() const
+{
+    return underlying->appliesOperationsEagerly();
+}
+
 bool MetadataStorageFromCacheObjectStorage::areBlobPathsRandom() const
 {
     return underlying->areBlobPathsRandom();
+}
+
+ObjectStorageKeyGeneratorPtr MetadataStorageFromCacheObjectStorage::getKeyGenerator() const
+{
+    return underlying->getKeyGenerator();
 }
 
 bool MetadataStorageFromCacheObjectStorage::existsFile(const std::string & path) const
@@ -213,6 +228,12 @@ bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredO
 
     std::lock_guard guard(removed_objects_mutex);
     return objects_to_remove.containsAny(blobs);
+}
+
+int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
+{
+    std::lock_guard guard(removed_objects_mutex);
+    return std::ssize(objects_to_remove);
 }
 
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
@@ -387,6 +408,21 @@ void MetadataStorageFromCacheObjectStorageTransaction::addBlobToMetadata(const s
 void MetadataStorageFromCacheObjectStorageTransaction::truncateFile(const std::string & path, size_t size)
 {
     underlying->truncateFile(path, size);
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::incrementBlobRefCount(const std::string & blob)
+{
+    underlying->incrementBlobRefCount(blob);
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::decrementBlobRefCount(const std::string & blob)
+{
+    underlying->decrementBlobRefCount(blob);
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::submitBlobForRemoval(const std::string & remote_path)
+{
+    underlying->submitBlobForRemoval(remote_path);
 }
 
 }

@@ -1,0 +1,19 @@
+---
+slug: /cloud/get-started/cloud/use-cases/overview
+title: '用例'
+description: '探索 ClickHouse 的用例，包括实时分析、可观测性、数据仓库和智能体分析'
+keywords: ['用例']
+sidebarTitle: '概览'
+doc_type: 'landing-page'
+---
+
+ClickHouse 既适合作为**主数据存储**，也适合作为**分析层**。
+
+其列式架构、向量化处理和云原生设计，使其尤其适合同时追求速度与规模的分析工作负载。
+
+| 用例                                                 | 简述                                                                                                   |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [实时分析](/zh/get-started/use-cases/real-time-analytics) | 在数据到达时，对数十亿行数据执行亚秒级查询。非常适合面向客户的仪表盘、实时排行榜，以及任何需要从持续更新的事件流中读取数据的产品功能。                                  |
+| [可观测性](/zh/get-started/use-cases/observability)       | 通过 ClickStack 在单个 ClickHouse 数据库中摄取并查询日志、指标和链路追踪。消除日志、指标和链路追踪三大支柱彼此割裂的问题，无需预聚合即可实现关联的全保真分析。          |
+| [数据仓库](/zh/get-started/use-cases/data-warehousing)    | 将 ClickHouse 与对象存储上的开放表格式 (Iceberg、Delta Lake、Hudi) 结合使用，在不锁定数据的前提下，获得 ACID 事务、schema 约束以及数据仓库级查询性能。 |
+| [智能体分析](/zh/get-started/use-cases/agentic-analytics)  | AI 智能体同时需要高并发和全保真数据。ClickHouse 将实时分析、数据仓库和可观测性整合到统一平台中，智能体可通过 MCP 或自然语言接口直接查询。                       |

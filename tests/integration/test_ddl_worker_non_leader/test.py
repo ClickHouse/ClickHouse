@@ -2,7 +2,6 @@ import time
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 

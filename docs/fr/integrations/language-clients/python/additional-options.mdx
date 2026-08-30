@@ -1,0 +1,90 @@
+---
+sidebarTitle: 'Options supplémentaires'
+keywords: ['clickhouse', 'python', 'options', 'paramètres']
+description: 'Options supplémentaires pour ClickHouse Connect'
+slug: /integrations/language-clients/python/additional-options
+title: 'Options supplémentaires'
+doc_type: 'référence'
+---
+
+ClickHouse Connect offre plusieurs options supplémentaires pour des cas d’usage avancés.
+
+<div id="global-settings">
+  ## Paramètres globaux
+</div>
+
+Quelques paramètres contrôlent globalement le comportement de ClickHouse Connect. Ils sont accessibles depuis le paquet `common` de premier niveau :
+
+```python
+from clickhouse_connect import common
+
+common.set_setting("autogenerate_session_id", False)
+print(common.get_setting("invalid_setting_action"))
+# Output: error
+```
+
+<Note>
+  Configurez les paramètres de création des clients avant de créer ceux-ci. Les paramètres tels que les ID de session et de requête générés, ainsi que l’identification du produit, sont copiés dans l’état propre au client. Les modifications globales ultérieures ne mettent donc pas à jour les clients existants. Les paramètres de liaison et d’insertion fonctionnent différemment. `naive_datetime_binding` et `dict_parameter_format` sont lus lors de la liaison des paramètres. `naive_datetime_insert` est lu lorsqu’une colonne d’insertion au format Native contenant des objets Python `datetime` ou des chaînes ISO `DateTime64` est sérialisée. Les modifications de ces paramètres affectent les clients existants. Un contexte d’insertion réutilisable utilise la valeur actuelle de `naive_datetime_insert` pour chaque insertion.
+</Note>
+
+Les paramètres globaux suivants sont actuellement définis :
+
+| Nom du paramètre          | Par défaut | Options                       | Description                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | ---------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autogenerate_session_id` | `True`     | `True`, `False`               | Génère un ID de session UUID pour chaque client synchrone, sauf si un ID de session est fourni. La fabrique asynchrone remplace cette valeur par `False` par défaut.                                                                                                                                                                                                                                          |
+| `autogenerate_query_id`   | `True`     | `True`, `False`               | Génère un ID de requête UUID pour chaque requête, sauf si un ID est fourni.                                                                                                                                                                                                                                                                                                                                   |
+| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | Formate les dictionnaires Python utilisés lors de la liaison de paramètres en JSON ou en littéraux Map ClickHouse.                                                                                                                                                                                                                                                                                            |
+| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | Action à effectuer pour un paramètre que le serveur signale comme readonly. `drop` l’ignore, `send` le transmet et `error` déclenche une `ProgrammingError`. Les paramètres absents de `system.settings` pour l’utilisateur courant, par exemple un paramètre rendu `CHANGEABLE_IN_READONLY` pour un rôle, sont transmis afin que le serveur puisse les accepter ou les rejeter, sauf si l’action est `drop`. |
+| `naive_datetime_binding`  | `"wall"`   | `"wall"`, `"legacy"`          | Contrôle la liaison des paramètres de requête `datetime` sans fuseau horaire. `wall` formate ces valeurs telles quelles. `legacy` restaure l’ancien comportement de conversion selon le fuseau horaire local de l’hôte. Ajoutez `tzinfo` pour préserver un instant précis.                                                                                                                                    |
+| `naive_datetime_insert`   | `"local"`  | `"local"`, `"server"`         | Contrôle l’insertion d’objets Python contenant des valeurs `datetime` sans fuseau horaire et de chaînes ISO sans fuseau horaire acceptées par `DateTime64`. `local` utilise le fuseau horaire du processus pour des raisons de compatibilité. `server` utilise le fuseau horaire déclaré de la colonne, puis celui du serveur. Les colonnes NumPy et Pandas de type `datetime64` restent inchangées.          |
+| `max_connection_age`      | `600`      | Tout nombre de secondes       | Durée de vie maximale d’une connexion HTTP persistante réutilisée. La rotation aide à répartir les connexions entre les nœuds situés derrière un répartiteur de charge.                                                                                                                                                                                                                                       |
+| `product_name`            | `""`       | Toute chaîne                  | Identifiant de produit ajouté aux informations du client. Utilisez une valeur telle que `"my-product/1.0"`.                                                                                                                                                                                                                                                                                                   |
+| `readonly`                | `0`        | `0`, `1`                      | No-op Deprecated conservé pour la compatibilité avec la version 1.x. Le client lit directement le paramètre `readonly` du serveur.                                                                                                                                                                                                                                                                            |
+| `send_os_user`            | `True`     | `True`, `False`               | Inclut l’utilisateur détecté du système d’exploitation dans les informations du client.                                                                                                                                                                                                                                                                                                                       |
+| `send_integration_tags`   | `True`     | `True`, `False`               | Inclut les intégrations utilisées par le client, telles que Pandas ou SQLAlchemy, dans le User-Agent HTTP.                                                                                                                                                                                                                                                                                                    |
+| `use_protocol_version`    | `True`     | `True`, `False`               | Négocie la version du protocole client utilisée par les fonctionnalités au format Native, telles que les métadonnées de fuseau horaire des colonnes `DateTime`. Désactivez cette option pour les proxys qui rejettent `client_protocol_version`.                                                                                                                                                              |
+| `max_error_size`          | `1024`     | Tout entier non négatif       | Nombre maximal de caractères inclus dans une erreur client. Utilisez `0` pour le message complet.                                                                                                                                                                                                                                                                                                             |
+| `http_buffer_size`        | `10485760` | Octets                        | Taille du buffer en mémoire pour les requêtes HTTP en streaming, 10 MiB par défaut.                                                                                                                                                                                                                                                                                                                           |
+
+<div id="compression">
+  ## Compression
+</div>
+
+ClickHouse Connect prend en charge la compression des réponses avec lz4, zstd, brotli, gzip et deflate. Les insertions Native prennent en charge lz4, zstd, brotli et gzip. La compression réduit les transferts réseau en contrepartie d’un temps CPU plus élevé.
+
+Pour recevoir des données compressées, le paramètre `enable_http_compression` du ClickHouse server doit être défini sur 1, ou l’utilisateur doit avoir l’autorisation de modifier ce paramètre requête par requête.
+
+La compression est contrôlée par l’argument `compress` de `get_client` et `get_async_client`. La valeur par défaut, `True`, annonce tous les encodages de réponse disponibles et compresse les blocs d’insertion Native avec lz4. Définissez `compress=False` pour désactiver la compression, ou passez l’une des valeurs `"lz4"`, `"zstd"`, `"br"` ou `"gzip"` pour demander une méthode spécifique.
+
+Les méthodes client brutes n’utilisent pas le paramètre `compress` défini au niveau du client. `raw_query` et `raw_stream` renvoient des données non compressées, et `raw_insert` utilise son propre argument `compression` pour indiquer la compression déjà appliquée au payload.
+
+La prise en charge de lz4 et zstd est installée avec ClickHouse Connect. Avec Python 3.14, zstd utilise le module de bibliothèque standard `compression.zstd`. Les versions de Python 3.10 à 3.13 utilisent `backports.zstd`. Un interpréteur CPython 3.14+ personnalisé compilé sans prise en charge de zstd s’importe tout de même ; zstd est alors retiré des méthodes disponibles et une erreur n’est levée que si zstd est explicitement demandé. Brotli est optionnel et doit être installé séparément avant d’utiliser `compress="br"`.
+
+gzip est généralement plus lent que lz4 ou zstd pour les charges de travail ClickHouse.
+
+<div id="http-proxy-support">
+  ## Prise en charge du proxy HTTP
+</div>
+
+ClickHouse Connect reconnaît les variables d’environnement standard `HTTP_PROXY` et `HTTPS_PROXY`. Ces variables s’appliquent à tous les clients du processus. Pour configurer un proxy pour chaque client, passez `http_proxy` ou `https_proxy` à `get_client` ou `get_async_client`.
+
+Le client synchrone utilise `urllib3`. Pour utiliser un proxy SOCKS, installez PySocks et passez un `urllib3.contrib.socks.SOCKSProxyManager` comme argument `pool_mgr` à `get_client`. `pool_mgr` n’est pas pris en charge par le client asynchrone.
+
+<div id="variant-dynamic-json-data-types">
+  ## Types de données Variant, Dynamic et JSON
+</div>
+
+ClickHouse Connect prend en charge les types `Variant`, `Dynamic` et `JSON` actuellement disponibles dans ClickHouse. Le type legacy `Object('json')` a été supprimé dans clickhouse-connect 0.14 et n’est pas pris en charge.
+
+<div id="usage-notes">
+  ### Notes d’utilisation
+</div>
+
+* Les valeurs `Variant` sont lues comme le type Python correspondant. Les insertions Native sélectionnent un membre en fonction du type de valeur Python.
+* Lorsque plusieurs membres `Variant` correspondent au même type Python, encapsulez la valeur avec `clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")` pour sélectionner explicitement le membre voulu.
+* Le format de lecture `typed` de `Variant` renvoie des objets `TypedVariant(value, type_name)` et préserve le type du membre d’origine. Activez-le avec `query_formats={"Variant": "typed"}`.
+* Les valeurs `Dynamic` sont lues comme le type Python correspondant. Les insertions sont actuellement envoyées via la représentation String.
+* Les valeurs `JSON` peuvent être insérées sous forme de dictionnaires Python ou de chaînes contenant un objet JSON. Le format de lecture par défaut renvoie des dictionnaires ; utilisez le format de lecture `"string"` pour renvoyer des chaînes JSON.
+* Les requêtes qui sélectionnent une sous-colonne `Variant`, `Dynamic` ou `JSON` renvoient le type concret de la sous-colonne.
+
+Certaines valeurs stockées dans la zone de données partagées des colonnes `JSON` ou `Dynamic` utilisent des types que le client ne peut pas encore décoder. Ces valeurs sont renvoyées sous forme d’octets bruts. Ces types complexes utilisent également le chemin de conversion en pur Python ; ils peuvent donc être plus lents que les types scalaires établis.

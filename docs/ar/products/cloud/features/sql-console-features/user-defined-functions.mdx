@@ -1,0 +1,267 @@
+---
+sidebarTitle: 'الدوال المعرّفة من قبل المستخدم'
+slug: /cloud/features/user-defined-functions
+title: 'الدوال المعرّفة من قبل المستخدم في Cloud'
+description: 'أضف دوال بايثون التنفيذية الخاصة بك إلى Cloud'
+doc_type: 'guide'
+keywords: ['دالة معرّفة من قبل المستخدم', 'UDF']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+تتيح الدوال المعرّفة من قبل المستخدم (UDF) للمستخدمين توسيع إمكانات ClickHouse بما يتجاوز ما توفره أكثر من ألف [دالة](/ar/reference/functions/regular-functions/overview) جاهزة.
+
+في ClickHouse Cloud، توجد عدة طرق لإنشاء الدوال المعرّفة من قبل المستخدم وإدارتها:
+
+1. باستخدام SQL
+2. باستخدام UI والتعليمات البرمجية الخاصة بك (الإصدار التجريبي العام)
+3. باستخدام [Cloud واجهة برمجة تطبيقات](#manage-udfs-with-the-cloud-api) (تجريبي)
+4. باستخدام [Terraform](#manage-udfs-with-terraform) (alpha)
+
+<div id="sql-udfs">
+  ## الدوال المعرّفة من قبل المستخدم في SQL
+</div>
+
+يمكن إنشاء UDFs في SQL باستخدام عبارة [`CREATE FUNCTION`](/ar/reference/statements/create/function) انطلاقًا من تعبير lambda.
+
+في هذا المثال، سننشئ دالة معرّفة من قبل المستخدم قابلة للتنفيذ وبسيطة باسم `isBusinessHours`.
+ستتحقق الدالة مما إذا كان طابع زمني معيّن يقع ضمن ساعات العمل المعتادة، وستُرجع true إذا كان كذلك، وإلا false.
+
+1. سجّل الدخول إلى Cloud Console وافتح SQL Console
+2. اكتب استعلام SQL التالي لإنشاء الدالة `isBusinessHours`:
+
+```sql
+CREATE FUNCTION isBusinessHours AS (ts) ->
+toDayOfWeek(ts) BETWEEN 1 AND 5
+AND toHour(ts) BETWEEN 9 AND 17;
+```
+
+3. نفّذ ما يلي لاختبار UDF الذي أنشأته للتو:
+
+```sql
+SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+```
+
+من المفترض أن تظهر لك النتيجة التالية:
+
+```response
+1   0
+```
+
+4. يمكنك استخدام الأمر `DROP FUNCTION` لإزالة دالة UDF التي أنشأتها للتو:
+
+```sql
+DROP FUNCTION isBusinessHours
+```
+
+<Warning>
+  **مهم**
+
+  إن UDFs في ClickHouse Cloud **لا ترث الإعدادات على مستوى المستخدم**. وتُنفَّذ باستخدام إعدادات النظام الافتراضية.
+</Warning>
+
+هذا يعني:
+
+* لا تنتقل الإعدادات على مستوى الجلسة (المعيَّنة عبر عبارة `SET`) إلى سياق تنفيذ UDF
+* لا ترث UDFs إعدادات ملف تعريف المستخدم
+* لا تنطبق الإعدادات على مستوى الاستعلام ضمن تنفيذ UDF
+
+<div id="ui-udfs">
+  ## الدوال المُعرَّفة من قبل المستخدم المُنشأة عبر UI
+</div>
+
+<BetaBadge />
+
+يوفّر ClickHouse Cloud واجهة إعداد عبر UI لإنشاء الدوال المُعرَّفة من قبل المستخدم.
+
+في هذا المثال، سننشئ الدالة البسيطة نفسها المُعرَّفة من قبل المستخدم والقابلة للتنفيذ `isBusinessHours`، والتي تتحقق مما إذا كان `timestamp` معيّن يقع ضمن ساعات العمل المعتادة.
+سبق أن أنشأناها باستخدام SQL، ولكن هذه المرة سننشئها باستخدام بايثون ونُعدّها عبر UI.
+
+<Steps>
+  <Step title="أنشئ ملف بايثون" id="create-python-file">
+    أنشئ ملفًا جديدًا باسم `main.py` على جهازك المحلي:
+
+    ```python
+    cat > main.py << 'EOF'
+    import sys
+    from datetime import datetime
+
+    for line in sys.stdin:
+        ts = datetime.fromisoformat(line.strip())
+        result = 1 if (0 <= ts.weekday() <= 4 and 9 <= ts.hour <= 17) else 0
+        print(result)
+        sys.stdout.flush()
+    EOF
+    ```
+
+    إذا كان سكربت بايثون لديك يستورد حزمًا تابعة لجهات خارجية، فأدرجها في ملف `requirements.txt` وسيتولى ClickHouse Cloud تثبيتها لك. ويمكنك بدلًا من ذلك تضمين التبعيات مباشرةً في ملف ZIP، لكن عندئذٍ يجب تضمين الحزم المخزنة مؤقتًا لكلتا معماريتَي CPU، لذا يُعد `requirements.txt` الخيار الأبسط. على سبيل المثال:
+
+    ```text
+    requests>=2.28.0
+    numpy>=1.23.0
+    ```
+
+    <Note>
+      تتوقع ClickHouse Cloud أن يكون الملف `main.py` موجودًا داخل ملف zip الذي سترفعه عبر واجهة المستخدم في الخطوة التالية.
+      إذا منحت الملف اسمًا آخر، فستواجه خطأً.
+    </Note>
+  </Step>
+
+  <Step title="تجميع التبعيات والملفات المحلية" id="bundle-dependencies">
+    لتضمين حزم التبعيات وأي ملفات محلية إضافية (مثل ملفات wheel أو ملفات الإعداد أو ملفات البيانات)، ضعها في المجلد نفسه إلى جانب `main.py` و`requirements.txt`. عند إنشاء أرشيف ZIP، ضمّن جميع الملفات:
+
+    ```bash
+    zip is_business_hours.zip main.py requirements.txt
+    ```
+
+    يمكنك الإشارة إلى الدليل الأساسي للمسار المحلي المضمَّن في شيفرة بايثون الخاصة بك باستخدام `os.path.dirname(os.path.abspath(__file__))`. يُرجع هذا التعبير المسار المطلق إلى الدليل الذي يوجد فيه ملف `main.py` داخل أرشيف ZIP، مما يتيح لك الوصول إلى الملفات المضمَّنة الأخرى:
+
+    ```python
+    import os
+
+    # Get the base directory of the bundled files
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_dir, 'config.json')
+    ```
+
+    يكون ذلك مفيدًا عندما تحتاج إلى:
+
+    * الوصول إلى ملفات التهيئة المضمّنة مع UDF الخاصة بك
+    * تحميل حزم wheel للتبعيات المخصّصة
+    * الإشارة إلى نصوص برمجية إضافية أو ملفات بيانات
+
+    الآن قم بضغط الملف في أرشيف ZIP:
+
+    ```bash
+    zip is_business_hours.zip main.py
+    ```
+
+    <Warning>
+      **الروابط الرمزية غير مسموح بها**
+
+      يرفض ClickHouse Cloud أرشيفات UDF التي تحتوي على روابط رمزية. تأكد من أن حزمة ZIP تحتوي فقط على ملفات ومجلدات عادية — ستفشل عملية التحقق من أي عملية رفع تتضمن روابط رمزية.
+    </Warning>
+  </Step>
+
+  <Step title="أنشئ UDF عبر واجهة المستخدم" id="create-udf-via-ui">
+    1. من الصفحة الرئيسية لـ Cloud Console، انقر على اسم مؤسستك في القائمة السفلية اليسرى.
+    2. اختر **الدوال المعرّفة من قبل المستخدم** من القائمة.
+    3. في صفحة الدوال المعرّفة من قبل المستخدم، انقر على **Set up a UDF**. ستُفتح لوحة إعدادات على الجانب الأيمن من الشاشة.
+    4. أدخل اسمًا للدالة. في هذا المثال، استخدم `isBusinessHours`.
+    5. اختر نوع الدالة: إما **Executable pool** أو **Executable**:
+       * **Executable pool**: يُحفَظ pool من العمليات المستمرة، وتُؤخَذ منه عملية لتنفيذ reads.
+       * **Executable**: يُشغَّل السكربت مع كل query.
+    6. في هذا المثال، استخدم الإعدادات الافتراضية. للاطلاع على القائمة الكاملة لمعلمات الإعداد، راجع [الدوال المعرّفة من قبل المستخدم التنفيذية](/ar/reference/functions/regular-functions/udf#executable-user-defined-functions).
+    7. انقر على **Browse File** لتحميل ملف `.zip` الذي أُنشئ في بداية هذا الدليل.
+    8. أضف argument جديدًا. في هذا المثال، أضف argument باسم `timestamp` من النوع `DateTime`.
+    9. اختر return type. في هذا المثال، اختر `Bool`.
+    10. انقر على **Create UDF**. سيعرض مربع حوار حالة build الحالية.
+        * إذا كانت هناك أي مشكلات، فستتغير الحالة إلى **error**.
+        * بخلاف ذلك، ستنتقل الحالة من **building** إلى **provisioning**. يجب أن تكون الخدمة في حالة تشغيل لإكمال provisioning. إذا كانت الخدمة في حالة idle، فانقر على **Wake Up Service** في لوحة **UDF details** بجوار اسم الخدمة.
+        * عند اكتمال العملية، ستتغير الحالة إلى **deployed**.
+  </Step>
+
+  <Step title="اختبر UDF الخاص بك" id="test-your-udf">
+    1. ارجع إلى الصفحة الرئيسية في **SQL Console** بالنقر على **Settings - return to your service view** من الزاوية العلوية اليسرى للصفحة
+    2. انقر على **SQL Console** في القائمة الجانبية اليسرى
+    3. اكتب الاستعلام التالي:
+
+    ```sql
+    SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+    ```
+
+    من المفترض أن تظهر لك النتيجة:
+
+    ```response
+    true    false
+    ```
+  </Step>
+
+  <Step title="إنشاء إصدار جديد" id="create-new-version">
+    لتغيير شيفرة UDF، أنشئ إصدارًا جديدًا. لا تُستخدم لوحة **Edit** إلا لإدارة الخدمات المُسنَدة إلى UDF؛ ولن يؤدي رفع ملف من خلالها إلى استبدال الشيفرة المنشورة.
+
+    1. من الصفحة الرئيسية في Cloud Console، انقر على اسم مؤسستك في القائمة السفلية اليسرى.
+    2. اختر **الدوال المعرّفة من قبل المستخدم** من القائمة.
+    3. انقر على النقاط الثلاث ضمن **الإجراءات** الخاصة بـ UDF ‏`isBusinessHours`، ثم انقر على **إنشاء إصدار جديد**
+    4. ارفع ملف zip يتضمن الشيفرة المعدّلة، أو غيّر الإعدادات ثم انقر على **إنشاء إصدار جديد**
+
+    لقد أضفت بنجاح أول دالة معرّفة من قبل المستخدم عبر UI، وتحققت من أنها تعمل، ورأيت كيفية إنشاء إصدار جديد لها عند الحاجة.
+  </Step>
+</Steps>
+
+<div id="manage-udfs-with-the-cloud-api">
+  ## إدارة UDFs باستخدام Cloud واجهة برمجة تطبيقات
+</div>
+
+<BetaBadge />
+
+يتوفر كل ما هو متاح في واجهة المستخدم برمجيًا أيضًا عبر [ClickHouse Cloud واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/api-overview).
+تتيح لك نقاط نهاية UDF إعداد برنامج نصي لإدارة دورة الحياة الكاملة لـ UDF، بما في ذلك تحميل أرشيفات المصدر وإنشاء الدالات والإصدارات وإرفاقها بالخدمات وحذفها.
+
+<Note>
+  نقاط النهاية هذه في مرحلة Beta، وقد يتغير عقد واجهة برمجة تطبيقات.
+</Note>
+
+سير العمل المعتاد لإنشاء UDF ونشرها عبر واجهة برمجة تطبيقات هو:
+
+1. [أنشئ URL للتحميل](/ar/products/cloud/api-reference/udf/udf-upload-session-create) للحصول على URL تحميل `application/zip` موقّع مسبقًا، ثم حمّل أرشيف ZIP إليه. لا يمكن استخدام كل معرّف تحميل إلا لمحاولة إنشاء واحدة، سواء لـ UDF أو لإصدار؛ اطلب URL تحميل جديدًا عند إعادة المحاولة.
+2. [أنشئ UDF](/ar/products/cloud/api-reference/udf/udf-create) من الأرشيف المُحمَّل، مع تحديد اسم الدالة وبيئة التشغيل والوسيطات ونوع الإرجاع.
+3. [أرفق UDF بخدمة](/ar/products/cloud/api-reference/udf/udf-attach). إذا لم يُحدَّد الإصدار، يُرفق أحدث إصدار جاهز. يجب أن تكون الخدمة قيد التشغيل؛ ويمكن إيقاظ الخدمات الخاملة أولًا.
+
+المجموعة الكاملة من نقاط النهاية:
+
+| نقطة النهاية                                                                        | الوصف                                                                |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [إنشاء URL لتحميل UDF](/ar/products/cloud/api-reference/udf/udf-upload-session-create) | ينشئ URL تحميل `application/zip` موقّعًا مسبقًا على مستوى المؤسسة    |
+| [إنشاء UDF](/ar/products/cloud/api-reference/udf/udf-create)                           | ينشئ UDF جديدة من أرشيف مُحمَّل                                      |
+| [إدراج UDFs](/ar/products/cloud/api-reference/udf/udf-list)                            | يعيد أحدث إصدار من كل UDF في المؤسسة                                 |
+| [الحصول على UDF](/ar/products/cloud/api-reference/udf/udf-get)                         | يعيد أحدث إصدار من UDF                                               |
+| [حذف UDF](/ar/products/cloud/api-reference/udf/udf-delete)                             | يحذف جميع إصدارات UDF ويفصلها عن كل الخدمات                          |
+| [إنشاء إصدار UDF](/ar/products/cloud/api-reference/udf/udf-version-create)             | يستخدم أرشيف مصدر، ويعيّن إصدارًا، ويبدأ بناء UDF                    |
+| [إدراج إصدارات UDF](/ar/products/cloud/api-reference/udf/udf-version-list)             | يعيد جميع إصدارات UDF                                                |
+| [حذف إصدار UDF](/ar/products/cloud/api-reference/udf/udf-version-delete)               | يحذف إصدار UDF غير المرفق بأي خدمة                                   |
+| [إرفاق UDF بخدمة](/ar/products/cloud/api-reference/udf/udf-attach)                     | يرفق إصدارًا واحدًا من UDF بخدمة، ويستبدل الإصدار الحالي عند الضرورة |
+| [إدراج إرفاقات UDF](/ar/products/cloud/api-reference/udf/udf-attachment-list)          | يعيد إرفاقات الخدمة الحالية لـ UDF                                   |
+| [الحصول على إرفاق UDF](/ar/products/cloud/api-reference/udf/udf-attachment-get)        | يعيد الإرفاق الحالي لـ UDF بخدمة واحدة                               |
+| [فصل UDF عن خدمة](/ar/products/cloud/api-reference/udf/udf-detach)                     | يفصل UDF عن خدمة                                                     |
+
+راجع [مرجع UDF واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/udf/udf-create) للاطلاع على مخططات الطلبات والاستجابات.
+
+<div id="manage-udfs-with-terraform">
+  ## إدارة UDFs باستخدام Terraform
+</div>
+
+يتضمن [موفّر Terraform الرسمي لـ ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) موردين لإدارة UDFs كبنية تحتية معرّفة بالشيفرة:
+
+* يدير [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) الدالة نفسها. ويأخذ أرشيف ZIP يتضمن شيفرة مصدر الدالة وينشر إصدارًا جديدًا كلما تغيّر hash الأرشيف، مع انتظار اكتمال عملية البناء.
+* يرفق [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) إصدار UDF بخدمة. لا يمكن أن تحتوي الخدمة إلا على إصدار واحد من الدالة في الوقت نفسه. يمكنك تثبيت رقم إصدار محدد، أو الإشارة إلى `clickhouse_udf.<name>.version` لترقية الخدمات تلقائيًا إلى أحدث إصدار.
+
+<Note>
+  تتوفر هذه الموارد في إصدار الموفّر 3.24.0 والإصدارات الأحدث. وهي في حالة alpha، وقد يتغير سلوكها في إصدارات الموفّر المستقبلية.
+</Note>
+
+على سبيل المثال، لنشر UDF‏ `isBusinessHours` من المثال السابق باستخدام Terraform:
+
+```terraform
+resource "clickhouse_udf" "is_business_hours" {
+  function_name = "isBusinessHours"
+  runtime       = "python3.11"
+  type          = "executable_pool"
+  return_type   = "Bool"
+
+  arguments = [
+    { name = "timestamp", type = "DateTime" },
+  ]
+
+  source_archive_path = "${path.module}/is_business_hours.zip"
+  source_archive_hash = filebase64sha256("${path.module}/is_business_hours.zip")
+}
+
+resource "clickhouse_udf_attachment" "production" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+```
+
+لا تنجح عملية الإرفاق إلا للإصدارات الجاهزة، وقد تستغرق عدة دقائق؛ وتُفعَّل الخدمات الخاملة تلقائيًا. يؤدي حذف مورد `clickhouse_udf` إلى إزالة جميع إصدارات الدالة وفصلها عن جميع الخدمات.

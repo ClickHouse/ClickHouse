@@ -1,0 +1,23 @@
+---
+description: 'Documentación de la cláusula ALL'
+sidebarTitle: 'ALL'
+slug: /sql-reference/statements/select/all
+title: 'Cláusula ALL'
+doc_type: 'reference'
+---
+
+Si hay varias filas que coinciden en una tabla, `ALL` las devuelve todas. `SELECT ALL` es idéntico a `SELECT` sin `DISTINCT`. Si se especifican tanto `ALL` como `DISTINCT`, se lanzará una excepción.
+
+`ALL` puede especificarse dentro de funciones de agregación, aunque no tiene ningún efecto práctico en el resultado de la consulta.
+
+Por ejemplo:
+
+```sql
+SELECT sum(ALL number) FROM numbers(10);
+```
+
+Es equivalente a:
+
+```sql
+SELECT sum(number) FROM numbers(10);
+```

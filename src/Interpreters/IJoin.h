@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -63,6 +64,9 @@ public:
 
     virtual JoinResultBlock next() = 0;
 
+    /// Right table rows matched while producing the result. Only meaningful once the result is exhausted.
+    virtual size_t getMatchedRightRows() const { return 0; }
+
     static JoinResultPtr createFromBlock(Block block);
 };
 
@@ -75,6 +79,12 @@ public:
 
     virtual const TableJoin & getTableJoin() const = 0;
 
+    /// The `join_any_take_last_row` setting: for `ANY` joins it selects the last matching right-side
+    /// row instead of the first one. It is not part of `TableJoin`, it is baked into the concrete
+    /// algorithm, so algorithms that honor it expose it here. Algorithms for which the setting is
+    /// meaningless keep the default.
+    virtual bool anyTakeLastRow() const { return false; }
+
     /// Returns true if clone is supported
     virtual bool isCloneSupported() const
     {
@@ -86,9 +96,9 @@ public:
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_) const
     {
-        (void)(table_join_);
-        (void)(left_sample_block_);
-        (void)(right_sample_block_);
+        (void)table_join_;
+        (void)left_sample_block_;
+        (void)right_sample_block_;
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
     }
 
@@ -105,7 +115,7 @@ public:
     /// (e.g., when PREWHERE consumed all columns from the right side of a cross join).
     virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits = true) /// NOLINT
     {
-        /// Default implementation ignores num_rows; HashJoin overrides this for CROSS joins.
+        /// Default implementation ignores num_rows; joins that need row-count-only blocks override it.
         (void)num_rows;
         return addBlockToJoin(block, check_limits);
     }
@@ -131,6 +141,7 @@ public:
     /// Number of rows/bytes stored in memory
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
+    virtual StepAnalysisReport getAnalysisReport() const = 0;
 
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
@@ -146,6 +157,11 @@ public:
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
+
+    /// Whether the join emits left rows in the same order they arrive. HashJoin/DirectJoin/ConcurrentHashJoin
+    /// stream the probe side, so they do. PartialMergeJoin re-sorts left blocks by the join key, so it does not;
+    /// the read-in-order-through-join optimisation in optimizeReadInOrder.cpp must not propagate through such joins.
+    virtual bool preservesLeftBlockOrder() const { return true; }
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
@@ -178,10 +194,18 @@ public:
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
 
+    /// Called by `JoiningTransform` when every probe stream has consumed its whole left input.
+    /// Not called when the probe is cut short (LIMIT, cancellation).
+    /// `matched_right_rows` is the number of right table rows matched across every probe stream.
+    virtual void onProbePhaseFinish(size_t /*matched_right_rows*/) { }
+
     /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
     /// a post build optimization step.
     virtual bool hasPostBuildPhase() const { return false; }
     virtual void runPostBuildPhase() { }
+
+    /// Enables lazy columns indexing optimization on hash join variants
+    virtual void setEnableLazyColumnsIndexing(bool /*value*/) { }
 
 private:
     Block totals;

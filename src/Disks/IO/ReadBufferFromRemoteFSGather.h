@@ -36,7 +36,7 @@ public:
 
     void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
-    std::optional<size_t> tryGetFileSize() override { return getTotalSize(blobs_to_read); }
+    std::optional<size_t> tryGetFileSize() override;
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
@@ -47,6 +47,13 @@ public:
     bool isSeekCheap() override;
 
     bool isContentCached(size_t offset, size_t size) override;
+
+    /// Positioned reads are supported only for single-blob files; that's always the case on
+    /// "plain" object storage disks, while e.g. a file written with WriteMode::Append on an "s3"
+    /// disk consists of multiple blobs.
+    bool supportsReadAt() override;
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object, size_t start_offset);

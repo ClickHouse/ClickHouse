@@ -1,0 +1,267 @@
+---
+sidebarTitle: 'Пользовательские функции'
+slug: /cloud/features/user-defined-functions
+title: 'Пользовательские функции в Cloud'
+description: 'Добавьте в Cloud собственные исполняемые функции Python'
+doc_type: 'guide'
+keywords: ['user defined function', 'UDF']
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+Пользовательские функции (UDF) позволяют расширять возможности ClickHouse сверх того, что доступно в более чем тысяче готовых [функций](/ru/reference/functions/regular-functions/overview).
+
+В ClickHouse Cloud есть несколько способов создавать пользовательские функции и управлять ими:
+
+1. С помощью SQL
+2. С помощью интерфейса и собственного кода (публичная бета)
+3. С помощью [Cloud API](#manage-udfs-with-the-cloud-api) (бета)
+4. С помощью [Terraform](#manage-udfs-with-terraform) (альфа)
+
+<div id="sql-udfs">
+  ## Пользовательские функции SQL
+</div>
+
+Пользовательские функции SQL можно создавать с помощью оператора [`CREATE FUNCTION`](/ru/reference/statements/create/function) на основе лямбда-выражения.
+
+В этом примере мы создадим простую исполняемую пользовательскую функцию `isBusinessHours`.
+Функция будет проверять, попадает ли указанная временная метка в стандартные рабочие часы, и возвращать true, если да, и false — если нет.
+
+1. Войдите в Cloud Console и откройте консоль SQL
+2. Напишите следующий SQL-запрос, чтобы создать функцию `isBusinessHours`:
+
+```sql
+CREATE FUNCTION isBusinessHours AS (ts) ->
+toDayOfWeek(ts) BETWEEN 1 AND 5
+AND toHour(ts) BETWEEN 9 AND 17;
+```
+
+3. Чтобы протестировать только что созданную UDF, выполните следующую команду:
+
+```sql
+SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+```
+
+Вы должны получить такой результат:
+
+```response
+1   0
+```
+
+4. Вы можете использовать команду `DROP FUNCTION`, чтобы удалить только что созданную UDF:
+
+```sql
+DROP FUNCTION isBusinessHours
+```
+
+<Warning>
+  **Важно**
+
+  пользовательская функция (UDF) в ClickHouse Cloud **не наследует настройки на уровне пользователя**. Она выполняется с системными настройками по умолчанию.
+</Warning>
+
+Это означает:
+
+* Настройки уровня сеанса (заданные через оператор `SET`) не передаются в контекст выполнения UDF
+* Настройки профиля пользователя не наследуются UDF
+* Настройки уровня запроса не применяются при выполнении UDF
+
+<div id="ui-udfs">
+  ## Пользовательские функции, созданные через интерфейс
+</div>
+
+<BetaBadge />
+
+ClickHouse Cloud позволяет создавать пользовательские функции через интерфейс.
+
+В этом примере мы создадим ту же простую исполняемую пользовательскую функцию `isBusinessHours`, которая проверяет, попадает ли заданная временная метка в обычные рабочие часы.
+Ранее мы создавали её с помощью SQL, а на этот раз создадим её с помощью Python и настроим через интерфейс.
+
+<Steps>
+  <Step title="Создайте Python-файл" id="create-python-file">
+    Создайте новый файл `main.py` на локальной машине:
+
+    ```python
+    cat > main.py << 'EOF'
+    import sys
+    from datetime import datetime
+
+    for line in sys.stdin:
+        ts = datetime.fromisoformat(line.strip())
+        result = 1 if (0 <= ts.weekday() <= 4 and 9 <= ts.hour <= 17) else 0
+        print(result)
+        sys.stdout.flush()
+    EOF
+    ```
+
+    Если ваш Python-скрипт импортирует сторонние пакеты, перечислите их в файле `requirements.txt`, и ClickHouse Cloud установит их автоматически. Вместо этого можно добавить зависимости прямо в ZIP-архив, но тогда потребуется включить кэшированные пакеты для обеих архитектур CPU, поэтому вариант с `requirements.txt` проще. Например:
+
+    ```text
+    requests>=2.28.0
+    numpy>=1.23.0
+    ```
+
+    <Note>
+      ClickHouse Cloud ожидает, что в zip-архиве, который вы загрузите через интерфейс на следующем шаге, будет файл `main.py`.
+      Если назвать файл иначе, возникнет ошибка.
+    </Note>
+  </Step>
+
+  <Step title="Пакеты зависимостей и локальные файлы" id="bundle-dependencies">
+    Чтобы включить пакеты зависимостей и любые дополнительные локальные файлы (например, wheel-файлы, файлы конфигурации или файлы данных), поместите их в тот же каталог, где находятся `main.py` и `requirements.txt`. При создании ZIP-архива включите в него все файлы:
+
+    ```bash
+    zip is_business_hours.zip main.py requirements.txt
+    ```
+
+    В коде Python вы можете сослаться на базовый каталог локального упакованного path, используя `os.path.dirname(os.path.abspath(__file__))`. Это возвращает абсолютный path к каталогу, в котором находится ваш `main.py` внутри ZIP-архива, что позволяет получать доступ к другим упакованным файлам:
+
+    ```python
+    import os
+
+    # Get the base directory of the bundled files
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_dir, 'config.json')
+    ```
+
+    Это полезно, когда вам нужно:
+
+    * Получить доступ к файлам конфигурации, включённым в ваш UDF
+    * Загрузить wheel-пакеты для пользовательских зависимостей
+    * Указать дополнительные скрипты или файлы данных
+
+    Теперь сожмите файл в ZIP-архив:
+
+    ```bash
+    zip is_business_hours.zip main.py
+    ```
+
+    <Warning>
+      **Символические ссылки запрещены**
+
+      ClickHouse Cloud отклоняет архивы UDF, содержащие символические ссылки. Убедитесь, что ваш ZIP-архив содержит только обычные файлы и каталоги — загрузка архивов с символическими ссылками не пройдет проверку.
+    </Warning>
+  </Step>
+
+  <Step title="Создание UDF через интерфейс" id="create-udf-via-ui">
+    1. На главной странице Cloud Console нажмите имя вашей организации в меню в левом нижнем углу.
+    2. Выберите в меню **Пользовательские функции**.
+    3. На странице пользовательских функций нажмите **Настроить UDF**. Справа откроется панель конфигурации.
+    4. Введите имя функции. В этом примере используйте `isBusinessHours`.
+    5. Выберите тип функции: **Executable pool** или **Executable**:
+       * **Executable pool**: Поддерживается пул постоянных процессов, и для операций чтения процесс берётся из этого пула.
+       * **Executable**: Скрипт запускается для каждого запроса.
+    6. В этом примере используйте настройки по умолчанию. Полный список параметров конфигурации см. в разделе [Исполняемые пользовательские функции](/ru/reference/functions/regular-functions/udf#executable-user-defined-functions).
+    7. Нажмите **Выбрать файл**, чтобы загрузить файл `.zip`, созданный в начале этого руководства.
+    8. Добавьте новый аргумент. В этом примере добавьте аргумент `timestamp` с типом `DateTime`.
+    9. Выберите тип возвращаемого значения. В этом примере выберите `Bool`.
+    10. Нажмите **Создать UDF**. В диалоговом окне отобразится текущий статус сборки.
+        * Если возникнут какие-либо проблемы, статус изменится на **ошибка**.
+        * В противном случае статус последовательно изменится с **сборка** на **подготовка**. Для завершения подготовки ваш сервис должен быть активен. Если сервис находится в состоянии бездействия, нажмите **Пробудить сервис** на панели **Сведения о UDF** рядом с именем сервиса.
+        * После завершения статус изменится на **развернуто**.
+  </Step>
+
+  <Step title="Протестируйте свою UDF" id="test-your-udf">
+    1. вернитесь на главную страницу **SQL Console**, нажав в левом верхнем углу страницы **Settings - return to your service view**
+    2. нажмите **SQL Console** в меню слева
+    3. введите следующий запрос:
+
+    ```sql
+    SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+    ```
+
+    Вы увидите результат:
+
+    ```response
+    true    false
+    ```
+  </Step>
+
+  <Step title="Создайте новую версию" id="create-new-version">
+    Чтобы изменить код UDF, создайте новую версию. Панель **Edit** управляет только тем, каким сервисам назначена UDF; загрузка файла в этой панели не заменит уже развернутый код.
+
+    1. На главной странице Cloud Console нажмите имя своей организации в меню в левом нижнем углу.
+    2. В меню выберите **Пользовательские функции**.
+    3. Для UDF `isBusinessHours` нажмите на три точки в разделе **Действия**, затем выберите **Создать новую версию**
+    4. Загрузите ZIP-архив с измененным кодом или измените настройки, затем нажмите **Создать новую версию**
+
+    Вы успешно добавили свою первую пользовательскую функцию через интерфейс, убедились, что она выполняется, и узнали, как при необходимости создать для нее новую версию.
+  </Step>
+</Steps>
+
+<div id="manage-udfs-with-the-cloud-api">
+  ## Управление пользовательскими функциями (UDF) через Cloud API
+</div>
+
+<BetaBadge />
+
+Всё, что доступно в интерфейсе, также доступно программно через [ClickHouse Cloud API](/ru/products/cloud/features/admin-features/api/api-overview).
+Конечные точки UDF позволяют автоматизировать весь жизненный цикл UDF: загрузку исходных архивов, создание функций и версий, их подключение к сервисам и удаление.
+
+<Note>
+  Эти конечные точки находятся на стадии бета-тестирования, и контракт API может измениться.
+</Note>
+
+Типичный процесс создания и развертывания UDF через API:
+
+1. [Создайте URL для загрузки](/ru/products/cloud/api-reference/udf/udf-upload-session-create), чтобы получить предварительно подписанный URL для загрузки `application/zip`, а затем загрузите по нему ZIP-архив. Каждый ID загрузки можно использовать только для одной попытки создания UDF или её версии; при повторной попытке запросите новый URL для загрузки.
+2. [Создайте UDF](/ru/products/cloud/api-reference/udf/udf-create) из загруженного архива, указав имя функции, среду выполнения, аргументы и возвращаемый тип.
+3. [Подключите UDF к сервису](/ru/products/cloud/api-reference/udf/udf-attach). Если версия не указана, подключается последняя готовая версия. Сервис должен быть запущен; бездействующие сервисы можно предварительно активировать.
+
+Полный список конечных точек:
+
+| Конечная точка                                                                              | Описание                                                                                                  |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| [Создать URL для загрузки UDF](/ru/products/cloud/api-reference/udf/udf-upload-session-create) | Создаёт предварительно подписанный URL для загрузки `application/zip`, действующий в пределах организации |
+| [Создать UDF](/ru/products/cloud/api-reference/udf/udf-create)                                 | Создаёт новую UDF из загруженного архива                                                                  |
+| [Получить список UDF](/ru/products/cloud/api-reference/udf/udf-list)                           | Возвращает последнюю версию каждой UDF в организации                                                      |
+| [Получить UDF](/ru/products/cloud/api-reference/udf/udf-get)                                   | Возвращает последнюю версию UDF                                                                           |
+| [Удалить UDF](/ru/products/cloud/api-reference/udf/udf-delete)                                 | Удаляет все версии UDF и отключает её от всех сервисов                                                    |
+| [Создать версию UDF](/ru/products/cloud/api-reference/udf/udf-version-create)                  | Принимает исходный архив, назначает версию и запускает сборку UDF                                         |
+| [Получить список версий UDF](/ru/products/cloud/api-reference/udf/udf-version-list)            | Возвращает все версии UDF                                                                                 |
+| [Удалить версию UDF](/ru/products/cloud/api-reference/udf/udf-version-delete)                  | Удаляет версию UDF, не подключённую ни к одному сервису                                                   |
+| [Подключить UDF к сервису](/ru/products/cloud/api-reference/udf/udf-attach)                    | Подключает одну версию UDF к сервису, при необходимости заменяя текущую версию                            |
+| [Получить список подключений UDF](/ru/products/cloud/api-reference/udf/udf-attachment-list)    | Возвращает текущие подключения UDF к сервисам                                                             |
+| [Получить подключение UDF](/ru/products/cloud/api-reference/udf/udf-attachment-get)            | Возвращает текущее подключение UDF к одному сервису                                                       |
+| [Отключить UDF от сервиса](/ru/products/cloud/api-reference/udf/udf-detach)                    | Отключает UDF от сервиса                                                                                  |
+
+См. [справочник API UDF](/ru/products/cloud/api-reference/udf/udf-create) со схемами запросов и ответов.
+
+<div id="manage-udfs-with-terraform">
+  ## Управление UDF с помощью Terraform
+</div>
+
+Официальный [Terraform-провайдер ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) включает два ресурса для управления UDF в рамках подхода «инфраструктура как код»:
+
+* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) управляет самой функцией. Он принимает ZIP-архив с исходным кодом функции и публикует новую версию при изменении хеша архива, дожидаясь завершения сборки.
+* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) подключает версию UDF к сервису. К сервису можно одновременно подключить не более одной версии функции. Можно закрепить конкретный номер версии или сослаться на `clickhouse_udf.<name>.version`, чтобы автоматически обновлять сервисы до последней версии.
+
+<Note>
+  Эти ресурсы доступны начиная с версии провайдера 3.24.0. Они имеют статус альфа, и их поведение может измениться в будущих версиях провайдера.
+</Note>
+
+Например, чтобы развернуть с помощью Terraform UDF `isBusinessHours` из предыдущего примера:
+
+```terraform
+resource "clickhouse_udf" "is_business_hours" {
+  function_name = "isBusinessHours"
+  runtime       = "python3.11"
+  type          = "executable_pool"
+  return_type   = "Bool"
+
+  arguments = [
+    { name = "timestamp", type = "DateTime" },
+  ]
+
+  source_archive_path = "${path.module}/is_business_hours.zip"
+  source_archive_hash = filebase64sha256("${path.module}/is_business_hours.zip")
+}
+
+resource "clickhouse_udf_attachment" "production" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+```
+
+Подключение возможно только для версий в состоянии готовности и может занять несколько минут; бездействующие сервисы запускаются автоматически. При удалении ресурса `clickhouse_udf` удаляются все версии функции, и она отключается от всех сервисов.

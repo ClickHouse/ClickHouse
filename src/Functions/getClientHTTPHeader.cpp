@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
+#include <Common/HTTPFieldLess.h>
+#include <Common/MapWithMemoryTracking.h>
 
 
 namespace DB
@@ -24,17 +26,26 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetClientHTTPHeader final : public IFunction, WithContext
+class FunctionGetClientHTTPHeader final : public IFunction
 {
 public:
-    explicit FunctionGetClientHTTPHeader(ContextPtr context_)
-        : WithContext(context_)
+    explicit FunctionGetClientHTTPHeader(const ContextPtr & context_)
+        /// The headers are a property of the query, so capture them here instead of keeping a reference to
+        /// the context. A function built while analyzing a subquery can be executed after the context that
+        /// built it is gone - e.g. a scalar subquery whose expression actions are reused by the outer query -
+        /// and looking the context up at execution time throws `Context has expired`.
+        : http_headers(context_->getClientInfo().http_headers.begin(), context_->getClientInfo().http_headers.end())
     {
-        if (!getContext()->getSettingsRef()[Setting::allow_get_client_http_header])
+        if (!context_->getSettingsRef()[Setting::allow_get_client_http_header])
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function getClientHTTPHeader requires setting `allow_get_client_http_header` to be enabled.");
     }
 
     String getName() const override { return "getClientHTTPHeader"; }
+
+    bool isDeterministic() const override { return false; }
+
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
@@ -53,8 +64,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const ClientInfo & client_info = getContext()->getClientInfo();
-
         const auto & source = arguments[0].column;
         auto result = result_type->createColumn();
         result->reserve(input_rows_count);
@@ -63,7 +72,7 @@ public:
         {
             Field header;
             source->get(row, header);
-            if (auto it = client_info.http_headers.find(header.safeGet<String>()); it != client_info.http_headers.end())
+            if (auto it = http_headers.find(header.safeGet<String>()); it != http_headers.end())
                 result->insert(it->second);
             else
                 result->insertDefault();
@@ -71,6 +80,9 @@ public:
 
         return result;
     }
+
+private:
+    const MapWithMemoryTracking<String, String, HTTPFieldLess> http_headers;
 };
 
 }
@@ -80,15 +92,25 @@ REGISTER_FUNCTION(GetClientHTTPHeader)
     FunctionDocumentation::Description description = R"(
 Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
-Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
+Certain HTTP headers (e.g., `Authorization`, `Authentication` and `X-ClickHouse-*`) are restricted.
 
 :::note Setting `allow_get_client_http_header` is required
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
 :::
 
-HTTP headers are case sensitive for this function.
+HTTP headers are case-insensitive per RFC 9110.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
+
+`getClientHTTPHeader` reads the headers of the current request, so it returns a non-empty value only when the query is sent over the HTTP interface.
+For example, supply the header with the request and read it back over HTTP:
+
+```bash
+echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
+    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
+```
+
+The command above returns `application/x-www-form-urlencoded`.
 )";
     FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
     FunctionDocumentation::Arguments arguments = {
@@ -99,12 +121,13 @@ If the function is used in the context of a distributed query, it returns non-em
         {
             "Usage example",
             R"(
-SELECT getClientHTTPHeader('Content-Type');
+-- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
+-- no request headers, so the function returns an empty string. See the description above
+-- for an HTTP example that returns the actual header value.
+SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1
             )",
             R"(
-┌─getClientHTTPHeader('Content-Type')─┐
-│ application/x-www-form-urlencoded   │
-└─────────────────────────────────────┘
+
             )"
         }
     };

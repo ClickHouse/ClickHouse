@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
 #include <Common/FailPoint.h>
+#include <base/sleep.h>
 namespace DB
 {
 namespace Setting
@@ -244,7 +245,8 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
     new_metadata.setDataLakeTableState(*state);
 
     if (configuration->shouldReloadSchemaForConsistency(query_context))

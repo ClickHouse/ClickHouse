@@ -1,0 +1,11 @@
+array32: UNEXPECTED_END_OF_FILE
+map32: UNEXPECTED_END_OF_FILE
+str32: UNEXPECTED_END_OF_FILE
+bin32: UNEXPECTED_END_OF_FILE
+map_underbound: UNEXPECTED_END_OF_FILE
+Map(Int64, Nullable(Int64))
+Nullable(Int64)	42
+Array(Nullable(Int64))	[1,2,3]
+Nullable(String)	2097152
+deep: TOO_DEEP_RECURSION
+Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Nullable(Int64)))))))))))

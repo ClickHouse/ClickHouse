@@ -7,6 +7,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/checkLpNormPArgument.h>
 
 #include <cmath>
 
@@ -18,12 +19,23 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
+
+#if USE_MULTITARGET_CODE
+/// Widen 16 packed `BFloat16` to `Float32` without AVX512-BF16: a `BFloat16` is the upper 16 bits of the
+/// corresponding `Float32`, so zero-extend each 16-bit value to 32 bits and shift it into the high half.
+/// Uses only AVX-512F/BW, so it runs on all `x86-64-v4` CPUs (not just AVX512-BF16 ones), and it is faster
+/// than the native `dpbf16` / BFloat16->Float32 convert instructions, which are throughput-limited.
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static inline __m512 loadBFloat16AsFloat32(const BFloat16 * p)
+{
+    const __m256i raw = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(p));
+    return _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(raw), 16));
+}
+#endif
 
 struct L1Distance
 {
@@ -124,7 +136,7 @@ struct L2Distance
             state.sum = _mm512_reduce_add_pd(sums);
     }
 
-    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
         size_t i_max,
@@ -134,19 +146,12 @@ struct L2Distance
     {
         __m512 sums = _mm512_setzero_ps();
 
-        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+        constexpr size_t n = sizeof(__m512) / sizeof(Float32);
 
         for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
-            __m512 x1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
-            __m512 x2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
-            __m512 y1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
-            __m512 y2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
-
-            __m512 differences1 = _mm512_sub_ps(x1, y1);
-            __m512 differences2 = _mm512_sub_ps(x2, y2);
-            sums = _mm512_fmadd_ps(differences1, differences1, sums);
-            sums = _mm512_fmadd_ps(differences2, differences2, sums);
+            __m512 differences = _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x), loadBFloat16AsFloat32(data_y + i_y));
+            sums = _mm512_fmadd_ps(differences, differences, sums);
         }
 
         state.sum = _mm512_reduce_add_ps(sums);
@@ -332,7 +337,7 @@ struct CosineDistance
         }
     }
 
-    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
         size_t i_max,
@@ -344,15 +349,15 @@ struct CosineDistance
         __m512 x_squareds = _mm512_setzero_ps();
         __m512 y_squareds = _mm512_setzero_ps();
 
-        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+        constexpr size_t n = sizeof(__m512) / sizeof(Float32);
 
         for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
-            __m512 x = _mm512_loadu_ps(data_x + i_x);
-            __m512 y = _mm512_loadu_ps(data_y + i_y);
-            dot_products = _mm512_dpbf16_ps(dot_products, x, y);
-            x_squareds = _mm512_dpbf16_ps(x_squareds, x, x);
-            y_squareds = _mm512_dpbf16_ps(y_squareds, y, y);
+            __m512 x = loadBFloat16AsFloat32(data_x + i_x);
+            __m512 y = loadBFloat16AsFloat32(data_y + i_y);
+            dot_products = _mm512_fmadd_ps(x, y, dot_products);
+            x_squareds = _mm512_fmadd_ps(x, x, x_squareds);
+            y_squareds = _mm512_fmadd_ps(y, y, y_squareds);
         }
 
         state.dot_prod = _mm512_reduce_add_ps(dot_products);
@@ -435,6 +440,8 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = count / unroll_count * unroll_count;
 
+        /// Keep this outer loop scalar: `clang-22` otherwise vectorizes it into a slow strided gather instead of letting the unrolled inner loop SLP-vectorize into contiguous loads (worst for `Linf`/`BFloat16`).
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -509,6 +516,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = count / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -585,6 +593,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = array_size / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -656,6 +665,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = array_size / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -732,6 +742,10 @@ public:
 
             types.push_back(array_type->getNestedType());
         }
+
+        if constexpr (std::is_same_v<Kernel, LpDistance>)
+            checkLpNormPArgumentForAnalysis(arguments[2], getName());
+
         const DataTypePtr & common_type = getLeastSupertype(types);
         switch (common_type->getTypeId())
         {
@@ -935,7 +949,7 @@ private:
             }
             else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
             {
-                if (isArchSupported(TargetArch::x86_64_sapphirerapids))
+                if (isArchSupported(TargetArch::x86_64_v4))
                 {
                     size_t prev = 0;
                     for (size_t row = 0; row < input_rows_count; ++row)
@@ -986,24 +1000,13 @@ LpDistance::ConstParams FunctionArrayDistance<LpDistance>::initConstParams(const
                     "Argument p of function {} was not provided",
                     getName());
 
-    if (!arguments[2].column->isNumeric())
-        throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument p of function {} must be numeric constant",
-                    getName());
-
     if (!isColumnConst(*arguments[2].column) && arguments[2].column->size() != 1)
         throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Second argument for function {} must be either constant Float64 or constant UInt",
+                    "Argument p of function {} must be constant",
                     getName());
 
-    Float64 p = arguments[2].column->getFloat64(0);
-    if (p < 1 || p >= HUGE_VAL)
-        throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Second argument for function {} must be not less than one and not be an infinity",
-                    getName());
+    Float64 p = extractLpNormPArgument(*arguments[2].column, getName());
 
     return LpDistance::ConstParams{p, 1 / p};
 }

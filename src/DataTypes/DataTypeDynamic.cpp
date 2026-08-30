@@ -463,7 +463,7 @@ SELECT d, d < 3 AS res, toTypeName(res) FROM test;
 SELECT d, exp2(d) AS res, toTypeName(res) FROM test;
 ```
 
-```sql
+```text
 ┌─d────┬──res─┬─toTypeName(res)───┐
 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ Nullable(Float64) │
 │ 1    │    2 │ Nullable(Float64) │
@@ -662,7 +662,7 @@ SELECT d, dynamicType(d) FROM test;
 SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
 ```
 
-```sql
+```text
 ┌─d───────┬─dynamicType(d)─┐
 │ []      │ Array(Int64)   │
 │ [1,2,3] │ Array(Int64)   │
@@ -1011,14 +1011,17 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     variant_column.getLocalDiscriminatorsPtr(),
                     "",
                     *discriminator,
-                    variant_column.localDiscriminatorByGlobal(*discriminator));
+                    variant_column.localDiscriminatorByGlobal(*discriminator),
+                    variant_column.getNumVariants());
             else
                 creator = std::make_unique<SerializationVariantElement::VariantSubcolumnCreator>(
                     variant_column.getLocalDiscriminatorsPtr(),
                     "",
                     *discriminator,
                     variant_column.localDiscriminatorByGlobal(*discriminator),
-                    make_subcolumn_nullable);
+                    make_subcolumn_nullable,
+                    nullptr,
+                    variant_column.getNumVariants());
             res->column = creator->create(res->column);
         }
         /// Check if requested type was extracted from shared variant. In this case we should use
