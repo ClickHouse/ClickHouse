@@ -307,6 +307,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsUInt64 max_parts_in_total;
     extern const MergeTreeSettingsUInt64 max_projections;
+    extern const MergeTreeSettingsUInt64 max_table_size_rows;
+    extern const MergeTreeSettingsUInt64 max_table_size_bytes_compressed;
+    extern const MergeTreeSettingsUInt64 max_table_size_bytes_uncompressed;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
@@ -421,6 +424,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int TABLE_SIZE_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
@@ -6678,7 +6682,8 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     Transaction & out_transaction,
     DataPartsLock & lock,
     DataPartsVector * out_covered_parts,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
 
@@ -6710,6 +6715,11 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     if (hierarchy.duplicate_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", hierarchy.duplicate_part->getNameWithState());
 
+    /// Empty parts do not add data and are used to remove it (e.g. by TRUNCATE or DROP PARTITION),
+    /// so they are always allowed regardless of the table size limits.
+    if (check_table_size_limits && part->rows_count != 0)
+        throwIfTableSizeLimitsExceeded(lock, part.get(), hierarchy.covered_parts);
+
     if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
 
@@ -6730,28 +6740,31 @@ bool MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
-    return renameTempPartAndReplaceImpl(part, out_transaction, lock, /*out_covered_parts=*/ nullptr, rename_in_transaction);
+    return renameTempPartAndReplaceImpl(part, out_transaction, lock, /*out_covered_parts=*/ nullptr, rename_in_transaction, check_table_size_limits);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     auto lock = lockParts();
-    return renameTempPartAndReplaceUnlocked(part, lock, out_transaction, rename_in_transaction);
+    return renameTempPartAndReplaceUnlocked(part, lock, out_transaction, rename_in_transaction, check_table_size_limits);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     DataPartsLock & lock,
     Transaction & out_transaction,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     DataPartsVector covered_parts;
-    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction);
+    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction, check_table_size_limits);
     return covered_parts;
 }
 
@@ -6759,11 +6772,12 @@ bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     DataPartsVector covered_parts;
 
-    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction))
+    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction, check_table_size_limits))
         return false;
 
     if (!covered_parts.empty())
@@ -7416,11 +7430,222 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
+void MergeTreeData::throwIfTableSizeLimitsExceeded() const
+{
+    const auto settings = getSettings();
+
+    /// Fast path to avoid taking the parts lock when the limits are not set.
+    if (!(*settings)[MergeTreeSetting::max_table_size_rows]
+        && !(*settings)[MergeTreeSetting::max_table_size_bytes_compressed]
+        && !(*settings)[MergeTreeSetting::max_table_size_bytes_uncompressed])
+        return;
+
+    auto parts_lock = readLockParts();
+    throwIfTableSizeLimitsExceeded(parts_lock, nullptr, {});
+}
+
+MergeTreeData::PartsSize MergeTreeData::calculatePartsSize(const DataPartsVector & parts)
+{
+    PartsSize result;
+    for (const auto & part : parts)
+    {
+        /// Patch parts represent mutations of rows in regular parts, not additional table rows.
+        if (!part->info.isPatch())
+            result.rows += part->rows_count;
+
+        result.bytes_compressed += part->getBytesOnDisk();
+        result.bytes_uncompressed += part->getBytesUncompressedOnDisk();
+    }
+    return result;
+}
+
+MergeTreeData::PartsSize MergeTreeData::calculateTableSizeForLimits(const DataPartsAnyLock &) const
+{
+    /// Parts in the `PreActive` state have been already accepted into the working set by a concurrent
+    /// operation and are about to become active, so they have to be counted as well. Otherwise a batch of
+    /// parts precommitted in a single transaction, or a concurrent insert running between
+    /// `renameTempPartAndAdd` and `Transaction::commit`, would be invisible to the check and the limits
+    /// could be overshot by the whole precommitted batch.
+    auto pre_active_range = getDataPartsStateRange(DataPartState::PreActive);
+    DataPartsVector pre_active_parts(pre_active_range.begin(), pre_active_range.end());
+
+    /// An active part covered by a `PreActive` part will be removed from the active set when the
+    /// corresponding transaction commits, so it should not be counted twice.
+    auto is_covered_by_pre_active = [&](const MergeTreePartInfo & info)
+    {
+        return std::any_of(pre_active_parts.begin(), pre_active_parts.end(),
+            [&](const DataPartPtr & pre_active) { return pre_active->info.contains(info); });
+    };
+
+    PartsSize result;
+
+    for (const auto & part : pre_active_parts)
+    {
+        if (!part->info.isPatch())
+            result.rows += part->rows_count;
+    }
+
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+    {
+        if (!part->info.isPatch() && !is_covered_by_pre_active(part->info))
+            result.rows += part->rows_count;
+    }
+
+    /// Inactive (outdated) parts are counted as well because the purpose of the limits is to restrict disk usage.
+    /// They are removed in the background, so the total size can decrease over time. Parts in the `Deleting`
+    /// state are counted for the same reason: `clearOldPartsFromFilesystem` moves a part to `Deleting` before
+    /// its files are removed from the disk, and only `removePartsFinally` erases it from `data_parts_indexes`
+    /// afterwards, so until then its bytes still occupy the disk.
+    ///
+    /// The limits apply to the set of data parts of the table, which is not exactly the same as the instantaneous
+    /// number of bytes occupied on the disks. In-flight copies of data are not counted: a temporary part being
+    /// written by an insert or a merge, and the old copy of a part that has been moved to another disk or volume,
+    /// which is put into the `DeleteOnDestroy` state and is deleted as soon as the last reader releases it.
+    /// Such copies cannot be counted here in any case: `swapActivePart` and `MergeTreePartsMover` erase the old
+    /// part from `data_parts_indexes` in the same operation that assigns the `DeleteOnDestroy` state to it, so
+    /// no part in that state is ever reachable through `getDataPartsStateRange`. This is not a hole in the
+    /// accounting: the moved part itself is still counted through its new copy, and the extra space is bounded
+    /// by the size of the data being moved or merged and is released without any user action.
+    for (auto state : {DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated, DataPartState::Deleting})
+    {
+        for (const auto & part : getDataPartsStateRange(state))
+        {
+            result.bytes_compressed += part->getBytesOnDisk();
+            result.bytes_uncompressed += part->getBytesUncompressedOnDisk();
+        }
+    }
+
+    return result;
+}
+
+void MergeTreeData::throwIfTableSizeLimitsExceeded(
+    const DataPartsAnyLock & parts_lock,
+    const IMergeTreeDataPart * added_part,
+    const DataPartsVector & covered_parts) const
+{
+    const auto settings = getSettings();
+
+    const UInt64 max_rows = (*settings)[MergeTreeSetting::max_table_size_rows];
+    const UInt64 max_bytes_compressed = (*settings)[MergeTreeSetting::max_table_size_bytes_compressed];
+    const UInt64 max_bytes_uncompressed = (*settings)[MergeTreeSetting::max_table_size_bytes_uncompressed];
+
+    if (!max_rows && !max_bytes_compressed && !max_bytes_uncompressed)
+        return;
+
+    const PartsSize current = calculateTableSizeForLimits(parts_lock);
+    const PartsSize covered = calculatePartsSize(covered_parts);
+
+    if (max_rows)
+    {
+        /// The parts covered by the operation are removed from the active set when it commits,
+        /// so they are not part of the table size any more.
+        const UInt64 total_rows = current.rows - std::min(current.rows, covered.rows);
+
+        if (total_rows > max_rows)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total number of rows in active data parts of table {} is {}, "
+                "which exceeds the 'max_table_size_rows' setting value ({})",
+                getLogName(), total_rows, max_rows);
+    }
+
+    if (max_bytes_compressed || max_bytes_uncompressed)
+    {
+        /// An operation that replaces the covered parts with a not larger part is always allowed, so that a
+        /// table that has already crossed a limit can be brought back under it by a size-reducing merge or
+        /// mutation, and not only by dropping whole parts. Note that the covered parts are not subtracted
+        /// from the total: they only become inactive and still occupy the disk until they are removed in
+        /// the background.
+        const bool is_shrinking_compressed = added_part && added_part->getBytesOnDisk() <= covered.bytes_compressed;
+        const bool is_shrinking_uncompressed = added_part && added_part->getBytesUncompressedOnDisk() <= covered.bytes_uncompressed;
+
+        if (max_bytes_compressed && current.bytes_compressed > max_bytes_compressed && !is_shrinking_compressed)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total size of compressed data in active and inactive parts of table {} is {}, "
+                "which exceeds the 'max_table_size_bytes_compressed' setting value ({}). "
+                "Note: inactive parts are removed in the background, so the total size can decrease over time",
+                getLogName(), ReadableSize(current.bytes_compressed), ReadableSize(max_bytes_compressed));
+
+        if (max_bytes_uncompressed && current.bytes_uncompressed > max_bytes_uncompressed && !is_shrinking_uncompressed)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total size of uncompressed data in active and inactive parts of table {} is {}, "
+                "which exceeds the 'max_table_size_bytes_uncompressed' setting value ({}). "
+                "Note: inactive parts are removed in the background, so the total size can decrease over time",
+                getLogName(), ReadableSize(current.bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
+    }
+}
+
+void MergeTreeData::throwIfTableSizeLimitsExceededForReplacement(
+    const DataPartsLock & parts_lock,
+    const MutableDataPartsVector & added_parts,
+    const std::optional<MergeTreePartInfo> & drop_range) const
+{
+    const auto settings = getSettings();
+
+    const UInt64 max_rows = (*settings)[MergeTreeSetting::max_table_size_rows];
+    const UInt64 max_bytes_compressed = (*settings)[MergeTreeSetting::max_table_size_bytes_compressed];
+    const UInt64 max_bytes_uncompressed = (*settings)[MergeTreeSetting::max_table_size_bytes_uncompressed];
+
+    if (!max_rows && !max_bytes_compressed && !max_bytes_uncompressed)
+        return;
+
+    /// The parts that the operation is going to remove after committing the new ones.
+    DataPartsVector replaced_parts;
+    if (drop_range)
+        replaced_parts = getPartHierarchy(*drop_range, DataPartState::Active, parts_lock).covered_parts;
+
+    const PartsSize current = calculateTableSizeForLimits(parts_lock);
+    const PartsSize replaced = calculatePartsSize(replaced_parts);
+    const PartsSize added = calculatePartsSize(DataPartsVector(added_parts.begin(), added_parts.end()));
+
+    /// Unlike a single insert, whose parts are checked one by one against the current table size, the whole
+    /// batch is known in advance here, so it is accounted at once and the operation is rejected as a whole
+    /// instead of being interrupted in the middle. An operation that does not increase the table size is
+    /// always allowed, so that an already over-limit table can be brought back under the limit.
+
+    if (max_rows)
+    {
+        /// The replaced parts are removed from the active set when the operation completes.
+        const UInt64 total_rows = current.rows - std::min(current.rows, replaced.rows) + added.rows;
+
+        if (total_rows > max_rows && added.rows > replaced.rows)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the operation would make the total number of rows in active data parts "
+                "of table {} equal to {}, which exceeds the 'max_table_size_rows' setting value ({})",
+                getLogName(), total_rows, max_rows);
+    }
+
+    /// The replaced parts are not subtracted from the number of bytes: they only become inactive and still
+    /// occupy the disk until they are removed in the background.
+
+    if (max_bytes_compressed && current.bytes_compressed + added.bytes_compressed > max_bytes_compressed
+        && added.bytes_compressed > replaced.bytes_compressed)
+    {
+        throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+            "Table size limit exceeded: the operation would make the total size of compressed data in active and "
+            "inactive parts of table {} equal to {}, which exceeds the 'max_table_size_bytes_compressed' setting "
+            "value ({}). Note: inactive parts are removed in the background, so the total size can decrease over time",
+            getLogName(), ReadableSize(current.bytes_compressed + added.bytes_compressed), ReadableSize(max_bytes_compressed));
+    }
+
+    if (max_bytes_uncompressed && current.bytes_uncompressed + added.bytes_uncompressed > max_bytes_uncompressed
+        && added.bytes_uncompressed > replaced.bytes_uncompressed)
+    {
+        throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+            "Table size limit exceeded: the operation would make the total size of uncompressed data in active and "
+            "inactive parts of table {} equal to {}, which exceeds the 'max_table_size_bytes_uncompressed' setting "
+            "value ({}). Note: inactive parts are removed in the background, so the total size can decrease over time",
+            getLogName(), ReadableSize(current.bytes_uncompressed + added.bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
+    }
+}
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
+
+    if (allow_throw)
+        throwIfTableSizeLimitsExceeded();
 
     const auto active_parts_to_delay_insert = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : (*settings)[MergeTreeSetting::parts_to_delay_insert];
     const auto active_parts_to_throw_insert = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : (*settings)[MergeTreeSetting::parts_to_throw_insert];
