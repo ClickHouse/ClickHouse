@@ -904,9 +904,9 @@ ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
     if (select_query.where())
-        assertNoAggregates(select_query.where(), "in WHERE");
+        assertNoAggregates(select_query.where(), "in WHERE", AGGREGATE_IN_WHERE_HINT);
     if (select_query.prewhere())
-        assertNoAggregates(select_query.prewhere(), "in PREWHERE");
+        assertNoAggregates(select_query.prewhere(), "in PREWHERE", AGGREGATE_IN_WHERE_HINT);
 
     GetAggregatesVisitor::Data data;
     GetAggregatesVisitor(data).visit(query);
