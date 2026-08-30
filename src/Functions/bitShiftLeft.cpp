@@ -190,25 +190,26 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
 SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
         )",
         R"(
-┌──a─┬─bin(99)──┬─a_shifted─┬─bin(bitShiftLeft(99, 2))─┐
-│ 99 │ 01100011 │       140 │ 10001100                 │
-└────┴──────────┴───────────┴──────────────────────────┘
+┌──a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
+│ 99 │ 01100011 │       140 │ 10001100       │
+└────┴──────────┴───────────┴────────────────┘
         )"},
         {"Usage example with hexadecimal encoding", R"(
-SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+-- The shifted value is binary, so it is shown with `hex`.
+SELECT 'abc' AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
         )",
         R"(
-┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftLeft('abc', 4))─┐
-│ abc │ 616263     │ &0        │ 06162630                    │
-└─────┴────────────┴───────────┴─────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 06162630  │
+└─────┴────────┴───────────┘
         )"},
 {"Usage example with Fixed String encoding", R"(
-SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
         )",
 R"(
-┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftLeft(toFixedString('abc', 3), 4))─┐
-│ abc │ 616263                       │ &0        │ 162630                                        │
-└─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 162630    │
+└─────┴────────┴───────────┘
         )"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
