@@ -3,13 +3,14 @@
         <max_threads>8</max_threads>
     </settings>
 
-    <create_query>CREATE TABLE mt_prewhere_many_parts (id UInt32, s String, val1 UInt32, val2 UInt32) ENGINE = MergeTree ORDER BY val1 PARTITION BY id % 2000 SETTINGS parts_to_throw_insert = 10000, parts_to_delay_insert = 10000</create_query>
+    <!-- Many small parts and many PREWHERE steps: the per-task cost of building the range readers chain
+         (sample blocks of the readers and dry-runs of the PREWHERE steps) dominates over reading the data. -->
+    <create_query>CREATE TABLE mt_prewhere_many_parts (id UInt32, s String, val1 UInt32, val2 UInt32) ENGINE = MergeTree ORDER BY val1 PARTITION BY id % 5000 SETTINGS parts_to_throw_insert = 10000, parts_to_delay_insert = 10000</create_query>
     <fill_query>SYSTEM STOP MERGES mt_prewhere_many_parts</fill_query>
-    <fill_query>INSERT INTO mt_prewhere_many_parts SELECT number, toString(number % 1000), rand() % 10000, rand() FROM numbers_mt(20000000) SETTINGS max_block_size = 10000000, max_insert_block_size = 10000000, max_partitions_per_insert_block = 2000</fill_query>
+    <fill_query>INSERT INTO mt_prewhere_many_parts SELECT number, toString(number % 1000), rand() % 10000, rand() FROM numbers_mt(500000) SETTINGS max_block_size = 1000000, max_insert_block_size = 1000000, max_partitions_per_insert_block = 5000</fill_query>
 
-    <query>SELECT count() FROM mt_prewhere_many_parts PREWHERE val1 = 7 FORMAT Null</query>
-    <query>SELECT count() FROM mt_prewhere_many_parts PREWHERE val1 % 10 = 1 AND s LIKE '%77%' WHERE val2 != 0 FORMAT Null</query>
-    <query>SELECT sum(val2) FROM mt_prewhere_many_parts PREWHERE s = '123' FORMAT Null</query>
+    <query>SELECT count() FROM mt_prewhere_many_parts PREWHERE val1 % 3 != 1 AND val1 % 4 != 1 AND val1 % 5 != 1 AND val1 % 6 != 1 AND val1 % 7 != 1 AND val1 % 8 != 1 AND val1 % 9 != 1 AND val1 % 10 != 1 AND val1 % 11 != 1 AND val1 % 12 != 1 AND val1 % 13 != 1 AND val1 % 14 != 1 AND val1 % 15 != 1 AND val1 % 16 != 1 AND val1 % 17 != 1 AND val1 % 18 != 1 AND val1 % 19 != 1 AND val1 % 20 != 1 AND val1 % 21 != 1 AND val1 % 22 != 1 AND val1 % 23 != 1 AND val1 % 24 != 1 AND val1 % 25 != 1 AND val1 % 26 != 1 AND val1 % 27 != 1 AND val1 % 28 != 1 AND val1 % 29 != 1 AND val1 % 30 != 1 AND val1 % 31 != 1 AND val1 % 32 != 1 AND val1 % 33 != 1 AND val1 % 34 != 1 AND val1 % 35 != 1 AND val1 % 36 != 1 AND val1 % 37 != 1 AND val1 % 38 != 1 AND val1 % 39 != 1 AND val1 % 40 != 1 AND val1 % 41 != 1 AND val1 % 42 != 1 FORMAT Null</query>
+    <query>SELECT sum(val2) FROM mt_prewhere_many_parts PREWHERE val1 % 3 != 1 AND val1 % 4 != 1 AND val1 % 5 != 1 AND val1 % 6 != 1 AND val1 % 7 != 1 AND val1 % 8 != 1 AND val1 % 9 != 1 AND val1 % 10 != 1 AND val1 % 11 != 1 AND val1 % 12 != 1 AND val1 % 13 != 1 AND val1 % 14 != 1 AND val1 % 15 != 1 AND val1 % 16 != 1 AND val1 % 17 != 1 AND val1 % 18 != 1 AND val1 % 19 != 1 AND val1 % 20 != 1 AND val1 % 21 != 1 AND val1 % 22 != 1 AND val1 % 23 != 1 AND val1 % 24 != 1 AND val1 % 25 != 1 AND val1 % 26 != 1 AND val1 % 27 != 1 AND val1 % 28 != 1 AND val1 % 29 != 1 AND val1 % 30 != 1 AND val1 % 31 != 1 AND val1 % 32 != 1 AND val1 % 33 != 1 AND val1 % 34 != 1 AND val1 % 35 != 1 AND val1 % 36 != 1 AND val1 % 37 != 1 AND val1 % 38 != 1 AND val1 % 39 != 1 AND val1 % 40 != 1 AND val1 % 41 != 1 AND val1 % 42 != 1 AND s LIKE '%77%' WHERE val2 != 0 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS mt_prewhere_many_parts</drop_query>
 </test>
