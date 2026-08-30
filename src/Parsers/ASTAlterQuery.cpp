@@ -102,6 +102,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->statistics_decl = res->children.emplace_back(statistics_decl->clone()).get();
     if (partition)
         res->partition = res->children.emplace_back(partition->clone()).get();
+    if (partitions)
+        res->partitions = res->children.emplace_back(partitions->clone()).get();
     if (predicate)
         res->predicate = res->children.emplace_back(predicate->clone()).get();
     if (update_assignments)
@@ -184,6 +186,10 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeChild("projection", projection);
     w.writeChild("statistics_decl", statistics_decl);
     w.writeChild("partition", partition);
+    /// The multi-partition `DELETE/UPDATE ... IN PARTITION p1, p2` form is carried separately from the
+    /// single-partition `partition` slot; without it the round-trip would silently widen the mutation to
+    /// the whole table.
+    w.writeChild("partitions", partitions);
     w.writeChild("predicate", predicate);
     w.writeChild("update_assignments", update_assignments);
     w.writeChild("comment", comment);
@@ -331,6 +337,22 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         }
         partition = partition_child.get();
         children.push_back(std::move(partition_child));
+    }
+    /// `partitions` is the multi-partition `IN PARTITION p1, p2, ...` form, which `ParserAlterQuery`
+    /// produces only for `DELETE` and `UPDATE` and never together with the single-partition `partition`
+    /// slot.
+    if (auto partitions_child = r.readPartitionListChild("partitions"))
+    {
+        if (type != ASTAlterCommand::DELETE && type != ASTAlterCommand::UPDATE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partitions' (a multi-partition IN PARTITION) is only valid for the DELETE and UPDATE commands, "
+                "not '{}', during AST JSON deserialization",
+                magic_enum::enum_name(type));
+        if (partition)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partition' and 'partitions' cannot be set at the same time during AST JSON deserialization");
+        partitions = partitions_child.get();
+        children.push_back(std::move(partitions_child));
     }
     readRawChild("predicate", predicate);
     /// `update_assignments` is an `ASTExpressionList` of `ASTAssignment` (`MutationCommand::parse`
@@ -1041,7 +1063,16 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << "DELETE";
 
-        if (partition)
+        if (partitions)
+        {
+            ostr << " IN PARTITION ";
+            /// The `ALTER` command list is formatted with a prepended whitespace; the flag must not leak
+            /// into the partition list, or it would emit a second space after `IN PARTITION`.
+            auto nested_frame = frame;
+            nested_frame.expression_list_prepend_whitespace = false;
+            partitions->format(ostr, settings, state, nested_frame);
+        }
+        else if (partition)
         {
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
@@ -1055,7 +1086,15 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "UPDATE ";
         update_assignments->format(ostr, settings, state, frame);
 
-        if (partition)
+        if (partitions)
+        {
+            ostr << " IN PARTITION ";
+            /// See the `DELETE` branch above.
+            auto nested_frame = frame;
+            nested_frame.expression_list_prepend_whitespace = false;
+            partitions->format(ostr, settings, state, nested_frame);
+        }
+        else if (partition)
         {
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
@@ -1196,6 +1235,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::i
     f(&projection, nullptr);
     f(&statistics_decl, nullptr);
     f(&partition, nullptr);
+    f(&partitions, nullptr);
     f(&predicate, nullptr);
     f(&update_assignments, nullptr);
     f(&comment, nullptr);
