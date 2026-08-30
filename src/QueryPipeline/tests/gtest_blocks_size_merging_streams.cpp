@@ -277,7 +277,8 @@ static std::vector<UInt64> mergeKeys(const Block & header, const std::vector<std
 }
 
 /// A chunk with no rows is not data for a merge: a cursor over it has no row to read. Here it is the
-/// last chunk of the last live source, so it reaches the merge with an empty queue.
+/// last chunk of the last live source, so it reaches the merge with an empty queue, which is the case
+/// `gtest_merging_sorted_empty_chunk.cpp` also covers, checked here on the merged keys.
 TEST(MergingSortedTest, RowlessChunkFromFinishedInput)
 {
     std::vector<std::string> key_columns{"K1"};
@@ -294,6 +295,7 @@ TEST(MergingSortedTest, RowlessChunkFromFinishedInput)
 
 /// A rowless chunk from a source that has NOT finished only means "no data yet": the merge must wait
 /// for that source instead of treating it as exhausted, or the rows it still owes are lost.
+/// `gtest_merging_sorted_empty_chunk.cpp` sends its rowless chunk last, so only this arm pins the wait.
 TEST(MergingSortedTest, RowlessChunkFromUnfinishedInput)
 {
     std::vector<std::string> key_columns{"K1"};
