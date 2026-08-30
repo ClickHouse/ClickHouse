@@ -1072,3 +1072,62 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by;"
+
+# Case 20: the carried GROUP BY entry leaves the part schedulable
+#
+# Case 19 pins the bound the carried entry holds. The other half of that contract
+# is invisible to it: the entry must also stay unfinished, because the TTL
+# selectors gate on hasAnyNonFinishedTTLs() before they ever look at the bound
+# (TTLRowDeleteMergeSelector::canConsiderPart). Combining the source parts already
+# strips ttl_finished, so the carried entry arrives unfinished and a later TTL
+# merge still picks the part up. Only a background merge exercises that gate -
+# OPTIMIZE bypasses the selector - so this rolls up on the pool and watches rows.
+# -------------------------------------------------------------------
+echo "-- Case 20: the carried GROUP BY entry leaves the part schedulable"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_group_by_sched
+    (
+        id UInt64,
+        event_time DateTime,
+        value UInt64
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY GROUP BY id SET value = max(value)
+    SETTINGS
+        max_number_of_merges_with_ttl_in_pool = 1,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_group_by_sched;
+
+    -- Ten rows per key, so a rollup that actually runs is visible as a row drop.
+    INSERT INTO t_ttl_patch_group_by_sched SELECT number % 10, now() - INTERVAL 2 DAY, number FROM numbers(100);
+
+    UPDATE t_ttl_patch_group_by_sched SET event_time = now() + INTERVAL 5 DAY WHERE id < 2
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM STOP TTL MERGES t_ttl_patch_group_by_sched;
+    SYSTEM START MERGES t_ttl_patch_group_by_sched;
+    OPTIMIZE TABLE t_ttl_patch_group_by_sched FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_sched;"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by_sched;"
+
+# The eighty still-expired rows collapse to one per key; the twenty patched into the
+# future stay. A part hidden from the selector would sit at 100 forever.
+sleep 11
+for _ in $(seq 1 15); do
+    sched_rows=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_sched;")
+    [[ "$sched_rows" -lt 100 ]] && break
+    sleep 1
+done
+echo "rolled up after the blocked patched merge: $([[ "$sched_rows" -lt 100 ]] && echo 1 || echo 0)"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by_sched;"
