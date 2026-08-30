@@ -19,6 +19,11 @@ node = cluster.add_instance(
 def setup():
     try:
         cluster.start()
+        # cluster.start() waits for the main HTTP port only, and the Prometheus port
+        # can start listening slightly later, so wait for the endpoint explicitly.
+        cluster.wait_for_url(
+            f"http://{node.ip_address}:9093/api/v1/parse_query?query=up"
+        )
         yield cluster
     finally:
         cluster.shutdown()
