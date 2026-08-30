@@ -69,9 +69,9 @@ public:
     bool hasReadPostings(std::string_view token) const;
 
     void addMissingToken(std::string_view token);
-    /// Returns false when the readable rows clip the token away entirely, so no postings will
-    /// ever be read for it.
-    bool addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
+    /// Returns the token's row range after clipping to the readable rows, or nothing when the clip
+    /// leaves it empty and no postings will ever be read for it.
+    std::optional<RowsRange> addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
     void addPostings(std::string_view token, const PostingList & postings);
 
     /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
