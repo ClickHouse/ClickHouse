@@ -68,6 +68,7 @@ print bin(4, toLowCardinality(1));
 print bin(toLowCardinality(-5), 3);
 print bin_at(toLowCardinality(6), 2, 1);
 print bin_at(6, 2, toLowCardinality(1));
+print bin_at(datetime(2026-08-01 12:34:56), toLowCardinality(1h), datetime(2026-08-01 00:30:00));
 print toLowCardinality(1h) / 30m;
 
 SET dialect = 'clickhouse';
@@ -93,6 +94,27 @@ SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toLowCardinality(to
 SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toLowCardinality(toIntervalMonth(-1)));
 SELECT kqlBinAt(materialize(toLowCardinality(6)), 2, 1);
 
+SELECT '-- a LowCardinality(Nullable) timespan keeps its null map --';
+SELECT kqlBin(toLowCardinality(toNullable(toIntervalHour(16))), toIntervalHour(7));
+SELECT kqlBin(toNullable(toIntervalHour(16)), toIntervalHour(7));
+SELECT kqlBinAt(toLowCardinality(toNullable(toIntervalHour(16))), toIntervalHour(7), toIntervalHour(1));
+SELECT kqlBinAt(toNullable(toIntervalHour(16)), toIntervalHour(7), toIntervalHour(1));
+SELECT kqlBin(toLowCardinality(nullIf(toNullable(toIntervalHour(16)), toIntervalHour(16))), toIntervalHour(7));
+SELECT kqlBin(nullIf(toNullable(toIntervalHour(16)), toIntervalHour(16)), toIntervalHour(7));
+SELECT toTypeName(kqlBin(toLowCardinality(toNullable(toIntervalHour(16))), toIntervalHour(7)));
+SELECT toTypeName(kqlBin(toNullable(toIntervalHour(16)), toIntervalHour(7)));
+
+SELECT '-- LowCardinality is transparent to kqlBinAt on every branch --';
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toLowCardinality(toIntervalHour(1)), toDateTime64('2026-08-01 00:30:00', 7, 'UTC'));
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1), toDateTime64('2026-08-01 00:30:00', 7, 'UTC'));
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toLowCardinality(toIntervalMonth(1)), toDateTime64('2026-01-01 00:00:00', 7, 'UTC'));
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalMonth(1), toDateTime64('2026-01-01 00:00:00', 7, 'UTC'));
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toLowCardinality(toIntervalMonth(-1)), toDateTime64('2026-01-01 00:00:00', 7, 'UTC'));
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalMonth(-1), toDateTime64('2026-01-01 00:00:00', 7, 'UTC'));
+SELECT kqlBinAt(toLowCardinality(toIntervalHour(16)), toIntervalHour(7), toIntervalHour(1));
+SELECT kqlBinAt(toIntervalHour(16), toIntervalHour(7), toIntervalHour(1));
+
 SELECT '-- a carrier the unwrapped form also rejects stays rejected --';
 SELECT kqlBin(toLowCardinality('x'), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT kqlBin(toLowCardinality(toDate('2026-01-01')), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT kqlBin(toLowCardinality(toDateTime('2026-01-01 00:00:00', 'UTC')), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

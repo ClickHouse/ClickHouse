@@ -44,6 +44,7 @@ b
 -6
 5
 5
+2026-08-01 12:30:00.0000000
 2
 -- kqlDivide over intervals from SQL --
 1.5
@@ -62,4 +63,22 @@ LowCardinality(UInt8)	3
 2026-08-01
 \N
 5
+-- a LowCardinality(Nullable) timespan keeps its null map --
+14
+14
+15
+15
+\N
+\N
+Nullable(IntervalHour)
+Nullable(IntervalHour)
+-- LowCardinality is transparent to kqlBinAt on every branch --
+2026-08-01 12:30:00.0000000
+2026-08-01 12:30:00.0000000
+2026-08-01 00:00:00.0000000
+2026-08-01 00:00:00.0000000
+\N
+\N
+15
+15
 -- a carrier the unwrapped form also rejects stays rejected --
