@@ -436,7 +436,17 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
             if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
                 continue;
             const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
-            if (!key || (key->name() != "type" && key->name() != "object_storage_type"))
+            if (!key)
+                continue;
+
+            /// `include` pulls a part of the description out of the server configuration, so the disk that
+            /// is finally created can have a different backend than the `type` written in the query. The
+            /// access check runs before any of that is resolved, so `include` is rejected outright - it is
+            /// the only way to keep the checked source and the created source the same.
+            if (key->name() == "include")
+                throw_bad_argument(disk_arg_num, "`include` is not allowed in the disk description");
+
+            if (key->name() != "type" && key->name() != "object_storage_type")
                 continue;
 
             const auto & value_ast = equals->arguments->children[1];
