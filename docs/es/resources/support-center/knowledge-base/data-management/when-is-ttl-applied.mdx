@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## Reglas TTL y control
 </div>
 
-TTL terminará aplicándose ***con el tiempo***. ¿Qué significa esto? La configuración de tabla `MergeTree` [`merge_with_ttl_timeout`](/es/reference/settings/merge-tree-settings#merge_with_ttl_timeout) establece el retraso mínimo, en segundos, antes de repetir una fusión con TTL de eliminación. El valor predeterminado es de 14400 segundos (4 horas). Pero ese es solo el retraso mínimo; puede pasar más tiempo antes de que se active una fusión para aplicar el TTL de eliminación.
+TTL terminará aplicándose ***con el tiempo***. ¿Qué significa esto? La configuración de tabla `MergeTree` [`merge_with_ttl_timeout`](/es/reference/settings/merge-tree-settings/merge-with#merge_with_ttl_timeout) establece el retraso mínimo, en segundos, antes de repetir una fusión con TTL de eliminación. El valor predeterminado es de 14400 segundos (4 horas). Pero ese es solo el retraso mínimo; puede pasar más tiempo antes de que se active una fusión para aplicar el TTL de eliminación.
 
 Puede ver toda la configuración actual de TTL (como `merge_with_ttl_timeout`) con esta consulta:
 
@@ -69,11 +69,11 @@ La respuesta tiene este aspecto:
 
 ```response
 ┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
-│ background_pool_size │ 16    │       0 │ Configuración obsoleta, no hace nada. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+│ background_pool_size │ 16    │       0 │ Obsolete setting, does nothing. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
 └──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
 ```
 
-Consulta la documentación para ver cómo modificar la [configuración `background_pool_size`](/es/reference/settings/server-settings/settings#background_pool_size), que se configura de la siguiente manera:
+Consulta la documentación para ver cómo modificar la [configuración `background_pool_size`](/es/reference/settings/server-settings/settings/background#background_pool_size), que se configura de la siguiente manera:
 
 ```xml
 <background_pool_size>16</background_pool_size>

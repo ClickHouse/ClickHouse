@@ -72,6 +72,18 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// See `FunctionComparison::canThrow`. Both sides are cast to their common type before they are
+    /// compared, so only the types that need no cast at all are reported as not throwing.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        if (arguments.size() != 2)
+            return true;
+
+        const auto left = removeNullable(removeLowCardinality(arguments[0].type));
+        const auto right = removeNullable(removeLowCardinality(arguments[1].type));
+        return !left->equals(*right) || comparisonCanThrow(left, right);
+    }
+
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool useDefaultImplementationForNothing() const override { return true; }

@@ -604,7 +604,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
 
     insertRowToLogTable(
         local_context,
-        dumpMetadataObjectToString(metadata_object),
+        [&] { return dumpMetadataObjectToString(metadata_object); },
         DB::IcebergMetadataLogLevel::Metadata,
         persistent_components.path_resolver.getTableRoot(),
         Iceberg::IcebergPathFromMetadata::deserialize(metadata_path),
@@ -626,7 +626,7 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator
             || (!iceberg_object_info->info.equality_deletes_objects.empty()))
-        ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
+        ? persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
         : nullptr;
 }
 
@@ -792,22 +792,43 @@ void IcebergMetadata::createInitial(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
 
-    std::vector<String> metadata_files;
-    try
+    const bool catalog_manages_location = catalog && catalog->managesTableLocation();
+
+    String namespace_name;
+    String table_name;
+    if (catalog)
+        std::tie(namespace_name, table_name) = DataLake::parseTableName(table_id_.getTableName());
+
+    if (catalog_manages_location)
     {
-        metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
-    }
-    catch (const Exception & ex)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
-    }
-    if (!metadata_files.empty())
-    {
-        if (if_not_exists)
-            return;
-        else
+        DataLake::TableMetadata existing_table;
+        if (catalog->tryGetTableMetadata(namespace_name, table_name, existing_table))
+        {
+            if (if_not_exists)
+                return;
             throw Exception(
-                ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+                ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog", namespace_name, table_name);
+        }
+    }
+    else
+    {
+        std::vector<String> metadata_files;
+        try
+        {
+            metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        }
+        catch (const Exception & ex)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
+        }
+        if (!metadata_files.empty())
+        {
+            if (if_not_exists)
+                return;
+            else
+                throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+        }
     }
 
     String location_path = configuration_ptr->getRawPath().path;
@@ -816,6 +837,7 @@ void IcebergMetadata::createInitial(
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
             = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
+
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
@@ -828,34 +850,42 @@ void IcebergMetadata::createInitial(
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 
-    try
+    if (catalog)
     {
-        writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
-    }
-    catch (const Exception & e)
-    {
-        /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
-        /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
-        /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
-        const bool precondition_failed
-            = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-            || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-        if (if_not_exists && precondition_failed)
-            return;
-        throw;
+        /// Register the namespace before any files are written (but after all local
+        /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
+        /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
+        /// a namespace over the plain directory those files would leave behind.
+        catalog->createNamespaceIfNotExists(namespace_name, location_path);
     }
 
-    if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    if (!catalog_manages_location)
     {
-        auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+        try
+        {
+            writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
+        }
+        catch (const Exception & e)
+        {
+            const bool precondition_failed
+                = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
+                || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
+            if (if_not_exists && precondition_failed)
+                return;
+            throw;
+        }
+
+        if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        {
+            auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+            writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+        }
     }
 
     if (catalog)
     {
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
             + configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix);
-        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
 }
@@ -1058,6 +1088,7 @@ IcebergFileRecord buildIcebergFileRecord(
     record.schema_id = processed->resolved_schema_id;
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
+    record.first_row_id = processed->first_row_id;
 
     for (const auto & [column_id, info] : parsed.columns_infos)
     {
@@ -1127,6 +1158,37 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
             object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
+            return false;
+    }
+    return true;
+}
+
+bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
+    auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
+    if (table_state_snapshot == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't extract iceberg table state from storage snapshot for table location {}",
+            persistent_components.table_location);
+    }
+
+    /// An empty table trivially satisfies the requirements.
+    auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
+    if (!data_snapshot)
+        return true;
+
+    /// The lazy branch re-reads the surviving rows by their physical row numbers, and the main
+    /// read must be able to prune the deferred columns. Prove that for every file of the snapshot:
+    /// all data files are Parquet, none needs schema evolution, and there are no equality deletes.
+    /// The manifest files are cached, and the read itself traverses them anyway.
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        auto files_handle = getManifestFileEntriesHandle(
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+
+        if (!files_handle.areAllDataFilesEligibleForLazyMaterialization(table_state_snapshot->schema_id))
             return false;
     }
     return true;
@@ -1262,7 +1324,7 @@ ObjectIterator IcebergMetadata::iterate(
 NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    return *persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id);
+    return *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
 std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -1279,7 +1341,7 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
     result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_state.schema_id)});
+        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
@@ -1415,7 +1477,9 @@ void IcebergMetadata::addDeleteTransformers(
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
             /// update_row_numbers_info = true: every transform that can precede this one (the
             /// position-delete transform, an earlier equality-delete filter) maintains
-            /// `ChunkInfoRowNumbers`, so it still describes the chunk here.
+            /// `ChunkInfoRowNumbers`, so it still describes the chunk here. Keeping the physical row
+            /// numbers consistent after rows are removed is what makes the `_row_number` virtual
+            /// column and lazy materialization correct on top of equality deletes.
             return std::make_shared<FilterTransform>(
                 header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true,
                 /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
@@ -1496,7 +1560,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.table_uuid);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id), local_context);
+    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     result.sort_order_id = sort_order_id;
     return result;
