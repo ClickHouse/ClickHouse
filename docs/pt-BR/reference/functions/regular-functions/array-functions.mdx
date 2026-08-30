@@ -725,6 +725,13 @@ Obtém o elemento do array fornecido no índice `n`, em que `n` pode ser de qual
 Se o índice estiver fora dos limites de um array, a função retornará um valor padrão (0 para números, uma string vazia para strings etc.),
 exceto no caso de argumentos com um array não constante e um índice constante 0. Nesse caso, ocorrerá o erro `Array indices are 1-based`.
 
+Quando `n` é um array de inteiros, retorna um array com os elementos nas posições especificadas (uma operação de coleta).
+Isso é equivalente a `arrayMap(i -> arr[i], n)`, mas tem uma implementação separada e mais eficiente.
+Posições fora dos limites geram o valor padrão, assim como para um índice escalar.
+Os elementos do índice podem ser `Nullable`. Um índice `NULL` produz `NULL` (e torna `Nullable` o tipo de elemento do resultado) quando o tipo de elemento pode ser
+envolvido em `Nullable`; para tipos de elemento que não podem estar dentro de `Nullable` (como `Array`, `Map`), um índice `NULL` produz o
+valor padrão. Esse é o mesmo comportamento de um índice escalar `NULL`.
+
 <Note>
   Arrays no ClickHouse são indexados a partir de 1.
 </Note>
@@ -741,11 +748,11 @@ arrayElement(arr, n)
 
 **Argumentos**
 
-* `arr` — O array em que pesquisar. [`Array(T)`](/pt-BR/reference/data-types/array). - `n` — Posição do elemento a ser obtido. [`(U)Int*`](/pt-BR/reference/data-types/int-uint).
+* `arr` — O array em que pesquisar. [`Array(T)`](/pt-BR/reference/data-types/array). - `n` — Posição do elemento a ser obtido ou um array de posições. As posições podem ser `Nullable`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Array((U)Int*)`](/pt-BR/reference/data-types/array).
 
 **Valor retornado**
 
-Retorna um único array combinado a partir dos argumentos de array fornecidos [`Array(T)`](/pt-BR/reference/data-types/array)
+Quando `n` é um escalar, retorna o elemento do tipo `T`. Quando `n` é um array, retorna `Array(Nullable(T))` se os elementos de índice forem `Nullable` e `T` puder ser encapsulado em `Nullable`; caso contrário, retorna `Array(T)`. [`Any`](/pt-BR/reference/data-types/index) ou [`Array(T)`](/pt-BR/reference/data-types/array) ou [`Array(Nullable(T))`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -789,6 +796,16 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 0
 ```
 
+**Array de índices**
+
+```sql title=Query
+SELECT [10, 20, 30, 40][[2, 4, 1]]
+```
+
+```response title=Response
+[20,40,10]
+```
+
 <div id="arrayElementOrNull">
   ## arrayElementOrNull
 </div>
@@ -796,7 +813,13 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 Introduzido em: v1.1.0
 
 Obtém o elemento do array fornecido no índice `n`, em que `n` pode ser qualquer tipo inteiro.
-Se o índice estiver fora dos limites do array, `NULL` será retornado em vez de um valor padrão.
+Se o índice estiver fora dos limites do array, `NULL` será retornado em vez de um valor padrão,
+desde que o tipo de resultado possa ser `Nullable`. Para tipos de elemento que ainda não são `Nullable` e não podem ser
+envolvidos por `Nullable` (como `Array`, `Map`), o valor padrão do tipo de elemento será retornado.
+
+Quando `n` é um array de inteiros, retorna um array dos elementos nas posições especificadas.
+Isso é equivalente a `arrayMap(i -> arrayElementOrNull(arr, i), n)`, mas tem uma implementação separada e mais eficiente.
+Posições fora dos limites e índices `NULL` produzem valores `NULL` no array de resultado, seguindo a mesma regra de um índice escalar.
 
 <Note>
   Arrays no ClickHouse são indexados a partir de 1.
@@ -807,16 +830,16 @@ Se o índice estiver fora dos limites do array, `NULL` será retornado em vez de
 **Sintaxe**
 
 ```sql
-arrayElementOrNull(arrays)
+arrayElementOrNull(arr, n)
 ```
 
 **Argumentos**
 
-* `arrays` — Número arbitrário de argumentos do tipo array. [`Array`](/pt-BR/reference/data-types/array)
+* `arr` — O array a ser pesquisado. [`Array(T)`](/pt-BR/reference/data-types/array). - `n` — Posição do elemento a ser obtido ou um array de posições. As posições podem ser `Nullable`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Array((U)Int*)`](/pt-BR/reference/data-types/array).
 
 **Valor retornado**
 
-Retorna um único array combinado a partir dos argumentos fornecidos. [`Array(T)`](/pt-BR/reference/data-types/array)
+Quando `n` é escalar, retorna `Nullable(T)` se `T` puder ser encapsulado em `Nullable`; caso contrário, `T`. Quando `n` é um array, retorna `Array(Nullable(T))` se `T` puder ser encapsulado em `Nullable`; caso contrário, `Array(T)`. [`Any`](/pt-BR/reference/data-types/index) ou [`Nullable(T)`](/pt-BR/reference/data-types/nullable) ou [`Array(T)`](/pt-BR/reference/data-types/array) ou [`Array(Nullable(T))`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -848,6 +871,16 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 
 ```response title=Response
 NULL
+```
+
+**Array de índices**
+
+```sql title=Query
+SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
+```
+
+```response title=Response
+[10,NULL,20]
 ```
 
 <div id="arrayEnumerate">
@@ -1731,6 +1764,12 @@ e com as funções de agregação, que recebem um grupo de linhas e as &quot;com
 
 Todos os valores nas colunas são simplesmente copiados, exceto os valores da coluna à qual essa função é aplicada;
 eles são substituídos pelo valor correspondente do array.
+
+`arrayJoin`, inclusive por meio de seu alias `unnest`, não pode ser usado em uma condição `JOIN ON` avaliada durante o join, pois essa condição deve
+preservar o número de linhas. Uma condição que se aplica a apenas um lado e uma chave de igualdade sobre `arrayJoin` são
+extraídas antes do join e não são afetadas. Uma condição `ALL INNER JOIN` sem disjunções também não é afetada,
+pois, nesse caso, a condição é aplicada após o join.
+Quando a expansão depende de apenas um lado, mova-a para um `ARRAY JOIN` em uma subconsulta antes do join; uma condição cujo argumento de `arrayJoin` lê colunas de ambos os lados precisa ser reestruturada.
 
 <Note>
   Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
@@ -4248,7 +4287,7 @@ Verifica se o array de entrada está vazio.
 Um array é considerado vazio se não contiver nenhum elemento.
 
 <Note>
-  Pode ser otimizada ao habilitar a [`configuração optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna de array. A consulta `SELECT empty(arr) FROM TABLE;` é transformada em `SELECT arr.size0 = 0 FROM TABLE;`.
+  Pode ser otimizada ao habilitar a [`configuração optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna de array. A consulta `SELECT empty(arr) FROM TABLE;` é transformada em `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 A função também funciona com strings ou UUIDs.
@@ -5137,6 +5176,11 @@ Se o array não contiver o valor pesquisado, a função retorna `0`.
 
 Elementos definidos como `NULL` são tratados como valores normais.
 
+Elementos `NaN` não seguem a regra de `NULL` acima.
+Uma comparação escalar entre dois valores `NaN` (`NaN = NaN`) é `0`, mas `indexOf` ainda pode reportar um elemento `NaN` como encontrado.
+Esse comportamento é um detalhe de implementação. Não dependa de um comportamento específico.
+Para encontrar um, teste-o: `arrayFirstIndex(x -> isNaN(x), arr)` retorna sua posição; `arrayExists(x -> isNaN(x), arr)`, uma flag.
+
 **Sintaxe**
 
 ```sql
@@ -5335,7 +5379,7 @@ Verifica se o array de entrada não está vazio.
 Um array é considerado não vazio se contiver pelo menos um elemento.
 
 <Note>
-  Pode ser otimizada ativando a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna do tipo array. A consulta `SELECT notEmpty(arr) FROM table` é transformada em `SELECT arr.size0 != 0 FROM TABLE`.
+  Pode ser otimizada ativando a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna do tipo array. A consulta `SELECT notEmpty(arr) FROM table` é transformada em `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 A função também funciona com Strings ou UUIDs.
@@ -5364,6 +5408,71 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="notHas">
+  ## notHas
+</div>
+
+Introduzido em: v26.8.0
+
+Retorna se o array não contém o elemento especificado, se o map não contém a chave especificada ou se o objeto JSON não contém o caminho especificado. É a negação de `has`.
+
+**Sintaxe**
+
+```sql
+notHas(haystack, needle)
+```
+
+**Argumentos**
+
+* `haystack` — O array, map ou JSON de origem. [`Array`](/pt-BR/reference/data-types/array), [`Map`](/pt-BR/reference/data-types/map) ou [`JSON`](/pt-BR/reference/data-types/newjson)
+* `needle` — O valor a ser buscado (elemento no array, chave no map ou string de caminho no JSON).
+
+**Valor retornado**
+
+Retorna `1` se o haystack não contiver o needle especificado; caso contrário, retorna `0`. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Uso básico de Array**
+
+```sql title=Query
+SELECT notHas([1, 2, 3], 2)
+```
+
+```response title=Response
+0
+```
+
+**Array não encontrada**
+
+```sql title=Query
+SELECT notHas([1, 2, 3], 4)
+```
+
+```response title=Response
+1
+```
+
+**Uso básico de map**
+
+```sql title=Query
+SELECT notHas(map('a', 1, 'b', 2), 'c')
+```
+
+```response title=Response
+1
+```
+
+**Uso básico de JSON**
+
+```sql title=Query
+SELECT notHas('{"a" : 1, "b" : {"c" : 2}}'::JSON, 'b.c')
+```
+
+```response title=Response
+0
 ```
 
 <div id="randomHadamardTransform">
@@ -5397,7 +5506,8 @@ preenchimento com zeros até uma potência de dois maior; ela é **rejeitada com
 retornar silenciosamente um vetor mais longo. Use um comprimento compatível ou passe `output_dims` para calcular uma
 projeção truncada de um comprimento arbitrário (veja abaixo).
 
-O resultado tem o mesmo tipo de elemento da entrada; um array de entrada vazio retorna um array vazio.
+O resultado tem o mesmo tipo de elemento da entrada; um array de entrada vazio retorna um array vazio
+(`output_dims` não se aplica a ele).
 
 * `seed` (opcional, padrão `0`): seleciona o padrão de sinais; a mesma seed sempre produz a mesma
   transformada.
@@ -5483,7 +5593,7 @@ Os tipos compatíveis são:
 
 * Todos os argumentos `start`, `end` e `step` devem ser de um dos tipos compatíveis acima. Os elementos do array retornado serão de um supertipo dos argumentos.
 
-* É lançada uma exceção se a função retornar um array com comprimento total maior que o número de elementos especificado pela configuração [`function_range_max_elements_in_block`](/pt-BR/reference/settings/session-settings#function_range_max_elements_in_block).
+* É lançada uma exceção se a função retornar um array com comprimento total maior que o número de elementos especificado pela configuração [`function_range_max_elements_in_block`](/pt-BR/reference/settings/session-settings/function#function_range_max_elements_in_block).
 
 * Retorna `NULL` se algum argumento tiver o tipo Nullable(nothing). É lançada uma exceção se algum argumento tiver o valor `NULL` (tipo Nullable(T)).
 

@@ -14,6 +14,7 @@
           "expanded": false,
           "group": "语句",
           "pages": [
+            "zh/reference/statements/index",
             {
               "expanded": false,
               "group": "ALTER",
@@ -43,8 +44,7 @@
                 "zh/reference/statements/alter/user",
                 "zh/reference/statements/alter/masking-policy",
                 "zh/reference/statements/alter/view"
-              ],
-              "root": "zh/reference/statements/alter/index"
+              ]
             },
             "zh/reference/statements/attach",
             "zh/reference/statements/check-grant",
@@ -54,11 +54,13 @@
               "expanded": false,
               "group": "CREATE",
               "pages": [
+                "zh/reference/statements/create/index",
                 "zh/reference/statements/create/database",
                 {
                   "expanded": false,
-                  "group": "字典",
+                  "group": "DICTIONARY",
                   "pages": [
+                    "zh/reference/statements/create/dictionary",
                     "zh/reference/statements/create/dictionary/attributes",
                     "zh/reference/statements/create/dictionary/embedded",
                     "zh/reference/statements/create/dictionary/lifetime",
@@ -66,6 +68,7 @@
                       "expanded": false,
                       "group": "布局",
                       "pages": [
+                        "zh/reference/statements/create/dictionary/layouts/overview",
                         "zh/reference/statements/create/dictionary/layouts/flat",
                         "zh/reference/statements/create/dictionary/layouts/hashed",
                         "zh/reference/statements/create/dictionary/layouts/hashed-array",
@@ -78,13 +81,13 @@
                         "zh/reference/statements/create/dictionary/layouts/polygon",
                         "zh/reference/statements/create/dictionary/layouts/ip-trie",
                         "zh/reference/statements/create/dictionary/layouts/regexp-tree"
-                      ],
-                      "root": "zh/reference/statements/create/dictionary/layouts/overview"
+                      ]
                     },
                     {
                       "expanded": false,
                       "group": "数据源",
                       "pages": [
+                        "zh/reference/statements/create/dictionary/sources/overview",
                         "zh/reference/statements/create/dictionary/sources/local-file",
                         "zh/reference/statements/create/dictionary/sources/executable-file",
                         "zh/reference/statements/create/dictionary/sources/executable-pool",
@@ -99,11 +102,9 @@
                         "zh/reference/statements/create/dictionary/sources/null",
                         "zh/reference/statements/create/dictionary/sources/yamlregexptree",
                         "zh/reference/statements/create/dictionary/sources/ytsaurus"
-                      ],
-                      "root": "zh/reference/statements/create/dictionary/sources/overview"
+                      ]
                     }
-                  ],
-                  "root": "zh/reference/statements/create/dictionary"
+                  ]
                 },
                 "zh/reference/statements/create/masking-policy",
                 "zh/reference/statements/create/function",
@@ -112,11 +113,19 @@
                 "zh/reference/statements/create/role",
                 "zh/reference/statements/create/row-policy",
                 "zh/reference/statements/create/settings-profile",
-                "zh/reference/statements/create/table",
+                {
+                  "expanded": false,
+                  "group": "表",
+                  "pages": [
+                    "zh/reference/statements/create/table",
+                    "zh/reference/statements/create/table/codec",
+                    "zh/reference/statements/create/table/temporary-table",
+                    "zh/reference/statements/create/table/replace-table"
+                  ]
+                },
                 "zh/reference/statements/create/user",
                 "zh/reference/statements/create/view"
-              ],
-              "root": "zh/reference/statements/create/index"
+              ]
             },
             "zh/reference/statements/delete",
             "zh/reference/statements/describe-table",
@@ -141,6 +150,7 @@
               "expanded": false,
               "group": "SELECT",
               "pages": [
+                "zh/reference/statements/select/index",
                 "zh/reference/statements/select/all",
                 "zh/reference/statements/select/apply_modifier",
                 "zh/reference/statements/select/array-join",
@@ -158,6 +168,7 @@
                 "zh/reference/statements/select/limit",
                 "zh/reference/statements/select/offset",
                 "zh/reference/statements/select/order-by",
+                "zh/reference/statements/select/pipe-operators",
                 "zh/reference/statements/select/prewhere",
                 "zh/reference/statements/select/qualify",
                 "zh/reference/statements/select/replace_modifier",
@@ -165,8 +176,7 @@
                 "zh/reference/statements/select/union",
                 "zh/reference/statements/select/where",
                 "zh/reference/statements/select/with"
-              ],
-              "root": "zh/reference/statements/select/index"
+              ]
             },
             "zh/reference/statements/set-role",
             "zh/reference/statements/set",
@@ -175,20 +185,18 @@
             "zh/reference/statements/truncate",
             "zh/reference/statements/undrop",
             "zh/reference/statements/update",
-            "zh/reference/statements/use",
-            "zh/reference/statements/watch"
-          ],
-          "root": "zh/reference/statements/index"
+            "zh/reference/statements/use"
+          ]
         },
         {
           "expandable": true,
           "expanded": false,
           "group": "运算符",
           "pages": [
+            "zh/reference/operators/index",
             "zh/reference/operators/exists",
             "zh/reference/operators/distributed-ddl"
-          ],
-          "root": "zh/reference/operators/index"
+          ]
         }
       ]
     },
@@ -197,6 +205,7 @@
       "expanded": false,
       "group": "数据类型",
       "pages": [
+        "zh/reference/data-types/index",
         {
           "expanded": false,
           "group": "数值类型",
@@ -285,12 +294,12 @@
           "expanded": false,
           "group": "特殊数据类型",
           "pages": [
+            "zh/reference/data-types/special-data-types/index",
             "zh/reference/data-types/special-data-types/expression",
             "zh/reference/data-types/special-data-types/interval",
             "zh/reference/data-types/special-data-types/nothing",
             "zh/reference/data-types/special-data-types/set"
-          ],
-          "root": "zh/reference/data-types/special-data-types/index"
+          ]
         },
         {
           "group": "二进制编码",
@@ -298,25 +307,28 @@
             "zh/reference/data-types/data-types-binary-encoding"
           ]
         }
-      ],
-      "root": "zh/reference/data-types/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "引擎",
       "pages": [
+        "zh/reference/engines/engines",
         {
           "expanded": false,
           "group": "表引擎",
           "pages": [
+            "zh/reference/engines/table-engines/index",
             {
               "expanded": false,
               "group": "集成",
               "pages": [
+                "zh/reference/engines/table-engines/integrations/index",
                 "zh/reference/engines/table-engines/integrations/arrowflight",
                 "zh/reference/engines/table-engines/integrations/azure-queue",
                 "zh/reference/engines/table-engines/integrations/azureBlobStorage",
+                "zh/reference/engines/table-engines/integrations/bigquery",
                 "zh/reference/engines/table-engines/integrations/deltalake",
                 "zh/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "zh/reference/engines/table-engines/integrations/ExternalDistributed",
@@ -340,23 +352,23 @@
                 "zh/reference/engines/table-engines/integrations/sqlite",
                 "zh/reference/engines/table-engines/integrations/time-series",
                 "zh/reference/engines/table-engines/integrations/ytsaurus"
-              ],
-              "root": "zh/reference/engines/table-engines/integrations/index"
+              ]
             },
             {
               "expanded": false,
-              "group": "Log 家族",
+              "group": "日志家族",
               "pages": [
+                "zh/reference/engines/table-engines/log-family/index",
                 "zh/reference/engines/table-engines/log-family/log",
                 "zh/reference/engines/table-engines/log-family/stripelog",
                 "zh/reference/engines/table-engines/log-family/tinylog"
-              ],
-              "root": "zh/reference/engines/table-engines/log-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "MergeTree 家族",
               "pages": [
+                "zh/reference/engines/table-engines/mergetree-family/index",
                 "zh/reference/engines/table-engines/mergetree-family/mergetree",
                 "zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree",
                 "zh/reference/engines/table-engines/mergetree-family/annindexes",
@@ -369,13 +381,13 @@
                 "zh/reference/engines/table-engines/mergetree-family/summingmergetree",
                 "zh/reference/engines/table-engines/mergetree-family/textindexes",
                 "zh/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree"
-              ],
-              "root": "zh/reference/engines/table-engines/mergetree-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "特殊",
               "pages": [
+                "zh/reference/engines/table-engines/special/index",
                 "zh/reference/engines/table-engines/special/alias",
                 "zh/reference/engines/table-engines/special/buffer",
                 "zh/reference/engines/table-engines/special/dictionary",
@@ -394,40 +406,40 @@
                 "zh/reference/engines/table-engines/special/set",
                 "zh/reference/engines/table-engines/special/url",
                 "zh/reference/engines/table-engines/special/view"
-              ],
-              "root": "zh/reference/engines/table-engines/special/index"
+              ]
             }
-          ],
-          "root": "zh/reference/engines/table-engines/index"
+          ]
         },
         {
           "expanded": false,
           "group": "数据库引擎",
           "pages": [
+            "zh/reference/engines/database-engines/index",
             "zh/reference/engines/database-engines/atomic",
             "zh/reference/engines/database-engines/backup",
             "zh/reference/engines/database-engines/datalake",
             "zh/reference/engines/database-engines/materialized-postgresql",
             "zh/reference/engines/database-engines/mysql",
             "zh/reference/engines/database-engines/postgresql",
+            "zh/reference/engines/database-engines/remote",
             "zh/reference/engines/database-engines/replicated",
             "zh/reference/engines/database-engines/shared",
             "zh/reference/engines/database-engines/sqlite"
-          ],
-          "root": "zh/reference/engines/database-engines/index"
+          ]
         }
-      ],
-      "root": "zh/reference/engines/engines"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "函数",
       "pages": [
+        "zh/reference/functions/index",
         {
           "expanded": false,
-          "group": "常规函数",
+          "group": "普通函数",
           "pages": [
+            "zh/reference/functions/regular-functions/overview",
             "zh/reference/functions/regular-functions/ai-functions",
             "zh/reference/functions/regular-functions/arithmetic-functions",
             "zh/reference/functions/regular-functions/array-functions",
@@ -449,6 +461,7 @@
               "expanded": false,
               "group": "Geo",
               "pages": [
+                "zh/reference/functions/regular-functions/geo/index",
                 "zh/reference/functions/regular-functions/geo/coordinates",
                 "zh/reference/functions/regular-functions/geo/flipCoordinates",
                 "zh/reference/functions/regular-functions/geo/geometry",
@@ -458,8 +471,7 @@
                 "zh/reference/functions/regular-functions/geo/polygon",
                 "zh/reference/functions/regular-functions/geo/s2",
                 "zh/reference/functions/regular-functions/geo/svg"
-              ],
-              "root": "zh/reference/functions/regular-functions/geo/index"
+              ]
             },
             "zh/reference/functions/regular-functions/hash-functions",
             "zh/reference/functions/regular-functions/in-functions",
@@ -473,7 +485,6 @@
             "zh/reference/functions/regular-functions/numeric-indexed-vector-functions",
             "zh/reference/functions/regular-functions/other-functions",
             "zh/reference/functions/regular-functions/random-functions",
-            "zh/reference/functions/regular-functions/overview",
             "zh/reference/functions/regular-functions/rounding-functions",
             "zh/reference/functions/regular-functions/splitting-merging-functions",
             "zh/reference/functions/regular-functions/string-functions",
@@ -488,13 +499,13 @@
             "zh/reference/functions/regular-functions/uniqtheta-functions",
             "zh/reference/functions/regular-functions/url-functions",
             "zh/reference/functions/regular-functions/uuid-functions"
-          ],
-          "root": "zh/reference/functions/regular-functions/regular-functions-index"
+          ]
         },
         {
           "expanded": false,
           "group": "聚合函数",
           "pages": [
+            "zh/reference/functions/aggregate-functions/index",
             "zh/reference/functions/aggregate-functions/combinators",
             "zh/reference/functions/aggregate-functions/grouping_function",
             "zh/reference/functions/aggregate-functions/parametric-functions",
@@ -663,16 +674,17 @@
                 "zh/reference/functions/aggregate-functions/welchTTest"
               ]
             }
-          ],
-          "root": "zh/reference/functions/aggregate-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "表函数",
           "pages": [
+            "zh/reference/functions/table-functions/index",
             "zh/reference/functions/table-functions/arrowflight",
             "zh/reference/functions/table-functions/azureBlobStorage",
             "zh/reference/functions/table-functions/azureBlobStorageCluster",
+            "zh/reference/functions/table-functions/bigquery",
             "zh/reference/functions/table-functions/cluster",
             "zh/reference/functions/table-functions/deltalake",
             "zh/reference/functions/table-functions/deltalakeCluster",
@@ -698,6 +710,7 @@
             "zh/reference/functions/table-functions/jdbc",
             "zh/reference/functions/table-functions/loop",
             "zh/reference/functions/table-functions/merge",
+            "zh/reference/functions/table-functions/mergeTreeCodecBlockCounts",
             "zh/reference/functions/table-functions/mergeTreeIndex",
             "zh/reference/functions/table-functions/mergeTreeProjection",
             "zh/reference/functions/table-functions/mergeTreeTextIndex",
@@ -728,13 +741,13 @@
             "zh/reference/functions/table-functions/view",
             "zh/reference/functions/table-functions/ytsaurus",
             "zh/reference/functions/table-functions/zeros"
-          ],
-          "root": "zh/reference/functions/table-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "窗口函数",
           "pages": [
+            "zh/reference/functions/window-functions/index",
             "zh/reference/functions/window-functions/cume_dist",
             "zh/reference/functions/window-functions/dense_rank",
             "zh/reference/functions/window-functions/first_value",
@@ -749,8 +762,7 @@
             "zh/reference/functions/window-functions/percent_rank",
             "zh/reference/functions/window-functions/rank",
             "zh/reference/functions/window-functions/row_number"
-          ],
-          "root": "zh/reference/functions/window-functions/index"
+          ]
         },
         {
           "group": "用户自定义函数",
@@ -759,14 +771,14 @@
             "zh/reference/functions/regular-functions/wasm_udf"
           ]
         }
-      ],
-      "root": "zh/reference/functions/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "格式",
       "pages": [
+        "zh/reference/formats/index",
         {
           "expanded": false,
           "group": "Arrow",
@@ -870,6 +882,7 @@
             "zh/reference/formats/Parquet/ParquetMetadata"
           ]
         },
+        "zh/reference/formats/PNG",
         "zh/reference/formats/PostgreSQLWire",
         {
           "expanded": false,
@@ -897,6 +910,14 @@
             "zh/reference/formats/Protobuf/Protobuf",
             "zh/reference/formats/Protobuf/ProtobufList",
             "zh/reference/formats/Protobuf/ProtobufSingle"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Puffin",
+          "pages": [
+            "zh/reference/formats/Puffin/Puffin",
+            "zh/reference/formats/Puffin/PuffinMetadata"
           ]
         },
         "zh/reference/formats/RawBLOB",
@@ -937,14 +958,23 @@
         "zh/reference/formats/Values",
         "zh/reference/formats/Vertical",
         "zh/reference/formats/XML"
-      ],
-      "root": "zh/reference/formats/index"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
+      "group": "接口",
+      "pages": [
+        "zh/reference/interfaces/specs/NativeProtocol",
+        "zh/reference/interfaces/specs/NativeFormat"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "设置",
       "pages": [
+        "zh/reference/settings/index",
         {
           "$ref": "./settings/server-settings/settings/navigation.json"
         },
@@ -958,15 +988,14 @@
           "$ref": "./settings/formats/navigation.json"
         },
         "zh/reference/settings/beta-and-experimental-features"
-      ],
-      "root": "zh/reference/settings/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "系统表",
       "pages": [
-        "zh/reference/system-tables/index",
+        "zh/reference/system-tables/overview",
         "zh/reference/system-tables/aggregate_function_combinators",
         "zh/reference/system-tables/aggregated_zookeeper_log",
         "zh/reference/system-tables/asynchronous_insert_log",
@@ -975,6 +1004,7 @@
         "zh/reference/system-tables/asynchronous_metric_log",
         "zh/reference/system-tables/asynchronous_metrics",
         "zh/reference/system-tables/azure_queue_log",
+        "zh/reference/system-tables/azure_queue_metadata",
         "zh/reference/system-tables/azure_queue_metadata_cache",
         "zh/reference/system-tables/azure_queue_settings",
         "zh/reference/system-tables/backup_log",
@@ -1001,15 +1031,20 @@
         "zh/reference/system-tables/database_replicas",
         "zh/reference/system-tables/databases",
         "zh/reference/system-tables/dead_letter_queue",
+        "zh/reference/system-tables/delta_lake_metadata_log",
         "zh/reference/system-tables/delta_metadata_log",
         "zh/reference/system-tables/detached_parts",
         "zh/reference/system-tables/detached_tables",
         "zh/reference/system-tables/dictionaries",
+        "zh/reference/system-tables/dictionary_layouts",
+        "zh/reference/system-tables/dictionary_sources",
         "zh/reference/system-tables/dimensional_metrics",
         "zh/reference/system-tables/disks",
+        "zh/reference/system-tables/disk_types",
         "zh/reference/system-tables/distributed_ddl_queue",
         "zh/reference/system-tables/distribution_queue",
         "zh/reference/system-tables/dns_cache",
+        "zh/reference/system-tables/documentation",
         "zh/reference/system-tables/dropped_tables",
         "zh/reference/system-tables/dropped_tables_parts",
         "zh/reference/system-tables/enabled_roles",
@@ -1025,9 +1060,11 @@
         "zh/reference/system-tables/functions",
         "zh/reference/system-tables/grants",
         "zh/reference/system-tables/graphite_retentions",
+        "zh/reference/system-tables/handlers",
         "zh/reference/system-tables/histogram_metric_log",
         "zh/reference/system-tables/histogram_metrics",
         "zh/reference/system-tables/hypothetical_indexes",
+        "zh/reference/system-tables/iceberg_files",
         "zh/reference/system-tables/iceberg_history",
         "zh/reference/system-tables/iceberg_metadata_log",
         "zh/reference/system-tables/information_schema",
@@ -1036,6 +1073,10 @@
         "zh/reference/system-tables/jemalloc_stats",
         "zh/reference/system-tables/jemalloc_profile_text",
         "zh/reference/system-tables/kafka_consumers",
+        "zh/reference/system-tables/keeper_changelogs",
+        "zh/reference/system-tables/keeper_cluster",
+        "zh/reference/system-tables/keeper_snapshots",
+        "zh/reference/system-tables/keeper_storage",
         "zh/reference/system-tables/keywords",
         "zh/reference/system-tables/licenses",
         "zh/reference/system-tables/macros",
@@ -1084,6 +1125,7 @@
         "zh/reference/system-tables/role_grants",
         "zh/reference/system-tables/roles",
         "zh/reference/system-tables/row_policies",
+        "zh/reference/system-tables/s3_queue_metadata",
         "zh/reference/system-tables/s3_queue_settings",
         "zh/reference/system-tables/s3queue_log",
         "zh/reference/system-tables/s3queue_metadata_cache",
@@ -1113,6 +1155,7 @@
         "zh/reference/system-tables/user_defined_functions",
         "zh/reference/system-tables/user_directories",
         "zh/reference/system-tables/user_processes",
+        "zh/reference/system-tables/user_query_log",
         "zh/reference/system-tables/users",
         "zh/reference/system-tables/view_refreshes",
         "zh/reference/system-tables/warnings",
@@ -1125,13 +1168,13 @@
         "zh/reference/system-tables/zookeeper_connection_log",
         "zh/reference/system-tables/zookeeper_log",
         "zh/reference/system-tables/zookeeper_watches"
-      ],
-      "root": "zh/reference/system-tables/overview"
+      ]
     },
     {
       "group": "数据湖",
-      "pages": [],
-      "root": "zh/reference/datalakes"
+      "pages": [
+        "zh/reference/datalakes"
+      ]
     }
   ]
 }

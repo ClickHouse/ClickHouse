@@ -254,7 +254,8 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 - `db_path` — Path to a file with SQLite database.
 
-## Data types support {#data_types-support}
+<a id="data_types-support"></a>
+## Data types support {#data-types-support}
 
 The table below shows the default type mapping when ClickHouse automatically infers schema from SQLite:
 

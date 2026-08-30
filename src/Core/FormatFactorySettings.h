@@ -24,7 +24,7 @@ If it is set to true, allow strings in single quotes.
 If it is set to true, allow strings in double quotes.
 )", 0) \
     DECLARE(Bool, input_format_parallel_parsing, true, R"(
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [CSV](/reference/formats/CSV/CSV) and [JSONEachRow](/reference/formats/JSON/JSONEachRow) formats.
 
 Possible values:
 
@@ -32,7 +32,7 @@ Possible values:
 - 0 — Disabled.
 )", 0) \
     DECLARE(Bool, output_format_parallel_formatting, true, R"(
-Enables or disables parallel formatting of data formats. Supported only for [TSV](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [CSV](/reference/formats/CSV/CSV) and [JSONEachRow](/reference/formats/JSON/JSONEachRow) formats.
 
 Possible values:
 
@@ -53,6 +53,8 @@ Note: a flattened header is not read back into a Tuple by name when `input_forma
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
 
 This applies only to bare `Tuple`. A `Nullable(Tuple)` is always written as a single CSV field (see [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns)) and is likewise read back from a single field, never from separate columns, regardless of this setting. Separate-columns parsing is not supported for `Nullable(Tuple)` because a leading `\N` field is ambiguous (it may be the outer NULL of the tuple or the NULL of its first element).
+
+Because a bare `Tuple` then occupies one field per element, a `\N` in the field of a direct top-level element is that element and not the whole column, so [input_format_null_as_default](#input_format_null_as_default) applies to that element. A row that supplies a single field for the whole tuple is short by the remaining elements and is rejected instead of taking the column default. Set this setting to `0` to read such a field as the whole column again. A `\N` in the field of an element of a nested `Tuple` is still read as that whole nested element.
 )", 0) \
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
@@ -73,12 +75,12 @@ When writing data, ClickHouse throws an exception if input data contain columns 
 
 Supported formats:
 
-- [JSONEachRow](/interfaces/formats/JSONEachRow) (and other JSON formats)
-- [BSONEachRow](/interfaces/formats/BSONEachRow) (and other JSON formats)
-- [TSKV](/interfaces/formats/TSKV)
+- [JSONEachRow](/reference/formats/JSON/JSONEachRow) (and other JSON formats)
+- [BSONEachRow](/reference/formats/BSONEachRow) (and other JSON formats)
+- [TSKV](/reference/formats/TabSeparated/TSKV)
 - All formats with suffixes WithNames/WithNamesAndTypes
-- [MySQLDump](/interfaces/formats/MySQLDump)
-- [Native](/interfaces/formats/Native)
+- [MySQLDump](/reference/formats/MySQLDump)
+- [Native](/reference/formats/Native)
 
 Possible values:
 
@@ -92,18 +94,18 @@ To improve insert performance, we recommend disabling this check if you are sure
 
 Supported formats:
 
-- [CSVWithNames](/interfaces/formats/CSVWithNames)
-- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
-- [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames)
-- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
-- [JSONCompactEachRowWithNames](/interfaces/formats/JSONCompactEachRowWithNames)
-- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
-- [JSONCompactStringsEachRowWithNames](/interfaces/formats/JSONCompactStringsEachRowWithNames)
-- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
-- [RowBinaryWithNames](/interfaces/formats/RowBinaryWithNames)
-- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
-- [CustomSeparatedWithNames](/interfaces/formats/CustomSeparatedWithNames)
-- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
+- [CSVWithNames](/reference/formats/CSV/CSVWithNames)
+- [CSVWithNamesAndTypes](/reference/formats/CSV/CSVWithNamesAndTypes)
+- [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames)
+- [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNames](/reference/formats/JSON/JSONCompactEachRowWithNames)
+- [JSONCompactEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNames](/reference/formats/JSON/JSONCompactStringsEachRowWithNames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNames](/reference/formats/RowBinary/RowBinaryWithNames)
+- [RowBinaryWithNamesAndTypes](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNames](/reference/formats/CustomSeparated/CustomSeparatedWithNames)
+- [CustomSeparatedWithNamesAndTypes](/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
 
 Possible values:
 
@@ -115,12 +117,12 @@ Controls whether format parser should check if data types from the input data ma
 
 Supported formats:
 
-- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
-- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
-- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
-- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
-- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
-- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
+- [CSVWithNamesAndTypes](/reference/formats/CSV/CSVWithNamesAndTypes)
+- [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNamesAndTypes](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNamesAndTypes](/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
 
 Possible values:
 
@@ -132,7 +134,7 @@ Enables or disables the insertion of JSON data with nested objects.
 
 Supported formats:
 
-- [JSONEachRow](/interfaces/formats/JSONEachRow)
+- [JSONEachRow](/reference/formats/JSON/JSONEachRow)
 
 Possible values:
 
@@ -141,10 +143,10 @@ Possible values:
 
 See also:
 
-- [Usage of Nested Structures](/integrations/data-formats/json/other-formats#accessing-nested-json-objects) with the `JSONEachRow` format.
+- [Usage of Nested Structures](/guides/clickhouse/data-formats/json/formats#accessing-nested-json-objects) with the `JSONEachRow` format.
 )", 0) \
     DECLARE(Bool, input_format_defaults_for_omitted_fields, true, R"(
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](/interfaces/formats/JSONEachRow) (and other JSON formats), [CSV](/interfaces/formats/CSV), [TabSeparated](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [Parquet](/interfaces/formats/Parquet), [Arrow](/interfaces/formats/Arrow), [Avro](/interfaces/formats/Avro), [ORC](/interfaces/formats/ORC), [Native](/interfaces/formats/Native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](/reference/formats/JSON/JSONEachRow) (and other JSON formats), [CSV](/reference/formats/CSV/CSV), [TabSeparated](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [Parquet](/reference/formats/Parquet/Parquet), [Arrow](/reference/formats/Arrow/Arrow), [Avro](/reference/formats/Avro/Avro), [ORC](/reference/formats/ORC), [Native](/reference/formats/Native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
 :::note
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -168,7 +170,7 @@ Treat empty fields in TSV input as default values.
 Treat inserted enum values in TSV formats as enum indices.
 )", 0) \
     DECLARE(Bool, input_format_null_as_default, true, R"(
-Enables or disables the initialization of [NULL](/sql-reference/syntax#literals) fields with [default values](/sql-reference/statements/create/table#default_values), if data type of these fields is not [nullable](/sql-reference/data-types/nullable).
+Enables or disables the initialization of [NULL](/reference/syntax#literals) fields with [default values](/reference/statements/create/table#default_values), if data type of these fields is not [nullable](/reference/data-types/nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable for most input formats.
@@ -218,6 +220,9 @@ Approximate memory limit for Parquet reader v3. Limits how many row groups or co
 )", 0) \
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
 Skip pages using min/max values from column index.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_spatial_filter_push_down, true, R"(
+When reading GeoParquet files, skip whole row groups and, together with `input_format_parquet_page_filter_push_down`, individual pages based on spatial predicates in the WHERE clause and the geometry bounding box statistics (`geospatial_statistics.bbox` or `covering.bbox` columns) in the Parquet metadata.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
@@ -271,6 +276,9 @@ Delimiter between a pair of map key/values in Hive Text File
 )", 0) \
     DECLARE(Bool, input_format_hive_text_allow_variable_number_of_columns, true, R"(
 Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values
+)", 0) \
+    DECLARE(Char, format_hive_text_rows_delimiter, '\n', R"(
+Delimiter at the end of each row in the Hive Text output format
 )", 0) \
     DECLARE(UInt64, input_format_msgpack_number_of_columns, 0, R"(
 The number of columns in inserted MsgPack data. Used for automatic schema inference from data.
@@ -352,9 +360,6 @@ Skip columns with unsupported types while schema inference for format ORC
 )", 0) \
     DECLARE(Bool, input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format Arrow
-)", 0) \
-    DECLARE(Bool, input_format_arrow_use_native_reader, true, R"(
-Use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
 )", 0) \
     DECLARE(String, column_names_for_schema_inference, "", R"(
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
@@ -589,6 +594,9 @@ When enabled, dots in JSON keys will be escaped during parsing.
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
+    DECLARE(UInt64, input_format_json_max_object_size, 512 * 1024 * 1024, R"(
+Maximum allowed size of a single JSON object in bytes. Objects exceeding this limit are rejected as likely malformed. This protects against memory exhaustion when a malformed JSON document is parsed as a single object. The same limit is applied in both parallel and non-parallel parsing paths. Set to 0 to disable the check.
+)", 0) \
     DECLARE(Bool, input_format_json_empty_as_default, false, R"(
 When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
@@ -760,8 +768,8 @@ See also:
 )", 0) \
     \
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
-Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
-corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
+Dynamically trim the trailing zeros of `DateTime64` values, rounding the output scale up to the next
+multiple of three that keeps every significant digit: [0, 3, 6, 9]. An all-zero fraction is dropped.)", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
 Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
 `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
@@ -881,7 +889,7 @@ Write values of [JSON](/reference/data-types/newjson) data type as JSON [String]
 )", 0) \
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
-Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
+Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/reference/formats/JSON/JSON) format.
 Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
 Possible values:
@@ -890,7 +898,7 @@ Possible values:
 - 1 — Integers are enclosed in quotes.
 )", 0) \
     DECLARE(Bool, output_format_json_quote_denormals, false, R"str(
-Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](/interfaces/formats/JSON) output format.
+Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](/reference/formats/JSON/JSON) output format.
 
 Possible values:
 
@@ -1010,7 +1018,7 @@ Enabled by default.
 Skip key value pairs with null value when serialize named tuple columns as JSON objects. It is only valid when output_format_json_named_tuples_as_objects is true.
 )", 0) \
     DECLARE(Bool, output_format_json_array_of_rows, false, R"(
-Enables the ability to output all rows as a JSON array in the [JSONEachRow](/interfaces/formats/JSONEachRow) format.
+Enables the ability to output all rows as a JSON array in the [JSONEachRow](/reference/formats/JSON/JSONEachRow) format.
 
 Possible values:
 
@@ -1113,7 +1121,7 @@ Disabled by default.
 )", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
-The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
+The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/reference/formats/JSON/JSONObjectEachRow) format.
 Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
 )", 0) \
     \
@@ -1201,6 +1209,9 @@ Use Parquet String type instead of Binary for String columns.
 )", 0) \
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
 Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_wide_integer_as_decimal, false, R"(
+Write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standards-compliant Parquet `DECIMAL` values in big-endian byte order. The default keeps the legacy unannotated little-endian `FIXED_LEN_BYTE_ARRAY` representation for compatibility with older ClickHouse versions. The decimal representation enables interoperable numeric statistics, but some Parquet readers do not support precisions above 38 or 76.
 )", 0) \
     DECLARE(ParquetCompression, output_format_parquet_compression_method, "zstd", R"(
 Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)
@@ -1456,7 +1467,7 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
         Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
-Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
+Enables or disables random shard insertion into a [Distributed](/reference/engines/table-engines/special/distributed) table when there is no distributed key.
 
 By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will reject any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
 
@@ -1489,9 +1500,6 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
 )", 0) \
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
 Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
-)", 0) \
-    DECLARE(Bool, output_format_arrow_use_native_writer, true, R"(
-Use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
 )", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
@@ -1527,7 +1535,7 @@ Maximum size of a single CapnProto message in bytes. This protects against malfo
 Use autogenerated Protobuf when format_schema is not set
 )", 0) \
     DECLARE(String, output_format_schema, "", R"(
-The path to the file where the automatically generated schema will be saved in [Cap'n Proto](/interfaces/formats/CapnProto) or [Protobuf](/interfaces/formats/Protobuf) formats.
+The path to the file where the automatically generated schema will be saved in [Cap'n Proto](/reference/formats/CapnProto) or [Protobuf](/reference/formats/Protobuf/Protobuf) formats.
 )", 0) \
     \
     DECLARE(String, input_format_mysql_dump_table_name, "", R"(
@@ -1571,7 +1579,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
+[`displaySecretsInShowAndSelect`](/reference/statements/grant#displaysecretsinshowandselect) privilege.
 
 Possible values:
 
@@ -1624,9 +1632,35 @@ Possible values:
 
 Default value: `` (empty).
 )", 0) \
+    DECLARE(UInt64, output_format_image_time_multiplier_seconds, 1, R"(
+The numerator of the time unit of the `t` column, in seconds, for image output formats such as `PNG`.
+
+The presence of a `t` column makes the format produce an animation, in which `t` is the relative time offset
+of the frame. One unit of `t` corresponds to `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` seconds.
+With the default values (`1` and `60`), one unit of `t` is 1/60 of a second.
+
+Default value: 1.
+)", 0) \
+    DECLARE(UInt64, output_format_image_time_divisor_seconds, 60, R"(
+The denominator of the time unit of the `t` column, in seconds, for image output formats such as `PNG`.
+
+See [`output_format_image_time_multiplier_seconds`](#output_format_image_time_multiplier_seconds).
+
+Default value: 60.
+)", 0) \
+    DECLARE(Bool, output_format_image_streaming_animation, false, R"(
+For image output formats such as `PNG`, write each frame of an animation as soon as the next value of the `t` column is seen, instead of buffering all the frames in memory until the end of the query.
+
+Only one frame is kept in memory, and the frames reach the output while the query is still running. In exchange, the values of `t` must be non-decreasing, otherwise the query throws an exception, and the number of frames is not known when the header of the animation has to be written, so the declared frame count is an upper bound rather than the exact value. Browsers play such a file, but decoders that trust the declared count report an error after the last real frame.
+
+Default value: `false`.
+)", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
+)", 0) \
+    DECLARE(UInt64, input_format_json_max_string_column_growth_step, 0, R"(
+When building the JSON column's internal String buffers while parsing JSON from string, cap the power-of-two growth at this many bytes: once the reserved size reaches this value, the buffer grows by increments of this size instead of doubling. This bounds over-allocation for large JSON columns. 0 means unlimited (pure doubling).
 )", 0) \
     DECLARE(UInt64, input_format_max_block_wait_ms, 0, R"(
 Limits the maximum time in milliseconds to wait before emitting a block during parsing in row-based input formats. 0 means no limit.
@@ -1693,6 +1727,8 @@ Supported modes:
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader_v3, true) \
     MAKE_OBSOLETE(M, Bool, input_format_orc_use_fast_decoder, true) \
+    MAKE_OBSOLETE(M, Bool, input_format_arrow_use_native_reader, true) \
+    MAKE_OBSOLETE(M, Bool, output_format_arrow_use_native_writer, true) \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_use_custom_encoder, true) \
     MAKE_OBSOLETE(M, ParquetVersion, output_format_parquet_version, "2.latest") \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_compliant_nested_types, true) \

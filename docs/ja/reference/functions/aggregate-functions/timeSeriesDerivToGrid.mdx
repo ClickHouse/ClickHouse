@@ -13,10 +13,10 @@ doc_type: 'reference'
 
 導入バージョン: v25.6.0
 
-時系列データをタイムスタンプと値の組として受け取り、開始タイムスタンプ、終了タイムスタンプ、step で表される一定間隔の時間グリッド上で、このデータから [PromQL ライクな微分](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) を計算する集約関数です。グリッド上の各点について、`deriv` の計算に使用するサンプルは、指定された時間ウィンドウ内のものが考慮されます。
+時系列データをタイムスタンプと値の組として受け取り、開始タイムスタンプ、終了タイムスタンプ、step で表される一定間隔の時間グリッド上で、このデータから [PromQL ライクな微分](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) を計算する集約関数です。グリッド上の各点について、`deriv` の計算に使用するサンプルは指定された時間ウィンドウ内のものが考慮されます。
 
 <Note>
-  この関数は実験的機能です。`allow_experimental_ts_to_grid_aggregate_function=true` を設定して有効にしてください。
+  この関数は実験的機能です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効にしてください。
 </Note>
 
 **構文**
@@ -27,7 +27,10 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **パラメータ**
 
-* `start_timestamp` — グリッドの開始位置を指定します。 - `end_timestamp` — グリッドの終了位置を指定します。 - `grid_step` — グリッドの刻み幅を秒単位で指定します。 - `staleness` — 対象とするサンプルの最大 &quot;staleness&quot; を秒単位で指定します。staleness ウィンドウは左開右閉区間です。
+* `start_timestamp` — グリッドの開始位置を指定します。`DateTime64` 型の timestamp 引数の場合、小数値、数値または日時を表すテキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `end_timestamp` — グリッドの終了位置を指定します。`DateTime64` 型の timestamp 引数の場合、小数値、数値または日時を表すテキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `grid_step` — グリッドの刻み幅を秒単位で指定します。`DateTime64` 型の timestamp 引数の場合、小数値、数値、または &#39;15s&#39; や &#39;1m&#39; のような期間を表す文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `staleness` — 対象とするサンプルの最大 &quot;staleness&quot; を秒単位で指定します。staleness ウィンドウは左開右閉区間です。`DateTime64` 型の timestamp 引数の場合、小数値、数値、または &#39;15s&#39; や &#39;1m&#39; のような期間を表す文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
 
 **引数**
 
@@ -35,7 +38,7 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **戻り値**
 
-指定したグリッド上の `deriv` の値を `Array(Nullable(Float64))` として返します。返される配列には、時間グリッド上の各点に対応する値が 1 つずつ含まれます。特定のグリッド点について微分値を計算するのに十分なサンプルがウィンドウ内にない場合、その値は NULL になります。
+指定したグリッド上の `deriv` の値を `Array(Nullable(Float64))` として返します。返される配列には時間グリッド上の各点に対して1つの値が含まれます。特定のグリッド点について微分値を計算するのにウィンドウ内のサンプル数が不足している場合、その値は NULL になります。
 
 **例**
 
