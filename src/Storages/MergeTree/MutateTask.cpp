@@ -2263,7 +2263,6 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             ctx->time_of_mutation,
             ctx->new_data_part,
             ctx->space_reservation,
-            ctx->is_explicit_recompression,
             (*ctx->mutate_entry)->ptr()
         );
 
@@ -2507,8 +2506,10 @@ private:
         ctx->compression_codec = std::move(part_compression_codec.codec);
         ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
         /// Record the chosen codec on the part so that its projections merged by the sub-merge in
-        /// `MergeTask` (see the projection branch there) inherit the same codec.
+        /// `MergeTask` (see the projection branch there) inherit the same codec, together with
+        /// whether it was asked for by an explicit `RECOMPRESS` TTL.
         ctx->new_data_part->default_codec = ctx->compression_codec;
+        ctx->new_data_part->default_codec_is_explicit_recompression = ctx->is_explicit_recompression;
 
         NameSet entries_to_hardlink;
         NameSet removed_indices;
@@ -3106,6 +3107,7 @@ private:
         /// whenever the source part-wide value was approximate.
         ctx->new_data_part->default_codec = ctx->compression_codec;
         ctx->new_data_part->default_codec_is_approximate = codec_is_approximate;
+        ctx->new_data_part->default_codec_is_explicit_recompression = ctx->is_explicit_recompression;
 
         if (ctx->mutating_pipeline_builder.initialized())
         {

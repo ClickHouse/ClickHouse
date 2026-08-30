@@ -979,7 +979,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// codec while rewriting the projection data.
         chassert(global_ctx->parent_part->default_codec);
         global_ctx->compression_codec = global_ctx->parent_part->default_codec;
-        global_ctx->is_explicit_recompression = global_ctx->parent_is_explicit_recompression;
+        global_ctx->is_explicit_recompression = global_ctx->parent_part->default_codec_is_explicit_recompression;
     }
     else
     {
@@ -993,8 +993,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     /// Record the chosen codec on the part so that its projections (merged by the sub-merge above,
-    /// or rebuilt via `writeTempProjectionPart`) inherit the same codec.
+    /// or rebuilt via `writeTempProjectionPart`) inherit the same codec, together with whether it
+    /// was asked for by an explicit `RECOMPRESS` TTL.
     global_ctx->new_data_part->default_codec = global_ctx->compression_codec;
+    global_ctx->new_data_part->default_codec_is_explicit_recompression = global_ctx->is_explicit_recompression;
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -1649,7 +1651,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
         global_ctx->time_of_merge,
         global_ctx->new_data_part,
         global_ctx->space_reservation,
-        global_ctx->is_explicit_recompression,
         !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr
     );
 }
@@ -2263,7 +2264,6 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection_merging_params,
             projection,
             global_ctx->new_data_part.get(),
-            global_ctx->is_explicit_recompression,
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
             ".proj",
             NO_TRANSACTION_PTR,

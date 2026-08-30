@@ -494,6 +494,14 @@ public:
     /// wrong guess cannot suppress a merge that is still needed.
     mutable bool default_codec_is_approximate = false;
 
+    /// Whether `default_codec` was chosen by an explicit `RECOMPRESS` TTL rather than by the
+    /// `<compression>` config or the built-in default. It travels with `default_codec` so that the
+    /// projections written under this part - merged by `MergeProjectionPartsTask` or rebuilt by
+    /// `writeTempProjectionPart` - inherit the codec *and* the reason for it, and adaptive codec
+    /// selection does not replace a codec the user asked for. It is in-memory provenance of the write
+    /// that is producing the part: nothing on disk records it, so it stays `false` for a loaded part.
+    bool default_codec_is_explicit_recompression = false;
+
     /// Set by `loadChecksums` when `checksums.txt` was missing on disk and had to be regenerated
     /// during the current load. The regenerated file is compressed with the *current* built-in
     /// default codec (`CompressionCodecFactory::getDefaultCodec`), not the codec the part was written

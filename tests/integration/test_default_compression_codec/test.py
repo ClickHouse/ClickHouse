@@ -27,6 +27,7 @@ node2 = cluster.add_instance(
     with_zookeeper=True,
 )
 node4 = cluster.add_instance("node4")
+
 node5 = cluster.add_instance(
     "node5",
     main_configs=[

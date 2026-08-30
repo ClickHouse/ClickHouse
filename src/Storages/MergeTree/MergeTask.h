@@ -100,7 +100,6 @@ public:
         MergeTreeData::MergingParams merging_params_,
         ProjectionDescriptionRawPtr projection_,
         IMergeTreeDataPart * parent_part_,
-        bool parent_is_explicit_recompression_,
         MergedPartOffsetsPtr merged_part_offsets_,
         String suffix_,
         MergeTreeTransactionPtr txn,
@@ -127,7 +126,6 @@ public:
             global_ctx->cleanup = std::move(cleanup_);
             global_ctx->projection = projection_;
             global_ctx->parent_part = std::move(parent_part_);
-            global_ctx->parent_is_explicit_recompression = parent_is_explicit_recompression_;
             global_ctx->merged_part_offsets = std::move(merged_part_offsets_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
@@ -218,9 +216,6 @@ private:
         ProjectionDescriptionRawPtr projection{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
-        /// Whether the parent selected its codec from an explicit `RECOMPRESS` TTL.
-        /// Projection metadata does not contain the parent's TTL definitions.
-        bool parent_is_explicit_recompression{false};
         MergedPartOffsetsPtr merged_part_offsets;
         ContextPtr context{nullptr};
         time_t time_of_merge{0};

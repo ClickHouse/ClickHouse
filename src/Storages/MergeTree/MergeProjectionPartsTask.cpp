@@ -116,7 +116,6 @@ bool MergeProjectionPartsTask::executeStep()
             NO_TRANSACTION_PTR,
             &projection,
             new_data_part.get(),
-            parent_is_explicit_recompression,
             ".tmp_proj");
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
