@@ -130,6 +130,10 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
         case TypeIndex::String:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
             return true;
         default:
             return false;
@@ -144,10 +148,96 @@ std::vector<uint8_t> dumpValue(T value)
     return bytes;
 }
 
+template <typename DecimalType>
+std::vector<uint8_t> dumpDecimalValue(const Field & field)
+{
+    using NativeType = typename DecimalType::NativeType;
+
+    std::vector<uint8_t> bytes;
+    if (field.getType() == Field::Types::String)
+    {
+        /// A decimal read back from an existing manifest during a manifest rewrite: ClickHouse parses
+        /// the Avro `fixed` of a decimal as a `String`, so the value is already the unscaled value in
+        /// two's-complement big-endian form; it only needs re-trimming to the minimum number of bytes.
+        const auto & str = field.safeGet<String>();
+        if (str.empty() || str.size() > sizeof(NativeType))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg decimal value read back from a manifest is {} bytes long, which does not fit into {} bytes of the declared type",
+                str.size(),
+                sizeof(NativeType));
+        bytes.assign(str.begin(), str.end());
+    }
+    else
+    {
+        const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+
+        bytes.resize(sizeof(NativeType));
+        for (size_t i = 0; i < sizeof(NativeType); ++i)
+            bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+    }
+
+    size_t first = 0;
+    while (first + 1 < bytes.size()
+           && ((bytes[first] == 0x00 && (bytes[first + 1] & 0x80) == 0) || (bytes[first] == 0xFF && (bytes[first + 1] & 0x80) != 0)))
+        ++first;
+
+    return std::vector<uint8_t>(bytes.begin() + first, bytes.end());
+}
+
+template <typename DecimalType>
+avro::GenericDatum makeDecimalFixedDatum(const Field & field, const avro::NodePtr & schema)
+{
+    using NativeType = typename DecimalType::NativeType;
+
+    if (schema->type() != avro::AVRO_FIXED)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg decimal partition values are written as an Avro `fixed`, but the manifest schema declares {}",
+            avro::toString(schema->type()));
+
+    const size_t size = schema->fixedSize();
+    std::vector<uint8_t> bytes;
+    if (field.getType() == Field::Types::String)
+    {
+        /// A partition value read back from an existing manifest during a manifest rewrite:
+        /// ClickHouse parses an Avro `fixed` as a `String`, so the value is already the unscaled
+        /// value in two's-complement big-endian form; re-pad it to this schema's width.
+        const auto & str = field.safeGet<String>();
+        if (str.empty() || str.size() > size)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg decimal partition value read back from a manifest is {} bytes long, which does not fit into the {}-byte `fixed` of the manifest schema",
+                str.size(),
+                size);
+        bytes.assign(size, (str[0] & 0x80) ? 0xFF : 0x00);
+        std::copy(str.begin(), str.end(), bytes.end() - str.size());
+    }
+    else
+    {
+        const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+        bytes.assign(size, unscaled_value < 0 ? 0xFF : 0x00);
+        for (size_t i = 0; i < size && i < sizeof(NativeType); ++i)
+            bytes[size - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+    }
+
+    avro::GenericDatum datum(schema);
+    datum.value<avro::GenericFixed>().value() = std::move(bytes);
+    return datum;
+}
+
 std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::Decimal32:
+            return dumpDecimalValue<Decimal32>(field);
+        case TypeIndex::Decimal64:
+            return dumpDecimalValue<Decimal64>(field);
+        case TypeIndex::Decimal128:
+            return dumpDecimalValue<Decimal128>(field);
+        case TypeIndex::Decimal256:
+            return dumpDecimalValue<Decimal256>(field);
         case TypeIndex::Nullable:
             return dumpFieldToBytes(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
         case TypeIndex::Int32:
@@ -227,10 +317,12 @@ static void extendSchemaForPartitions(
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
+        const Int32 field_id = static_cast<Int32>(1000 + i);
+
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-        field->set(Iceberg::f_field_id, 1000 + i);
+        field->set(Iceberg::f_field_id, field_id);
         field->set(Iceberg::f_name, partition_columns[i]);
-        field->set(Iceberg::f_type, getAvroType(partition_types[i]));
+        field->set(Iceberg::f_type, getAvroType(partition_types[i], field_id));
         partition_fields->add(field);
     }
 
@@ -390,10 +482,34 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
-            /// Build the Avro datum that holds the actual partition value (without
-            /// the surrounding union). Throws on an unsupported value type.
-            auto make_value_datum = [&]() -> avro::GenericDatum
+            size_t field_index = 0;
+            if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Partition field {} not found in manifest schema",
+                    partition_columns[i]);
+
+            const avro::NodePtr & field_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
+
+            /// Build the Avro datum holding the partition value; throws on an unsupported type.
+            auto make_value_datum = [&](const avro::NodePtr & value_schema) -> avro::GenericDatum
             {
+                /// Decimals are dispatched on the column type rather than on the `Field` type, because
+                /// `DateTime64` also lives in a `DecimalField` while Iceberg writes it as a plain `long`.
+                switch (removeNullable(partition_types[i])->getTypeId())
+                {
+                    case TypeIndex::Decimal32:
+                        return makeDecimalFixedDatum<Decimal32>(partition_values[i], value_schema);
+                    case TypeIndex::Decimal64:
+                        return makeDecimalFixedDatum<Decimal64>(partition_values[i], value_schema);
+                    case TypeIndex::Decimal128:
+                        return makeDecimalFixedDatum<Decimal128>(partition_values[i], value_schema);
+                    case TypeIndex::Decimal256:
+                        return makeDecimalFixedDatum<Decimal256>(partition_values[i], value_schema);
+                    default:
+                        break;
+                }
+
                 switch (partition_values[i].getType())
                 {
                     case Field::Types::Int64:
@@ -420,18 +536,8 @@ void generateManifestFile(
 
             if (is_nullable_partition)
             {
-                /// Nullable partition columns are encoded as Avro `["null", T]`
-                /// unions. NULL selects branch 0; a concrete value selects branch 1.
-                /// See issue #105852: before this change, NULL partition values were
-                /// silently written as 0 because the schema was non-nullable.
-                size_t field_index = 0;
-                if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Partition field {} not found in manifest schema",
-                        partition_columns[i]);
-
-                const avro::NodePtr & union_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
+                /// Nullable partition columns are Avro `["null", T]` unions: NULL is branch 0, a value is branch 1.
+                const avro::NodePtr & union_schema = field_schema;
 
                 avro::GenericUnion union_field(union_schema);
                 if (is_null_value)
@@ -441,7 +547,7 @@ void generateManifestFile(
                 else
                 {
                     union_field.selectBranch(1);
-                    union_field.datum() = make_value_datum();
+                    union_field.datum() = make_value_datum(union_schema->leafAt(1));
                 }
                 partition_record.field(partition_columns[i]) = avro::GenericDatum(union_schema, union_field);
             }
@@ -452,7 +558,7 @@ void generateManifestFile(
                         ErrorCodes::LOGICAL_ERROR,
                         "Got NULL partition value for non-nullable partition column {}",
                         partition_columns[i]);
-                partition_record.field(partition_columns[i]) = make_value_datum();
+                partition_record.field(partition_columns[i]) = make_value_datum(field_schema);
             }
         }
 

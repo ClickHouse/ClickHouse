@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTExpressionList.h>
@@ -504,6 +505,22 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
+/// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
+/// minimum number of bytes that can hold every value of the declared precision. One bit of that
+/// space is taken by the sign, hence `8 * bytes - 1`.
+static size_t icebergDecimalRequiredBytes(UInt32 precision)
+{
+    UInt256 max_value = 1;
+    for (UInt32 i = 0; i < precision; ++i)
+        max_value *= 10;
+    max_value -= 1;
+
+    size_t bytes = 1;
+    while (bytes < sizeof(UInt256) && (max_value >> (8 * bytes - 1)) != 0)
+        ++bytes;
+    return bytes;
+}
+
 /// Returns type and required
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
@@ -531,6 +548,11 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"string", true};
         case TypeIndex::UUID:
             return {"uuid", true};
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return {fmt::format("decimal({}, {})", getDecimalPrecision(*type), getDecimalScale(*type)), true};
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
@@ -598,7 +620,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type)
+Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 {
     switch (type->getTypeId())
     {
@@ -624,6 +646,25 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::String:
         case TypeIndex::UUID:
             return "string";
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        {
+            const UInt32 precision = getDecimalPrecision(*type);
+            const UInt32 scale = getDecimalScale(*type);
+
+            Poco::JSON::Object::Ptr decimal_type = new Poco::JSON::Object;
+            decimal_type->set("type", "fixed");
+            decimal_type->set("size", icebergDecimalRequiredBytes(precision));
+            /// `fixed` is a named Avro type, so the name must be unique within the manifest schema:
+            /// two partition fields of the same decimal shape must not both define `decimal_P_S`.
+            decimal_type->set("name", fmt::format("decimal_{}_{}_{}", precision, scale, field_id));
+            decimal_type->set("logicalType", "decimal");
+            decimal_type->set("precision", precision);
+            decimal_type->set("scale", scale);
+            return decimal_type;
+        }
         case TypeIndex::Nullable:
         {
             /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
@@ -632,7 +673,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
             union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType()));
+            union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
             return union_array;
         }
         default:
