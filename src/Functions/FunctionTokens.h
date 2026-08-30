@@ -2,6 +2,8 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -12,7 +14,6 @@
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <limits>
 
@@ -231,15 +232,6 @@ static inline std::optional<size_t> extractMaxSplits(
     }
 
     return std::nullopt;
-}
-
-static inline bool isStringOrNullableString(const IDataType & type)
-{
-    if (isString(type))
-        return true;
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
-        return isString(*nullable->getNestedType());
-    return false;
 }
 
 static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(

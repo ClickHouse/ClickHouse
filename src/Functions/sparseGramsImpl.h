@@ -214,7 +214,7 @@ public:
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String"},
+            {"s", &isStringOrNullableString, nullptr, "String"},
         };
 
         FunctionArgumentDescriptors optional_args{
