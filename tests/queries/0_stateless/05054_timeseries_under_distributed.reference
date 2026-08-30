@@ -1,0 +1,10 @@
+--- every row is readable back through the Distributed table ---
+20	20
+--- and the rows really are split over both shards ---
+1	1
+--- a point lookup resolves on whichever shard holds it ---
+metric_7	7
+--- aggregation runs across both shards ---
+20	20
+--- the TimeSeries table functions need a real TimeSeries table, not a Distributed one ---
+1
