@@ -1,0 +1,8 @@
+504
+1
+Condition: and((toUInt8(x) in [1, 1]), (x in [257, 257]))
+Granules: 2/1000
+1
+1
+492
+492
