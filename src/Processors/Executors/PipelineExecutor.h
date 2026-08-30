@@ -153,6 +153,8 @@ private:
 
     /// If execution_status == from, change it to desired.
     bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);
+
+    String dumpPipeline() const;
 };
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
