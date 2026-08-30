@@ -118,7 +118,7 @@
     ]
   },
   {
-    "group": "OpenAPI",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
