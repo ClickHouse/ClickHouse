@@ -88,6 +88,15 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
     /// the result legitimately.
     "indexHint",
+    /// These expose the physical storage layout of a `JSON`/`Dynamic` column —
+    /// which paths are stored as dedicated dynamic subcolumns versus spilled into
+    /// the shared-data blob. That split is decided per part/block at write time
+    /// under `max_dynamic_paths`/`max_dynamic_types`, not part of the logical
+    /// value, so a rewrite that re-materialises the column (subquery wrap, DQP
+    /// reblocking) legitimately reports a different dynamic/shared assignment.
+    "JSONDynamicPaths", "JSONDynamicPathsWithTypes",
+    "JSONSharedDataPaths", "JSONSharedDataPathsWithTypes",
+    "isDynamicElementInSharedData",
     /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
     /// returns the query plan as rows. The plan text legitimately changes when
     /// DQP toggles an optimizer setting, so comparing such results is comparing
@@ -104,6 +113,13 @@ const std::unordered_set<String> non_deterministic_functions = {
     "anyRespectNulls", "anyLastRespectNulls",
     "first_value", "last_value",
     "topK", "topKWeighted",
+    /// `approx_top_k` / `approx_top_sum` (alias `approx_top_count`) use the same
+    /// bounded Filtered-Space-Saving structure as `topK`: merging the partial
+    /// states from the TLP UNION-ALL partition split drops different candidates
+    /// than a single pass over the whole input, so the approximate result
+    /// legitimately differs. `stripAggregateCombinators` maps the `*State`/
+    /// `*Merge` forms back to these base names.
+    "approx_top_k", "approx_top_sum", "approx_top_count",
     "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
     /// Approximate quantile/median functions: State/Merge gives different results
     /// than direct computation due to approximate merging algorithms. Block both
@@ -753,15 +769,22 @@ bool usesFinalAnywhere(const ASTPtr & ast)
 /// implementation-defined, so which right-side row a left row pairs with can
 /// change between plans — observed as a `Subquery wrap` false mismatch.
 /// Checked recursively: an ASOF join in any subquery taints the whole query.
-bool hasAsofJoinAnywhere(const ASTPtr & ast)
+/// Joins whose result is not stable across plan rewrites: `ASOF` picks the
+/// latest matching row (tie-breaking is plan-dependent), and `ANY` / old
+/// `RightAny` pick an arbitrary matching row from the right table, so which row
+/// survives the join can differ between the reference and the rewrite even at a
+/// fixed setting. `SEMI` / `ANTI` / `ALL` are deterministic and stay eligible.
+bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast)
 {
     if (!ast)
         return false;
     if (const auto * join = ast->as<ASTTableJoin>())
-        if (join->strictness == JoinStrictness::Asof)
+        if (join->strictness == JoinStrictness::Asof
+            || join->strictness == JoinStrictness::Any
+            || join->strictness == JoinStrictness::RightAny)
             return true;
     for (const auto & child : ast->children)
-        if (hasAsofJoinAnywhere(child))
+        if (hasNonDeterministicJoinAnywhere(child))
             return true;
     return false;
 }
@@ -895,7 +918,15 @@ bool referencesNonDeterministicDatabase(const ASTSelectQuery & select, const Str
 /// throws is treated conservatively as "distributed" (fail closed): we cannot
 /// prove the table is safe, so we skip the query rather than risk a false
 /// `AST_FUZZER_ORACLE_MISMATCH`.
-bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & context)
+/// Engines whose read is not stable across the oracle's repeated reads or plan
+/// rewrites: `Distributed` routes to remote shards (on the test clusters that
+/// all point at localhost a row is read once per shard, so reference vs rewrite
+/// can route/dedup differently), and `Buffer` splits rows between an in-memory
+/// buffer and the backing table with a background flush thread, so two reads
+/// can legitimately return different rows.
+const std::unordered_set<String> non_deterministic_table_engines = {"Distributed", "Buffer"};
+
+bool referencesNonDeterministicEngineAnywhere(const ASTPtr & ast, const ContextPtr & context)
 {
     if (!ast)
         return false;
@@ -907,20 +938,20 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
         try
         {
             auto storage = DatabaseCatalog::instance().tryGetTable({database, table_id->shortName()}, context);
-            if (storage && storage->getName() == "Distributed")
+            if (storage && non_deterministic_table_engines.contains(storage->getName()))
                 return true;
         }
         catch (...)
         {
             /// Ok: fail closed. If the table cannot be resolved we cannot prove it
-            /// is not `Distributed`, so treat it as distributed (unsafe) and skip
-            /// the query rather than risk a false oracle mismatch. Deliberately not
+            /// is not one of these engines, so treat it as unsafe and skip the
+            /// query rather than risk a false oracle mismatch. Deliberately not
             /// logged: this runs per-AST-node on a hot path.
             return true;
         }
     }
     for (const auto & child : ast->children)
-        if (referencesDistributedTableAnywhere(child, context))
+        if (referencesNonDeterministicEngineAnywhere(child, context))
             return true;
     return false;
 }
@@ -2467,9 +2498,9 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         }
     }
 
-    if (hasAsofJoinAnywhere(query_ast))
+    if (hasNonDeterministicJoinAnywhere(query_ast))
     {
-        LOG_TRACE(logger, "Oracle skip: ASOF JOIN (tie-breaking is plan-dependent)");
+        LOG_TRACE(logger, "Oracle skip: ASOF / ANY JOIN (picks an arbitrary/plan-dependent matching row)");
         return false;
     }
 
@@ -2485,14 +2516,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         return false;
     }
 
-    /// `Distributed` tables route to remote shards (here, test clusters whose
-    /// replicas all point at localhost), so a row is read once per shard and
-    /// the reference vs rewrite can route/dedup differently — the oracle can't
-    /// validate the result. Resolve each referenced table's engine (including
-    /// tables hidden inside subqueries / CTEs) and skip.
-    if (referencesDistributedTableAnywhere(query_ast, context))
+    /// Resolve each referenced table's engine (including tables hidden inside
+    /// subqueries / CTEs) and skip when any of them reads non-deterministically
+    /// across the oracle's repeated reads — see `non_deterministic_table_engines`.
+    if (referencesNonDeterministicEngineAnywhere(query_ast, context))
     {
-        LOG_TRACE(logger, "Oracle skip: query reads from a Distributed table");
+        LOG_TRACE(logger, "Oracle skip: query reads from a Distributed or Buffer table");
         return false;
     }
 
