@@ -49,6 +49,15 @@ CI_LOGS_SENDER_USER_CONFIG = "./tests/config/users.d/ci_logs_sender.yaml"
 # The port of the local server to export from, for `setup_log_cluster.sh`.
 SERVER_PORT_ENV = "LOG_EXPORT_SERVER_PORT"
 
+# The `Distributed` tables the export sends through, created by `start` as
+# `system.<log table>_sender`. `endsWith` rather than `LIKE '%\_sender'`, to
+# keep the escape of the underscore out of a query that goes through a shell
+# command line.
+SENDER_TABLES_QUERY = (
+    "SELECT database || '.' || name FROM system.tables "
+    "WHERE database = 'system' AND endsWith(name, '_sender') AND engine = 'Distributed'"
+)
+
 _credentials = None
 
 
@@ -167,6 +176,42 @@ def stop(port=None):
     )
 
 
+def _switch_distributed_sends(start_sending, port):
+    """`SYSTEM START|STOP DISTRIBUTED SENDS` for the export tables only.
+
+    Without a table the statement takes the lock for every `Distributed` table
+    of every database on the server, and the tables of the job are not ours to
+    hold back: the performance comparison runs tests that create `Distributed`
+    tables of their own (`tests/performance/add_distinct_to_in_clause.xml`).
+    Only the `_sender` tables of the export are named here, so the lock cannot
+    reach anything else.
+
+    Returns whether every one of them was switched. The export tables are the
+    ones created by `start`, so this must run after it.
+    """
+    action = "START" if start_sending else "STOP"
+    port_arg = _set_server_port(port)
+    tables = Shell.get_output(
+        f'clickhouse-client {port_arg} --query "{SENDER_TABLES_QUERY}"',
+        verbose=True,
+    ).split()
+    if not tables:
+        # Either the listing itself failed, or the export created no table.
+        print(f"WARNING: No log export table to {action} the distributed sends of")
+        return False
+    ok = True
+    for table in tables:
+        # Every table is switched, whatever happened to the previous one: a
+        # table left in the other state is what this reports as a failure, and
+        # stopping halfway would leave more of them.
+        switched = Shell.check(
+            f'clickhouse-client {port_arg} --query "SYSTEM {action} DISTRIBUTED SENDS {table}"',
+            verbose=True,
+        )
+        ok = ok and switched
+    return ok
+
+
 def stop_distributed_sends(port=None):
     """Keep the exported rows in the local files of the `_sender` tables
     instead of sending them to the CI Logs cluster.
@@ -174,20 +219,10 @@ def stop_distributed_sends(port=None):
     For the performance comparison, which must not spend the measured time on
     anything else: the rows are accumulated locally while the queries are
     measured, and `start_distributed_sends` + `stop` push them afterwards.
-    Applies to the tables that exist at this point, so it must run after
-    `start`.
     """
-    port_arg = _set_server_port(port)
-    return Shell.check(
-        f'clickhouse-client {port_arg} --query "SYSTEM STOP DISTRIBUTED SENDS"',
-        verbose=True,
-    )
+    return _switch_distributed_sends(False, port)
 
 
 def start_distributed_sends(port=None):
     """Undo `stop_distributed_sends`."""
-    port_arg = _set_server_port(port)
-    return Shell.check(
-        f'clickhouse-client {port_arg} --query "SYSTEM START DISTRIBUTED SENDS"',
-        verbose=True,
-    )
+    return _switch_distributed_sends(True, port)
