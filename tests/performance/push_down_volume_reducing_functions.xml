@@ -1,33 +1,54 @@
 <test>
-    <!-- `length`, `lengthUTF8`, `empty` and `notEmpty` turn a wide argument into a fixed-size
-         scalar. Computing them below `Sorting` / `Limit` / `Filter` lets those steps carry the
-         scalar instead of the original `String` / `Array` column. -->
+    <!-- `length`, `lengthUTF8`, `empty` and `notEmpty` turn a wide `String` / `FixedString`
+         argument into a fixed-size scalar. Computing them below `Sorting` / `Filter` lets those
+         steps carry the scalar instead of the original wide column. -->
+
+    <settings>
+        <!-- Keep the functions as `FUNCTION` nodes so the benchmark reaches the query-plan pass:
+             with the subcolumn rewrite there is nothing left to push down. -->
+        <optimize_functions_to_subcolumns>0</optimize_functions_to_subcolumns>
+    </settings>
 
     <create_query>
-        CREATE TABLE volume_reducing_functions (key UInt64, s String, arr Array(UInt64))
+        CREATE TABLE volume_reducing_functions (key UInt64, s String, fs FixedString(64))
         ENGINE = MergeTree ORDER BY tuple()
     </create_query>
 
     <fill_query>
         INSERT INTO volume_reducing_functions
-        SELECT number, randomPrintableASCII(100), range(number % 32) FROM numbers(10000000)
+        SELECT number, randomPrintableASCII(100), randomPrintableASCII(64) FROM numbers(10000000)
     </fill_query>
 
-    <!-- Sorting is the biggest win: without the optimization the whole `String` column is
-         copied into the sort buffer and merged. -->
-    <query>SELECT length(s) FROM volume_reducing_functions ORDER BY key FORMAT Null</query>
-    <query>SELECT lengthUTF8(s) FROM volume_reducing_functions ORDER BY key LIMIT 10 FORMAT Null</query>
-    <query>SELECT length(arr) FROM volume_reducing_functions ORDER BY key FORMAT Null</query>
+    <!-- Sorting is the biggest win: without the optimization the whole wide column is copied into
+         the sort buffer and merged. The subquery is required: for `SELECT length(s) FROM t ORDER
+         BY key` the Analyzer already computes the projection below the sort, so the wide column
+         never crosses it and there is nothing to push. -->
+    <query>SELECT length(s) FROM (SELECT s, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
+    <query>SELECT lengthUTF8(s) FROM (SELECT s, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
 
-    <!-- The wide column is only needed to evaluate the condition, so it is no longer copied
-         by the filter. This is the shape from issue #82378. -->
-    <query>SELECT avg(length(s)) FROM volume_reducing_functions WHERE notEmpty(s) FORMAT Null</query>
-
-    <!-- The filter does not read `s` at all, so it disappears from the filter payload entirely. -->
-    <query>SELECT length(s) FROM volume_reducing_functions WHERE key % 3 = 0 ORDER BY key FORMAT Null</query>
+    <!-- Measure the Boolean volume-reducing functions independently. -->
+    <query>SELECT empty(s) FROM (SELECT s, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
+    <query>SELECT notEmpty(s) FROM (SELECT s, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
 
     <!-- Several functions over the same argument are pushed together and replace it once. -->
-    <query>SELECT length(s), empty(s) FROM volume_reducing_functions ORDER BY key FORMAT Null</query>
+    <query>SELECT length(s), empty(s) FROM (SELECT s, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
+
+    <!-- `FixedString` is the other supported wide type. `Array` is deliberately absent: the pass
+         never admits it, so such a query would measure nothing. `lengthUTF8` is admitted by its own
+         branch of `isSupportedArgumentType`, which requires `FixedString(N)` with `N` wider than a
+         `UInt64`, so it needs a query of its own: `FixedString(64)` is the positive side of that
+         condition. Both sides of the condition are asserted on the plan shape by
+         `04101_volume_reducing_function_push_down`, so these queries cannot silently stop
+         exercising the pass without a stateless test failing. -->
+    <query>SELECT length(fs) FROM (SELECT fs, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
+    <query>SELECT lengthUTF8(fs) FROM (SELECT fs, key FROM volume_reducing_functions ORDER BY key) FORMAT Null</query>
+
+    <!-- The filter reads `s` to evaluate its condition, but nothing above it needs the strings, so
+         `length(s)` is computed before the filter and the surviving strings are not copied. This
+         is the shape from issue #82378. A predicate that does not read `s` would not be rewritten
+         at all, so it would measure nothing. -->
+    <query>SELECT avg(length(s)) FROM volume_reducing_functions WHERE s &lt; 'M' FORMAT Null</query>
+    <query>SELECT length(s) FROM volume_reducing_functions WHERE s &lt; 'M' ORDER BY key FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS volume_reducing_functions</drop_query>
 </test>

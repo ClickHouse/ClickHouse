@@ -40,6 +40,43 @@ endif()
 set(dbms_headers)
 set(dbms_sources)
 
+# Unit-test builds compile microbenchmark translation units to catch source regressions without
+# linking the comparatively expensive benchmark executables. ENABLE_BENCHMARKS additionally builds
+# those executables as part of the default build.
+if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
+    add_custom_target (clickhouse-microbenchmarks-objects ALL)
+
+    if (ENABLE_BENCHMARKS)
+        add_custom_target (clickhouse-microbenchmarks ALL)
+    endif ()
+
+    function (clickhouse_add_microbenchmark target)
+        cmake_parse_arguments (MICROBENCHMARK "" "" "SOURCES;LIBRARIES" ${ARGN})
+        if (NOT MICROBENCHMARK_SOURCES OR MICROBENCHMARK_UNPARSED_ARGUMENTS)
+            message (FATAL_ERROR "clickhouse_add_microbenchmark requires SOURCES and accepts optional LIBRARIES")
+        endif ()
+
+        set (object_target "${target}_objects")
+        add_library (${object_target} OBJECT ${MICROBENCHMARK_SOURCES})
+        set_property (TARGET ${object_target} PROPERTY EXCLUDE_FROM_ALL TRUE)
+        target_link_libraries (${object_target} PRIVATE
+            ch_contrib::gbenchmark_headers
+            ${MICROBENCHMARK_LIBRARIES})
+        add_dependencies (clickhouse-microbenchmarks-objects ${object_target})
+
+        if (ENABLE_BENCHMARKS)
+            clickhouse_add_executable (${target} EXCLUDE_FROM_ALL $<TARGET_OBJECTS:${object_target}>)
+            target_link_libraries (${target} PRIVATE
+                ch_contrib::gbenchmark_all
+                ${MICROBENCHMARK_LIBRARIES})
+            # Retaining debug sections from ClickHouse dependencies can make each executable several GiB.
+            # Strip only the final executable; benchmark code generation still follows the configured build type.
+            target_link_options (${target} PRIVATE "LINKER:-S")
+            add_dependencies (clickhouse-microbenchmarks ${target})
+        endif ()
+    endfunction ()
+endif ()
+
 add_subdirectory (Access)
 add_subdirectory (Backups)
 add_subdirectory (Columns)
@@ -258,7 +295,7 @@ endif()
 # LogElement::appendToBlock functions walk hundreds of values and do tight column inserts in
 # a loop, so the per-call __msan_set_alloca_origin / __msan_chain_origin cost adds up to
 # seconds per `SYSTEM FLUSH LOGS query_log`. With x86-64-v3 AVX2 codegen these flushes push
-# the MSan WasmEdge stateless check over the 600s/180s timeouts.
+# the MSan stateless check over the 600s/180s timeouts.
 #
 # Origin tracking is still on globally; these files are leaf helpers where MSan checks
 # don't carry uninit values into user code, so dropping origin tracking here is safe.
@@ -380,7 +417,6 @@ add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storag
 add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
 add_object_library(clickhouse_storages_mergetree_projection_index Storages/MergeTree/ProjectionIndex)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
-add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
@@ -523,6 +559,9 @@ target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::xxHash)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
+endif()
+if (TARGET ch_contrib::silk_fibers)
+    target_link_libraries (dbms PRIVATE ch_contrib::silk_fibers)
 endif()
 
 target_include_directories (dbms PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
@@ -927,10 +966,6 @@ if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
 endif()
 
-if (TARGET ch_contrib::wasmedge)
-    target_link_libraries(dbms PRIVATE ch_contrib::wasmedge)
-endif()
-
 if (TARGET ch_rust::wasmtime)
     # FIXME: same as for ch_rust::delta_kernel_rs above
     target_link_libraries(clickhouse_common_io PRIVATE ch_rust::wasmtime)
@@ -946,6 +981,7 @@ if (ENABLE_TESTS)
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
     clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
+    add_dependencies (unit_tests_dbms clickhouse-microbenchmarks-objects)
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
