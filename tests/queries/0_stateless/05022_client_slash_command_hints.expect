@@ -223,10 +223,12 @@ expect -ex "help"
 send -- "\r"
 expect "Usage: help <name>"
 # `clear_and_quit` waits for the SQL prompt; the AI-chat mode redraws its own `:?` one, so the exit
-# is spelled out here.
+# is spelled out here. The smiley of that prompt is colored - the reset sequence sits between the `?`
+# and the space that follows it - so the wait is for the smiley alone: neither the trailing space nor
+# the end of the drawing (the cursor is moved after it) is adjacent to it.
 if {[interrupt]} {
     expect {
-        eof            {}
-        -re {:[)?] $}  { send -- "\4" ; expect eof }
+        eof          {}
+        -re {:[)?]}  { send -- "\4" ; expect eof }
     }
 }
