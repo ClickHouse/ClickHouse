@@ -170,6 +170,12 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         else if (make_columns_nullable == 1)
             type = makeNullableRecursively(type, format_settings);
 
+        /// A null-typed column infers as Nullable(Nothing), which cannot be stored in a table; keep it
+        /// skippable so `CREATE TABLE ... AS file(...)` retains the skip-setting escape hatch.
+        if (format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference
+            && type->cannotBeStoredInTables())
+            continue;
+
         result.emplace_back(field.name, type);
     }
     return result;

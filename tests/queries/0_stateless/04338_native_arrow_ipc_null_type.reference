@@ -44,3 +44,10 @@ a dictionary-encoded null union child maps to NULL and does not desync the buffe
 1
 2
 3
+the skip setting still drops null-typed columns, so CREATE TABLE AS file() keeps working
+n	Nullable(Int64)					
+1
+2
+3
+without the skip setting table creation reports the unusable type
+DATA_TYPE_CANNOT_BE_USED_IN_TABLES

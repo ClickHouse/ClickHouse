@@ -94,4 +94,15 @@ echo 'a dictionary-encoded null union child maps to NULL and does not desync the
 ${CLICKHOUSE_LOCAL} -q "SELECT n, ud FROM file('${FILE_PREFIX}.union.arrow', 'Arrow') ORDER BY n"
 ${CLICKHOUSE_LOCAL} -q "SELECT n FROM file('${FILE_PREFIX}.union.arrow', 'Arrow', 'n Int64') ORDER BY n"
 
+echo 'the skip setting still drops null-typed columns, so CREATE TABLE AS file() keeps working'
+${CLICKHOUSE_LOCAL} -q "
+    CREATE TABLE t ENGINE = Memory AS SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow')
+    SETTINGS input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 1;
+    DESCRIBE t;
+    SELECT * FROM t ORDER BY n"
+
+echo 'without the skip setting table creation reports the unusable type'
+${CLICKHOUSE_LOCAL} -q "CREATE TABLE t2 ENGINE = Memory AS SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow')" 2>&1 \
+    | grep -oF 'DATA_TYPE_CANNOT_BE_USED_IN_TABLES' | head -1
+
 rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow" "${FILE_PREFIX}.dict.arrow" "${FILE_PREFIX}.union.arrow"
