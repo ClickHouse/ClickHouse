@@ -4,8 +4,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/Serializations/SerializationInfoObject.h>
-#include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/Serializations/SerializationInfoNamed.h>
 
 namespace DB
 {
@@ -115,8 +114,9 @@ void SerializationInfoNullable::syncData()
 bool canReuseSerializationInfoForTypeChange(const SerializationInfo & old_info, const SerializationInfo & new_info)
 {
     return old_info.structureEquals(new_info)
-        || (typeid_cast<const SerializationInfoObject *>(&old_info) && typeid_cast<const SerializationInfoObject *>(&new_info))
-        || (typeid_cast<const SerializationInfoTuple *>(&old_info) && typeid_cast<const SerializationInfoTuple *>(&new_info));
+        || (typeid(old_info) == typeid(new_info)
+            && (dynamic_cast<const SerializationInfoNamed *>(&old_info)
+                || typeid_cast<const SerializationInfoNullable *>(&old_info)));
 }
 
 MutableSerializationInfoPtr tryReuseSerializationInfoThroughNullable(

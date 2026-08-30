@@ -27,6 +27,16 @@ WHERE active
     AND column = 'j';
 
 ALTER TABLE json_sparse_nullable_nested_evolution
+    MODIFY COLUMN j JSON(o Nullable(JSON(x Nullable(String), y UInt64, max_dynamic_paths = 0)), max_dynamic_paths = 0);
+
+SELECT subcolumns.serializations[indexOf(subcolumns.names, 'o.x')]
+FROM system.parts_columns
+WHERE active
+    AND database = currentDatabase()
+    AND table = 'json_sparse_nullable_nested_evolution'
+    AND column = 'j';
+
+ALTER TABLE json_sparse_nullable_nested_evolution
     MODIFY COLUMN j JSON(o JSON(x Nullable(String), max_dynamic_paths = 0), max_dynamic_paths = 0);
 
 SELECT subcolumns.serializations[indexOf(subcolumns.names, 'o.x')]

@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfoNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -859,9 +860,7 @@ getColumnsForNewDataPart(
                     continue;
 
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
-                if (old_info->structureEquals(*rebuilt_info)
-                    || (isObject(source_type) && isObject(storage_type))
-                    || (isTuple(source_type) && isTuple(storage_type)))
+                if (canReuseSerializationInfoForTypeChange(*old_info, *rebuilt_info))
                     rebuilt_info = old_info->createWithType(*source_type, *storage_type, settings);
 
                 new_serialization_infos.emplace(new_name, std::move(rebuilt_info));
@@ -879,9 +878,7 @@ getColumnsForNewDataPart(
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
-        if (!old_info->structureEquals(*new_info)
-            && !(isObject(old_type) && isObject(new_type))
-            && !(isTuple(old_type) && isTuple(new_type)))
+        if (!canReuseSerializationInfoForTypeChange(*old_info, *new_info))
         {
             new_serialization_infos.emplace(new_name, std::move(new_info));
             continue;

@@ -38,6 +38,12 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT arr.x FROM ${table} ORDER BY id LIMIT 2;
 "
 
+${CLICKHOUSE_CLIENT} --query "
+    ALTER TABLE ${table}
+        MODIFY COLUMN arr Array(JSON(x Nullable(String), y UInt64, max_dynamic_paths = 0));
+    SELECT dumpColumnStructure(arr) LIKE '%Sparse%' FROM ${table} LIMIT 1;
+"
+
 ${CLICKHOUSE_CLIENT} --query "SELECT arr FROM ${table} ORDER BY id FORMAT Native" \
     | ${CLICKHOUSE_LOCAL} --input-format Native --query \
         "SELECT count(), countIf(arr.x = ['value']), countIf(arr.x = [NULL]) FROM table"
