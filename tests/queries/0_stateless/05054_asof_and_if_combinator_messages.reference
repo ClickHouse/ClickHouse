@@ -10,7 +10,7 @@ Code: 43. Illegal type UInt32 of the last argument of an aggregate function with
 
 === an ASOF join says that the inequality is needed in addition to the equalities
 --- SELECT * FROM l ASOF JOIN r ON l.a = r.a
-Code: 403. ASOF join requires one inequality predicate ( <, <=, > or >= ) in the JOIN ON expression, in addition to the equality predicates. (INVALID_JOIN_ON_EXPRESSION)
+Code: 403. ASOF join requires one inequality predicate (<, <=, > or >=) in the JOIN ON expression, in addition to the equality predicates. (INVALID_JOIN_ON_EXPRESSION)
 
 === the same, spelled correctly
 2

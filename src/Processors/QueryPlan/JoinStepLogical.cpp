@@ -1513,7 +1513,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
             /// left to print is nothing, and the message used to end in ", in .".
             const auto remaining_condition = formatJoinCondition(join_expression);
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "ASOF join requires one inequality predicate ( <, <=, > or >= ) in the JOIN ON expression, "
+                "ASOF join requires one inequality predicate (<, <=, > or >=) in the JOIN ON expression, "
                 "in addition to the equality predicates{}",
                 remaining_condition.empty() ? "" : fmt::format(", but only found: {}", remaining_condition));
         }
