@@ -315,14 +315,15 @@ void wireRuntimeFilterExchangeTopology(
         }
 
         std::vector<String> remote_stages;
+        /// A filter is delivered to every stage that uses it; the stage graph does not restrict
+        /// the delivery itself. A `stage_depends_on` entry (an ordering hint, required only by
+        /// persisted chains) is added per receiving stage below, and only where it cannot create
+        /// a cycle: when the producing stage depends on the receiving stage (a join delivering to
+        /// the scans below it - the common filter topology), the entry is skipped and the
+        /// receiver just applies the filter whenever it arrives.
+        std::unordered_set<String> stages_without_completion_edge;
         for (const auto & [stage_name, sites] : consuming_stages)
         {
-            /// Uniform discovery could otherwise create a dependency cycle the stage scheduler
-            /// does not guard against. Skip delivery to this stage; if every consuming stage is
-            /// skipped the filter stays fully local.
-            if (stageDependsOnTransitively(distributed_plan.stage_depends_on, producer.stage, stage_name))
-                continue;
-
             /// Ship the stage if any apply site passes. A tiny or stats-less first site must
             /// not veto a sibling that would prune. No estimates at all -> transport as before.
             if (estimated_keys)
@@ -340,6 +341,14 @@ void wireRuntimeFilterExchangeTopology(
                     continue;
             }
 
+            if (stageDependsOnTransitively(distributed_plan.stage_depends_on, producer.stage, stage_name))
+            {
+                stages_without_completion_edge.insert(stage_name);
+                LOG_TRACE(getLogger("joinRuntimeFilter"),
+                    "Filter '{}' delivery to stage '{}' is wired without a stage dependency: "
+                    "the producing stage '{}' depends on that stage, so an entry would create a cycle",
+                    producer.step->getFilterName(), stage_name, producer.stage);
+            }
             remote_stages.push_back(stage_name);
         }
         if (remote_stages.empty())
@@ -352,65 +361,13 @@ void wireRuntimeFilterExchangeTopology(
         for (const auto & task : send_tasks)
             source_buckets.push_back(taskBucketId(task));
 
-        if (send_tasks.size() == 1)
-        {
-            /// A single build task is itself the root of the merge tree: its complete partial is
-            /// broadcast directly, one exchange per receiving stage. Unlike the shared chain of a
-            /// real tree below, each of these edges is independent, so the exchange kind follows
-            /// the per-pair rule (copy the kind of an existing data edge between the two stages).
-            for (const auto & receive_stage : remote_stages)
-            {
-                auto & receive_tasks = distributed_plan.stages.at(receive_stage).tasks;
-                Strings destination_buckets;
-                for (const auto & task : receive_tasks)
-                    destination_buckets.push_back(taskBucketId(task));
-
-                ExchangeDescription exchange_description;
-                exchange_description.name = "exchange_" + std::to_string(next_exchange_id);
-                ++next_exchange_id;
-                exchange_description.source_bucket_count = 1;
-                exchange_description.destination_bucket_count = receive_tasks.size();
-
-                /// Same kind as the data exchanges. Streaming data -> streaming filter (probe gets it while it runs).
-                /// Persisted plan -> persisted filter (streaming transport is never started). A Persisted data
-                /// edge between the same stages already waits for the whole build; a streaming filter sink would
-                /// wait for a consumer that never starts.
-                exchange_description.kind = default_kind;
-                auto dependencies = distributed_plan.stage_depends_on.find(receive_stage);
-                const bool edge_exists
-                    = dependencies != distributed_plan.stage_depends_on.end() && dependencies->second.contains(producer.stage);
-                if (edge_exists)
-                {
-                    const auto & data_exchange = dependencies->second.at(producer.stage);
-                    exchange_description.kind = distributed_plan.exchange_descriptions.at(data_exchange).kind;
-                }
-
-                distributed_plan.exchange_descriptions[exchange_description.name] = exchange_description;
-                producer.step->addExchange(exchange_description.name, destination_buckets);
-
-                for (const String & destination_bucket : destination_buckets)
-                    send_tasks.front().output_exchange_streams.emplace_back(
-                        ExchangeStreamId(exchange_description.name, source_buckets.front(), destination_bucket));
-                for (auto & task : receive_tasks)
-                {
-                    std::vector<ExchangeStreamId> streams;
-                    for (const auto & source_bucket : source_buckets)
-                        streams.emplace_back(exchange_description.name, source_bucket, taskBucketId(task));
-                    task.runtime_filter_descriptors.push_back(
-                        {key, producer.step->getFilterName(), producer.step->getFilterColumnType(), geometry, streams});
-                    task.input_exchange_streams.insert(task.input_exchange_streams.end(), streams.begin(), streams.end());
-                }
-
-                if (!edge_exists)
-                    distributed_plan.stage_depends_on[receive_stage][producer.stage] = exchange_description.name;
-            }
-            continue;
-        }
-
-        /// Several build tasks: a bounded fan-in merge tree instead of all-to-all delivery. Every
-        /// build task sends its partial once to its parent merge task; each merge level combines
-        /// complete child states; the single root task broadcasts the global union once per
-        /// destination task of every receiving stage.
+        /// Every transported filter is merged and broadcast by its own filter-only merge stage,
+        /// also with a single build task. The broadcast sink may wait until query end for a
+        /// receiver that finished early; a data task must never hold that wait.
+        /// A bounded fan-in merge tree instead of all-to-all delivery. Every build task sends its
+        /// partial once to its parent merge task; each merge level combines complete child
+        /// states; the single root task broadcasts the global union once per destination task of
+        /// every receiving stage.
         const size_t fan_in = RUNTIME_FILTER_MERGE_FAN_IN;
 
         /// Whole chain uses one kind: the plan's data-exchange kind. Persisted data edge between
@@ -428,19 +385,41 @@ void wireRuntimeFilterExchangeTopology(
                 chain_kind = ExchangeDescription::Kind::Persisted;
         }
 
+        /// A persisted chain needs the stage dependency: it is what orders the receiver's read
+        /// after the blob write. A receiving stage that cannot have one would just miss the blob,
+        /// so delivery to it is dropped (its sites read no filter and pass all rows) and the
+        /// other stages keep theirs.
+        if (chain_kind == ExchangeDescription::Kind::Persisted && !stages_without_completion_edge.empty())
+        {
+            for (const auto & stage_name : stages_without_completion_edge)
+                LOG_TRACE(getLogger("joinRuntimeFilter"),
+                    "Filter '{}' is not delivered to stage '{}': the exchange chain is persisted and "
+                    "the required stage dependency would create a cycle",
+                    producer.step->getFilterName(), stage_name);
+            std::erase_if(remote_stages, [&](const String & stage_name) { return stages_without_completion_edge.contains(stage_name); });
+            stages_without_completion_edge.clear();
+            if (remote_stages.empty())
+                continue;
+        }
+
         std::vector<size_t> level_sizes;
         for (size_t tasks = send_tasks.size(); tasks > 1;)
         {
             tasks = (tasks + fan_in - 1) / fan_in;
             level_sizes.push_back(tasks);
         }
+        /// One build task still gets a root merge stage (a chain with a single level of one task).
+        if (level_sizes.empty())
+            level_sizes.push_back(1);
 
         std::vector<String> level_exchange(level_sizes.size());
         std::vector<String> level_stage(level_sizes.size());
         for (size_t level = 0; level < level_sizes.size(); ++level)
         {
             level_exchange[level] = "exchange_" + std::to_string(next_exchange_id);
-            level_stage[level] = "rf_merge_" + std::to_string(next_exchange_id);
+            /// The filter name in the stage (and thus task) name lets one string follow a filter
+            /// through plans, logs and profiling tables.
+            level_stage[level] = "rf_merge_" + std::to_string(next_exchange_id) + "_" + producer.step->getFilterName();
             ++next_exchange_id;
         }
         Strings broadcast_exchange(remote_stages.size());
@@ -493,6 +472,7 @@ void wireRuntimeFilterExchangeTopology(
                 level_buckets.push_back(toString(task_index));
 
             DistributedQueryStage stage;
+            stage.filter_only = true;
             stage.query_plan_fragment.addStep(
                 std::make_unique<MergeRuntimeFiltersStep>(
                     producer.step->getFilterName(),
@@ -573,7 +553,8 @@ void wireRuntimeFilterExchangeTopology(
                 task.input_exchange_streams.insert(task.input_exchange_streams.end(), streams.begin(), streams.end());
             }
 
-            distributed_plan.stage_depends_on[receive_stage][root_stage] = broadcast_exchange[receive_index];
+            if (!stages_without_completion_edge.contains(receive_stage))
+                distributed_plan.stage_depends_on[receive_stage][root_stage] = broadcast_exchange[receive_index];
         }
     }
 }

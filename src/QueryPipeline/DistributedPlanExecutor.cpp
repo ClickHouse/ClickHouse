@@ -2080,9 +2080,12 @@ void DistributedQueryPlanExecutor::start()
             startStageWithDependencies(stage_name, executed_stages);
     }
 
-    /// Wait for all stages to finish
-    for (const auto & [stage_name, _] : distributed_query_plan.stages)
-        running_stages.push_back(stage_name);
+    /// Wait for all data stages to finish. Filter-only stages are excluded: once the data
+    /// stages are done an undelivered filter has nobody left to serve, so the query result is
+    /// complete without them, and cleanup cancels their tasks (a clean finish, not an error).
+    for (const auto & [stage_name, stage] : distributed_query_plan.stages)
+        if (!stage.filter_only)
+            running_stages.push_back(stage_name);
 }
 
 bool DistributedQueryPlanExecutor::execute(UInt64 poll_timeout_ms)
