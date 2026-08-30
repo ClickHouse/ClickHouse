@@ -151,11 +151,11 @@ static std::pair<ColumnPtr, DataTypePtr> distributeParentNullMapToElement(
         /// element's own null representation.
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*parent_null_map_ptr).getData();
         auto mutable_col = IColumn::mutate(elem_col);
-        applyParentNullMapToExtractedSubcolumn(mutable_col, null_map, 0, 0);
+        applyParentNullMapToExtractedSubcolumn(*mutable_col, null_map, 0, 0);
         return {std::move(mutable_col), elem_type};
     }
 
-    /// Array, Map, etc. — cannot represent NULL. Keep the type; filter out the parent-NULL rows and
+    /// Array, Map, etc. cannot represent NULL. Keep the type; filter out the parent-NULL rows and
     /// expand back so those positions carry type defaults (a no-op type-wise, so schema planning is
     /// stable).
     const auto & nm = assert_cast<const ColumnUInt8 &>(*parent_null_map_ptr).getData();
@@ -667,7 +667,7 @@ bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & 
 /// Applies the extracted-subcolumn nullable policy to a terminal extracted subcolumn. A Tuple-valued
 /// element arrives as `Nullable(Tuple(...))` both when the wrapping was synthesized from an outer
 /// struct null map and when the element is declared nullable, and the null map contents cannot tell
-/// those apart — so `declared_subcolumn_type` (the root declared type's subcolumn type) is the
+/// those apart, so `declared_subcolumn_type` (the root declared type's subcolumn type) is the
 /// arbiter: `Nullable` keeps the column nullable, a non-nullable `Tuple` drops the outer `Nullable`.
 /// Dropping materializes type defaults first, because `ColumnNullable` does not guarantee the nested
 /// payload under a NULL row holds the type default. A nullptr declared type falls back to the
@@ -749,7 +749,7 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
 
     if (!nested_tables.contains(nested_names.first))
     {
-        /// Nested::flatten only descends into a plain Tuple, so a Nullable(Tuple(...)) parent
+        /// `Nested::flatten` only descends into a plain `Tuple`, so a `Nullable(Tuple(...))` parent
         /// (e.g. from the Arrow reader) would drop the subcolumn and yield defaults. Unwrap to
         /// Tuple(Nullable(...)) first, propagating the struct null map to each element.
         ColumnsWithTypeAndName columns = {Nested::unwrapNullableTuple(root_column)};

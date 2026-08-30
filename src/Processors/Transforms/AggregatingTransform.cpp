@@ -4,6 +4,8 @@
 #include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Interpreters/AdaptiveAggregationImpl.h>
+
 #include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
@@ -229,13 +231,15 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         Arena * arena_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        AdaptiveAggregationSessionPtr adaptive_session_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , arena(arena_)
         , updater(std::move(updater_))
+        , adaptive_session(std::move(adaptive_session_))
     {
     }
 
@@ -262,9 +266,26 @@ protected:
             return {};
         }
 
+        /// The adaptive merge gives every bucket its own arena (see the setup in
+        /// `createSources`), so a retired bucket's drained and merged states free with its
+        /// slot instead of accumulating until the whole merge ends.
+        Arena * bucket_arena = arena;
+        if (adaptive_session)
+        {
+            bucket_arena = data->at(0)->adaptive_merge_bucket_arenas[bucket_num].get();
+            params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), bucket_arena, bucket_num, *adaptive_session, shared_data->is_cancelled);
+        }
+
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
-            *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater);
+            *data, bucket_arena, params->final, bucket_num, shared_data->is_cancelled, updater);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
+
+        /// Retire the bucket's working memory only after a successful conversion: the output
+        /// chunk either copied the values out or captured the arena slot's ownership. A
+        /// cancelled bucket skips retirement and leaves everything to the ordinary destruction
+        /// of the variants, which still owns every non-retired slot.
+        if (adaptive_session && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
+            params->aggregator.retireAdaptiveMergedBucket(*data->at(0), *adaptive_session, bucket_num);
 
         shared_data->is_bucket_processed[bucket_num] = true;
 
@@ -277,6 +298,7 @@ private:
     SharedDataPtr shared_data;
     Arena * arena;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    AdaptiveAggregationSessionPtr adaptive_session;
 };
 
 /// Worker of the parallel single-level merge: atomically takes the next hash partition, merges it out of
@@ -420,6 +442,14 @@ private:
         if (!chunks_to_merge)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with ChunksToMerge info in {}", getName());
 
+        /// This transform drops the `ChunksToMerge` wrapper and emits the chunks it holds, so the ids of the
+        /// buckets which `GroupingAggregatedTransform` still owes would be lost. It is used only over
+        /// `ConvertingAggregatedToChunksSource`, which produces the buckets in order of their id-s and never
+        /// delays any of them, so there is nothing to report and nothing to lose. If that ever changes, the
+        /// chunks have to be stamped here with `chunks_to_merge->out_of_order_buckets`, otherwise the node
+        /// which merges this result can finalize a bucket before all of its data is sent.
+        chassert(chunks_to_merge->out_of_order_buckets.empty());
+
         if (chunks_to_merge->chunks)
             for (auto & cur_chunk : *chunks_to_merge->chunks)
                 chunks.emplace_back(std::move(cur_chunk));
@@ -490,13 +520,15 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        AdaptiveAggregationSessionPtr adaptive_session_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
         , updater(std::move(updater_))
+        , adaptive_session(std::move(adaptive_session_))
     {
     }
 
@@ -850,6 +882,7 @@ private:
     size_t num_threads;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    AdaptiveAggregationSessionPtr adaptive_session;
 
     bool is_initialized = false;
     bool finished = false;
@@ -964,11 +997,29 @@ private:
     {
         AggregatedDataVariantsPtr & first = data->at(0);
 
+        if (adaptive_session)
+        {
+            /// The adaptive drain and merge create the destination's states in per-bucket
+            /// arenas, for two reasons. Fresh arenas (rather than `pools[thread]`, typically a
+            /// source local's arena) because with a zero-size aggregate state (`Nothing`) an
+            /// arena returns one address for every allocation, so a drained state would alias
+            /// that local's states and the bucket merge would see a state merged into itself.
+            /// And per bucket (rather than per source) so a converted bucket's states free
+            /// with its slot when the bucket retires. The slots live outside
+            /// `aggregates_pools`, which every bucket's output columns capture wholesale;
+            /// each conversion is handed its own slot instead.
+            first->adaptive_merge_bucket_arenas.resize(ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS);
+            for (auto & slot : first->adaptive_merge_bucket_arenas)
+                slot = std::make_shared<Arena>();
+        }
+
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            /// Select Arena to avoid race conditions
-            Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena, updater);
+            /// Select Arena to avoid race conditions; the adaptive sources pick their arena
+            /// per bucket instead.
+            Arena * arena = adaptive_session ? nullptr : first->aggregates_pools.at(thread).get();
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(
+                params, data, shared_data, arena, updater, adaptive_session);
 
             processors.emplace_back(std::move(source));
         }
@@ -1045,19 +1096,28 @@ AggregatingTransform::AggregatingTransform(
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
 {
+    /// `AggregatingStep` leaves its engagement verdict in the flag. Without a producer nothing is ever
+    /// staged, so the merge-time drains find empty backlogs and do nothing.
+    if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
+        adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
 
+void AggregatingTransform::onCancel() noexcept
+{
+    /// A pressure sweep checks this between chunks and buckets: it can spill gigabytes to
+    /// disk, and a cancelled query must not wait that out.
+    if (adaptive_context)
+        adaptive_context->session->cancel();
+}
+
 size_t AggregatingTransform::getGeneratingStepGroup() const
 {
     /// After consumption finishes, this transform generates the child processors that perform
-    /// the merge / final part of aggregation. Those children belong to the corresponding
-    /// generating stage, not to the AggregatingTransform's own (partial) aggregation stage,
-    /// which is why we map the current group to its generating counterpart here.
-    return AggregatingStep::AggregatingStage::PartialAggregation == static_cast<AggregatingStep::AggregatingStage>(getQueryPlanStepGroup())
-        ? static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation)
-        : static_cast<size_t>(AggregatingStep::AggregatingStage::AggregatingSharded);
+    /// the merge / final part of aggregation. Those children belong to the generating stage,
+    /// not to the AggregatingTransform's own (partial) aggregation stage.
+    return static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation);
 }
 
 IProcessor::Status AggregatingTransform::prepare()
@@ -1192,7 +1252,15 @@ void AggregatingTransform::consume(Chunk chunk)
     }
     else
     {
-        if (!params->aggregator.executeOnBlock(chunk.detachColumns(), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys))
+        if (!params->aggregator.executeOnBlock(
+                chunk.detachColumns(),
+                0,
+                num_rows,
+                variants,
+                key_columns,
+                aggregate_columns,
+                no_more_keys,
+                adaptive_context.get()))
             is_consume_finished = true;
     }
 }
@@ -1209,7 +1277,9 @@ void AggregatingTransform::initGenerate()
         if (params->params.only_merge)
             params->aggregator.mergeOnBlock(getInputs().front().getHeader().getColumns(), 0, false, variants, no_more_keys, is_cancelled);
         else
-            params->aggregator.executeOnBlock(getInputs().front().getHeader().getColumns(), 0, 0, variants, key_columns, aggregate_columns, no_more_keys);
+            params->aggregator.executeOnBlock(
+                getInputs().front().getHeader().getColumns(), 0, 0, variants, key_columns, aggregate_columns, no_more_keys,
+                /* adaptive= */ nullptr);
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
@@ -1226,17 +1296,38 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
 
         /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
-        if (!variants.empty())
+        /// A table that already spilled keeps its type with zero rows; writing it again would
+        /// produce an empty part per producer.
+        if (variants.hasData())
             params->aggregator.writeToTemporaryFile(variants);
     }
 
-    if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
+    bool adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
+    if (adaptive_engaged)
+    {
+        /// Complete this thread's backlog contribution before the finish barrier below: the last
+        /// finisher assembles the merge assuming every producer's staged records are enqueued.
+        params->aggregator.flushPendingChunks(*adaptive_context);
+
+        if (variants.isConvertibleToTwoLevel())
+            variants.convertToTwoLevel();
+    }
+
+    if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
         /// Note: we reset aggregation state here to release memory earlier.
         /// It might cause extra memory usage for complex queries othervise.
         many_data.reset();
         return;
     }
+
+    adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
+
+    if (adaptive_engaged)
+        LOG_TRACE(
+            log,
+            "Adaptive aggregation: {} delayed records queued for the merge-time drain",
+            adaptive_context->session->backlog.undrainedRecords());
 
     /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
     /// it is necessary to check whether any of the aggregators contains temporary data.
@@ -1248,21 +1339,58 @@ void AggregatingTransform::initGenerate()
                 params->aggregator_list_ptr->end(),
                 [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
     };
+
+    if (adaptive_engaged)
+    {
+        auto & shared = *adaptive_context->session;
+
+        /// The producers' final flushes run after their own spill checks, and a flush's seal
+        /// copies can push memory over the external threshold with nothing re-checking. Re-check
+        /// here, after every producer flushed and before the merge path is chosen: the sweep
+        /// no-ops under the trigger, sheds staged records when over it, and spills the routing
+        /// table if shedding is not enough - which makes the choice below go external.
+        if (params->params.max_bytes_before_external_group_by)
+            params->aggregator.drainStagedChunksUnderMemoryPressure(shared);
+
+        if (aggregator_has_temporary_data())
+        {
+            /// A thawed or given-up producer spilled on the baseline path, so the merge goes
+            /// external and the bucket-parallel drain will not run: put the backlogs into
+            /// disk-mergeable form by draining everything into the routing table now (the
+            /// finish barrier guarantees a quiescent, uncontended sweep). The external branch
+            /// below flushes it together with the other still-in-memory variants.
+            params->aggregator.drainStagedChunksAtFinish(shared);
+
+            /// The external merge bypasses `prepareVariantsToMerge`, which is where the thaw
+            /// verdict is normally recorded.
+            params->aggregator.recordAdaptiveStagingVerdict(shared);
+        }
+        if (shared.early_drain_variants->hasData())
+        {
+            /// Early-drained records live in the routing table: it holds part of the result
+            /// and joins the merge set like any other variant. Only the last finisher gets
+            /// here, so growing `variants` is safe as long as nothing else reads it - hence
+            /// the barrier above counts `num_producers` rather than the size of this vector.
+            many_data->variants.push_back(shared.early_drain_variants);
+        }
+    }
+
     if (!aggregator_has_temporary_data())
     {
         if (!skip_merging)
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(
+                std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
-            processors.emplace_back(
-                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater));
+            processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
+                params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
         }
         else
         {
             if (updater)
                 updater->markUnsupportedCase();
 
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), /*adaptive_session=*/nullptr);
             Pipes pipes;
             for (auto & variant : prepared_data)
             {
@@ -1321,7 +1449,7 @@ void AggregatingTransform::initGenerate()
                 if (cur_variants->isConvertibleToTwoLevel())
                     cur_variants->convertToTwoLevel();
 
-                if (!cur_variants->empty())
+                if (cur_variants->hasData())
                     params->aggregator.writeToTemporaryFile(*cur_variants);
             }
         }
@@ -1335,7 +1463,7 @@ void AggregatingTransform::initGenerate()
         for (auto & aggregator : *params->aggregator_list_ptr)
         {
             auto new_tmp_files = aggregator.detachTemporaryData();
-            num_streams += tmp_files.size();
+            num_streams += new_tmp_files.size();
 
             for (auto & tmp_stream : new_tmp_files)
             {

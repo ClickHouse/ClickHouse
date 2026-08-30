@@ -42,6 +42,7 @@ ClickHouse Cloud 서비스에 대한 액세스를 AWS PrivateLink 주소로만 �
   * ap-northeast-2
   * ap-northeast-3
   * ap-south-1
+  * ap-southeast-5
   * ap-southeast-4
   * ap-southeast-3
   * ap-south-2
@@ -51,7 +52,10 @@ ClickHouse Cloud 서비스에 대한 액세스를 AWS PrivateLink 주소로만 �
   * us-west-1
   * us-east-2
   * us-east-1
-    가격 관련 참고: AWS는 교차 리전 데이터 전송에 대해 요금을 부과합니다. 가격은 [여기](https://aws.amazon.com/privatelink/pricing/)에서 확인하십시오.
+</Note>
+
+<Note>
+  AWS는 교차 리전 데이터 전송에 대해 요금을 부과합니다. 자세한 내용은 [AWS PrivateLink 요금](https://aws.amazon.com/privatelink/pricing/)을 참조하십시오.
 </Note>
 
 **AWS PrivateLink를 활성화하려면 다음 작업을 완료하십시오**:
@@ -159,11 +163,13 @@ jq .result
 
 AWS 콘솔을 열고 **VPC** → **Endpoints** → **Create endpoints**로 이동하세요.
 
-**Endpoint services that use NLBs and GWLBs**를 선택한 다음, **Service Name** 필드에 [Endpoint &quot;Service name&quot; 가져오기 ](#obtain-endpoint-service-info) 단계에서 얻은 `Service name`<sup>console</sup> 또는 `endpointServiceId`<sup>API</sup>를 입력하세요. **Verify service**를 클릭하세요.
+**Endpoint services that use NLBs and GWLBs**를 선택한 다음, **Service Name** 필드에 [엔드포인트 &quot;Service name&quot; 확인 ](#obtain-endpoint-service-info) 단계에서 얻은 `Service name`<sup>console</sup> 또는 `endpointServiceId`<sup>API</sup>를 입력하세요. **Verify service**를 클릭하세요.
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink 엔드포인트 설정" border />
 
-PrivateLink를 통해 리전 간 연결을 설정하려면 &quot;Cross region endpoint&quot; 체크박스를 선택하고 서비스 리전을 지정하세요. 서비스 리전은 ClickHouse 인스턴스가 실행 중인 리전입니다.
+<Note>
+  리전 간 연결의 경우 **Cross region endpoint** 체크박스를 선택하고 ClickHouse 서비스가 실행 중인 서비스 리전을 지정하세요.
+</Note>
 
 &quot;Service name couldn&#39;t be verified.&quot; 오류가 발생하면 지원되는 리전 목록에 새 리전을 추가하도록 고객 지원팀에 문의하십시오.
 

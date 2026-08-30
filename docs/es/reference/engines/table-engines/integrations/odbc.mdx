@@ -38,7 +38,7 @@ La estructura de la tabla puede diferir de la estructura de la tabla de origen:
 
 * Los nombres de las columnas deben ser los mismos que en la tabla de origen, pero puedes usar solo algunas de ellas y en cualquier orden.
 * Los tipos de las columnas pueden diferir de los de la tabla de origen. ClickHouse intenta [convertir](/es/reference/functions/regular-functions/type-conversion-functions#CAST) los valores a los tipos de datos de ClickHouse.
-* La configuración [external&#95;table&#95;functions&#95;use&#95;nulls](/es/reference/settings/session-settings#external_table_functions_use_nulls) define cómo se manejan las columnas Nullable. Valor predeterminado: 1. Si es 0, la función de tabla no crea columnas Nullable e inserta valores predeterminados en lugar de valores null. Esto también se aplica a los valores NULL dentro de arrays.
+* La configuración [external&#95;table&#95;functions&#95;use&#95;nulls](/es/reference/settings/session-settings/external-table#external_table_functions_use_nulls) define cómo se manejan las columnas Nullable. Valor predeterminado: 1. Si es 0, la función de tabla no crea columnas Nullable e inserta valores predeterminados en lugar de valores null. Esto también se aplica a los valores NULL dentro de arrays.
 
 **Parámetros del motor**
 

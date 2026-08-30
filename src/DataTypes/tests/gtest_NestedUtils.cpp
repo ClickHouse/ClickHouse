@@ -67,7 +67,7 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlo
         DataTypes{inner_tuple, string_type}, Strings{"a", "b"});
     DataTypePtr nullable_tuple = std::make_shared<DataTypeNullable>(outer_tuple);
 
-    /// Empty block (0 rows) — the schema-planning / sample-block case.
+    /// Empty block (0 rows): the schema-planning / sample-block case.
     Block block;
     block.insert({nullable_tuple->createColumn(), nullable_tuple, "t"});
 
@@ -140,7 +140,7 @@ GTEST_TEST(NestedUtils, extractTupleElementFromNullableTupleWithNullRowGivesDefa
 
 /// An element DECLARED `Nullable(Tuple(...))` is genuinely nullable, so its real NULL rows must
 /// survive extraction even with `allow_nullable_tuple_in_extracted_subcolumns` off (its default
-/// here) — unlike a synthetic wrapping from an outer struct null map, which the setting governs.
+/// here), unlike a synthetic wrapping from an outer struct null map, which the setting governs.
 /// The declared subcolumn type of the root, not the null map contents, tells the two apart.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullable)
 {
@@ -175,13 +175,13 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullable)
 }
 
 /// Readers lowercase the requested name before it reaches the extractor, while the declared-type
-/// lookup matches case-sensitively — so a mixed-case declared element (`A`) requested as `a` must
+/// lookup matches case-sensitively, so a mixed-case declared element (`A`) requested as `a` must
 /// still be found, or the genuinely nullable descendant is wrongly treated as synthetic.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCaseInsensitive)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
 
-    /// x Tuple(A Nullable(Tuple(b Nullable(UInt32)))) — note the mixed-case element name `A`.
+    /// x Tuple(A Nullable(Tuple(b Nullable(UInt32)))): note the mixed-case element name `A`.
     DataTypePtr b_type = std::make_shared<DataTypeNullable>(uint_type);
     DataTypePtr inner_tuple = std::make_shared<DataTypeTuple>(DataTypes{b_type}, Strings{"b"});
     DataTypePtr nullable_inner = std::make_shared<DataTypeNullable>(inner_tuple);
@@ -214,7 +214,7 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCase
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
 
-    /// x Tuple(a Nullable(Tuple(b Nullable(UInt32)))) — declared element name is lowercase `a`.
+    /// x Tuple(a Nullable(Tuple(b Nullable(UInt32)))): declared element name is lowercase `a`.
     DataTypePtr b_type = std::make_shared<DataTypeNullable>(uint_type);
     DataTypePtr inner_tuple = std::make_shared<DataTypeTuple>(DataTypes{b_type}, Strings{"b"});
     DataTypePtr nullable_inner = std::make_shared<DataTypeNullable>(inner_tuple);
@@ -241,7 +241,7 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCase
 }
 
 /// An empty Nullable(Tuple()) has no elements to descend into. ColumnTuple::create rejects an empty
-/// column list, so unwrapping such a parent must not construct one — extracting a missing subcolumn
+/// column list, so unwrapping such a parent must not construct one; extracting a missing subcolumn
 /// like `t.x` must simply return no column instead of raising a LOGICAL_ERROR. Regression for the
 /// `Nullable(Tuple())` + missing-columns Arrow/ORC read reported on PR #109741.
 GTEST_TEST(NestedUtils, extractSubcolumnFromEmptyNullableTupleDoesNotThrow)
