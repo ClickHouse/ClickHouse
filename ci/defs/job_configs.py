@@ -4,8 +4,8 @@ from praktika.utils import Utils
 from ci.defs.defs import (
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
+    LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -18,6 +18,59 @@ LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # and lead to "runner lost communication". Reserve a larger margin on the host
 # by capping Keeper to ~70% of physical memory.
 KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
+
+# Integration tests run a nested Docker daemon, so `docker_in_docker.sh` splits the job's
+# `--memory` into capped cgroup leaves. `/init`'s cap is a ceiling rather than a share, so the
+# caps can sum above the job limit.
+
+# Not a leaf: headroom for the pages faulted before delegation, which stay charged to the
+# cgroup root and can be neither migrated nor reclaimed (measured up to ~147 MiB).
+INTEGRATION_DIND_ROOT_RESERVE = 1 * 1024**3
+# Everything not charged to `/docker`: pytest, its xdist workers, the post-teardown steps, and the
+# per-test subprocesses - `helpers/cluster.py` runs each node's `clickhouse-client` and
+# `helpers/iceberg_utils.py` runs Spark's `local` driver on the host, not in a container. That
+# scales with xdist concurrency, hence a share of the job limit; the floor keeps the smallest
+# supported host runnable and the cap keeps the container budget from losing a worker.
+INTEGRATION_DIND_INIT_RESERVE = min(max(LIMITED_MEM // 3, 8 * 1024**3), 16 * 1024**3)
+# Holds dockerd, containerd and one containerd-shim per nested container, so it scales with
+# concurrency rather than staying at the daemon's own footprint. An absolute floor, never a
+# fraction of the job limit: too small and the daemons cannot boot at all.
+INTEGRATION_DIND_DAEMON_RESERVE = 2 * 1024**3
+# What the nested test containers may collectively use. Also bounds xdist worker concurrency, so
+# scheduling and containment agree on one number. Clamped at zero because a negative reads to
+# `docker_in_docker.sh`'s validator as a malformed variable rather than a host too small.
+INTEGRATION_NESTED_BUDGET = max(
+    LIMITED_MEM
+    - INTEGRATION_DIND_ROOT_RESERVE
+    - INTEGRATION_DIND_INIT_RESERVE
+    - INTEGRATION_DIND_DAEMON_RESERVE,
+    0,
+)
+# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out, and its
+# charge is anon, so reclaim cannot meet a cap the way it can for `/docker`'s page cache. It
+# overlaps `/docker`, so this cap alone is within the job limit but the three together are not.
+INTEGRATION_DIND_INIT_LIMIT = max(
+    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
+    INTEGRATION_DIND_INIT_RESERVE,
+)
+# `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
+# every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
+# reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
+# is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
+INTEGRATION_DIND_DAEMON_LIMIT = max(
+    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
+    INTEGRATION_DIND_DAEMON_RESERVE,
+)
+integration_dind_env = (
+    "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
+    f"+--env=CI_DIND_JOB_MEM={LIMITED_MEM}"
+    f"+--env=CI_DIND_ROOT_RESERVE={INTEGRATION_DIND_ROOT_RESERVE}"
+    f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
+    f"+--env=CI_DIND_INIT_LIMIT={INTEGRATION_DIND_INIT_LIMIT}"
+    f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
+    f"+--env=CI_DIND_DAEMON_LIMIT={INTEGRATION_DIND_DAEMON_LIMIT}"
+    f"+--env=CI_DIND_NESTED_BUDGET={INTEGRATION_NESTED_BUDGET}"
+)
 
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
@@ -172,9 +225,13 @@ common_integration_test_job_config = Job.Config(
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
+            "./ci/jobs/scripts/prefetch-integration-test-images",
         ],
     ),
-    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host+--ulimit nofile=262144:262144",
+    # Under `--cgroupns=host` the nested daemon parents its containers at the host's `/docker`,
+    # a sibling of this cgroup, so `--memory` bounds only the harness. Explicit because the
+    # daemon default is configurable and `host` would silently restore that leak.
+    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}",
     post_hooks=[
         "python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py",
         "python3 ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
@@ -199,27 +256,6 @@ class JobConfigs:
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
-    )
-    ci_tests = Job.Config(
-        name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_SMALL,
-        command="python3 ./ci/jobs/ci_tests_job.py",
-        timeout=1200,
-        run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci",
-                # The ci/tests/ guards for the expect-trace / bash-xtrace separation read these
-                # two files, so a change to either must run this job.
-                "./tests/clickhouse-test",
-                "./tests/queries/shell_config.sh",
-                # The CFI build-classification guards read these two, so a change to either
-                # must run this job instead of reusing a cached result.
-                "./tests/config/install.sh",
-                "./tests/integration/helpers/cluster.py",
-            ]
-        ),
-        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -832,28 +868,28 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, parallel, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_wasm_parallel_{batch}"
+                    + f"_ft_old_s3_db_repl_parallel_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, sequential, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_wasm_sequential_{batch}"
+                    + f"_ft_old_s3_db_repl_sequential_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
@@ -906,7 +942,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, WasmEdge, parallel, {batch}/{total_batches}",
+                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -915,7 +951,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, WasmEdge, sequential, {batch}/{total_batches}",
+                parameter=f"amd_msan, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -1419,6 +1455,11 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
+        Job.ParamSet(
+            parameter="amd_release, oracle",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_RELEASE],
+        ),
     )
     ast_fuzzer_targeted_pr_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
@@ -1594,6 +1635,9 @@ class JobConfigs:
                 "./ci/jobs/scripts/docs",
                 "./utils/generate-async-metrics-docs",
                 "./utils/generate-system-tables-docs",
+                # The source of truth for the generated Open source changelog
+                # page, so a change to it alone must still run this job.
+                "./CHANGELOG.md",
             ],
             # These files are internal inputs or contributor documentation, not
             # pages published by Mintlify.
@@ -1728,6 +1772,32 @@ class JobConfigs:
         requires=[ArtifactNames.CH_ARM_RELEASE],
         run_in_docker="clickhouse/stateless-test",
         timeout=10800,
+    )
+    docs_examples_job = Job.Config(
+        name=JobNames.DOCS_EXAMPLES,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/docs_examples_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/docs_examples_job.py",
+                "./ci/jobs/scripts/server_cleanup.py",
+                "./tests/docs_examples/",
+                # The server of this job installs `programs/server/config.d` and
+                # `programs/server/users.d` dereferenced, and most of their entries are symlinks
+                # into `tests/config`, so the whole of it is an input of the job.
+                "./tests/config/",
+                "./programs/server/config.xml",
+                "./programs/server/config.d/",
+                "./programs/server/users.xml",
+                "./programs/server/users.d/",
+            ]
+            # The examples are extracted from server source registrations and validate server
+            # behavior, so every change that rebuilds the server must run this job too.
+            + build_digest_config.include_paths,
+        ),
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=3600,
     )
     sqlstorm_test_job = Job.Config(
         name=JobNames.SQL_STORM_TEST,
@@ -1932,7 +2002,7 @@ class JobConfigs:
 
     sign_macos_binary_jobs = Job.Config(
         name=JobNames.SIGN_MACOS,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.RELEASE_RUNNER,
         command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
         run_in_docker="clickhouse/utils+--network=host+root",
         timeout=3600,
