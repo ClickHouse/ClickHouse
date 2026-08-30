@@ -275,6 +275,21 @@ BAR = vector_selector("bar", [matcher("__name__", "bar")])
                 variadic=-1,
             ),
         ),
+        # A repeatable trailing argument may repeat zero times: Prometheus accepts
+        # `label_join` with no source labels.
+        (
+            'label_join(foo, "dst", ",")',
+            call(
+                "label_join",
+                ["vector", "string", "string", "string"],
+                [
+                    FOO,
+                    {"type": "stringLiteral", "val": "dst"},
+                    {"type": "stringLiteral", "val": ","},
+                ],
+                variadic=-1,
+            ),
+        ),
         ("time()", call("time", [], [], return_type="scalar")),
     ],
 )

@@ -56,6 +56,10 @@ namespace
     }
 
     /// The signature of a PromQL function as Prometheus defines it (see promql/parser/functions.go).
+    /// The signature table below covers exactly the functions the PromQL grammar accepts (the FUNCTION
+    /// token in contrib/antlr4-grammars/promql/PromQLLexer.g4) and must be updated together with it.
+    /// This includes `holt_winters`, which the ClickHouse PromQL dialect keeps although Prometheus 3
+    /// renamed it to `double_exponential_smoothing`.
     struct FunctionSignature
     {
         std::vector<ResultType> arg_types;
