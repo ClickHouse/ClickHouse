@@ -238,7 +238,7 @@ toUInt64('64'):  64
 
     /// toUInt128 documentation
     FunctionDocumentation::Description toUInt128_description = R"(
-Converts an input value to a value of type [`UInt128`](/sql-reference/functions/type-conversion-functions#toUInt128).
+Converts an input value to a value of type [`UInt128`](/reference/functions/regular-functions/type-conversion-functions#toUInt128).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -576,7 +576,7 @@ toInt64('-64'):  -64
 
     /// toInt128 documentation
     FunctionDocumentation::Description toInt128_description = R"(
-Converts an input value to a value of type [Int128](/sql-reference/data-types/int-uint).
+Converts an input value to a value of type [Int128](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -630,7 +630,7 @@ toInt128('-128'): -128
 
     /// toInt256 documentation
     FunctionDocumentation::Description toInt256_description = R"(
-Converts an input value to a value of type [Int256](/sql-reference/data-types/int-uint).
+Converts an input value to a value of type [Int256](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -707,9 +707,11 @@ toBFloat16('42.7')
 FORMAT Vertical;
         )",
         R"(
-toBFloat16(toFloat32(42.7)): 42.5
-toBFloat16(t⋯32('42.7')):    42.5
-toBFloat16('42.7'):          42.5
+Row 1:
+──────
+toBFloat16(toFloat32(42.7)):   42.5
+toBFloat16(toFloat32('42.7')): 42.5
+toBFloat16('42.7'):            42.5
         )"
     }
     };
@@ -721,7 +723,7 @@ toBFloat16('42.7'):          42.5
 
     /// toFloat32 documentation
     FunctionDocumentation::Description toFloat32_description = R"(
-Converts an input value to a value of type [Float32](/sql-reference/data-types/float).
+Converts an input value to a value of type [Float32](/reference/data-types/float).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -861,11 +863,11 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-a:      2.0
+a:      2
 type_a: Decimal(18, 1)
-b:      4.20
+b:      4.2
 type_b: Decimal(18, 2)
-c:      4.200
+c:      4.2
 type_c: Decimal(18, 3)
         )"
     }
@@ -1050,7 +1052,7 @@ type_c: Decimal(76, 3)
 
     /// toDate documentation
     FunctionDocumentation::Description description_toDate = R"(
-Converts an input value to type [`Date`](/sql-reference/data-types/date).
+Converts an input value to type [`Date`](/reference/data-types/date).
 Supports conversion from String, FixedString, DateTime, or numeric types.
     )";
     FunctionDocumentation::Syntax syntax_toDate = "toDate(x)";
@@ -1114,7 +1116,7 @@ Converts the argument to the Date data type. This is a MySQL compatibility alias
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(
 Converts the argument to the [Date32](/reference/data-types/date32) data type.
-If the value is outside the range, `toDate32` returns the border values supported by [Date32](/reference/data-types/date32).
+If the value is outside the `[0000-01-01, 9999-12-31]` range, `toDate32` returns the border values supported by [Date32](/reference/data-types/date32).
 If the argument is of type [`Date`](/reference/data-types/date), it's bounds are taken into account.
     )";
     FunctionDocumentation::Syntax syntax_toDate32 = "toDate32(expr)";
@@ -1132,12 +1134,12 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:           2025-01-01
+value:             2025-01-01
 toTypeName(value): Date32
         )"
     },
     {
-        "Outside range",
+        "Before 1900",
         R"(
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
 FORMAT Vertical
@@ -1145,7 +1147,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:           1900-01-01
+value:             1899-01-01
 toTypeName(value): Date32
         )"
     }
@@ -1158,12 +1160,23 @@ toTypeName(value): Date32
 
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
-Converts an input value to type [Time](/sql-reference/data-types/time).
+Converts an input value to type [Time](/reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+
+:::note Legacy `toTime`
+Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
+time component. That function is still available under the name [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+
+Setting [`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_to_time) to `1` also keeps the name `toTime` bound to the legacy
+function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
+While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
+The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
+:::
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "BFloat16", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
@@ -1201,14 +1214,14 @@ SELECT toTime(toDateTime(52225, 'UTC'))
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTime = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTime = {25, 5};
     FunctionDocumentation::Category category_toTime = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, {}, returned_value_toTime, examples_toTime, introduced_in_toTime, category_toTime};
 
     factory.registerFunction<detail::FunctionToTime>(documentation_toTime);
 
     FunctionDocumentation::Description description_toTime64 = R"(
-Converts an input value to type [Time64](/sql-reference/data-types/time64).
+Converts an input value to type [Time64](/reference/data-types/time64).
 Supports conversion from String, FixedString, DateTime64, or numeric types representing seconds since midnight.
 Provides sub-second precision for time values, up to `scale` fractional digits.
     )";
@@ -1296,52 +1309,49 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
     /// toDateTime32 documentation
     FunctionDocumentation::Description description_toDateTime32 = R"(
 Converts an input value to type `DateTime`.
-Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `DateTime`, or numeric types (`(U)Int*`, `Float*`, `Decimal`).
-DateTime32 provides extended range compared to `DateTime`, supporting dates from `1900-01-01` to `2299-12-31`.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; the `Time` type and wide integer types such as `(U)Int128`/`(U)Int256` wrap around instead of saturating.
+`DateTime32` is an alias of `DateTime` and supports dates from `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
+When converting from a string or from one of the saturating numeric types listed above, values outside of this range are saturated to the range boundaries. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+Conversions from other date and time types such as `Date32` or `DateTime64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime32 = "toDateTime32(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime32 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "UInt*", "Float*", "Date", "DateTime", "DateTime64"}},
+        {"x", "Input value to convert.", {"String", "FixedString", "(U)Int*", "Float*", "BFloat16", "Date", "Date32", "Time", "DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone for the returned `DateTime` value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Returns the converted input value.", {"DateTime"}};
     FunctionDocumentation::Examples examples_toDateTime32 = {
     {
-        "The value is within the range",
+        "From a string",
         R"(
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
         )"
     },
     {
-        "As a decimal with precision",
+        "From a Unix timestamp",
         R"(
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
         )"
     },
     {
         "With a timezone",
         R"(
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
         )"
     }
     };
@@ -1369,9 +1379,9 @@ Converts an input value to a value of type [`DateTime64`](/reference/data-types/
 SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
         )"
     },
     {
@@ -1382,9 +1392,12 @@ SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
         )"
     },
     {
@@ -1393,9 +1406,9 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)──────────────┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
         )"
     }
     };
@@ -1421,7 +1434,7 @@ Converts a String value to a UUID value.
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
         )",
         R"(
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
         )"
@@ -1436,7 +1449,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
     /// toIPv4 documentation
     FunctionDocumentation::Description description_toIPv4 = R"(
 Converts a string or a UInt32 form of IPv4 address to type IPv4.
-It is similar to [`IPv4StringToNum`](/sql-reference/functions/ip-address-functions#IPv4StringToNum) and [`IPv4NumToString`](/sql-reference/functions/ip-address-functions#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
+It is similar to [`IPv4StringToNum`](/reference/functions/regular-functions/ip-address-functions#IPv4StringToNum) and [`IPv4NumToString`](/reference/functions/regular-functions/ip-address-functions#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
 )";
     FunctionDocumentation::Syntax syntax_toIPv4 = "toIPv4(x)";
     FunctionDocumentation::Arguments arguments_toIPv4 = {
@@ -1492,7 +1505,7 @@ SELECT toIPv4(2130706433);
     FunctionDocumentation::Description description_toIPv6 = R"(
 onverts a string or a `UInt128` form of IPv6 address to [`IPv6`](/reference/data-types/ipv6) type.
 For strings, if the IPv6 address has an invalid format, returns an empty value.
-Similar to [`IPv6StringToNum`](/sql-reference/functions/ip-address-functions#IPv6StringToNum) and [`IPv6NumToString`](/sql-reference/functions/ip-address-functions#IPv6NumToString) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
+Similar to [`IPv6StringToNum`](/reference/functions/regular-functions/ip-address-functions#IPv6StringToNum) and [`IPv6NumToString`](/reference/functions/regular-functions/ip-address-functions#IPv6NumToString) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 )";
@@ -1950,7 +1963,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt8OrZero('8'): 8
+toInt8OrZero('8'):   8
 toInt8OrZero('abc'): 0
         )"
     }
@@ -1999,7 +2012,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt16OrZero('16'): 16
+toInt16OrZero('16'):  16
 toInt16OrZero('abc'): 0
         )"
     }
@@ -2048,7 +2061,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt32OrZero('32'): 32
+toInt32OrZero('32'):  32
 toInt32OrZero('abc'): 0
         )"
     }
@@ -2060,7 +2073,7 @@ toInt32OrZero('abc'): 0
     factory.registerFunction<detail::FunctionToInt32OrZero>(documentation_toInt32OrZero);
 
     FunctionDocumentation::Description description_toInt64OrZero = R"(
-Converts an input value to type [Int64](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int64](/reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt64`](#toInt64) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2100,7 +2113,7 @@ SELECT toInt64OrZero('abc')
     factory.registerFunction<detail::FunctionToInt64OrZero>(documentation_toInt64OrZero);
 
     FunctionDocumentation::Description description_toInt128OrZero = R"(
-Converts an input value to type [Int128](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int128](/reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt128`](#toInt128) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2140,7 +2153,7 @@ SELECT toInt128OrZero('abc')
     factory.registerFunction<detail::FunctionToInt128OrZero>(documentation_toInt128OrZero);
 
     FunctionDocumentation::Description description_toInt256OrZero = R"(
-Converts an input value to type [Int256](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int256](/reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt256`](#toInt256) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2212,11 +2225,9 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
        toBFloat16OrZero('12.3'), -- typical use
        toBFloat16OrZero('12.3456789') -- silent loss of precision
         )",
-        R"(
-0
-12.25
-12.3125
-        )"
+        R"DOCS_MD(
+0	12.25	12.3125
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrZero_introduced_in = {1, 1};
@@ -2337,8 +2348,9 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
 
     /// toDate32OrZero documentation
     FunctionDocumentation::Description description_toDate32OrZero = R"(
-Converts an input value to a value of type [Date32](/reference/data-types/date32) but returns the lower boundary of [Date32](/reference/data-types/date32) if an invalid argument is received.
-The same as [toDate32](#toDate32) but returns lower boundary of [Date32](/reference/data-types/date32) if an invalid argument is received.
+Converts an input value to a value of type [Date32](/reference/data-types/date32) but returns the default value `1900-01-01` if an invalid argument is received.
+The same as [toDate32](#toDate32) but returns `1900-01-01` if an invalid argument is received.
+Note that `1900-01-01` is a historical default value for invalid input, not the lower boundary of [Date32](/reference/data-types/date32), which is `0000-01-01`.
 
 See also:
 - [`toDate32`](#toDate32)
@@ -2349,7 +2361,7 @@ See also:
     FunctionDocumentation::Arguments arguments_toDate32OrZero = {
         {"x", "A string representation of a date.", {"String"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDate32OrZero = {"Returns a Date32 value if successful, otherwise the lower boundary of Date32 (`1900-01-01`).", {"Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDate32OrZero = {"Returns a Date32 value if successful, otherwise the historical default value for invalid input (`1900-01-01`).", {"Date32"}};
     FunctionDocumentation::Examples examples_toDate32OrZero = {
     {
         "Usage example",
@@ -2392,7 +2404,7 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {25, 5};
     FunctionDocumentation::Category category_toTimeOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTimeOrZero = {description_toTimeOrZero, syntax_toTimeOrZero, arguments_toTimeOrZero, {}, returned_value_toTimeOrZero, examples_toTimeOrZero, introduced_in_toTimeOrZero, category_toTimeOrZero};
 
@@ -2521,7 +2533,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -2568,7 +2580,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -2610,7 +2622,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -2657,7 +2669,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -2671,7 +2683,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
     /// toUUIDOrZero documentation
     FunctionDocumentation::Description description_toUUIDOrZero = R"(
 Converts an input value to a value of type [UUID](/reference/data-types/uuid) but returns zero UUID in case of an error.
-Like [`toUUID`](/sql-reference/functions/type-conversion-functions#toUUID) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
+Like [`toUUID`](/reference/functions/regular-functions/type-conversion-functions#toUUID) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).
@@ -2779,9 +2791,9 @@ SELECT
     toIPv6OrZero('invalid::ip') AS invalid_ipv6
         )",
         R"(
-┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334        │ ::           │
-└─────────────────────────────────────┴──────────────┘
+┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ::           │
+└──────────────────────────────┴──────────────┘
         )"
     }
     };
@@ -2831,7 +2843,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): \N
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -2881,7 +2893,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): \N
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -2931,7 +2943,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): \N
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -2981,7 +2993,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): \N
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3031,7 +3043,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): \N
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3081,7 +3093,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): \N
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3131,7 +3143,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): \N
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3181,7 +3193,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): \N
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3231,7 +3243,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): \N
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3281,7 +3293,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): \N
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3331,7 +3343,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  \N
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3381,7 +3393,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  \N
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3425,11 +3437,9 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
        toBFloat16OrNull('12.3'), -- typical use
        toBFloat16OrNull('12.3456789') -- silent loss of precision
         )",
-        R"(
-\N
-12.25
-12.3125
-        )"
+        R"DOCS_MD(
+\N	12.25	12.3125
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrNull_introduced_in = {1, 1};
@@ -3479,7 +3489,7 @@ Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  \N
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3530,7 +3540,7 @@ Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  \N
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3629,7 +3639,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {25, 5};
     FunctionDocumentation::Category category_toTimeOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTimeOrNull = {description_toTimeOrNull, syntax_toTimeOrNull, arguments_toTimeOrNull, {}, returned_value_toTimeOrNull, examples_toTimeOrNull, introduced_in_toTimeOrNull, category_toTimeOrNull};
 
@@ -3779,7 +3789,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -3824,7 +3834,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -3868,7 +3878,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -3913,7 +3923,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -3928,7 +3938,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
     FunctionDocumentation::Description description_toUUIDOrNull = R"(
 Converts an input value to a value of type `UUID` but returns `NULL` in case of an error.
 
-Like [`toUUID`](/sql-reference/functions/type-conversion-functions#toUUID) but returns `NULL` instead of throwing an exception on conversion errors.
+Like [`toUUID`](/reference/functions/regular-functions/type-conversion-functions#toUUID) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).
@@ -3955,7 +3965,7 @@ SELECT
         )",
         R"(
 ┌─valid_uuid───────────────────────────┬─invalid_uuid─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │         ᴺᵁᴸᴸ │
+│ 550e8400-e29b-41d4-a716-446655440000 │ ᴺᵁᴸᴸ         │
 └──────────────────────────────────────┴──────────────┘
         )"
     }
@@ -3997,7 +4007,7 @@ SELECT
         )",
         R"(
 ┌─valid_ip────┬─invalid_ip─┐
-│ 192.168.1.1 │       ᴺᵁᴸᴸ │
+│ 192.168.1.1 │ ᴺᵁᴸᴸ       │
 └─────────────┴────────────┘
         )"
     }
@@ -4039,9 +4049,9 @@ SELECT
     toIPv6OrNull('invalid::ip') AS invalid_ipv6
         )",
         R"(
-┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334        │         ᴺᵁᴸᴸ │
-└─────────────────────────────────────┴──────────────┘
+┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ᴺᵁᴸᴸ         │
+└──────────────────────────────┴──────────────┘
         )"
     }
     };
@@ -4148,7 +4158,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
@@ -4192,7 +4202,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4226,7 +4236,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
        parseDateTimeBestEffortUS('15/08/2025') AS fallback_to_standard
         )",
         R"(
-┌─us_format───────────┬─fallback_to_standard─┐
+┌───────────us_format─┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
         )"
@@ -4260,7 +4270,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────┬─invalid─────────────┐
+┌────────────valid_us─┬─────────────invalid─┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
@@ -4294,7 +4304,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────┬─invalid─┐
+┌────────────valid_us─┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4308,7 +4318,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
 
     /// parseDateTime32BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffort = R"(
-Converts a string representation of a date and time to the [`DateTime`](/sql-reference/data-types/datetime) data type.
+Converts a string representation of a date and time to the [`DateTime`](/reference/data-types/datetime) data type.
 
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
     )";
@@ -4353,7 +4363,7 @@ AS parseDateTime32BestEffort
         )",
         R"(
 ┌─parseDateTime32BestEffort─┐
-│       2015-07-07 12:04:41 │
+│       2010-09-10 06:51:25 │
 └───────────────────────────┘
         )"
     }
@@ -4385,7 +4395,7 @@ SELECT
     parseDateTime32BestEffortOrZero('invalid date') AS invalid
     )",
     R"(
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
     )"
@@ -4418,7 +4428,7 @@ SELECT
     parseDateTime32BestEffortOrNull('invalid date') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4493,7 +4503,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────────┬─invalid─────────────────┐
+┌───────────────────valid─┬─────────────────invalid─┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4526,7 +4536,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrNull('invalid') AS invalid
     )",
     R"(
-┌─valid───────────────────┬─invalid─┐
+┌───────────────────valid─┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"
@@ -4559,7 +4569,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
        parseDateTime64BestEffortUS('15/08/2025 10:15:30.456') AS fallback_to_standard
         )",
         R"(
-┌─us_format───────────────┬─fallback_to_standard────┐
+┌───────────────us_format─┬────fallback_to_standard─┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4592,7 +4602,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────────┬─invalid─────────────────┐
+┌────────────────valid_us─┬─────────────────invalid─┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4625,7 +4635,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────────┬─invalid─┐
+┌────────────────valid_us─┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"

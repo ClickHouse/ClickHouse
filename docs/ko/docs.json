@@ -57,9 +57,6 @@
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
-        },
-        {
-          "$ref": "./products/clickhouse-private/navigation.json"
         }
       ],
       "tab": "솔루션"
@@ -69,7 +66,8 @@
         {
           "item": "생태계",
           "pages": [
-            "ko/integrations/home"
+            "ko/integrations/home",
+            "ko/integrations/data-catalogs"
           ]
         },
         {

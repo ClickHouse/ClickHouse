@@ -90,7 +90,7 @@ public:
         last_local_buffer_size.store(read_settings.local_fs_settings.buffer_size, std::memory_order_relaxed);
         last_remote_buffer_size.store(read_settings.remote_fs_settings.buffer_size, std::memory_order_relaxed);
         last_max_size_bytes.store(max_size_bytes, std::memory_order_relaxed);
-        return IObjectStorage::readSmallObjectAndGetObjectMetadata(object, read_settings, max_size_bytes, read_hint);
+        return LocalObjectStorage::readSmallObjectAndGetObjectMetadata(object, read_settings, max_size_bytes, read_hint);
     }
 
     size_t getSmallObjectReads() const { return small_object_reads.load(std::memory_order_relaxed); }
