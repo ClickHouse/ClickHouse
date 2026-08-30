@@ -500,6 +500,7 @@ public:
     IndexPtr tryGetIndex() const;
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
+    void removeFromSkippingIndexCache(SkippingIndexCache * skipping_index_cache) const;
 
     void setIndex(Columns index_columns);
     void unloadIndex();

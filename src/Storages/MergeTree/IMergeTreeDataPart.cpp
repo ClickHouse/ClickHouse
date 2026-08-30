@@ -1074,8 +1074,36 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
-    if (auto skipping_index_cache = storage.getContext()->getSkippingIndexCache())
-        skipping_index_cache->removeEntriesFromCache(getIndexCacheKeyPrefix());
+    removeFromSkippingIndexCache(storage.getContext()->getSkippingIndexCache().get());
+}
+
+void IMergeTreeDataPart::removeFromSkippingIndexCache(SkippingIndexCache * skipping_index_cache) const
+{
+    if (!skipping_index_cache)
+        return;
+
+    /// Bypass QueryMetadataCache for the same reason as in `removeIndexMarksFromCache`.
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), true);
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return;
+
+    auto key_prefix = getIndexCacheKeyPrefix();
+    auto part_checksum = checksums.getTotalChecksumUInt128();
+
+    for (const auto & index_description : secondary_indices)
+    {
+        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
+        if (!skip_index->supportsGranuleCache())
+            continue;
+
+        auto index_name = skip_index->getFileName();
+        if (!skip_index->getPhysicalFormat(*this, index_name))
+            continue;
+
+        auto marks_count = index_granularity->getMarksCountForSkipIndex(index_description.granularity);
+        skipping_index_cache->removeEntriesFromCache(key_prefix, part_checksum, index_name, marks_count);
+    }
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
