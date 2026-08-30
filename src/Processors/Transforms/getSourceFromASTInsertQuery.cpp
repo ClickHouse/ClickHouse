@@ -638,27 +638,14 @@ String getInsertDataSchemaMismatchDescription(
         return true;
     };
 
-    /// Whether every sampled `String` value reached by `path` holds numeric text (the content a cast
-    /// into a numeric destination accepts).
-    auto sampled_string_values_are_numeric_text
-        = [&](size_t column_index, const std::vector<SampledValueStep> & path) -> std::optional<bool>
-    {
-        return sampled_string_values_satisfy(
-            column_index,
-            path,
-            [](const String & text)
-            {
-                Float64 number = 0;
-                return tryParse<Float64>(number, text);
-            });
-    };
-
     /// Whether every sampled `String` value reached by `path` is a valid text representation of
     /// `destination`. `castColumn` of a `String` source column reads the value with the whole-text
-    /// deserializer of the destination type, so this mirrors what the cast-on-read formats really do
-    /// for the destinations that no plain "is it a number" check can decide: `Bool` and the nested
-    /// types (`Array`, `Tuple`, `Map`), all of which accept their usual text form (`true`, `[1,2]`,
-    /// ...) from a source `String` column.
+    /// deserializer of the destination type, so this mirrors what the cast-on-read formats really do:
+    /// a numeric destination accepts exactly the text its own parser accepts (`-1` or `1.5` is valid
+    /// text for a `Float64` column but not for a `UInt8` one), and `Bool` and the nested types
+    /// (`Array`, `Tuple`, `Map`) accept their usual text form (`true`, `[1,2]`, ...). The caller
+    /// passes a destination that keeps the `Nullable` wrapper where the cast does (the generic
+    /// serialization-based conversions), so the `NULL` literal is accepted there too.
     auto sampled_string_values_are_valid_text_for
         = [&](size_t column_index, const std::vector<SampledValueStep> & path, const DataTypePtr & destination)
         -> std::optional<bool>
@@ -1198,9 +1185,12 @@ String getInsertDataSchemaMismatchDescription(
                 /// The formats that cast a decoded source `String` column to the destination type read
                 /// the value with the whole-text deserializer of `Bool`, which accepts both the word
                 /// forms and the quoted numerics, so only a sampled value that is not a valid `Bool`
-                /// text is a genuine mismatch there.
+                /// text is a genuine mismatch there. The cast into a `Nullable(Bool)` destination goes
+                /// through the `Nullable` serialization, which additionally accepts the `NULL` literal,
+                /// so validate against the destination with its `Nullable` wrapper kept on.
                 if (format_casts_string_source_columns && evidence.column_index)
-                    return sampled_string_values_are_valid_text_for(*evidence.column_index, evidence.path, expected_unwrapped)
+                    return sampled_string_values_are_valid_text_for(
+                               *evidence.column_index, evidence.path, removeLowCardinality(expected_type))
                         .value_or(true);
                 return format_casts_string_source_columns;
             }
@@ -1231,12 +1221,20 @@ String getInsertDataSchemaMismatchDescription(
             /// columnar formats and `Native`) accept a numeric string such as `"1"` into a numeric
             /// column, exactly like the text formats do — but the second inference pass cannot tell
             /// that string apart from genuine text, because it re-reads the same typed `String` column
-            /// whatever the numbers-from-strings settings say. Inspect the sampled values instead.
+            /// whatever the numbers-from-strings settings say. Inspect the sampled values instead,
+            /// validating them with the destination's own whole-text parse — the same contract the
+            /// cast applies — so a value like `-1` or `1.5` counts as numeric text for a `Float64`
+            /// column but stays a genuine mismatch for a `UInt8` one. A `Nullable` numeric destination
+            /// accepts any string value: `castColumn` of a `String` source column into a `Nullable`
+            /// type deliberately turns unparsable text into `NULL` instead of throwing.
             if (format_casts_string_source_columns)
             {
+                if (removeLowCardinality(expected_type)->isNullable())
+                    return true;
                 if (!evidence.column_index)
                     return true;
-                return sampled_string_values_are_numeric_text(*evidence.column_index, evidence.path).value_or(true);
+                return sampled_string_values_are_valid_text_for(*evidence.column_index, evidence.path, expected_unwrapped)
+                    .value_or(true);
             }
 
             return !type_is_confirmed_text(evidence.numbers_inferred_type);
