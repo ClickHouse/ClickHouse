@@ -104,8 +104,6 @@ private:
 
     /// Estimates the cardinality of a query from already-read postings and `cardinality` hints for unread tokens.
     double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
-    /// Union estimate over a pattern query's scan-discovered tokens (`query->getTokens` is empty for those).
-    double estimatePatternQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
 
     /* Fields built in the constructor from MergeTreeIndexConditionText. */
 
