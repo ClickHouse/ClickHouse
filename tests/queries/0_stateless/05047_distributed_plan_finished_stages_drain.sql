@@ -1,10 +1,9 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
--- A ~40-stage distributed plan executed in process. The plan's stages finish together at the end of
--- the query; that the driver then collects all of them in one poll instead of one per poll interval
--- is asserted in the unit test `DistributedQueryTest.ExecuteCollectsAllFinishedStagesInOneCall`,
--- because from SQL it is only visible as latency.
+-- A ~40-stage distributed plan executed in process. That the driver collects all finished stages in
+-- one poll is not asserted: from SQL it shows up only as latency, which is not separable from the
+-- load of the parallel suite.
 
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0;
 
