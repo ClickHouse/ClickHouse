@@ -1,0 +1,4 @@
+geometry polygon const	Parts: 1 | Granules: 1
+geometry point const	Parts: 0 | Granules: 0
+geometry point const	Granules: 0/1
+geometry point const	0

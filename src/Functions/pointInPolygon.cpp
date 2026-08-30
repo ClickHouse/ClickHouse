@@ -246,11 +246,32 @@ public:
     /// since no other spatial predicate's argument accepts a bare point there; this override tells
     /// it to derive a zero-area bbox from the first argument's constant instead of giving up.
     ///
-    /// This is the only part of the spatial contract `pointInPolygon` needs to state: it merely
-    /// ENABLES pruning and cannot hide an exception. Every argument it refuses, it refuses in
-    /// `getReturnTypeImpl` below, during analysis, before any granule is read -- so no amount of
-    /// pruning can turn such a refusal into a silent `0`, and there is nothing to fail closed for.
+    /// This merely ENABLES pruning and cannot hide an exception, so it needs no counterpart for a
+    /// plainly typed argument: every such argument `pointInPolygon` refuses, it refuses in
+    /// `getReturnTypeImpl` below, during analysis, before any granule is read.
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return arg_index == 0; }
+
+    /// That analysis-time guarantee does NOT extend to a `Geometry` (a `Variant`) or a `Dynamic`
+    /// argument. `FunctionVariantAdaptor`/`FunctionDynamicAdaptor` build the concrete overload --
+    /// and so reach `getReturnTypeImpl` -- only while EXECUTING, per row, and nothing evaluates the
+    /// predicate before granule selection, because `ActionsDAG::updateHeader` dry-runs a function
+    /// only when every argument is constant. A `Geometry` constant holding a `Polygon` at argument 0
+    /// would otherwise contribute its bbox, prune every disjoint granule away, and answer `0`
+    /// instead of raising `ILLEGAL_TYPE_OF_ARGUMENT`.
+    ///
+    /// Answered by REPRESENTATION rather than by kind name: `getReturnTypeImpl` validates its
+    /// arguments structurally, so kinds that share a representation -- `Ring`, `LineString` and
+    /// `MultiPoint` are all `Array(Tuple(Float64, Float64))` -- are accepted or refused alike, and
+    /// naming them individually would fail closed for kinds that run perfectly well, costing pruning
+    /// for a query that cannot raise. A name that is no geometry at all (a WKB `String`, say) maps to
+    /// itself and is refused.
+    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
+    {
+        const auto representation = GeoBboxDetail::geoKindRepresentationName(kind_name);
+        if (arg_index == 0)
+            return representation != "Point";
+        return representation != "Ring" && representation != "Polygon" && representation != "MultiPolygon";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
