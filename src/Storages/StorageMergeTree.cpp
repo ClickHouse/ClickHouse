@@ -1698,9 +1698,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 return std::unexpected(SelectMergeFailure{
                     .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                     .explanation = PreformattedMessage::create(
-                        "Merging {} would materialize a pending RENAME COLUMN or DROP COLUMN that the result part "
-                        "cannot record, because an earlier pending mutation is not materialized by the merge",
-                        future_part->name),
+                        "Merging {} would materialize a pending RENAME COLUMN that the result part cannot record, "
+                        "because an earlier pending mutation is not materialized by the merge", future_part->name),
                 });
 
             if (*mutation_version > future_part->part_info.getDataVersion())
@@ -2364,33 +2363,26 @@ std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
 
     /// A part carries a single data version, so it can only express a contiguous prefix of the
     /// pending mutations as applied. Past the first mutation the merge leaves pending for this part,
-    /// a metadata mutation would still be materialized by the merge - `AlterConversions` applies
-    /// every pending `RENAME COLUMN` and `DROP COLUMN` while the merge reads the source parts - and
-    /// the merged part cannot record it. Both orderings that follow lose data, so refuse the merge;
-    /// it becomes possible again as soon as the mutation ahead has run.
+    /// a pending `RENAME COLUMN` would be materialized without being recorded: the mutation would
+    /// resolve the new name back to the physical name the merge already replaced, read the column as
+    /// missing and fill defaults, losing the values of a column with no default expression. Refuse
+    /// the merge instead; it becomes possible again as soon as the mutation ahead of the rename has
+    /// run. Two `ALTER` queries cannot reach this state, because `RENAME COLUMN` is a barrier command
+    /// and `alter` waits out every earlier mutation before registering it, but a single `ALTER` that
+    /// combines a rename with an `UPDATE` puts both into one entry, and a merge does not materialize
+    /// that entry.
     ///
-    /// For a `RENAME COLUMN`, the mutation that runs afterwards resolves the new name back to the
-    /// physical name the merge already replaced, reads the column as missing and fills defaults,
-    /// losing the values of a column with no default expression.
-    ///
-    /// For a `DROP COLUMN` - including its `CLEAR COLUMN` form, which keeps the column in the
-    /// metadata and only wipes the values - the merge writes the column as missing, so the earlier
-    /// mutation that has still to run sees the wiped values rather than the original ones. With
-    /// `ALTER TABLE t UPDATE z = y + 100 WHERE 1, CLEAR COLUMN y` the merge clears `y`, and the
-    /// `UPDATE` then computes `z` from the defaults instead of the values that predate the clear.
-    ///
-    /// Two `ALTER` queries reach this state for a `DROP COLUMN` (only `RENAME COLUMN` is a barrier
-    /// command, so only a rename makes `alter` wait out every earlier mutation), and a single
-    /// `ALTER` that combines any of these commands with an `UPDATE` reaches it for both, because it
-    /// puts them into one entry that a merge does not materialize.
+    /// Only `RENAME COLUMN` needs this barrier. The other metadata mutation a merge materializes is
+    /// `DROP COLUMN` - including its `CLEAR COLUMN` form - and applying it a second time to the
+    /// merged part is a no-op rather than a loss, so the merged part not recording it costs nothing.
+    /// A `CLEAR COLUMN` pending in front of a mutation that still has to run does spoil the values
+    /// that mutation reads, but through `AlterConversions` alone: it happens with no merge involved
+    /// at all, and refusing the merge does not prevent it.
     for (; it != current_mutations_by_version.end(); ++it)
     {
         for (const auto & command : *it->second.commands)
         {
-            /// Not filtered by partition on purpose: `StorageMergeTree::MutationsSnapshot` does not
-            /// honour `IN PARTITION` either, so a `CLEAR COLUMN ... IN PARTITION` is materialized by
-            /// a merge in every partition.
-            if (AlterConversions::isSupportedMetadataMutation(command.type))
+            if (command.type == MutationCommand::RENAME_COLUMN)
                 return {};
         }
     }
