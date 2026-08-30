@@ -7,3 +7,4 @@ single aligned donor	assumeNotNull(t)	Tuple(a JSON(max_dynamic_paths=5, SHARED R
 if(tuple,tuple) type	Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
 if(map,map) type	Map(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
 if(arrayZip,arrayZip) type	Array(Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\')))
+if(single-donor branches)	1	1
