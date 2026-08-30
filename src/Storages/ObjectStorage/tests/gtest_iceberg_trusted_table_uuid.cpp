@@ -161,6 +161,27 @@ TEST(IcebergTrustedTableUuid, WatermarkRefreshesTheIdentityAtTheSameVersion)
     EXPECT_FALSE(uuid.needsRevalidation(3, "metadata/v3.metadata.json", identity("etag-v3")));
 }
 
+/// A stable state at a version below the high-water mark must become cacheable again once it
+/// has actually been revalidated. Rolling a table back to an earlier metadata file leaves the
+/// selected version permanently below the mark, and if the revalidation that confirmed the
+/// unchanged `table-uuid` did not record that file, every single query would keep paying for an
+/// uncached read of it. Versions between the rolled-back one and the mark were still never
+/// validated, so they must stay suspicious.
+TEST(IcebergTrustedTableUuid, ARevalidatedLowerVersionBecomesCacheableAgain)
+{
+    TrustedTableUuid uuid("11111111-1111-1111-1111-111111111111");
+    uuid.markValidated(5, "metadata/v5.metadata.json", identity("etag-v5"));
+
+    /// The table is rolled back to version 3; the revalidation confirms the same `table-uuid`.
+    ASSERT_TRUE(uuid.needsRevalidation(3, "metadata/v3.metadata.json", identity("etag-v3")));
+    ASSERT_FALSE(uuid.commitValidated("11111111-1111-1111-1111-111111111111", 3, "metadata/v3.metadata.json", identity("etag-v3")));
+
+    EXPECT_FALSE(uuid.needsRevalidation(3, "metadata/v3.metadata.json", identity("etag-v3")));
+
+    /// The high-water mark did not drop, so a version that was never validated is still checked.
+    EXPECT_TRUE(uuid.needsRevalidation(4, "metadata/v4.metadata.json", identity("etag-v4")));
+}
+
 /// A confirmed replacement does reset the watermark: the recreated table restarts the
 /// numbering, and keeping the previous table's higher watermark would force an uncached read
 /// on every query until the new table caught up with it.
