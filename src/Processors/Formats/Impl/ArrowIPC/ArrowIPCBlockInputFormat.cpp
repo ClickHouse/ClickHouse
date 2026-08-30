@@ -319,39 +319,6 @@ ColumnWithTypeAndName realignStructFieldsToRequested(ColumnWithTypeAndName from,
     return from;
 }
 
-/// A LowCardinality dictionary must have unique values; the library reader rejects non-unique ones.
-/// Validate the common (non-nullable, contiguously-comparable) dictionary value columns.
-void checkDictionaryUnique(const ColumnPtr & values)
-{
-    const IColumn * inner = values.get();
-    const ColumnNullable * nullable = nullptr;
-    if (values->isNullable())
-    {
-        nullable = &assert_cast<const ColumnNullable &>(*values);
-        inner = &nullable->getNestedColumn();
-    }
-    /// Only validate value columns that can be compared cheaply and contiguously.
-    if (!(inner->isFixedAndContiguous() || typeid_cast<const ColumnString *>(inner)))
-        return;
-
-    UnorderedSetWithMemoryTracking<std::string_view> seen;
-    seen.reserve(values->size());
-    bool null_seen = false;
-    for (size_t i = 0; i < values->size(); ++i)
-    {
-        if (nullable && nullable->getNullMapData()[i])
-        {
-            if (null_seen)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
-            null_seen = true;
-        }
-        else if (!seen.emplace(inner->getDataAt(i)).second)
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
-        }
-    }
-}
-
 /// Collects every Arrow dictionary id used anywhere in `field`'s type subtree (the field itself or a
 /// dictionary nested inside its Array/Map/Tuple/Union children). Used to decide which DictionaryBatch
 /// bodies a subset read actually needs.
