@@ -10,7 +10,5 @@ all_2_2_0	1000000	1999999
 7168
 8192
 9216
-MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder)	0
-MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder)	65536
-VirtualRowTransform	0
-VirtualRowTransform	65536
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder)	2	1
+VirtualRowTransform	2	1

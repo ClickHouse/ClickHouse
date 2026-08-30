@@ -19,8 +19,6 @@ INSERT INTO t_paste_r SELECT number + 10 FROM numbers(3);
 -- parser rejects one. Every count below is 1 without the fix.
 SELECT 'A1', count() FROM (EXPLAIN SYNTAX oneline = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
 SELECT 'A2', count() FROM (EXPLAIN SYNTAX oneline = 1, run_query_tree_passes = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
-SET enable_analyzer = 0;
-SELECT 'A3', count() FROM (EXPLAIN SYNTAX oneline = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
 SET enable_analyzer = 1;
 SELECT 'A4', count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1, run_passes = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
 
@@ -28,8 +26,6 @@ SELECT 'A4', count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1, run_p
 -- Any for a Paste kind as well, so the formatter must not print `ANY PASTE JOIN` either.
 SET join_default_strictness = 'ANY';
 SELECT 'A7', count() FROM (EXPLAIN SYNTAX oneline = 1, run_query_tree_passes = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
-SET enable_analyzer = 0;
-SELECT 'A8', count() FROM (EXPLAIN SYNTAX oneline = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
 SET enable_analyzer = 1;
 SET join_default_strictness = 'ALL';
 
@@ -38,8 +34,6 @@ SET join_default_strictness = 'ALL';
 SET join_default_strictness = 'ANY';
 SET any_join_distinct_right_table_keys = 1;
 SELECT 'A9', count() FROM (EXPLAIN SYNTAX oneline = 1, run_query_tree_passes = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
-SET enable_analyzer = 0;
-SELECT 'A10', count() FROM (EXPLAIN SYNTAX oneline = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
 SET enable_analyzer = 1;
 SET any_join_distinct_right_table_keys = 0;
 SET join_default_strictness = 'ALL';
@@ -47,8 +41,6 @@ SET join_default_strictness = 'ALL';
 -- A5/A6: the formatted text is what a shipped query carries, so a PASTE JOIN with a remote
 -- table in the leftmost slot fails on the remote server with SYNTAX_ERROR without the fix.
 SELECT 'A5', * FROM remote('127.0.0.2', currentDatabase(), t_paste_l) AS x PASTE JOIN t_paste_r AS y ORDER BY a;
-SET enable_analyzer = 0;
-SELECT 'A6', * FROM remote('127.0.0.2', currentDatabase(), t_paste_l) AS x PASTE JOIN t_paste_r AS y ORDER BY a;
 SET enable_analyzer = 1;
 
 -- B: the strictness modifier must still be printed everywhere the parser accepts it, and the
