@@ -882,6 +882,9 @@ def start_log_export(servers):
     The reference server is skipped when the commit of its build cannot be
     read: `commit_sha` is what attributes its rows to a build, and the rows
     would be of no use in the CI Logs cluster without it.
+
+    A server whose export cannot be held back has it torn down instead: the
+    export costs this job its logs when it fails, never its measurements.
     """
     info = Info()
     try:
@@ -918,11 +921,27 @@ def start_log_export(servers):
                     f"WARNING: Failed to set up the system log export on the [{node_name}] server"
                 )
                 continue
-            # After the setup: the lock covers the `Distributed` tables that
-            # exist when it is taken, and those are created by the setup.
-            log_export.stop_distributed_sends(server.port)
+            # After the setup, which is what creates the tables the sends are
+            # stopped for.
+            if not log_export.stop_distributed_sends(server.port):
+                # Fail closed. The measured numbers are what this job is for,
+                # the logs are a by-product: an export that cannot be held
+                # back has to go, or it would ship rows over the network while
+                # the queries are measured.
+                print(
+                    f"WARNING: Cannot hold back the log export of the [{node_name}] server "
+                    "for the measured window - tearing the export down, "
+                    "this server will not export its system logs"
+                )
+                log_export.stop(server.port)
         except Exception:
             traceback.print_exc()
+            # The same, for a failure raised rather than reported: whatever the
+            # export is in the middle of, it must not outlive this stage.
+            try:
+                log_export.stop(server.port)
+            except Exception:
+                traceback.print_exc()
     return True
 
 
