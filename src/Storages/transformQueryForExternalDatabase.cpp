@@ -644,7 +644,8 @@ RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, con
 SourceColumnNames getSourceColumnNames(
     const ASTSelectQuery & select,
     const NamesAndTypesList & available_columns,
-    const StorageID & source_storage_id)
+    const StorageID & source_storage_id,
+    const NameSet & local_only_columns = {})
 {
     NameSet source_table_names{source_storage_id.table_name, source_storage_id.getFullNameNotQuoted()};
 
@@ -685,13 +686,19 @@ SourceColumnNames getSourceColumnNames(
         source_table_names.insert(qualifiers.begin(), qualifiers.end());
 
     SourceColumnNames source_columns;
-    for (const auto & col : available_columns)
+    auto add_source_column = [&](const String & column_name)
     {
-        source_columns.emplace(col.name, col.name);
+        source_columns.emplace(column_name, column_name);
         for (const auto & source_table_name : source_table_names)
             if (!source_table_name.empty())
-                source_columns.emplace(source_table_name + "." + col.name, col.name);
-    }
+                source_columns.emplace(source_table_name + "." + column_name, column_name);
+    };
+
+    for (const auto & column : available_columns)
+        add_source_column(column.name);
+    for (const auto & column_name : local_only_columns)
+        add_source_column(column_name);
+
     return source_columns;
 }
 
@@ -768,7 +775,7 @@ String transformQueryForExternalDatabaseImpl(
     if (const auto & original_prewhere = original_select.prewhere())
         original_where = original_where ? makeASTOperator("and", original_where, original_prewhere) : original_prewhere;
 
-    const auto source_columns = getSourceColumnNames(original_select, available_columns, source_storage_id);
+    const auto source_columns = getSourceColumnNames(original_select, available_columns, source_storage_id, local_only_columns);
     const bool where_contains_source_column = containsSourceColumn(original_where, source_columns);
 
     /// First remove predicates belonging to other sources. Such predicates are evaluated by the
@@ -941,7 +948,8 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
     const SelectQueryInfo & query_info,
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
-    const StorageID & source_storage_id)
+    const StorageID & source_storage_id,
+    const NameSet & local_only_columns)
 {
     if (!context->getSettingsRef()[Setting::external_table_strict_query])
         return;
@@ -970,7 +978,8 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         if (select.where())
         {
             auto & where = select.refWhere();
-            auto where_result = removeUnknownSubexpressionsFromWhere(where, getSourceColumnNames(select, available_columns, source_storage_id));
+            auto where_result = removeUnknownSubexpressionsFromWhere(
+                where, getSourceColumnNames(select, available_columns, source_storage_id, local_only_columns));
             if (!where_result.keep)
                 where.reset();
         }
@@ -978,7 +987,8 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         if (select.prewhere())
         {
             auto & prewhere = select.refPrewhere();
-            auto prewhere_result = removeUnknownSubexpressionsFromWhere(prewhere, getSourceColumnNames(select, available_columns, source_storage_id));
+            auto prewhere_result = removeUnknownSubexpressionsFromWhere(
+                prewhere, getSourceColumnNames(select, available_columns, source_storage_id, local_only_columns));
             if (!prewhere_result.keep)
                 prewhere.reset();
         }

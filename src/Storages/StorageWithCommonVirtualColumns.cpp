@@ -43,6 +43,14 @@ void convertToHeader(QueryPlan & query_plan, const Block & header, ContextPtr co
 
 }
 
+NameSet StorageWithCommonVirtualColumns::getPlanVirtualColumnNames(const StorageMetadataPtr & metadata)
+{
+    NameSet result;
+    for (const auto & column : metadata->virtuals.getNamesAndTypes(VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan))
+        result.insert(column.name);
+    return result;
+}
+
 void StorageWithCommonVirtualColumns::read(
     QueryPlan & query_plan,
     const Names & column_names,

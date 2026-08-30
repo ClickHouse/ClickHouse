@@ -287,6 +287,7 @@ Pipe StorageSQLite::read(
     reclassifyGeneratedColumnsFromRemote(context_);
 
     storage_snapshot->check(column_names);
+    NameSet local_only_columns = getPlanVirtualColumnNames(storage_snapshot->metadata);
 
     String query;
     if (remote_table_or_query.isQuery())
@@ -294,7 +295,7 @@ Pipe StorageSQLite::read(
         /// The user-provided query is passed to SQLite as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
         rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID());
+            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID(), local_only_columns);
         query = buildQueryForExternalDatabaseSubquery(
             remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksSQLite);
     }
@@ -324,7 +325,6 @@ Pipe StorageSQLite::read(
         /// like a predicate of another table of the query: it would be dropped as foreign instead of being
         /// kept local, and `external_table_strict_query = 1` would silently accept the query.
         NamesAndTypesList available_columns = storage_snapshot->metadata->getColumns().getAllPhysical();
-        NameSet local_only_columns;
         for (const auto & column : available_columns)
         {
             if (!SQLiteFormatImpl::isPushdownSafeColumn(

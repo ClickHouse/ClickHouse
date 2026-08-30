@@ -28,6 +28,8 @@ public:
         size_t num_streams) override;
 
 protected:
+    static NameSet getPlanVirtualColumnNames(const StorageMetadataPtr & metadata);
+
     virtual void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,

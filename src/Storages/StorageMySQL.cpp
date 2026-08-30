@@ -157,13 +157,14 @@ void StorageMySQL::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    const auto local_only_columns = getPlanVirtualColumnNames(storage_snapshot->metadata);
     String query;
     if (remote_table_or_query.isQuery())
     {
         /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
         rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID());
+            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID(), local_only_columns);
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
     }
     else
@@ -176,7 +177,10 @@ void StorageMySQL::readImpl(
             remote_database_name,
             remote_table_or_query.getTableName(),
             getStorageID(),
-            context_);
+            context_,
+            {},
+            {},
+            local_only_columns);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;

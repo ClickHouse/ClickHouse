@@ -167,13 +167,14 @@ public:
         size_t max_block_size_,
         String remote_table_schema_,
         TableNameOrQuery remote_table_or_query_,
-        postgres::PoolWithFailoverPtr pool_
-    )
+        NameSet local_only_columns_,
+        postgres::PoolWithFailoverPtr pool_)
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
         , remote_table_or_query(remote_table_or_query_)
+        , local_only_columns(std::move(local_only_columns_))
         , pool(std::move(pool_))
     {
     }
@@ -191,6 +192,7 @@ public:
             max_block_size,
             remote_table_schema,
             remote_table_or_query,
+            local_only_columns,
             pool);
     }
 
@@ -203,7 +205,11 @@ public:
             /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
             /// reject any outer filter under external_table_strict_query.
             rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-                query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context, storage_snapshot->storage.getStorageID());
+                query_info,
+                storage_snapshot->metadata->getColumns().getAllPhysical(),
+                context,
+                storage_snapshot->storage.getStorageID(),
+                local_only_columns);
             query = buildQueryForExternalDatabaseSubquery(
                 remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
         }
@@ -225,7 +231,9 @@ public:
                 remote_table_or_query.getTableName(),
                 storage_snapshot->storage.getStorageID(),
                 context,
-                transform_query_limit);
+                transform_query_limit,
+                {},
+                local_only_columns);
         }
         LOG_TRACE(logger, "Query: {}", query);
 
@@ -236,6 +244,7 @@ public:
     size_t max_block_size;
     String remote_table_schema;
     TableNameOrQuery remote_table_or_query;
+    NameSet local_only_columns;
     postgres::PoolWithFailoverPtr pool;
 };
 
@@ -272,6 +281,7 @@ void StoragePostgreSQL::readImpl(
         max_block_size,
         remote_table_schema,
         remote_table_or_query,
+        getPlanVirtualColumnNames(storage_snapshot->metadata),
         pool);
     query_plan.addStep(std::move(reading));
 }
