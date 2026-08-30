@@ -3,8 +3,8 @@
 -- Test the LIKE dictionary-scan guards and the selectivity short-circuit:
 -- 1. `text_index_like_max_postings_rows_to_read` bounds the total posting rows read (charged by
 --    cardinality), cutting the scan short and falling back to brute force.
--- 2. `analyzeCardinalitiesAndBypassPatterns` bypasses a pattern query whose matched-token union is
---    not selective, before any posting list is read.
+-- 2. `analyzeCardinalitiesAndBypassPatterns` bypasses a pattern query whose matched-token union
+--    leaves no row unmatched, before any posting list is read.
 -- In every case the result must equal a plain scan without the index.
 
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
@@ -26,25 +26,26 @@ ENGINE = MergeTree
 ORDER BY id;
 
 -- 100 000 rows, 676 unique alphabetic tokens ('paa'..'pzz'), each ~148 rows (~13 granules),
--- so most tokens have non-embedded postings; '%pa%' matches 26 of them (non-selective).
+-- so most tokens have non-embedded postings; '%pa%' matches 27 of them (3995 rows).
+-- Every row also carries the token 'common', whose posting list covers the whole part.
 INSERT INTO t_text_index_like_guards
-    SELECT number, concat('p', char(97 + (number % 26)), char(97 + intDiv(number, 26) % 26))
+    SELECT number, concat('p', char(97 + (number % 26)), char(97 + intDiv(number, 26) % 26), ' common')
     FROM numbers(100000);
 
 -- Rows budget = 0: any non-embedded posting row overflows immediately -> discard + fallback.
 SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%pa%'
     SETTINGS log_comment = 'like_guards_q1', text_index_like_max_postings_to_read = 1000000, text_index_like_max_postings_rows_to_read = 0;
 
--- Non-selective pattern ('%p%' matches all 100 000 rows) -> bypassed before postings reads.
-SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%p%'
-    SETTINGS log_comment = 'like_guards_q2', text_index_like_min_pattern_length = 1, text_index_like_max_postings_to_read = 1000000;
+-- 'common' is in every row, so its postings cannot prune -> bypassed before postings reads.
+SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%common%'
+    SETTINGS log_comment = 'like_guards_q2', text_index_like_max_postings_to_read = 1000000;
 
 -- Selective token needle: the index serves it, no bypass, correct result.
 SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%paa%' SETTINGS text_index_like_min_pattern_length = 3;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Q1 (rows budget): TextIndexDiscardPatternScan set; Q2 (non-selective): TextIndexDiscardPatternQueryLowSelectivity set.
+-- Q1 (rows budget): TextIndexDiscardPatternScan set; Q2 (covers every row): TextIndexDiscardPatternQueryLowSelectivity set.
 SELECT 'q1',
     ProfileEvents['TextIndexDiscardPatternScan'] > 0 AS discarded_scan,
     ProfileEvents['TextIndexDiscardPatternQueryLowSelectivity'] > 0 AS bypassed_low_selectivity
