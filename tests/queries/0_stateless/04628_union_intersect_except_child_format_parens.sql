@@ -126,11 +126,13 @@ SELECT '===';
 
 -- Case 7: the group in the middle of a three-branch chain, so the child has a
 -- sibling on both sides.
--- {1} UNION ALL ({2} EXCEPT {9}) UNION ALL {3} = {1, 2, 3}
--- Without the fix: ({1} UNION ALL {2}) EXCEPT ({9} UNION ALL {3}) = {1, 2}.
+-- {1} UNION ALL ({2} EXCEPT {1}) UNION ALL {3} = {1, 2, 3}
+-- Without the fix: (({1} UNION ALL {2}) EXCEPT {1}) UNION ALL {3} = {2, 3}. The
+-- trailing UNION is folded in after the EXCEPT node is built, so the group binds
+-- to its left sibling only.
 DROP TABLE IF EXISTS v_union_group_middle;
 
-CREATE VIEW v_union_group_middle AS SELECT 1 AS x UNION ALL (SELECT 2 EXCEPT SELECT 9) UNION ALL SELECT 3;
+CREATE VIEW v_union_group_middle AS SELECT 1 AS x UNION ALL (SELECT 2 EXCEPT SELECT 1) UNION ALL SELECT 3;
 
 SELECT replaceAll(extract(formatQuerySingleLine(create_table_query), 'AS .*'), currentDatabase() || '.', '') FROM system.tables WHERE database = currentDatabase() AND name = 'v_union_group_middle';
 SELECT * FROM v_union_group_middle ORDER BY all;
