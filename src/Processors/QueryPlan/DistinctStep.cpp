@@ -25,6 +25,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+bool preliminaryDistinctIsUseful(size_t max_threads)
+{
+    return max_threads > 1;
+}
+
 static ITransformingStep::Traits getTraits(bool pre_distinct)
 {
     const bool preserves_number_of_streams = pre_distinct;
@@ -135,7 +140,7 @@ void DistinctStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
     settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;

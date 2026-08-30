@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -9,7 +10,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
-#include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
@@ -19,6 +19,8 @@
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
+#include <chrono>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -67,7 +69,6 @@ enum class FrontMessageType : Int32
     EXECUTE = 'E',
     COPY_DATA = 'd',
     COPY_COMPLETION = 'c',
-    COPY_FAILURE = 'f',
 };
 
 enum class MessageType : Int32
@@ -151,7 +152,6 @@ enum class ColumnType : Int32
     FLOAT8 = 701,
     VARCHAR = 1043,
     DATE = 1082,
-    TIMESTAMP = 1114,
     NUMERIC = 1700,
     UUID = 2950,
 };
@@ -161,11 +161,8 @@ class ColumnTypeSpec
 public:
     ColumnType type;
     Int16 len;
-    /// PostgreSQL type modifier (`atttypmod`), sent verbatim in `RowDescription`. -1 means "no modifier";
-    /// for `numeric` it carries the precision and scale (see `convertDataTypeToPostgresColumnTypeSpec`).
-    Int32 type_modifier;
 
-    ColumnTypeSpec(ColumnType type_, Int16 len_, Int32 type_modifier_ = -1) : type(type_), len(len_), type_modifier(type_modifier_) {}
+    ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
 };
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
@@ -184,8 +181,17 @@ public:
     template<typename TMessage>
     std::unique_ptr<TMessage> receiveWithPayloadSize(Int32 payload_size)
     {
+        if (payload_size < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Negative payload size {} received from client", payload_size);
+
         std::unique_ptr<TMessage> message = std::make_unique<TMessage>(payload_size);
-        message->deserialize(*in);
+
+        /// The message is parsed with a buffer limited to the declared payload size, so that parsing
+        /// cannot read past the end of the message. Otherwise a client could declare a small message
+        /// and then stream data without a terminator, making the parser consume it without a bound.
+        LimitReadBuffer limited_in(*in, {.read_no_more = static_cast<size_t>(payload_size)});
+        message->deserialize(limited_in);
         return message;
     }
 
@@ -449,7 +455,9 @@ public:
 
             parameters.insert({std::move(parameter_name), std::move(parameter_value)});
 
-            if (payload_size < 0)
+            /// `payload_size` is the declared size of the message and never changes, so the check
+            /// has to be made against the remaining size instead.
+            if (ps < 0)
             {
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                                 "Size of payload is larger than one declared in the message of type {}.",
@@ -992,7 +1000,7 @@ public:
         writeBinaryBigEndian(static_cast<Int16>(0), out);
         writeBinaryBigEndian(static_cast<Int32>(type_spec.type), out);
         writeBinaryBigEndian(type_spec.len, out);
-        writeBinaryBigEndian(type_spec.type_modifier, out);
+        writeBinaryBigEndian(static_cast<Int32>(-1), out);
         writeBinaryBigEndian(static_cast<Int16>(format_code), out);
     }
 
@@ -1215,38 +1223,6 @@ public:
     }
 };
 
-/// Sent by the client to abort an in-progress `COPY FROM STDIN` (libpq emits it when the local data
-/// source errors out or the copy is cancelled). The body is a human-readable failure reason.
-class CopyFail : FrontMessage
-{
-public:
-    String message;
-
-    void deserialize(ReadBuffer & in) override
-    {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        if (sz < static_cast<Int32>(sizeof(Int32)))
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong message length {} in CopyFail, it must be at least 4", sz);
-        message.reserve(sz - sizeof(Int32));
-        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
-        {
-            char byte = 0;
-            readBinary(byte, in);
-            message.push_back(byte);
-        }
-        /// The reason is a null-terminated string; drop the trailing NUL if present.
-        if (!message.empty() && message.back() == '\0')
-            message.pop_back();
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_FAIL;
-    }
-};
-
 class CopyOutData : public BackendMessage
 {
     VectorWithMemoryTracking<char> data;
@@ -1341,15 +1317,14 @@ public:
         ALTER_TABLE = 14,
         TRUNCATE = 15,
         USE = 16,
-        SET = 17,
-        ROLLBACK = 18
+        SET = 17
     };
 private:
-    String enum_to_string[19] =
+    String enum_to_string[18] =
     {
         "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET", "ROLLBACK"
+        "TRUNCATE", "USE", "SET"
     };
 
     String value;
@@ -1400,12 +1375,7 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
-    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly.
-    // Only ASCII is classified and case-folded. The text is matched against ASCII keywords, while the query carries
-    // arbitrary user bytes - a `SET application_name` value, a string literal - so the locale-dependent `std::isspace` /
-    // `std::toupper` must not see it: they are undefined for a negative `char` (any byte >= 0x80 on a signed-`char`
-    // build) and would otherwise make the classification depend on the process locale. Non-ASCII bytes are copied
-    // through unchanged, which is what keyword matching needs.
+    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
     static String extractNormalizedPrefix(const String & query, size_t max_len)
     {
         String prefix;
@@ -1415,8 +1385,7 @@ public:
 
         for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
         {
-            const char c = query[i];
-            if (isWhitespaceASCII(c))
+            if (std::isspace(query[i]))
             {
                 if (!prev_was_space)
                 {
@@ -1426,7 +1395,7 @@ public:
             }
             else
             {
-                prefix.push_back(isAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c);
+                prefix.push_back(static_cast<char>(std::toupper(query[i])));
                 prev_was_space = false;
             }
         }
@@ -1445,11 +1414,7 @@ public:
             {"ALTER TABLE", Command::ALTER_TABLE},
             {"TRUNCATE", Command::TRUNCATE},
             {"BEGIN", Command::BEGIN},
-            {"START TRANSACTION", Command::BEGIN},
             {"COMMIT", Command::COMMIT},
-            {"END", Command::COMMIT},
-            {"ROLLBACK", Command::ROLLBACK},
-            {"ABORT", Command::ROLLBACK},
             {"INSERT", Command::INSERT},
             {"DELETE", Command::DELETE},
             {"UPDATE", Command::UPDATE},
@@ -1501,6 +1466,11 @@ protected:
     }
 
 public:
+    virtual bool isSupportedForUser(const String &, Session &) const
+    {
+        return true;
+    }
+
     virtual void authenticate(
         const String & user_name,
         Session & session,
@@ -1561,6 +1531,137 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
+    enum class ScramSaltKind : uint8_t
+    {
+        /// The user has no `scram_sha256_password` at all.
+        NoScram,
+        /// Live verifiers sharing a single salt, which PostgreSQL SCRAM can offer on the wire.
+        Live,
+        /// Only expired verifiers: the salt is still usable to run the exchange and report invalid credentials.
+        ExpiredOnly,
+        /// A live verifier that PostgreSQL SCRAM cannot represent: a second factor, several different salts to
+        /// choose from, or another method that narrows the session and which a SCRAM client proof cannot be checked
+        /// against.
+        UnsupportedConfiguration,
+    };
+
+    struct ScramSalt
+    {
+        ScramSaltKind kind = ScramSaltKind::NoScram;
+        String salt;
+        /// The user has another live authentication method that the PostgreSQL protocol can offer on the wire.
+        bool has_live_alternative = false;
+    };
+
+    /// A method that limits the session (`GRANTS`) or its lifetime (`VALID UNTIL`) takes part in the fail-close
+    /// combination of `IAccessStorage::authenticateImpl` when it accepts the same credential.
+    static bool methodNarrowsSession(const AuthenticationData & auth_method)
+    {
+        return auth_method.getValidUntil() != 0 || !auth_method.getGrants().structurallyEmpty();
+    }
+
+    ScramSalt getScramSalt(const String & user_name, Session & session) const
+    {
+        const auto & access_control = session.globalContext()->getAccessControl();
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+        ScramSalt result;
+        std::optional<String> expired_scram_salt;
+        std::optional<String> live_scram_salt;
+        bool unsupported_configuration = false;
+
+        if (auto id = access_control.find<User>(user_name))
+        {
+            if (auto user = access_control.tryRead<User>(*id))
+            {
+                /// First pass: choose the salt that `AuthenticationSASLContinue` would send.
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
+                        continue;
+
+                    const auto valid_until = auth_method.getValidUntil();
+                    if (valid_until && now > valid_until)
+                    {
+                        if (!expired_scram_salt)
+                            expired_scram_salt = auth_method.getSalt();
+                        continue;
+                    }
+
+                    /// PostgreSQL SCRAM cannot represent a second factor.
+                    if (auth_method.getOneTimePassword())
+                    {
+                        unsupported_configuration = true;
+                        continue;
+                    }
+
+                    /// Several live verifiers are representable as long as they agree on the salt: the exchange sends a
+                    /// single salt in `AuthenticationSASLContinue`, and the client proof derived from it is then checked
+                    /// against every stored salted password of the user. Differing salts cannot be represented, because
+                    /// only one of them can be sent on the wire.
+                    if (live_scram_salt && *live_scram_salt != auth_method.getSalt())
+                    {
+                        unsupported_configuration = true;
+                        continue;
+                    }
+
+                    live_scram_salt = auth_method.getSalt();
+                }
+
+                /// Second pass: look for the other authentication methods of the user.
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    const auto type = auth_method.getType();
+                    const auto valid_until = auth_method.getValidUntil();
+                    const bool expired = valid_until && now > valid_until;
+
+                    /// The only other authentication methods the PostgreSQL protocol can offer on the wire.
+                    if (!expired
+                        && (type == AuthenticationType::NO_PASSWORD || type == AuthenticationType::PLAINTEXT_PASSWORD))
+                        result.has_live_alternative = true;
+
+                    if (!live_scram_salt)
+                        continue;
+
+                    /// `IAccessStorage::authenticateImpl` fails close for ambiguous credentials: when the same
+                    /// credential is accepted by several methods, the session is limited to the intersection of their
+                    /// `GRANTS` and expires at the earliest of their `VALID UNTIL`, even when that moment has already
+                    /// passed. That scan re-checks the credential against the other methods, but a SCRAM client proof
+                    /// can only be checked against a `scram_sha256_password` method that uses the very salt sent in
+                    /// `AuthenticationSASLContinue`: the proof is derived from the salted password and the salt is part
+                    /// of the authentication message. A method that could narrow the session but cannot be matched by
+                    /// the proof would silently drop out of the combination, so a password shared with such a method
+                    /// would be accepted over PostgreSQL while the native protocol rejects it as expired or grants it
+                    /// less. Refuse to run the exchange in that case instead of authenticating with weaker checks.
+                    if (!methodNarrowsSession(auth_method))
+                        continue;
+                    /// Methods verified against an external system never take part in the combination.
+                    if (!authenticationTypeIsVerifiedLocally(type))
+                        continue;
+                    if (type == AuthenticationType::SCRAM_SHA256_PASSWORD && auth_method.getSalt() == *live_scram_salt)
+                        continue;
+
+                    unsupported_configuration = true;
+                }
+            }
+        }
+
+        if (unsupported_configuration)
+            result.kind = ScramSaltKind::UnsupportedConfiguration;
+        else if (live_scram_salt)
+        {
+            result.kind = ScramSaltKind::Live;
+            result.salt = *live_scram_salt;
+        }
+        else if (expired_scram_salt)
+        {
+            result.kind = ScramSaltKind::ExpiredOnly;
+            result.salt = *expired_scram_salt;
+        }
+
+        return result;
+    }
+
     static size_t findPatternPosition(const String & key, const String & pattern)
     {
         size_t pos = key.size();
@@ -1612,6 +1713,22 @@ class ScrambleSHA256Auth : public AuthenticationMethod
     }
 
 public:
+    bool isSupportedForUser(const String & user_name, Session & session) const override
+    {
+        const auto scram_salt = getScramSalt(user_name, session);
+
+        if (scram_salt.kind == ScramSaltKind::NoScram)
+            return false;
+        if (scram_salt.kind == ScramSaltKind::Live)
+            return true;
+
+        /// Neither an expired verifier nor a configuration that the protocol cannot represent can lead to a successful
+        /// login. Select SCRAM in these cases only if nothing else can succeed either, so that an expired verifier is
+        /// reported as invalid credentials and an unsupported configuration is reported as such, instead of shadowing
+        /// a method that would have worked.
+        return !scram_salt.has_live_alternative;
+    }
+
     static String generateNonce()
     {
         static constexpr size_t nonce_length = 16;
@@ -1671,6 +1788,11 @@ public:
 
         String auth_message;
 
+        const auto scram_salt = getScramSalt(user_name, session);
+        if (scram_salt.kind == ScramSaltKind::UnsupportedConfiguration || scram_salt.kind == ScramSaltKind::NoScram)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
+
         mt.send(Messaging::AuthenticationSASL(), true);
         auto rsp = mt.receive<Messaging::SASLInitialResponse>();
 
@@ -1679,19 +1801,7 @@ public:
         auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
         auto nonce = client_nonce + server_nonce;
 
-        String salt;
-        const auto& access_control = session.globalContext()->getAccessControl();
-        if (auto id = access_control.find<User>(user_name))
-        {
-            if (auto user = access_control.tryRead<User>(*id))
-            {
-                for (const auto & auth_method : user->authentication_methods)
-                {
-                    salt = auth_method.getSalt();
-                }
-            }
-        }
-        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
+        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, scram_salt.salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();
@@ -1736,7 +1846,7 @@ public:
 
             for (auto user_authentication_type : user_authentication_types)
             {
-                if (type_to_method.contains(user_authentication_type))
+                if (type_to_method.contains(user_authentication_type) && type_to_method[user_authentication_type]->isSupportedForUser(user_name, session))
                 {
                     type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
                     mt.send(Messaging::AuthenticationOk(), true);
@@ -1745,10 +1855,14 @@ public:
                 }
             }
         }
-        catch (const Exception&)
+        catch (const Exception & e)
         {
-            mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
-                    true);
+            const bool unsupported_authentication_configuration = e.code() == ErrorCodes::NOT_IMPLEMENTED;
+            mt.send(Messaging::ErrorOrNoticeResponse(
+                Messaging::ErrorOrNoticeResponse::ERROR,
+                unsupported_authentication_configuration ? "0A000" : "28P01",
+                unsupported_authentication_configuration ? "Authentication configuration is not supported by the PostgreSQL protocol" : "Invalid user or password"),
+                true);
 
             throw;
         }

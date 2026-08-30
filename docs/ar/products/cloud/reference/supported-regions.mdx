@@ -9,68 +9,69 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="aws-regions">
-  ## مناطق AWS
+<div id="supported-regions">
+  ## المناطق المدعومة
 </div>
 
-* ap-northeast-1 (طوكيو)
-* ap-northeast-2 (كوريا الجنوبية، سيول)
-* ap-south-1 (مومباي)
-* ap-southeast-1 (سنغافورة)
-* ap-southeast-2 (سيدني)
-* eu-central-1 (فرانكفورت)
-* eu-west-1 (أيرلندا)
-* eu-west-2 (لندن)
-* us-east-1 (شمال فيرجينيا)
-* us-east-2 (أوهايو)
-* us-west-2 (أوريغون)
-* il-central-1 (إسرائيل، تل أبيب)
-* ca-central-1 (كندا)
+توضح الجداول التالية المناطق المدعومة حسب مزود السحابة. تشير الشارات إلى توفر منطقة خاصة وHIPAA وPCI. أما المناطق التي لا تحمل شارة، فلا تتوفر فيها حاليًا أي من هذه الخيارات.
 
-**منطقة خاصة:**
+<Tabs>
+  <Tab title="AWS" id="aws-regions" icon="aws">
+    | المنطقة          | التوافر                                                                                              |
+    | ---------------- | ---------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">خاص</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">خاص</Badge>                                                                    |
+    | `ap-northeast-1` | —                                                                                                    |
+    | `ap-northeast-2` | —                                                                                                    |
+    | `ap-south-1`     | —                                                                                                    |
+    | `ap-southeast-1` | —                                                                                                    |
+    | `ap-southeast-2` | —                                                                                                    |
+    | `ap-southeast-3` | <Badge color="purple">خاص</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">خاص</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `eu-north-1`     | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `il-central-1`   | —                                                                                                    |
+    | `mx-central-1`   | <Badge color="purple">خاص</Badge> <Badge color="blue">PCI</Badge>                                    |
+    | `sa-east-1`      | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+  </Tab>
 
-* af-south-1 (جنوب أفريقيا)
-* eu-north-1 (ستوكهولم)
-* sa-east-1 (أمريكا الجنوبية)
-* ap-southeast-3 (جاكرتا)
-* ap-east-1 (هونغ كونغ)
-* mx-central-1 (المكسيك)
+  <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
+    | المنطقة                   | التوافر                                                            |
+    | ------------------------- | ------------------------------------------------------------------ |
+    | `asia-northeast1`         | —                                                                  |
+    | `asia-southeast1`         | —                                                                  |
+    | `australia-southeast1`    | <Badge color="purple">خاص</Badge>                                  |
+    | `europe-west2`            | —                                                                  |
+    | `europe-west3`            | <Badge color="purple">خاص</Badge>                                  |
+    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">خاص</Badge>                                  |
+    | `northamerica-northeast1` | <Badge color="purple">خاص</Badge>                                  |
+    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">خاص</Badge>                                  |
+  </Tab>
 
-<div id="google-cloud-regions">
-  ## مناطق Google Cloud
-</div>
-
-* asia-southeast1 (سنغافورة)
-* asia-northeast1 (طوكيو)
-* europe-west2 (لندن)
-* europe-west4 (هولندا)
-* us-central1 (آيوا)
-* us-east1 (كارولاينا الجنوبية)
-
-**منطقة خاصة:**
-
-* australia-southeast1(سيدني)
-* europe-west3 (فرانكفورت)
-* europe-west6 (زيورخ)
-* northamerica-northeast1 (مونتريال)
-* us-west1 (أوريغون)
-
-<div id="azure-regions">
-  ## مناطق Azure
-</div>
-
-* West US 3 (أريزونا)
-* East US 2 (فيرجينيا)
-* Germany West Central (فرانكفورت)
-
-**منطقة خاصة:**
-
-* Japan East (طوكيو، سايتاما)
-* UAE North (دبي)
-* Australia East (نيو ساوث ويلز)
+  <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
+    | المنطقة                | التوافر                           |
+    | ---------------------- | --------------------------------- |
+    | `Australia East`       | <Badge color="purple">خاص</Badge> |
+    | `East US 2`            | —                                 |
+    | `Germany West Central` | —                                 |
+    | `Japan East`           | <Badge color="purple">خاص</Badge> |
+    | `UAE North`            | <Badge color="purple">خاص</Badge> |
+    | `West US 3`            | —                                 |
+  </Tab>
+</Tabs>
 
 <Note>
-  هل تحتاج إلى النشر في منطقة غير مدرجة حاليًا؟ [قدّم طلبًا](https://clickhouse.com/pricing?modal=open).
+  هل تحتاج إلى النشر في منطقة غير مدرجة حاليًا؟ [أرسل طلبًا](https://clickhouse.com/pricing?modal=open).
 </Note>
 
 <div id="private-regions">
@@ -79,15 +80,14 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="ميزة المناطق الخاصة" />
 
-نوفر مناطق خاصة لخدماتنا من فئة Enterprise. يُرجى [التواصل معنا](https://clickhouse.com/company/contact) لطلب مناطق خاصة.
+نوفر مناطق خاصة للخدمات من فئة Enterprise. يُرجى [التواصل معنا](https://clickhouse.com/company/contact) لطلب منطقة خاصة.
 
 اعتبارات أساسية بشأن المناطق الخاصة:
 
 * لن تتوسع الخدمات تلقائيًا؛ ومع ذلك، يتوفر التوسع الرأسي والأفقي يدويًا.
 * لا يمكن تحويل الخدمات إلى حالة الخمول.
-* صفحة الحالة غير متاحة للمناطق الخاصة.
 
-قد تنطبق متطلبات إضافية للامتثال لمعايير HIPAA (بما في ذلك توقيع اتفاقية BAA). يُرجى ملاحظة أن HIPAA متاح حاليًا فقط للخدمات من فئة Enterprise
+قد تنطبق متطلبات إضافية للامتثال لمتطلبات HIPAA، بما في ذلك توقيع اتفاقية الشريك التجاري (BAA). يتوفر HIPAA حاليًا فقط للخدمات من فئة Enterprise.
 
 <div id="hipaa-compliant-regions">
   ## المناطق المتوافقة مع HIPAA
@@ -95,21 +95,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
-يجب على العملاء توقيع اتفاقية شريك أعمال (BAA) وطلب التهيئة عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المتوافقة مع HIPAA. تدعم المناطق التالية الامتثال لمتطلبات HIPAA:
-
-* AWS af-south-1 (جنوب أفريقيا) **منطقة خاصة**
-* AWS ca-central-1 (كندا)
-* AWS eu-central-1 (فرانكفورت)
-* AWS eu-north-1 (ستوكهولم) **منطقة خاصة**
-* AWS eu-west-1 (أيرلندا)
-* AWS eu-west-2 (لندن)
-* AWS sa-east-1 (أمريكا الجنوبية) **منطقة خاصة**
-* AWS us-east-1 (شمال فيرجينيا)
-* AWS us-east-2 (أوهايو)
-* AWS us-west-2 (أوريغون)
-* GCP europe-west4 (هولندا)
-* GCP us-central1 (آيوا)
-* GCP us-east1 (كارولاينا الجنوبية)
+يجب على العملاء توقيع اتفاقية الشريك التجاري (BAA) وطلب عملية الإعداد عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المحددة في الجدول على أنها متوافقة مع HIPAA.
 
 <div id="pci-compliant-regions">
   ## المناطق المتوافقة مع PCI
@@ -117,19 +103,4 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 
-يجب على العملاء طلب عملية الإعداد عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المتوافقة مع PCI. وتدعم المناطق التالية التوافق مع PCI:
-
-* AWS af-south-1 (جنوب أفريقيا) **منطقة خاصة**
-* AWS ca-central-1 (كندا)
-* AWS eu-central-1 (فرانكفورت)
-* AWS eu-north-1 (ستوكهولم) **منطقة خاصة**
-* AWS eu-west-1 (أيرلندا)
-* AWS eu-west-2 (لندن)
-* AWS mx-central-1 (المكسيك) **منطقة خاصة**
-* AWS sa-east-1 (أمريكا الجنوبية) **منطقة خاصة**
-* AWS us-east-1 (شمال فيرجينيا)
-* AWS us-east-2 (أوهايو)
-* AWS us-west-2 (أوريغون)
-* GCP europe-west4 (هولندا)
-* GCP us-central1 (آيوا)
-* GCP us-east1 (كارولاينا الجنوبية)
+يجب على العملاء طلب عملية الإعداد عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المعلَّمة في الجدول بأنها متوافقة مع PCI.

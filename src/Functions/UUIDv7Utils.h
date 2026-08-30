@@ -62,8 +62,9 @@ struct CounterFields
 struct Data
 {
     /// Guarantee counter monotonicity within one timestamp across all threads generating UUIDv7 simultaneously.
-    static inline CounterFields fields;
-    static inline SharedMutex mutex; /// works a little bit faster than std::mutex here
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static CounterFields fields;
+    static SharedMutex mutex; /// works a little bit faster than std::mutex here
     std::lock_guard<SharedMutex> guard;
 
     Data()
