@@ -47,9 +47,6 @@ protected:
     FormatSettings settings;
     WriteBuffer * ostr;
 
-private:
-    void writeLine(const std::vector<String> & values);
-
     Names fields;
 };
 

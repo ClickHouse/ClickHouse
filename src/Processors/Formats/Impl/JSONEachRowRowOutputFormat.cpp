@@ -72,31 +72,21 @@ void JSONEachRowRowOutputFormat::writeRowBetweenDelimiter()
 }
 
 
-void JSONEachRowRowOutputFormat::writeLine(const std::vector<String> & values)
-{
-    JSONUtils::makeNamesValidJSONStrings(values, settings, settings.json.validate_utf8);
-    writeChar('[', *ostr);
-    for (size_t i = 0; i < values.size(); ++i)
-    {
-        writeChar('\"', *ostr);
-        writeString(values[i], *ostr);
-        writeChar('\"', *ostr);
-        if (i + 1 != values.size())
-            writeFieldDelimiter();
-    }
-    writeCString("]\n", *ostr);
-}
-
-
 void JSONEachRowRowOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)
-        writeLine(JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8));
+        JSONUtils::writeStringFieldsFromJSONArrayRow(
+            JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8),
+            *ostr,
+            pretty_json ? ",\n" : ",");
 
     if (with_types)
-        writeLine(JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8));
+        JSONUtils::writeStringFieldsFromJSONArrayRow(
+            JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8),
+            *ostr,
+            pretty_json ? ",\n" : ",");
 
     if (settings.json.array_of_rows)
     {

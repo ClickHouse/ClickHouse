@@ -777,6 +777,38 @@ namespace JSONUtils
         return true;
     }
 
+    std::vector<String> readStringFieldsFromJSONArrayRow(ReadBuffer & in, const FormatSettings & settings)
+    {
+        skipArrayStart(in);
+        std::vector<String> fields;
+        String field;
+        do
+        {
+            skipWhitespaceIfAny(in);
+            readJSONString(field, in, settings.json);
+            fields.push_back(field);
+            skipWhitespaceIfAny(in);
+        }
+        while (checkChar(',', in));
+
+        skipArrayEnd(in);
+        return fields;
+    }
+
+    void writeStringFieldsFromJSONArrayRow(const Strings & fields, WriteBuffer & out, const char * field_delimiter)
+    {
+        writeChar('[', out);
+        for (size_t i = 0; i < fields.size(); ++i)
+        {
+            writeChar('"', out);
+            writeString(fields[i], out);
+            writeChar('"', out);
+            if (i + 1 != fields.size())
+                writeCString(field_delimiter, out);
+        }
+        writeCString("]\n", out);
+    }
+
     void skipObjectStart(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);

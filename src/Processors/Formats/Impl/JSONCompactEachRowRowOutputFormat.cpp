@@ -71,30 +71,21 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
     writeRowEndDelimiter();
 }
 
-void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & values)
-{
-    JSONUtils::makeNamesValidJSONStrings(values, settings, settings.json.validate_utf8);
-    writeRowStartDelimiter();
-    for (size_t i = 0; i < values.size(); ++i)
-    {
-        writeChar('\"', *ostr);
-        writeString(values[i], *ostr);
-        writeChar('\"', *ostr);
-        if (i + 1 != values.size())
-            writeFieldDelimiter();
-    }
-    writeRowEndDelimiter();
-}
-
 void JSONCompactEachRowRowOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)
-        writeLine(JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8));
+        JSONUtils::writeStringFieldsFromJSONArrayRow(
+            JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8),
+            *ostr,
+            ", ");
 
     if (with_types)
-        writeLine(JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8));
+        JSONUtils::writeStringFieldsFromJSONArrayRow(
+            JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8),
+            *ostr,
+            ", ");
 }
 
 void JSONCompactEachRowRowOutputFormat::writeSuffix()

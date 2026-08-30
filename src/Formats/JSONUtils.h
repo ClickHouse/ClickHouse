@@ -176,6 +176,13 @@ namespace JSONUtils
     bool checkAndSkipArrayStart(ReadBuffer & in);
     bool checkAndSkipArrayEnd(ReadBuffer & in);
 
+    /// Read string fields from a JSON array row, e.g. `["id", "name"]`.
+    std::vector<String> readStringFieldsFromJSONArrayRow(ReadBuffer & in, const FormatSettings & settings);
+
+    /// Write string fields as a JSON array row, e.g. `["id", "name"]`.
+    /// Each field is expected to be pre-escaped for JSON string literal content (as returned by `makeNamesValidJSONStrings`).
+    void writeStringFieldsFromJSONArrayRow(const Strings & fields, WriteBuffer & out, const char * field_delimiter);
+
     void skipObjectStart(ReadBuffer & in);
     void skipObjectEnd(ReadBuffer & in);
     bool checkAndSkipObjectStart(ReadBuffer & in);

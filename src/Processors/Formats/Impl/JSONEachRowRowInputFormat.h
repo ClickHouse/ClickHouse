@@ -85,7 +85,6 @@ private:
     bool with_names;
     bool with_types;
 
-    std::vector<String> readHeaderRow();
     void validateTypesFromHeader(const std::vector<String> & column_names, const std::vector<String> & type_names);
 
 protected:
@@ -118,8 +117,6 @@ private:
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
-
-    std::vector<String> readHeaderRow();
 
     bool with_names;
     bool with_types;
