@@ -833,7 +833,8 @@ void addAggregationStep(QueryPlan & query_plan,
     const QueryNode & query_node,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    bool group_by_keys_semantically_constant)
 {
     auto aggregation_analysis_result = expression_analysis_result.getAggregation();
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
@@ -891,6 +892,9 @@ void addAggregationStep(QueryPlan & query_plan,
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         force_aggregation_in_order);
+
+    if (group_by_keys_semantically_constant)
+        aggregating_step->markGroupByKeysSemanticallyConstant();
 
     if (!query_analysis_result.aggregate_final)
         applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
@@ -2755,6 +2759,12 @@ void Planner::buildPlanForQueryNode()
         if (expression_analysis_result.hasAggregation())
         {
             auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
+
+            /// Computed before `addExpressionStep` moves the DAG out of the analysis result.
+            bool group_by_keys_semantically_constant = aggregation_analysis_result.before_aggregation_actions
+                && allAggregationKeysAreSemanticallyConstant(
+                    aggregation_analysis_result.before_aggregation_actions->dag, aggregation_analysis_result.aggregation_keys);
+
             if (aggregation_analysis_result.before_aggregation_actions)
                 addExpressionStep(
                     planner_context,
@@ -2765,7 +2775,13 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context);
+            addAggregationStep(
+                query_plan,
+                query_node,
+                expression_analysis_result,
+                query_analysis_result,
+                planner_context,
+                group_by_keys_semantically_constant);
         }
 
         /** If we have aggregation, we can't execute any later-stage

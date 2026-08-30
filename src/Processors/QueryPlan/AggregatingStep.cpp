@@ -94,6 +94,40 @@ static bool allAggregationKeysAreConstant(const Block & header, const Names & ke
     return true;
 }
 
+/// See the declaration for the contract. A node is semantically constant when it carries a folded
+/// constant column, or is `materialize` over a semantically constant argument: `materialize` is
+/// explicitly not constant-folded, so `GROUP BY materialize(1)` reaches the aggregation with a
+/// full (non-const) key column while still producing a single group.
+static bool isSemanticallyConstantNode(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+
+    if (node->column && isColumnConst(*node->column))
+        return true;
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+        && node->function_base->getName() == "materialize")
+        return isSemanticallyConstantNode(node->children.front());
+
+    return false;
+}
+
+bool allAggregationKeysAreSemanticallyConstant(const ActionsDAG & dag, const Names & keys)
+{
+    if (keys.empty())
+        return false;
+
+    for (const auto & key : keys)
+    {
+        const auto * node = dag.tryFindInOutputs(key);
+        if (!node || !isSemanticallyConstantNode(node))
+            return false;
+    }
+
+    return true;
+}
+
 static bool memoryBoundMergingWillBeUsed(
     bool should_produce_results_in_order_of_bucket_number,
     bool memory_bound_merging_of_aggregation_results_enabled,
@@ -706,8 +740,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// proportional to the result; it would only serialize the upstream scan/filter and
             /// lose parallel-scan throughput.
             /// An aggregation whose keys are all constant has the same shape - a single group, and
-            /// therefore one partial state per stream - and is excluded for the same reason.
+            /// therefore one partial state per stream - and is excluded for the same reason. The header
+            /// check misses keys whose constness was stripped by `materialize`; those are caught by the
+            /// callers via `markGroupByKeysSemanticallyConstant`.
             bool use_gradual_resize = !params.keys.empty()
+                && !group_by_keys_semantically_constant
                 && !allAggregationKeysAreConstant(pipeline.getHeader(), params.keys)
                 && (settings.min_rows_per_stream_for_gradual_resize || settings.min_bytes_per_stream_for_gradual_resize);
 

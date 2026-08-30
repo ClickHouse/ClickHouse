@@ -26,6 +26,14 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
 /// the key's name, the sort would order by something the heap never ranked and pruning could drop real winners.
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
 
+/// Whether every one of `keys` is semantically a constant in `dag`: a folded constant, or a constant
+/// wrapped in `materialize` (possibly nested, possibly through aliases). Such an aggregation produces a
+/// single group even though the key columns in the pipeline header are not `ColumnConst` - `materialize`
+/// deliberately strips constness - so callers of `AggregatingStep` use it to keep the strict pre-aggregation
+/// resize for queries like `GROUP BY materialize(1)` (see `markGroupByKeysSemanticallyConstant`).
+/// Best-effort: an expression over a materialized constant (e.g. `materialize(1) + 0`) is not recognized.
+bool allAggregationKeysAreSemanticallyConstant(const ActionsDAG & dag, const Names & keys);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.
@@ -91,6 +99,12 @@ public:
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
+    /// The caller determined (from the pre-aggregation actions DAG, before `materialize` strips constness -
+    /// see `allAggregationKeysAreSemanticallyConstant`) that every `GROUP BY` key is a constant, so the
+    /// aggregation produces a single group and the gradual pre-aggregation resize must not be used.
+    /// Not serialized with the plan: a deserialized step merely falls back to the header-based
+    /// `ColumnConst` check, which affects only the choice between the strict and the gradual resize.
+    void markGroupByKeysSemanticallyConstant() { group_by_keys_semantically_constant = true; }
     void setLimitHint(size_t limit) { limit_hint = limit; }
     size_t getLimitHint() const { return limit_hint; }
     const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
@@ -164,6 +178,7 @@ private:
     size_t merge_threads;
     size_t temporary_data_merge_threads;
     bool skip_merging = false; // if we aggregate partitioned data merging is not needed
+    bool group_by_keys_semantically_constant = false; /// See `markGroupByKeysSemanticallyConstant`.
 
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;
