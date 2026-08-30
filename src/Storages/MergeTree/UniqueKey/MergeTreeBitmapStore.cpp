@@ -511,19 +511,23 @@ size_t MergeTreeBitmapStore::removeObsoleteBitmaps(const MergeTreePartInfo & par
 
     /// Outside the entry lock: the floor below is what keeps a live reader off these versions
     auto & storage = mutableStorage(*part);
-    size_t removed = 0;
+    std::vector<CSN> removed;
     for (auto version : to_remove)
     {
         const bool existed = DeleteBitmapFileOps::removeVersion(storage, version);
         if (cache)
             cache->remove(DeleteBitmapCache::makeKey(part->getDeleteBitmapCacheIdentity(), version));
         if (!existed)
+        {
+            LOG_WARNING(log, "Try to remove obsolete delete bitmap version {} of part {} (oldest_snapshot={}), but the file does not exist",
+                        version, part_info.getPartNameV1(), oldest_snapshot_csn);
             continue;
+        }
 
-        ++removed;
+        removed.push_back(version);
     }
     LOG_TRACE(log, "Removed obsolete delete bitmap versions {} of part {} (oldest_snapshot={})",
-                fmt::join(to_remove, ","), part_info.getPartNameV1(), oldest_snapshot_csn);
+                fmt::join(removed, ","), part_info.getPartNameV1(), oldest_snapshot_csn);
 
     /// By value, not by re-running the bisect: a settle can publish a version below the floor
     /// It's fine for this infrequent cleanup
@@ -535,7 +539,7 @@ size_t MergeTreeBitmapStore::removeObsoleteBitmaps(const MergeTreePartInfo & par
         });
         chassert(std::is_sorted(entry->settled.begin(), entry->settled.end()));
     }
-    return removed;
+    return removed.size();
 }
 
 }
