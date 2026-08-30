@@ -14,19 +14,20 @@ SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 
--- The outer query carries `optimize_aggregation_in_order = 1`, which the parallel-
--- replicas planner uses to derive `WithOrder` for the standard-aggregator path. The
--- inner SETTINGS pin `optimize_aggregation_in_order = 0` on each subquery, but the
--- sharded-aggregator subquery still scatters rows by hash and ends up announcing
--- `Default`. Both subqueries share the same `ParallelReplicasReadingCoordinator`
--- instance, which is what the bug requires.
+-- The outer query carries `optimize_aggregation_in_order = 1`, which the parallel-replicas
+-- planner would use to derive `WithOrder` for the subqueries' reads if it planned them with the
+-- outer scope's settings; each subquery's own SETTINGS pin `optimize_aggregation_in_order = 0`,
+-- so a correct plan announces `Default`. Both subqueries read the same table and share the same
+-- `ParallelReplicasReadingCoordinator` instance, which is what the bug required: a subquery
+-- planned under the wrong settings scope announced a different mode to the already-created
+-- coordinator.
 SELECT
     (SELECT count() FROM
         (SELECT a, sum(b) FROM t_pr_coord_collision GROUP BY a
-         SETTINGS enable_sharding_aggregator = 0, optimize_aggregation_in_order = 0)) > 0,
+         SETTINGS optimize_aggregation_in_order = 0)) > 0,
     (SELECT count() FROM
         (SELECT a, sum(b) FROM t_pr_coord_collision GROUP BY a
-         SETTINGS enable_sharding_aggregator = 1, optimize_aggregation_in_order = 0)) > 0
+         SETTINGS optimize_aggregation_in_order = 0)) > 0
 SETTINGS optimize_aggregation_in_order = 1;
 
 DROP TABLE t_pr_coord_collision;
