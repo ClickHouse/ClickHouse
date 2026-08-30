@@ -52,3 +52,6 @@ RegularMerge	0	200
 -- Case 19: blocked patched merge keeps its GROUP BY TTL entry
 100
 1
+-- Case 20: the carried GROUP BY entry leaves the part schedulable
+100
+rolled up after the blocked patched merge: 1
