@@ -24,6 +24,12 @@ namespace
     {
         switch (node->node_type)
         {
+            case NodeType::ParenExpression:
+            {
+                const auto * paren_node = static_cast<const PrometheusQueryTree::ParenExpression *>(node);
+                return visitNode(paren_node->getExpression(), context);
+            }
+
             case NodeType::Scalar:
             {
                 const auto * scalar_node = static_cast<const PrometheusQueryTree::Scalar *>(node);

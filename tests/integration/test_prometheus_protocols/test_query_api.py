@@ -158,6 +158,110 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
 
 
+@pytest.mark.parametrize(
+    ("query", "parenthesized_query"),
+    [
+        ("1", "(1)"),
+        ("9", "(((1 + 2) * 3))"),
+        ('"hello"', '("hello")'),
+        ("post_body_metric", "((post_body_metric))"),
+        ("post_body_metric[2s]", "((post_body_metric[2s]))"),
+        ("abs(vector(-2))", "(abs((vector((-2)))))"),
+        ("sum(post_body_metric)", "sum((post_body_metric))"),
+        ("vector(time())[2s:1s]", "((vector((time())))[2s:1s])"),
+        ("post_body_metric offset 1s", "((post_body_metric offset 1s))"),
+        (
+            "last_over_time(post_body_metric[2s] @ 1000)",
+            "last_over_time(((post_body_metric[2s] @ 1000)))",
+        ),
+        (
+            "last_over_time(vector(time())[2s:1s] @ 1000)",
+            "last_over_time((((vector((time())))[2s:1s] @ 1000)))",
+        ),
+        (
+            'label_replace(post_body_metric, "copy", "$1", "job", "(.*)")',
+            'label_replace((post_body_metric), ("copy"), ("$1"), ("job"), ("(.*)"))',
+        ),
+        ("nonexistent_metric", "((nonexistent_metric))"),
+    ],
+)
+def test_query_executes_parenthesized_expressions(query, parenthesized_query):
+    def execute_sql(expression):
+        return node.query(
+            f"SELECT * FROM prometheusQuery(prometheus, '{expression}', 1001)"
+        )
+
+    assert execute_sql(parenthesized_query) == execute_sql(query)
+    assert execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", parenthesized_query, timestamp=1001
+    ) == execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", query, timestamp=1001
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "parenthesized_query"),
+    [
+        ("time()", "((time()))"),
+        ("post_body_metric", "((post_body_metric))"),
+        ("abs(vector(-2))", "(abs((vector((-2)))))"),
+        ("sum(post_body_metric)", "sum((post_body_metric))"),
+        ("post_body_metric offset 1s", "((post_body_metric offset 1s))"),
+        (
+            "last_over_time(post_body_metric[2s])",
+            "last_over_time(((post_body_metric[2s])))",
+        ),
+        (
+            "last_over_time(post_body_metric[2s] @ 1000)",
+            "last_over_time(((post_body_metric[2s] @ 1000)))",
+        ),
+        (
+            "last_over_time(vector(time())[2s:1s] @ 1000)",
+            "last_over_time((((vector((time())))[2s:1s] @ 1000)))",
+        ),
+        ("nonexistent_metric", "((nonexistent_metric))"),
+    ],
+)
+def test_range_query_executes_parenthesized_expressions(query, parenthesized_query):
+    def execute_sql(expression):
+        return node.query(
+            f"SELECT * FROM prometheusQueryRange(prometheus, '{expression}', 999, 1002, 1)"
+        )
+
+    assert execute_sql(parenthesized_query) == execute_sql(query)
+    assert execute_range_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query_range", parenthesized_query, 999, 1002, 1
+    ) == execute_range_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query_range", query, 999, 1002, 1
+    )
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "minute((vector(time())))",
+        "minute(vector((time())))",
+        "minute(vector(scalar((vector((time()))))))",
+        "minute((vector((+time()))))",
+    ],
+)
+def test_parenthesized_time_preserves_float32_precision(expression):
+    table = "prometheus_parentheses_float32"
+    node.query(
+        f"CREATE TABLE {table} "
+        "(time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+    try:
+        assert node.query(
+            f"SELECT value FROM prometheusQuery({table}, '{expression}', 1770582599)"
+        ) == "29\n"
+        assert node.query(
+            f"SELECT * FROM prometheusQueryRange({table}, '{expression}', 1770582580, 1770582700, 60)"
+        ) == "[]\t[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]\n"
+    finally:
+        node.query(f"DROP TABLE {table} SYNC")
+
+
 def test_format_query_get():
     response = requests.get(
         f"http://{node.ip_address}:9093/api/v1/format_query",

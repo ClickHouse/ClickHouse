@@ -116,7 +116,7 @@ namespace
     }
 
     /// Finds the `time()` call reachable from `node` after peeling off any number of `scalar(...)`, `vector(...)`,
-    /// unary `+...`, and `Offset` (`@ <timestamp>` / `offset <duration>`) wrappers. All of these are
+    /// unary `+...`, parentheses, and `Offset` (`@ <timestamp>` / `offset <duration>`) wrappers. All of these are
     /// value-preserving no-ops in the generic conversion path: applyFunctionScalar()'s
     /// CONST_SCALAR/SINGLE_SCALAR/SCALAR_GRID cases, applyFunctionVector(), applyUnaryOperator()'s '+' case, and
     /// applyOffset()'s offsetEvaluationTime()/setEvaluationTime() (for those same store methods) each return
@@ -139,6 +139,12 @@ namespace
     /// Returns nullptr if `node` isn't (possibly wrapped) exactly a bare `time()` call.
     const PrometheusQueryTree::Function * findTimeCallThroughScalarVectorWrappers(const Node * node)
     {
+        if (node->node_type == NodeType::ParenExpression)
+        {
+            const auto * paren = static_cast<const PrometheusQueryTree::ParenExpression *>(node);
+            return findTimeCallThroughScalarVectorWrappers(paren->getExpression());
+        }
+
         if (node->node_type == NodeType::UnaryOperator)
         {
             const auto * unary_operator = static_cast<const PrometheusQueryTree::UnaryOperator *>(node);
