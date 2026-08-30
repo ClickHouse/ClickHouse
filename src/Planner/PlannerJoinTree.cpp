@@ -2137,8 +2137,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// globally (see Aggregator::ensureLimitsFixedMapMerge), so shards could each keep a
                         /// different, locally-permitted set of keys and the initiator would return more groups
                         /// in total than the limit allows. Matches the precedent set by
-                        /// AggregatingStep::canUseShardedAggregation and useDataParallelAggregation, which
-                        /// disable independent aggregation for the same reason.
+                        /// `useDataParallelAggregation`, which disables independent aggregation for the same
+                        /// reason.
                         const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
                             && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
 
