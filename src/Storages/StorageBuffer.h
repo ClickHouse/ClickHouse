@@ -88,6 +88,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
     bool isRemote() const override;
+    bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
 
     /// The table the buffers are flushed into and reads are forwarded to.
     /// Empty destination (`Buffer(..., '', '')`) means the table only buffers, and nullptr is returned.
