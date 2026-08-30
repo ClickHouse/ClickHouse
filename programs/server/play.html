@@ -15233,8 +15233,27 @@ async function cancel()
     progressEl.clear();
 }
 
+/// The configured server is this page's own origin - the only case where a credential may be
+/// persisted by the browser (see `storeCredentials`).
+function isSameOriginTarget(value) {
+    try {
+        return new URL(value, location.href).origin === location.origin;
+    } catch (e) {
+        return false;
+    }
+}
+
+/// Browser Credential Management API: remember the entered credentials so the browser can offer to
+/// save them and later autofill them.
+///
+/// Persist only for a same-origin target, the same rule `schema.html` follows. A `PasswordCredential`
+/// is scoped to the page origin, not to the server named in the URL input - its `name` field is a
+/// display label, not an isolation key. A trusted host can hand this page a connection to a different
+/// server (`applyConnectionFromHost`), so storing the login it sent would let the browser autofill it
+/// on a later plain visit to this page, where the connection defaults back to the server that served
+/// it (`defaultServerAddress`) and the next Run would send the other server's login to this one.
 function storeCredentials() {
-    if (password_elem.value) {
+    if (password_elem.value && isSameOriginTarget(url_elem.value)) {
         const cred = new PasswordCredential({
             id: user_elem.value,
             password: password_elem.value,
@@ -19478,20 +19497,31 @@ document.getElementById('download-button').addEventListener('click', async funct
     let terminalOrigin = null;
     const MIN_TERMINAL_HEIGHT = 20;
 
-    /// The `/webterminal` endpoint lives on the ClickHouse server addressed by `url_elem.value`,
+    /// The Web Terminal endpoint lives on the ClickHouse server addressed by `url_elem.value`,
     /// which may differ from the page's own origin when the page is opened locally with `?url=...`.
-    /// Resolve both the availability probe and the iframe `src` against the same configured server URL.
+    /// Resolve the availability probe, the iframe `src` and the new-tab `href` against the same
+    /// configured server URL.
+    /// The path of that address is a prefix of the endpoint rather than decoration, exactly as in
+    /// `docsURL`: a server exposed as `https://proxy.example/clickhouse/` serves its terminal at
+    /// `https://proxy.example/clickhouse/webterminal`, while `https://proxy.example/webterminal`
+    /// belongs to an unrelated site. So `webterminal` is appended to the configured path instead of
+    /// resolving a root-absolute route. The query string of the configured address is dropped: it
+    /// selects the query endpoint (see `sameServerAddress`) and means nothing to the terminal page.
     /// Returns `null` if the configured URL cannot be parsed, so the caller can treat the terminal
     /// as unavailable instead of letting the exception abort `play.html` initialization.
     function getTerminalURL() {
         try {
-            return new URL('/webterminal', url_elem.value).href;
+            const url = new URL(url_elem.value, location.href);
+            url.search = '';
+            url.hash = '';
+            url.pathname = url.pathname.replace(/\/?$/, '/') + 'webterminal';
+            return url.href;
         } catch (e) {
             return null;
         }
     }
 
-    /// Keep the icon's `href` pointing at the current `/webterminal` URL, so that a native
+    /// Keep the icon's `href` pointing at the current Web Terminal URL, so that a native
     /// middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on
     /// macOS, Ctrl+click elsewhere) opens the right address even after the user edits the
     /// server URL. The `href` is removed when the URL is currently unparsable: an empty `href`
@@ -19517,7 +19547,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         }
     }
 
-    /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal).
+    /// Hide the terminal icon if the Web Terminal is not available (gated by `allow_experimental_webterminal`).
     terminalIcon.style.display = 'none';
     const terminalProbeURL = getTerminalURL();
     if (terminalProbeURL) {

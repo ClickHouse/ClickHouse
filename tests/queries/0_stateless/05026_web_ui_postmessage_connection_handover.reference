@@ -6,5 +6,6 @@ schema announces=yes accepts=yes origins=exact endpoint_query=preserved default_
 jemalloc announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
 processors-profile announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
 binary announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
-webterminal handshake=yes accepts=yes origins=exact
+webterminal handshake=yes accepts=yes origins=exact ws_route=prefixed
 play docs_relay=yes direct_docs_opener=no relay_trust_guard=yes relay_ordering_guard=yes
+play terminal_route=prefixed credential_store=same-origin

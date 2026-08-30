@@ -117,10 +117,20 @@
         return origin === window.location.origin || TRUSTED_PARENT_ORIGINS.indexOf(origin) !== -1;
     }
 
+    // The WebSocket endpoint is this very route, so derive it from the address this page was served
+    // from instead of a root-absolute path. Behind a path-routed reverse proxy the server is exposed
+    // as `https://proxy.example/clickhouse/` and the page is served as
+    // `https://proxy.example/clickhouse/webterminal`, while the same route at the origin belongs to
+    // an unrelated site. The page is attached with `attachNonStrictPath` (see `HTTPHandlerFactory`),
+    // so the served path may carry a suffix - `/webterminal/`, `/webterminalfoo` - and the route is
+    // therefore cut at its last occurrence in the path.
     function getWebSocketURL() {
         var loc = window.location;
         var protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-        return protocol + '//' + loc.host + '/webterminal';
+        var path = loc.pathname;
+        var route = path.lastIndexOf('/webterminal');
+        if (route !== -1) path = path.slice(0, route) + '/webterminal';
+        return protocol + '//' + loc.host + path;
     }
 
     function initTerminal() {

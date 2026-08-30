@@ -85,7 +85,13 @@ content=$(fetch_page webterminal)
 handshake=$(echo "$content" | grep -qF "'webterminal-hello'" && echo yes || echo no)
 accepts=$(echo "$content" | grep -qF "'webterminal-credentials'" && echo yes || echo no)
 origins=$(exact_origins "$content")
-echo "webterminal handshake=${handshake} accepts=${accepts} origins=${origins}"
+# The WebSocket endpoint of the terminal is the very route this page was served from, so it must keep
+# the path prefix of that route. A root-absolute `/webterminal` connects to whatever answers at the
+# origin, which behind a path-routed reverse proxy is an unrelated site.
+ws_route=$(echo "$content" | grep -qF "lastIndexOf('/webterminal')" \
+    && ! echo "$content" | grep -qF "loc.host + '/webterminal'" \
+    && echo prefixed || echo root)
+echo "webterminal handshake=${handshake} accepts=${accepts} origins=${origins} ws_route=${ws_route}"
 
 content=$(fetch_page play)
 relay=$(echo "$content" | grep -qF "clickhouse-docs-relay-ready" && echo yes || echo no)
@@ -95,3 +101,17 @@ relay_ordering_guard=$(echo "$content" | grep -qF "if (!credentials || !docs_fra
     && echo "$content" | grep -qF "docs_frame_ready = true;" \
     && echo yes || echo no)
 echo "play docs_relay=${relay} direct_docs_opener=${direct_docs_opener} relay_trust_guard=${relay_trust_guard} relay_ordering_guard=${relay_ordering_guard}"
+
+# The Web Terminal link, probe and iframe of `/play` address the configured server, and the path of
+# that address is part of the endpoint, exactly like the Documentation link: a server exposed as
+# `https://proxy.example/clickhouse/` serves its terminal under that prefix.
+terminal_route=$(echo "$content" | grep -qF "+ 'webterminal';" \
+    && ! echo "$content" | grep -qF "new URL('/webterminal'" \
+    && echo prefixed || echo root)
+# A handed-over connection may name a server other than the one that served this page, and a
+# `PasswordCredential` is scoped to the page origin rather than to that server. Persisting a
+# cross-origin login here would let the browser autofill it on a later plain visit, where the page
+# defaults back to its own origin and would send that login to the wrong server.
+credential_store=$(echo "$content" | grep -qF "password_elem.value && isSameOriginTarget(url_elem.value)" \
+    && echo same-origin || echo any-origin)
+echo "play terminal_route=${terminal_route} credential_store=${credential_store}"
