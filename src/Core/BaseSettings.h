@@ -10,6 +10,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
@@ -254,6 +255,9 @@ public:
 
     /// Get the tier (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL) of a setting
     SettingsTierType getTier(std::string_view name) const;
+
+    /// Tier of a built-in setting. Unlike `getTier`, ignores custom settings and returns nullopt instead of throwing when no setting exists.
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
 
     // ========================================================================
     // VALIDATION & CONVERSION (static utilities)
@@ -592,6 +596,16 @@ SettingsTierType BaseSettings<TTraits>::getTier(std::string_view name) const
     if (tryGetCustomSetting(name))
         return SettingsTierType::PRODUCTION;
     BaseSettingsHelpers::throwSettingNotFound(name);
+}
+
+template <typename TTraits>
+std::optional<SettingsTierType> BaseSettings<TTraits>::tryGetTierOfBuiltin(std::string_view name)
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        return accessor.getTier(index);
+    return std::nullopt;
 }
 
 template <typename TTraits>

@@ -3,6 +3,6 @@ set dialect = 'kusto';
 print '-- isnan --';
 print isnan(double(nan));
 print isnan(4.2);
-print isnan(4); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+print isnan(4);  -- used to raise; the rewrite returns the value Kusto gives
 print isnan(real(+inf));
-print isnan(dynamic(null)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+print isnan(dynamic(null));  -- used to raise; the rewrite returns the value Kusto gives
