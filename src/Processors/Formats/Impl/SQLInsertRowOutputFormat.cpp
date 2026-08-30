@@ -8,6 +8,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Processors/Formats/Impl/SQLInsertRowOutputFormat.h>
 #include <Processors/Port.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageFactory.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -20,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -34,6 +36,13 @@ const DataTypeValidationSettings & getDefaultDataTypeValidationSettings()
     }();
 
     return settings;
+}
+
+bool isMergeTreePersistentVirtualColumn(const String & column_name)
+{
+    return column_name == RowExistsColumn::name
+        || column_name == BlockNumberColumn::name
+        || column_name == BlockOffsetColumn::name;
 }
 
 }
@@ -53,6 +62,15 @@ SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHea
         {
             if (!unique_column_names.emplace(column_name).second)
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column_name));
+        }
+
+        for (const auto & column_name : column_names)
+        {
+            if (isMergeTreePersistentVirtualColumn(column_name))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create table with column '{}' for MergeTree engines because it is reserved for persistent virtual column",
+                    column_name);
         }
 
         for (const auto & type : types)
