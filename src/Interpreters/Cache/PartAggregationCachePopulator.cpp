@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/StorageSnapshot.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
