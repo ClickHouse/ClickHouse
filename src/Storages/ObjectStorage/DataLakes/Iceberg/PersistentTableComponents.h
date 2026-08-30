@@ -45,18 +45,15 @@ struct PersistentTableComponents
     /// Canonical identity of the physical storage this table lives on, see `TableStorageIdentity`.
     const TableStorageIdentity table_identity;
 
-    /// Invalidate cached metadata for this table under both keys we may have used to cache it
-    /// (`table_path` and `table_uuid`, each namespaced by `table_identity.data_source_description`
-    /// via `IcebergMetadataFilesCache::getLatestVersionKey`).
+    /// Invalidate the cached latest-metadata selection for this table, keyed by `table_path`
+    /// namespaced by `table_identity.data_source_description` via
+    /// `IcebergMetadataFilesCache::getLatestVersionKey`.
     void invalidateMetadataCache() const
     {
         if (!metadata_cache)
             return;
         metadata_cache->remove(
-            IcebergMetadataFilesCache::getLatestVersionKey(table_identity.data_source_description, table_path, /*is_uuid=*/false));
-        if (table_uuid.has_value())
-            metadata_cache->remove(
-                IcebergMetadataFilesCache::getLatestVersionKey(table_identity.data_source_description, *table_uuid, /*is_uuid=*/true));
+            IcebergMetadataFilesCache::getLatestVersionKey(table_identity.data_source_description, table_path));
     }
 };
 

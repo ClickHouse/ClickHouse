@@ -145,15 +145,16 @@ public:
     }
 
     /// Key for the latest-metadata-version cell (see `getOrSetLatestMetadataVersion`), which is
-    /// referenced by `table_path` or `table_uuid` alone rather than the uuid+path pair `getKey`
-    /// composes. Needs `data_source_description` mixed in for the same reason as `getKey`, and
-    /// `is_uuid` tags which of the two disjoint keyspaces (`table_path` vs `table_uuid`) the value
-    /// came from -- without it, a table whose `table_path` string happened to equal another
-    /// table's normalized `table_uuid` on the same backend would collide and reuse that table's
-    /// cached latest-metadata entry.
-    static String getLatestVersionKey(const String & data_source_description, const String & table_path_or_uuid, bool is_uuid)
+    /// referenced by `table_path` alone rather than by the uuid+path pair `getKey` composes: which
+    /// file under `metadata/` is the latest one is a property of the table root, not of the
+    /// `table-uuid` recorded inside it. Two roots can carry the same `table-uuid` -- copying a
+    /// table's directory copies its metadata verbatim -- so referencing this cell by `table-uuid`
+    /// would let one root's selection be reused for the other, pointing at a metadata file that
+    /// does not exist under the reader's root. Needs `data_source_description` mixed in for the
+    /// same reason as `getKey`.
+    static String getLatestVersionKey(const String & data_source_description, const String & table_path)
     {
-        return data_source_description + '\0' + (is_uuid ? '1' : '0') + '\0' + table_path_or_uuid;
+        return data_source_description + '\0' + table_path;
     }
 
     /// Probe the cache without insert-on-miss. Returns the cached JSON or empty string on miss.
@@ -227,38 +228,31 @@ public:
 
     template <typename LoadFunc>
     LatestMetadataVersionPtr getOrSetLatestMetadataVersion(
-        const String & data_source_description, const String & table_path, const std::optional<String> & table_uuid, LoadFunc && load_fn, time_t tolerated_staleness_ms)
+        const String & data_source_description, const String & table_path, LoadFunc && load_fn, time_t tolerated_staleness_ms)
     {
-        /// NOTE: `table_path` and `table_uuid` reference the same cell under two independent keys,
-        ///       so a cell stored under one table's UUID is visible to any query supplying that
-        ///       UUID, and a cell stored under a table path is visible to any query on that path.
-        ///       Callers whose selection of the latest metadata file depends on *both* (namely the
-        ///       explicit `iceberg_metadata_table_uuid` way, which filters `metadata/` by
-        ///       `table-uuid`) must not use this cache at all.
+        /// NOTE: the cell is referenced by the table path alone, so it is visible to any query on
+        ///       that path. Callers whose selection of the latest metadata file depends on
+        ///       anything else (namely the explicit `iceberg_metadata_table_uuid` way, which
+        ///       filters `metadata/` by `table-uuid`) must not use this cache at all.
 
         /// This caching method for latest metadata version:
-        /// 1.    Takes two keys to reference a table - path and [optional] uuid
+        /// 1.    Takes a single key to reference a table - its path
         /// 2.    Probes the cache only if stale values are tolerated - sometimes we just have to force the latest value from the remote catalog and to cache it
-        /// 2.1.  Lookup in cache is performed using table uuid if it's provided, or using table path
-        /// 3.    If the value needs to be forced via the remote catalog, we first load it, then we place it in cache under both keys
+        /// 3.    If the value needs to be forced via the remote catalog, we first load it, then we place it in cache
 
         /// NOTE: There're couple of caveats and nuances regarding current implementation
         ///       (a) can't use getOrSet (as should've) at the moment - because load_fn accesses the same cache to extract uuid from the metadata.json file
         ///       (b) also can't use getOrSet - because there's no mechanism to disregard the existing value because of its staleness
-        ///       (c) single value is referenced using two keys
         ///       For now the potential impact of these nuances is considered low for the potential gain - in the worst case, we'll call remote catalog more than once, which is still better than now
         /// TODO:
-        ///       (a) and (c) will be solved by moving to AsyncIterator for Iceberg - the loading process should be decoupled, refactored and broken down into independent pieces;
+        ///       (a) will be solved by moving to AsyncIterator for Iceberg - the loading process should be decoupled, refactored and broken down into independent pieces;
         ///                   and later by refactoring caching to create a new logical layer of snapshot caching
         ///       (b) #97410 will address several design flaws of CacheBase + will introduce custom predicates for get/set operations
 
         /// tolerated_staleness_ms=0 would mean that a non-cached value is required
         if (tolerated_staleness_ms > 0)
         {
-            const String data_path = table_uuid
-                ? getLatestVersionKey(data_source_description, *table_uuid, /*is_uuid=*/true)
-                : getLatestVersionKey(data_source_description, table_path, /*is_uuid=*/false);
-            auto found = Base::get(data_path);
+            auto found = Base::get(getLatestVersionKey(data_source_description, table_path));
 
             if (found)
             {
@@ -284,9 +278,7 @@ public:
         cell->latest_metadata = load_fn();
         cell->cached_at = std::chrono::system_clock::now();
 
-        Base::set(getLatestVersionKey(data_source_description, table_path, /*is_uuid=*/false), std::make_shared<IcebergMetadataFilesCacheCell>(cell));
-        if (table_uuid)
-            Base::set(getLatestVersionKey(data_source_description, *table_uuid, /*is_uuid=*/true), std::make_shared<IcebergMetadataFilesCacheCell>(cell));
+        Base::set(getLatestVersionKey(data_source_description, table_path), std::make_shared<IcebergMetadataFilesCacheCell>(cell));
 
         return cell;
     }

@@ -1438,12 +1438,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     /// The explicit `iceberg_metadata_table_uuid` selection way picks a metadata file by filtering
     /// this table's `metadata/` directory by `table-uuid`, so its result is only valid for that
     /// exact (table path, UUID) pair. The latest-version cache references a cell by the table path
-    /// and by the UUID *separately* (see `IcebergMetadataFilesCache::getLatestVersionKey`): the
-    /// UUID-side key would let a query on a different table under the same backend reuse this
-    /// selection, and the path-side key would let a query with a different
-    /// `iceberg_metadata_table_uuid` under the same path reuse it. Neither can be validated here,
-    /// so this selection way neither probes nor populates the latest-version cache and always
-    /// scans `metadata/` -- which is what the setting asks for in the first place.
+    /// alone (see `IcebergMetadataFilesCache::getLatestVersionKey`), which would let a query with a
+    /// different `iceberg_metadata_table_uuid` under the same path reuse this selection. That
+    /// cannot be validated here, so this selection way neither probes nor populates the
+    /// latest-version cache and always scans `metadata/` -- which is what the setting asks for in
+    /// the first place.
     const bool uuid_selects_metadata_file = table_uuid.has_value() && use_table_uuid_for_metadata_file_selection;
 
     if (metadata_cache && !uuid_selects_metadata_file)
@@ -1451,7 +1450,6 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         return metadata_cache->getOrSetLatestMetadataVersion(
             table_identity.data_source_description,
             table_path,
-            table_uuid,
             load_fn,
             tolerated_staleness_ms
         )->latest_metadata;
