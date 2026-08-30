@@ -3,7 +3,8 @@
 # The `/`-commands of the client (`/clear`, `/help`, `/man`) are offered by the line editor as soon
 # as a `/` is typed at the beginning of the input:
 #   1. as as-you-type hints - the whole list for a bare `/`, an inline ghost for a unique prefix;
-#   2. as Tab completions, which is how they are completed when the instant hints are disabled.
+#   2. as Tab completions, which is how they are completed when the instant hints are disabled;
+#   3. in the AI-chat (`:?`) mode too, where they run as commands rather than being sent to the agent.
 # A `/` elsewhere in the input, and the argument of a command, are not commands and offer nothing.
 # A mistake in the name of a command is reported with the similar commands instead of being parsed
 # as SQL, and so is an argument given to a command that takes none.
@@ -205,3 +206,27 @@ clear_and_quit
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL -q '/hepl'"
 expect -ex {Unknown command `/hepl`}
 expect eof
+
+# ─── 8. The commands are hinted and run in the AI-chat mode as well ──────────
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
+expect ":) "
+
+# A leading `?` switches the line editor into the AI-chat mode instead of being inserted.
+# (`-ex`: a `?` in a glob pattern would match any character.)
+send -- "?"
+expect -ex ":?"
+send -- "/"
+expect "/man"
+# The command runs as the command itself, no AI provider involved.
+send -- "help"
+expect -ex "help"
+send -- "\r"
+expect "Usage: help <name>"
+# `clear_and_quit` waits for the SQL prompt; the AI-chat mode redraws its own `:?` one, so the exit
+# is spelled out here.
+if {[interrupt]} {
+    expect {
+        eof            {}
+        -re {:[)?] $}  { send -- "\4" ; expect eof }
+    }
+}
