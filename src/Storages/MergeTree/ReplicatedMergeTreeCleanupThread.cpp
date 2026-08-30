@@ -146,10 +146,10 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     ::sort(entries.begin(), entries.end());
 
-    String min_saved_record_log_str = entries[
-        entries.size() > (*storage_settings)[MergeTreeSetting::max_replicated_logs_to_keep]
-            ? entries.size() - (*storage_settings)[MergeTreeSetting::max_replicated_logs_to_keep]
-            : 0];
+    /// Keep at least one entry: its name is the threshold that log pointers of inactive replicas
+    /// are compared with, so it has to name an entry that exists.
+    const UInt64 max_logs_to_keep = std::max<UInt64>((*storage_settings)[MergeTreeSetting::max_replicated_logs_to_keep], 1);
+    String min_saved_record_log_str = entries[entries.size() - std::min<UInt64>(max_logs_to_keep, entries.size())];
 
     /// Replicas that were marked is_lost but are active.
     std::unordered_set<String> recovering_replicas;
