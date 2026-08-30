@@ -883,6 +883,7 @@ void AllocationLimit::clearMemoryGrowthSuspension()
 void AllocationLimit::processSuction()
 {
     if (!suspended_growth || suspended_growth_retry_pending || unused_capacity_retry_waiting
+        || memory_growth_suspension_beneficiaries != 0
         || local_decrease != nullptr || allocation_to_kill
         || suspended_growth->allocation.isGrowthRecoveryActive()
         || !suspended_growth->allocation.memory_growth_suction_priority)
