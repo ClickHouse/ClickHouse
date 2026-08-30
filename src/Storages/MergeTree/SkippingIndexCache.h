@@ -3,6 +3,7 @@
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace ProfileEvents
@@ -68,8 +69,6 @@ struct SkippingIndexCacheCell
             memory_bytes += granule->memoryUsageBytes() + GRANULE_OVERHEAD_BYTES_GUESS;
     }
 
-    SkippingIndexCacheCell(const SkippingIndexCacheCell &) = delete;
-    SkippingIndexCacheCell & operator=(const SkippingIndexCacheCell &) = delete;
 };
 
 struct SkippingIndexCacheWeightFunction
@@ -93,22 +92,19 @@ public:
         : Base(cache_policy, CurrentMetrics::SkippingIndexCacheBytes, CurrentMetrics::SkippingIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    /// LoadFunc should have signature () -> MergeTreeIndexGranules.
+    /// Marks of the index granules stored in the block.
+    static MarkRange blockRange(size_t block_number, size_t marks_count)
+    {
+        size_t begin = block_number * GRANULES_PER_ENTRY;
+        return {begin, std::min(marks_count, begin + GRANULES_PER_ENTRY)};
+    }
+
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
-        auto wrapped_load = [&]() -> MappedPtr
-        {
-            return std::make_shared<SkippingIndexCacheCell>(load());
-        };
-
-        auto result = Base::getOrSet(key, wrapped_load);
-        if (result.second)
-            ProfileEvents::increment(ProfileEvents::SkippingIndexCacheMisses);
-        else
-            ProfileEvents::increment(ProfileEvents::SkippingIndexCacheHits);
-
-        return result.first;
+        auto [cell, missed] = Base::getOrSet(key, [&] { return std::make_shared<SkippingIndexCacheCell>(load()); });
+        ProfileEvents::increment(missed ? ProfileEvents::SkippingIndexCacheMisses : ProfileEvents::SkippingIndexCacheHits);
+        return cell;
     }
 
     void removeEntriesFromCache(const String & path_to_data_part)
@@ -117,10 +113,9 @@ public:
     }
 
 private:
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr &) override
     {
         ProfileEvents::increment(ProfileEvents::SkippingIndexCacheWeightLost, weight_loss);
-        UNUSED(mapped_ptr);
     }
 };
 

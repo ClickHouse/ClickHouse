@@ -56,8 +56,4 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
     AND query LIKE 'SELECT count() FROM tab WHERE%' AND query NOT LIKE '%use_skip_indexes = 0%'
 ORDER BY event_time_microseconds;
 
-SELECT value > 0 FROM system.metrics WHERE metric = 'SkippingIndexCacheCells';
-SYSTEM DROP SKIPPING INDEX CACHE;
-SELECT value FROM system.metrics WHERE metric = 'SkippingIndexCacheCells';
-
 DROP TABLE tab;

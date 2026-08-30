@@ -25,11 +25,7 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO tab SELECT number, number % 100 FROM num
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM tab WHERE key = 42"
 
 cells_before=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'SkippingIndexCacheCells'")
-if [ "$cells_before" -gt 0 ]; then
-    echo "SkippingIndexCacheCells	Populated"
-else
-    echo "SkippingIndexCacheCells	UNEXPECTED_ZERO"
-fi
+$CLICKHOUSE_CLIENT --query "SELECT 'SkippingIndexCacheCells', if($cells_before > 0, 'Populated', 'UNEXPECTED_ZERO')"
 
 # The mutation replaces the part; the old part becomes Outdated and is removed soon after.
 $CLICKHOUSE_CLIENT --query "ALTER TABLE tab DELETE WHERE id = 0 SETTINGS mutations_sync = 2"

@@ -5,14 +5,13 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Storages/MergeTree/SkippingIndexCache.h>
 
 
 namespace DB
 {
 
 class VectorSimilarityIndexCache;
-class SkippingIndexCache;
-struct SkippingIndexCacheCell;
 
 class MergeTreeIndexReader
 {
@@ -49,11 +48,10 @@ private:
     SkippingIndexCache * skipping_index_cache;
     MergeTreeReaderSettings settings;
 
-    /// Set in the constructor and never changed afterwards: switching to the uncached path mid-way
-    /// would deserialize into a granule that is shared with the cache.
-    bool use_skipping_index_cache = false;
-    String skipping_index_cache_key_prefix;
-    size_t current_block_number = 0;
+    /// Empty if the part is not Active: such parts are removed soon, so their granules are not cached.
+    String cache_key_prefix;
+    /// Only the block number changes between lookups.
+    SkippingIndexCacheKey skipping_index_cache_key;
     std::shared_ptr<SkippingIndexCacheCell> current_block;
 
     StreamMap streams;

@@ -744,14 +744,6 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
 }
 
-void IMergeTreeDataPart::removeFromSkippingIndexCache(SkippingIndexCache * skipping_index_cache) const
-{
-    if (!skipping_index_cache)
-        return;
-
-    skipping_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-}
-
 void IMergeTreeDataPart::setIndex(Columns index_columns)
 {
     std::scoped_lock lock(index_mutex);
@@ -1083,7 +1075,8 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
-    removeFromSkippingIndexCache(storage.getContext()->getSkippingIndexCache().get());
+    if (auto skipping_index_cache = storage.getContext()->getSkippingIndexCache())
+        skipping_index_cache->removeEntriesFromCache(getIndexCacheKeyPrefix());
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -2784,6 +2777,11 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
     if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
         return fs::path(MergeTreeData::DETACHED_DIR_NAME) / *path;
     return {};
+}
+
+String IMergeTreeDataPart::getIndexCacheKeyPrefix() const
+{
+    return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
 }
 
 String IMergeTreeDataPart::getRelativePathOfActivePart() const

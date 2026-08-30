@@ -500,7 +500,6 @@ public:
     IndexPtr tryGetIndex() const;
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
-    void removeFromSkippingIndexCache(SkippingIndexCache * skipping_index_cache) const;
 
     void setIndex(Columns index_columns);
     void unloadIndex();
@@ -576,6 +575,10 @@ public:
     /// This method ignores current tmp prefix of part and returns
     /// the name of part when it was or will be in Active state.
     String getRelativePathOfActivePart() const;
+
+    /// Identifies the part in caches of secondary index granules; uses `getRelativePathOfActivePart` so that
+    /// the key used on insertion matches the one used on eviction in `clearCaches`.
+    String getIndexCacheKeyPrefix() const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
