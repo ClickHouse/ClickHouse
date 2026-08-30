@@ -947,7 +947,14 @@ def start_log_export(servers):
 
 def export_system_logs(servers):
     """Send what the servers accumulated while the tests were running to the
-    CI Logs cluster, and drop the export views."""
+    CI Logs cluster, and drop the export views.
+
+    Best effort throughout: the measurements are over by now, and a server
+    whose export was torn down in `start_log_export` has nothing left to send.
+    The `SYSTEM FLUSH DISTRIBUTED` of `log_export.stop` sends the accumulated
+    files whatever came of the `START` above (`processFiles(force = true)` does
+    not consult the send lock), so the rows are not lost if it did not take.
+    """
     for node_name, server in servers:
         print(f"Export the system logs of the [{node_name}] server")
         try:
