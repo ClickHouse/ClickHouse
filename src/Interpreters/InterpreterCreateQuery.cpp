@@ -2206,6 +2206,31 @@ catch (...)
     throw;
 }
 
+/// A table function whose storage is chosen by the current user's grants cannot be persisted at any
+/// nesting depth: the outermost one is refused through `canBeUsedToCreateTable`, but the same
+/// function nested in an argument of another table function, e.g. `remote(..., viewIfPermitted(...))`
+/// or `remote(..., loop(viewIfPermitted(...)))`, would be persisted along with it and later resolved
+/// on a local shard under the connection's credentials instead of the reader's grants, disclosing
+/// the guarded structure or data.
+void throwIfNestedTableFunctionDependsOnCurrentUserGrants(const ASTPtr & ast, const ContextPtr & context)
+{
+    for (const auto & child : ast->children)
+    {
+        if (const auto * function = child->as<ASTFunction>())
+        {
+            if (const auto nested_table_function = TableFunctionFactory::instance().tryGet(function->name, context);
+                nested_table_function && nested_table_function->dependsOnCurrentUserGrants())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}' cannot be used to create a table, neither directly nor nested in another table function",
+                    function->name);
+            }
+        }
+        throwIfNestedTableFunctionDependsOnCurrentUserGrants(child, context);
+    }
+}
+
 }
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
@@ -2405,6 +2430,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         if (!table_function->canBeUsedToCreateTable())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
+
+        throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, getContext());
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup

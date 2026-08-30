@@ -42,6 +42,21 @@ out=$(${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE TABLE ${db}.dst2_05060
 echo "$out" | grep -m1 -o "cannot be used to create a table"
 echo "$out" | grep -m1 -o "BAD_ARGUMENTS"
 
+# The refusal is unconditional, so even a full-access user cannot persist the function nested in
+# another table function: `remote(...)` would otherwise store it and later decide the guarded branch
+# under the connection's credentials instead of the reader's grants.
+echo "--- nested in remote(...) is refused too, even for a full-access user ---"
+out=$({ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${db}.dst3_05060 AS remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', viewIfPermitted(SELECT * FROM ${db}.src_05060 ELSE null('x UInt64')))"
+        ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM ${db}.dst3_05060"; } 2>&1)
+echo "$out" | grep -m1 -o "cannot be used to create a table"
+echo "$out" | grep -m1 -o "UNKNOWN_TABLE"
+echo "leaked: [$(echo "$out" | leaked)]"
+
+echo "--- nested through loop(...) inside remote(...) is refused too ---"
+out=$(${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${db}.dst4_05060 AS remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', loop(viewIfPermitted(SELECT * FROM ${db}.src_05060 ELSE null('x UInt64'))))" 2>&1)
+echo "$out" | grep -m1 -o "cannot be used to create a table"
+echo "$out" | grep -m1 -o "BAD_ARGUMENTS"
+
 echo "--- the ELSE fallback still works in a query, without the grant ---"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM viewIfPermitted(SELECT * FROM ${db}.src_05060 ELSE null('x UInt64'))"
 
@@ -57,5 +72,7 @@ echo "leaked: [$(echo "$out" | leaked)]"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst1_05060"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst2_05060"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst3_05060"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst4_05060"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.src_05060"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"

@@ -5,6 +5,13 @@ leaked: []
 --- refused with an explicit column list too ---
 cannot be used to create a table
 BAD_ARGUMENTS
+--- nested in remote(...) is refused too, even for a full-access user ---
+cannot be used to create a table
+UNKNOWN_TABLE
+leaked: []
+--- nested through loop(...) inside remote(...) is refused too ---
+cannot be used to create a table
+BAD_ARGUMENTS
 --- the ELSE fallback still works in a query, without the grant ---
 0
 --- and the query returns the source rows once permitted ---
