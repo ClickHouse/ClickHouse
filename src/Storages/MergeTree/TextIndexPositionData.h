@@ -1,7 +1,8 @@
 #pragma once
 
+#include <base/PackedStringRef.h>
 #include <base/types.h>
-#include <Common/HashTable/StringHashMap.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -50,10 +51,7 @@ struct RoaringishEntry
     }
 
     /// Two entries have the same bucket if they share (doc_id, group).
-    bool sameBucket(const RoaringishEntry & other) const
-    {
-        return doc_id == other.doc_id && group == other.group;
-    }
+    bool sameBucket(const RoaringishEntry & other) const { return doc_id == other.doc_id && group == other.group; }
 
     void mergeBitmap(const RoaringishEntry & other)
     {
@@ -62,10 +60,7 @@ struct RoaringishEntry
     }
 
     /// Return a copy with a different doc_id, preserving group and bitmap.
-    RoaringishEntry withDocId(UInt32 new_doc_id) const
-    {
-        return {new_doc_id, group, bitmap};
-    }
+    RoaringishEntry withDocId(UInt32 new_doc_id) const { return {new_doc_id, group, bitmap}; }
 };
 
 /// Builder that accumulates Roaringish entries for a single token during index construction.
@@ -95,8 +90,7 @@ public:
         if (sorted)
             return;
 
-        std::sort(entries.begin(), entries.end(),
-            [](const RoaringishEntry & a, const RoaringishEntry & b) { return a.key() < b.key(); });
+        std::sort(entries.begin(), entries.end(), [](const RoaringishEntry & a, const RoaringishEntry & b) { return a.key() < b.key(); });
 
         size_t write = 0;
         for (size_t read = 1; read < entries.size(); ++read)
@@ -121,7 +115,7 @@ private:
     bool sorted = true;
 };
 
-using TokenToPositionListMap = StringHashMap<PositionListBuilder>;
+using TokenToPositionListMap = HashMap<PackedStringRef, PositionListBuilder>;
 
 /// Struct-of-arrays form of a roaringish position list, used on the query/decode path.
 ///
@@ -137,14 +131,34 @@ struct PositionList
 
     size_t size() const { return doc.size(); }
     bool empty() const { return doc.empty(); }
-    void clear() { doc.clear(); group.clear(); bitmap.clear(); }
-    void resize(size_t n) { doc.resize(n); group.resize(n); bitmap.resize(n); }
-    void reserve(size_t n) { doc.reserve(n); group.reserve(n); bitmap.reserve(n); }
+    void clear()
+    {
+        doc.clear();
+        group.clear();
+        bitmap.clear();
+    }
+    void resize(size_t n)
+    {
+        doc.resize(n);
+        group.resize(n);
+        bitmap.resize(n);
+    }
+    void reserve(size_t n)
+    {
+        doc.reserve(n);
+        group.reserve(n);
+        bitmap.reserve(n);
+    }
 
     /// (doc_id, group) intersection key.
     UInt64 key(size_t i) const { return (static_cast<UInt64>(doc[i]) << 32) | group[i]; }
 
-    void pushBack(UInt32 d, UInt32 g, UInt32 b) { doc.push_back(d); group.push_back(g); bitmap.push_back(b); }
+    void pushBack(UInt32 d, UInt32 g, UInt32 b)
+    {
+        doc.push_back(d);
+        group.push_back(g);
+        bitmap.push_back(b);
+    }
 };
 
 }

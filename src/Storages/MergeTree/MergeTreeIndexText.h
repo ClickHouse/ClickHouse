@@ -1,19 +1,20 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Storages/MergeTree/IPostingListCodec.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Core/SettingsEnums.h>
+#include <Formats/MarkInCompressedFile.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
+#include <base/PackedStringRef.h>
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
-#include <Storages/MergeTree/TextIndexPositionData.h>
-#include <Formats/MarkInCompressedFile.h>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -164,7 +165,7 @@ private:
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
-using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
+using TokenToPostingsBuilderMap = HashMap<PackedStringRef, PostingListBuilder>;
 /// A token paired with its posting/position builder views.
 struct SortedToken
 {
