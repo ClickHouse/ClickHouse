@@ -332,9 +332,9 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     // higher-precedence one. The requester is always treated as freeing memory — abandoning its own request
     // relieves the pressure even when it currently holds nothing — so it never sinks below a third-party
     // holder on the `allocated` component alone. `memory_eviction_score` (the per-query setting, 0 by
-    // default) then decides, falling back to the largest `fair_key`; at the default score everywhere the
-    // victim is the largest reservation, matching the previous behaviour, including a zero-byte requester
-    // self-killing its own oversized grow.
+    // default) then decides, falling back to the largest `fair_key`. At the default score the score has no
+    // effect, so the victim is the largest reservation among the candidates that can free memory — a
+    // zero-byte re-grower is not chosen even when its `fair_key` is the largest.
     auto rankKey = [&killer](const ResourceAllocation & a)
     {
         const bool frees_memory = a.allocated > 0 || &a == &killer.allocation;
