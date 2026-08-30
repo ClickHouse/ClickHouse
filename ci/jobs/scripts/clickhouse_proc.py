@@ -39,6 +39,46 @@ remote_servers:
 CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
 CLICKHOUSE_CI_LOGS_USER = "ci"
 
+# Substrings marking a "Code: 499. The specified key does not exist" log line as benign for the
+# "Lost s3 keys" / "S3_ERROR No such key thrown" checks - keep in sync with
+# check_logs_for_critical_errors() in tests/docker_scripts/stress_tests.lib. Ignored:
+#  - "a.myext" is used by 02724_database_s3.sh and does not exist
+#  - "DistributedCacheTCPHandler" and "caller id: None:DistribCache" happen inside the distributed
+#    cache server
+#  - "ReadBuffer is canceled by the exception" is a normal cancellation, the message is kept for
+#    debugging purposes
+#  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer", "ReadBufferFromS3",
+#    "ReadBufferFromAzureBlobStorage" are printed internally by a buffer, the exception is rethrown
+#    and handled correctly
+#  - "Error during background download" is printed by the filesystem cache background download
+#    worker (CacheMetadata): the prefetched object can be concurrently removed (DROP, mutation, part
+#    removal), the download is just marked as failed and the data is re-read from the source later
+#  - "caller id: None:cache-warm" is a read issued by the cache warmer, which walks the files of a
+#    part that can be removed under it; the warmer treats a missing object as expected and the file
+#    segment is never served, so nothing is lost
+NO_SUCH_KEY_IGNORES = (
+    "a.myext",
+    "ReadBuffer is canceled by the exception",
+    "DistributedCacheTCPHandler",
+    "ReadBufferFromDistributedCache",
+    "ReadBufferFromS3",
+    "ReadBufferFromAzureBlobStorage",
+    "AsynchronousBoundedReadBuffer",
+    "Error during background download",
+    "caller id: None:DistribCache",
+    "caller id: None:cache-warm",
+)
+
+
+def no_such_key_check_command(log_dir):
+    """Command behind both "No such key" checks: fails if a non-ignored occurrence is found."""
+    ignores = " ".join(f"-e '{ignore}'" for ignore in NO_SUCH_KEY_IGNORES)
+    return (
+        f"cd {log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
+        f"clickhouse-server*.log | grep -v {ignores} "
+        "| head -n100 | tee /dev/stderr | grep -q ."
+    )
+
 
 class ClickHouseProc:
     SEAWEEDFS_LOG = f"{temp_dir}/seaweedfs.log"
@@ -1137,40 +1177,8 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                         )
                     )
 
-        # Both "No such key" checks below run the same scan, so the ignore list is
-        # built once - keep it in sync with check_logs_for_critical_errors() in
-        # tests/docker_scripts/stress_tests.lib. Ignored:
-        #  - "a.myext" is used by 02724_database_s3.sh and does not exist
-        #  - "DistributedCacheTCPHandler" and "caller id: None:DistribCache" happen
-        #    inside the distributed cache server
-        #  - "ReadBuffer is canceled by the exception" is a normal cancellation, the
-        #    message is kept for debugging purposes
-        #  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer",
-        #    "ReadBufferFromS3", "ReadBufferFromAzureBlobStorage" are printed
-        #    internally by a buffer, the exception is rethrown and handled correctly
-        #  - "Error during background download" is printed by the filesystem cache
-        #    background download worker (CacheMetadata): the prefetched object can be
-        #    concurrently removed (DROP, mutation, part removal), the download is just
-        #    marked as failed and the data is re-read from the source later
-        no_such_key_ignores = " ".join(
-            f"-e '{ignore}'"
-            for ignore in (
-                "a.myext",
-                "ReadBuffer is canceled by the exception",
-                "DistributedCacheTCPHandler",
-                "ReadBufferFromDistributedCache",
-                "ReadBufferFromS3",
-                "ReadBufferFromAzureBlobStorage",
-                "AsynchronousBoundedReadBuffer",
-                "Error during background download",
-                "caller id: None:DistribCache",
-            )
-        )
-        no_such_key_command = (
-            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
-            f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
-            "| head -n100 | tee /dev/stderr | grep -q ."
-        )
+        # Both "No such key" checks below run the same scan, so build it once.
+        no_such_key_command = no_such_key_check_command(self.log_dir)
         results.append(
             Result.from_commands_run(
                 name="Lost s3 keys",
