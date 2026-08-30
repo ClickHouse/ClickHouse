@@ -32,11 +32,11 @@ INSERT INTO t_text_index_like_guards
     FROM numbers(100000);
 
 -- Rows budget = 0: any non-embedded posting row overflows immediately -> discard + fallback.
-SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%pa%'
+SELECT /* like_guards_q1 */ count() FROM t_text_index_like_guards WHERE message LIKE '%pa%'
     SETTINGS text_index_like_max_postings_to_read = 1000000, text_index_like_max_postings_rows_to_read = 0;
 
 -- Non-selective pattern ('%p%' matches all 100 000 rows) -> bypassed before postings reads.
-SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%p%'
+SELECT /* like_guards_q2 */ count() FROM t_text_index_like_guards WHERE message LIKE '%p%'
     SETTINGS text_index_like_min_pattern_length = 1, text_index_like_max_postings_to_read = 1000000;
 
 -- Selective token needle: the index serves it, no bypass, correct result.
@@ -50,13 +50,13 @@ SELECT 'q1',
     ProfileEvents['TextIndexDiscardPatternQueryLowSelectivity'] > 0 AS bypassed_low_selectivity
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
-    AND query LIKE 'SELECT count() FROM t_text_index_like_guards WHERE message LIKE \'%pa%\'%text_index_like_max_postings_rows_to_read = 0%';
+    AND query LIKE 'SELECT /* like_guards_q1 */%';
 
 SELECT 'q2',
     ProfileEvents['TextIndexDiscardPatternScan'] > 0 AS discarded_scan,
     ProfileEvents['TextIndexDiscardPatternQueryLowSelectivity'] > 0 AS bypassed_low_selectivity
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
-    AND query LIKE 'SELECT count() FROM t_text_index_like_guards WHERE message LIKE \'%p%\'%text_index_like_min_pattern_length = 1%';
+    AND query LIKE 'SELECT /* like_guards_q2 */%';
 
 DROP TABLE t_text_index_like_guards;
