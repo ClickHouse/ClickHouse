@@ -93,3 +93,38 @@ SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT tuple((x = 1) AND (materializ
 -- the optimization (NULL excluded, `1`/`5` filtered out; only `10` remains).
 SELECT groupArray(x) FROM (SELECT x FROM values('x LowCardinality(Nullable(Int32))', 1, 5, NULL, 10) WHERE (x != 1) AND (x != 5) ORDER BY x SETTINGS optimize_redundant_comparisons = 1);
 SELECT groupArray(x) FROM (SELECT x FROM values('x LowCardinality(Nullable(Int32))', 1, 5, NULL, 10) WHERE (x != 1) AND (x != 5) ORDER BY x SETTINGS optimize_redundant_comparisons = 0);
+
+-- 7) The carrier the AST fuzzer keeps rediscovering on master (`Logical error:
+--    '!raw_type->isNullable()'`, STID `2508-50fe`, e.g.
+--    https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=d469feea5f342065ffe8b2384d4ddf354dae3978&name_0=MasterCI&name_1=Stress%20test%20%28arm_asan_ubsan%29 ).
+--    It reaches the same `addComparisonFilter` through a different route than the cases above: the
+--    `Nothing`-typed operand comes from `ARRAY JOIN []` (whose element type is `Nothing`) instead of
+--    `assumeNotNull(materialize(toNullable(NULL)))`, and the collapsed AND sits in a `JOIN ON`
+--    section. `JOIN ON` is load-bearing - the same AND in a `WHERE` is rejected earlier, so only the
+--    join expression lets a `Nothing`-typed AND reach the optimizer.
+DROP TABLE IF EXISTS t_and_chain_array_join;
+CREATE TABLE t_and_chain_array_join (c0 Int32) ENGINE = MergeTree() ORDER BY tuple();
+INSERT INTO t_and_chain_array_join VALUES (1), (2);
+
+--    `t2.c0 = a0` is `Nothing`-typed and collapses the AND's own result type, while
+--    `toNullable(t2.c0) > 0` stays `Nullable(UInt8)` and reaches the pruning path. `ARRAY JOIN []`
+--    produces no rows, so the query is valid and returns nothing; assert the empty result on every
+--    combination of the two settings, since either entry point alone reaches the assertion.
+SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1;
+SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 0;
+SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 1;
+SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 0;
+--    A result-only check stays green if the queries stop running the optimizer at all, so pin the
+--    pruning as well: given `> 5`, the sibling `> 3` is redundant and folded away, leaving the
+--    Nullable-result `greater` plus one surviving constant comparison.
+SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) SETTINGS optimize_redundant_comparisons = 1) WHERE explain ILIKE '%function_name: greater,%';
+SELECT count() = 3 FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) SETTINGS optimize_redundant_comparisons = 0) WHERE explain ILIKE '%function_name: greater,%';
+--    The exact fuzzer query: here the Nullable-result comparison is over a correlated scalar
+--    subquery rather than a column. `optimize_and_compare_chain` does not gate this one -
+--    `tryOptimizeAndCompareChain` skips a chain holding a correlated subquery, while
+--    `tryOptimizeAndCompareNotEqualsChain` has no such guard - so it arrives only via
+--    `optimize_redundant_comparisons`. A correlated subquery is not supported in a join expression,
+--    so the query must report that handled exception instead of aborting.
+SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_redundant_comparisons = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_redundant_comparisons = 0; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE t_and_chain_array_join;
