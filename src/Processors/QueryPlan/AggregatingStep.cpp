@@ -348,9 +348,13 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.only_merge)
         return "the step only merges";
 
-    /// TODO (nihalzp): Support the group-by limits and the overflow row.
-    if (params.max_rows_to_group_by != 0 || params.overflow_row)
-        return "group-by limits or the overflow row are set";
+
+    /// TODO (nihalzp): Support the break and any overflow modes and the overflow row.
+    if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode != OverflowMode::THROW)
+        return "a dropping group-by limit mode is set";
+
+    if (params.overflow_row)
+        return "the overflow row is set";
 
     if (params.keys_size < 1)
         return "the aggregation has no keys";
