@@ -238,7 +238,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                     if (materialized_arg.type->isNullable())
                         materialized_arg.column = materialized_arg.column->convertToFullColumnIfReplicated();
                 }
-                return defaultImplementationForNulls(materialized_args, result_type, input_rows_count, dry_run);
+                return defaultImplementationForNulls(materialized_args, result_type, input_rows_count, dry_run, profile);
             }
         }
 
