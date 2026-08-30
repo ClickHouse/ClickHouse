@@ -371,11 +371,15 @@ class RunnerPool:
                 {
                     "Sid": "SQSReceiveDelete",
                     "Effect": "Allow",
+                    # No sqs:SendMessage: runners only consume their queue (jobs
+                    # report completion via S3, the orchestrator is the only
+                    # dispatcher). Granting it would let a job with instance-role
+                    # credentials inject synthetic job_task messages or flood the
+                    # queue, bypassing orchestrator scheduling.
                     "Action": [
                         "sqs:ReceiveMessage",
                         "sqs:DeleteMessage",
                         "sqs:ChangeMessageVisibility",
-                        "sqs:SendMessage",
                         "sqs:GetQueueUrl",
                         "sqs:GetQueueAttributes",
                     ],
