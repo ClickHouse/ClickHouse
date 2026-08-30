@@ -276,6 +276,19 @@ SELECT count() FROM dist_probe_missing_nested SETTINGS enable_analyzer = 0, pref
 SELECT count() FROM dist_probe_missing_nested SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 0, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
 DROP TABLE dist_probe_missing_nested;
 
+-- A target that resolves its backing object while parsing its arguments rather than while resolving its
+-- structure (`timeSeriesMetrics` and the other `timeSeries*` / `prometheusQuery*` functions call
+-- `resolveStorageID` / `DatabaseCatalog::getTable` in `parseArguments`) must be classified the same way:
+-- the probe builds the table function inside the same tolerant block, so a source table missing only on the
+-- local replica is skipped or failed over instead of aborting the read.
+CREATE TABLE dist_probe_missing_ts (id UUID, metric_family_name String, type String, unit String, help String)
+    ENGINE = Distributed(test_shard_localhost, timeSeriesMetrics(currentDatabase(), 'probe_no_such_ts'));
+SELECT count() FROM dist_probe_missing_ts SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT count() FROM dist_probe_missing_ts SETTINGS enable_analyzer = 0, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+-- Without `skip_unavailable_shards` (and with no remote replica to try) the missing source still surfaces.
+SELECT count() FROM dist_probe_missing_ts SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 0, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+DROP TABLE dist_probe_missing_ts;
+
 -- A deterministic evaluation failure of the target table function is a real error and must be surfaced, not
 -- silently downgraded to a skipped shard: the local-replica probe treats only a missing backing object
 -- (`UNKNOWN_TABLE` / `UNKNOWN_DATABASE`) as "table absent",

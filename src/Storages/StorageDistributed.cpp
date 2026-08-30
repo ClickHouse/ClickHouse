@@ -2642,8 +2642,10 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         /// in it can neither be read nor frozen: the shards that do have the collection would resolve an
         /// empty stored database against the current database of whatever session reads the table, which
         /// is exactly the session dependency this binding removes. Such a definition is therefore not
-        /// persisted at all - it is rejected, and naming the database explicitly with a `database = ...`
-        /// / `db = ...` override (bound above) makes the target well defined again.
+        /// persisted at all - it is rejected. An explicit `database = ...` / `db = ...` override is not an
+        /// escape hatch: it only lets this walk skip the collection, after which target-argument validation
+        /// parses the target through `TableFunctionRemote` and reports the absent collection itself as
+        /// `NAMED_COLLECTION_DOESNT_EXIST`. The collection must be defined on this server either way.
         /// `identifier_can_only_name_a_collection` tells the two spellings apart: with a `key = value`
         /// override present no positional signature matches, so the identifier must be a collection
         /// (`parseRemoteFunctionArguments` reports a missing one itself). A configured-cluster identifier
@@ -2670,8 +2672,9 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
                                 "'{}' is not a named collection on this server, so the database of the '{}' target cannot be "
                                 "bound to the current database of this CREATE: a collection defined only on the shards may store "
                                 "an empty database, which is resolved against the current database of the session that reads the "
-                                "table. Define the collection on this server, or name the database explicitly with a "
-                                "'database = ...' argument.",
+                                "table. Define the collection on this server: an explicit 'database = ...' / 'db = ...' "
+                                "override is not enough, because the target arguments are validated by parsing them, "
+                                "which needs the collection as well.",
                                 collection_identifier->name(),
                                 function_name);
             }
@@ -3232,7 +3235,7 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
-The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` (including its SQL-standard aliases `DATABASE()`, `SCHEMA()`, and `current_database()`) is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`, and an empty database argument of `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`, positional or a named-collection `database`/`db` override, e.g. `remote('127.0.0.1', '', 'table')` or `remote(collection, database = '', table = 'table')`, and likewise an empty database stored inside the named collection itself, which is frozen by injecting a literal `database` override) is filled in with the current database. A named collection that is not defined on this server cannot be resolved at `CREATE` time, so its stored database can neither be read nor frozen, and such a target is rejected unless the database is named explicitly with a `database`/`db` argument. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
+The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` (including its SQL-standard aliases `DATABASE()`, `SCHEMA()`, and `current_database()`) is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`, and an empty database argument of `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`, positional or a named-collection `database`/`db` override, e.g. `remote('127.0.0.1', '', 'table')` or `remote(collection, database = '', table = 'table')`, and likewise an empty database stored inside the named collection itself, which is frozen by injecting a literal `database` override) is filled in with the current database. A named collection that is not defined on this server cannot be resolved at `CREATE` time, so its stored database can neither be read nor frozen, and such a target is rejected. An explicit `database`/`db` argument is not an escape hatch: the target arguments are validated by parsing them, which needs the collection as well, so an unresolvable collection is rejected in that spelling too. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
 
 :::note Read-only
 A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).

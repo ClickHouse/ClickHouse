@@ -316,13 +316,17 @@ void SelectStreamFactory::createForShardImpl(
             /// (`registerStorageDistributed` -> `getStructureOfRemoteTable`). So probe - and materialize - a copy.
             ASTPtr local_table_func_ptr = table_func_ptr->clone();
 
-            /// `get` invokes `parseArguments`, where arbitrary expressions in a user-provided
-            /// target can be evaluated. In particular, a scalar subquery can report
-            /// `UNKNOWN_TABLE` before the table function has attempted to resolve its backing
-            /// object. Do not turn such definition errors into an absent local replica.
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(local_table_func_ptr, context);
+            /// `get` is inside the tolerant block as well: a target that resolves its backing object while
+            /// parsing arguments (`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery*`, ...) reports a
+            /// missing one from `get`, and it must take the same skip/failover path as the named-table branch
+            /// rather than abort the query. Argument evaluation of the static-structure functions this could
+            /// otherwise misclassify does not happen here: `numbers`/`zeros` have no `parseArguments` at all and
+            /// evaluate their arguments in `executeImpl` below, outside the block, so
+            /// `numbers((SELECT count() FROM missing_src))` still surfaces its `UNKNOWN_TABLE` to the user.
+            TableFunctionPtr table_function_ptr;
             try
             {
+                table_function_ptr = TableFunctionFactory::instance().get(local_table_func_ptr, context);
                 table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query=*/false);
             }
             catch (const Exception & e)
