@@ -9,6 +9,7 @@
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
+#include <Common/ActionBlocker.h>
 #include <Common/ExternalLoaderStatus.h>
 #include <Common/Logger.h>
 #include <Core/Types.h>
@@ -79,6 +80,10 @@ public:
         Duration loading_duration{};
         std::exception_ptr exception;
         std::shared_ptr<const ObjectConfig> config;
+        /// Whether the last loading attempt gave up because reload was blocked (SYSTEM STOP RELOAD DICTIONARIES),
+        /// as opposed to still being in progress. Callers that poll for a terminal state should treat this the
+        /// same as a failure, since it will otherwise never resolve on its own while reload stays blocked.
+        bool blocked = false;
     };
 
     using LoadResults = std::vector<LoadResult>;
@@ -221,6 +226,8 @@ public:
 
     /// Reload only a specified path in a specified config repository.
     void reloadConfig(const String & repository_name, const String & path) const;
+
+    ActionLock getActionLock();
 
 protected:
     virtual LoadableMutablePtr createObject(
