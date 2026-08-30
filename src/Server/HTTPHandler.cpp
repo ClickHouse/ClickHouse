@@ -1398,25 +1398,38 @@ void HTTPHandler::processQuery(
                         --parentheses_depth;
                 }
 
-                /// Skip the body of the CTE: either a parenthesized subquery or a single name.
+                /// Skip the body of the CTE: a parenthesized subquery, optionally prefixed with
+                /// `MATERIALIZED` (see `ParserWithElement`), or a single name.
                 token = next_significant_token();
                 if (token.isEnd() || token.isError())
                     return false;
-                if (token.type == TokenType::OpeningRoundBracket)
+                bool token_is_past_the_body = false;
+                if (is_keyword(token, "MATERIALIZED"))
                 {
-                    for (size_t depth = 1; depth != 0;)
-                    {
-                        token = next_significant_token();
-                        if (token.isEnd() || token.isError())
-                            return false;
-                        if (token.type == TokenType::OpeningRoundBracket)
-                            ++depth;
-                        else if (token.type == TokenType::ClosingRoundBracket)
-                            --depth;
-                    }
+                    /// `MATERIALIZED` acts as the keyword only when a subquery follows; a bare
+                    /// `MATERIALIZED` is an ordinary alias name, and then the token just read is
+                    /// already the one after the body.
+                    token = next_significant_token();
+                    token_is_past_the_body = token.type != TokenType::OpeningRoundBracket;
                 }
+                if (!token_is_past_the_body)
+                {
+                    if (token.type == TokenType::OpeningRoundBracket)
+                    {
+                        for (size_t depth = 1; depth != 0;)
+                        {
+                            token = next_significant_token();
+                            if (token.isEnd() || token.isError())
+                                return false;
+                            if (token.type == TokenType::OpeningRoundBracket)
+                                ++depth;
+                            else if (token.type == TokenType::ClosingRoundBracket)
+                                --depth;
+                        }
+                    }
 
-                token = next_significant_token();
+                    token = next_significant_token();
+                }
                 if (token.type != TokenType::Comma)
                     break;
             }

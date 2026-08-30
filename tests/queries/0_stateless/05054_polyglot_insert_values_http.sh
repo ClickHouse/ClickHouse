@@ -40,6 +40,17 @@ ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=WITH%20cte%20AS%20(SELECT%201)
 echo "--- no insert when an HTTP body accompanies a CTE-wrapped polyglot INSERT (expect: 7 1) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# `AS MATERIALIZED (<subquery>)` is another CTE body form (see `ParserWithElement`): the scan must
+# consume the `MATERIALIZED` keyword and the subquery to reach the INSERT that follows.
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=WITH%20cte%20AS%20MATERIALIZED%20(SELECT%201)%20INSERT%20INTO%20t%20VALUES%20(12)" -d ',(13)' 2>&1 | grep -om1 "NOT_IMPLEMENTED"
+echo "--- no insert when an HTTP body accompanies a materialized-CTE-wrapped polyglot INSERT (expect: 7 1) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
+# ... while a bare `MATERIALIZED` not followed by a subquery is an ordinary alias name, and such a
+# query keeps the legacy behavior of continuing the URL query with the request body.
+echo "--- the request body continues a URL query with a bare materialized alias ---"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&input_format_max_block_wait_ms=1000&query=WITH%201%20AS%20materialized%20SELECT%20materialized%20AS%20insert" -d ' FORMAT JSONEachRow'
+
 # The bareword `INSERT` on its own does not make a query an `INSERT` statement - it is also a legal
 # identifier. Such a query must keep the legacy behavior of continuing the URL query with the
 # request body instead of taking the streaming-safe path meant for inline data.

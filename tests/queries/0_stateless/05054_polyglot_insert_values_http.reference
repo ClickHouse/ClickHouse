@@ -6,6 +6,11 @@ NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 --- no insert when an HTTP body accompanies a CTE-wrapped polyglot INSERT (expect: 7 1) ---
 7	1
+NOT_IMPLEMENTED
+--- no insert when an HTTP body accompanies a materialized-CTE-wrapped polyglot INSERT (expect: 7 1) ---
+7	1
+--- the request body continues a URL query with a bare materialized alias ---
+{"insert":1}
 --- the request body continues a URL query that only mentions the identifier insert ---
 {"insert":2}
 --- the request body continues a URL query aliasing both insert and into ---
