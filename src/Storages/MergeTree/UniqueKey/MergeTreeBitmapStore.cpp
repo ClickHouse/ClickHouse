@@ -161,6 +161,9 @@ void MergeTreeBitmapStore::dropPart(const IMergeTreeDataPart & part)
 
     if (!owed.empty())
     {
+        /// A divergence: `grabOldParts` holds an owing part back rather than removing it. Forget
+        /// rather than throw -- the part is already out of the set, and leaking the index entry on
+        /// top of the lost kills helps nobody.
         forgetStagedBitmaps(part.info, owed);
 
         Strings targets;
@@ -168,10 +171,10 @@ void MergeTreeBitmapStore::dropPart(const IMergeTreeDataPart & part)
         for (const auto & target : owed)
             targets.push_back(target.getPartNameV1());
 
-        LOG_WARNING(log,
+        LOG_ERROR(log,
             "Part '{}' left the part set still owing staged delete bitmaps for {} target(s) ({}). "
             "Those targets have been unlinked from it and no longer apply the kills those bitmaps "
-            "carried. Such a part should have been held back until its bitmaps settled",
+            "carried",
             partNameV1(part), targets.size(), fmt::join(targets, ", "));
     }
 
@@ -226,17 +229,11 @@ MergeTreeBitmapStore::stagedVersions(const std::vector<MergeTreePartInfo> & owne
         const auto owner = findPart(owner_info);
         if (!owner)
         {
-            /// Deliberately the weaker predicate, unlike `sweepOrphanTarget` below: skipping is
-            /// only safe while the load is still running, because it converges. A readonly table
-            /// never schedules that load, so `outdatedPartsSetIsComplete()` would stay false
-            /// forever and every unresolvable owner would be skipped silently -- dropping the kills
-            /// its staged bitmap holds from the read. Throwing is the right answer there.
-            if (!data.outdatedPartsLoadingFinished())
-                continue;
-
-            /// Afterwards it is a divergence between the index and the part set, and skipping it
-            /// would silently drop whatever kills the staged bitmap holds. `entries` is memory-only
-            /// and rebuilt from disk by `loadPart`, so this cannot outlive the process that broke it.
+            /// An owner enters the index only once `loadPart` has seen it, and one that owes a
+            /// staged bitmap is held back from removal, so it cannot have left the part set.
+            /// Skipping it would silently drop whatever kills the staged bitmap holds. `entries` is
+            /// memory-only and rebuilt from disk by `loadPart`, so this cannot outlive the process
+            /// that broke it.
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Part {} is indexed as holding a staged delete bitmap but is in neither Active nor "
                 "Outdated, so the kills in that bitmap cannot be resolved",
@@ -373,16 +370,13 @@ IBitmapStore::SettleReport MergeTreeBitmapStore::settleStagedBitmaps(
     const auto owner = findPart(owner_info);
     if (!owner)
     {
+        /// An owing part is held back from removal, so this is a divergence. Not fail-closed: the
+        /// staged files are still on disk, and the caller sees them counted as outstanding.
         LOG_ERROR(log,
             "Cannot settle the staged delete bitmaps of part {}: it is not in this table's part set, "
             "so nothing can be published out of it", owner_info.getPartNameV1());
-        return {.owner_unresolved = true};
+        return {.failed = targets.size()};
     }
-
-    if (owner->getState() == MergeTreeData::DataPartState::Outdated)
-        LOG_ERROR(log,
-            "Part {} is Outdated but still holds staged delete bitmaps; some retire path did not "
-            "discharge it.", partNameV1(*owner));
 
     SettleReport report;
     for (const auto & target : targets)

@@ -4143,6 +4143,14 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 continue;
             }
 
+            /// Above the `force` branch below: a forced round must not drop another part's kills either.
+            if (hasUnsettledStagedBitmaps(*part))
+            {
+                part->removal_state.store(DataPartRemovalState::HAS_UNSETTLED_STAGED_BITMAPS, std::memory_order_relaxed);
+                skipped_parts.push_back(part->info);
+                continue;
+            }
+
             /// First remove all covered parts, then remove covering empty part
             /// Avoids resurrection of old parts for MergeTree and issues with unexpected parts for Replicated
             if (part->rows_count == 0 && !getCoveredOutdatedParts(part, parts_lock).empty())
@@ -4603,44 +4611,52 @@ UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
     return *unique_key_txn_manager;
 }
 
-DataPartsVector MergeTreeData::trySettleStagedBitmaps(const DataPartsVector & parts)
+bool MergeTreeData::hasUnsettledStagedBitmaps(const IMergeTreeDataPart & part) const
 {
-    if (parts.empty() || !unique_key_txn_manager)
-        return parts;
+    if (!unique_key_txn_manager)
+        return false;
 
-    const String table_name = getStorageID().getNameForLogs();
+    /// A rolled-back transaction's bitmaps never publish, so holding the part back would pin it forever.
+    if (part.version->getInfo().creation_csn == Tx::RolledBackCSN)
+        return false;
 
-    DataPartsVector settled;
-    settled.reserve(parts.size());
-    for (const auto & part : parts)
+    return !uniqueKeyTxnManager().bitmapStore().stagedTargetsOf(part.info).empty();
+}
+
+void MergeTreeData::settleOutstandingStagedBitmaps()
+{
+    if (!unique_key_txn_manager)
+        return;
+
+    /// Active too: such a part blocks its own retirement, and nothing else comes back for it.
+    DataPartsVector owners;
+    {
+        auto lock = readLockParts();
+        for (const auto state : {DataPartState::Active, DataPartState::Outdated})
+            for (const auto & part : getDataPartsStateRange(state))
+                if (hasUnsettledStagedBitmaps(*part))
+                    owners.push_back(part);
+    }
+
+    for (const auto & part : owners)
     {
         try
         {
-            if (const auto report = uniqueKeyTxnManager().settleStagedBitmaps(*part); report.anyOutstanding())
-            {
-                LOG_WARNING(log,
-                    "Not removing part {} of table {} yet: {} staged delete bitmap(s) could not be settled "
-                    "({} deferred, {} failed{})",
-                    part->name, table_name, report.deferred + report.failed,
-                    report.deferred, report.failed,
-                    report.owner_unresolved ? ", and an owner is no longer in the part set" : "");
-                continue;
-            }
+            const auto report = uniqueKeyTxnManager().settleStagedBitmaps(*part);
+
+            /// Deferred alone is nobody's problem: the next round retries, and a part whose
+            /// transaction is still committing defers every round until the commit lands.
+            if (report.failed)
+                LOG_WARNING(log, "Part {} could not settle {} staged delete bitmap(s)", part->name, report.failed);
+            else
+                LOG_TRACE(log, "Part {}: settled {}, deferred {}", part->name, report.settled, report.deferred);
         }
         catch (...)
         {
             tryLogCurrentException(log,
-                fmt::format("Settle part {} of table {} staged delete bitmaps failed",
-                    part->name, table_name));
-            continue;
+                fmt::format("Could not settle the staged delete bitmaps of part {}", part->name));
         }
-
-        LOG_TRACE(log, "Settled the staged delete bitmaps of part {} of table {}", part->name, table_name);
-        settled.push_back(part);
     }
-
-    LOG_TRACE(log, "Settled {} of {} part(s) of table {}", settled.size(), parts.size(), table_name);
-    return settled;
 }
 
 void MergeTreeData::loadUniqueKeyBitmaps(const DataPartPtr & part)
@@ -4694,24 +4710,12 @@ size_t MergeTreeData::clearEmptyParts()
                 && !part->version->isVisible(TransactionLog::instance().getLatestSnapshot()))
                 continue;
 
+            /// Dropping it would only move it to Outdated, where `grabOldParts` holds it back.
+            if (hasUnsettledStagedBitmaps(*part))
+                continue;
+
             parts_names_to_drop.emplace_back(part->name);
         }
-    }
-
-    /// For unique-key table, unsettled part cannot be dropped
-    if (hasUniqueKey())
-    {
-        DataPartsVector parts_to_settle;
-        parts_to_settle.reserve(parts_names_to_drop.size());
-        for (const auto & name : parts_names_to_drop)
-            if (auto part = getPartIfExists(name, {DataPartState::Active}))
-                parts_to_settle.push_back(std::move(part));
-
-        NameSet settled;
-        for (const auto & part : trySettleStagedBitmaps(parts_to_settle))
-            settled.insert(part->name);
-
-        std::erase_if(parts_names_to_drop, [&](const String & name) { return !settled.contains(name); });
     }
 
     for (auto & name : parts_names_to_drop)

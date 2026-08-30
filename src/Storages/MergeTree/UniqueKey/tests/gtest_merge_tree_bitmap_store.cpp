@@ -4,7 +4,9 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/SharedThreadPools.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -13,6 +15,7 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/UniqueKey/MergeTreeBitmapStore.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 #include <Storages/MergeTree/UniqueKey/tests/gtest_part_storage_fixture.h>
 #include <Storages/StorageMergeTree.h>
 #include <Common/CurrentThread.h>
@@ -35,11 +38,13 @@ namespace
 /// background task runs, and the part set holds only what `addPart` puts there.
 struct TableFixture
 {
+    /// A unique key gives the table its own `UniqueKeyTxnManager`, and so the store that
+    /// `MergeTreeData` itself consults. The store tests build a standalone store instead.
     ContextMutablePtr context;
     std::shared_ptr<StorageMergeTree> table;
     std::string relative_path;
 
-    TableFixture()
+    explicit TableFixture(bool with_unique_key = false)
     {
         MainThreadStatus::getInstance();
         tryRegisterFunctions();
@@ -56,11 +61,17 @@ struct TableFixture
         columns.add(ColumnDescription("id", std::make_shared<DataTypeUInt64>()));
         metadata.setColumns(columns);
 
-        auto order_by_ast = makeASTFunction("tuple");
+        /// A UNIQUE KEY has to sit on a real sorting key; nothing else here cares what it is.
+        auto order_by_ast = with_unique_key
+            ? makeASTFunction("tuple", make_intrusive<ASTIdentifier>("id"))
+            : makeASTFunction("tuple");
         metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
         metadata.primary_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
         metadata.primary_key.definition_ast = nullptr;
         metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, {}, context);
+
+        if (with_unique_key)
+            metadata.unique_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
 
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
@@ -355,3 +366,88 @@ TEST(MergeTreeBitmapStoreTest, StagedOwnerThatLeftThePartSetIsRejected)
 }
 
 #endif
+
+/// Goes red if the `hasUnsettledStagedBitmaps` guard in `grabOldParts` is dropped. No retire path
+/// reaches this state today -- they all settle first or refuse -- so the test builds it directly.
+TEST(MergeTreeBitmapStoreTest, GrabOldPartsHoldsBackAPartWithUnsettledStagedBitmaps)
+{
+    TableFixture tbl{/*with_unique_key=*/ true};
+
+    auto owner = tbl.addPart("all_2_2_0", /*first_id=*/ 100, /*rows=*/ 4);
+    ASSERT_NE(owner, nullptr);
+    const auto owner_info = owner->info;
+    tbl.table->uniqueKeyTxnManager().bitmapStore().registerStagedBitmaps(
+        owner_info, {tbl.partInfo("all_1_1_0")});
+
+    {
+        auto lock = tbl.table->lockParts();
+        tbl.table->removePartsFromWorkingSet(
+            NO_TRANSACTION_RAW, {owner}, /*clear_without_timeout=*/ true, lock);
+    }
+
+    /// `grabOldParts` skips a part any second holder can still see, so the fixture's own reference
+    /// has to go -- otherwise the part is held back for the wrong reason and the test proves nothing.
+    owner.reset();
+
+    EXPECT_TRUE(tbl.table->grabOldParts(/*force=*/ true).empty());
+
+    const auto held = tbl.table->getPartIfExists(owner_info, {MergeTreeData::DataPartState::Outdated});
+    ASSERT_NE(held, nullptr);
+    EXPECT_EQ(held->removal_state.load(), DataPartRemovalState::HAS_UNSETTLED_STAGED_BITMAPS);
+}
+
+/// Goes red if the guard over-triggers. It does NOT catch the guard being dropped -- read it with
+/// the test above, not instead of it.
+TEST(MergeTreeBitmapStoreTest, GrabOldPartsTakesAPartWithNoStagedBitmaps)
+{
+    TableFixture tbl{/*with_unique_key=*/ true};
+
+    auto owner = tbl.addPart("all_2_2_0", /*first_id=*/ 100, /*rows=*/ 4);
+    ASSERT_NE(owner, nullptr);
+
+    {
+        auto lock = tbl.table->lockParts();
+        tbl.table->removePartsFromWorkingSet(
+            NO_TRANSACTION_RAW, {owner}, /*clear_without_timeout=*/ true, lock);
+    }
+    owner.reset();
+
+    EXPECT_EQ(tbl.table->grabOldParts(/*force=*/ true).size(), 1u);
+}
+
+/// Goes red if the `RolledBackCSN` exemption is dropped: the part would be pinned forever, because
+/// its staged bitmaps can never publish.
+TEST(MergeTreeBitmapStoreTest, GrabOldPartsTakesARolledBackPartWithStagedBitmaps)
+{
+    TableFixture tbl{/*with_unique_key=*/ true};
+
+    auto owner = tbl.addPart("all_2_2_0", /*first_id=*/ 100, /*rows=*/ 4);
+    ASSERT_NE(owner, nullptr);
+    tbl.table->uniqueKeyTxnManager().bitmapStore().registerStagedBitmaps(
+        owner->info, {tbl.partInfo("all_1_1_0")});
+    owner->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
+
+    {
+        auto lock = tbl.table->lockParts();
+        tbl.table->removePartsFromWorkingSet(
+            NO_TRANSACTION_RAW, {owner}, /*clear_without_timeout=*/ true, lock);
+    }
+    owner.reset();
+
+    EXPECT_EQ(tbl.table->grabOldParts(/*force=*/ true).size(), 1u);
+}
+
+/// Goes red if the unresolvable-owner branch reports a guessed count instead of the whole list.
+TEST(MergeTreeBitmapStoreTest, SettleCountsEveryTargetFailedWhenTheOwnerIsGone)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const std::vector<MergeTreePartInfo> targets{
+        tbl.partInfo("all_1_1_0"), tbl.partInfo("all_2_2_0")};
+
+    const auto report = store.settleStagedBitmaps(tbl.partInfo("all_9_9_0"), targets, /*csn=*/7);
+    EXPECT_EQ(report.failed, targets.size());
+    EXPECT_EQ(report.settled, 0u);
+    EXPECT_TRUE(report.anyOutstanding());
+}

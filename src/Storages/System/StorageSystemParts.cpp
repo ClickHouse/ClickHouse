@@ -34,6 +34,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Waiting mutation parent to be removed";
     case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
         return "Waiting for covered parts to be removed first";
+    case DB::DataPartRemovalState::HAS_UNSETTLED_STAGED_BITMAPS:
+        return "Waiting for the delete bitmaps this part stages for others to settle";
     case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
     case DB::DataPartRemovalState::REMOVE_ROLLED_BACK:

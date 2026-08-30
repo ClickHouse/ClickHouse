@@ -1046,29 +1046,23 @@ public:
 
     size_t clearEmptyParts();
 
-    /// False while outdated parts are still being loaded asynchronously, so a part that is simply
-    /// not loaded yet is indistinguishable from one that never existed. Any decision to DESTROY
-    /// state on the strength of "this part does not resolve" has to wait for this.
-    bool outdatedPartsLoadingFinished() const
-    {
-        return outdated_data_parts_loading_finished.load(std::memory_order_relaxed);
-    }
-
-    /// True only when the in-memory Outdated set is the whole Outdated set on disk.
-    /// `outdatedPartsLoadingFinished()` cannot answer that on its own: it reads `true` both when the
-    /// asynchronous load finished and when it was never scheduled (readonly disks / `table_readonly`),
-    /// and in the latter case the set is absent rather than empty.
+    /// True only when the in-memory Outdated set is the whole Outdated set on disk. The load flag
+    /// alone cannot say that: it reads `true` both when the asynchronous load finished and when it
+    /// was never scheduled (readonly disks / `table_readonly`), and in the latter case the set is
+    /// absent rather than empty. Any decision to DESTROY state on the strength of "this part does
+    /// not resolve" has to wait for this.
     bool outdatedPartsSetIsComplete() const
     {
-        return outdatedPartsLoadingFinished()
+        return outdated_data_parts_loading_finished.load(std::memory_order_relaxed)
             && !outdated_data_parts_loading_skipped.load(std::memory_order_relaxed);
     }
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
-    /// Settle the staged bitmaps each part still owes, per part
-    /// Returns the parts that settled, so a caller cannot remove those parts not settled.
-    DataPartsVector trySettleStagedBitmaps(const DataPartsVector & parts);
+    /// Index-only -- no part lookup, no i/o -- so it is safe to call under the part-set lock.
+    bool hasUnsettledStagedBitmaps(const IMergeTreeDataPart & part) const;
+
+    void settleOutstandingStagedBitmaps();
 
     /// Announce a part's directory to the bitmap store, which indexes the sidecars in it.
     void loadUniqueKeyBitmaps(const DataPartPtr & part);

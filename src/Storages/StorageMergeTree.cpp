@@ -2359,6 +2359,10 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
 size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
 {
+    /// Before the grab, which holds those parts back. The only retry of a settle that failed or
+    /// deferred after the commit that staged it.
+    settleOutstandingStagedBitmaps();
+
     DataPartsVector parts_to_remove = grabOldParts(force);
     if (parts_to_remove.empty())
         return 0;

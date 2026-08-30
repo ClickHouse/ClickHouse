@@ -55,24 +55,20 @@ public:
         /// Published into the target, or unlinked because the target is provably gone. Nothing left.
         size_t settled = 0;
         /// Left staged: the target is missing while the part set is still loading, so "reclaimed"
-        /// and "not loaded yet" are the same observation. Benign only where a retry is free.
+        /// and "not loaded yet" are the same observation. The next GC round retries it.
         size_t deferred = 0;
-        /// Left staged: the settle itself threw, or the file does not name a parseable part.
+        /// Left staged: the settle itself threw, the file does not name a parseable part, or the
+        /// owner is no longer resolvable.
         size_t failed = 0;
-        /// `owner`'s staged set could not be enumerated at all -- unresolvable part, or a failed
-        /// listing -- so the three counts above say nothing about it. Its own field rather than a
-        /// `failed` of unknown size, because that count would be a guess.
-        bool owner_unresolved = false;
 
         /// Everything a retire path must refuse to proceed over.
-        bool anyOutstanding() const { return owner_unresolved || deferred > 0 || failed > 0; }
+        bool anyOutstanding() const { return deferred > 0 || failed > 0; }
 
         void add(const SettleReport & other)
         {
             settled += other.settled;
             deferred += other.deferred;
             failed += other.failed;
-            owner_unresolved |= other.owner_unresolved;
         }
     };
 
@@ -83,7 +79,7 @@ public:
         const MergeTreePartInfo & owner, const std::vector<MergeTreePartInfo> & targets, CSN csn) = 0;
 
     /// The same, for every target the index has for `owner`. For a caller holding a part and no
-    /// staging record -- a retire path, which must drain the owner completely, and recovery, whose
+    /// staging record -- a retire path, which must settle the owner completely, and recovery, whose
     /// staging call is in a dead process.
     virtual SettleReport settleStagedBitmaps(const MergeTreePartInfo & owner, CSN csn) = 0;
 

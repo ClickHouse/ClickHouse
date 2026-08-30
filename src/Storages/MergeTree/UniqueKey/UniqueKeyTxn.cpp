@@ -167,9 +167,8 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
             if (report.anyOutstanding())
                 LOG_WARNING(log,
                     "Staged bitmaps of part {} are not fully settled at csn {} ({} deferred, {} "
-                    "failed{}); the next settle will retry",
-                    owner.name, csn, report.deferred, report.failed,
-                    report.owner_unresolved ? ", owner unresolved" : "");
+                    "failed); the next settle will retry",
+                    owner.name, csn, report.deferred, report.failed);
         }
     }
     catch (...)
@@ -218,7 +217,7 @@ void UniqueKeyTxnManager::runRecovery(const std::vector<MergeTreeDataPartPtr> & 
         try
         {
             const auto report = settleStagedBitmaps(*part);
-            if (report.deferred || report.failed || report.owner_unresolved)
+            if (report.anyOutstanding())
                 ++parts_with_work;
             total.add(report);
         }
@@ -238,9 +237,8 @@ void UniqueKeyTxnManager::runRecovery(const std::vector<MergeTreeDataPartPtr> & 
     /// Silent when there was nothing to do, which is every ordinary startup.
     if (parts_with_work)
         LOG_INFO(log,
-            "Txn-state recovery over {} part(s): {} still owe a staged bitmap ({} deferred, {} failed{})",
-            parts.size(), parts_with_work, total.deferred, total.failed,
-            total.owner_unresolved ? ", an owner is no longer in the part set" : "");
+            "Txn-state recovery over {} part(s): {} still owe a staged bitmap ({} deferred, {} failed)",
+            parts.size(), parts_with_work, total.deferred, total.failed);
 }
 
 }
