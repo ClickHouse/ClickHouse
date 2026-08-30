@@ -862,6 +862,9 @@ getColumnsForNewDataPart(
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
                 if (canReuseSerializationInfoForTypeChange(*old_info, *rebuilt_info))
                     rebuilt_info = old_info->createWithType(*source_type, *storage_type, settings);
+                else if (auto reused = tryReuseSerializationInfoThroughNullable(
+                             *old_info, *source_type, rebuilt_info, *storage_type, settings))
+                    rebuilt_info = std::move(reused);
 
                 new_serialization_infos.emplace(new_name, std::move(rebuilt_info));
                 continue;
@@ -878,13 +881,11 @@ getColumnsForNewDataPart(
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
-        if (!canReuseSerializationInfoForTypeChange(*old_info, *new_info))
-        {
-            new_serialization_infos.emplace(new_name, std::move(new_info));
-            continue;
-        }
-
-        new_info = old_info->createWithType(*old_type, *new_type, settings);
+        if (canReuseSerializationInfoForTypeChange(*old_info, *new_info))
+            new_info = old_info->createWithType(*old_type, *new_type, settings);
+        else if (auto reused = tryReuseSerializationInfoThroughNullable(
+                     *old_info, *old_type, new_info, *new_type, settings))
+            new_info = std::move(reused);
         new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 

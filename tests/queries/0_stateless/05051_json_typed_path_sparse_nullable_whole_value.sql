@@ -34,4 +34,15 @@ FORMAT JSONEachRow;
 SELECT estimateCompressionRatio(j) > 0
 FROM json_sparse_nullable_whole_value;
 
+ALTER TABLE json_sparse_nullable_whole_value
+    MODIFY COLUMN j JSON(x Nullable(String), max_dynamic_paths = 0) DEFAULT '{}'
+    SETTINGS mutations_sync = 2;
+
+SELECT subcolumns.serializations[indexOf(subcolumns.names, 'x')]
+FROM system.parts_columns
+WHERE active
+    AND database = currentDatabase()
+    AND table = 'json_sparse_nullable_whole_value'
+    AND column = 'j';
+
 DROP TABLE json_sparse_nullable_whole_value;

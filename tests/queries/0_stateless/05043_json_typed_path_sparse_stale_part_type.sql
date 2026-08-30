@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS json_sparse_stale_part_type;
 CREATE TABLE json_sparse_stale_part_type
 (
     id UInt64,
-    j JSON(x Nullable(String), max_dynamic_paths = 0),
+    j Nullable(JSON(x Nullable(String), max_dynamic_paths = 0)),
     materialized UInt64 MATERIALIZED id + 1
 )
 ENGINE = MergeTree
@@ -18,13 +18,13 @@ SETTINGS
 INSERT INTO json_sparse_stale_part_type
 SELECT
     number,
-    CAST(if(number = 0, '{"x":"rare"}', '{}'), 'JSON(x Nullable(String), max_dynamic_paths = 0)')
+    CAST(if(number = 0, '{"x":"rare"}', '{}'), 'Nullable(JSON(x Nullable(String), max_dynamic_paths = 0))')
 FROM numbers(100)
 SETTINGS optimize_on_insert = 0;
 
 ALTER TABLE json_sparse_stale_part_type DETACH PART 'all_1_1_0';
 ALTER TABLE json_sparse_stale_part_type
-    MODIFY COLUMN j JSON(x Nullable(String), y UInt64, max_dynamic_paths = 0);
+    MODIFY COLUMN j JSON(x Nullable(String), y UInt64, max_dynamic_paths = 0) DEFAULT '{}';
 ALTER TABLE json_sparse_stale_part_type ATTACH PART 'all_1_1_0';
 
 ALTER TABLE json_sparse_stale_part_type ADD PROJECTION p (SELECT id, j ORDER BY id);
