@@ -256,22 +256,35 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     return new_readers;
 }
 
-MergeTreeRangeReader::SampleBlocksPtr RangeReadersSampleBlocksCache::get(size_t reader_idx, const IMergeTreeReader & reader, const PrewhereExprStepPtr & step)
+std::vector<MergeTreeRangeReader::SampleBlocksPtr> RangeReadersSampleBlocksCache::get(const std::vector<ChainReader> & chain)
 {
-    if (reader_idx >= entries.size())
-        entries.resize(reader_idx + 1);
+    std::lock_guard lock(mutex);
 
-    auto & entry = entries[reader_idx];
-    auto prev_reader_sample_blocks = reader_idx ? entries[reader_idx - 1].sample_blocks : nullptr;
+    if (entries.size() < chain.size())
+        entries.resize(chain.size());
 
-    if (entry.sample_blocks && entry.step == step && entry.prev_reader_sample_blocks == prev_reader_sample_blocks && entry.columns == reader.getColumns())
-        return entry.sample_blocks;
+    std::vector<MergeTreeRangeReader::SampleBlocksPtr> result;
+    result.reserve(chain.size());
 
-    entry.columns = reader.getColumns();
-    entry.step = step;
-    entry.prev_reader_sample_blocks = prev_reader_sample_blocks;
-    entry.sample_blocks = MergeTreeRangeReader::createSampleBlocks(reader, prev_reader_sample_blocks ? prev_reader_sample_blocks->result : Block{}, step.get());
-    return entry.sample_blocks;
+    /// Once an entry is rebuilt, all following entries are rebuilt too because they depend on the previous sample blocks.
+    bool prev_reused = true;
+    for (size_t i = 0; i < chain.size(); ++i)
+    {
+        const auto & [reader, step] = chain[i];
+        auto & entry = entries[i];
+
+        if (!(prev_reused && entry.sample_blocks && entry.step == step && entry.columns == reader->getColumns()))
+        {
+            entry.columns = reader->getColumns();
+            entry.step = step;
+            entry.sample_blocks = MergeTreeRangeReader::createSampleBlocks(*reader, i ? result.back()->result : Block{}, step.get());
+            prev_reused = false;
+        }
+
+        result.push_back(entry.sample_blocks);
+    }
+
+    return result;
 }
 
 MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
@@ -312,21 +325,39 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
         return collect_predicate_statistics ? read_steps_performance_counters.getCountersForStep(step) : nullptr;
     };
 
-    auto add_range_reader = [&](IMergeTreeReader * reader, const PrewhereExprStepPtr & step, ReadStepPerformanceCountersPtr counters, bool is_main_reader)
+    std::vector<RangeReadersSampleBlocksCache::ChainReader> chain;
+    std::vector<ReadStepPerformanceCountersPtr> counters;
+    std::vector<bool> is_main_reader;
+
+    auto add_chain_reader = [&](IMergeTreeReader * reader, const PrewhereExprStepPtr & step, ReadStepPerformanceCountersPtr reader_counters, bool is_main)
     {
-        auto sample_blocks = sample_blocks_cache.get(range_readers.size(), *reader, step);
-        range_readers.emplace_back(reader, std::move(sample_blocks), step.get(), std::move(counters), is_main_reader, can_read_incomplete_granules);
+        chain.emplace_back(reader, step);
+        counters.push_back(std::move(reader_counters));
+        is_main_reader.push_back(is_main);
     };
 
     if (task_readers.prepared_index)
-        add_range_reader(task_readers.prepared_index.get(), /*step=*/ nullptr, index_counter, /*is_main_reader=*/ false);
+        add_chain_reader(task_readers.prepared_index.get(), /*step=*/ nullptr, index_counter, /*is_main=*/ false);
 
     size_t counter_idx = 0;
     for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
-        add_range_reader(task_readers.prewhere[i].get(), prewhere_actions.steps[i], step_counter(counter_idx++), /*is_main_reader=*/ false);
+        add_chain_reader(task_readers.prewhere[i].get(), prewhere_actions.steps[i], step_counter(counter_idx++), /*is_main=*/ false);
 
     if (!task_readers.main->getColumns().empty())
-        add_range_reader(task_readers.main.get(), /*step=*/ nullptr, step_counter(counter_idx), /*is_main_reader=*/ true);
+        add_chain_reader(task_readers.main.get(), /*step=*/ nullptr, step_counter(counter_idx), /*is_main=*/ true);
+
+    auto sample_blocks = sample_blocks_cache.get(chain);
+
+    for (size_t i = 0; i < chain.size(); ++i)
+    {
+        range_readers.emplace_back(
+            chain[i].reader,
+            std::move(sample_blocks[i]),
+            chain[i].step.get(),
+            std::move(counters[i]),
+            is_main_reader[i],
+            can_read_incomplete_granules);
+    }
 
     return MergeTreeReadersChain{std::move(range_readers), task_readers.patches};
 }

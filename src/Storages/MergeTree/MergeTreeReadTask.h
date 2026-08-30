@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <mutex>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -140,22 +141,29 @@ using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 /// Cache of sample blocks of the range readers chain, one entry per position in the chain.
 /// Sample blocks depend only on the columns of the reader, the prewhere step and the sample blocks of the previous reader,
 /// which are usually the same for consecutive read tasks (even of different parts), so building them once per task is wasteful.
+/// The whole chain is looked up atomically because the cache may be shared between threads
+/// (`MergeTreeSelectProcessor::readCurrentTask` can be called concurrently).
 class RangeReadersSampleBlocksCache
 {
 public:
-    /// Readers must be requested in the order of the chain, starting from index 0.
-    MergeTreeRangeReader::SampleBlocksPtr get(size_t reader_idx, const IMergeTreeReader & reader, const PrewhereExprStepPtr & step);
+    struct ChainReader
+    {
+        IMergeTreeReader * reader;
+        PrewhereExprStepPtr step;
+    };
+
+    std::vector<MergeTreeRangeReader::SampleBlocksPtr> get(const std::vector<ChainReader> & chain);
 
 private:
     struct Entry
     {
         NamesAndTypesList columns;
         PrewhereExprStepPtr step;
-        MergeTreeRangeReader::SampleBlocksPtr prev_reader_sample_blocks;
         MergeTreeRangeReader::SampleBlocksPtr sample_blocks;
     };
 
-    std::vector<Entry> entries;
+    std::mutex mutex;
+    std::vector<Entry> entries TSA_GUARDED_BY(mutex);
 };
 
 /// A batch of work for MergeTreeSelectProcessor
