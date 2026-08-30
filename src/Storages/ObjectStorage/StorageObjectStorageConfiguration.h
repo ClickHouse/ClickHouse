@@ -311,7 +311,8 @@ public:
         return false;
     }
 
-    virtual void drop(ContextPtr) {}
+    /// See IDataLakeMetadata::drop for the `commit` and `policy` contract. The default just commits.
+    virtual void drop(ContextPtr, const std::function<void()> & commit, DropCleanupPolicy /*policy*/) { commit(); }
 
     virtual bool isBackgroundExecutable() const
     {

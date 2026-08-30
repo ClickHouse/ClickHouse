@@ -1,0 +1,6 @@
+drop with mid-cleanup failure: succeeded (best-effort)
+table dropped
+drop with post-commit anchor failure: succeeded (best-effort)
+table dropped
+drop with first-delete failure: FAILED (propagated)
+table reattached intact

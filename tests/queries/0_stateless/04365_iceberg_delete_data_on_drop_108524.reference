@@ -1,0 +1,6 @@
+created: metadata present
+drop on: table path empty
+recreate at same path: ok
+drop off: metadata kept
+orphan hint: create rejected
+orphan hint: no spurious metadata

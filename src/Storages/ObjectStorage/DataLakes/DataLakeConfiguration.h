@@ -333,10 +333,13 @@ public:
         return current_metadata->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
-    void drop(ContextPtr local_context) override
+    void drop(ContextPtr local_context, const std::function<void()> & commit, DropCleanupPolicy policy) override
     {
         if (current_metadata)
-            current_metadata->drop(local_context);
+            current_metadata->drop(local_context, commit, policy);
+        else
+            /// No metadata loaded (non-Iceberg engine or cleanup disabled): nothing to delete.
+            commit();
     }
 
     SinkToStoragePtr write(

@@ -31,6 +31,22 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+/// Whether a data-lake drop may swallow a per-object cleanup failure, given how the owning database
+/// reacts to a thrown drop(). Cleanup deletes files irreversibly, so swallowing is required exactly
+/// where a rethrow would lose data or block re-create:
+///  - Reattaching (DatabaseOnDisk / Memory / Ordinary, Nil UUID): reattaches on a thrown drop(), so
+///    swallow once the first delete succeeded, else a partially deleted table returns to service.
+///  - AsyncRetry (DatabaseAtomic / Replicated, non-Nil UUID): dropTableFinally retries a thrown
+///    drop(), so never swallow, else the retry metadata is dropped while files remain.
+///  - CatalogRetry (DatabaseDataLake): retryable while the catalog row lives, so swallow only the
+///    post-commit anchor phase, else a surviving *.metadata.json blocks re-create with no SQL retry.
+enum class DropCleanupPolicy : uint8_t
+{
+    Reattaching,
+    AsyncRetry,
+    CatalogRetry,
+};
+
 class BackgroundJobsAssignee;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
@@ -181,7 +197,11 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
-    virtual void drop(ContextPtr) { }
+    /// Drop the table's underlying files. `commit` is the caller's commit point (catalog entry
+    /// removal) and must be invoked exactly once: Iceberg deletes data, commits, then deletes the
+    /// metadata anchor last, so any failure before `commit` leaves the table reconstructable.
+    /// `policy` selects failure handling per phase (see DropCleanupPolicy). The default just commits.
+    virtual void drop(ContextPtr, const std::function<void()> & commit, DropCleanupPolicy /*policy*/) { commit(); }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 

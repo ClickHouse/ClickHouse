@@ -32,6 +32,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 #include <Interpreters/PreparedSets.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -121,6 +122,13 @@ extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 extern const int FILE_ALREADY_EXISTS;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_drop_metadata_anchor_fail[];
+extern const char iceberg_drop_first_data_delete_fail[];
 }
 
 namespace Setting
@@ -814,7 +822,16 @@ void IcebergMetadata::createInitial(
         std::vector<String> metadata_files;
         try
         {
-            metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+            /// The path counts as occupied by any `*.metadata.json` OR a surviving
+            /// `metadata/version-hint.text`, which a best-effort DROP can leave behind on its own. Missing
+            /// the hint here would write a fresh `v1.metadata.json`, then fail the `If-None-Match: *` write
+            /// of the hint, leaving every retry failing with TABLE_ALREADY_EXISTS.
+            metadata_files = listFiles(
+                *object_storage,
+                configuration_ptr->getPathForRead().path,
+                "metadata",
+                [](const RelativePathWithMetadata & file)
+                { return file.relative_path.ends_with(".metadata.json") || file.relative_path.ends_with("metadata/version-hint.text"); });
         }
         catch (const Exception & ex)
         {
@@ -1510,14 +1527,105 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr context)
+void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & commit, DropCleanupPolicy policy)
 {
-    if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
+    if (!context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
-        auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
-        for (const auto & file : files)
-            object_storage->removeObjectIfExists(StoredObject(file));
+        /// Cleanup disabled: leave the files in place, just remove the catalog entry.
+        commit();
+        return;
     }
+
+    /// Three phases: delete data/manifest files, run the caller's commit (catalog entry removal),
+    /// then delete the metadata anchor. Per-phase failure handling follows `policy`, see
+    /// DropCleanupPolicy.
+
+    /// The point of no return for the Reattaching policy: past the first successful delete, a rethrow
+    /// would reattach a partially deleted table.
+    bool any_object_deleted = false;
+
+    auto should_swallow = [&](bool post_commit_anchor) -> bool
+    {
+        switch (policy)
+        {
+            case DropCleanupPolicy::Reattaching:
+                return any_object_deleted;
+            case DropCleanupPolicy::AsyncRetry:
+                return false;
+            case DropCleanupPolicy::CatalogRetry:
+                return post_commit_anchor;
+        }
+        return false;
+    };
+
+    auto remove_object = [&](const String & file, const char * kind, bool swallow, const char * inject_failpoint)
+    {
+        try
+        {
+            /// Inside the try, so it exercises the same path a real removeObjectIfExists failure would.
+            if (inject_failpoint)
+                fiu_do_on(inject_failpoint, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop {} deletion", kind);
+                });
+            LOG_DEBUG(log, "Deleting Iceberg {} file on drop: {}", kind, file);
+            object_storage->removeObjectIfExists(StoredObject(file));
+            any_object_deleted = true;
+        }
+        catch (...)
+        {
+            if (!swallow)
+                throw;
+            LOG_WARNING(
+                log,
+                "Best-effort Iceberg drop: ignoring failure to delete {} file {}: {}",
+                kind,
+                file,
+                getCurrentExceptionMessage(/* with_stacktrace */ false));
+        }
+    };
+
+    /// listFiles keys on `path / prefix`, so the prefix must be empty to enumerate everything under
+    /// the table path (passing table_path here too matches nothing).
+    auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
+
+    /// Data and manifest files first, keeping the metadata anchor: a DROP retry reconstructs
+    /// IcebergMetadata from it, so it must outlive any pre-commit failure. The anchor is
+    /// `*.metadata.json` plus `metadata/version-hint.text` -- with iceberg_use_version_hint on,
+    /// getLatestOrExplicitMetadataFileAndVersion reads the hint first and throws if it is missing,
+    /// so deleting the hint early breaks reconstruction after a restart.
+    std::vector<String> metadata_files;
+    for (const auto & file : files)
+    {
+        if (file.ends_with(".metadata.json") || file.ends_with("metadata/version-hint.text"))
+        {
+            metadata_files.push_back(file);
+            continue;
+        }
+        remove_object(file, "data", should_swallow(/* post_commit_anchor */ false), FailPoints::iceberg_drop_first_data_delete_fail);
+    }
+
+    /// The commit point: everything above is retryable, once this succeeds the table is gone.
+    if (should_swallow(/* post_commit_anchor */ false))
+    {
+        try
+        {
+            commit();
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log,
+                "Best-effort Iceberg drop: ignoring failure at commit point: {}",
+                getCurrentExceptionMessage(/* with_stacktrace */ false));
+        }
+    }
+    else
+        commit();
+
+    /// The metadata anchor last. For a metadata-only table (no data files) the first anchor delete is
+    /// itself the Reattaching point of no return, so a failure before it succeeds still propagates.
+    for (const auto & file : metadata_files)
+        remove_object(file, "metadata", should_swallow(/* post_commit_anchor */ true), FailPoints::iceberg_drop_metadata_anchor_fail);
 }
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const

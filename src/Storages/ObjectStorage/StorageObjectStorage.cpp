@@ -37,6 +37,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
@@ -67,11 +68,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
     extern const int ACCESS_DENIED;
 }
 
 namespace FailPoints
 {
+    extern const char iceberg_drop_data_cleanup_fail[];
+    extern const char iceberg_drop_catalog_remove_fail[];
     extern const char datalake_simulate_missing_table_state[];
 }
 
@@ -884,16 +888,61 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
+void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    /// The whole settings, not just iceberg_delete_data_on_drop: the drop-time Iceberg init also reads
+    /// session-scoped settings from this context (e.g. allow_experimental_geo_types_in_iceberg).
+    drop_query_settings = std::make_shared<const Settings>(query_context->getSettingsCopy());
+}
+
 void StorageObjectStorage::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background.
-    auto drop_context = Context::getGlobalContextInstance();
-    if (catalog)
+    /// No query context here (background pool), so rebuild one from the global context plus the
+    /// snapshot taken in checkTableCanBeDropped.
+    auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
+    if (drop_query_settings)
+        drop_context->setSettings(*drop_query_settings);
+    const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
+    /// On the DataLakeCatalog path the storage is a fresh instance whose metadata was never
+    /// initialized, so configuration->drop() would be a no-op and leave the files behind. Initialize
+    /// only when actually deleting data, so a plain DROP keeps its no-op behavior; and only for
+    /// Iceberg (the only engine overriding drop()), so DeltaLake/Hudi/Paimon do not pay an init that
+    /// could fail on metadata or object-storage errors.
+    if (delete_data_on_drop && configuration->isIcebergConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
+
+    fiu_do_on(FailPoints::iceberg_drop_data_cleanup_fail, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop data cleanup");
+    });
+
+    /// The drop's commit point, which configuration->drop() orders between data deletion and metadata
+    /// deletion so that a failure on either side leaves the table reconstructable for a retry.
+    /// Non-Iceberg engines and cleanup-disabled drops just run this commit.
+    auto commit = [this, delete_data_on_drop]
     {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+        fiu_do_on(FailPoints::iceberg_drop_catalog_remove_fail, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop catalog removal");
+        });
+
+        if (catalog)
+        {
+            const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+            catalog->dropTable(namespace_name, table_name, delete_data_on_drop);
+        }
+    };
+
+    /// Map the owning database to its failure-handling policy, see DropCleanupPolicy: catalog-backed
+    /// (DatabaseDataLake) is CatalogRetry, otherwise the Nil-vs-non-Nil database UUID tells Ordinary /
+    /// Memory (Reattaching) from Atomic / Replicated (AsyncRetry). That is the same discriminator
+    /// InterpreterDropQuery uses to tell atomic from non-atomic drop handling.
+    DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;
+    if (catalog == nullptr)
+    {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.database_name);
+        policy = (database && database->getUUID() == UUIDHelpers::Nil) ? DropCleanupPolicy::Reattaching
+                                                                       : DropCleanupPolicy::AsyncRetry;
     }
-    configuration->drop(drop_context);
+    configuration->drop(drop_context, commit, policy);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
