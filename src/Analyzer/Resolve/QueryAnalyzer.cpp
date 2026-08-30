@@ -4047,8 +4047,19 @@ bool convertNestedGroupByKeysToNullable(
   *   (for example, reused through an alias).
   * All shapes are mapped to the original key node.
   */
-void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, IdentifierResolveScope & scope)
+void registerNullableGroupByKeys(const QueryTreeNodes & original_group_by_keys, IdentifierResolveScope & scope)
 {
+    /// A key that is an `if`/`multiIf` with a constant condition is later collapsed to the branch it
+    /// always takes, so that branch is what the aggregation groups by: one more shape per key. A
+    /// constant branch is left out, being neither a correlated reference nor a key anywhere else.
+    QueryTreeNodes group_by_keys = original_group_by_keys;
+    for (const auto & key : original_group_by_keys)
+    {
+        auto collapsed_key = tryCollapseConstantConditionFunction(key);
+        if (collapsed_key && collapsed_key->getNodeType() != QueryTreeNodeType::CONSTANT)
+            group_by_keys.push_back(std::move(collapsed_key));
+    }
+
     for (const auto & key : group_by_keys)
         scope.nullable_group_by_keys.emplace(key, key);
 

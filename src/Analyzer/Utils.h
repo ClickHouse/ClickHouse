@@ -98,6 +98,12 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
 /// Try extract boolean constant from condition node
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
 
+/** If node is an `if`/`multiIf` with a constant condition and the branch it always takes has the same
+  * result type, returns that branch, which is the node the query tree ends up carrying in its place.
+  * Returns nullptr otherwise.
+  */
+QueryTreeNodePtr tryCollapseConstantConditionFunction(const QueryTreeNodePtr & node);
+
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
   */

@@ -413,6 +413,39 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
+QueryTreeNodePtr tryCollapseConstantConditionFunction(const QueryTreeNodePtr & node)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
+        return nullptr;
+
+    const auto & arguments = function_node->getArguments().getNodes();
+    if (arguments.size() != 3)
+        return nullptr;
+
+    const auto * first_argument_constant_node = arguments[0]->as<ConstantNode>();
+    if (!first_argument_constant_node)
+        return nullptr;
+
+    const auto & condition_value = first_argument_constant_node->getValue();
+
+    bool condition_boolean_value = false;
+
+    if (condition_value.getType() == Field::Types::Int64)
+        condition_boolean_value = static_cast<bool>(condition_value.safeGet<Int64>());
+    else if (condition_value.getType() == Field::Types::UInt64)
+        condition_boolean_value = static_cast<bool>(condition_value.safeGet<UInt64>());
+    else
+        return nullptr;
+
+    const auto & argument_node = condition_boolean_value ? arguments[1] : arguments[2];
+
+    if (!node->getResultType()->equals(*argument_node->getResultType()))
+        return nullptr;
+
+    return argument_node;
+}
+
 const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
 {
     static const Names no_aliases;
