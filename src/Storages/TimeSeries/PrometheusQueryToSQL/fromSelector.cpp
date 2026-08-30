@@ -43,9 +43,20 @@ namespace
         selector_function->arguments->children.push_back(timeSeriesTimestampToAST(max_time, context.timestamp_data_type));
         shard_builder.from_table_function = std::move(selector_function);
 
-        /// SELECT timeSeriesTagsToGroup(tags) AS group, timestamp, value FROM cluster(<cluster>, view(<shard query>))
-        /// Groups are node-local, so timeSeriesTagsToGroup() must stay here: inside the view every shard
-        /// restarts numbering and unrelated series get merged silently.
+        /// SELECT tags, timestamp, value FROM cluster(<cluster>, view(<shard query>))
+        SelectQueryBuilder cluster_builder;
+
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        cluster_builder.from_table_function = makeASTFunction(
+            "cluster",
+            make_intrusive<ASTLiteral>(context.cluster_name),
+            makeASTFunction("view", shard_builder.getSelectQuery()));
+
+        /// SELECT timeSeriesTagsToGroup(tags) AS group, timestamp, value FROM view(<cluster query>)
+        /// Groups are node-local: without the view() the whole query goes to the shards, which each restart their own counter.
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(makeASTFunction("timeSeriesTagsToGroup", make_intrusive<ASTIdentifier>(ColumnNames::Tags)));
@@ -54,10 +65,7 @@ namespace
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
 
-        builder.from_table_function = makeASTFunction(
-            "cluster",
-            make_intrusive<ASTLiteral>(context.cluster_name),
-            makeASTFunction("view", shard_builder.getSelectQuery()));
+        builder.from_table_function = makeASTFunction("view", cluster_builder.getSelectQuery());
 
         return builder.getSelectQuery();
     }
