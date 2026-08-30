@@ -467,9 +467,12 @@ MergeTreeBitmapStore::SettleOutcome MergeTreeBitmapStore::publishStagedFile(
         const auto entry = getOrCreateEntry(target.info);
         std::lock_guard lock(entry->mutex);
 
+        /// In common case the insert is at the end, but in theory the publish can be out-of-order
         auto & settled = entry->settled;
-        if (std::find(settled.begin(), settled.end(), csn) == settled.end())
-            settled.insert(std::upper_bound(settled.begin(), settled.end(), csn), csn);
+        const auto pos = std::lower_bound(settled.begin(), settled.end(), csn);
+        if (pos == settled.end() || *pos != csn)
+            settled.insert(pos, csn);
+        chassert(std::is_sorted(settled.begin(), settled.end()));
         std::erase(entry->staged_owners, owner.info);
     }
 
@@ -500,8 +503,10 @@ size_t MergeTreeBitmapStore::removeObsoleteBitmaps(const MergeTreePartInfo & par
     {
         std::lock_guard lock(entry->mutex);
         auto & settled = entry->settled;
+        /// Remove the prefix: [csn < floor_version->csn]
         const auto end = std::lower_bound(settled.begin(), settled.end(), floor_version->csn);
         to_remove.insert(to_remove.end(), settled.begin(), end);
+        chassert(std::is_sorted(to_remove.begin(), to_remove.end()));
     }
 
     /// Outside the entry lock: the floor below is what keeps a live reader off these versions
@@ -516,17 +521,19 @@ size_t MergeTreeBitmapStore::removeObsoleteBitmaps(const MergeTreePartInfo & par
             continue;
 
         ++removed;
-        LOG_TRACE(log, "Removed obsolete delete bitmap version {} of part {} (oldest_snapshot={})",
-                  version, part_info.getPartNameV1(), oldest_snapshot_csn);
     }
+    LOG_TRACE(log, "Removed obsolete delete bitmap versions {} of part {} (oldest_snapshot={})",
+                fmt::join(to_remove, ","), part_info.getPartNameV1(), oldest_snapshot_csn);
 
-    /// By value, not by re-running the bisect: a settle can publish a version below the floor while
-    /// the lock is dropped above, and it holds no lock this round could wait on. Erasing the prefix
-    /// again would drop that version from the index while its file stays on disk unreferenced.
+    /// By value, not by re-running the bisect: a settle can publish a version below the floor
+    /// It's fine for this infrequent cleanup
     {
         std::lock_guard lock(entry->mutex);
-        for (const CSN version : to_remove)
-            std::erase(entry->settled, version);
+        std::erase_if(entry->settled, [&](CSN version)
+        {
+            return std::binary_search(to_remove.begin(), to_remove.end(), version);
+        });
+        chassert(std::is_sorted(entry->settled.begin(), entry->settled.end()));
     }
     return removed;
 }
