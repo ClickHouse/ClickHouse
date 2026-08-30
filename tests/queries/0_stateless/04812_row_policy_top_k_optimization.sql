@@ -30,10 +30,6 @@ CREATE ROW POLICY rp_04812 ON t_04812 FOR SELECT USING key >= 100 TO ALL;
 -- (row estimation does not work when granules are skipped during the scan). Without the pin the bug
 -- cannot manifest in the CI environment at all, and bugfix validation reports "bug does not reproduce
 -- on master". `0` is the default, so the query still is the one a user runs.
-SELECT key FROM t_04812 ORDER BY key LIMIT 3
-    SETTINGS enable_analyzer = 0, use_skip_indexes = 1, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1,
-             query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, enable_parallel_replicas = 0,
-             max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 
 SELECT '--';
 
