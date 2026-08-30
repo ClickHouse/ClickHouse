@@ -1849,6 +1849,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, optimize_mutations_with_partition_pruning, true, R"(
+When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of `ALTER TABLE UPDATE`/`DELETE` mutations and lightweight `UPDATE`/`DELETE` statements on tables of the `ReplicatedMergeTree` family and only processes the affected partitions instead of all partitions.
+
+This automatic pruning currently applies only to replicated tables. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit a mutation to specific partitions.
+
+Possible values:
+
+- 0 — Disabled. Mutations and lightweight updates will process all partitions.
+- 1 — Enabled. Mutations and lightweight updates will only process partitions that match the WHERE condition.
+)", 0) \
     DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
 Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
 
@@ -5390,7 +5400,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 ```
 )", 0) \
  DECLARE(Bool, validate_mutation_query, true, R"(
-Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query will cause mutations to get stuck, requiring manual intervention.
+Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query can cause mutations to get stuck, requiring manual intervention.
 
 Only change this setting if you encounter a backward-incompatible bug.
 )", 0) \
@@ -8909,19 +8919,6 @@ Controls how posting lists are applied during text index queries.
 Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
 Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
 )", 0, text_index_density_threshold) \
-    DECLARE(Bool, allow_experimental_window_view, false, R"(
-Enable WINDOW VIEW. Not mature enough.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, window_view_clean_interval, 60, R"(
-The clean interval of window view in seconds to free outdated data.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, window_view_heartbeat_interval, 15, R"(
-The heartbeat interval in seconds to indicate watch query is alive.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, wait_for_window_view_fire_signal_timeout, 10, R"(
-Timeout for waiting for window view fire signal in event time processing
-)", EXPERIMENTAL) \
-    \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
@@ -8948,7 +8945,7 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
-Enable Kusto Query Language (KQL) - an alternative to SQL.
+Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
@@ -9265,6 +9262,10 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, allow_experimental_live_view, false) \
     MAKE_OBSOLETE(M, Seconds, live_view_heartbeat_interval, 15) \
     MAKE_OBSOLETE(M, UInt64, max_live_view_insert_blocks_before_refresh, 64) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_window_view, false) \
+    MAKE_OBSOLETE(M, Seconds, window_view_clean_interval, 60) \
+    MAKE_OBSOLETE(M, Seconds, window_view_heartbeat_interval, 15) \
+    MAKE_OBSOLETE(M, Seconds, wait_for_window_view_fire_signal_timeout, 10) \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_cleanup_timeout_ms, 1000) \
     MAKE_OBSOLETE(M, Bool, optimize_fuse_sum_count_avg, 0) \
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
