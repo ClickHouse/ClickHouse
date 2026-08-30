@@ -220,6 +220,9 @@ public:
     /// (multiple sources / multi-input steps).
     static QueryPlan cloneSubtree(Node * subplan_root);
 
+    /// Same as above, preserving the execution limits and resources from the plan that owns the subtree.
+    static QueryPlan cloneSubtree(Node * subplan_root, const QueryPlan & source_plan);
+
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:

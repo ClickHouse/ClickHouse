@@ -106,31 +106,13 @@ Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodec
     if (deployment_default->isEncryption())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec pool must not be built from an encrypting default");
 
-    Codecs pool{CompressionCodecFactory::instance().get("NONE", {}), deployment_default};
+    static const CompressionCodecPtr none_codec = CompressionCodecFactory::instance().get("NONE", {});
+    Codecs pool{none_codec, deployment_default};
     const TypeIndex type_id = type.getTypeId();
     for (const auto & [codec_expr, types] : CANDIDATES)
         if (std::ranges::find(types, type_id) != types.end())
             pool.push_back(buildCodecForType(codec_expr, type));
     return pool;
-}
-
-VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
-{
-    VectorWithMemoryTracking<TypeIndex> result;
-    for (const auto & [codec_expr, types] : CANDIDATES)
-        for (const TypeIndex type_id : types)
-            if (std::ranges::find(result, type_id) == result.end()) /// distinct: a type may appear in more than one group
-                result.push_back(type_id);
-    return result;
-}
-
-bool AdaptiveCodec::isCandidateType(const IDataType & type)
-{
-    const TypeIndex type_id = type.getTypeId();
-    for (const auto & [codec_expr, types] : CANDIDATES)
-        if (std::ranges::find(types, type_id) != types.end())
-            return true;
-    return false;
 }
 
 CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default)

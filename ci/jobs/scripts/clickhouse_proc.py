@@ -13,10 +13,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import List
 
+from ci.jobs.scripts import log_export
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
-from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -24,20 +24,6 @@ from ci.praktika.utils import Shell, Utils
 repo_dir = Utils.cwd()
 temp_dir = f"{repo_dir}/ci/tmp"
 p_temp_dir = Path(temp_dir)
-
-LOG_EXPORT_CONFIG_TEMPLATE = """
-remote_servers:
-    {CLICKHOUSE_CI_LOGS_CLUSTER}:
-        shard:
-            replica:
-                secure: 1
-                user: '{CLICKHOUSE_CI_LOGS_USER}'
-                host: '{CLICKHOUSE_CI_LOGS_HOST}'
-                port: 9440
-                password: '{CLICKHOUSE_CI_LOGS_PASSWORD}'
-"""
-CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
-CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
@@ -334,7 +320,6 @@ class ClickHouseProc:
             )
 
     def create_log_export_config(self, config_dir=None):
-        print("Create log export config")
         # Write into the config dir the server actually reads. Callers that run
         # the server from a non-default location (e.g. `ClickHouseService` under
         # `ci/tmp/etc/clickhouse-server`) must pass it explicitly, otherwise the
@@ -342,65 +327,21 @@ class ClickHouseProc:
         # the server starts without it, failing replication setup with `Code:
         # 701. Requested cluster 'system_logs_export' not found`.
         config_dir = config_dir or self.ch_config_dir
-        config_file = Path(config_dir) / "config.d" / "system_logs_export.yaml"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-
-        self.log_export_host, self.log_export_password = (
-            Secret.Config(
-                name="clickhouse_ci_logs_host",
-                type=Secret.Type.AWS_SSM_PARAMETER,
-                region="us-east-1",
-            )
-            .join_with(
-                Secret.Config(
-                    name="clickhouse_ci_logs_password",
-                    type=Secret.Type.AWS_SSM_PARAMETER,
-                    region="us-east-1",
-                )
-            )
-            .get_value()
+        self.log_export_host, self.log_export_password = log_export.get_credentials()
+        return log_export.create_config(
+            config_dir, self.log_export_host, self.log_export_password
         )
-
-        config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
-            CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
-            CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
-            CLICKHOUSE_CI_LOGS_USER=CLICKHOUSE_CI_LOGS_USER,
-            CLICKHOUSE_CI_LOGS_PASSWORD=self.log_export_password,
-        )
-
-        with open(config_file, "w") as f:
-            f.write(config_content)
-        return True
 
     def start_log_exports(self, check_start_time):
-        print("Start log export")
-        if self.log_export_host:
-            os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
-            os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
-            os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
-            os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
-        info = Info()
-        os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
-            f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
-        )
-
-        return Shell.check(
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
-            verbose=True,
+        return log_export.start(
+            check_start_time,
+            host=self.log_export_host,
+            password=self.log_export_password,
         )
 
     @staticmethod
     def stop_log_exports():
-        # Flush any buffered system-log records so the final queries are
-        # exported before the replication views are detached.
-        Shell.check(
-            'clickhouse-client --query "SYSTEM FLUSH LOGS"',
-            verbose=True,
-        )
-        return Shell.check(
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
-            verbose=True,
-        )
+        return log_export.stop()
 
     def start(self, replica_num=0):
         if replica_num == 0:

@@ -63,9 +63,7 @@ def kafka_setup_teardown():
 def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator):
     # data was dumped from clickhouse itself in a following manner
     # clickhouse-client --format=Native --query='SELECT toInt64(number) as id, toUInt16( intDiv( id, 65536 ) ) as blockNo, reinterpretAsString(19777) as val1, toFloat32(0.5) as val2, toUInt8(1) as val3 from numbers(100) ORDER BY id' | xxd -ps | tr -d '\n' | sed 's/\(..\)/\\x\1/g'
-    admin_client = k.KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
 
     all_formats = {
         ## Text formats ##
