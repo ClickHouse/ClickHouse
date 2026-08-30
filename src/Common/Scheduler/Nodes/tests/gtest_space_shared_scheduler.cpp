@@ -860,3 +860,47 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreDefaultZeroByteRequesterSelfKillsL
     ASSERT_EQ(killer.killCount(), 1u) << "At the default score the largest reservation (the requester's grow) must self-kill";
     EXPECT_EQ(peer.killCount(), 0u) << "The smaller peer holding memory must survive, matching the legacy policy";
 }
+
+
+/// Default-score regression for the "frees memory first" rule. An admitted query that shrank back to zero
+/// and is re-growing stays in `running_allocations` with `allocated == 0` but a large `fair_key`. Even with
+/// every `memory_eviction_score` at the default 0, that zero-byte re-grower must not be evicted ahead of a
+/// query that actually holds memory — killing it would free nothing. (Selecting purely by the largest
+/// `fair_key`, as before this feature, would have evicted the re-grower here.) `killer` carries the smaller
+/// `fair_key`, so the parked scheduler processes it first while the re-grower waits as a bystander.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreDefaultPrefersHolderOverZeroByteRegrower)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation holder(queue, "holder", 7000, /* memory_eviction_score = */ 0);
+    ManualAllocation regrower(queue, "regrower", 2000, /* memory_eviction_score = */ 0);
+    regrower.decreaseAsync(2000); // admitted == true, allocated == 0
+    regrower.waitSynced();
+    ManualAllocation killer(queue, "killer", 1000, /* memory_eviction_score = */ 0);
+    // Total allocated: 7000 (holder) + 0 (regrower) + 1000 (killer) = 8000.
+
+    // Park the scheduler so both increases queue in one activation. `killer`'s fair_key (1000 + 3000 = 4000)
+    // is smaller than the re-grower's (0 + 9000 = 9000), so `killer` is processed first and becomes the
+    // requester, while `regrower` waits as a running bystander that holds no memory but has the largest
+    // fair_key.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    regrower.increaseAsync(9000); // largest fair_key, but holds no memory
+    killer.increaseAsync(3000);   // 8000 + 3000 > 10000 triggers the eviction
+
+    release.set_value();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (holder.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(holder.killCount(), 1u) << "The memory holder must be evicted, not the zero-byte re-grower";
+    EXPECT_EQ(regrower.killCount(), 0u) << "A zero-byte re-grower must not be evicted even though its fair_key is largest";
+    EXPECT_EQ(killer.killCount(), 0u);
+}
