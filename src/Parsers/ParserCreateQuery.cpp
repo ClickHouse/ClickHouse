@@ -1085,6 +1085,14 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->storage, storage);
     query->set(query->as_table_function, as_table_function);
 
+    /// A table created from a table function has no storage definition of its own, the same rule
+    /// that rejects an explicit `ENGINE` above, so the one synthesized below is formatted after the
+    /// table function, where the grammar has no production for it and metadata cannot be read back.
+    if (query->as_table_function && query->columns_list
+        && (query->columns_list->primary_key || query->columns_list->primary_key_from_columns))
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR, "PRIMARY KEY is not allowed in the column list of a table created from a table function");
+
     /// Normalize a PRIMARY KEY declared inside the column list into the storage definition
     /// before the comment child is appended: when there is no explicit ENGINE clause, the
     /// storage node is synthesized here, and it must land in `children` where a fresh parse
@@ -3046,7 +3054,7 @@ These codecs are designed to make compression more effective by exploiting speci
 
 ### ALP {#alp}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 `ALP(variant)` — Adaptive lossless compression for floating-point data. Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
@@ -3057,7 +3065,7 @@ The codec accepts an optional variant argument:
 - `ALP(RD)` — Real Doubles variant. Reinterprets each value's bit pattern and splits it into a high part (sign + exponent + top mantissa bits) and a low part. High parts are dictionary-encoded (up to 8 entries), low parts are bit-packed. Works best when many values share the same high bits.
 
 <Note>
-This codec is experimental and requires `SET enable_alp_codec = 1` to use.
+This codec is in beta and requires `SET enable_alp_codec = 1` to use.
 </Note>
 
 ### FPC {#fpc}
