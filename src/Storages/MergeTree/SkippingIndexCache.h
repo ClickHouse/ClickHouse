@@ -68,7 +68,6 @@ struct SkippingIndexCacheCell
         for (const auto & granule : granules)
             memory_bytes += granule->memoryUsageBytes() + GRANULE_OVERHEAD_BYTES_GUESS;
     }
-
 };
 
 struct SkippingIndexCacheWeightFunction

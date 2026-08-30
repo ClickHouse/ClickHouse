@@ -23,7 +23,7 @@ CREATE TABLE tab
     INDEX idx_ngrams s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 16, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO tab SELECT number, number * 7919 % 1000, concat('token', toString(number % 997), ' text') FROM numbers(4800);
 

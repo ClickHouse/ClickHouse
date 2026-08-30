@@ -549,6 +549,10 @@ possible_properties = {
     "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "vector_similarity_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "vector_similarity_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "skipping_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "skipping_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "skipping_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
+    "skipping_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "wait_dictionaries_load_at_startup": true_false_lambda,
     "zookeeper": {
         "use_compression": true_false_lambda,

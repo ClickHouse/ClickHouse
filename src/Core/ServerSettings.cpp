@@ -639,7 +639,7 @@ This setting can be modified at runtime and will take effect immediately.
 :::note
 This setting can be modified at runtime and will take effect immediately.
 :::)", 0) \
-    DECLARE(UInt64, skipping_index_cache_max_entries, DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES, "Size of cache for skipping index granules in entries. Zero means disabled.", 0) \
+    DECLARE(UInt64, skipping_index_cache_max_entries, DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES, "Maximum number of entries in the skipping index cache. Zero means no entry-count limit.", 0) \
     DECLARE(Double, skipping_index_cache_size_ratio, DEFAULT_SKIPPING_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.", 0) \
     DECLARE(String, text_index_tokens_cache_policy, DEFAULT_TEXT_INDEX_TOKENS_CACHE_POLICY, "Text index tokens cache policy name.", 0) \
     DECLARE(UInt64, text_index_tokens_cache_size, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE, R"(Size of cache for text index tokens. Zero means disabled.

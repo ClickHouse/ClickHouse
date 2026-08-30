@@ -729,8 +729,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-    index_cache->remove(key);
+    index_cache->remove(PrimaryIndexCache::hash(getIndexCacheKeyPrefix()));
 }
 
 /// Remove all vector similarity index cache entries for this part.
@@ -741,7 +740,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getIndexCacheKeyPrefix());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)

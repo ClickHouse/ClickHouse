@@ -96,7 +96,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
         cache_key_prefix = concrete_part->getIndexCacheKeyPrefix();
 
     /// Decided once here: switching to the uncached path later would deserialize into a granule shared with the cache.
-    if (cache_key_prefix.empty() || !index->supportsGranuleCache())
+    if (cache_key_prefix.empty() || !index->supportsGranuleCache() || (skipping_index_cache && skipping_index_cache->maxSizeInBytes() == 0))
         skipping_index_cache = nullptr;
     else
         skipping_index_cache_key = {cache_key_prefix, index->getFileName(), std::numeric_limits<size_t>::max()};
@@ -210,8 +210,10 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         size_t block_number = mark / SkippingIndexCache::GRANULES_PER_ENTRY;
         if (skipping_index_cache_key.block_number != block_number)
         {
+            auto key = skipping_index_cache_key;
+            key.block_number = block_number;
+            current_block = skipping_index_cache->getOrSet(key, [this, block_number] { return loadBlockOfGranules(block_number); });
             skipping_index_cache_key.block_number = block_number;
-            current_block = skipping_index_cache->getOrSet(skipping_index_cache_key, [this, block_number] { return loadBlockOfGranules(block_number); });
         }
 
         granule = current_block->granules.at(mark % SkippingIndexCache::GRANULES_PER_ENTRY);
