@@ -374,6 +374,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
+            /// As in the branches above: a data lake table only refreshes its external metadata
+            /// here, and `ALTER TABLE ... EXECUTE` (`remove_orphan_files`, `expire_snapshots`)
+            /// must operate on the incarnation of the table that is in storage now.
+            table->updateExternalDynamicMetadataIfExists(context);
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;

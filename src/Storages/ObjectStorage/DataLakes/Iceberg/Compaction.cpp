@@ -207,8 +207,16 @@ static Plan getPlan(
         persistent_table_components.getTableUuid(),
         persistent_table_components.metadata_compression_method);
 
-    Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.getTableUuid());
+    /// The codec of the file being read is described by its name, and it is not necessarily the
+    /// codec this table object was opened with or the one new metadata is written with.
+    Poco::JSON::Object::Ptr initial_metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        persistent_table_components.metadata_cache,
+        context,
+        log,
+        getCompressionMethodFromMetadataFile(metadata_file_path),
+        persistent_table_components.getTableUuid());
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -1373,13 +1381,14 @@ void compactIcebergManifests(
             /* force_fetch_latest_metadata */ true,
             /* ignore_explicit_metadata_file_path */ true);
 
+        /// As in `getPlan`: read the selected file with the codec that belongs to it.
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,
             object_storage_,
             persistent_table_components.metadata_cache,
             context_,
             log,
-            persistent_table_components.metadata_compression_method,
+            getCompressionMethodFromMetadataFile(metadata_file_path),
             persistent_table_components.getTableUuid());
 
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
