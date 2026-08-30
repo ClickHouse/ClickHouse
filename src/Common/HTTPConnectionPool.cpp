@@ -446,17 +446,26 @@ private:
         /// stop following the connection it is supposed to identify.
         void assignFrom(PooledConnection & other)
         {
+            /// Take the copies first: `Poco::Net::HTTPClientSession::assign` ends by resetting the
+            /// source session, which runs the `reset` override below and clears the very fields we
+            /// are about to read. That is the right thing for the source - the socket is ours now,
+            /// and it must not keep claiming it - but reading it afterwards would hand us an
+            /// unidentified socket and mint a new id for a connection that did not change.
+            const UInt64 other_connection_id = other.connection_id;
+            const Poco::Timestamp other_established_at = other.established_at;
+            const int other_socket_fd = other.socket_fd;
+            const UInt64 other_socket_inode = other.socket_inode;
+            const UInt32 other_requests_on_socket = other.requests_on_socket;
+            const Poco::Timespan other_last_idle_time = other.last_idle_time;
+
             Session::assign(other);
 
-            connection_id = other.connection_id;
-            established_at = other.established_at;
-            socket_fd = other.socket_fd;
-            socket_inode = other.socket_inode;
-            requests_on_socket = other.requests_on_socket;
-            last_idle_time = other.last_idle_time;
-
-            /// The socket is gone from `other` now, so it must not keep claiming it.
-            other.forgetSocketIdentity();
+            connection_id = other_connection_id;
+            established_at = other_established_at;
+            socket_fd = other_socket_fd;
+            socket_inode = other_socket_inode;
+            requests_on_socket = other_requests_on_socket;
+            last_idle_time = other_last_idle_time;
         }
 
         /// Called on every path that drops this session's socket. The fd number and the inode are
