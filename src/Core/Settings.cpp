@@ -4842,6 +4842,14 @@ The memory size at which the adaptive aggregator freezes a thread's local hash t
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \
         {"24.7", false, true, "Use buffering before merging while reading in order of primary key"}) \
+    DECLARE(UInt64, max_parallel_ordered_merge_materialization_threads, 0, R"(
+Maximum number of threads used to materialize output blocks after merging pre-sorted streams.
+
+This setting applies only to multi-stream merges in the `MergingSorted` and `FinishSorting` query plan steps, preliminary merges during in-order reads, and sorted coordinator-side `GatherReceive` merges. Other ordered-merge sites, including merges inside `Limit` for `WITH TIES`, order-preserving `GatherSend`, `FINAL`, and full sorting (both its final in-memory merge and external spill merges), are unaffected.
+
+The ordered merge itself remains single-threaded and determines the exact output row order; complete output blocks are materialized in parallel and then restored to that order. Higher values keep more source and output blocks in flight and can increase memory usage. Values 0 and 1 disable parallel materialization.
+)", 0, \
+        {"26.10", 0, 0, "New setting to control parallel materialization of output blocks only in multi-stream `MergingSorted` and `FinishSorting` query plan steps, preliminary in-order read merges, and sorted coordinator-side `GatherReceive` merges. Other merge sites, including merges inside `Limit` for `WITH TIES`, order-preserving `GatherSend`, `FINAL`, and full sorting, are unaffected."}) \
     DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, R"(
 Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.
 )", 0) \
