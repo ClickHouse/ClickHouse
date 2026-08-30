@@ -100,6 +100,10 @@ public:
     class InstantSelector : public Node
     {
     public:
+        /// The metric name written before the braces; empty when the selector is written
+        /// without it, e.g. {__name__="http_requests"}. The metric name is always stored
+        /// in `matchers` too (as the first matcher), this field only records the original form.
+        String metric_name;
         MatcherList matchers;
         InstantSelector() { node_type = NodeType::InstantSelector; result_type = ResultType::INSTANT_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;

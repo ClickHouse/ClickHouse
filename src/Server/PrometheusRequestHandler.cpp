@@ -35,6 +35,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/prometheusQueryTreeToJSON.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -422,7 +424,7 @@ public:
 };
 
 /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// (/api/v1/query, /api/v1/query_range, /api/v1/parse_query, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -476,6 +478,28 @@ public:
 
         try
         {
+            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
+            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
+            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
+            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
+            const String uri_path = Poco::URI(uri).getPath();
+
+            if (uri_path.ends_with("/parse_query"))
+            {
+                /// This endpoint only parses the given PromQL expression, it doesn't need a TimeSeries table,
+                /// so it is handled before the table is resolved.
+                /// Scale 9 (nanoseconds) matches the precision the Prometheus parser uses
+                /// for `@` timestamps before rounding them to milliseconds.
+                PrometheusQueryTree promql_query{params->get("query", ""), /* timestamp_scale = */ 9};
+                String data = prometheusQueryTreeToJSON(promql_query);
+
+                auto & out = getOutputStream(response);
+                writeString(R"({"status":"success","data":)", out);
+                writeString(data, out);
+                writeString("}", out);
+                return;
+            }
+
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
@@ -483,12 +507,6 @@ public:
             {
                 getOutputStream(response).finalize();
             };
-
-            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
-            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
-            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
-            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
-            const String uri_path = Poco::URI(uri).getPath();
 
             if (uri_path.ends_with("/query_range"))
             {
@@ -539,10 +557,6 @@ public:
             else if (uri_path.ends_with("/format_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
-            }
-            else if (uri_path.ends_with("/parse_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
             }
             else if (uri_path.ends_with("/series"))
             {
@@ -705,7 +719,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
+        /// All other /api/v1/* endpoints (query, query_range, parse_query, series, labels, label/<name>/values, metadata)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }

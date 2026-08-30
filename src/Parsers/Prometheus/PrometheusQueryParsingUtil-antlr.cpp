@@ -466,7 +466,10 @@ namespace
             MatcherList matchers;
             auto * metric_name_ctx = ctx->metricName();
             if (metric_name_ctx)
+            {
+                new_node->metric_name = getMetricName(metric_name_ctx);
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
+            }
 
             if (auto * label_matcher_list_ctx = ctx->labelMatcherList())
             {
