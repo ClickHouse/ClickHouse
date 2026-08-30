@@ -10,6 +10,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
+#include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -1052,12 +1053,50 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down object storage queue streaming");
         StreamingStorageRegistry::instance().shutdown();
 
-        /// Stop all MergeTree background executors before shutting down databases.
-        /// This ensures no background tasks (merges, mutations, moves, part cleanup)
-        /// are running when storage objects are shut down or destroyed.
-        /// Without this, a background task could be accessing a storage's data_parts_indexes
-        /// while DatabaseCatalog::shutdown is destroying that storage, causing a SIGBUS.
+        /// Stop all MergeTree background executors and cancel the in-flight merges,
+        /// mutations and fetches, in this order:
+        ///
+        /// 1. Flip every executor into shutdown mode without joining it. From this point on
+        ///    no new task can be scheduled (`trySchedule` rejects them) and no pending task
+        ///    can start (worker threads exit at the next step boundary), so the set of
+        ///    running tasks cannot grow.
+        /// 2. Cancel everything that is currently running. `cancelAll` also marks entries
+        ///    inserted later as cancelled, so a task that is inside its first step and has
+        ///    not registered itself in the list yet cannot escape the cancellation.
+        /// 3. Join the executors.
+        ///
+        /// The executors' `wait` (step 3) does not interrupt already running tasks, and the
+        /// per-storage cancellation (`merges_blocker`, `fetcher.blocker`) happens only later,
+        /// in `DatabaseCatalog::shutdown`. Without step 2, `wait` would block until the
+        /// current task step completes, and a single slow step (e.g. a merge applying huge
+        /// patch parts, which can spend minutes inside one block under sanitizers, or a
+        /// fetch of a large part) would delay shutdown beyond any timeout. The results of
+        /// these merges and fetches are discarded after the restart anyway, so finishing
+        /// them is pure waste. Without step 1, the cancellation would be racy: a task
+        /// scheduled after step 2 would be invisible to `cancelAll` and block `wait` again.
+        ///
+        /// Merge and mutate tasks check `MergeListElement::is_cancelled` on every block
+        /// through `MergeProgressCallback` and abort with the `ABORTED` exception; fetches
+        /// check `ReplicatedFetchListElement::is_cancelled` on every buffer refill.
+        ///
+        /// Waiting for the executors before shutting down databases also ensures no
+        /// background task is accessing a storage's data (e.g. data_parts_indexes) while
+        /// `DatabaseCatalog::shutdown` destroys that storage, which used to cause a SIGBUS.
         /// See https://github.com/ClickHouse/ClickHouse/issues/85433
+        LOG_TRACE(log, "Stopping background executors from starting new tasks");
+        if (merge_mutate_executor)
+            merge_mutate_executor->requestShutdown();
+        if (fetch_executor)
+            fetch_executor->requestShutdown();
+        if (moves_executor)
+            moves_executor->requestShutdown();
+        if (common_executor)
+            common_executor->requestShutdown();
+
+        LOG_TRACE(log, "Cancelling merges, mutations and fetches");
+        merge_list.cancelAll();
+        replicated_fetch_list.cancelAll();
+
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
         SHUTDOWN(log, "moves executor", moves_executor, wait());
@@ -2185,6 +2224,8 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
+    if (!database.empty())
+        DatabaseCatalog::instance().assertDatabaseExists(database);
 
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
@@ -3701,12 +3742,13 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
     current_database = name;
 }
 
+/// Existence is checked by the callers before they take `mutex`: the check resolves typo hints,
+/// which read this same `mutex`.
 void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
 {
     if (name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    DatabaseCatalog::instance().assertDatabaseExists(name);
     current_database = name;
     mirrorCurrentDatabaseIntoSetting(name);
     need_recalculate_access = true;
@@ -3714,6 +3756,8 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 
 void Context::setCurrentDatabase(const String & name)
 {
+    DatabaseCatalog::instance().assertDatabaseExists(name);
+
     std::lock_guard lock(mutex);
     setCurrentDatabaseWithLock(name, lock);
 }
@@ -4316,6 +4360,20 @@ WasmModuleManager * Context::initWasmModuleManager()
         return nullptr;
 
     String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
+    /// Validated on every build, including the ones that cannot run WebAssembly at all, so that a stale
+    /// engine name in the configuration is reported the same way everywhere instead of being ignored.
+    WasmModuleManager::validateEngineName(engine_name);
+
+#if !USE_WASMTIME
+    /// This build has no WebAssembly engine, so fail close: do not expose any WebAssembly UDF surface at all.
+    /// In particular, `system.webassembly_modules` is not attached and persisted `LANGUAGE WASM` functions are
+    /// not loaded at startup (loading them would compile the modules and abort the server startup).
+    LOG_WARNING(
+        shared->log,
+        "WebAssembly UDFs are enabled in the configuration, but this build of ClickHouse does not include "
+        "a WebAssembly engine, so WebAssembly UDFs remain unavailable");
+    return nullptr;
+#else
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
@@ -4323,6 +4381,7 @@ WasmModuleManager * Context::initWasmModuleManager()
     shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
 
     return shared->wasm_module_manager.get();
+#endif
 }
 
 bool Context::hasWasmModuleManager() const
@@ -4335,7 +4394,15 @@ WasmModuleManager & Context::getWasmModuleManager() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->wasm_module_manager)
+    {
+#if USE_WASMTIME
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WebAssembly support is not enabled");
+#else
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "WebAssembly support is not enabled: this build of ClickHouse does not include a WebAssembly engine");
+#endif
+    }
     return *shared->wasm_module_manager;
 }
 
