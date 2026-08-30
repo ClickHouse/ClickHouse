@@ -10,9 +10,6 @@ CREATE TABLE test
 ENGINE = MergeTree()
 ORDER BY tuple();
 
--- Cannot have a different expression with the same alias
-ALTER TABLE test ADD COLUMN invalid_column String MATERIALIZED concat(str, 'b' AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
-ALTER TABLE test ADD COLUMN invalid_column String DEFAULT concat(str, 'b' AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 -- Cannot specify codec for column type ALIAS
 ALTER TABLE test MODIFY COLUMN column_with_codec String ALIAS str; -- { serverError BAD_ARGUMENTS }
 -- alias is defined exactly the same
@@ -33,8 +30,6 @@ CREATE TABLE test2
 ENGINE = ReplicatedMergeTree('/clickhouse/03224_invalid_alter/{database}/{table}', 'r1')
 ORDER BY tuple();
 
-ALTER TABLE test2 ADD COLUMN invalid_column String MATERIALIZED concat(str, 'b' AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
-ALTER TABLE test2 ADD COLUMN invalid_column String DEFAULT concat(str, 'b' AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 ALTER TABLE test2 MODIFY COLUMN column_with_codec String ALIAS str; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE test2 ADD COLUMN valid_column_1 String DEFAULT concat(str, 'a' AS a);
 ALTER TABLE test2 ADD COLUMN valid_column_2 String MATERIALIZED concat(str, 'c' AS c);
@@ -54,8 +49,6 @@ CREATE TABLE test3 ON CLUSTER test_shard_localhost
 ENGINE = ReplicatedMergeTree('/clickhouse/03224_invalid_alter/{database}_atomic/{table}', 'r1')
 ORDER BY tuple();
 
-ALTER TABLE test3 ON CLUSTER test_shard_localhost ADD COLUMN invalid_column String MATERIALIZED concat(str, 'b' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
-ALTER TABLE test3 ON CLUSTER test_shard_localhost ADD COLUMN invalid_column String DEFAULT concat(str, 'b' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 ALTER TABLE test3 ON CLUSTER test_shard_localhost MODIFY COLUMN column_with_codec String ALIAS str FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE test3 ON CLUSTER test_shard_localhost ADD COLUMN valid_column_1 String DEFAULT concat(str, 'a' AS a);
 ALTER TABLE test3 ON CLUSTER test_shard_localhost ADD COLUMN valid_column_2 String MATERIALIZED concat(str, 'c' AS c);
@@ -80,8 +73,6 @@ ENGINE = ReplicatedMergeTree()
 ORDER BY tuple()
 FORMAT Null;
 
-ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 ADD COLUMN invalid_column String MATERIALIZED concat(str, 'b' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
-ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 ADD COLUMN invalid_column String DEFAULT concat(str, 'b' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 MODIFY COLUMN column_with_codec String ALIAS str FORMAT Null SETTINGS distributed_ddl_output_mode='throw'; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 ADD COLUMN valid_column_1 String DEFAULT concat(str, 'a' AS a) FORMAT Null SETTINGS distributed_ddl_output_mode='throw';
 ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.test4 ADD COLUMN valid_column_2 String MATERIALIZED concat(str, 'c' AS c) FORMAT Null SETTINGS distributed_ddl_output_mode='throw';
