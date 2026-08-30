@@ -1338,21 +1338,20 @@ def print_sql_stacktraces(args) -> None:
     Adds thread_name and query_id to the C-side picture, which is the
     only way to map a stuck thread to the query it was running.
 
-    Self-skips when the liveness check fails, because this dump is another
-    query over the path the check just could not complete.  This keeps
-    callers honest: they can invoke this from any context (per-test
-    timeout, end-of-run hung-check) without first probing the server
-    themselves.
+    No liveness pre-check: this dump goes over native TCP while
+    `check_server_liveness` probes HTTP, and a failed probe does not
+    establish that the server is gone. `get_stacktraces_from_clickhouse` is
+    bounded and never raises, so callers can invoke this from any context.
     """
-    if not check_server_liveness(args, max_retries=1):
-        print("Skipping system.stack_trace query: liveness check failed.")
-        return
     print("\nCollecting stacktraces from system.stack_trace table:")
     bt = get_stacktraces_from_clickhouse(args)
     if bt:
         _append_stacktrace_log(SQL_STACKTRACES_LOG, bt)
         print(trim_for_log(bt, 100))
         print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
+    else:
+        # Distinguish "tried and got nothing" from "never tried".
+        print("Collected no stacks from system.stack_trace.")
 
 
 def get_server_pid(args):
@@ -5008,6 +5007,7 @@ def run_tests_array(
                     # server process, and a cause claimed after it loses to any
                     # cause claimed during it.
                     try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
@@ -5016,6 +5016,7 @@ def run_tests_array(
                     )
                 if test_result.reason == FailureReason.LIVENESS_CHECK_FAILED:
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     if not is_concurrent:
                         # Sequential runner owns the main process, so there is no
@@ -5583,6 +5584,7 @@ def do_run_tests(
                     # Claim before collecting: the sweep below can block ~30s per
                     # server process.
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_testing.set()
 
@@ -5925,6 +5927,8 @@ def main(args):
         msg = "Server is not responding. Cannot query the server version."
         if args.hung_check:
             print(msg)
+            # The probe that just failed is HTTP; this dump goes over TCP.
+            print_sql_stacktraces(args)
             print_c_stacktraces(args)
         raise TestException(msg)
 
