@@ -5428,6 +5428,129 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
     assert 0 == int(cursor.fetchall()[0][0])
 
 
+def test_attach_table_keeps_schema_list_database_restartable(started_cluster):
+    # Regression for a review finding on https://github.com/ClickHouse/ClickHouse/pull/110493: for a
+    # database created with `materialized_postgresql_schema_list`, `ATTACH TABLE` used to persist
+    # `materialized_postgresql_tables_list` into the stored definition without clearing the schema list,
+    # so the next startup rebuilt the replication handler from a definition carrying both settings and
+    # failed with "Cannot have schema list and tables list at the same time" - one successful recovery
+    # attach poisoned the database's own metadata. The table list must not be persisted in this mode:
+    # the attach is durable through the nested table on disk plus the publication membership, which the
+    # whole-schema attach path treats as the authoritative replicated set on restart. `DETACH TABLE ...
+    # PERMANENTLY` had the same bug and must stay symmetric.
+    #
+    # The schema list names two schemas because table names are schema-qualified in the nested database
+    # and in the publication only when the list names more than one schema (see fetchPostgreSQLTablesList) -
+    # a pre-existing property of this mode.
+    schemas = ["atl_schema_a", "atl_schema_b"]
+    table = "postgresql_replica_0"
+    extra_table = "postgresql_replica_1"
+    mat_db = "attach_schema_list_db"
+    pg_dbs = ["atl_src_a", "atl_src_b"]
+
+    cursor = pg_manager.get_db_cursor()
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        create_postgres_schema(cursor, schema_name)
+        pg_manager.create_clickhouse_postgres_db(
+            database_name=pg_db,
+            schema_name=schema_name,
+            postgres_database="postgres_database",
+        )
+        create_postgres_table_with_schema(cursor, schema_name, table)
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(0, 30)"
+        )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[
+            f"materialized_postgresql_schema_list = '{', '.join(schemas)}'",
+        ],
+    )
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+
+    # A table created in a replicated schema after the database does not join replication by itself;
+    # `ATTACH TABLE` is the documented way to add it.
+    create_postgres_table_with_schema(cursor, schemas[0], extra_table)
+    instance.query(
+        f"INSERT INTO {pg_dbs[0]}.{extra_table} SELECT number, number FROM numbers(0, 30)"
+    )
+    instance.query(f"ATTACH TABLE `{mat_db}`.`{schemas[0]}.{extra_table}`")
+    check_tables_are_synchronized(
+        instance,
+        extra_table,
+        schema_name=schemas[0],
+        postgres_database=pg_dbs[0],
+        materialized_database=mat_db,
+    )
+
+    # The stored definition must stay self-consistent: the schema list survives and no tables list is
+    # persisted alongside it.
+    show_create = instance.query(f"SHOW CREATE DATABASE `{mat_db}`")
+    assert "materialized_postgresql_schema_list" in show_create
+    assert "materialized_postgresql_tables_list" not in show_create
+
+    # The startup that used to throw "Cannot have schema list and tables list at the same time":
+    # replication must come back for all three tables, including the attached one.
+    instance.restart_clickhouse()
+    for schema_name, pg_db, tbl in [
+        (schemas[0], pg_dbs[0], table),
+        (schemas[1], pg_dbs[1], table),
+        (schemas[0], pg_dbs[0], extra_table),
+    ]:
+        instance.query(
+            f"INSERT INTO {pg_db}.{tbl} SELECT number, number FROM numbers(30, 20)"
+        )
+        check_tables_are_synchronized(
+            instance,
+            tbl,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+        assert 50 == int(
+            instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{tbl}`")
+        )
+
+    # The symmetric path: a permanent detach must not persist the tables list either, and the database
+    # must again survive a restart, with the detached table gone and the others still replicating.
+    instance.query(f"DETACH TABLE `{mat_db}`.`{schemas[0]}.{extra_table}` PERMANENTLY")
+    show_create = instance.query(f"SHOW CREATE DATABASE `{mat_db}`")
+    assert "materialized_postgresql_schema_list" in show_create
+    assert "materialized_postgresql_tables_list" not in show_create
+
+    instance.restart_clickhouse()
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(50, 20)"
+        )
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+        assert 70 == int(
+            instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{table}`")
+        )
+    assert 0 == int(
+        instance.query(f"EXISTS TABLE `{mat_db}`.`{schemas[0]}.{extra_table}`")
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

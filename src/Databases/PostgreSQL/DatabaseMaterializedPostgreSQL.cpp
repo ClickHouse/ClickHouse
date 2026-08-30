@@ -48,6 +48,7 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_schema_list;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_replication_slot;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
 }
@@ -472,13 +473,6 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         bool publication_added = false;
         try
         {
-            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
-            if (tables_to_replicate.empty())
-            {
-                std::lock_guard tables_lock(tables_mutex);
-                tables_to_replicate = getFormattedTablesList();
-            }
-
             auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
 
             /// Initialize the PostgreSQL side before publishing either the persistent table list or
@@ -491,13 +485,30 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             }
             added_to_replication = true;
 
-            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
-            auto alter_query = createAlterSettingsQuery(new_setting);
+            /// For a database created with `materialized_postgresql_schema_list` the table list must not
+            /// be persisted: the stored definition would then carry both settings, and the next startup
+            /// rebuilds the replication handler from it and fails with "Cannot have schema list and
+            /// tables list at the same time". The attach is durable without it - the nested table
+            /// created above survives on disk and the table was added to the publication, and on
+            /// restart the whole-schema attach path treats exactly that on-disk set of nested tables
+            /// as the authoritative replicated set.
+            if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
+            {
+                auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+                if (tables_to_replicate.empty())
+                {
+                    std::lock_guard tables_lock(tables_mutex);
+                    tables_to_replicate = getFormattedTablesList();
+                }
 
-            /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
-            /// `handler_mutex`, and the two mutexes must always be taken in that order.
-            InterpreterAlterQuery(alter_query, current_context).execute();
+                /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+                SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
+                auto alter_query = createAlterSettingsQuery(new_setting);
+
+                /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
+                /// `handler_mutex`, and the two mutexes must always be taken in that order.
+                InterpreterAlterQuery(alter_query, current_context).execute();
+            }
 
             {
                 std::lock_guard tables_lock(tables_mutex);
@@ -563,11 +574,18 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             tables_to_replicate = getFormattedTablesList(table_name);
         }
 
-        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-        SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
-        auto alter_query = createAlterSettingsQuery(new_setting);
-
+        /// For a database created with `materialized_postgresql_schema_list` the table list must not be
+        /// persisted (see the symmetric branch in attachTable()): the stored definition would then carry
+        /// both settings and the next startup would fail with "Cannot have schema list and tables list
+        /// at the same time". The detach is durable without it - the nested table is dropped from disk
+        /// and the table is removed from the publication below, so the restart-time authoritative
+        /// on-disk set no longer contains it.
+        if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
         {
+            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
+            auto alter_query = createAlterSettingsQuery(new_setting);
+
             auto current_context = Context::createCopy(getContext()->getGlobalContext());
             current_context->setInternalQuery(true);
             InterpreterAlterQuery(alter_query, current_context).execute();
