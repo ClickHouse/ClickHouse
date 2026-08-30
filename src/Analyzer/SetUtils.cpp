@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/Set.h>
@@ -29,6 +30,43 @@ extern const int UNKNOWN_ELEMENT_OF_ENUM;
 
 namespace
 {
+
+/// Replace every Row inside `type` with its named Tuple equivalent; the columns are
+/// ColumnTuple either way, so only the type needs rewriting.
+DataTypePtr lowerRowTypesToTuples(const DataTypePtr & type)
+{
+    if (const auto * row_type = typeid_cast<const DataTypeRow *>(type.get()))
+    {
+        DataTypes elements = row_type->getElements();
+        for (auto & element : elements)
+            element = lowerRowTypesToTuples(element);
+        return std::make_shared<DataTypeTuple>(elements, row_type->getElementNames());
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements = tuple_type->getElements();
+        bool changed = false;
+        for (auto & element : elements)
+        {
+            auto lowered = lowerRowTypesToTuples(element);
+            changed |= lowered.get() != element.get();
+            element = std::move(lowered);
+        }
+        if (!changed)
+            return type;
+        return tuple_type->hasExplicitNames()
+            ? std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames())
+            : std::make_shared<DataTypeTuple>(elements);
+    }
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto lowered = lowerRowTypesToTuples(array_type->getNestedType());
+        if (lowered.get() == array_type->getNestedType().get())
+            return type;
+        return std::make_shared<DataTypeArray>(lowered);
+    }
+    return type;
+}
 
 /// Unwrap Nullable to get to the underlying Tuple type.
 /// Also unwrap LowCardinality for robustness, even though LowCardinality(Tuple) is not supported.
@@ -651,8 +689,13 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 /// If `transform_null_in` is false, then `SELECT NULL IN (NULL, 1)` returns NULL, otherwise it returns true.
 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
-    const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params)
+    const DataTypePtr & lhs_expression_type_raw, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type_raw, GetSetElementParams params)
 {
+    /// Everything below keys on Tuple, so Row types are classified and unpacked as their
+    /// named Tuple equivalents; `Set::execute` casts a Row probe column accordingly.
+    const DataTypePtr lhs_expression_type = lowerRowTypesToTuples(lhs_expression_type_raw);
+    const DataTypePtr rhs_type = lowerRowTypesToTuples(rhs_type_raw);
+
     DataTypes lhs_unpacked_types = {lhs_expression_type};
 
     /// Unpack `Tuple(...)` into tuple elements.

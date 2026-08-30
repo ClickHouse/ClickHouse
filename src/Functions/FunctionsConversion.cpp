@@ -976,6 +976,10 @@ FunctionCast::ElementWrappers FunctionCast::getElementWrappers(const DataTypes &
 
 FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const
 {
+    /// Row shares ColumnTuple with Tuple, so a Row source is converted as the equivalent named Tuple.
+    if (const auto * from_row = typeid_cast<const DataTypeRow *>(from_type_untyped.get()))
+        return createTupleWrapper(std::make_shared<DataTypeTuple>(from_row->getElements(), from_row->getElementNames()), to_type);
+
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
     {
@@ -1188,13 +1192,8 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
 FunctionCast::WrapperType FunctionCast::createRowWrapper(const DataTypePtr & from_type_untyped, const DataTypeRow * to_type) const
 {
     /// Row shares ColumnTuple with Tuple, so lower the cast to a Tuple conversion.
-    /// A Row source has to be lowered too, otherwise createTupleWrapper rejects it.
-    auto from_type = from_type_untyped;
-    if (const auto * from_row = typeid_cast<const DataTypeRow *>(from_type.get()))
-        from_type = std::make_shared<DataTypeTuple>(from_row->getElements(), from_row->getElementNames());
-
     auto tuple_equivalent = std::make_shared<DataTypeTuple>(to_type->getElements(), to_type->getElementNames());
-    return createTupleWrapper(from_type, tuple_equivalent.get());
+    return createTupleWrapper(from_type_untyped, tuple_equivalent.get());
 }
 
 FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const
