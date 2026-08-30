@@ -107,7 +107,6 @@ public:
 
     /// For tcp
     String os_user;
-    String client_hostname;
     String client_name;
     /// Canonical id of the AI coding agent that invoked the client (e.g. `claude-code`, `cursor`),
     /// detected from environment variables. Empty when no agent is detected.
@@ -216,6 +215,9 @@ public:
 
     String getVersionStr() const;
 
+    /// Hostname of the machine this `ClientInfo` describes.
+    const String & getClientHostName() const;
+
 private:
     struct ForwardedForCache;
 
@@ -224,6 +226,9 @@ private:
     mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
 
     void fillOSUserHostNameAndVersionInfo();
+
+    String client_hostname;
+    bool resolve_client_hostname_on_demand = false;
 };
 
 String toString(ClientInfo::Interface interface);
