@@ -241,3 +241,82 @@ FROM
 );
 
 DROP TABLE t_dup_chain_json;
+
+DROP TABLE IF EXISTS t_dup_chain_dynamic;
+CREATE TABLE t_dup_chain_dynamic (k String, v UInt64) ENGINE = MergeTree PARTITION BY k ORDER BY v;
+INSERT INTO t_dup_chain_dynamic VALUES ('p1', 1), ('p2', 2);
+
+-- A `Dynamic` holds the value of its active type and its `Field` no longer says which type that is,
+-- so the two constants below carry one `Field` under one declared type while `concat` still renders
+-- them `11323` and `2001-01-01`. Each atom matches exactly one partition, so adopting the other
+-- atom's transformed range drops a partition that holds a matching row. Partition pruning is pinned
+-- because the rows below are correct when every partition is scanned, which would leave the arm blind.
+SELECT arraySort(groupArray(v)) FROM
+(
+    SELECT v FROM t_dup_chain_dynamic
+    WHERE concat(CAST(CAST(11323, 'UInt16'), 'Dynamic'), k) = '11323p1'
+       OR concat(CAST(CAST(11323, 'Date'), 'Dynamic'), k) = '2001-01-01p2'
+)
+SETTINGS use_partition_pruning = 1;
+-- The rows above are also what a chain that was never built would return, so read the plan too: with
+-- a single atom, exactly one index reports one of the two parts, and that is the partition one.
+-- Parallel replicas are off because without a local plan the initiator's plan holds no
+-- `ReadFromMergeTree`.
+SELECT countIf(toUInt64OrZero(extract(explain, 'Parts: (\\d+)/')) = 1
+           AND toUInt64OrZero(extract(explain, 'Parts: \\d+/(\\d+)')) = 2) = 1 FROM
+(
+    EXPLAIN indexes = 1 SELECT v FROM t_dup_chain_dynamic
+    WHERE concat(CAST(CAST(11323, 'UInt16'), 'Dynamic'), k) = '11323p1'
+)
+SETTINGS use_partition_pruning = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+-- An explicit `Variant` carries the same ambiguity, and the refusal answers for it separately, so it
+-- needs an arm of its own. `Date` and `UInt16` are not similar enough for
+-- `allow_suspicious_variant_types` to refuse the pair, so one declared type holds both alternatives.
+SELECT arraySort(groupArray(v)) FROM
+(
+    SELECT v FROM t_dup_chain_dynamic
+    WHERE concat(CAST(CAST(11323, 'UInt16'), 'Variant(Date, UInt16)'), k) = '11323p1'
+       OR concat(CAST(CAST(11323, 'Date'), 'Variant(Date, UInt16)'), k) = '2001-01-01p2'
+)
+SETTINGS use_partition_pruning = 1;
+-- The same plan reading for the `Variant` arm, for the same reason.
+SELECT countIf(toUInt64OrZero(extract(explain, 'Parts: (\\d+)/')) = 1
+           AND toUInt64OrZero(extract(explain, 'Parts: \\d+/(\\d+)')) = 2) = 1 FROM
+(
+    EXPLAIN indexes = 1 SELECT v FROM t_dup_chain_dynamic
+    WHERE concat(CAST(CAST(11323, 'UInt16'), 'Variant(Date, UInt16)'), k) = '11323p1'
+)
+SETTINGS use_partition_pruning = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+-- The same application-count oracle for a container that carries a `Dynamic`: the two atoms below
+-- differ only in the active type nested in one declared `Array(Dynamic)`, so they must apply the chain
+-- twice what a single atom does. The one-atom query is the liveness control, since it proves a chain
+-- was built and applied at all. The pins are those the oracles above need, for the same reasons.
+SELECT sum(v) FROM t_dup_chain_dynamic
+WHERE arrayStringConcat(concat([CAST(CAST(11323, 'UInt16'), 'Dynamic')], [k])) >= ''
+  AND arrayStringConcat(concat([CAST(CAST(11323, 'Date'), 'Dynamic')], [k])) <= '~'
+SETTINGS log_comment = '05048_dynamic_two_atoms', use_query_condition_cache = 0,
+    use_statistics_for_part_pruning = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SELECT sum(v) FROM t_dup_chain_dynamic
+WHERE arrayStringConcat(concat([CAST(CAST(11323, 'UInt16'), 'Dynamic')], [k])) >= ''
+SETTINGS log_comment = '05048_dynamic_one_atom', use_query_condition_cache = 0,
+    use_statistics_for_part_pruning = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT count() = 2 AND max(applications) = 2 * min(applications) AND min(applications) > 0
+   AND uniqExact(marks) = 1
+FROM
+(
+    SELECT
+        argMax(ProfileEvents['IndexMonotonicFunctionChainApplications'], event_time_microseconds) AS applications,
+        argMax(ProfileEvents['SelectedMarksTotal'], event_time_microseconds) AS marks
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+      AND current_database = currentDatabase()
+      AND log_comment IN ('05048_dynamic_two_atoms', '05048_dynamic_one_atom')
+    GROUP BY log_comment
+);
+
+DROP TABLE t_dup_chain_dynamic;

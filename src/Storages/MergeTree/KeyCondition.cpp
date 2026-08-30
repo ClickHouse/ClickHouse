@@ -3017,6 +3017,19 @@ static bool fieldHoldsObject(const Field & field)
     return false;
 }
 
+/// A `Variant`'s and a `Dynamic`'s `Field` is the value of the active alternative and does not say
+/// which alternative that is, so two values of one such type can carry the same `Field`.
+static bool typeHoldsVariantOrDynamic(const IDataType & type)
+{
+    auto is_ambiguous = [](const IDataType & candidate) { return isVariant(candidate) || isDynamic(candidate); };
+    if (is_ambiguous(type))
+        return true;
+
+    bool holds = false;
+    type.forEachChild([&](const IDataType & child) { holds = holds || is_ambiguous(child); });
+    return holds;
+}
+
 /// Identifies what a chain computes: equal identities transform a range identically. Absent when an
 /// element's result is not a function of its arguments alone. Type NAMES are canonical, while
 /// `DataTypeDateTime::equals` ignores the time zone that a bare `toHour` reads from its argument.
@@ -3058,6 +3071,9 @@ static std::optional<UInt128> monotonicFunctionsChainIdentity(const KeyCondition
             /// A dummy type's `Field` does not identify its value: a lambda's column reports its
             /// captures and not the expression it will run, and a set's reports an empty `Field`.
             if (dynamic_cast<const IDataTypeDummy *>(const_arg.type.get()))
+                return {};
+
+            if (typeHoldsVariantOrDynamic(*const_arg.type))
                 return {};
 
             const Field const_field = const_column->getField();
