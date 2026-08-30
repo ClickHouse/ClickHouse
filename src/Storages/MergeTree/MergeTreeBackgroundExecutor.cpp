@@ -196,18 +196,27 @@ size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
         return 0;
 
     auto & value = CurrentMetrics::values[metric];
-    const Int64 current = value.load();
 
-    /// Bound the reservation by the number of worker threads, not the (larger) task-slot count.
-    /// Reserved slots are consumed by merges that run synchronously on dedicated threads and cannot
-    /// be postponed the way scheduled executor tasks can, so with a concurrency ratio > 1 reserving
-    /// up to the task-slot count could run several times more merge threads than the pool has
-    /// workers, exceeding the operator's configured merge parallelism.
-    const Int64 limit = std::min(static_cast<Int64>(max_tasks_count.load()), static_cast<Int64>(threads_count));
-    if (current >= limit)
+    /// Bound the number of reservations by the number of worker threads, not the (larger)
+    /// task-slot count. Reserved slots are consumed by merges that run synchronously on dedicated
+    /// threads and cannot be postponed the way scheduled executor tasks can, so with a concurrency
+    /// ratio > 1 reserving up to the task-slot count could run several times more merge threads
+    /// than the pool has workers, exceeding the operator's configured merge parallelism.
+    ///
+    /// The bound is checked against other reservations only. The shared task metric also counts
+    /// in-flight background tasks (pending and active), and on a busy server their steady churn
+    /// keeps the metric at or above the worker-thread bound most of the time; counting them
+    /// against the (smaller) foreground bound starves foreground merges indefinitely. The total
+    /// number of in-flight tasks - reservations included - is still capped by `max_tasks_count`,
+    /// the same invariant `trySchedule` maintains.
+    const Int64 fg_limit = std::min(static_cast<Int64>(max_tasks_count.load()), static_cast<Int64>(threads_count));
+    const Int64 reserved = reserved_task_slots.load();
+    const Int64 current = value.load();
+    if (reserved >= fg_limit || current >= static_cast<Int64>(max_tasks_count.load()))
         return 0;
 
-    const size_t granted = std::min(desired, static_cast<size_t>(limit - current));
+    const size_t granted = std::min({desired, static_cast<size_t>(fg_limit - reserved), static_cast<size_t>(max_tasks_count.load() - current)});
+    reserved_task_slots.fetch_add(static_cast<Int64>(granted));
     value.fetch_add(static_cast<Int64>(granted));
     return granted;
 }
@@ -220,15 +229,23 @@ size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired) TSA_
 
     std::unique_lock lock(mutex);
     auto & value = CurrentMetrics::values[metric];
-    const auto get_limit = [this] TSA_REQUIRES(mutex)
+    const auto get_fg_limit = [this] TSA_REQUIRES(mutex)
     {
         return std::min(static_cast<Int64>(max_tasks_count.load()), static_cast<Int64>(threads_count));
+    };
+
+    /// See `tryReserveTaskSlots` for why the foreground bound is checked against other
+    /// reservations only, while the shared task metric is checked against `max_tasks_count`.
+    const auto saturated = [&] TSA_REQUIRES(mutex)
+    {
+        return reserved_task_slots.load() >= get_fg_limit()
+            || value.load() >= static_cast<Int64>(max_tasks_count.load());
     };
 
     /// This is called by foreground `OPTIMIZE FINAL`, so do not wait indefinitely without
     /// observing query cancellation. `wait_for` also handles a notification caused by a
     /// configuration change or executor shutdown without delaying it by the polling interval.
-    while (!shutdown && value.load() >= get_limit())
+    while (!shutdown && saturated())
     {
         task_slots_available.wait_for(lock, std::chrono::milliseconds(100));
         CurrentThread::checkIfNotCancelled();
@@ -238,7 +255,11 @@ size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired) TSA_
         return 0;
 
     CurrentThread::checkIfNotCancelled();
-    const size_t granted = std::min(desired, static_cast<size_t>(get_limit() - value.load()));
+    const size_t granted = std::min(
+        {desired,
+         static_cast<size_t>(get_fg_limit() - reserved_task_slots.load()),
+         static_cast<size_t>(max_tasks_count.load() - value.load())});
+    reserved_task_slots.fetch_add(static_cast<Int64>(granted));
     value.fetch_add(static_cast<Int64>(granted));
     return granted;
 }
@@ -249,6 +270,7 @@ void MergeTreeBackgroundExecutor<Queue>::releaseTaskSlots(size_t count) noexcept
     /// Decrement without the lock, mirroring how TaskRuntimeData releases its slot on destruction.
     if (count)
     {
+        reserved_task_slots.fetch_sub(static_cast<Int64>(count));
         CurrentMetrics::values[metric].fetch_sub(static_cast<Int64>(count));
         task_slots_available.notify_all();
     }

@@ -336,9 +336,11 @@ public:
     /// synchronous merges of OPTIMIZE FINAL). Returns the number of slots actually reserved, which
     /// may be fewer than requested (down to zero if the pool is already busy). The reservation is
     /// accounted in the same task metric and taken under the same lock as `trySchedule`, so the two
-    /// never race and the metric never exceeds the configured maximum. It is bounded by the number
-    /// of worker threads, not the (larger) task-slot count, because the reserved slots run on
-    /// dedicated threads that cannot be postponed. Release with `releaseTaskSlots`.
+    /// never race and the metric never exceeds the configured maximum. The number of reservations
+    /// is bounded by the number of worker threads, not the (larger) task-slot count, because the
+    /// reserved slots run on dedicated threads that cannot be postponed. That bound is checked
+    /// against other reservations only - not against in-flight background tasks, whose steady
+    /// churn would otherwise starve foreground merges. Release with `releaseTaskSlots`.
     size_t tryReserveTaskSlots(size_t desired);
 
     /// Like `tryReserveTaskSlots`, but waits until at least one slot becomes available. This is
@@ -375,6 +377,13 @@ private:
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;
     CurrentMetrics::Increment max_tasks_metric;
+
+    /// The number of slots currently reserved via `tryReserveTaskSlots`/`reserveTaskSlots` for
+    /// merges that run outside this executor. Kept separately from the shared task metric: the
+    /// foreground bound (the worker-thread budget) is checked against other reservations only,
+    /// because the metric also counts in-flight background tasks whose steady churn on a busy
+    /// server would otherwise starve a waiting foreground reservation indefinitely.
+    std::atomic<Int64> reserved_task_slots = 0;
 
     void routine(TaskRuntimeDataPtr item);
 
