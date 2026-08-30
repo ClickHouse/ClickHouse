@@ -232,7 +232,7 @@ namespace
             return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
         }
 
-        static size_t getStartPos(const antlr4::ParserRuleContext * ctx) { return ctx->getStart()->getStartIndex(); }
+        size_t getStartPos(const antlr4::ParserRuleContext * ctx) const { return getStartPos(ctx->getStart()); }
 
         size_t getStartPos(const antlr4::Token * token) const
         {

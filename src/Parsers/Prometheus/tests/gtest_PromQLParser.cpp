@@ -1576,6 +1576,29 @@ TEST(PromQLParser, ErrorPosition)
 }
 
 
+TEST(PromQLParser, SelectorValidationErrorPosition)
+{
+    /// The new selector validation must report a byte offset, like every other parser error,
+    /// so the reported position stays correct after multi-byte UTF-8 text.
+    for (const auto & [query, expected_error_pos, expected_error_message] :
+         std::initializer_list<std::tuple<std::string_view, size_t, std::string_view>>{
+             {R"({job=~".*"})", 0, "vector selector must contain at least one non-empty matcher"},
+             {R"({job=~"(.*"})", 0, "invalid regular expression in label matcher"},
+             {R"({foo="é"} or {job=~".*"})", 14, "vector selector must contain at least one non-empty matcher"},
+             {R"({foo="é"} or {job=~"(.*"})", 14, "invalid regular expression in label matcher"},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+        EXPECT_NE(error_message.find(expected_error_message), String::npos) << query << ": " << error_message;
+    }
+}
+
+
 TEST(PromQLParser, InvalidStringQuoteEscapes)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{

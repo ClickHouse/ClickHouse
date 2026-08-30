@@ -713,7 +713,7 @@ def test_native_promql_error_paths():
     do_clickhouse_only_query_test_expect_error(
         "day_of_week(test, test)",
         130,
-        "Function 'day_of_week' expects 1 arguments, but was called with 2 arguments",
+        "Function 'day_of_week' expects 0 or 1 arguments, but was called with 2 arguments",
     )
 
 
