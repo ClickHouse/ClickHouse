@@ -36,7 +36,7 @@ Se mais de `*_deduplication_window` outras operações de inserção ocorrerem d
 
 **Somente motores `*MergeTree` oferecem suporte à desduplicação durante a inserção.**
 
-Para motores `*ReplicatedMergeTree`, a desduplicação de inserção é habilitada por padrão e controlada pelas configurações [`replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings#replicated_deduplication_window) e [`replicated_deduplication_window_seconds`](/pt-BR/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds). Para motores `*MergeTree` não replicados, a desduplicação é controlada pela configuração [`non_replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+Para motores `*ReplicatedMergeTree`, a desduplicação de inserção é habilitada por padrão e controlada pelas configurações [`replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) e [`replicated_deduplication_window_seconds`](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds). Para motores `*MergeTree` não replicados, a desduplicação é controlada pela configuração [`non_replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 As configurações acima determinam os parâmetros do log de desduplicação de uma tabela. O log de desduplicação armazena um número finito de `block_id`s, que determinam como a desduplicação funciona (veja abaixo).
 
@@ -69,11 +69,11 @@ Quando uma tabela tem uma ou mais visões materializadas, os dados inseridos tam
 
 Você pode controlar esse processo usando as seguintes configurações para a tabela de origem:
 
-* [`replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings#replicated_deduplication_window)
-* [`replicated_deduplication_window_seconds`](/pt-BR/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
-* [`non_replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+* [`replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-Você também precisa habilitar a configuração de perfil do usuário [`deduplicate_blocks_in_dependent_materialized_views`](/pt-BR/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
+Você também precisa habilitar a configuração de perfil do usuário [`deduplicate_blocks_in_dependent_materialized_views`](/pt-BR/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views).
 Com a configuração `insert_deduplicate=1` habilitada, os dados inseridos passam por desduplicação na tabela de origem. A configuração `deduplicate_blocks_in_dependent_materialized_views=1` também habilita a desduplicação nas tabelas dependentes. Você precisa habilitar ambas se quiser desduplicação completa.
 
 Ao inserir blocos em tabelas sob visões materializadas, o ClickHouse calcula o `block_id` aplicando hash a uma string que combina os `block_id`s da tabela de origem com identificadores adicionais. Isso garante uma desduplicação precisa dentro das visões materializadas, permitindo distinguir os dados com base na inserção original, independentemente de quaisquer transformações aplicadas antes de chegarem à tabela de destino sob a visão materializada.

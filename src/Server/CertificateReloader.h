@@ -19,6 +19,7 @@
 #include <string>
 #include <filesystem>
 #include <list>
+#include <optional>
 #include <unordered_map>
 #include <mutex>
 
@@ -74,11 +75,9 @@ public:
     /// Singleton
     CertificateReloader(CertificateReloader const &) = delete;
     void operator=(CertificateReloader const &) = delete;
-    static CertificateReloader & instance()
-    {
-        static CertificateReloader instance;
-        return instance;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static CertificateReloader & instance();
 
     /// Handle configuration reload for default path
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
@@ -97,6 +96,11 @@ public:
 
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
+
+    /// The leaf certificate that is currently served for `prefix` connections, if there is one.
+    /// It is not necessarily the certificate of the corresponding `SSL_CTX`: certificates are installed
+    /// per connection, and with `<acme>` the context itself never gets a certificate at all.
+    std::optional<X509Certificate> getCertificate(const std::string & prefix) const;
 
 private:
     CertificateReloader() = default;

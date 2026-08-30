@@ -12,7 +12,7 @@ keywords: ['AWS PrivateLink', 'сервис конечной точки VPC', 'M
 
 В этом руководстве объясняется, как предоставить ClickPipes доступ к кластеру Amazon MSK с помощью [сервисов конечных точек VPC AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
 
-Используйте этот подход, если [подключение MSK multi-VPC](/ru/integrations/clickpipes/aws-privatelink#msk-multi-vpc) недоступно или его возможностей недостаточно, например в следующих случаях:
+Используйте этот подход, если [подключение MSK multi-VPC](/ru/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc) недоступно или его возможностей недостаточно, например в следующих случаях:
 
 * Межрегиональное подключение ClickPipes к MSK.
 * Кластеры MSK Express.
@@ -139,14 +139,14 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
 3. Выберите `Reverse private endpoint`.
 4. Выберите `сервис конечной точки VPC` в качестве типа конечной точки VPC.
 5. Введите имя сервиса конечной точки VPC для соответствующего брокера.
-6. В поле `Custom private DNS name` введите исходное имя хоста брокера MSK для этого брокера.
+6. В поле `пользовательское имя private DNS` введите исходное имя хоста брокера MSK для этого брокера.
 7. Создайте конечную точку.
 8. Если конечная точка ожидает подтверждения, подтвердите запрос на подключение в консоли сервиса конечной точки VPC в AWS.
 
 Повторяйте процесс, пока для каждого имени хоста брокера не будет создана соответствующая RPE.
 
 Подробнее о поведении пользовательского private DNS, правилах именования и возможностях API/Terraform см. в разделе
-[Custom private DNS](/ru/integrations/clickpipes/aws-privatelink#custom-private-dns).
+[Custom private DNS](/ru/integrations/clickpipes/networking/aws-privatelink#custom-private-dns).
 
 Вы также можете создать обратные частные конечные точки с помощью [OpenAPI](/ru/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) или Terraform.
 
@@ -171,17 +171,17 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
   ## Создайте Kafka ClickPipe
 </div>
 
-Следуйте [руководству по AWS PrivateLink для ClickPipes](/ru/integrations/clickpipes/aws-privatelink#creating-clickpipe),
+Следуйте [руководству по AWS PrivateLink для ClickPipes](/ru/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe),
 чтобы создать ClickPipe с обратными частными конечными точками.
 
 При создании Kafka ClickPipe:
 
-* Используйте исходные имена хостов брокеров MSK в качестве списка брокеров, включая порт, используемый вашим listener MSK, и метод аутентификации.
+* Используйте исходные имена хостов брокеров MSK в качестве списка брокеров, включая порт, используемый вашим листенером MSK, и метод аутентификации.
 * Не используйте bootstrap-строку брокера MSK.
 * Выберите или привяжите все обратные частные конечные точки для отдельных брокеров.
 * Настройте метод аутентификации, который требуется вашему кластеру MSK, например аутентификацию с использованием роли IAM.
 
-Порт зависит от вашего listener MSK. Например, для аутентификации IAM обычно используется `9098`, для SASL/SCRAM — `9096`, а для TLS — `9094`. Проверьте правильный порт в конфигурации вашего кластера MSK или в выводе bootstrap-брокера.
+Порт зависит от вашего листенера MSK. Например, для аутентификации IAM обычно используется `9098`, для SASL/SCRAM — `9096`, а для TLS — `9094`. Проверьте правильный порт в конфигурации вашего кластера MSK или в выводе bootstrap-брокера.
 
 Пример списка брокеров:
 
@@ -189,7 +189,7 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
 b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-2.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-3.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098
 ```
 
-Каждое имя хоста в списке брокеров должно совпадать с `пользовательским private DNS`, настроенным на одном из RPE.
+Каждое имя хоста в списке брокеров должно совпадать с `пользовательским именем private DNS`, настроенным на одном из RPE.
 
 <div id="terraform-automation">
   ## Автоматизация Terraform
