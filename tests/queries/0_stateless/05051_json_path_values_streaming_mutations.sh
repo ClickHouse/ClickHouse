@@ -1,9 +1,40 @@
-SET enable_json_type = 1;
-SET query_plan_direct_read_from_text_index = 1;
-SET query_plan_text_index_add_hint = 1;
-SET use_skip_indexes_on_data_read = 1;
-SET mutations_sync = 2;
+#!/usr/bin/env bash
 
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+run_queries()
+{
+    ${CLICKHOUSE_CLIENT} --multiquery \
+        --enable_json_type=1 \
+        --query_plan_direct_read_from_text_index=1 \
+        --query_plan_text_index_add_hint=1 \
+        --use_skip_indexes_on_data_read=1 \
+        --mutations_sync=2
+}
+
+wait_for_mutation_log()
+{
+    local table=$1
+    for _ in {1..20}; do
+        ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
+        if [ "$(${CLICKHOUSE_CLIENT} --query "
+            SELECT count()
+            FROM system.part_log
+            WHERE event_date >= yesterday() AND event_time >= now() - 600
+                AND database = currentDatabase() AND table = '${table}' AND event_type = 'MutatePart'
+        ")" -gt 0 ]; then
+            return 0
+        fi
+        sleep 0.5
+    done
+
+    echo "Timed out waiting for ${table} mutation in system.part_log" >&2
+    return 1
+}
+
+run_queries <<'SQL'
 SELECT 'wide materialization and mutation';
 CREATE TABLE json_stream_materialize_wide
 (
@@ -15,7 +46,11 @@ INSERT INTO json_stream_materialize_wide VALUES
     (1, '{"s":"one"}'), (2, '{"s":"two"}'), (3, '{"s":"three"}');
 ALTER TABLE json_stream_materialize_wide ADD INDEX tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1;
 ALTER TABLE json_stream_materialize_wide MATERIALIZE INDEX tokens;
-SYSTEM FLUSH LOGS part_log;
+SQL
+
+wait_for_mutation_log json_stream_materialize_wide || exit 1
+
+run_queries <<'SQL'
 SELECT ProfileEvents['JSONPathValuesTextIndexInputRows']
 FROM system.part_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
@@ -39,7 +74,11 @@ INSERT INTO json_stream_materialize_compact VALUES
     (1, '{"s":"one"}'), (2, '{"s":"two"}'), (3, '{"s":"three"}');
 ALTER TABLE json_stream_materialize_compact ADD INDEX tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1;
 ALTER TABLE json_stream_materialize_compact MATERIALIZE INDEX tokens;
-SYSTEM FLUSH LOGS part_log;
+SQL
+
+wait_for_mutation_log json_stream_materialize_compact || exit 1
+
+run_queries <<'SQL'
 SELECT ProfileEvents['JSONPathValuesTextIndexInputRows']
 FROM system.part_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
@@ -79,3 +118,4 @@ SELECT arraySort(groupArray(id)) FROM json_stream_replacing WHERE data.s = 'keep
 SETTINGS force_data_skipping_indices = 'tokens';
 CHECK TABLE json_stream_replacing SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_stream_replacing;
+SQL
