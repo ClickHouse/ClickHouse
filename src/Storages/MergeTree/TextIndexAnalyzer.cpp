@@ -452,12 +452,18 @@ double TextIndexAnalyzer::estimatePatternQueryCardinality(const QueryBuilder & q
     return n * (1.0 - not_in_any);
 }
 
-void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(double selectivity_threshold, size_t total_rows)
+void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(size_t total_rows)
 {
     if (total_rows == 0)
         return;
 
-    const double cardinality_threshold = static_cast<double>(total_rows) * selectivity_threshold;
+    /// Only a union that leaves no row unmatched is bypassed. Reading the postings of such a query
+    /// cannot prune anything, so the read is pure cost. Anything short of that still prunes - a
+    /// pattern matching a quarter of the rows reads a quarter of the granules instead of all of
+    /// them - so bypassing on a selectivity threshold would trade that pruning away. That is what
+    /// `text_index_hint_max_selectivity` (0.2) does for *hints*, where it is safe because the index
+    /// still prunes without them; applied here it would disable pruning outright.
+    const double unmatched_rows_threshold = 0.5;
 
     for (auto & [query_hash, query_builder] : query_builders)
     {
@@ -472,9 +478,10 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(double selectivity
         if (query_builder.tokens.empty())
             continue;
 
-        if (estimatePatternQueryCardinality(query_builder, total_rows) > cardinality_threshold)
+        const double estimated = estimatePatternQueryCardinality(query_builder, total_rows);
+        if (static_cast<double>(total_rows) - estimated < unmatched_rows_threshold)
         {
-            /// Union covers too many rows to be selective; bypass before reading its postings.
+            /// Union covers every row, so its postings cannot prune; bypass before reading them.
             query_builder.markBypassed();
             detachQueryFromTokens(query_hash, query_builder);
             ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternQueryLowSelectivity);
