@@ -110,7 +110,7 @@ This is the equivalent of `cardinality` in PostgreSQL, whereas in ClickHouse `ca
         {"Flat array", "SELECT arrayFlattenedLength([1, 2, 3]);", "3"},
         {"Non-array elements are not traversed", "SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);", "1"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
