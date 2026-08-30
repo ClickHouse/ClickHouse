@@ -109,12 +109,9 @@ GTEST_TEST(NestedUtils, extractTupleElementFromNullableTupleWithNullRowGivesDefa
         DataTypes{inner_tuple, string_type}, Strings{"a", "b"});
     DataTypePtr nullable_tuple = std::make_shared<DataTypeNullable>(outer_tuple);
 
-    /// Two rows: (( (10,'aa'), 'B' )) and a NULL row whose nested payload is NON-default
-    /// ((99,'zz'),'Z'). ColumnNullable does not guarantee the payload under a NULL row is the type
-    /// default, so if the terminal unwrap merely dropped the null map (getNestedColumnPtr) it would
-    /// surface (99,'zz') instead of (0,''). Inserting a real value BEFORE flagging the row null
-    /// reproduces the Arrow/ORC/Hive case: without the default-materializing unwrap this row0/row1
-    /// assertion fails.
+    /// The NULL row's nested payload is deliberately non-default ((99,'zz'),'Z'): `ColumnNullable`
+    /// does not guarantee the payload under a NULL row is the type default, so only a
+    /// default-materializing unwrap makes row 1 read as (0,'').
     auto column = nullable_tuple->createColumn();
     column->insert(Tuple{Tuple{UInt64(10), String("aa")}, String("B")});
     column->insert(Tuple{Tuple{UInt64(99), String("zz")}, String("Z")});
@@ -352,11 +349,9 @@ GTEST_TEST(NestedUtils, extractLowCardinalityLeafFromNullableTupleBecomesLowCard
     ASSERT_TRUE(col_v->column->isNullAt(1));
 }
 
-/// Two element names differing only in case are legal (`checkTupleNames` compares case-sensitively),
-/// so under case-insensitive extraction the requested name matches both. The column is taken with
-/// `Block::findByName(..., case_insentive)`, which returns the first such element, so the declared
-/// type has to be resolved in the same order: pairing one element's column with the other element's
-/// nullability turns a genuine NULL into a non-NULL tuple of NULLs.
+/// Element names only have to be unique case-sensitively, so under case-insensitive extraction one
+/// request matches both `A` and `a`. The column comes from `Block::findByName`'s first such match,
+/// so the declared type must be resolved in that same order to describe the same element.
 GTEST_TEST(NestedUtils, extractCaseCollidingElementPairsColumnWithItsOwnDeclaredType)
 {
     DataTypePtr nullable_uint = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>());

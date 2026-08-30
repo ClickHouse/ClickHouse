@@ -129,12 +129,9 @@ std::string extractTableName(const std::string & nested_name)
 }
 
 
-/// Distributes a parent struct null map onto one Tuple element. The result TYPE depends only on the
-/// element's declared type, never on the null map contents, so an empty sample block plans the same
-/// types as a data block carrying nulls. Does NOT apply
-/// `allow_nullable_tuple_in_extracted_subcolumns`: that happens once at the terminal
-/// `applyExtractedSubcolumnNullablePolicy`, so a further descent (`t.a` -> `t.a.x`) still sees the
-/// parent null map at the `Nullable(Tuple(...))` level.
+/// Distributes a parent struct null map onto one Tuple element. The result type depends only on the
+/// element's declared type, never on the null map contents, so an empty sample block plans what a
+/// null-carrying block yields. The setting is applied later, by the terminal policy, not here.
 static std::pair<ColumnPtr, DataTypePtr> distributeParentNullMapToElement(
     const ColumnPtr & elem_col,
     const DataTypePtr & elem_type,
@@ -680,14 +677,10 @@ bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & 
 
 }
 
-/// Applies the extracted-subcolumn nullable policy to a terminal extracted subcolumn. A Tuple-valued
-/// element arrives as `Nullable(Tuple(...))` both when the wrapping was synthesized from an outer
-/// struct null map and when the element is declared nullable, and the null map contents cannot tell
-/// those apart, so `declared_subcolumn_type` (the root declared type's subcolumn type) is the
-/// arbiter: `Nullable` keeps the column nullable, a non-nullable `Tuple` drops the outer `Nullable`.
-/// Dropping materializes type defaults first, because `ColumnNullable` does not guarantee the nested
-/// payload under a NULL row holds the type default. A nullptr declared type falls back to the
-/// setting-only decision, which is correct for synthetic wrappings.
+/// A `Nullable(Tuple(...))` element looks identical whether the wrapping was synthesized from an
+/// outer struct null map or declared in the schema, so `declared_subcolumn_type` is the arbiter and
+/// not the null map: `Nullable` keeps it nullable, a plain `Tuple` drops the wrapper. Dropping
+/// materializes type defaults first, since `ColumnNullable` may hold anything under a NULL row.
 static ColumnWithTypeAndName applyExtractedSubcolumnNullablePolicy(
     ColumnWithTypeAndName column, const DataTypePtr & declared_subcolumn_type)
 {
