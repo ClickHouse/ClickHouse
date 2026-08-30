@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/SharedThreadPools.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
@@ -29,11 +32,12 @@ namespace
 
 /// The store asks the table three questions -- resolve a part, the format version, whether the
 /// outdated load has finished -- so it needs a real `MergeTreeData`. Attached, never started: no
-/// background task runs and the part set stays empty.
+/// background task runs, and the part set holds only what `addPart` puts there.
 struct TableFixture
 {
     ContextMutablePtr context;
     std::shared_ptr<StorageMergeTree> table;
+    std::string relative_path;
 
     TableFixture()
     {
@@ -63,9 +67,15 @@ struct TableFixture
             columns, partition_key, metadata.getColumnsRequiredForPartitionKey(),
             metadata.primary_key, &metadata.partition_key, context));
 
+        /// Per instance, not shared: `addPart` writes real files, and a fixed path would let one
+        /// test's parts be loaded by the next test's `loadDataParts`.
+        const auto unique_id
+            = std::to_string(::getpid()) + "_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+        relative_path = "store/test_uk_bitmap_store_" + unique_id + "/";
+
         table = std::make_shared<StorageMergeTree>(
-            StorageID("test_db", "uk_bitmap_store"),
-            "store/test_uk_bitmap_store/",
+            StorageID("test_db", "uk_bitmap_store_" + unique_id),
+            relative_path,
             metadata,
             LoadingStrictnessLevel::ATTACH,
             context,
@@ -74,11 +84,63 @@ struct TableFixture
             std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings()));
     }
 
+    ~TableFixture()
+    {
+        table.reset();
+        std::error_code ec;
+        std::filesystem::remove_all(std::filesystem::path(context->getPath()) / relative_path, ec);
+    }
+
     MergeTreePartInfo partInfo(const std::string & name) const
     {
         return MergeTreePartInfo::fromPartName(name, table->format_version);
     }
+
+    /// A real part in the Active set, under the name the caller asks for. Every settle and every
+    /// sweep resolves its parts through `getPartIfExists`, so those paths cannot be reached from a
+    /// fixture whose part set is empty -- unlike the index-only tests, which never leave the store.
+    DataPartPtr addPart(const std::string & part_name, UInt64 first_id, size_t rows)
+    {
+        auto id_column = ColumnUInt64::create();
+        for (size_t i = 0; i < rows; ++i)
+            id_column->insertValue(first_id + i);
+
+        auto block = std::make_shared<Block>(Block{
+            ColumnWithTypeAndName(std::move(id_column), std::make_shared<DataTypeUInt64>(), "id")});
+        BlockWithPartition block_with_partition(std::move(block), Row{});
+
+        /// Bound to a named lvalue: converting an rvalue handle to `StorageMetadataPtr` is deleted.
+        auto metadata_handle = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+        const StorageMetadataPtr metadata_snapshot = metadata_handle;
+
+        MergeTreeDataWriter writer(*table);
+        auto temporary = writer.writeTempPart(block_with_partition, metadata_snapshot, context);
+        temporary->finalize();
+
+        /// `fillNewPartName` is private to StorageMergeTree, so the test names the part itself --
+        /// which is what lets the assertions below talk about `all_1_1_0` rather than whatever
+        /// block number the insert increment happened to hand out.
+        auto part = temporary->part;
+        part->info = partInfo(part_name);
+        part->setName(part_name);
+
+        MergeTreeData::Transaction transaction(*table, nullptr);
+        {
+            auto lock = table->lockParts();
+            table->renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
+            transaction.commit(lock);
+        }
+        return table->getPartIfExists(part->info, {MergeTreeData::DataPartState::Active});
+    }
 };
+
+/// The sidecar writers take a mutable storage, and a part in the set hands out a const one. Same
+/// `const_cast` the store itself does, and for the same reason: the rows are immutable, the
+/// directory is not.
+IDataPartStorage & partStorage(const IMergeTreeDataPart & part)
+{
+    return const_cast<IDataPartStorage &>(part.getDataPartStorage());
+}
 
 DeleteBitmap bitmapWithRow(UInt64 row)
 {
@@ -151,6 +213,112 @@ TEST(MergeTreeBitmapStoreTest, ForgettingStagedBitmapsClearsBothDirections)
     const auto [bitmap, csn] = store.readBitmap(target, UNBOUNDED_CSN);
     EXPECT_TRUE(bitmap->empty());
     EXPECT_EQ(csn, 0u);
+}
+
+TEST(MergeTreeBitmapStoreTest, SettleBelowTheNewestVersionIsVisibleAtItsOwnSnapshot)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/0, /*rows=*/4);
+    const auto owner = tbl.addPart("all_9_9_0", /*first_id=*/100, /*rows=*/1);
+
+    /// The target already carries a later version, so the settle below has to land in the middle of
+    /// the index rather than append to it.
+    DeleteBitmapFileOps::writeBitmapToStorage(partStorage(*target), /*version=*/9, bitmapWithRow(3));
+    ASSERT_EQ(store.loadPart(target->info, target->getDataPartStorage()), std::vector<CSN>({9}));
+
+    DeleteBitmapFileOps::writeStagedBitmapToStorage(
+        partStorage(*owner), target->info.getPartNameV1(), bitmapWithRow(1));
+    ASSERT_TRUE(store.loadPart(owner->info, owner->getDataPartStorage()).empty());
+
+    const auto report = store.settleStagedBitmaps(owner->info, {target->info}, /*csn=*/5);
+    EXPECT_EQ(report.settled, 1u);
+    EXPECT_FALSE(report.anyOutstanding());
+
+    /// DISCRIMINATING: place the insert with `upper_bound` instead of `lower_bound`, or guard it on
+    /// `pos == end()`, and csn 5 never enters the index -- this read goes empty while the file it
+    /// should resolve to sits in the target's directory.
+    const auto [at_five, five_csn] = store.readBitmap(target->info, /*snapshot_csn=*/5);
+    EXPECT_EQ(five_csn, 5u);
+    EXPECT_TRUE(at_five->contains(1));
+
+    /// And the version above it still wins at its own snapshot.
+    const auto [at_nine, nine_csn] = store.readBitmap(target->info, /*snapshot_csn=*/9);
+    EXPECT_EQ(nine_csn, 9u);
+    EXPECT_TRUE(at_nine->contains(3));
+}
+
+TEST(MergeTreeBitmapStoreTest, SettleForAMissingTargetUnlinksTheStagedFile)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto owner = tbl.addPart("all_9_9_0", /*first_id=*/100, /*rows=*/1);
+    const auto missing_target = tbl.partInfo("all_1_1_0");
+
+    const auto staged_name = DeleteBitmap::fileNameForStagedTarget(missing_target.getPartNameV1());
+    DeleteBitmapFileOps::writeStagedBitmapToStorage(
+        partStorage(*owner), missing_target.getPartNameV1(), bitmapWithRow(1));
+    ASSERT_TRUE(store.loadPart(owner->info, owner->getDataPartStorage()).empty());
+    ASSERT_EQ(store.stagedTargetsOf(owner->info), std::vector<MergeTreePartInfo>({missing_target}));
+
+    /// The target is in no state at all and the part set is complete, so "reclaimed" is the only
+    /// reading left: the bitmap is unlinked rather than carried by an owner nothing can resolve.
+    ASSERT_TRUE(tbl.table->outdatedPartsSetIsComplete());
+    const auto report = store.settleStagedBitmaps(owner->info, {missing_target}, /*csn=*/5);
+    EXPECT_EQ(report.settled, 1u);
+    EXPECT_FALSE(report.anyOutstanding());
+
+    EXPECT_FALSE(owner->getDataPartStorage().existsFile(staged_name));
+    EXPECT_TRUE(store.stagedTargetsOf(owner->info).empty());
+}
+
+TEST(MergeTreeBitmapStoreTest, ObsoleteSweepKeepsTheFloorVersionAndEverythingAbove)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto part = tbl.addPart("all_1_1_0", /*first_id=*/0, /*rows=*/4);
+    for (const CSN version : {3, 7, 12})
+        DeleteBitmapFileOps::writeBitmapToStorage(partStorage(*part), version, bitmapWithRow(version));
+    ASSERT_EQ(store.loadPart(part->info, part->getDataPartStorage()).size(), 3u);
+
+    /// A snapshot at 10 resolves to version 7, so 7 is the floor and only what is strictly below it
+    /// is unreachable. Reclaiming 7 as well would change what that snapshot reads.
+    EXPECT_EQ(store.removeObsoleteBitmaps(part->info, /*oldest_snapshot_csn=*/10), 1u);
+
+    std::vector<CSN> left;
+    for (const auto & file : store.listBitmaps(part->info))
+        left.push_back(file.version);
+    EXPECT_EQ(left, std::vector<CSN>({7, 12}));
+
+    const auto [at_ten, ten_csn] = store.readBitmap(part->info, /*snapshot_csn=*/10);
+    EXPECT_EQ(ten_csn, 7u);
+    EXPECT_TRUE(at_ten->contains(7));
+}
+
+TEST(MergeTreeBitmapStoreTest, ObsoleteSweepKeepsOnlyTheNewestWhenNothingIsPinned)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto part = tbl.addPart("all_1_1_0", /*first_id=*/0, /*rows=*/4);
+    for (const CSN version : {3, 7, 12})
+        DeleteBitmapFileOps::writeBitmapToStorage(partStorage(*part), version, bitmapWithRow(version));
+    ASSERT_EQ(store.loadPart(part->info, part->getDataPartStorage()).size(), 3u);
+
+    /// No open snapshot means the floor is the newest version, and the newest always stays --
+    /// it is the current state of the part, not a reclaimable predecessor.
+    EXPECT_EQ(store.removeObsoleteBitmaps(part->info, UNBOUNDED_CSN), 2u);
+
+    std::vector<CSN> left;
+    for (const auto & file : store.listBitmaps(part->info))
+        left.push_back(file.version);
+    EXPECT_EQ(left, std::vector<CSN>({12}));
+
+    /// A second round has nothing left to reclaim, and says so rather than double-counting.
+    EXPECT_EQ(store.removeObsoleteBitmaps(part->info, UNBOUNDED_CSN), 0u);
 }
 
 /// A LOGICAL_ERROR aborts rather than throwing under debug and sanitizer builds, so the two
