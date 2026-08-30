@@ -15,7 +15,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
 </div>
 
 <Steps>
-  <Step title="Télécharger le fichier CSV" id="download">
+  <Step>
+    ### Télécharger le fichier CSV
+
     Une version CSV du jeu de données peut être téléchargée depuis notre [bucket S3 public](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz) ou en exécutant cette commande :
 
     ```bash
@@ -25,7 +27,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     Avec ses 4,6 Go et ses 28 M de lignes, le téléchargement de ce fichier compressé devrait prendre de 5 à 10 minutes.
   </Step>
 
-  <Step title="Échantillonner les données" id="sampling">
+  <Step>
+    ### Échantillonner les données
+
     [`clickhouse-local`](/fr/concepts/features/tools-and-utilities/clickhouse-local) vous permet de traiter rapidement des fichiers locaux sans
     avoir à déployer et à configurer le serveur ClickHouse.
 
@@ -91,7 +95,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     Le format `Vertical` est utilisé pour visualiser plus facilement les données de chaque colonne.
   </Step>
 
-  <Step title="Charger les données avec l’inférence de schéma" id="loading-the-data">
+  <Step>
+    ### Charger les données avec l’inférence de schéma
+
     L’outil le plus simple et le plus puissant pour charger des données est `clickhouse-client` : un client natif en ligne de commande doté de nombreuses fonctionnalités.
     Pour charger les données, vous pouvez de nouveau recourir à l’inférence de schéma et laisser ClickHouse déterminer les types des colonnes.
 
@@ -142,7 +148,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     Vous avez inséré 28 millions de lignes dans ClickHouse avec une seule commande !
   </Step>
 
-  <Step title="Explorer les données" id="explore">
+  <Step>
+    ### Explorer les données
+
     Obtenez un échantillon des articles Hacker News et de certaines colonnes en exécutant la requête suivante :
 
     ```sql title="Query"
@@ -195,7 +203,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     Bien que l’inférence de schéma soit un excellent outil pour l’exploration initiale des données, elle relève d’une approche « best effort » et ne remplace pas, à long terme, la définition d’un schéma optimal pour vos données.
   </Step>
 
-  <Step title="Définir un schéma" id="define-a-schema">
+  <Step>
+    ### Définir un schéma
+
     Une optimisation simple et immédiate consiste à définir un type pour chaque champ.
     En plus de déclarer le champ temporel au format `DateTime`, nous définissons un type approprié pour chacun des champs ci-dessous après avoir supprimé notre jeu de données existant.
     Dans ClickHouse, la clé primaire des données est définie par la clause `ORDER BY`.
@@ -238,7 +248,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     ```
   </Step>
 
-  <Step title="Exécuter des exemples de requêtes" id="run-sample-queries">
+  <Step>
+    ### Exécuter des exemples de requêtes
+
     Quelques exemples de requêtes sont présentés ci-dessous pour vous aider à
     rédiger vos propres requêtes.
 
@@ -451,7 +463,9 @@ Parquet ne prend en charge qu’un nombre limité de types, que ClickHouse doit 
 L’inférence de type sur un fichier Parquet conduira invariablement à un schéma légèrement différent de celui du fichier CSV.
 
 <Steps>
-  <Step title="Insérer les données" id="insert-the-data">
+  <Step>
+    ### Insérer les données
+
     Exécutez la requête suivante pour lire ces mêmes données au format Parquet, en utilisant à nouveau la fonction url pour accéder aux données distantes :
 
     ```sql
@@ -543,7 +557,9 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     ```
   </Step>
 
-  <Step title="Ajouter un index de saut pour accélérer les requêtes" id="add-skipping-index">
+  <Step>
+    ### Ajouter un index de saut pour accélérer les requêtes
+
     Pour savoir combien de commentaires mentionnent &quot;ClickHouse&quot;, exécutez la requête suivante :
 
     ```sql title="Query"

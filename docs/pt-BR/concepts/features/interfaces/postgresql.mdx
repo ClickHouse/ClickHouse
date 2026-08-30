@@ -6,17 +6,17 @@ title: 'Interface PostgreSQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
 <Tip>
-  Conheça nosso serviço [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview). Com armazenamento NVMe fisicamente co-localizado com os recursos de compute, ele oferece desempenho até 10x superior para workloads limitados por disco, em comparação com alternativas que usam armazenamento conectado à rede, como EBS, e permite replicar seus dados do Postgres para o ClickHouse usando o conector Postgres CDC no ClickPipes.
+  Conheça nosso serviço [Managed Postgres](/pt-BR/products/managed-postgres/overview). Com armazenamento NVMe fisicamente co-localizado com os recursos de compute, ele oferece desempenho até 10x superior para workloads limitados por disco, em comparação com alternativas que usam armazenamento conectado à rede, como EBS, e permite replicar seus dados do Postgres para o ClickHouse usando o conector Postgres CDC no ClickPipes.
 </Tip>
 
 O ClickHouse oferece suporte ao protocolo wire do PostgreSQL, o que permite usar clientes Postgres para se conectar ao ClickHouse. Em certo sentido, o ClickHouse pode se passar por uma instância PostgreSQL, permitindo que você conecte ao ClickHouse um aplicativo cliente PostgreSQL para o qual o ClickHouse ainda não oferece suporte direto (por exemplo, Amazon Redshift).
 
-Para ativar o protocolo wire do PostgreSQL, adicione a configuração [postgresql&#95;port](/pt-BR/reference/settings/server-settings/settings/postgresql#postgresql_port) ao arquivo de configuração do seu servidor. Por exemplo, você pode definir a porta em um novo arquivo XML na pasta `config.d`:
+Para ativar o protocolo wire do PostgreSQL, adicione a configuração [postgresql&#95;port](/pt-BR/reference/settings/server-settings/settings#postgresql_port) ao arquivo de configuração do seu servidor. Por exemplo, você pode definir a porta em um novo arquivo XML na pasta `config.d`:
 
 ```xml
 <clickhouse>

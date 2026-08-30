@@ -1,0 +1,200 @@
+---
+noindex: true
+title: "Private API를 통한 백업 관리"
+sidebarTitle: "API를 통한 백업 관리"
+description: "Private API를 사용해 ClickHouse 백업을 생성, 모니터링, 예약 및 복원합니다."
+---
+
+Private API를 사용해 ClickHouse 백업을 생성, 모니터링, 예약 및 복원합니다.
+
+API 없이 수동으로 백업 작업을 수행하려면 [백업 및 복원](/ko/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual)을 참조하십시오.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* ClickHouse Private API가 설치되어 있고 접근 가능해야 합니다(예: `http://localhost:8080/`로 포트 포워딩)
+* 최소 1개의 ClickHouse 클러스터가 배포되어 있어야 합니다(이 가이드에서는 `default-xx-01`을 사용합니다)
+
+<div id="create-a-full-backup">
+  ## 전체 백업 생성하기
+</div>
+
+```json
+{
+    "incremental": false
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+응답에는 백업을 식별하는 UUID가 포함되어 있습니다.
+
+<div id="check-backup-status">
+  ## 백업 상태 확인
+</div>
+
+UUID로 특정 백업을 조회합니다:
+
+```bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+백업이 성공적으로 완료되면 `status.state` 필드는 `Ready`를 반환합니다.
+
+<div id="list-all-backups">
+  ## 모든 백업 조회
+</div>
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+이 엔드포인트는 필터링 및 정렬에 사용할 쿼리 매개변수를 지원합니다. 예를 들어, 가장 최근에 성공한 백업을 찾으려면 다음과 같이 하십시오:
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+<div id="create-incremental-backups">
+  ## 증분 백업 만들기
+</div>
+
+증분 백업은 이전 백업 이후 변경된 데이터만 백업하며, 전체 백업을 시작점으로 하는 백업 체인을 형성합니다.
+
+```json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="back-up-specific-tables-or-databases">
+  ## 특정 테이블 또는 데이터베이스 백업
+</div>
+
+`databases` 및 `tables` 필드를 사용해 백업할 대상을 지정합니다. 테이블 이름은 전체 이름(즉, `db.table`)으로 지정해야 합니다.
+
+```json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="schedule-backups-with-a-cronjob">
+  ## CronJob으로 백업 예약하기
+</div>
+
+Kubernetes CronJob을 사용하여 백업 생성을 자동화합니다:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+이 설정은 매일 오전 2시에 전체 백업이 수행되도록 예약합니다. Private API는 `http://clickhouse-private-api-airgap-management:8080`을 통해 접근할 수 있다고 가정합니다.
+
+<div id="restore-from-a-backup">
+  ## 백업에서 복원하기
+</div>
+
+<div id="via-the-api">
+  ### API를 통해
+</div>
+
+API는 백업을 다른 대상 인스턴스로 복원하는 endpoint를 제공합니다:
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+안전을 위해 API는 동일한 인스턴스에서 복원하는 것을 허용하지 않습니다. 원본에 과부하가 걸리지 않도록 복원용으로 새 클러스터를 생성하는 것이 좋습니다.
+
+<div id="manual-sql-alternative">
+  ### 수동 SQL 방식
+</div>
+
+세부적으로 제어하려면 SQL을 사용해 직접 복원하십시오. 예를 들어, 단일 데이터베이스를 새 이름으로 복원하려면 다음과 같이 하십시오:
+
+```sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+<div id="manage-backup-lifecycle">
+  ## 백업 수명 주기 관리
+</div>
+
+<div id="s3-lifecycle-policy">
+  ### S3 수명 주기 정책
+</div>
+
+S3 수명 주기 정책을 사용하면 오래된 백업을 자동으로 다른 스토리지 클래스로 전환하고 만료할 수 있습니다:
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+이 예시에서는 백업을 7일 후 Standard-IA로, 30일 후 Glacier로 이동한 다음, 90일 후 삭제합니다.
+
+<div id="backup-chain-integrity-warning">
+  ### 백업 체인 무결성 경고
+</div>
+
+S3 수명 주기 정책은 증분 백업 체인을 인식하지 못합니다. 체인의 기반이 되는 전체 백업이 삭제된 상태에서 증분 백업이 계속 이를 참조하면, 해당 증분 백업은 복원할 수 없게 됩니다.
+
+전체 백업의 보존 기간은 전체 백업 주기 간격보다 길게 설정하십시오. 백업이 정상적으로 복원되는지 정기적으로 테스트하십시오.

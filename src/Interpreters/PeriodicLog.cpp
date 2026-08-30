@@ -1,6 +1,5 @@
 #include <Common/setThreadName.h>
 #include <Common/SystemLogBase.h>
-#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>

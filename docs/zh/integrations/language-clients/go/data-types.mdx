@@ -258,7 +258,7 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
   ### Nested
 </div>
 
-Nested 字段等同于由命名元组组成的 Array。具体用法取决于用户是否将 [flatten&#95;nested](/zh/reference/settings/session-settings/other#flatten_nested) 设置为 1 或 0。
+Nested 字段等同于由命名元组组成的 Array。具体用法取决于用户是否将 [flatten&#95;nested](/zh/reference/settings/session-settings#flatten_nested) 设置为 1 或 0。
 
 将 flatten&#95;nested 设置为 0 后，Nested 列会保持为单个元组数组。这样你就可以使用Map切片进行插入和读取，并支持任意层级的嵌套。映射中的键名必须与列名相同，如下例所示。
 
@@ -357,7 +357,7 @@ for rows.Next() {
     }
     fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
 }
-// NOTE: Do not skip rows.Err() check
+// 注意：不要跳过 rows.Err() 检查
 if err := rows.Err(); err != nil {
     return err
 }

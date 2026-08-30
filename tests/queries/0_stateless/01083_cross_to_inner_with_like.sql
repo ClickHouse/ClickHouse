@@ -1,5 +1,3 @@
-SET enable_analyzer = 1;
-
 SET convert_query_to_cnf = 0;
 
 DROP TABLE IF EXISTS n;

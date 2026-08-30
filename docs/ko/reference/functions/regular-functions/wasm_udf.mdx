@@ -6,10 +6,14 @@ title: 'WebAssembly 사용자 정의 함수'
 doc_type: 'guide'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-ClickHouse는 WebAssembly로 작성된 사용자 정의 함수(UDF)를 생성할 수 있도록 지원합니다. 이를 통해 Rust, C, C++ 등의 언어로 작성한 사용자 정의 로직을 WebAssembly 모듈로 컴파일해 실행할 수 있습니다.
+<div id="webassembly-user-defined-functions">
+  # WebAssembly 사용자 정의 함수
+</div>
+
+ClickHouse는 WebAssembly로 작성된 사용자 정의 함수(UDF) 생성 기능을 지원합니다. 이를 통해 Rust, C, C++ 등으로 작성한 사용자 정의 로직을 WebAssembly 모듈로 컴파일해 실행할 수 있습니다.
 
 <CloudNotSupportedBadge />
 
@@ -240,7 +244,7 @@ RETURNS return_type
 * `DETERMINISTIC`: 함수를 결정적으로 선언합니다 — 동일한 입력에 대해 항상 동일한 출력을 반환합니다. 지정하면 모든 인수가 상수인 호출에 대해 ClickHouse가 상수 폴딩을 수행할 수 있습니다. 함수는 쿼리 분석 시점에 한 번 평가되며, 결과는 모든 행에 재사용됩니다.
 * `SHA256_HASH`: 검증에 사용할 예상 모듈 해시입니다(생략하면 자동으로 채워짐). 서로 다른 레플리카에서 올바른 WASM 모듈이 로드되었는지 확인하는 데 사용할 수 있습니다.
 * `SETTINGS`: 함수별 설정
-  * `serialization_format` String — 모듈에 전달되는 인수 블록을 직렬화하고 반환된 결과를 파싱하는 데 사용하는 포맷입니다. `ABI BUFFERED_V1`에서만 사용됩니다. 지원되는 값: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`. 기본값: `MsgPack`. `Buffers`와 같은 블록 기반 포맷은 선언된 함수 시그니처와 타입이 일치하는 단일 컬럼 하나를 반환해야 합니다.
+  * `serialization_format` String — ABI에 필요할 때 사용하는 직렬화 포맷입니다. 지원되는 값: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`. 기본값: `MsgPack`. `Buffers`와 같은 블록 기반 포맷은 선언된 함수 시그니처와 타입이 일치하는 단일 컬럼 하나를 반환해야 합니다.
   * `webassembly_udf_enable_fuel` Bool — 함수에 대한 제한된 연료 예산을 활성화합니다. 기본값: `true`. `false`이면 이 함수에서는 쿼리 수준 설정 `webassembly_udf_max_fuel`이 무시됩니다. `wasmtime` 엔진을 사용할 때 연료 제한을 비활성화하면 성능이 향상될 수 있습니다. 하지만 신뢰할 수 없거나 버그가 있는 게스트 코드의 경우, 제어되지 않는 실행 위험이 커질 수 있습니다.
 
 <div id="abis-versions">
@@ -283,162 +287,52 @@ WebAssembly는 부호 있는 인수와 부호 없는 인수를 구분하지 않�
 </div>
 
 <Note>
-  이 ABI는 실험적 기능이며 향후 릴리스에서 변경될 수 있습니다.
+  이 ABI는 실험적이며 향후 릴리스에서 변경될 수 있습니다.
 </Note>
 
-WASM 메모리를 통해 (역)직렬화하여 전체 블록을 한 번에 처리합니다. 모든 인수 및 반환 타입을 지원합니다.
+WASM 메모리를 통한 (역)직렬화를 사용해 전체 블록을 한 번에 처리합니다. 모든 인수 및 반환 타입을 지원합니다.
 
-데이터는 WASM 메모리의 버퍼를 통해 교환됩니다. 버퍼는 데이터에 대한 포인터와 데이터 크기를 저장하는 8바이트 구조체이며, 리틀 엔디언 `u32` 값 2개로 구성됩니다. 버퍼는 데이터 자체가 아니라 이 구조체를 가리키는 포인터인 handle로 전달됩니다. 게스트 코드는 이러한 버퍼를 생성하고 제거하기 위한 2개의 함수를 내보내야 합니다.
+직렬화된 데이터는 wasm 메모리에 복사되며, 버퍼를 가리키는 포인터(데이터 포인터와 데이터 크기로 구성됨)가 입력 행 수와 함께 UDF 함수에 전달됩니다. 따라서 WASM에서 실행되는 사용자 정의 함수는 항상 두 개의 `i32` 인수를 받아 하나의 `i32` 값을 반환합니다.
+게스트 코드는 데이터를 처리한 후 직렬화된 결과 데이터가 들어 있는 결과 버퍼를 가리키는 포인터를 반환합니다.
 
-각 입력 블록에 대해 ClickHouse는 다음을 수행합니다.
-
-1. 함수의 `serialization_format`(기본값은 `MsgPack`)을 사용하여 인수 컬럼을 직렬화합니다. 행 기반 포맷은 `ARGUMENTS`에 선언된 순서대로 인수 값을 행별로 작성합니다. 이름이 지정된 필드가 있는 포맷은 인수 이름을 사용하므로, 이러한 포맷을 사용할 때는 `ARGUMENTS`에 인수 이름을 선언하십시오.
-2. 모듈에서 내보낸 `clickhouse_create_buffer`를 호출하고, 반환된 버퍼가 가리키는 메모리에 직렬화된 데이터를 복사합니다.
-3. 입력 버퍼 handle(함수에 인수가 없으면 `0`)과 행 수라는 2개의 `i32` 인수로 사용자 정의 함수를 호출합니다. 함수는 게스트 코드가 직접 할당한 결과 버퍼의 handle인 단일 `i32`를 반환합니다. `0`을 반환하면 쿼리가 오류와 함께 실패합니다.
-4. 결과 버퍼를 읽습니다. 이 버퍼에는 동일한 포맷으로 직렬화된, 정확히 같은 수의 행을 포함하는 컬럼이 정확히 하나 있어야 합니다. `JSONEachRow`처럼 이름이 지정된 필드가 있는 포맷에서는 결과 컬럼의 이름이 `result`여야 합니다.
-5. 입력 버퍼(있는 경우)와 결과 버퍼 handle 모두에 대해 `clickhouse_destroy_buffer`를 호출합니다. 게스트 코드는 결과 버퍼를 직접 해제해서는 안 되며, 입력 handle을 결과로 반환해서도 안 됩니다. 그렇게 하면 버퍼가 두 번 제거됩니다.
-
-함수는 입력 블록마다 한 번 호출됩니다. 대규모 쿼리는 쿼리 파이프라인에 의해 여러 블록으로 분할되므로(`webassembly_udf_max_input_block_size` 설정으로 호출당 최대 행 수를 추가로 제한할 수 있음), 각 호출에서 전달되는 행 수는 전체 쿼리가 아니라 해당 블록의 크기입니다.
-
-<Note>
-  버퍼 내부의 정확한 바이트는 선택한 포맷에 따라 결정되며, 게스트 코드는 이를 직접 디코딩하고 인코딩해야 합니다. 특히 `String` 값의 경우:
-
-  * `MsgPack`: ClickHouse는 `String` 값을 `str` 계열이 아닌 `bin` 타입 계열(`0xc4`/`0xc5`/`0xc6`)로 작성합니다. 결과를 파싱할 때는 두 계열 모두 허용됩니다.
-  * `RowBinary`: 각 `String` 앞에는 고정 폭 정수가 아닌 부호 없는 varint([LEB128](https://en.wikipedia.org/wiki/LEB128)) 형식의 바이트 길이가 접두사로 추가됩니다.
-  * `JSONEachRow`: 각 결과 행은 예를 들어 `{"result":"value"}`와 같이 `result` 키를 가진 객체여야 합니다.
-</Note>
+게스트 코드는 이러한 버퍼를 생성하고 해제하는 두 개의 함수를 제공해야 합니다.
 
 ```
 (module
-  ;; Allocate a new buffer of specified size
-  ;; Returns: handle to Buffer structure (not direct data pointer!) with pointer to data and size
+  ;; 지정된 크기의 새 버퍼를 할당합니다
+  ;; 반환값: Buffer 구조체에 대한 핸들 (직접 데이터 포인터가 아님!) - 데이터 포인터와 크기를 포함
   (func (export "clickhouse_create_buffer")
-    (param $size i32)    ;; Size of data to allocate
-    (result i32))        ;; Returns buffer handle with enough space
+    (param $size i32)    ;; 할당할 데이터 크기
+    (result i32))        ;; 충분한 공간을 가진 버퍼 핸들 반환
 
-  ;; Free a buffer by its handle
+  ;; 핸들로 버퍼를 해제합니다
   (func (export "clickhouse_destroy_buffer")
-    (param $handle i32)  ;; Buffer handle to free
-    (result))            ;; No return value
+    (param $handle i32)  ;; 해제할 버퍼 핸들
+    (result))            ;; 반환값 없음
 
-    ;; User-defined function
+    ;; 사용자 정의 함수
     (func (export "user_defined_function1")
-      (param $input_buffer_handle i32)  ;; Input buffer handle
-      (param $n i32)                    ;; Number of rows in input
-      (result i32))                     ;; Returns output buffer handle
+      (param $input_buffer_handle i32)  ;; 입력 버퍼 핸들
+      (param $n i32)                    ;; 입력의 행 수
+      (result i32))                     ;; 출력 버퍼 핸들 반환
 )
 ```
 
-freestanding C로 작성한 완전한 예시입니다. `str_reverse`는 `serialization_format = 'RowBinary'`를 사용해 각 입력 문자열의 바이트 순서를 뒤집습니다. 모듈 인스턴스는 여러 블록에서 재사용되므로 `clickhouse_destroy_buffer`가 실제로 메모리를 회수해야 합니다. 여기서는 모든 버퍼가 소멸되면 할당자가 재설정됩니다.
+C 정의 예시:
 
 ```c
-#include <stdint.h>
-
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickHouseBuffer;
+} ClickhouseBuffer;
 
-#define HEAP_SIZE (1 << 24)
-static _Alignas(16) uint8_t heap[HEAP_SIZE];
-static uint32_t heap_pos = 0;
-static uint32_t live_buffers = 0;
+ClickhouseBuffer * clickhouse_create_buffer(uint32_t size) { /* ... */ }
 
-__attribute__((export_name("clickhouse_create_buffer")))
-ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
-{
-    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
-    if (heap_pos + total > HEAP_SIZE)
-        return 0; /* a zero handle makes the host fail the query with an error */
-    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
-    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
-    buf->size = size;
-    heap_pos += total;
-    ++live_buffers;
-    return buf;
-}
+void clickhouse_destroy_buffer(ClickhouseBuffer * data) { /* ... */ }
 
-__attribute__((export_name("clickhouse_destroy_buffer")))
-void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
-{
-    if (--live_buffers == 0)
-        heap_pos = 0;
-}
-
-/* RowBinary prefixes each String with its byte length as an unsigned varint (LEB128) */
-static uint64_t read_varint(const uint8_t ** pp)
-{
-    uint64_t value = 0;
-    for (int shift = 0;; shift += 7)
-    {
-        uint8_t b = *(*pp)++;
-        value |= (uint64_t)(b & 0x7f) << shift;
-        if (!(b & 0x80))
-            return value;
-    }
-}
-
-static void write_varint(uint8_t ** pp, uint64_t value)
-{
-    while (value >= 0x80)
-    {
-        *(*pp)++ = (uint8_t)(value | 0x80);
-        value >>= 7;
-    }
-    *(*pp)++ = (uint8_t)value;
-}
-
-/* Reverses the bytes of each input string */
-__attribute__((export_name("str_reverse")))
-ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
-{
-    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
-    if (!out)
-        return 0;
-    const uint8_t * in = input->data;
-    uint8_t * o = out->data;
-    for (uint32_t row = 0; row < num_rows; ++row)
-    {
-        uint64_t len = read_varint(&in);
-        write_varint(&o, len);
-        for (uint64_t i = 0; i < len; ++i)
-            o[i] = in[len - 1 - i];
-        in += len;
-        o += len;
-    }
-    out->size = (uint32_t)(o - out->data);
-    return out;
-}
-```
-
-clang 및 `wasm-ld`(LLVM/lld에 포함됨)를 사용하여 빌드합니다:
-
-```bash
-clang --target=wasm32 -ffreestanding -nostdlib -fno-builtin -c str_reverse.c
-wasm-ld --no-entry str_reverse.o -o str_reverse.wasm
-```
-
-함수는 모듈에서 내보내야 합니다. 위와 같이 `__attribute__((export_name("...")))`로 표시하거나 `wasm-ld --export-all`로 링크하십시오. `-fno-builtin`은 clang이 단순한 바이트 루프를 표준 라이브러리 없이는 사용할 수 없는 `memcpy`/`memset` 호출로 변환하는 것을 방지합니다.
-
-모듈을 로드하고 함수를 생성합니다:
-
-```bash
-cat str_reverse.wasm | clickhouse client -q "INSERT INTO system.webassembly_modules (name, code) SELECT 'str_reverse', code FROM input('code String') FORMAT RawBlob"
-```
-
-```sql
-CREATE FUNCTION str_reverse LANGUAGE WASM ABI BUFFERED_V1
-FROM 'str_reverse' :: 'str_reverse'
-ARGUMENTS (s String) RETURNS String
-SETTINGS serialization_format = 'RowBinary';
-
-SELECT str_reverse(toString(number + 100)) FROM numbers(3);
-```
-
-```text
-001
-101
-201
+/// 예시 사용자 정의 함수
+ClickhouseBuffer * user_defined_function1(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
+ClickhouseBuffer * user_defined_function2(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
 ```
 
 <div id="abi-assemblyscript">

@@ -14,7 +14,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
   ## 説明
 </div>
 
-`system.part_log` テーブルは、[part&#95;log](/ja/reference/settings/server-settings/settings/other#part_log) サーバー設定が指定されている場合にのみ作成されます。
+`system.part_log` テーブルは、[part&#95;log](/ja/reference/settings/server-settings/settings#part_log) サーバー設定が指定されている場合にのみ作成されます。
 
 このテーブルには、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーのテーブルにある [データパーツ](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key) に対して発生したイベント (データの追加やマージなど) に関する情報が含まれています。
 
@@ -42,7 +42,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `partition_id` ([String](/ja/reference/data-types/string)) — データパートが挿入された先のパーティションの ID です。パーティション化に `tuple()` が使用されている場合、このカラムは `all` の値を取ります。
 * `partition` ([String](/ja/reference/data-types/string)) — パーティションの名前。
 * `part_type` ([String](/ja/reference/data-types/string)) — パーツの種類。設定可能な値: wide パーツ、compact パーツ。
-* `part_storage_type` ([String](/ja/reference/data-types/string)) — `DataPartStorage` の種類。設定可能な値: `Packed` - ほとんどのパーツファイルは単一のアーカイブに保存されます (プロジェクションおよび `txn_version.txt` などの一部のサービスファイルは個別に書き込まれます) 、`Full` - 各ファイルは個別に保存されます。
+* `part_storage_type` ([String](/ja/reference/data-types/string)) — DataPartStorage の種類。設定可能な値: Packed - すべてのファイルが 1 つのブロブに保存されます。Full - 各ファイルがそれぞれ 1 つのブロブに保存されます。
 * `disk_name` ([String](/ja/reference/data-types/string)) — データパートが格納されているディスク名。
 * `path_on_disk` ([String](/ja/reference/data-types/string)) — データパートのファイルが格納されているフォルダーへの絶対パス。
 * `rows` ([UInt64](/ja/reference/data-types/int-uint)) — データパート内の行数。
@@ -96,16 +96,15 @@ part_name:               all_1_7_1
 partition_id:            all
 partition:               tuple()
 part_type:               Wide
-part_storage_type:       Full
 disk_name:               default
 path_on_disk:            ./data/store/1ad/1ad33424-f5f5-402b-ac03-ec82282634ab/all_1_7_1/
-rows:                    3285726 -- 3.29 million
-size_in_bytes:           438968542 -- 438.97 million
+rows:                    3285726 -- 329万
+size_in_bytes:           438968542 -- 4億3897万
 merged_from:             ['all_1_1_0','all_2_2_0','all_3_3_0','all_4_4_0','all_5_5_0','all_6_6_0','all_7_7_0']
-bytes_uncompressed:      1373137767 -- 1.37 billion
-read_rows:               3285726 -- 3.29 million
-read_bytes:              1429206946 -- 1.43 billion
-peak_memory_usage:       303611887 -- 303.61 million
+bytes_uncompressed:      1373137767 -- 13億7000万
+read_rows:               3285726 -- 329万
+read_bytes:              1429206946 -- 14億3000万
+peak_memory_usage:       303611887 -- 3億361万
 error:                   0
 exception:
 mutation_ids:

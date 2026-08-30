@@ -15,7 +15,9 @@ keywords: ['example dataset', 'hacker news', 'sample data', 'text analysis', 've
 </div>
 
 <Steps>
-  <Step title="CSV をダウンロード" id="download">
+  <Step>
+    ### CSV をダウンロード
+
     このデータセットの CSV 版は、公開 [S3 bucket](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz) からダウンロードするか、次のコマンドを実行して取得できます。
 
     ```bash
@@ -25,7 +27,9 @@ keywords: ['example dataset', 'hacker news', 'sample data', 'text analysis', 've
     4.6GB、2,800万行のこの圧縮ファイルのダウンロードには、5〜10分かかるはずです。
   </Step>
 
-  <Step title="データをサンプリングする" id="sampling">
+  <Step>
+    ### データをサンプリングする
+
     [`clickhouse-local`](/ja/concepts/features/tools-and-utilities/clickhouse-local) を使うと、ClickHouse server をデプロイして設定しなくても、
     ローカルファイルを高速に処理できます。
 
@@ -91,7 +95,9 @@ keywords: ['example dataset', 'hacker news', 'sample data', 'text analysis', 've
     `Vertical` フォーマットを使うと、各カラムのデータをより見やすく表示できます。
   </Step>
 
-  <Step title="スキーマ推論を使ってデータをロードする" id="loading-the-data">
+  <Step>
+    ### スキーマ推論を使ってデータをロードする
+
     データのロードに最も簡単で強力なツールは、`clickhouse-client` です。これは、多機能なネイティブのコマンドラインクライアントです。
     データをロードする際は、再度スキーマ推論を活用し、ClickHouse にカラムの型の判定を任せることができます。
 
@@ -142,7 +148,9 @@ keywords: ['example dataset', 'hacker news', 'sample data', 'text analysis', 've
     たった1つのコマンドで、2,800万行をClickHouseに正常に挿入できました！
   </Step>
 
-  <Step title="データを確認する" id="explore">
+  <Step>
+    ### データを確認する
+
     以下のクエリを実行して、Hacker News の記事と特定のカラムをサンプルとして表示します。
 
     ```sql title="Query"
@@ -195,7 +203,9 @@ keywords: ['example dataset', 'hacker news', 'sample data', 'text analysis', 've
     スキーマ推論は初期段階でデータを調べるには非常に便利な機能ですが、「ベストエフォート」にすぎず、長期的にはデータに最適なスキーマを定義する代わりにはなりません。
   </Step>
 
-  <Step title="スキーマを定義する" id="define-a-schema">
+  <Step>
+    ### スキーマを定義する
+
     すぐに効果が見込める最適化として、各フィールドに型を定義することが挙げられます。
     time フィールドを `DateTime` 型として宣言するだけでなく、既存のデータセットを削除したうえで、以下の各フィールドにも適切な型を定義します。
     ClickHouse では、データの主キーは `ORDER BY` 句で定義されます。
@@ -238,7 +248,9 @@ keywords: ['example dataset', 'hacker news', 'sample data', 'text analysis', 've
     ```
   </Step>
 
-  <Step title="サンプルクエリを実行する" id="run-sample-queries">
+  <Step>
+    ### サンプルクエリを実行する
+
     以下にサンプルクエリをいくつか示します。独自のクエリを作成する際の参考にしてください。
 
     #### Hacker Newsで「ClickHouse」はどれほど話題になっているか？
@@ -449,7 +461,9 @@ Parquet の型は最小限に抑えられており、ClickHouse はそれに従�
 Parquet ファイルに対する型推論を行うと、CSV ファイルの場合とはわずかに異なるスキーマになります。
 
 <Steps>
-  <Step title="データを挿入する" id="insert-the-data">
+  <Step>
+    ### データを挿入する
+
     次のクエリを実行し、再度 `url` 関数を使ってリモートデータを読み込み、同じデータを Parquet フォーマットで読み込みます。
 
     ```sql
@@ -541,7 +555,9 @@ Parquet ファイルに対する型推論を行うと、CSV ファイルの場�
     ```
   </Step>
 
-  <Step title="クエリを高速化するため、スキップ索引を追加する" id="add-skipping-index">
+  <Step>
+    ### クエリを高速化するため、スキップ索引を追加する
+
     &quot;ClickHouse&quot; に言及しているコメントの数を調べるには、次のクエリを実行します。
 
     ```sql title="Query"

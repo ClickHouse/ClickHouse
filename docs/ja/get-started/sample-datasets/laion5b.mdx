@@ -25,7 +25,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## データセットの詳細
 </div>
 
-完全なデータセットは、[opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader) を使用してダウンロードできます。
+完全なデータセットは、`npy` ファイルと `Parquet` ファイルが混在する形で [the-eye.eu](https://the-eye.eu/public/AI/cah/laion5b/) から入手できます。
 
 ClickHouse は、1億件のベクトルのサブセットを `S3` バケットで公開しています。
 この `S3` バケットには 10 個の `Parquet` ファイルが含まれており、各 `Parquet` ファイルには 1,000 万行が含まれています。
@@ -37,7 +37,9 @@ ClickHouse は、1億件のベクトルのサブセットを `S3` バケット�
 </div>
 
 <Steps>
-  <Step title="テーブルを作成" id="create-table">
+  <Step>
+    ### テーブルを作成
+
     埋め込みとそれに関連する属性を保存するために、`laion_5b_100m` テーブルを作成します。
 
     ```sql
@@ -66,7 +68,9 @@ ClickHouse は、1億件のベクトルのサブセットを `S3` バケット�
     ポストフィルタリング／プリフィルタリングを組み合わせたベクトル類似度検索を理解するために、述語条件で使用できます
   </Step>
 
-  <Step title="データを読み込む" id="load-table">
+  <Step>
+    ### データを読み込む
+
     すべての`Parquet`ファイルからデータセットを読み込むには、次のSQLステートメントを実行してください。
 
     ```sql
@@ -84,7 +88,9 @@ ClickHouse は、1億件のベクトルのサブセットを `S3` バケット�
     ```
   </Step>
 
-  <Step title="ブルートフォースによるベクトル類似度検索の実行" id="run-a-brute-force-vector-similarity-search">
+  <Step>
+    ### ブルートフォースによるベクトル類似度検索の実行
+
     KNN (k最近傍法) 探索またはブルートフォース探索では、データセット内の各ベクトルと検索用の埋め込みベクトルとの距離を計算し、その距離を並べ替えることで最近傍を取得します。データセット自体のベクトルの1つを検索ベクトルとして使用することもできます。例：
 
     ```sql title="Query"
@@ -93,11 +99,11 @@ ClickHouse は、1億件のベクトルのサブセットを `S3` バケット�
     ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
     LIMIT 20
 
-    The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
+    id = 9999 の行のベクトルは、デリレストランのイメージの埋め込みです。
     ```
 
     ```response title="Response" highlight={24}
-        ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+    ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
      1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
      2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
      3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
@@ -127,7 +133,9 @@ ClickHouse は、1億件のベクトルのサブセットを `S3` バケット�
     1億行の場合、ベクトル索引を使用しない上記のクエリは、完了までに数秒〜数分かかることがあります。
   </Step>
 
-  <Step title="ベクトル類似度索引を構築する" id="build-vector-similarity-index">
+  <Step>
+    ### ベクトル類似度索引を構築する
+
     次の SQL を実行して、`laion_5b_100m` テーブルの `vector` カラムにベクトル類似度索引を定義し、構築します。
 
     ```sql
@@ -144,7 +152,9 @@ ClickHouse は、1億件のベクトルのサブセットを `S3` バケット�
     索引の構築と保存には、使用可能な CPU コア数とストレージ帯域幅によっては、1 億件のフルデータセットで数時間かかることもあります。
   </Step>
 
-  <Step title="ANN 検索を実行する" id="perform-ann-search">
+  <Step>
+    ### ANN 検索を実行する
+
     ベクトル類似度索引が構築されると、ベクトル検索クエリでは自動的にその索引が使用されます。
 
     ```sql title="Query"
@@ -158,7 +168,9 @@ ClickHouse は、1億件のベクトルのサブセットを `S3` バケット�
     ベクトル索引の初回のメモリへの読み込みには、数秒から数分かかることがあります。
   </Step>
 
-  <Step title="検索クエリ用の埋め込みを生成する" id="generating-embeddings-for-search-query">
+  <Step>
+    ### 検索クエリ用の埋め込みを生成する
+
     `LAION 5b` データセットの埋め込みベクトルは、`OpenAI CLIP` モデル `ViT-L/14` を使用して生成されています。
 
     以下に、`CLIP` API を使用して埋め込みベクトルをプログラムで生成する方法を示す Python スクリプトの例を示します。生成した検索用の埋め込みベクトルは、その後 `SELECT` クエリ内の [`cosineDistance()`](/ja/reference/functions/regular-functions/distance-functions#cosineDistance) 関数に引数として渡されます。
@@ -175,21 +187,21 @@ ClickHouse は、1億件のベクトルのサブセットを `S3` バケット�
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = clip.load("ViT-L/14", device=device)
 
-    # Search for images that contain both a dog and a cat
+    # 犬と猫の両方が含まれる画像を検索する
     text = clip.tokenize(["a dog and a cat"]).to(device)
 
     with torch.no_grad():
         text_features = model.encode_text(text)
         np_arr = text_features.detach().cpu().numpy()
 
-        # Pass ClickHouse credentials here
+        # ClickHouseの認証情報をここに渡す
         chclient = clickhouse_connect.get_client()
 
         params = {'v1': list(np_arr[0])}
         result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
                                 parameters=params)
 
-        # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
+        # 結果をブラウザで開けるシンプルなHTMLページに書き出す。一部のURLは廃止された可能性がある。
         print("<html>")
         for r in result.result_rows:
             print("<img src = ", r[1], 'width="200" height="200">')

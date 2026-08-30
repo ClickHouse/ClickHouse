@@ -9,7 +9,7 @@ keywords: ['AWS', 'Lambda', 'OTEL', 'ClickStack', 'سجلات', 'CloudWatch']
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -43,7 +43,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 * دور تنفيذ Lambda مزوّد بأذونات لإضافة الطبقات
 
 <Steps>
-  <Step title="اختر طبقة Rotel Lambda Extension المناسبة" id="choose-layer">
+  <Step>
+    #### اختر طبقة Rotel Lambda Extension المناسبة
+
     اختر طبقة Lambda التي تتوافق مع معمارية بيئة تشغيل Lambda لديك. يعتمد الحقل `{version}`
     على منطقة AWS التي تنشر إليها. راجع صفحة [الإصدارات](https://github.com/streamfold/rotel-lambda-extension/releases)
     للاطلاع على أحدث أرقام الإصدارات المطابقة لمنطقتك.
@@ -63,7 +65,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     * sa-east-1
   </Step>
 
-  <Step title="أضِف طبقة Rotel إلى دالة Lambda الخاصة بك" id="add-layer">
+  <Step>
+    #### أضِف طبقة Rotel إلى دالة Lambda الخاصة بك
+
     *في هذه الأمثلة، استبدل `{arch}` و`{region}` و`{version}` بالقيم المناسبة المذكورة أعلاه.*
 
     ##### الخيار 1: Console في AWS
@@ -99,7 +103,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     ```
   </Step>
 
-  <Step title="اضبط الامتداد للتصدير إلى ClickStack" id="configure-extension">
+  <Step>
+    #### اضبط الامتداد للتصدير إلى ClickStack
+
     يُضبط Rotel Lambda Extension باستخدام متغيرات البيئة. تحتاج إلى ضبط endpoint الخاص بمُصدِّر OTLP بحيث يشير إلى مثيل ClickStack الخاص بك. تفترض الأمثلة أن دالة AWS Lambda لديك قادرة على الوصول إلى مثيل ClickStack.
 
     ##### الإعداد الأساسي (متغيرات البيئة)
@@ -197,7 +203,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     </Note>
   </Step>
 
-  <Step title="اختبر التكامل" id="test-integration">
+  <Step>
+    #### اختبر التكامل
+
     استدعِ دالة Lambda الخاصة بك للتأكد من إرسال السجلات إلى ClickStack:
 
     ```bash
@@ -214,7 +222,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     ```
   </Step>
 
-  <Step title="تحقّق من السجلات في HyperDX" id="verify-logs">
+  <Step>
+    #### تحقّق من السجلات في HyperDX
+
     بعد اكتمال الإعداد، سجّل الدخول إلى HyperDX (واجهة مستخدم ClickStack) وتحقّق من وصول السجلات:
 
     <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="عرض سجلات Lambda" />
@@ -238,7 +248,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 بشكل افتراضي، ترسل AWS Lambda جميع السجلات إلى CloudWatch Logs، وقد تصبح هذه العملية مكلفة عند التوسّع. بعد التأكد من أن السجلات تتدفق إلى ClickStack، يمكنك تعطيل تسجيل CloudWatch لتقليل التكاليف.
 
 <Steps>
-  <Step title="إزالة أذونات CloudWatch من دور التنفيذ" id="remove-permissions">
+  <Step>
+    #### إزالة أذونات CloudWatch من دور التنفيذ
+
     1. افتح AWS Console وانتقل إلى **AWS Lambda**
     2. انتقل إلى دالة Lambda الخاصة بك
     3. حدّد **Configuration** → **Permissions**
@@ -249,7 +261,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     6. احفظ الدور
   </Step>
 
-  <Step title="التحقّق من تعطيل تسجيل CloudWatch" id="verify-disabled">
+  <Step>
+    #### التحقّق من تعطيل تسجيل CloudWatch
+
     استدعِ دالتك مرة أخرى وتحقّق مما يلي:
 
     1. عدم إنشاء أي streams جديدة للسجلات في CloudWatch
@@ -273,7 +287,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 يعمل Rotel Lambda Extension بسلاسة مع طبقات auto-instrumentation في OpenTelemetry لجمع تتبع وmetrics الموزعة بالإضافة إلى سجل.
 
 <Steps>
-  <Step title="اختر طبقة auto-instrumentation المناسبة للغتك" id="choose-instrumentation">
+  <Step>
+    #### اختر طبقة auto-instrumentation المناسبة للغتك
+
     توفّر AWS طبقات auto-instrumentation في OpenTelemetry لعدة لغات:
 
     | اللغة   | نمط ARN للطبقة                                                                        |
@@ -285,7 +301,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     اعثر على أحدث الإصدارات في [AWS OpenTelemetry Lambda repository](https://github.com/aws-observability/aws-otel-lambda).
   </Step>
 
-  <Step title="أضف كلتا الطبقتين إلى دالتك" id="add-both-layers">
+  <Step>
+    #### أضف كلتا الطبقتين إلى دالتك
+
     أضف **كلتا** طبقة امتداد Rotel وطبقة auto-instrumentation:
 
     ```bash
@@ -297,7 +315,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     ```
   </Step>
 
-  <Step title="اضبط auto-instrumentation" id="configure-instrumentation">
+  <Step>
+    #### اضبط auto-instrumentation
+
     عيّن متغير البيئة `AWS_LAMBDA_EXEC_WRAPPER` لتمكين auto-instrumentation:
 
     **بالنسبة إلى Node.js:**
@@ -319,7 +339,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     ```
   </Step>
 
-  <Step title="تحقّق من تتبع في HyperDX" id="verify-traces">
+  <Step>
+    #### تحقّق من تتبع في HyperDX
+
     بعد استدعاء دالتك:
 
     1. انتقل إلى عرض **Traces** في HyperDX

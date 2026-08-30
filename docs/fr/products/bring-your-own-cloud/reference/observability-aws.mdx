@@ -34,7 +34,7 @@ BYOC offre deux principales façons de collecter et de visualiser des métriques
 | **Idéal pour**                 | Supervision globale de l&#39;infrastructure et des services                                                    | Supervision et intégration au niveau du service                                           |
 | **Mode d&#39;intégration**     | Configurer la fédération dans un Prometheus externe pour ingérer les métriques du cluster                      | Ajouter directement les endpoints de métriques ClickHouse à votre config Prometheus       |
 
-**Recommandation** : pour la plupart des cas d&#39;usage, nous recommandons d&#39;intégrer le stack Prometheus intégré, car il fournit des métriques complètes sur tous les composants de votre déploiement BYOC (services ClickHouse, cluster Kubernetes et services associés), et pas seulement sur les serveurs ClickHouse.
+**Recommandation** : pour la plupart des cas d&#39;usage, nous recommandons d&#39;intégrer le stack Prometheus intégré, car il fournit des métriques complètes sur tous les composants de votre déploiement BYOC (services ClickHouse, cluster Kubernetes et services associés), et pas seulement sur les serveurs ClickHouse. 
 
 <div id="builtin-prometheus-stack">
   ## La stack Prometheus BYOC intégrée
@@ -52,21 +52,19 @@ ClickHouse BYOC déploie une stack Prometheus de monitoring complète au sein de
 
 Pour vous connecter à la stack Prometheus intégrée :
 
-1. **Activez le répartiteur de charge privé** de votre infrastructure BYOC dans la ClickHouse Cloud console (voir [Répartiteurs de charge](/fr/products/bring-your-own-cloud/configuration/configurations#load-balancers)).
+1. **Contactez ClickHouse Support** pour activer le load balancer privé de votre environnement BYOC.
 2. **Demandez l’URL de l’endpoint Prometheus** à ClickHouse Support.
-3. **Vérifiez la connectivité réseau privée** avec l’endpoint Prometheus, généralement via un peering VPC/VNet ou une autre configuration de réseau privé.
+3. **Vérifiez la connectivité réseau privée** vers l’endpoint Prometheus, généralement via le VPC peering ou une autre configuration de réseau privé.
 
 Les formats d’endpoint varient selon le type de connectivité :
 
-| Connectivité     | Format de l’endpoint                                                           |
-| ---------------- | ------------------------------------------------------------------------------ |
-| Peering VPC/VNet | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| Endpoint privé   | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`  |
-
-`<cloud>` correspond à `aws`, `gcp` ou `azure`. Pour les endpoints privés, `<label>` dépend du Cloud : `vpce` sur AWS, `p` sur GCP et `privatelink` sur Azure.
+| Connectivité      | Format d’endpoint                                                              |
+| ----------------- | ------------------------------------------------------------------------------ |
+| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
 
 <Note>
-  L’URL de la stack Prometheus est accessible uniquement via des connexions réseau privées et ne nécessite pas d’authentification. L’accès est limité aux réseaux pouvant atteindre votre VPC/VNet BYOC via le peering ou d’autres options de connectivité privée.
+  L’URL de la stack Prometheus est accessible uniquement via des connexions sur réseau privé et ne nécessite pas d’authentification. L’accès est limité aux réseaux pouvant atteindre votre VPC BYOC via le VPC peering ou d’autres options de connectivité privée.
 </Note>
 
 <div id="prometheus-stack-integration">
@@ -121,7 +119,7 @@ Les services ClickHouse exposent un endpoint de métriques compatible avec Prome
 L’endpoint de métriques est disponible à l’adresse `/metrics_all` sur le point de terminaison de votre service ClickHouse :
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **Exemple de réponse :**
@@ -184,7 +182,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -195,7 +193,7 @@ scrape_configs:
 
 Remplacez :
 
-* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` par l’endpoint réel de votre service
+* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` par l’endpoint réel de votre service
 * `<username>` et `<password>` par les identifiants de votre utilisateur de scraping
 
 <div id="clickhouse-mixin">
@@ -208,7 +206,7 @@ Pour les équipes qui souhaitent disposer d’un ensemble de tableaux de bord pr
   ### Configurer Grafana et importer le Mix-in ClickHouse
 </div>
 
-Une fois votre instance Prometheus intégrée à votre stack de monitoring ClickHouse, vous pouvez visualiser les métriques dans Grafana en suivant ces étapes :
+Une fois votre instance Prometheus intégrée à votre stack de monitoring ClickHouse, vous pouvez visualiser les métriques dans Grafana en հետևant ces étapes :
 
 1. **Ajouter Prometheus comme source de données dans Grafana**
    Accédez à « Data sources » dans la barre latérale de Grafana, cliquez sur « Add data source », puis sélectionnez « Prometheus ». Saisissez l’URL de votre instance Prometheus ainsi que les identifiants nécessaires à la connexion.

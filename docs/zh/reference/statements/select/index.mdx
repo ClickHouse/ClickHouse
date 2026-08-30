@@ -1,6 +1,6 @@
 ---
 description: 'SELECT 查询文档'
-sidebarTitle: '概览'
+sidebarTitle: 'SELECT'
 slug: /sql-reference/statements/select/
 title: 'SELECT 查询'
 doc_type: 'reference'
@@ -34,26 +34,23 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-紧跟在 `SELECT` 后面的表达式列表是必需的；其他所有子句均为可选。
+除紧跟在 `SELECT` 后面的必需表达式列表外，所有子句都是可选的；关于这部分的更详细说明，请参见[下文](#select-clause)。
 
-`SELECT` 及其可选子句分别在单独的章节中说明：
+各可选子句的具体说明分别见单独章节，下面按其执行顺序列出：
 
 * [WITH 子句](/zh/reference/statements/select/with)
 * [SELECT 子句](#select-clause)
-* [ALL 子句](/zh/reference/statements/select/all)
 * [DISTINCT 子句](/zh/reference/statements/select/distinct)
 * [FROM 子句](/zh/reference/statements/select/from)
 * [SAMPLE 子句](/zh/reference/statements/select/sample)
-* [ARRAY JOIN 子句](/zh/reference/statements/select/array-join)
 * [JOIN 子句](/zh/reference/statements/select/join)
 * [PREWHERE 子句](/zh/reference/statements/select/prewhere)
 * [WHERE 子句](/zh/reference/statements/select/where)
-* [GROUP BY 子句](/zh/reference/statements/select/group-by)
-* [HAVING 子句](/zh/reference/statements/select/having)
 * [WINDOW 子句](/zh/reference/functions/window-functions/index)
-* [QUALIFY 子句](/zh/reference/statements/select/qualify)
-* [ORDER BY 子句](/zh/reference/statements/select/order-by)
+* [GROUP BY 子句](/zh/reference/statements/select/group-by)
 * [LIMIT BY 子句](/zh/reference/statements/select/limit-by)
+* [HAVING 子句](/zh/reference/statements/select/having)
+* [QUALIFY 子句](/zh/reference/statements/select/qualify)
 * [LIMIT 子句](/zh/reference/statements/select/limit)
 * [OFFSET 子句](/zh/reference/statements/select/offset)
 * [UNION 子句](/zh/reference/statements/select/union)
@@ -61,15 +58,6 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [EXCEPT 子句](/zh/reference/statements/select/except)
 * [INTO OUTFILE 子句](/zh/reference/statements/select/into-outfile)
 * [FORMAT 子句](/zh/reference/statements/select/format)
-
-查询也可以写成使用[管道运算符](/zh/reference/statements/select/pipe-operators)构成的线性转换链：
-
-```sql
-FROM table
-|> WHERE x > 1
-|> AGGREGATE count() AS c GROUP BY y
-|> ORDER BY c DESC
-```
 
 <div id="select-clause">
   ## SELECT 子句
@@ -208,7 +196,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 你可以在查询的任何部分使用别名 (`AS` 别名) 。
 
-`GROUP BY`、`ORDER BY` 和 `LIMIT BY` 子句支持位置参数。要启用此功能，请打开 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 设置。例如，`ORDER BY 1,2` 会先按表中的第 1 列、再按第 2 列对行进行排序。
+`GROUP BY`、`ORDER BY` 和 `LIMIT BY` 子句支持位置参数。要启用此功能，请打开 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings#enable_positional_arguments) 设置。例如，`ORDER BY 1,2` 会先按表中的第 1 列、再按第 2 列对行进行排序。
 
 <div id="implementation-details">
   ## 实现细节

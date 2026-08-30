@@ -36,7 +36,9 @@ ClickStack встроен непосредственно в бинарный ф�
 <Tabs>
   <Tab title="Docker">
     <Steps>
-      <Step title="Запустите ClickHouse" id="start-clickhouse-docker">
+      <Step>
+        ### Запустите ClickHouse
+
         Загрузите и запустите образ сервера ClickHouse, задав пароль:
 
         ```shell
@@ -54,7 +56,9 @@ ClickStack встроен непосредственно в бинарный ф�
         </Tip>
       </Step>
 
-      <Step title="Откройте интерфейс ClickStack" id="open-clickstack-ui-docker">
+      <Step>
+        ### Откройте интерфейс ClickStack
+
         Откройте [http://localhost:8123](http://localhost:8123) в браузере и нажмите **ClickStack**.
 
         Введите имя пользователя `default` и пароль `password`, чтобы подключиться к локальному экземпляру.
@@ -62,7 +66,9 @@ ClickStack встроен непосредственно в бинарный ф�
         <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="Аутентификация" size="lg" />
       </Step>
 
-      <Step title="Создайте источник" id="create-a-source-docker">
+      <Step>
+        ### Создайте источник
+
         Если у вас уже есть таблицы OpenTelemetry, ClickStack обнаружит их и автоматически создаст источники.
 
         При чистой установке вам будет предложено создать источник. Укажите в поле **Table** нужное имя таблицы (например, `otel_logs`) и нажмите **Save New Source**.
@@ -76,7 +82,9 @@ ClickStack встроен непосредственно в бинарный ф�
 
   <Tab title="Бинарный файл">
     <Steps>
-      <Step title="Запустите ClickHouse" id="start-clickhouse-binary">
+      <Step>
+        ### Запустите ClickHouse
+
         Скачайте и запустите ClickHouse:
 
         ```shell
@@ -131,11 +139,15 @@ ClickStack встроен непосредственно в бинарный ф�
         ```
       </Step>
 
-      <Step title="Откройте интерфейс ClickStack" id="open-clickstack-ui-binary">
+      <Step>
+        ### Откройте интерфейс ClickStack
+
         Откройте [http://localhost:8123](http://localhost:8123) в браузере и нажмите **ClickStack**. Подключение к локальному экземпляру будет создано автоматически.
       </Step>
 
-      <Step title="Создайте источник" id="create-a-source-binary">
+      <Step>
+        ### Создайте источник
+
         Если у вас уже есть таблицы OpenTelemetry, ClickStack обнаружит их и автоматически создаст источники.
 
         Если данных у вас пока нет, см. [ингестия данных](/ru/clickstack/ingesting-data/index), чтобы узнать о доступных вариантах.
@@ -150,9 +162,9 @@ ClickStack встроен непосредственно в бинарный ф�
   ## Следующие шаги
 </div>
 
-Если вы готовы выйти за рамки оценки, рассмотрите следующие варианты развертывания для продакшн:
+Если вы готовы выйти за рамки оценки, рассмотрите вариант развертывания для продакшна:
 
-* [All-in-One](/ru/clickstack/deployment/all-in-one) — единый контейнер со всеми компонентами, включая постоянное хранение данных и аутентификацию
-* [Docker Compose](/ru/clickstack/deployment/docker-compose) — отдельные компоненты для большего контроля
-* [Helm](/ru/clickstack/deployment/helm) — рекомендуется для развертываний Kubernetes в продакшн
-* [Управляемый ClickStack](/ru/clickstack/getting-started/managed) — полностью управляемое решение в ClickHouse Cloud
+* [All-in-One](/ru/clickstack/deployment/all-in-one) — один контейнер со всеми компонентами, включая постоянное хранение данных и аутентификацию
+* [Docker Compose](/ru/clickstack/deployment/docker-compose) — отдельные компоненты для более гибкого управления
+* [Helm](/ru/clickstack/deployment/helm) — рекомендуется для развертываний Kubernetes в продакшне
+* [Управляемый ClickStack](/ru/clickstack/getting-started/managed) — полностью управляемый сервис в ClickHouse Cloud

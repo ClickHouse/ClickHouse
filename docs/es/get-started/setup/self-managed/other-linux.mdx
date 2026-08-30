@@ -13,12 +13,16 @@ import Recommendations from '/snippets/es/recommendations.mdx';
 > Se recomienda usar archivos `tgz` oficiales precompilados para todas las distribuciones de Linux en las que no sea posible instalar paquetes `deb` o `rpm`.
 
 <Steps>
-  <Step title="Revisar las recomendaciones" id="review-recommendations">
+  <Step>
+    ## Revisar las recomendaciones
+
     <Recommendations />
   </Step>
 
-  <Step title="Descargar e instalar la última versión estable" id="install-latest-stable">
-    La versión requerida puede descargarse con `curl` o `wget` desde el repositorio [https://packages.clickhouse.com/tgz/](https://packages.clickhouse.com/tgz/).
+  <Step>
+    ## Descargar e instalar la última versión estable
+
+    La versión requerida puede descargarse con `curl` o `wget` desde el repositorio https://packages.clickhouse.com/tgz/.
     Después, los archivos descargados deben descomprimirse e instalarse con los scripts de instalación.
 
     A continuación se muestra un ejemplo de cómo instalar la última versión estable.
@@ -30,7 +34,9 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     </Note>
   </Step>
 
-  <Step title="Obtener la última versión de ClickHouse" id="get-latest-version">
+  <Step>
+    ## Obtener la última versión de ClickHouse
+
     Obtén la última versión de ClickHouse desde GitHub y guárdala en la variable `LATEST_VERSION`.
 
     ```bash
@@ -40,7 +46,9 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Detectar la arquitectura de tu sistema" id="detect-system-architecture">
+  <Step>
+    ## Detectar la arquitectura de tu sistema
+
     Detecta la arquitectura del sistema y establece la variable ARCH en consecuencia:
 
     ```bash
@@ -52,7 +60,9 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Descargar archivos tar para cada componente de ClickHouse" id="download-tarballs">
+  <Step>
+    ## Descargar archivos tar para cada componente de ClickHouse
+
     Descarga los archivos tar para cada componente de ClickHouse. El bucle intenta primero con los
     paquetes específicos de la arquitectura y, si no están disponibles, recurre a los genéricos.
 
@@ -65,7 +75,9 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Extraer e instalar paquetes" id="extract-and-install">
+  <Step>
+    ## Extraer e instalar paquetes
+
     Ejecuta los siguientes comandos para extraer e instalar los siguientes paquetes:
 
     * `clickhouse-common-static`

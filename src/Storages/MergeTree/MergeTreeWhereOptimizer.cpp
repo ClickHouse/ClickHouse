@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <Core/Settings.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -13,12 +12,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
-#include <base/defines.h>
 
 namespace DB
 {
@@ -31,14 +28,11 @@ namespace Setting
     extern const SettingsBool use_statistics;
 }
 
-namespace
-{
-
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
-constexpr auto threshold = 2;
+static constexpr auto threshold = 2;
 
-NameToIndexMap fillNamesPositions(const Names & names)
+static NameToIndexMap fillNamesPositions(const Names & names)
 {
     NameToIndexMap names_positions;
 
@@ -51,22 +45,8 @@ NameToIndexMap fillNamesPositions(const Names & names)
     return names_positions;
 }
 
-constexpr double default_bytes_per_string_value = 64;
-constexpr double default_bytes_per_complex_value = 128;
-
-/// Uncompressed, unlike the stored column sizes, so it over-charges - the safe direction for a
-/// column whose real cost is unknown.
-double approximateBytesPerValueForType(const IDataType & type)
-{
-    if (type.haveMaximumSizeOfValue())
-        return static_cast<double>(type.getMaximumSizeOfValueInMemory());
-    if (WhichDataType(type).isString())
-        return default_bytes_per_string_value;
-    return default_bytes_per_complex_value;
-}
-
 /// Find minimal position of any of the column in primary key.
-Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndexMap & primary_key_positions)
+static Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndexMap & primary_key_positions)
 {
     Int64 min_position = std::numeric_limits<Int64>::max() - 1;
 
@@ -80,7 +60,7 @@ Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndex
     return min_position;
 }
 
-NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
+static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
     options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
@@ -103,21 +83,17 @@ NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names
     return table_columns;
 }
 
-}
-
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageSnapshotPtr & storage_snapshot,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
-    bool supported_columns_include_subcolumns_,
     LoggerPtr log_)
     : estimator(estimator_)
     , table_columns(getTableColumns(storage_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
-    , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
     , sorting_key_names{NameSet(
           storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
@@ -131,9 +107,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         if (it != column_sizes.end())
             total_size_of_queried_columns += it->second;
     }
-
-    if (estimator)
-        total_rows = estimator->getTotalRows();
 }
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
@@ -205,18 +178,6 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         for (const auto & n : condition.nodes)
         {
             const ActionsDAG::Node * condition_node = n.getDAGNode();
-
-            /// FINAL merges by physical name, so unwrap an analyzer alias to its input column
-            /// before moving it to PREWHERE (otherwise the alias reaches the merge as a measure).
-            if (is_final)
-            {
-                const ActionsDAG::Node * unwrapped = condition_node;
-                while (unwrapped->type == ActionsDAG::ActionType::ALIAS)
-                    unwrapped = unwrapped->children.front();
-                if (unwrapped->type == ActionsDAG::ActionType::INPUT)
-                    condition_node = unwrapped;
-            }
-
             if (prewhere_conditions.insert(condition_node).second)
                 prewhere_conditions_list.push_back(condition_node);
         }
@@ -533,22 +494,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 pk_positions.emplace(cond.min_position_in_primary_key);
             }
 
-            /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
-            /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
-            const double rejected_rows = static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count);
-            if (total_rows == 0)
-                /// No statistics: fall back to pure I/O cost.
-                cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
-            else if (rejected_rows <= 0)
-                /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
-                cond.bytes_per_rejected_row = std::numeric_limits<double>::infinity();
-            else if (total_size_of_queried_columns == 0)
-                /// Nothing measured (compact parts): the type estimate is too coarse to outrank
-                /// selectivity, e.g. `Nullable(Int64)` would beat `Int64` on the null byte.
-                cond.bytes_per_rejected_row = static_cast<double>(cond.estimated_row_count);
-            else
-                cond.bytes_per_rejected_row = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
-
             res.emplace_back(std::move(cond));
         }
     }
@@ -574,7 +519,6 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             Condition cond({conjunct});
             cond.table_columns = columns;
             cond.columns_size = getColumnsSize(columns);
-            cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
             cond.viable =
                 !has_invalid_column
                 && !columns.empty()
@@ -734,51 +678,13 @@ UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
     return size;
 }
 
-double MergeTreeWhereOptimizer::approximateBytesPerRow(const NameSet & columns) const
-{
-    double bytes_per_row = 0;
-
-    for (const auto & column : columns)
-        bytes_per_row += approximateBytesPerRowAndColumn(column);
-
-    return bytes_per_row;
-}
-
-double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & column) const
-{
-    chassert(total_rows > 0);
-
-    if (auto it = column_sizes.find(column); it != column_sizes.end() && it->second != 0)
-        return static_cast<double>(it->second) / static_cast<double>(total_rows);
-
-    const auto * virtual_column
-        = storage_metadata->virtuals.tryGetDescription(column, VirtualsKind::All, VirtualsMaterializationPlace::All);
-
-    /// `_part`, `_partition_id` and the like come from part metadata, so nothing is read for them.
-    /// A virtual column with a default expression (`__text_index_*`) may have to be computed.
-    if (virtual_column && virtual_column->isEphemeral() && !virtual_column->default_desc.expression)
-        return 0;
-
-    if (virtual_column)
-        return approximateBytesPerValueForType(*virtual_column->type);
-
-    if (auto column_in_storage = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column))
-        return approximateBytesPerValueForType(*column_in_storage->type);
-
-    /// Not resolvable through the metadata. Charge the widest estimate rather than 0, which would
-    /// schedule it first.
-    return default_bytes_per_complex_value;
-}
-
 bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) const
 {
     if (!supported_columns.has_value())
         return true;
 
-    /// The contract lists top-level names; a subcolumn is admitted through its origin column.
-    const auto & columns_description = storage_metadata->getColumns();
     for (const auto & column : columns)
-        if (!prewhereSupportedColumnsContain(*supported_columns, supported_columns_include_subcolumns, columns_description, column))
+        if (!supported_columns->contains(column))
             return false;
 
     return true;

@@ -14,14 +14,14 @@ Returns `0` for the first row, and for subsequent rows the difference to the pre
 :::warning Deprecated
 Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.
-It is advised to use [window functions](/reference/functions/window-functions) instead.
+It is advised to use [window functions](/sql-reference/window-functions) instead.
 
-You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
+You can use setting [`allow_deprecated_error_prone_window_functions`](/operations/settings/settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 :::
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 The order of rows during calculation of `runningDifference()` can differ from the order of rows returned to the user.
-To prevent that you can create a subquery with [`ORDER BY`](/reference/statements/select/order-by) and call the function from outside the subquery.
+To prevent that you can create a subquery with [`ORDER BY`](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
 Please note that the block size affects the result.
 The internal state of `runningDifference` state is reset for each new block.
 )";
@@ -85,7 +85,9 @@ WHERE diff != 1;
         R"(
 ┌─number─┬─diff─┐
 │      0 │    0 │
-│  65409 │    0 │
+└────────┴──────┘
+┌─number─┬─diff─┐
+│  65536 │    0 │
 └────────┴──────┘
         )"
     }

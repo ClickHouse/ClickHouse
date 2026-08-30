@@ -165,7 +165,7 @@ No entanto, você pode excluir dados antigos usando `ALTER TABLE ... DROP PARTIT
 
 A cláusula `FORMAT` deve ser especificada no final da consulta se a cláusula `SELECT` contiver a função de tabela [input()](/pt-BR/reference/functions/table-functions/input).
 
-Para inserir um valor padrão em vez de `NULL` em uma coluna com um tipo de dado não anulável, habilite a configuração [insert&#95;null&#95;as&#95;default](/pt-BR/reference/settings/session-settings/insert#insert_null_as_default).
+Para inserir um valor padrão em vez de `NULL` em uma coluna com um tipo de dado não anulável, habilite a configuração [insert&#95;null&#95;as&#95;default](/pt-BR/reference/settings/session-settings#insert_null_as_default).
 
 `INSERT` também oferece suporte a CTE (expressão de tabela comum). Por exemplo, as duas instruções a seguir são equivalentes:
 
@@ -306,7 +306,7 @@ O desempenho não será afetado se:
   ### Inserções assíncronas
 </div>
 
-É possível inserir dados de forma assíncrona por meio de inserções pequenas, mas frequentes. Os dados dessas inserções são combinados em lotes e depois inseridos com segurança em uma tabela. Para usar inserções assíncronas, ative a configuração [`async_insert`](/pt-BR/reference/settings/session-settings/async-insert#async_insert).
+É possível inserir dados de forma assíncrona por meio de inserções pequenas, mas frequentes. Os dados dessas inserções são combinados em lotes e depois inseridos com segurança em uma tabela. Para usar inserções assíncronas, ative a configuração [`async_insert`](/pt-BR/reference/settings/session-settings#async_insert).
 
 Usar `async_insert` ou o [motor de tabela `Buffer`](/pt-BR/reference/engines/table-engines/special/buffer) resulta em bufferização adicional.
 
@@ -314,13 +314,13 @@ Usar `async_insert` ou o [motor de tabela `Buffer`](/pt-BR/reference/engines/tab
   ### Inserções grandes ou demoradas
 </div>
 
-Ao inserir grandes volumes de dados, o ClickHouse otimiza o desempenho de gravação por meio de um processo chamado &quot;squashing&quot;. Pequenos blocos de dados inseridos na memória são mesclados e compactados em blocos maiores antes de serem gravados em disco. O squashing reduz a sobrecarga associada a cada operação de gravação. Nesse processo, os dados inseridos ficam disponíveis para consulta depois que o ClickHouse conclui a gravação de cada [`max_insert_block_size`](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size) linhas.
+Ao inserir grandes volumes de dados, o ClickHouse otimiza o desempenho de gravação por meio de um processo chamado &quot;squashing&quot;. Pequenos blocos de dados inseridos na memória são mesclados e compactados em blocos maiores antes de serem gravados em disco. O squashing reduz a sobrecarga associada a cada operação de gravação. Nesse processo, os dados inseridos ficam disponíveis para consulta depois que o ClickHouse conclui a gravação de cada [`max_insert_block_size`](/pt-BR/reference/settings/session-settings#max_insert_block_size) linhas.
 
 **Veja também**
 
-* [async&#95;insert](/pt-BR/reference/settings/session-settings/async-insert#async_insert)
-* [wait&#95;for&#95;async&#95;insert](/pt-BR/reference/settings/session-settings/wait-for#wait_for_async_insert)
-* [wait&#95;for&#95;async&#95;insert&#95;timeout](/pt-BR/reference/settings/session-settings/wait-for#wait_for_async_insert_timeout)
-* [async&#95;insert&#95;max&#95;data&#95;size](/pt-BR/reference/settings/session-settings/async-insert#async_insert_max_data_size)
-* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)
-* `async_insert_stale_timeout_ms`
+* [async&#95;insert](/pt-BR/reference/settings/session-settings#async_insert)
+* [wait&#95;for&#95;async&#95;insert](/pt-BR/reference/settings/session-settings#wait_for_async_insert)
+* [wait&#95;for&#95;async&#95;insert&#95;timeout](/pt-BR/reference/settings/session-settings#wait_for_async_insert_timeout)
+* [async&#95;insert&#95;max&#95;data&#95;size](/pt-BR/reference/settings/session-settings#async_insert_max_data_size)
+* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings#async_insert_busy_timeout_max_ms)
+* [async&#95;insert&#95;stale&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings#async_insert_max_data_size)
