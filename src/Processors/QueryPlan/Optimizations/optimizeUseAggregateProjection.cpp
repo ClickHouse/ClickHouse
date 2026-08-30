@@ -987,6 +987,11 @@ static Block makeBlockWithMinMaxFromStatistics(
         if (part->index_granularity->getRowsCountInRanges(part_with_ranges.ranges) != part->rows_count)
             return false;
 
+        /// An empty part has no extremes, but `getExtremes` reports zeros for it. Read it instead;
+        /// it contributes nothing to the result anyway.
+        if (part->rows_count == 0)
+            return false;
+
         Estimates estimates;
         try
         {
@@ -1034,8 +1039,16 @@ static Block makeBlockWithMinMaxFromStatistics(
 
             auto & folded = folded_values[i];
             bool is_min = stats_aggregates[i].kind == StatisticsMinMaxAggregate::Kind::Min;
-            if (folded.isNull() || (is_min ? *part_values[i] < folded : folded < *part_values[i]))
-                folded = *part_values[i];
+            const Field & value = *part_values[i];
+
+            /// `min`/`max` skip `NaN` and return it only when every value is `NaN`, and a part
+            /// whose values are all `NaN` reports `NaN` as both of its extremes, so fold the
+            /// per-part extrema with the same rule as `SingleValueDataFixed::setIfGreater`
+            /// and `SingleValueDataFixed::setIfSmaller` instead of the raw `Field` ordering.
+            if (folded.isNull() || isNaNField(folded))
+                folded = value;
+            else if (!isNaNField(value) && (is_min ? value < folded : folded < value))
+                folded = value;
         }
 
         ++covered_parts;
