@@ -354,7 +354,7 @@ void selectWithinPartsRange(
             max_age = std::max(max_age, cur_age);
             all_small_and_fresh = all_small_and_fresh
                 && cur_size < settings.small_parts_threshold
-                && static_cast<size_t>(cur_age) < settings.small_parts_max_age;
+                && cur_age < settings.small_parts_max_age;
 
             if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
             {
