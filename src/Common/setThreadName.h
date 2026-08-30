@@ -141,6 +141,7 @@ namespace DB
     M(READER_POOL, "Reader") \
     M(READ_TASK_ITERATOR, "ReadTaskIteratr") \
     M(READ_THREAD_POOL, "ThreadPoolRead") \
+    M(REDIS_HANDLER, "RedisHandler") \
     M(REMOTE_FS_READ_THREAD_POOL, "VFSRead") \
     M(REMOTE_FS_WRITE_THREAD_POOL, "VFSWrite") \
     M(RESTORE_COORDINATION, "RestoreCoord") \

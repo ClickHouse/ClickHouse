@@ -2154,6 +2154,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "remote_url_allow_hosts",
         "http_handlers",
         "arrowflight",
+        "redis",
         "proxy",
         "enable_http_stacktrace",
         "enable_verbose_replicas_status",

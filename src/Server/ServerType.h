@@ -22,6 +22,7 @@ public:
         ARROW_FLIGHT,
         POSTGRESQL,
         PROMETHEUS,
+        REDIS,
         CUSTOM,
         INTERSERVER_HTTP,
         INTERSERVER_HTTPS,

@@ -9,6 +9,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -17,7 +18,9 @@
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Defines.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
@@ -30,6 +33,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h>
 #include <filesystem>
+#include <memory>
 #include <numeric>
 #include <unordered_set>
 
@@ -1106,6 +1110,101 @@ private:
     }
 };
 
+Block StorageJoin::getBlockByKeys(const std::vector<std::vector<Field>> & keys, const Names & column_names, ContextPtr context)
+{
+    /// For a composite key, check that all necessary data has been provided.
+    for (const auto & key : keys)
+        if (key.size() != key_names.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Mismatched number of keys ({}) and join key columns ({})", key.size(), key_names.size());
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto cur_sample_block = metadata_snapshot->getSampleBlock();
+
+    DataTypes key_types;
+    key_types.reserve(key_names.size());
+    for (const auto & key_name : key_names)
+        key_types.push_back(cur_sample_block.getColumnOrSubcolumnByName(key_name).type);
+
+    DataTypes return_types;
+    return_types.reserve(column_names.size());
+    for (const auto & name : column_names)
+    {
+        if (!cur_sample_block.has(name))
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table {}", name, getStorageID().getNameForLogs());
+
+        /// Request a Nullable result (as `joinGetOrNull` does), so that a missing key is
+        /// distinguishable from a key present with a default value.
+        /// `LowCardinality(T)` cannot be wrapped into `Nullable`, it has to become
+        /// `LowCardinality(Nullable(T))`, so make it nullable here rather than in `joinGetCheckAndGetReturnType`.
+        const bool is_low_cardinality = cur_sample_block.getByName(name).type->lowCardinality();
+        auto return_type = joinGetCheckAndGetReturnType(key_types, name, /*or_null=*/ !is_low_cardinality);
+        if (is_low_cardinality)
+            return_type = makeNullableOrLowCardinalityNullableSafe(return_type);
+
+        if (!isNullableOrLowCardinalityNullable(return_type))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Column {} of type {} in table {} cannot be used for get requests, because a missing key "
+                "would not be distinguishable from a default value",
+                name, return_type->getName(), getStorageID().getNameForLogs());
+
+        return_types.push_back(std::move(return_type));
+    }
+
+    MutableColumns result_columns;
+    result_columns.reserve(column_names.size());
+    for (const auto & return_type : return_types)
+    {
+        result_columns.push_back(return_type->createColumn());
+        result_columns.back()->reserve(keys.size());
+    }
+
+    /// A single read lock for the whole request: every key and every column of one request has to
+    /// observe the same state of the table, and `joinGet` would take and release the lock on each call.
+    if (!keys.empty())
+    {
+        TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+
+        /// `joinGet` returns at most `max_joined_block_rows` rows at once, so look the keys up in batches.
+        for (size_t begin = 0; begin < keys.size(); begin += DEFAULT_BLOCK_SIZE)
+        {
+            const size_t end = std::min(begin + DEFAULT_BLOCK_SIZE, keys.size());
+
+            Block key_block;
+            for (size_t i = 0; i < key_names.size(); ++i)
+            {
+                MutableColumnPtr column = key_types[i]->createColumn();
+                column->reserve(end - begin);
+                for (size_t row = begin; row < end; ++row)
+                    column->insert(keys[row][i]);
+                key_block.insert({std::move(column), key_types[i], key_names[i]});
+            }
+
+            /// `joinGet` returns a single column, so request the columns one by one.
+            for (size_t i = 0; i < column_names.size(); ++i)
+            {
+                Block block_with_column_to_add({{return_types[i]->createColumn(), return_types[i], column_names[i]}});
+                auto result = join->joinGet(key_block, block_with_column_to_add);
+                auto column = result.column->convertToFullColumnIfConst();
+
+                if (column->size() != end - begin)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Lookup of column {} in table {} returned {} values for {} keys",
+                        column_names[i], getStorageID().getNameForLogs(), column->size(), end - begin);
+
+                result_columns[i]->insertRangeFrom(*column, 0, column->size());
+            }
+        }
+    }
+
+    Block result_block;
+    for (size_t i = 0; i < column_names.size(); ++i)
+        result_block.insert({std::move(result_columns[i]), return_types[i], column_names[i]});
+
+    return result_block;
+}
 
 // TODO: multiple stream read and index read
 Pipe StorageJoin::read(

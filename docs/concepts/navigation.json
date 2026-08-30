@@ -225,6 +225,7 @@
                 "concepts/features/interfaces/mysql",
                 { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
+                "concepts/features/interfaces/redis",
                 "concepts/features/interfaces/prometheus",
                 "concepts/features/interfaces/ssh",
                 "concepts/features/interfaces/grpc",
