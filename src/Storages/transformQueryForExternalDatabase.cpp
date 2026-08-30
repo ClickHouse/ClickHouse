@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Access/Common/RowPolicyDefs.h>
@@ -633,15 +634,26 @@ bool isRowPreservingExpression(const ASTPtr & node)
     return true;
 }
 
+/// Returns the value of a `UInt64` literal, if the expression is one.
+std::optional<UInt64> getUInt64LiteralValue(const ASTPtr & node)
+{
+    const auto * literal = node->as<ASTLiteral>();
+    if (literal && literal->value.getType() == Field::Types::UInt64)
+        return literal->value.safeGet<UInt64>();
+    return {};
+}
+
 /// An explicit allow-list of query shapes for which the LIMIT can be pushed down to the
 /// external database: a plain single-table SELECT, optionally with a WHERE clause (which
-/// must additionally be copied to the external query without changes - checked separately)
-/// and a SETTINGS clause (it does not change the data). Everything else (DISTINCT, GROUP BY,
-/// ORDER BY, HAVING, LIMIT BY, OFFSET, WITH TIES, JOIN, ARRAY JOIN, SAMPLE, FINAL, ...) is
-/// applied locally after reading from the external table, so limiting the result remotely
-/// could change it. Note that some of these modifiers are flags on `ASTSelectQuery` rather
-/// than children, and some are hidden inside the TABLES child, so children alone are not
-/// a complete proxy and the flags and the table expression are checked explicitly.
+/// must additionally be copied to the external query without changes - checked separately),
+/// an OFFSET (the rows it skips are read remotely as well, so the pushed-down limit is
+/// `offset + length`) and a SETTINGS clause (it does not change the data). Everything else
+/// (DISTINCT, GROUP BY, ORDER BY, HAVING, LIMIT BY, WITH TIES, JOIN, ARRAY JOIN, SAMPLE,
+/// FINAL, ...) is applied locally after reading from the external table, so limiting the
+/// result remotely could change it. Note that some of these modifiers are flags on
+/// `ASTSelectQuery` rather than children, and some are hidden inside the TABLES child, so
+/// children alone are not a complete proxy and the flags and the table expression are
+/// checked explicitly.
 bool isLimitPushDownSafe(const ASTSelectQuery & query)
 {
     if (query.distinct || query.group_by_all || query.group_by_with_totals || query.order_by_all
@@ -654,7 +666,7 @@ bool isLimitPushDownSafe(const ASTSelectQuery & query)
     for (const auto & child : query.children)
     {
         if (child != query.select() && child != query.tables() && child != query.where()
-            && child != query.limitLength() && child != query.settings())
+            && child != query.limitLength() && child != query.limitOffset() && child != query.settings())
             return false;
     }
 
@@ -789,13 +801,27 @@ String transformQueryForExternalDatabaseImpl(
     auto limit_len_expr = original_select.limitLength();
     if (limit_push_down_allowed && where_fully_copied && limit_len_expr)
     {
-        if (auto * limit_len_lit = limit_len_expr->as<ASTLiteral>(); limit_len_lit && limit_len_lit->value.getType() == Field::Types::UInt64)
+        if (auto limit_len = getUInt64LiteralValue(limit_len_expr))
         {
-            auto limit_len = limit_len_lit->value.safeGet<UInt64>();
-            if (limit.has_value())
-                limit = std::min<size_t>(limit.value(), limit_len);
-            else
-                limit = limit_len;
+            /// The OFFSET is applied locally, so the rows it skips have to be read from the external
+            /// table as well: the limit sent remotely is `offset + length`. An OFFSET that is not a
+            /// UInt64 literal (it is not known here) disables the push-down entirely.
+            bool limit_is_known = true;
+            UInt64 limit_with_offset = *limit_len;
+
+            if (auto limit_offset_expr = original_select.limitOffset())
+            {
+                auto limit_offset = getUInt64LiteralValue(limit_offset_expr);
+                limit_is_known = limit_offset && !common::addOverflow(limit_with_offset, *limit_offset, limit_with_offset);
+            }
+
+            if (limit_is_known)
+            {
+                if (limit.has_value())
+                    limit = std::min<size_t>(limit.value(), limit_with_offset);
+                else
+                    limit = limit_with_offset;
+            }
         }
     }
 

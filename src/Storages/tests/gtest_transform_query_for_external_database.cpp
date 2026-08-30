@@ -492,12 +492,23 @@ TEST(TransformQueryForExternalDatabase, Limit)
         "SELECT column FROM table LIMIT 10",
         R"(SELECT "column" FROM "test"."table" LIMIT 10)");
 
-    // OFFSET is not supported yet
+    /// The OFFSET is applied locally, so the rows it skips still have to be read from the
+    /// external table: the pushed-down limit is `offset + length`.
     check(state, 1, {"column"},
         "SELECT column FROM table LIMIT 10 OFFSET 5",
-        R"(SELECT "column" FROM "test"."table")");
+        R"(SELECT "column" FROM "test"."table" LIMIT 15)");
     check(state, 1, {"column"},
         "SELECT column FROM table LIMIT 5, 10",
+        R"(SELECT "column" FROM "test"."table" LIMIT 15)");
+
+    /// An `OFFSET` without a `LIMIT` gives nothing to push down.
+    check(state, 1, {"column"},
+        "SELECT column FROM table OFFSET 5",
+        R"(SELECT "column" FROM "test"."table")");
+
+    /// `offset + length` must not overflow.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 18446744073709551615 OFFSET 1",
         R"(SELECT "column" FROM "test"."table")");
 
     check(state, 1, {"column"},
