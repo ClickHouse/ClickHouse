@@ -438,44 +438,10 @@ inline std::string geoKindNameOfType(const IDataType & type)
     return {};
 }
 
-/// Helpers backing `hasDeferredGeometryKindRejection` below; kept out of `DB` so their generic
-/// names cannot collide with anything else declared at that scope.
+/// Helpers backing the geometry-kind checks below; kept out of `DB` so their generic names cannot
+/// collide with anything else declared at that scope.
 namespace GeoBboxDetail
 {
-
-/// Whether the geometry kind stored in `type` is only decided at execution time, and the predicate
-/// may well reject it there. A `Dynamic` column, or a `Variant` (`Geometry` is a `Variant` over the
-/// geometry kinds), carries no single declared kind an `ActionsDAG` node could be asked about: which
-/// overload runs -- and therefore whether it raises `ILLEGAL_TYPE_OF_ARGUMENT` -- is settled per row.
-/// Such an argument must fail closed for the whole conjunction. It is guaranteed to be evaluated on
-/// every surviving row under `short_circuit_function_evaluation = 'disable'`, so it raises as soon as
-/// a rejected kind is actually seen -- but if a sibling conjunct on the indexed column pruned every
-/// granule first, `ExecutableFunctionDynamicAdaptor`/`ExecutableFunctionVariantAdaptor` return an
-/// empty result without ever building the raising overload, and the query answers `0` instead of
-/// surfacing the exception. That is the very exception hiding the constant-side checks above avoid,
-/// only reached across columns.
-///
-/// A `Variant` names its alternatives, so it fails closed only when at least one of them is a kind
-/// this predicate rejects at this position -- a `Variant` all of whose alternatives are accepted can
-/// never raise, and vetoing pruning for it would cost pruning for nothing. A `Dynamic` can hold any
-/// type at all, so it always fails closed for a predicate that rejects any kind whatsoever.
-///
-/// "Named" is the operative word: an alternative that carries no custom name of its own -- say a raw
-/// `Tuple(Float64, Float64)` -- is still resolved to a concrete geometry by `callOnGeometryDataType`,
-/// which compares the type STRUCTURALLY and reads that tuple as a `Point`. There is no kind name to
-/// ask `rejectsColumnGeometryKind` about, yet the overload built per row can reject it just the
-/// same, so an unnamed alternative must be treated as an unknown kind and fail closed exactly like a
-/// `Dynamic`, not waved through as "says nothing".
-inline bool rejectsAnyGeometryKind(const IFunctionBase & function, size_t arg_index)
-{
-    /// Probing the geometry kinds tells a predicate that rejects some kind apart from one that
-    /// accepts everything and can never raise on kind grounds -- e.g. a WASM UDF reading raw WKB,
-    /// which keeps its default `rejectsColumnGeometryKind` of false and must keep pruning.
-    static constexpr std::array kind_names
-        = {"Point", "Ring", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "String"};
-    return std::ranges::any_of(
-        kind_names, [&](std::string_view kind_name) { return function.rejectsColumnGeometryKind(kind_name, arg_index); });
-}
 
 /// Unwrap the `Nullable`/`LowCardinality` wrappers that carry no kind of their own, so the type
 /// underneath is the one the predicate is actually asked about.
@@ -533,17 +499,6 @@ inline std::string_view structuralGeoKindName(const IDataType & type)
     return kind_names[depth];
 }
 
-/// Whether the predicate rejects `type` at `arg_index` when `type` carries no kind name of its own:
-/// by the structural kind it resolves to, if it resolves to one at all, and only otherwise by the
-/// blanket "rejects any kind" test.
-inline bool rejectsUnnamedGeometryType(const IDataType & type, const IFunctionBase & function, size_t arg_index)
-{
-    const auto structural_kind_name = structuralGeoKindName(type);
-    if (!structural_kind_name.empty())
-        return function.rejectsColumnGeometryKind(structural_kind_name, arg_index);
-    return rejectsAnyGeometryKind(function, arg_index);
-}
-
 /// The REPRESENTATION a geometry kind name reduces to. `DataTypeArray::equals` and
 /// `DataTypeTuple::equals` compare only the nested types, ignoring the outer custom name, so kinds
 /// that differ by name alone are one and the same type to `IDataType::equals`: `Ring`, `LineString`
@@ -585,16 +540,25 @@ inline std::string declaredGeoRepresentationName(const IDataType & type)
 
 /// Whether `type` resolves its geometry kind only at execution time -- a `Dynamic`, or a `Variant`
 /// (`Geometry` is a `Variant` over the geometry kinds).
+///
+/// Such an argument vetoes pruning for the whole conjunction, unconditionally. Which overload runs
+/// -- and so whether it raises `ILLEGAL_TYPE_OF_ARGUMENT` -- is settled per row by
+/// `ExecutableFunctionDynamicAdaptor`/`ExecutableFunctionVariantAdaptor`, and on a block a sibling
+/// conjunct pruned to `0` rows those adaptors return an empty result without ever building the
+/// raising overload: the query answers `0` instead of surfacing the exception.
+///
+/// Deliberately blunt. A finer rule -- inspect the `Variant`'s alternatives, or a constant's stored
+/// discriminator, and ask the predicate about each resolved kind -- is what this used to do, and it
+/// needed per-kind knowledge from every predicate to stay both correct and useful. Since no shipped
+/// query has a `Dynamic`/`Variant` geometry in a spatial predicate today, the pruning given up here
+/// is theoretical, while the machinery it removes was not. Refining it is
+/// https://github.com/ClickHouse/ClickHouse/issues/117163.
 inline bool isDeferredGeometryKindType(const IDataType & type)
 {
     const IDataType & inner = unwrapGeoKindWrappers(type);
     return typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner);
 }
 
-/// Whether `type` is a bare, unnamed two-`Float64` `Tuple` -- the shape `callOnGeometryDataType`
-/// resolves as `Point` by `IDataType::equals`, with no `Point` custom name to report it under.
-/// `geoKindNameOfType` and `constGeoKindName` both return an empty kind for it, so the kind checks
-/// in `extractSpatialPredicateNodeBbox` cannot see it at all and would treat it as harmless.
 /// Whether `type` is no geometry at all: neither a named geometry kind (a WKB `String` included,
 /// see `geoKindNameOfType`), nor one of the unnamed shapes `callOnGeometryDataType` resolves
 /// structurally, nor a `Dynamic`/`Variant` whose kind is only known per row.
@@ -606,6 +570,10 @@ inline bool isNonGeometryType(const IDataType & type)
     return geoKindNameOfType(inner).empty() && structuralGeoKindName(inner).empty();
 }
 
+/// Whether `type` is a bare, unnamed two-`Float64` `Tuple` -- the shape `callOnGeometryDataType`
+/// resolves as `Point` by `IDataType::equals`, with no `Point` custom name to report it under.
+/// `geoKindNameOfType` and `constGeoKindName` both return an empty kind for it, so the kind checks
+/// in `extractSpatialPredicateNodeBbox` cannot see it at all and would treat it as harmless.
 inline bool isRawPointTuple(const IDataType & type)
 {
     const IDataType & inner = unwrapGeoKindWrappers(type);
@@ -614,78 +582,11 @@ inline bool isRawPointTuple(const IDataType & type)
 
 }
 
-inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunctionBase & function, size_t arg_index)
-{
-    const IDataType & inner = GeoBboxDetail::unwrapGeoKindWrappers(type);
-
-    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&inner))
-    {
-        for (const auto & alternative : variant_type->getVariants())
-        {
-            const auto kind_name = geoKindNameOfType(*alternative);
-            /// An unnamed alternative is an unknown kind, not an absent one: see the note above.
-            /// It is unknown only where it does not resolve structurally, though -- see
-            /// `structuralGeoKindName`.
-            if (kind_name.empty() ? GeoBboxDetail::rejectsUnnamedGeometryType(*alternative, function, arg_index)
-                                  : function.rejectsColumnGeometryKind(kind_name, arg_index))
-                return true;
-        }
-        return false;
-    }
-
-    if (typeid_cast<const DataTypeDynamic *>(&inner))
-    {
-        /// Every kind a predicate could possibly reject is reachable here.
-        return GeoBboxDetail::rejectsAnyGeometryKind(function, arg_index);
-    }
-
-    return false;
-}
-
-/// The concrete type actually stored in a constant `Dynamic`/`Variant` node's single row -- the
-/// alternative whose overload will be built at execution time. Returns `nullptr` when the node is
-/// not such a constant, or when the stored alternative cannot be determined.
-inline DataTypePtr constGeoStoredType(const ActionsDAG::Node & node)
-{
-    if (!node.result_type)
-        return nullptr;
-
-    const auto * variant_type = typeid_cast<const DataTypeVariant *>(node.result_type.get());
-    const auto * dynamic_type = variant_type ? nullptr : typeid_cast<const DataTypeDynamic *>(node.result_type.get());
-    if ((!variant_type && !dynamic_type) || !node.column)
-        return nullptr;
-
-    const IColumn * data_col = node.column.get();
-    if (const auto * const_col = typeid_cast<const ColumnConst *>(data_col))
-        data_col = &const_col->getDataColumn();
-
-    if (dynamic_type)
-    {
-        const auto * dynamic_col = typeid_cast<const ColumnDynamic *>(data_col);
-        if (!dynamic_col || dynamic_col->size() != 1)
-            return nullptr;
-
-        return dynamic_col->getTypeAt(0);
-    }
-
-    const auto * variant_col = typeid_cast<const ColumnVariant *>(data_col);
-    if (!variant_col || variant_col->size() != 1)
-        return nullptr;
-
-    const auto discr = variant_col->globalDiscriminatorAt(0);
-    if (discr == ColumnVariant::NULL_DISCRIMINATOR || discr >= variant_type->getVariants().size())
-        return nullptr;
-
-    return variant_type->getVariants()[discr];
-}
-
+/// The geometry kind a constant node is DECLARED to carry. A `Dynamic`/`Variant` node reports none:
+/// it is vetoed wholesale by `GeoBboxDetail::isDeferredGeometryKindType` before this is consulted.
 inline std::string constGeoKindName(const ActionsDAG::Node & node)
 {
-    const auto stored_type = constGeoStoredType(node);
-    if (stored_type)
-        return geoKindNameOfType(*stored_type);
-    if (typeid_cast<const DataTypeVariant *>(node.result_type.get())
-        || typeid_cast<const DataTypeDynamic *>(node.result_type.get()))
+    if (!node.result_type || GeoBboxDetail::isDeferredGeometryKindType(*node.result_type))
         return {};
     return geoKindNameOfType(*node.result_type);
 }
@@ -794,8 +695,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
             /// Checked for EVERY input, accepted or not: `accept_input` rejecting a `Dynamic`/
             /// `Variant` column is precisely the case that used to fall through to
             /// `has_extra_non_constant` and let a sibling conjunct prune the exception away.
-            if (child->result_type
-                && hasDeferredGeometryKindRejection(*child->result_type, *node.function_base, this_arg_index))
+            if (child->result_type && GeoBboxDetail::isDeferredGeometryKindType(*child->result_type))
             {
                 any_deferred_kind_rejection = true;
                 continue;
@@ -877,31 +777,11 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
             continue;
         }
 
-        /// A `Dynamic`/`Variant` constant whose stored alternative carries no kind name -- say
-        /// `CAST((500., 500.) AS Tuple(Float64, Float64))::Dynamic` -- is an unknown kind, not an
-        /// absent one, exactly as for a column (see `hasDeferredGeometryKindRejection`). The
-        /// structural shape below can't stand in for the missing name here: `tryExtractConstGeoField`
-        /// flattens the constant to a raw tuple that `extractBboxFromFieldValue` declines without
-        /// poisoning `acc.valid`, so the node would be downgraded to `NotApplicable` -- while the
-        /// per-row overload `ExecutableFunctionDynamicAdaptor`/`ExecutableFunctionVariantAdaptor`
-        /// builds resolves that same tuple as a `Point` through `callOnGeometryDataType` and raises.
-        /// Pruned away by a sibling conjunct, that exception never surfaces. Fail closed instead.
-        /// Unless the stored alternative resolves structurally after all -- `constGeoStoredType`
-        /// gives the concrete type whose overload will be built, and `structuralGeoKindName` reads
-        /// the raw tuple as a `Point` exactly as `callOnGeometryDataType` does -- in which case the
-        /// predicate can be asked about that kind directly, and only a kind it rejects at this
-        /// position fails closed.
-        if (kind_name.empty() && child->result_type && GeoBboxDetail::isDeferredGeometryKindType(*child->result_type))
+        /// A `Dynamic`/`Variant` constant is vetoed too, for the same reason as the column above.
+        if (child->result_type && GeoBboxDetail::isDeferredGeometryKindType(*child->result_type))
         {
-            const auto stored_type = constGeoStoredType(*child);
-            const bool rejected = stored_type
-                ? GeoBboxDetail::rejectsUnnamedGeometryType(*stored_type, *node.function_base, this_arg_index)
-                : GeoBboxDetail::rejectsAnyGeometryKind(*node.function_base, this_arg_index);
-            if (rejected)
-            {
-                any_deferred_kind_rejection = true;
-                continue;
-            }
+            any_deferred_kind_rejection = true;
+            continue;
         }
 
         const_fields.push_back({this_arg_index, std::move(field)});

@@ -13,13 +13,9 @@
 # `NodeBboxStatus::NoInfo` and lost pruning on its indexed `rect` column for every query the runtime
 # accepts perfectly well. The hook is now answered from the declared representation.
 #
-# There is deliberately no `Dynamic`/`Variant` constant case here. Passing one makes the UDF's
-# result type `Dynamic` (`FunctionUserDefinedWasm` does not override
-# `getReturnTypeForDefaultImplementationForDynamic`), and the analyzer rejects a `Dynamic` `WHERE`
-# filter outright with `ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER` in `validateFilter`, so such a predicate
-# never reaches index analysis at all. That is a general WASM UDF limitation rather than anything
-# spatial. `FunctionVariantAdaptor`'s forwarding of these hooks is covered on `Variant` COLUMNS by
-# `05048_spatial_bbox_wasm_deferred_kind_closed.sh`.
+# There is deliberately no `Dynamic`/`Variant` constant case here: such an argument vetoes pruning
+# outright (`GeoBboxDetail::isDeferredGeometryKindType`, covered by
+# `05062_spatial_bbox_deferred_geometry_closed.sql`), so the hook is never consulted for it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
