@@ -9,6 +9,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+latest_metadata_file()
+{
+    local metadata_path=$1
+
+    for metadata_file in "${metadata_path}"/v*.metadata.json
+    do
+        basename "${metadata_file}"
+    done | sort -t v -k2 -n | tail -1
+}
+
 rewrite_metadata()
 {
     local metadata_path=$1
@@ -55,11 +65,11 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE1} (c Int32) ENGINE = IcebergL
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE1} VALUES (1)"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE1}"
 
-LATEST1=$(ls "${PATH1}metadata/" | grep -E '^v[0-9]+\.metadata\.json$' | sort -t v -k2 -n | tail -1)
+LATEST1=$(latest_metadata_file "${PATH1}metadata")
 rewrite_metadata "${PATH1}metadata" "${LATEST1}" absent
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT count() FROM ${TABLE1}"
 
-LATEST1=$(ls "${PATH1}metadata/" | grep -E '^v[0-9]+\.metadata\.json$' | sort -t v -k2 -n | tail -1)
+LATEST1=$(latest_metadata_file "${PATH1}metadata")
 rewrite_metadata "${PATH1}metadata" "${LATEST1}" null
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT count() FROM ${TABLE1}"
 
@@ -72,7 +82,7 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INS
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE2} VALUES (2)"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE2}"
 
-LATEST2=$(ls "${PATH2}metadata/" | grep -E '^v[0-9]+\.metadata\.json$' | sort -t v -k2 -n | tail -1)
+LATEST2=$(latest_metadata_file "${PATH2}metadata")
 HISTORICAL_SNAPSHOT_ID=$(rewrite_metadata "${PATH2}metadata" "${LATEST2}" historical)
 
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT count() FROM ${TABLE2}"
