@@ -922,17 +922,29 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_rows_where;"
 echo "-- Case 17: the recalculation step honours a rows-WHERE predicate"
 
 ${CLICKHOUSE_CLIENT} -q "
-    CREATE TABLE t_ttl_rows_where_predicate (id UInt64, ts DateTime, flag UInt8)
+    CREATE TABLE t_ttl_rows_where_predicate (id UInt64, ts DateTime, flag UInt8, payload String)
     ENGINE = MergeTree()
     ORDER BY id
     TTL ts + INTERVAL 50 YEAR DELETE WHERE flag = 1
-    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
 
     -- The oldest ts belongs to a flag = 0 row, which this rule can never delete, so it must not
     -- become the bound. Inserted before TTL merges are stopped so no background TTL pass can rewrite
     -- the part first; STOP TTL MERGES stops those merges, it does not block inserts.
-    INSERT INTO t_ttl_rows_where_predicate VALUES (1, '2000-01-01 00:00:00', 0), (3, '2030-01-01 00:00:00', 1);
-    INSERT INTO t_ttl_rows_where_predicate VALUES (2, '2020-01-01 00:00:00', 1);
+    INSERT INTO t_ttl_rows_where_predicate VALUES (1, '2000-01-01 00:00:00', 0, 'a'), (3, '2030-01-01 00:00:00', 1, 'a');
+    INSERT INTO t_ttl_rows_where_predicate VALUES (2, '2020-01-01 00:00:00', 1, 'a');
+
+    -- A patch part is what puts the merge on the recalculation path at all: without one,
+    -- recalculate_ttl_for_patches stays false, and a 50-year TTL is never due so the ordinary TTL
+    -- step does not run either - the merged infos would then just be folded source metadata and the
+    -- check below would pass on an unfixed build. This update deliberately touches neither ts nor
+    -- flag, so the expected bound is unchanged by it.
+    UPDATE t_ttl_rows_where_predicate SET payload = 'b' WHERE id = 1
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
 
     SYSTEM STOP TTL MERGES t_ttl_rows_where_predicate;
     OPTIMIZE TABLE t_ttl_rows_where_predicate FINAL;
