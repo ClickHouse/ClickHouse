@@ -33,6 +33,14 @@ export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="$(command -v clickhouse)"}
 [ -x "$CLICKHOUSE_BINARY-client" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
 [ -x "$CLICKHOUSE_BINARY" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY client}
 export CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
+# Say which protocol this run uses instead of letting the client choose: given neither a port nor a TLS
+# mode it probes both the plain and the secure port and uses whichever answers first, and the test server
+# listens on both.
+# A secure run already carries `--secure`, which wins over this anyway. Spelled as an `if` rather than
+# with `&&`, so that a secure run does not leave a non-zero status behind for a caller using `set -e`.
+if [[ " ${CLICKHOUSE_CLIENT_OPT:-} " != *" --secure "* ]]; then
+    CLICKHOUSE_CLIENT_OPT0+=" --no-secure "
+fi
 export CLICKHOUSE_CLIENT_OPT="${CLICKHOUSE_CLIENT_OPT0:-} ${CLICKHOUSE_CLIENT_OPT:-}"
 export CLICKHOUSE_CLIENT_EXPECT_OPT="${CLICKHOUSE_CLIENT_OPT} --disable_suggestion --no-warnings --enable-progress-table-toggle 0 --progress no --output-format-pretty-color 0 --highlight 0"
 export CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:="$CLICKHOUSE_CLIENT_BINARY ${CLICKHOUSE_CLIENT_OPT:-}"}
@@ -126,7 +134,8 @@ fi
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY} keeper-client $KEEPER_CLIENT_DEFAULT_ARGS"}
 export CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client $KEEPER_CLIENT_DEFAULT_ARGS"}
 
-export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --accept-invalid-certificate --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
+# `--no-secure` is stripped before `--secure`: the pattern of the latter matches inside the former.
+export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--no-secure //' | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --accept-invalid-certificate --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
 
 # Add database and log comment to url params
 if [ -n "${CLICKHOUSE_URL_PARAMS:-}" ]

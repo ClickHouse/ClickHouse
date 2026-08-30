@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'AWS PrivateLink for ClickPipes'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'Establish a secure connection between ClickPipes and a data source using AWS PrivateLink.'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'AWS PrivateLink for ClickPipes'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'ClickPipes security', 'vpc endpoint', 'private connectivity', 'vpc resource']
 integration:
@@ -167,7 +168,7 @@ It is a recommended option for ClickPipes for MSK.
 See the [getting started](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html) guide for more details.
 
 <Info>
-Update your MSK cluster policy and add `072088201116` to the allowed principals to your MSK cluster.
+ClickPipes owns the client VPC and creates the managed VPC connection. To establish the network connection, enable multi-VPC private connectivity on your MSK cluster and authorize the ClickPipes AWS account in the cluster policy.
 See AWS guide for [attaching a cluster policy](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html) for more details.
 </Info>
 

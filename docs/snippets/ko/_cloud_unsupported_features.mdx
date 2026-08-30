@@ -1,0 +1,111 @@
+---
+title: Cloud에서 지원되지 않는 기능
+---
+
+다음 표에는 ClickHouse Cloud에서 지원되지 않는 것으로 분류된 기능과 자가 관리형 절차가 나열되어 있습니다. 각 항목에는 해당 원본 페이지에서 지원되는 기능도 함께 다루더라도, 지원되지 않는 구체적인 기능을 명시합니다.
+
+<div id="unsupported-managed-infrastructure-and-operations">
+  ### 관리형 인프라 및 운영
+</div>
+
+| 지원되지 않는 기능                         | 문서                                                                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 자가 관리형 `ClickHouse Keeper` 배포 및 구성 | [Keeper 가이드](/ko/guides/oss/deployment-and-scaling/keeper), [ZooKeeper 연결 보안](/ko/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)  |
+| TLS 인증서 수동 프로비저닝 및 서버 구성           | [ACME 프로비저닝](/ko/concepts/features/security/tls/configuring-tls-acme-client), [TLS 구성](/ko/concepts/features/security/tls/configuring-tls) |
+| `TTL`을 사용한 핫/웜/콜드 스토리지 계층 수동 구성    | [가이드](/ko/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture)                                              |
+| 자가 관리형 하드웨어 성능 테스트 실행              | [가이드](/ko/concepts/features/performance/troubleshoot/performance-test)                                                                  |
+| 자가 관리형 운영 권장 사항 적용                 | [가이드](/ko/guides/oss/best-practices/tips)                                                                                               |
+
+<div id="unsupported-authentication-and-security">
+  ### 인증 및 보안
+</div>
+
+| 지원되지 않는 기능      | 문서                                                                                                                          |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| HTTP 외부 인증      | [참고](/ko/concepts/features/security/external-authenticators/http)                                                              |
+| Kerberos 외부 인증  | [참고](/ko/concepts/features/security/external-authenticators/kerberos)                                                          |
+| LDAP 인증 및 역할 매핑 | [구성](/ko/concepts/features/security/configuring-ldap), [인증자](/ko/concepts/features/security/external-authenticators/ldap)         |
+| X.509 인증서 인증    | [사용자 인증](/ko/concepts/features/security/ssl-user-auth), [외부 인증자](/ko/concepts/features/security/external-authenticators/ssl-x509) |
+
+<div id="unsupported-interfaces-and-integrations">
+  ### 인터페이스 및 통합
+</div>
+
+| 지원되지 않는 기능                     | 문서                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL wire 프로토콜 인터페이스     | [참고](/ko/concepts/features/interfaces/postgresql)                                                                                                                                                                                                                                                                                                      |
+| PTY 지원 SSH 인터페이스               | [참고](/ko/concepts/features/interfaces/ssh)                                                                                                                                                                                                                                                                                                             |
+| `MaterializedPostgreSQL` 복제 엔진 | [ClickPipes 가이드](/ko/integrations/clickpipes/postgres/connecting-to-postgresql#using-the-materializedpostgresql-database-engine), [커넥터 가이드](/ko/integrations/connectors/data-sources/postgres), [데이터베이스 엔진](/ko/reference/engines/database-engines/materialized-postgresql), [테이블 엔진](/ko/reference/engines/table-engines/integrations/materialized-postgresql) |
+| `ODBC` 테이블 엔진                  | [참고](/ko/reference/engines/table-engines/integrations/odbc)                                                                                                                                                                                                                                                                                            |
+| MinIO S3 호환 객체 스토리지 통합         | [가이드](/ko/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                             |
+| Tigris S3 호환 객체 스토리지 통합        | [가이드](/ko/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                            |
+
+<div id="unsupported-database-and-table-engines">
+  ### 지원되지 않는 데이터베이스 및 테이블 엔진
+</div>
+
+| 지원되지 않는 기능                                     | 문서                                                                                                                                                                                                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MySQL` 데이터베이스 엔진                              | [참고](/ko/reference/engines/database-engines/mysql)                                                                                                                                                                                                        |
+| `EmbeddedRocksDB` 테이블 엔진                       | [참고](/ko/reference/engines/table-engines/integrations/embedded-rocksdb)                                                                                                                                                                                   |
+| `HDFS` 테이블 엔진                                  | [참고](/ko/reference/engines/table-engines/integrations/hdfs)                                                                                                                                                                                               |
+| `Hive` 테이블 엔진                                  | [참고](/ko/reference/engines/table-engines/integrations/hive)                                                                                                                                                                                               |
+| `JDBC` 테이블 엔진                                  | [참고](/ko/reference/engines/table-engines/integrations/jdbc)                                                                                                                                                                                               |
+| 페더레이션 쿼리용 `Redis` 테이블 엔진                       | [참고](/ko/reference/engines/table-engines/integrations/redis)                                                                                                                                                                                              |
+| `SQLite` 테이블 엔진                                | [참고](/ko/reference/engines/table-engines/integrations/sqlite)                                                                                                                                                                                             |
+| `TimeSeries` 테이블 엔진                            | [참고](/ko/reference/engines/table-engines/integrations/time-series)                                                                                                                                                                                        |
+| `YTsaurus` 테이블 엔진                              | [참고](/ko/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                           |
+| `Log` 계열 테이블 엔진(`Log`, `StripeLog`, `TinyLog`) | [계열 개요](/ko/reference/engines/table-engines/log-family), [`Log`](/ko/reference/engines/table-engines/log-family/log), [`StripeLog`](/ko/reference/engines/table-engines/log-family/stripelog), [`TinyLog`](/ko/reference/engines/table-engines/log-family/tinylog) |
+
+<div id="unsupported-dictionaries-and-server-configuration">
+  ### 딕셔너리 및 서버 구성
+</div>
+
+| 지원되지 않는 기능                                                          | 문서                                                                                                                                                                                                                |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 명명된 컬렉션 및 `CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` SQL 문 | [개요](/ko/concepts/features/configuration/server-config/named-collections), [생성](/ko/reference/statements/create/named-collection), [변경](/ko/reference/statements/alter/named-collection)                                   |
+| 파일 기반 딕셔너리 구성                                                       | [참고](/ko/reference/statements/create/dictionary#creating-a-dictionary-with-a-configuration-file)                                                                                                                     |
+| 내장 지오베이스 딕셔너리                                                       | [참고](/ko/reference/statements/create/dictionary/embedded)                                                                                                                                                            |
+| 로컬 `YAMLRegExpTree` 딕셔너리 소스                                         | [레이아웃 가이드](/ko/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source), [소스 참고](/ko/reference/statements/create/dictionary/sources/yamlregexptree) |
+| `YTsaurus` 딕셔너리 소스                                                  | [참고](/ko/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                    |
+| 서버에서 구성된 일본어 토크나이저 딕셔너리                                             | [참고](/ko/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                 |
+
+<div id="unsupported-data-formats-and-codecs">
+  ### 데이터 포맷 및 코덱
+</div>
+
+| 지원되지 않는 기능                                                        | 문서                                                                                                                                                                                         |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 서버 측 스키마 파일을 사용하는 `CapnProto` 포맷                                  | [포맷 참고](/ko/reference/formats/CapnProto), [가이드](/ko/guides/clickhouse/data-formats/binary#capn-proto)                                                                                            |
+| 서버 측 스키마 파일을 사용하는 `Protobuf`, `ProtobufList`, `ProtobufSingle` 포맷 | [가이드](/ko/guides/clickhouse/data-formats/binary#protocol-buffers), [`ProtobufList`](/ko/reference/formats/Protobuf/ProtobufList), [`ProtobufSingle`](/ko/reference/formats/Protobuf/ProtobufSingle) |
+| 사용 중단된 `ZSTD_QAT` 및 `DEFLATE_QPL` 코덱                              | [`ZSTD_QAT`](/ko/reference/statements/create/table#zstd_qat), [`DEFLATE_QPL`](/ko/reference/statements/create/table#deflate_qpl)                                                                 |
+
+<div id="unsupported-functions-and-experimental-features">
+  ### 함수 및 실험적 기능
+</div>
+
+| 지원되지 않는 기능                            | 문서                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 실험적 자연어 처리 함수                         | [참고](/ko/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                                |
+| 커밋 및 롤백을 포함하는 실험적 다중 SQL 문 트랜잭션       | [가이드](/ko/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                                  |
+| 실험적 트랜잭션 인트로스펙션 함수                    | [`transactionID`](/ko/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/ko/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/ko/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
+| `WindowView`용 시간 윈도우 함수               | [참고](/ko/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                        |
+| 실험적 `WindowView`                      | [참고](/ko/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                                       |
+| WebAssembly 사용자 정의 함수                 | [개요](/ko/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [가이드](/ko/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                                |
+| 드라이버 기반 실행형 사용자 정의 함수                 | [참고](/ko/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                           |
+| 서버 로컬 파일을 대상으로 하는 `filesystem` 테이블 함수 | [참고](/ko/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                                     |
+
+<div id="unsupported-administration-and-access-control">
+  ### 관리 및 액세스 제어
+</div>
+
+| 지원되지 않는 기능                                | 문서                                                                                                                                                   |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALTER TABLE`을 통한 컬럼 통계 작업                | [참고](/ko/reference/statements/alter/statistics)                                                                                                         |
+| `EXECUTE AS`를 통한 사용자 가장                   | [참고](/ko/reference/statements/execute_as)                                                                                                               |
+| 테이블 엔진별 권한 부여                             | [권한 부여](/ko/reference/statements/grant#table-engine), [서버 설정](/ko/reference/settings/server-settings/settings/other#table_engines_require_grant)           |
+| `GRANT ALL` 권한 단축 구문                      | [참고](/ko/reference/statements/grant#all)                                                                                                                |
+| `SYSTEM SHUTDOWN`을 통한 서버 종료               | [참고](/ko/reference/statements/system#shutdown)                                                                                                          |
+| `SYSTEM` SQL 문을 통한 백그라운드 페치 시작 및 중지       | [`SYSTEM STOP FETCHES`](/ko/reference/statements/system#stop-fetches), [`SYSTEM START FETCHES`](/ko/reference/statements/system#start-fetches)             |
+| `SYSTEM` SQL 문을 통한 백그라운드 머지 시작 및 중지       | [`SYSTEM STOP MERGES`](/ko/reference/statements/system#stop-merges), [`SYSTEM START MERGES`](/ko/reference/statements/system#start-merges)                 |
+| `SYSTEM` SQL 문을 통한 백그라운드 `TTL` 머지 시작 및 중지 | [`SYSTEM STOP TTL MERGES`](/ko/reference/statements/system#stop-ttl-merges), [`SYSTEM START TTL MERGES`](/ko/reference/statements/system#start-ttl-merges) |

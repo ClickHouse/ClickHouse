@@ -18,6 +18,9 @@ namespace DB
 
 class SchemaCache;
 
+struct LazyObjectStorageFileRegistry;
+using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+
 class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
@@ -41,7 +44,8 @@ public:
         std::shared_ptr<IObjectIterator> file_iterator_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        bool need_only_count_);
+        bool need_only_count_,
+        LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr);
 
     ~StorageObjectStorageSource() override;
 
@@ -70,6 +74,11 @@ public:
 
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
+
+    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
+    /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
+    /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
+    static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
 
 protected:
     StorageID storage_id;
@@ -127,6 +136,13 @@ protected:
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
+
+    /// Lazy materialization: when set, a `__global_row_index` column is appended to every chunk
+    /// (the header must contain it), and every file is registered in the registry so that the
+    /// lazy branch can find it by index. See LazilyReadFromObjectStorage.
+    LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
+    /// The registry index of the file the current `reader` reads. Assigned on the first chunk.
+    std::optional<UInt64> current_file_index;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
