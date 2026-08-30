@@ -63,38 +63,102 @@ void IDataType::updateHash(SipHash & hash) const
     updateHashImpl(hash);
 }
 
+namespace
+{
+
+/// What decides which expression a type names, beyond what `equals` already compares: the time zone
+/// a date or time function reads from it, and a declared name of its own, which
+/// `IDataType::updateHash` hashes wherever it sits.
+struct ExpressionIdentityComponent
+{
+    std::string_view time_zone;
+    String declared_name;
+
+    bool operator==(const ExpressionIdentityComponent & rhs) const = default;
+};
+
+/// One component per type visited, the type itself and every type nested in it, in nesting order.
+/// A position is part of the type, so this is a sequence and never a set: the same two zones in the
+/// other order describe another type, and so does the same declared name at another position.
+struct ExpressionIdentity
+{
+    std::vector<ExpressionIdentityComponent> components;
+    bool has_time_zone = false;
+};
+
+/// These keep a nested type without handing it to `forEachChild`, so a zone inside one is not
+/// reachable here: the argument types of an aggregate function and of a lambda, a QBit element type.
+bool keepsANestedTypeOutOfReach(const IDataType & type)
+{
+    const auto type_id = type.getTypeId();
+    return type_id == TypeIndex::AggregateFunction || type_id == TypeIndex::Function || type_id == TypeIndex::QBit;
+}
+
+ExpressionIdentity collectExpressionIdentity(const IDataType & type)
+{
+    ExpressionIdentity identity;
+
+    auto visit = [&](const IDataType & one)
+    {
+        ExpressionIdentityComponent component;
+        if (const auto * with_time_zone = dynamic_cast<const TimezoneMixin *>(&one))
+        {
+            component.time_zone = getDateLUTTimeZone(with_time_zone->getTimeZone());
+            identity.has_time_zone = true;
+        }
+        /// The name carries what this walk cannot see: the interior of a declared name, and the
+        /// nested types of a type that does not hand them to `forEachChild`, zone included.
+        if (one.hasCustomName() || keepsANestedTypeOutOfReach(one))
+            component.declared_name = one.getName();
+        identity.components.push_back(std::move(component));
+    };
+
+    visit(type);
+    /// Descends the whole way down, not just one level.
+    type.forEachChild(visit);
+    return identity;
+}
+
+}
+
 bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
 {
     if (!lhs.equals(rhs))
         return false;
 
-    /// A declared name of its own is an identity of its own, and it is part of the hash.
-    if (lhs.hasCustomName() != rhs.hasCustomName())
-        return false;
-    if (lhs.hasCustomName() && lhs.getName() != rhs.getName())
-        return false;
+    const auto lhs_identity = collectExpressionIdentity(lhs);
+    const auto rhs_identity = collectExpressionIdentity(rhs);
 
     /// A time zone left out of the type means the session time zone, so it is the same expression as
-    /// that zone spelled out, while two different zones differ however they are spelled.
-    const auto * lhs_time_zone = dynamic_cast<const TimezoneMixin *>(&lhs);
-    const auto * rhs_time_zone = dynamic_cast<const TimezoneMixin *>(&rhs);
-    if (lhs_time_zone && rhs_time_zone)
-        return getDateLUTTimeZone(lhs_time_zone->getTimeZone()) == getDateLUTTimeZone(rhs_time_zone->getTimeZone());
+    /// that zone spelled out, while two different zones differ however they are spelled. A declared
+    /// name is compared at its own position, since the interior of one is an opaque string.
+    if (lhs_identity.components != rhs_identity.components)
+        return false;
 
-    return lhs.getName() == rhs.getName();
+    /// Where no zone reaches at all, the name of the whole type decides, so this relation is never
+    /// coarser than the name it refines.
+    if (!lhs_identity.has_time_zone)
+        return lhs.getName() == rhs.getName();
+
+    return true;
 }
 
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
 {
     type.updateHash(hash);
 
-    if (const auto * time_zone = dynamic_cast<const TimezoneMixin *>(&type))
+    const auto identity = collectExpressionIdentity(type);
+    for (const auto & component : identity.components)
     {
-        hash.update(getDateLUTTimeZone(time_zone->getTimeZone()));
-        return;
+        hash.update(component.time_zone.size());
+        hash.update(component.time_zone);
+        hash.update(component.declared_name.size());
+        hash.update(component.declared_name);
     }
 
-    hash.update(type.getName());
+    /// Whatever `haveSameExpressionIdentity` decides on has to be in the hash.
+    if (!identity.has_time_zone)
+        hash.update(type.getName());
 }
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)

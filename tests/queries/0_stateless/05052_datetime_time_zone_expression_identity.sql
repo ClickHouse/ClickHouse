@@ -222,6 +222,126 @@ SETTINGS session_timezone = 'UTC';
 SELECT 'two zones under one alias', toDateTime(0, 'UTC') AS a, toDateTime(0, 'Asia/Tokyo') AS a
 SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
+-- The zone can sit under a wrapper, which the declared name spells out only when the type does. Both
+-- spellings read the same zone, so the alias is unambiguous in every one of these.
+SELECT 'implicit and explicit zone under one alias, in Nullable',
+    CAST(0, 'Nullable(DateTime)') AS a, CAST(0, 'Nullable(DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC';
+
+SELECT 'implicit and explicit zone under one alias, in Array',
+    CAST([0], 'Array(DateTime)') AS a, CAST([0], 'Array(DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC';
+
+SELECT 'implicit and explicit zone under one alias, in Map',
+    CAST(map('k', 0), 'Map(String, DateTime)') AS a, CAST(map('k', 0), 'Map(String, DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC';
+
+SELECT 'implicit and explicit zone under one alias, in LowCardinality',
+    CAST(0, 'LowCardinality(DateTime)') AS a, CAST(0, 'LowCardinality(DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC', allow_suspicious_low_cardinality_types = 1;
+
+SELECT 'implicit and explicit zone under one alias, two wrappers deep',
+    CAST([0], 'Array(Nullable(DateTime))') AS a, CAST([0], 'Array(Nullable(DateTime(''UTC'')))') AS a
+SETTINGS session_timezone = 'UTC';
+
+SELECT 'implicit and explicit zone under one alias, sub-second, in Nullable',
+    CAST(0, 'Nullable(DateTime64(3))') AS a, CAST(0, 'Nullable(DateTime64(3, ''UTC''))') AS a
+SETTINGS session_timezone = 'UTC';
+
+SELECT 'an omitted zone and that zone spelled out under a wrapper are one sort key', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY CAST(0, 'Nullable(DateTime)'), CAST(0, 'Nullable(DateTime(''UTC''))')
+) WHERE explain ILIKE '%SORT id%'
+SETTINGS session_timezone = 'UTC';
+
+-- Two zones under a wrapper stay two expressions, and so do the same two zones in the other order.
+SELECT 'two zones under one alias, in Nullable',
+    CAST(0, 'Nullable(DateTime(''UTC''))') AS a, CAST(0, 'Nullable(DateTime(''Asia/Tokyo''))') AS a
+SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+
+SELECT 'two zones swapped inside a tuple are two sort keys', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY CAST((0, 0), 'Tuple(DateTime(''UTC''), DateTime(''Asia/Tokyo''))'),
+             CAST((0, 0), 'Tuple(DateTime(''Asia/Tokyo''), DateTime(''UTC''))')
+) WHERE explain ILIKE '%SORT id%'
+SETTINGS session_timezone = 'UTC';
+
+-- The paths of an object are a set, so these two spellings are one type and one expression. Their
+-- zones must not be read in the order the paths happen to be stored in.
+SELECT 'the same object paths spelled in either order are one expression',
+    CAST('{}', 'JSON(a DateTime(''UTC''), b DateTime(''Asia/Tokyo''))') AS a,
+    CAST('{}', 'JSON(b DateTime(''Asia/Tokyo''), a DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC', allow_experimental_json_type = 1;
+
+-- A declared name nested under a wrapper is still an identity of its own, on both halves of the
+-- relation: `IDataType::updateHash` hashes it there, so equality has to see it there.
+SELECT 'a custom name under a wrapper under one alias',
+    CAST(tuple(0), 'Tuple(SimpleAggregateFunction(any, DateTime(''UTC'')))') AS a,
+    CAST(tuple(0), 'Tuple(DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+
+SELECT 'a custom name under a wrapper is its own sort key', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY CAST(tuple(0), 'Tuple(SimpleAggregateFunction(any, DateTime(''UTC'')))'),
+             CAST(tuple(0), 'Tuple(DateTime(''UTC''))')
+) WHERE explain ILIKE '%SORT id%'
+SETTINGS session_timezone = 'UTC';
+
+-- A type that keeps its nested types to itself hides whatever zone sits inside it, so there the
+-- declared name of the whole type decides. These two differ only in that hidden zone.
+SELECT 'a zone out of reach under one alias',
+    CAST((0, initializeAggregation('anyState', toDateTime(0))),
+         'Tuple(DateTime(''UTC''), AggregateFunction(any, DateTime(''UTC'')))') AS a,
+    CAST((0, initializeAggregation('anyState', toDateTime(0))),
+         'Tuple(DateTime(''UTC''), AggregateFunction(any, DateTime(''Asia/Tokyo'')))') AS a
+SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+
+-- A declared name is compared at its own position, so one sitting elsewhere in the type does not
+-- decide for a zone: these two differ only in a zone left out and are one expression.
+SELECT 'a declared name beside an omitted zone under one alias',
+    CAST((true, 0), 'Tuple(Bool, DateTime)') AS a, CAST((true, 0), 'Tuple(Bool, DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC';
+
+-- The same position, one declared name against none: still two expressions.
+SELECT 'a declared name against none at one position under one alias',
+    CAST((true, 0), 'Tuple(Bool, DateTime(''UTC''))') AS a,
+    CAST((1, 0), 'Tuple(UInt8, DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+
+-- The same declared name at two different positions: two types, two names, two expressions. These
+-- are `equals`-equal, because `equals` does not look at a declared name at all.
+SELECT 'a declared name at another position under one alias',
+    CAST((true, 1, 0), 'Tuple(Bool, UInt8, DateTime(''UTC''))') AS a,
+    CAST((1, true, 0), 'Tuple(UInt8, Bool, DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+
+-- A type whose zone is out of reach is compared where it sits, so one carrying no zone at all does
+-- not decide for a zone elsewhere: these two differ only in a zone left out.
+SELECT 'a zone-free type out of reach beside an omitted zone', count() FROM (
+    SELECT CAST((initializeAggregation('anyState', toUInt8(1)), 0),
+                'Tuple(AggregateFunction(any, UInt8), DateTime)') AS a,
+           CAST((initializeAggregation('anyState', toUInt8(1)), 0),
+                'Tuple(AggregateFunction(any, UInt8), DateTime(''UTC''))') AS a
+) SETTINGS session_timezone = 'UTC';
+
+-- The paths an object skips are a set, so these two spellings are one type and one expression.
+SELECT 'reversed skip paths are one expression',
+    CAST('{}', 'JSON(a DateTime(''UTC''), SKIP p, SKIP q)') AS a,
+    CAST('{}', 'JSON(a DateTime(''UTC''), SKIP q, SKIP p)') AS a
+SETTINGS session_timezone = 'UTC', allow_experimental_json_type = 1;
+
+-- One expression is also one hash key, which the sort keys count reads and an alias does not.
+SELECT 'reversed skip paths are one sort key', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY CAST('{}', 'JSON(a DateTime(''UTC''), SKIP p, SKIP q)'),
+             CAST('{}', 'JSON(a DateTime(''UTC''), SKIP q, SKIP p)')
+) WHERE explain ILIKE '%SORT id%'
+SETTINGS session_timezone = 'UTC', allow_experimental_json_type = 1;
+
 -- A group key spelled differently from the selected expression passes name analysis and then has no
 -- column to read, which is how this shape behaves without this change too.
 SELECT 'implicit and explicit zone as a group key', toHour(toDateTime(0) + x)
@@ -263,3 +383,19 @@ SELECT 'a declared name is its own sort key', count() FROM (
     SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
     ORDER BY true, toUInt8(1)
 ) WHERE explain ILIKE '%SORT id%';
+
+-- Naming a tuple's only element with the index it already carries does not change what the element
+-- is, so this is one expression.
+SELECT 'a tuple element named by its index under one alias',
+    CAST(tuple(0), 'Tuple(`1` DateTime(''UTC''))') AS a, CAST(tuple(0), 'Tuple(DateTime(''UTC''))') AS a
+SETTINGS session_timezone = 'UTC';
+
+-- The hash still separates that pair, because it reads the element name mode. A hash finer than the
+-- comparison costs a de-duplication here and a repeated read in the query condition cache; the
+-- opposite order would answer from another expression's result, so this is the direction to hold.
+SELECT 'a tuple element named by its index keeps its own hash', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY CAST(tuple(0), 'Tuple(`1` DateTime(''UTC''))'), CAST(tuple(0), 'Tuple(DateTime(''UTC''))')
+) WHERE explain ILIKE '%SORT id%'
+SETTINGS session_timezone = 'UTC';

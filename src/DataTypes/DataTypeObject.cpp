@@ -274,8 +274,17 @@ MutableColumnPtr DataTypeObject::createColumn() const
 
 void DataTypeObject::forEachChild(const ChildCallback & callback) const
 {
-    for (const auto & [path, type] : typed_paths)
+    /// Sorted, like the name and the hash: `typed_paths` is unordered, and two objects that hold the
+    /// same paths are one type, so a caller must not see them in two different orders.
+    std::vector<String> sorted_paths;
+    sorted_paths.reserve(typed_paths.size());
+    for (const auto & [path, _] : typed_paths)
+        sorted_paths.push_back(path);
+    std::sort(sorted_paths.begin(), sorted_paths.end());
+
+    for (const auto & path : sorted_paths)
     {
+        const auto & type = typed_paths.at(path);
         callback(*type);
         type->forEachChild(callback);
     }
@@ -843,9 +852,13 @@ void DataTypeObject::updateHashImpl(SipHash & hash) const
         typed_paths.at(path)->updateHash(hash);
     }
 
-    // Include paths to skip in the hash
-    hash.update(paths_to_skip.size());
-    for (const auto & path : paths_to_skip)
+    // Include paths to skip in the hash, sorted like the typed paths above: they are a set, so two
+    // objects holding the same ones are one type and have to hash alike
+    std::vector<String> sorted_paths_to_skip(paths_to_skip.begin(), paths_to_skip.end());
+    std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
+
+    hash.update(sorted_paths_to_skip.size());
+    for (const auto & path : sorted_paths_to_skip)
         hash.update(path);
 
     // Include path regexps to skip in the hash

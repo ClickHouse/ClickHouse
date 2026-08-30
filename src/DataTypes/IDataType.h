@@ -550,9 +550,10 @@ FOR_TYPES_OF_TYPE(DISPATCH)
 #undef FOR_TYPES_OF_TYPE
 
 /// Whether the two types are `equals`-equal and agree on the time zone a date or time function
-/// reads from its argument, and a hash consistent with that. `equals` ignores that zone. Only a
-/// zone on the type itself is compared; one reachable only through a wrapper is left to the
-/// declared name, which cannot see a zone that was left out of it.
+/// reads from its argument, at every temporal position and at any depth. A zone this walk cannot
+/// reach, inside a declared name or inside a type that keeps its nested types from `forEachChild`,
+/// is left to the declared name of the whole type. The hash may tell apart types this predicate
+/// calls the same, never the reverse.
 bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs);
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
 

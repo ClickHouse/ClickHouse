@@ -79,4 +79,30 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
 ORDER BY
     event_time_microseconds;
 
+SELECT '--- a time zone omitted under a wrapper, across sessions';
+
+SYSTEM CLEAR QUERY CONDITION CACHE;
+
+SELECT count() FROM qcc_tz WHERE toHour(CAST(x, 'Nullable(DateTime)')) = 0 SETTINGS use_query_condition_cache = true, session_timezone = 'Asia/Tokyo';
+
+SELECT count() FROM qcc_tz WHERE toHour(CAST(x, 'Nullable(DateTime)')) = 0 SETTINGS use_query_condition_cache = true, session_timezone = 'UTC';
+
+SELECT '--- a time zone omitted under a wrapper, one session';
+
+SYSTEM CLEAR QUERY CONDITION CACHE;
+
+SELECT count() FROM qcc_tz WHERE toHour(CAST(x, 'Nullable(DateTime)')) = 5 SETTINGS use_query_condition_cache = true, session_timezone = 'UTC';
+
+SELECT count() FROM qcc_tz WHERE toHour(CAST(x, 'Nullable(DateTime)')) = 5 SETTINGS use_query_condition_cache = true, session_timezone = 'UTC';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+    type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND query = 'SELECT count() FROM qcc_tz WHERE toHour(CAST(x, ''Nullable(DateTime)'')) = 5 SETTINGS use_query_condition_cache = true, session_timezone = ''UTC'';'
+ORDER BY
+    event_time_microseconds;
+
 DROP TABLE qcc_tz;

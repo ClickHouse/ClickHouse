@@ -28,5 +28,21 @@ omitted zone against a projection on that same zone	0	1
 implicit and explicit zone under one alias	1970-01-01 00:00:00	1970-01-01 00:00:00
 implicit and explicit zone under one alias, non-UTC session	1970-01-01 09:00:00	1970-01-01 09:00:00
 an omitted zone and that zone spelled out are one sort key	1
+implicit and explicit zone under one alias, in Nullable	1970-01-01 00:00:00	1970-01-01 00:00:00
+implicit and explicit zone under one alias, in Array	['1970-01-01 00:00:00']	['1970-01-01 00:00:00']
+implicit and explicit zone under one alias, in Map	{'k':'1970-01-01 00:00:00'}	{'k':'1970-01-01 00:00:00'}
+implicit and explicit zone under one alias, in LowCardinality	1970-01-01 00:00:00	1970-01-01 00:00:00
+implicit and explicit zone under one alias, two wrappers deep	['1970-01-01 00:00:00']	['1970-01-01 00:00:00']
+implicit and explicit zone under one alias, sub-second, in Nullable	1970-01-01 00:00:00.000	1970-01-01 00:00:00.000
+an omitted zone and that zone spelled out under a wrapper are one sort key	1
+two zones swapped inside a tuple are two sort keys	2
+the same object paths spelled in either order are one expression	{"a":"1970-01-01 00:00:00","b":"1970-01-01 09:00:00"}	{"a":"1970-01-01 00:00:00","b":"1970-01-01 09:00:00"}
+a custom name under a wrapper is its own sort key	2
+a declared name beside an omitted zone under one alias	(true,'1970-01-01 00:00:00')	(true,'1970-01-01 00:00:00')
+a zone-free type out of reach beside an omitted zone	1
+reversed skip paths are one expression	{"a":"1970-01-01 00:00:00"}	{"a":"1970-01-01 00:00:00"}
+reversed skip paths are one sort key	1
 a custom name is its own sort key	2
 a declared name is its own sort key	2
+a tuple element named by its index under one alias	('1970-01-01 00:00:00')	('1970-01-01 00:00:00')
+a tuple element named by its index keeps its own hash	2
