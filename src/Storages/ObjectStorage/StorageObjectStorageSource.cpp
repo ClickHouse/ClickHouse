@@ -2,6 +2,7 @@
 #include <optional>
 #include <unordered_set>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
@@ -32,6 +33,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -100,6 +102,8 @@ namespace ErrorCodes
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int TOO_MANY_ROWS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -115,28 +119,6 @@ namespace
             result.emplace_back(std::move(element));
         }
         return result;
-    }
-
-    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
-    /// object cannot be safely cached and caching must be skipped (fail-close).
-    ///
-    /// The object identifier already uses the full path, so files that share a base name in
-    /// different directories do not collide. For general (non-data-lake) remote objects the path
-    /// alone is not a stable identity - an object can be overwritten in place under the same path -
-    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
-    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
-    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
-    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
-    /// lakes whose object metadata does not carry an ETag).
-    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
-    {
-        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
-        if (is_data_lake)
-            return identifier;
-        const auto & metadata = object_info.getObjectMetadata();
-        if (!metadata || metadata->etag.empty())
-            return std::nullopt;
-        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
     }
 
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
@@ -238,6 +220,70 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
         && object_info.data_lake_metadata->excluded_rows->size() > 0;
 }
 
+static bool readsIdentityPartitionColumn(
+    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    if (identity_partition_columns.empty())
+        return false;
+
+    for (const auto & required : dag.getRequiredColumns())
+        for (const auto & [name, _] : identity_partition_columns)
+            if (name == required.name)
+                return true;
+    return false;
+}
+
+static ActionsDAG substituteIdentityPartitionColumns(
+    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    std::unordered_map<std::string_view, const Field *> values_by_name;
+    for (const auto & [name, value] : identity_partition_columns)
+        values_by_name.emplace(name, &value);
+
+    ActionsDAG substitution;
+    for (const auto & required : dag.getRequiredColumns())
+    {
+        auto it = values_by_name.find(required.name);
+        if (it == values_by_name.end())
+            continue;
+
+        const auto & constant
+            = substitution.addColumn(required.type->createColumnConst(0, *it->second), required.type, required.name);
+        substitution.getOutputs().push_back(&substitution.materializeNode(constant));
+    }
+
+    return ActionsDAG::merge(std::move(substitution), dag.clone());
+}
+
+static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
+    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    std::unordered_map<std::string_view, const Field *> values_by_name;
+    for (const auto & [name, value] : identity_partition_columns)
+        if (header.has(name))
+            values_by_name.emplace(name, &value);
+
+    if (values_by_name.empty())
+        return {};
+
+    ActionsDAG dag;
+    auto & outputs = dag.getOutputs();
+    for (const auto & column : header)
+    {
+        const auto & input = dag.addInput(column.name, column.type);
+        auto it = values_by_name.find(column.name);
+        if (it == values_by_name.end())
+        {
+            outputs.push_back(&input);
+            continue;
+        }
+
+        const auto & constant = dag.addColumn(column.type->createColumnConst(1, *it->second), column.type, column.name);
+        outputs.push_back(&dag.materializeNode(constant));
+    }
+    return dag;
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     const StorageID & storage_id_,
     String name_,
@@ -251,7 +297,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     std::shared_ptr<IObjectIterator> file_iterator_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    bool need_only_count_)
+    bool need_only_count_,
+    LazyObjectStorageFileRegistryPtr lazy_row_index_registry_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
     , name(std::move(name_))
@@ -274,6 +321,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
+    , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
 }
 
@@ -307,6 +355,28 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
 
     return result;
+}
+
+/// The object identifier already uses the full path, so files that share a base name in
+/// different directories do not collide. For general (non-data-lake) remote objects the path
+/// alone is not a stable identity - an object can be overwritten in place under the same path -
+/// so the ETag is folded in as a content-version token; a query after an overwrite then misses
+/// rather than reusing stale row-group information. This only holds when the ETag is a strong
+/// content identifier: a weak token (e.g. HDFS's second-precision `(mtime, size)`) can stay the
+/// same across a same-second, same-size overwrite and would let the cache serve stale row-group
+/// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
+/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
+/// are immutable, so the path is a stable identity on its own and no ETag is required (this also
+/// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+{
+    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+    if (is_data_lake)
+        return identifier;
+    const auto & metadata = object_info.getObjectMetadata();
+    if (!metadata || !metadata->isEtagUsableAsCacheKey())
+        return std::nullopt;
+    return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -600,7 +670,7 @@ Chunk StorageObjectStorageSource::generate()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .storage_id = storage_snapshot->storage.getStorageID(),
+                    .storage_id = storage_id,
                     .size = object_size,
                     .filename = &filename,
                     /// Report an unknown modification time (e.g. a web object whose HTTP response has no
@@ -627,6 +697,51 @@ Chunk StorageObjectStorageSource::generate()
                 chunk.addColumn(type->createColumnConst(
                     chunk.getNumRows(),
                     headers)->convertToFullColumnIfConst());
+            }
+
+            if (lazy_row_index_registry)
+            {
+                /// Lazy materialization: append the `__global_row_index` column, which combines the
+                /// index of the file within the query with the physical row number within the file.
+                if (!current_file_index)
+                    current_file_index = lazy_row_index_registry->registerFile(object_info);
+
+                auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+                if (!row_numbers_info)
+                    /// Only the Parquet reader provides physical row numbers. This is reachable for a
+                    /// mixed-format Iceberg snapshot (the table-level format is Parquet, but an individual
+                    /// data file has a different format), which is discovered only at read time because the
+                    /// file list is built dynamically. Report an actionable error instead of failing later.
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Lazy materialization requires physical row numbers from the format reader, "
+                        "but file {} (format {}) does not provide them. "
+                        "Disable the query_plan_optimize_lazy_materialization_for_object_storage setting to read such data.",
+                        object_info->getPath(), object_info->getFileFormat().value_or(configuration->format));
+
+                const auto & applied_filter = row_numbers_info->applied_filter;
+                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
+                if (row_numbers_info->row_num_offset + num_indices > LazyObjectStorageFileRegistry::MAX_ROWS_PER_FILE)
+                    throw Exception(ErrorCodes::TOO_MANY_ROWS,
+                        "File {} has too many rows for lazy materialization. "
+                        "Disable the query_plan_optimize_lazy_materialization_for_object_storage setting",
+                        object_info->getPath());
+
+                const UInt64 file_part = *current_file_index << LazyObjectStorageFileRegistry::ROW_INDEX_BITS;
+                auto row_index_column = ColumnUInt64::create();
+                auto & row_index_data = row_index_column->getData();
+                row_index_data.reserve(num_rows);
+                for (size_t i = 0; i < num_indices; ++i)
+                {
+                    if (!applied_filter.has_value() || (*applied_filter)[i])
+                        row_index_data.push_back(file_part | (row_numbers_info->row_num_offset + i));
+                }
+
+                if (row_index_column->size() != num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Row numbers of a chunk are inconsistent with the number of rows: {} != {} (file {})",
+                        row_index_column->size(), num_rows, object_info->getPath());
+
+                chunk.addColumn(std::move(row_index_column));
             }
 
 #if USE_PARQUET
@@ -765,13 +880,16 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag && !hasAttachedDeletes(*reader.getObjectInfo()))
+            && !format_filter_info->filter_actions_dag
+            && !hasAttachedDeletes(*reader.getObjectInfo())
+            && !reader.getObjectInfo()->rows_to_read)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
         chassert(reader_future.valid());
         reader = reader_future.get();
+        current_file_index.reset();
 
         if (!reader)
             break;
@@ -1015,6 +1133,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
             schema_changed = true;
         }
+        std::vector<std::pair<String, Field>> identity_partition_columns;
+#if USE_AVRO
+        if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+            identity_partition_columns = iceberg_info->info.identity_partition_columns;
+#endif
+
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
         /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
@@ -1042,6 +1166,37 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     stripped_prewhere_info = format_filter_info->prewhere_info;
             }
 
+            auto row_level_filter = format_filter_info->row_level_filter;
+            auto prewhere_info = format_filter_info->prewhere_info;
+            bool filters_substituted = false;
+            /// A filter evaluated inside the reader must see the identity-partitioned columns of this
+            /// data file as the manifest defines them, because the file itself need not store them.
+            if (format_supports_prewhere && !identity_partition_columns.empty()
+                && (!schema_changed || configuration->getSchemaTransformer(context_, object_info) == nullptr))
+            {
+                if (row_level_filter && readsIdentityPartitionColumn(row_level_filter->actions, identity_partition_columns))
+                {
+                    auto substituted = std::make_shared<FilterDAGInfo>();
+                    substituted->actions
+                        = substituteIdentityPartitionColumns(row_level_filter->actions, identity_partition_columns);
+                    substituted->column_name = row_level_filter->column_name;
+                    substituted->do_remove_column = row_level_filter->do_remove_column;
+                    row_level_filter = std::move(substituted);
+                    filters_substituted = true;
+                }
+                if (prewhere_info && readsIdentityPartitionColumn(prewhere_info->prewhere_actions, identity_partition_columns))
+                {
+                    auto substituted = std::make_shared<PrewhereInfo>();
+                    substituted->prewhere_actions
+                        = substituteIdentityPartitionColumns(prewhere_info->prewhere_actions, identity_partition_columns);
+                    substituted->prewhere_column_name = prewhere_info->prewhere_column_name;
+                    substituted->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+                    substituted->need_filter = prewhere_info->need_filter;
+                    prewhere_info = std::move(substituted);
+                    filters_substituted = true;
+                }
+            }
+
             if (schema_changed)
             {
                 if (auto mapper = configuration->getColumnMapperForObject(object_info))
@@ -1067,11 +1222,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                             stripped_prewhere_info = format_filter_info->prewhere_info;
                     }
                     const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
-                    return std::make_shared<FormatFilterInfo>(
+                    auto result = std::make_shared<FormatFilterInfo>(
                         format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
-                        keep_in_reader ? format_filter_info->row_level_filter : nullptr,
-                        keep_in_reader ? format_filter_info->prewhere_info : nullptr);
+                        keep_in_reader ? row_level_filter : nullptr,
+                        keep_in_reader ? prewhere_info : nullptr);
+                    /// `mapper` is scoped to the schema this specific file was written under, so it
+                    /// maps field_id -> the column name *that file* used. Keep the current/query-side
+                    /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
+                    /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
+                    /// pruning) back to a field_id.
+                    result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    return result;
                 }
             }
 
@@ -1082,8 +1244,29 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
 
+            if (filters_substituted)
+                return std::make_shared<FormatFilterInfo>(
+                    format_filter_info->filter_actions_dag,
+                    format_filter_info->context.lock(),
+                    format_filter_info->column_mapper,
+                    row_level_filter, prewhere_info);
+
             return format_filter_info;
         }();
+
+        if (object_info->rows_to_read)
+        {
+            /// Lazy materialization: read only the specified rows of this file. The set of rows
+            /// differs per file, so make a per-file copy of the (possibly shared) filter info.
+            auto filter_info_with_rows = std::make_shared<FormatFilterInfo>(
+                filter_info ? filter_info->filter_actions_dag : nullptr,
+                context_,
+                filter_info ? filter_info->column_mapper : nullptr,
+                filter_info ? filter_info->row_level_filter : nullptr,
+                filter_info ? filter_info->prewhere_info : nullptr);
+            filter_info_with_rows->rows_to_read = object_info->rows_to_read;
+            filter_info = filter_info_with_rows;
+        }
 
         /// When PREWHERE / row-level filter is stripped from `format_filter_info` (i.e. the
         /// actual file format doesn't support PREWHERE), the format reader will not produce
@@ -1176,6 +1359,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
+
+        if (!identity_partition_columns.empty())
+        {
+            if (auto dag = buildIdentityPartitionColumnsDag(builder.getHeader(), identity_partition_columns))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, actions);
+                });
+            }
+        }
 
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 

@@ -90,7 +90,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * **Коннектор ClickHouse для AWS Glue**
   Теперь вы можете использовать официальный [ClickHouse Connector for AWS Glue](/ru/integrations/connectors/data-ingestion/AWS/glue), доступный в [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s). Он использует бессерверный движок AWS Glue на базе Apache
   Spark для извлечения, преобразования и загрузки данных при интеграции ClickHouse с другими источниками данных. Чтобы
-  начать, ознакомьтесь с анонсом в [блоге](http://clickhouse.com/blog/clickhouse-connector-aws-glue), где показано, как создавать таблицы, записывать и читать данные между ClickHouse и Spark.
+  начать, ознакомьтесь с анонсом в [блоге](https://clickhouse.com/blog/clickhouse-connector-aws-glue), где показано, как создавать таблицы, записывать и читать данные между ClickHouse и Spark.
 * **Изменение минимального количества реплик в сервисе**
   Сервисы, масштаб которых был увеличен, теперь можно [уменьшить обратно](/ru/products/cloud/features/autoscaling/overview) до одной реплики (раньше минимум составлял 2 реплики). Примечание: сервисы с одной репликой имеют меньшую доступность и не рекомендуются для использования в продакшне.
 * ClickHouse Cloud по умолчанию начнет отправлять уведомления о масштабировании сервиса и обновлениях его версии для ролей администраторов. Параметры этих уведомлений можно изменить в настройках уведомлений.
@@ -239,7 +239,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * **Закрытая предварительная версия MySQL CDC** теперь открыта. Это позволяет клиентам реплицировать базы данных MySQL
   в ClickHouse Cloud за несколько щелчков, обеспечивая быструю аналитику и
   устраняя необходимость во внешних ETL-инструментах. Коннектор поддерживает как непрерывную
-  репликацию, так и одноразовые миграции независимо от того, где размещен MySQL: в облаке (RDS,
+  репликацию, так и разовые миграции независимо от того, где размещен MySQL: в облаке (RDS,
   Aurora, Cloud SQL, Azure и т. д.) или в собственной инфраструктуре. Вы можете зарегистрироваться в закрытой
   предварительной версии, [перейдя по этой ссылке](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
 * Представлена **AWS PrivateLink для ClickPipes**. Вы можете использовать AWS PrivateLink для
@@ -247,7 +247,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   и ClickHouse Cloud. Это можно сделать без передачи трафика
   через публичный интернет при перемещении данных из таких источников, как Postgres, MySQL и
   MSK в AWS. Также поддерживается межрегиональный доступ через конечные точки сервиса VPC.
-  Настройка подключения PrivateLink теперь [полностью доступна для самостоятельного выполнения](/ru/integrations/clickpipes/aws-privatelink)
+  Настройка подключения PrivateLink теперь [полностью доступна для самостоятельного выполнения](/ru/integrations/clickpipes/networking/aws-privatelink)
   через ClickPipes.
 
 <div id="april-4-2025">

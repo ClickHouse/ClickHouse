@@ -124,6 +124,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /UserDefined/
     -e /FunctionBaseAI.h
     -e /aiEmbed.cpp
+    -e /aiSimilarity.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 
@@ -131,7 +132,6 @@ find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | gr
 FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # It is OK to have WithContext for derived classes from IFunctionOverloadResolver
     -e /FunctionJoinGet.cpp
-    -e /CastOverloadResolver.cpp
     -e /reverse.cpp
     -e /formatRow.cpp
     # Store global context
@@ -140,8 +140,6 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # Used only in getReturnTypeImpl()
     -e /array/arrayReduce.cpp
     -e /array/arrayReduceInRanges.cpp
-    # Global context
-    -e /catboostEvaluate.cpp
     # Always constant
     -e /connectionId.cpp
     # Do not leak HTTP headers to MergeTree
@@ -254,8 +252,6 @@ LARGE_FILE_WHITELIST=(
     # Legitimate test data that is hard to generate at runtime
     -e multi_column_bf.gz.parquet
     -e ghdata_sample.json
-    -e libcatboostmodel.so_aarch64
-    -e libcatboostmodel.so_x86_64
     -e test_01946.zstd
     -e e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz
     -e npy_big.npy

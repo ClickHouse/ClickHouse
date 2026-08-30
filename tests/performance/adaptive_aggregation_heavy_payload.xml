@@ -1,0 +1,20 @@
+<test>
+    <!-- The heavy-payload shapes of the adaptive aggregation: aggregations whose staged
+         records carry wide string keys or wide aggregate arguments, so the staging's copies
+         and block pinning are the dominant cost. The high-cardinality key (WatchID) with a
+         heavy argument is the design's target and must stay at least at parity. The wide
+         string key (URL) and the mildly skewed key with a heavy argument (UserID, whose top
+         16K keys cover only ~7% of rows) are the known weak shapes these queries track. The
+         light-argument control on the same scan isolates the payload cost from the scan. -->
+    <query>SELECT WatchID, min(URL) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
+    <query>SELECT WatchID, argMin(Title, EventTime) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
+    <query>SELECT URL, min(Title) FROM hits_100m_single GROUP BY URL FORMAT Null</query>
+    <query>SELECT UserID, min(URL) FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
+    <query>SELECT WatchID, sum(length(URL)) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
+
+    <!-- The keeping side of the thaw verdict, next to the firing shapes above. The stream
+         repeats every key ~12.5 times, but its arguments are fixed-width and excluded from
+         the waste estimate because they drain at batch speed, so it wastes only ~276 bytes
+         per key against the 300 bound and must stay engaged as a winning aggregation. -->
+    <query>SELECT number % 800000 AS k, avg(number), sum(number), max(number) FROM numbers_mt(10000000) GROUP BY k FORMAT Null</query>
+</test>

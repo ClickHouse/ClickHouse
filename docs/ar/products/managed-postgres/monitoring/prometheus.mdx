@@ -1,9 +1,9 @@
 ---
 slug: /cloud/managed-postgres/monitoring/prometheus
 sidebarTitle: 'نقطة نهاية Prometheus'
-title: 'تكامل Prometheus مع Managed Postgres'
-description: 'اجمع مقاييس Managed Postgres في Prometheus أو Grafana أو Datadog أو أي collector متوافق مع OpenMetrics'
-keywords: ['Managed Postgres', 'Prometheus', 'Grafana', 'Datadog', 'المقاييس', 'OpenMetrics', 'observability']
+title: 'تكامل Prometheus مع ClickHouse Managed Postgres'
+description: 'اجمع مقاييس ClickHouse Managed Postgres في Prometheus أو Grafana أو Datadog أو أي collector متوافق مع OpenMetrics'
+keywords: ['ClickHouse Managed Postgres', 'Prometheus', 'Grafana', 'Datadog', 'المقاييس', 'OpenMetrics', 'observability']
 doc_type: 'guide'
 ---
 
@@ -14,17 +14,17 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
-يوفّر Managed Postgres نقطتي نهاية للمقاييس متوافقتين مع Prometheus
+يوفّر ClickHouse Managed Postgres نقطتي نهاية للمقاييس متوافقتين مع Prometheus
 ضمن [واجهة برمجة تطبيقات ClickHouse Cloud][cloud-api]:
 
-| نقطة النهاية | المسار                                                 | القيم المعادة                               |
-| ------------ | ------------------------------------------------------ | ------------------------------------------- |
-| المؤسسة      | `/v1/organizations/{orgId}/postgres/prometheus`        | مقاييس لكل خدمة Managed Postgres في المؤسسة |
-| المثيل       | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | مقاييس لخدمة واحدة                          |
+| نقطة النهاية | المسار                                                 | القيم المعادة                                          |
+| ------------ | ------------------------------------------------------ | ------------------------------------------------------ |
+| المؤسسة      | `/v1/organizations/{orgId}/postgres/prometheus`        | مقاييس لكل خدمة ClickHouse Managed Postgres في المؤسسة |
+| المثيل       | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | مقاييس لخدمة واحدة                                     |
 
 <Note>
   تُرجِع نقطة النهاية على مستوى المؤسسة مقاييس لما يصل إلى 100 خدمة. إذا كانت
-  مؤسستك تضم أكثر من 100 خدمة Managed Postgres، [فتواصل مع
+  مؤسستك تضم أكثر من 100 خدمة ClickHouse Managed Postgres، [فتواصل مع
   الدعم](https://clickhouse.com/support/program).
 </Note>
 
@@ -123,7 +123,7 @@ scrape_configs:
 التراجع، ونشاط Tuple، وI/O، والتخزين لكل قاعدة بيانات،
 وحالات الجمود.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="لوحة معلومات Grafana لخدمات Managed Postgres" size="md" border />
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="لوحة معلومات Grafana لخدمات ClickHouse Managed Postgres" size="md" border />
 
 <div id="import-dashboard">
   ### استيراد لوحة المعلومات
@@ -178,8 +178,8 @@ scrape_configs:
 ](/ar/products/cloud/features/monitoring/prometheus)، لذا فإن إعدادات Grafana Cloud وGrafana
 Alloy ووكيل Datadog OpenMetrics الموضحة هناك
 تنطبق هنا أيضًا. وجّه `metrics_path` إلى مسار org أو
-المثيل لـ Managed Postgres بدلًا من مسار ClickHouse.
+المثيل لـ ClickHouse Managed Postgres بدلًا من مسار ClickHouse.
 
-[cloud-api]: /products/cloud/features/admin-features/api/index "واجهة برمجة تطبيقات Cloud"
+[cloud-api]: /products/cloud/features/admin-features/api/api-overview "واجهة برمجة تطبيقات Cloud"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "إدارة مفاتيح واجهة برمجة تطبيقات"

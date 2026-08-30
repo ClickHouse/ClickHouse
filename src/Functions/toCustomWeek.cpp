@@ -75,7 +75,7 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
     FunctionDocumentation::Description description_toYearWeek = R"(
 Returns the year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works like the mode argument of [`toWeek()`](/sql-reference/functions/date-time-functions#toWeek).
+The mode argument works like the mode argument of [`toWeek()`](/reference/functions/regular-functions/date-time-functions#toWeek).
 
 Warning: The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
 
@@ -132,12 +132,12 @@ toStartOfWeek(datetime[, mode[, timezone]])
         toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
     )", R"(
-    Row 1:
-    ──────
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-17
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-17
-    toStartOfWeek(toDate('2023-04-24')):                   2023-04-24
-    toStartOfWeek(toDate('2023-04-24'), 1):                2023-04-24
+Row 1:
+──────
+toStartOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-16
+toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-17
+toStartOfWeek(toDate('2023-04-24')):                 2023-04-23
+toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_to_start_of_week = {20, 1};
@@ -172,10 +172,10 @@ FORMAT Vertical
     )", R"(
 Row 1:
 ──────
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
-toLastDayOfWeek(toDate('2023-04-23')):                   2023-04-23
-toLastDayOfWeek(toDate('2023-04-23'), 1):                2023-04-23
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-22
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-23
+toLastDayOfWeek(toDate('2023-04-23')):                 2023-04-29
+toLastDayOfWeek(toDate('2023-04-23'), 1):              2023-04-23
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_to_last_day_of_week = {23, 5};
