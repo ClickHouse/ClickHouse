@@ -401,6 +401,15 @@ public:
 
     const VariantInfo & getVariantInfo() const { return variant_info; }
 
+    /// A policy-only rewrite retargets nested JSON object types in the variant columns in place, but
+    /// the cached names still spell the retired policy - which is what dynamicType() reports and what
+    /// chooseDynamicStructureForMerge seeds the destination set from. Rebuild them from the retargeted
+    /// variant type; the variant order is unchanged, so every discriminator keeps its meaning.
+    void resetVariantInfoAfterRetarget(const DataTypePtr & retargeted_variant_type)
+    {
+        createVariantInfo(retargeted_variant_type);
+    }
+
     const ColumnPtr & getVariantColumnPtr() const { return variant_column; }
     ColumnPtr & getVariantColumnPtr() { return variant_column; }
 

@@ -2414,8 +2414,12 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
         {
             const auto & variant_info = column_dynamic->getVariantInfo();
             const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+            DataTypes retargeted_variants;
+            retargeted_variants.reserve(variants.size());
+            bool any_variant_retargeted = false;
             for (const auto & variant_type : variants)
             {
+                retargeted_variants.push_back(variant_type);
                 /// The object may be direct (a dynamic path whose value is itself always
                 /// object-shaped) or wrapped, e.g. `arr`'s inconsistent-shape elements infer as
                 /// Array(JSON(...)), not a bare JSON.
@@ -2426,10 +2430,19 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
                 if (discriminator_it == variant_info.variant_name_to_discriminator.end())
                     continue;
 
+                auto retargeted_variant = replaceNestedJSONObjectType(variant_type, object_type->getTypeOfNestedObjects(path + "."));
                 setSharedDataPathMatcherRecursively(
                     column_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(discriminator_it->second),
-                    replaceNestedJSONObjectType(variant_type, object_type->getTypeOfNestedObjects(path + ".")));
+                    retargeted_variant);
+                /// The column is retargeted above, but the cached variant name still spells the retired
+                /// policy, and that name is what a regular-variant read reports and what the merge seeds
+                /// the destination set from.
+                any_variant_retargeted |= (retargeted_variant->getName() != variant_type->getName());
+                retargeted_variants.back() = retargeted_variant;
             }
+
+            if (any_variant_retargeted)
+                column_dynamic->resetVariantInfoAfterRetarget(std::make_shared<DataTypeVariant>(retargeted_variants));
 
             /// A nested object that currently lives only in the shared variant has no column for the
             /// loop above to retarget: its retired type survives solely as a statistics key, and
