@@ -141,13 +141,15 @@ public:
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
         if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
+            /// The pool can be shared with concurrent callers (e.g. two-level buckets are merged in parallel),
+            /// so track and wait only for our own jobs: a bare `thread_pool.wait()` would also wait for
+            /// unrelated jobs and could steal their exceptions.
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_CONVERT);
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
+                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
-
                     while (true)
                     {
                         if (is_cancelled.load(std::memory_order_seq_cst))
@@ -161,15 +163,14 @@ public:
                     }
                 };
                 for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
-                    thread_pool.scheduleOrThrowOnError(thread_func);
-
-                thread_pool.wait();
+                    runner.enqueueAndKeepTrack(thread_func, Priority{});
             }
             catch (...)
             {
-                thread_pool.wait();
+                is_cancelled.store(true);
                 throw;
             }
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
     }
 
@@ -384,6 +385,15 @@ public:
     }
 
     static bool worthConvertingToTwoLevel(size_t size) { return size > 100'000; }
+
+    /// Whether merging `other` into this set is heavy enough to be worth handing over to a thread pool
+    /// (via `parallelizeMergePrepare` + `parallelizeMergeMulti`) instead of merging serially in place.
+    /// A two-level set is always past the threshold: it converted at `worthConvertingToTwoLevel` size.
+    /// Both `size()` calls are O(1) here since they are only reached when the set is single-level.
+    bool worthMergingInParallel(const UniqExactSet & other) const
+    {
+        return isTwoLevel() || other.isTwoLevel() || worthConvertingToTwoLevel(size() + other.size());
+    }
 
     void convertToTwoLevel()
     {

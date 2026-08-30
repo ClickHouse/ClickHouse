@@ -525,6 +525,10 @@ private:
 
     bool all_aggregates_has_trivial_destructor = false;
 
+    /// Whether any of the aggregate functions supports parallel merging of large states
+    /// (see IAggregateFunction::isAbleToParallelizeMerge), e.g. uniqExact.
+    bool has_function_with_parallelizable_merge = false;
+
     /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
     Int64 memory_usage_before_aggregation = 0;
     /// Track memory held by the aggreagation state during execution.
@@ -865,6 +869,29 @@ private:
         UInt32 total_worker;
     };
 
+    /// Pairs of states (with the function's state offset applied) whose merge `mergeDataImpl` deferred
+    /// because they are too large to merge serially; one entry per aggregate function.
+    /// A destination repeats once per source it has to absorb, so after grouping by destination the
+    /// group is merged in one parallel multi-way pass (`mergeDeferredLargeStates`).
+    struct DeferredMergePairs
+    {
+        PaddedPODArray<AggregateDataPtr> dst_places;
+        PaddedPODArray<AggregateDataPtr> src_places;
+    };
+    using DeferredMerges = std::vector<DeferredMergePairs>;
+
+    /// True if the query can benefit from deferring large state merges: some aggregate function
+    /// can parallelize its merge and there is a thread pool to run it on.
+    bool worthDeferringLargeMerges() const { return has_function_with_parallelizable_merge && params.max_threads > 1; }
+
+    /// Merge (and destroy the sources of) the pairs deferred by `mergeDataImpl`, using the thread pool.
+    /// If `is_cancelled` is set, only destroys the deferred source states.
+    void mergeDeferredLargeStates(DeferredMerges & deferred, Arena * arena, std::atomic<bool> & is_cancelled) const;
+
+    /// Destroy the deferred source states without merging (used on the exception path: the source
+    /// hash tables have already been detached from these states, so nothing else will destroy them).
+    void destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept;
+
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
@@ -873,11 +900,15 @@ private:
             Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`.
+    /// If `deferred` is not null, pairs of states too large to merge serially are recorded there
+    /// (per aggregate function) instead of being merged; the caller must pass them to
+    /// `mergeDeferredLargeStates` afterwards.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
-        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr,
+        DeferredMerges * deferred = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
@@ -903,7 +934,8 @@ private:
     requires SetAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
-        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr,
+        DeferredMerges * deferred = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.

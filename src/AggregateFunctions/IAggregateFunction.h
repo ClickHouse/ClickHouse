@@ -265,6 +265,20 @@ public:
     /// then destroy states (on which src places points to).
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
+    /// Same as `mergeAndDestroyBatch`, but pairs of states that are too large to merge serially on this
+    /// thread are skipped and appended (with `offset` already applied) to `deferred_dst`/`deferred_src`.
+    /// The caller must later merge each deferred destination with all its deferred sources — e.g. via
+    /// `parallelizeMergePrepare` + `parallelizeMergeMulti` — and destroy the deferred source states.
+    /// Functions that cannot parallelize their merge (see `isAbleToParallelizeMerge`) defer nothing.
+    virtual void mergeAndDestroyBatchOrDefer(
+        AggregateDataPtr * dst_places,
+        AggregateDataPtr * src_places,
+        size_t size,
+        size_t offset,
+        PaddedPODArray<AggregateDataPtr> & deferred_dst,
+        PaddedPODArray<AggregateDataPtr> & deferred_src,
+        Arena * arena) const = 0;
+
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
@@ -649,6 +663,39 @@ public:
             else
                 static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
 
+            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+        }
+    }
+
+    /// Shadowed by functions whose merge cost grows with the state size and that implement
+    /// `parallelizeMergeMulti` (e.g. `uniqExact`): returns whether the pair should be deferred
+    /// by `mergeAndDestroyBatchOrDefer` for a later parallel merge.
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr __restrict /*rhs*/) const
+    {
+        return false;
+    }
+
+    void mergeAndDestroyBatchOrDefer(
+        AggregateDataPtr * dst_places,
+        AggregateDataPtr * rhs_places,
+        size_t size,
+        size_t offset,
+        PaddedPODArray<AggregateDataPtr> & deferred_dst,
+        PaddedPODArray<AggregateDataPtr> & deferred_src,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+                     "IAggregateFunction::mergeAndDestroyBatchOrDefer called with the same source and destination state");
+            if (static_cast<const Derived *>(this)->isLargeMergePair(dst_places[i] + offset, rhs_places[i] + offset))
+            {
+                deferred_dst.push_back(dst_places[i] + offset);
+                deferred_src.push_back(rhs_places[i] + offset);
+                continue;
+            }
+
+            static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
             static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
         }
     }

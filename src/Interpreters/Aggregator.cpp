@@ -725,7 +725,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
         aggregate_functions[i] = params.aggregates[i].function.get();
+        has_function_with_parallelizable_merge |= aggregate_functions[i]->isAbleToParallelizeMerge();
+    }
 
     /// Initialize sizes of aggregation states and its offsets.
     offsets_of_aggregate_states.resize(params.aggregates_size);
@@ -4145,7 +4148,8 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *)
+    Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *,
+    DeferredMerges *)
     const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
@@ -4162,7 +4166,8 @@ template <typename Method, typename Table>
 requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
-    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
+    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker,
+    DeferredMerges * deferred) const
 {
     if (is_simple_count)
     {
@@ -4238,7 +4243,14 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {
-            if (!is_aggregate_function_compiled[i])
+            if (is_aggregate_function_compiled[i])
+                continue;
+
+            if (deferred && aggregate_functions[i]->isAbleToParallelizeMerge())
+                aggregate_functions[i]->mergeAndDestroyBatchOrDefer(
+                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i],
+                    (*deferred)[i].dst_places, (*deferred)[i].src_places, arena);
+            else
                 aggregate_functions[i]->mergeAndDestroyBatch(
                     dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
         }
@@ -4249,8 +4261,99 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
-        aggregate_functions[i]->mergeAndDestroyBatch(
-            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+        if (deferred && aggregate_functions[i]->isAbleToParallelizeMerge())
+            aggregate_functions[i]->mergeAndDestroyBatchOrDefer(
+                dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i],
+                (*deferred)[i].dst_places, (*deferred)[i].src_places, arena);
+        else
+            aggregate_functions[i]->mergeAndDestroyBatch(
+                dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+    }
+}
+
+void Aggregator::destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept
+{
+    for (size_t i = 0; i < deferred.size(); ++i)
+    {
+        for (auto * src : deferred[i].src_places)
+            aggregate_functions[i]->destroy(src);
+        deferred[i].dst_places.clear();
+        deferred[i].src_places.clear();
+    }
+}
+
+void Aggregator::mergeDeferredLargeStates(DeferredMerges & deferred, Arena * arena, std::atomic<bool> & is_cancelled) const
+{
+    for (size_t i = 0; i < deferred.size(); ++i)
+    {
+        auto & pairs = deferred[i];
+        const size_t num_pairs = pairs.dst_places.size();
+        if (num_pairs == 0)
+            continue;
+
+        /// Group the pairs by destination: a destination repeats once per source it absorbs,
+        /// and merging a destination with all its sources in one multi-way pass parallelizes
+        /// over the whole group instead of source by source.
+        std::vector<size_t> order(num_pairs);
+        for (size_t j = 0; j < num_pairs; ++j)
+            order[j] = j;
+        ::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) { return pairs.dst_places[lhs] < pairs.dst_places[rhs]; });
+
+        /// Sources at sorted positions below this index have been destroyed.
+        size_t destroyed_prefix = 0;
+        try
+        {
+            AggregateDataPtrs places;
+            for (size_t group_begin = 0; group_begin < num_pairs;)
+            {
+                if (is_cancelled.load(std::memory_order_seq_cst))
+                    break;
+
+                size_t group_end = group_begin + 1;
+                while (group_end < num_pairs && pairs.dst_places[order[group_end]] == pairs.dst_places[order[group_begin]])
+                    ++group_end;
+
+                places.clear();
+                places.reserve(group_end - group_begin + 1);
+                places.push_back(pairs.dst_places[order[group_begin]]);
+                for (size_t j = group_begin; j < group_end; ++j)
+                    places.push_back(pairs.src_places[order[j]]);
+
+                if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
+                    aggregate_functions[i]->parallelizeMergePrepare(places, *thread_pool, is_cancelled);
+                aggregate_functions[i]->parallelizeMergeMulti(places, *thread_pool, is_cancelled, arena);
+
+                for (size_t j = group_begin; j < group_end; ++j)
+                    aggregate_functions[i]->destroy(pairs.src_places[order[j]]);
+                destroyed_prefix = group_end;
+
+                group_begin = group_end;
+            }
+        }
+        catch (...)
+        {
+            /// The source hash tables have been detached from these states, so nobody else will destroy them.
+            for (size_t j = destroyed_prefix; j < num_pairs; ++j)
+                aggregate_functions[i]->destroy(pairs.src_places[order[j]]);
+            pairs.dst_places.clear();
+            pairs.src_places.clear();
+
+            for (size_t k = i + 1; k < deferred.size(); ++k)
+            {
+                for (auto * src : deferred[k].src_places)
+                    aggregate_functions[k]->destroy(src);
+                deferred[k].dst_places.clear();
+                deferred[k].src_places.clear();
+            }
+            throw;
+        }
+
+        /// Leftover from the cancellation break: the result will be thrown away, only free the states.
+        for (size_t j = destroyed_prefix; j < num_pairs; ++j)
+            aggregate_functions[i]->destroy(pairs.src_places[order[j]]);
+
+        pairs.dst_places.clear();
+        pairs.src_places.clear();
     }
 }
 
@@ -4455,48 +4558,66 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     const bool prefetch = params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
-    /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
-    for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
+    DeferredMerges deferred;
+    if (worthDeferringLargeMerges())
+        deferred.resize(params.aggregates_size);
+    DeferredMerges * deferred_ptr = deferred.empty() ? nullptr : &deferred;
+
+    try
     {
-        if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
-            break;
-
-        AggregatedDataVariants & current = *non_empty_data[result_num];
-
-        if (!no_more_keys)
+        /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
+        for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
         {
-#if USE_EMBEDDED_COMPILER
-            if (compiled_aggregate_functions_holder)
+            if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
+                break;
+
+            AggregatedDataVariants & current = *non_empty_data[result_num];
+
+            if (!no_more_keys)
             {
-                mergeDataImpl<Method>(
-                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch, is_cancelled);
+#if USE_EMBEDDED_COMPILER
+                if (compiled_aggregate_functions_holder)
+                {
+                    mergeDataImpl<Method>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch,
+                        is_cancelled, nullptr, deferred_ptr);
+                }
+                else
+#endif
+                {
+                    mergeDataImpl<Method>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch,
+                        is_cancelled, nullptr, deferred_ptr);
+                }
+            }
+            else if (res->without_key)
+            {
+                mergeDataNoMoreKeysImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                    res->without_key,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
             }
             else
-#endif
             {
-                mergeDataImpl<Method>(
-                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled);
+                mergeDataOnlyExistingKeysImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
             }
-        }
-        else if (res->without_key)
-        {
-            mergeDataNoMoreKeysImpl<Method>(
-                getDataVariant<Method>(*res).data,
-                res->without_key,
-                getDataVariant<Method>(current).data,
-                res->aggregates_pool);
-        }
-        else
-        {
-            mergeDataOnlyExistingKeysImpl<Method>(
-                getDataVariant<Method>(*res).data,
-                getDataVariant<Method>(current).data,
-                res->aggregates_pool);
-        }
 
-        /// `current` will not destroy the states of aggregate functions in the destructor
-        current.aggregator = nullptr;
+            /// `current` will not destroy the states of aggregate functions in the destructor
+            current.aggregator = nullptr;
+        }
     }
+    catch (...)
+    {
+        destroyDeferredMergeSources(deferred);
+        throw;
+    }
+
+    if (deferred_ptr)
+        mergeDeferredLargeStates(deferred, res->aggregates_pool, is_cancelled);
 }
 
 #define M(NAME) \
@@ -4543,30 +4664,49 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     const bool prefetch = params.enable_prefetch
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
-    for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
-    {
-        if (is_cancelled.load(std::memory_order_seq_cst))
-            return;
+    DeferredMerges deferred;
+    if (worthDeferringLargeMerges())
+        deferred.resize(params.aggregates_size);
+    DeferredMerges * deferred_ptr = deferred.empty() ? nullptr : &deferred;
 
-        AggregatedDataVariants & current = *data[result_num];
+    try
+    {
+        for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
+        {
+            if (is_cancelled.load(std::memory_order_seq_cst))
+                break;
+
+            AggregatedDataVariants & current = *data[result_num];
 #if USE_EMBEDDED_COMPILER
-        if (compiled_aggregate_functions_holder)
-        {
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena, true, prefetch, is_cancelled);
-        }
-        else
+            if (compiled_aggregate_functions_holder)
+            {
+                mergeDataImpl<Method>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena, true, prefetch,
+                    is_cancelled, nullptr, deferred_ptr);
+            }
+            else
 #endif
-        {
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data.impls[bucket],
-                getDataVariant<Method>(current).data.impls[bucket],
-                arena,
-                false,
-                prefetch,
-                is_cancelled);
+            {
+                mergeDataImpl<Method>(
+                    getDataVariant<Method>(*res).data.impls[bucket],
+                    getDataVariant<Method>(current).data.impls[bucket],
+                    arena,
+                    false,
+                    prefetch,
+                    is_cancelled,
+                    nullptr,
+                    deferred_ptr);
+            }
         }
     }
+    catch (...)
+    {
+        destroyDeferredMergeSources(deferred);
+        throw;
+    }
+
+    if (deferred_ptr)
+        mergeDeferredLargeStates(deferred, arena, is_cancelled);
 }
 
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
