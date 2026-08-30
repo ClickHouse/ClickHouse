@@ -218,8 +218,7 @@ SELECT 'an omitted zone and that zone spelled out are one sort key', count() FRO
 ) WHERE explain ILIKE '%SORT id%'
 SETTINGS session_timezone = 'UTC';
 
--- Two zones under one alias are two expressions, so the alias is ambiguous. Before this change the
--- query returned a different value in each column while claiming both were the same expression.
+-- Two zones under one alias are two expressions, so the alias is ambiguous. Each column computes a different value.
 SELECT 'two zones under one alias', toDateTime(0, 'UTC') AS a, toDateTime(0, 'Asia/Tokyo') AS a
 SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 

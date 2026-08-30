@@ -273,7 +273,7 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         hash_state.update(result_name);
 
     if (result_type)
-        hash_state.update(result_type->getName());
+        updateExpressionIdentityHash(*result_type, hash_state);
 
     if (function_base)
         hash_state.update(function_base->getName());
