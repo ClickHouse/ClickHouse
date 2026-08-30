@@ -674,8 +674,12 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
 {
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
+    /// The codec belongs to the file being opened, not to the file this table object was opened
+    /// with: a table is allowed to change `write.metadata.compression-codec` between metadata
+    /// files, and an external writer replacing the table in place may pick a different one
+    /// altogether. It is fully described by the file name.
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.getTableUuid());
+        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, getCompressionMethodFromMetadataFile(metadata_path), persistent_components.getTableUuid());
 
     insertRowToLogTable(
         local_context,
@@ -958,7 +962,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
+        getCompressionMethodFromMetadataFile(table_state_snapshot.metadata_file_path),
         persistent_components.trusted_table_uuid->getForPinnedIncarnation(table_state_snapshot.trusted_uuid_incarnation));
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
@@ -1616,7 +1620,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
+        getCompressionMethodFromMetadataFile(actual_table_state_snapshot.metadata_file_path),
         persistent_components.trusted_table_uuid->getForPinnedIncarnation(actual_table_state_snapshot.trusted_uuid_incarnation));
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
