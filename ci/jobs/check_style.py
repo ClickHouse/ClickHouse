@@ -1134,8 +1134,7 @@ def declared_setting_names():
     Fail-close: a missing file or a namespace that parses to nothing means the declaration macros
     or their files moved, and quietly returning an empty set would exempt every setting from the
     current-version-block rule in `check_settings_changes_history`. Pure text parsing of the
-    declaration macros; `ci/tests/test_settings_history_removed_setting.py` guards it against rot
-    by requiring that every name recorded in SettingsChangesHistory.cpp resolves here."""
+    declaration macros."""
     names = {}
     for namespace, sources in _SETTINGS_DECLARATION_SOURCES.items():
         found = set()
