@@ -26,8 +26,6 @@
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int NOT_IMPLEMENTED;
-    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace DB::Parquet
