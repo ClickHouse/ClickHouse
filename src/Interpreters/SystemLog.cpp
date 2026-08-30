@@ -1132,6 +1132,10 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
         /// the same explicit column list, so a session that flips one of these settings would
         /// otherwise be able to give them different structures, which makes the union table
         /// mismatch its definition on every check and be recreated on every flush.
+        /// Note: `data_type_default_nullable` is the live half of this pin (several log tables
+        /// declare plain types that it would wrap into `Nullable`), while `flatten_nested` is
+        /// defensive: no system log element currently declares a `Nested` column, so it only
+        /// protects future schema additions and cannot be exercised by a regression test today.
         mutable_context->setSetting("flatten_nested", false);
         mutable_context->setSetting("data_type_default_nullable", false);
     }
