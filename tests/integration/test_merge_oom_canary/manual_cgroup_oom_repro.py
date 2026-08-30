@@ -46,7 +46,12 @@ workload as "OOM did not fire". After that first successful cycle, failures are 
 as the cgroup fills - with one exception: a `Memory limit (total) exceeded` rejection at any point
 before the OOM aborts the run, because it means tracked memory reached `max_server_memory_usage`, and
 a subsequent kernel kill would then demonstrate ordinary tracked-memory exhaustion rather than the
-resident > tracked drift this script exists to prove.
+resident > tracked drift this script exists to prove. Success is fail-closed too: the kernel kill is
+only reported as the expected result once some worker has observed a merge in flight (a completed
+`OPTIMIZE TABLE m FINAL` under `optimize_throw_if_noop = 1`, or a `CANNOT_ASSIGN_OPTIMIZE` rejection
+proving another worker's merge is running); a kill that lands while every worker is still building its
+first `INSERT` state aborts the run instead, since it would only show that the `INSERT` wave alone does
+not fit in the cgroup.
 """
 
 import os
@@ -481,6 +486,16 @@ def main():
         # through them, except for tracked-memory rejections, which abort at any point before the kill
         # (see below).
         churn_ok = threading.Event()
+        # A merge was actually observed in flight: either a cycle completed its
+        # `OPTIMIZE TABLE m FINAL SETTINGS optimize_throw_if_noop = 1` (a real merge ran, since the
+        # table uses the 'Manual' merge selector and a no-op would have thrown), or an `OPTIMIZE` was
+        # rejected with `CANNOT_ASSIGN_OPTIMIZE` because another worker was already merging every part
+        # of the partition. Success is gated on this event, not on the `oom_kill` alone: a kill that
+        # lands while every worker is still building its first `INSERT` state would otherwise be
+        # reported as "merge/insert churn OOM" when nothing merge-side ever ran, which is exactly the
+        # mechanism this script exists to demonstrate. Strictly weaker than `churn_ok` (every
+        # `churn_ok.set` is preceded by a `merge_observed.set`), so it never excuses a broken churn.
+        merge_observed = threading.Event()
         # First pre-success failure, recorded for the abort message (`list.append` is atomic, and only
         # the first element is ever read). Holds either a failed `CompletedProcess` or a
         # `subprocess.TimeoutExpired` - a call that timed out before anything ever succeeded is the
@@ -588,6 +603,7 @@ def main():
                 if record_tracked_limit_rejection(optimize, kills_before_optimize):
                     return
                 if insert.returncode == 0 and optimize.returncode == 0:
+                    merge_observed.set()
                     churn_ok.set()
                     continue
                 # Another worker's `OPTIMIZE` was already merging every part of the partition, so this
@@ -598,6 +614,7 @@ def main():
                 # `churn_ok` either. Just retry. Only reachable when the `INSERT` succeeded, so a
                 # decisive `INSERT` failure in the same cycle is still classified below.
                 if insert.returncode == 0 and "CANNOT_ASSIGN_OPTIMIZE" in optimize.stderr:
+                    merge_observed.set()
                     continue
                 failed = insert if insert.returncode != 0 else optimize
                 if not churn_ok.is_set() and oom_kill_count() == oom_before:
@@ -675,6 +692,19 @@ def main():
                 print(line)
                 break
         if oom_after > oom_before:
+            # A kill is only the result this script claims when merge churn was demonstrably in
+            # flight. Without that proof the kill may have come from the first wave of `INSERT`
+            # calls alone - an ordinary "this workload does not fit in the cgroup" outcome, not the
+            # merge memory escaping `max_memory_usage` that the reproducer is about.
+            if not merge_observed.is_set():
+                die(
+                    "the cgroup OOM killer fired, but no worker ever observed a merge: every "
+                    "`OPTIMIZE TABLE m FINAL` was still outstanding when the kill landed, so this "
+                    "run only shows that the `INSERT` wave alone does not fit in the "
+                    f"{LIMIT_GB} GiB cgroup, not that merge memory escapes the query limit; raise "
+                    "LIMIT_GB (or shrink the per-state payload) so the churn reaches its merges "
+                    "before the kill"
+                )
             print("RESULT: kernel OOM killer fired")
             return 0
         print("RESULT: OOM did not fire (try a larger workload or smaller LIMIT_GB)")
