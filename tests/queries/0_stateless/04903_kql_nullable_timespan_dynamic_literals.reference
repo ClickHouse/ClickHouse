@@ -1,0 +1,10 @@
+-- nullable timespan multiplication --
+\N	\N
+-- nullable totimespan --
+\N	\N	\N
+-- typed dynamic literals --
+['1.00:00:00']
+86400000000000
+['2026-08-15 12:34:56']
+['74be27de-1e4e-49d9-b579-fe0b331d3642']
+[1]

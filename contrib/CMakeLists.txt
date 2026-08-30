@@ -114,7 +114,6 @@ add_contrib (libarchive-cmake libarchive)
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
-add_contrib (wasmedge-cmake wasmedge)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -243,7 +242,9 @@ add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 
-add_contrib (google-benchmark-cmake google-benchmark)
+if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
+    add_contrib (google-benchmark-cmake google-benchmark)
+endif ()
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
