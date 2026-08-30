@@ -344,6 +344,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
+                /// As in the `AlterCommands` branch above: a data lake table only refreshes its
+                /// external metadata here, and the mutation has to be validated against the
+                /// same incarnation of the table that will execute it.
+                table->updateExternalDynamicMetadataIfExists(context);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Replicated-storage non-determinism check must always run, even when
