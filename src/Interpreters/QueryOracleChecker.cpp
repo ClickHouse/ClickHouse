@@ -3,6 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryOracles/OracleSettings.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -177,12 +178,8 @@ const std::unordered_set<String> non_deterministic_functions = {
 /// Maximum formatted query length for oracle sub-queries.
 constexpr size_t MAX_ORACLE_QUERY_LENGTH = 10000;
 
-/// Maximum total output size from an oracle sub-query (bytes).
-constexpr size_t MAX_ORACLE_OUTPUT_SIZE = 10 * 1024 * 1024;
-
-/// Maximum row count for an oracle sub-query result. Caps memory before the
-/// post-execution size check in `executeAndCollect*` triggers.
-constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
+/// `MAX_ORACLE_OUTPUT_SIZE` and `MAX_ORACLE_RESULT_ROWS` live in QueryOracles/OracleSettings.h
+/// (shared with `oraclePinnedSettings`, which pins the matching result caps).
 
 /// Case-insensitive view of `non_deterministic_functions`. ClickHouse resolves
 /// aggregate (and scalar) function names case-insensitively and the parser
@@ -1137,83 +1134,15 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
 
     auto oracle_context = Context::createCopy(session_context);
     oracle_context->makeQueryContext();
-    oracle_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
-    oracle_context->setSetting("ast_fuzzer_oracle", Field(false));
-    oracle_context->setSetting("max_execution_time", Field(UInt64(10)));
-    /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
-    oracle_context->setSetting("enable_optimize_predicate_expression", Field(false));
-    /// A seed query's `SET aggregate_functions_null_for_empty = 1` would leak
-    /// into oracle sub-queries and break NoREC: `count()` over zero input rows
-    /// becomes NULL while `countIf` still aggregates every row and returns 0.
-    /// Pin it off so both sides of every comparison use standard semantics.
-    oracle_context->setSetting("aggregate_functions_null_for_empty", Field(false));
-    /// See `truncating_settings`: with this on, `count()` over an empty input
-    /// returns zero rows while the NoREC `countIf` form returns one `0` row.
-    oracle_context->setSetting("empty_result_for_aggregation_by_empty_set", Field(false));
-    /// Constraint-based optimization trusts `CONSTRAINT ... ASSUME ...`
-    /// without checking. When a table's data violates its ASSUME constraint
-    /// (the fuzz corpus has such tables, e.g. `constraint_test_*`), the
-    /// optimizer may simplify a predicate using the (false) assumption in one
-    /// rewrite form but evaluate the real data in another, so the reference
-    /// and rewrite legitimately disagree — optimizer-dependent by design, not
-    /// a bug. Evaluate real data consistently by pinning the constraint
-    /// optimizer (and the CNF conversion that feeds it) off.
-    oracle_context->setSetting("optimize_using_constraints", Field(false));
-    oracle_context->setSetting("convert_query_to_cnf", Field(false));
-    /// Neutralize session-leaked read/result caps (a seed's `SET
-    /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
-    /// oracle sub-queries asymmetrically — see `truncating_settings`).
-    /// `max_result_rows`/`max_result_bytes`/`result_overflow_mode` and
-    /// `max_execution_time` are pinned above/below to the oracle's own caps,
-    /// which throw rather than truncate.
-    for (const auto * cap : {"max_rows_to_read", "max_bytes_to_read",
-                             "max_rows_to_read_leaf", "max_bytes_to_read_leaf",
-                             "max_rows_to_group_by", "max_rows_to_sort", "max_bytes_to_sort",
-                             "max_rows_in_distinct", "max_bytes_in_distinct",
-                             "max_rows_to_transfer", "max_bytes_to_transfer",
-                             "max_rows_in_join", "max_bytes_in_join",
-                             "max_rows_in_set", "max_bytes_in_set",
-                             "max_estimated_execution_time",
-                             /// `limit`/`offset` settings: a final LIMIT/OFFSET
-                             /// on every result, non-distributive over rewrites.
-                             "limit", "offset"})
-        oracle_context->setSetting(cap, Field(UInt64(0)));
-    for (const auto * mode : {"read_overflow_mode", "read_overflow_mode_leaf",
-                              "group_by_overflow_mode", "sort_overflow_mode",
-                              "distinct_overflow_mode", "transfer_overflow_mode",
-                              "join_overflow_mode", "set_overflow_mode",
-                              "timeout_overflow_mode"})
-        oracle_context->setSetting(mode, String("throw"));
-    /// Session-leaked `SET use_skip_indexes_if_final = 1,
-    /// use_skip_indexes_if_final_exact_mode = 0` would make oracle
-    /// sub-queries keep stale FINAL row versions (see `truncating_settings`).
-    oracle_context->setSetting("use_skip_indexes_if_final_exact_mode", Field(true));
-    /// A session-leaked `SET extremes = 1` would append extremes blocks to
-    /// every oracle sub-query result (counted as data rows).
-    oracle_context->setSetting("extremes", Field(false));
-    /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
-    /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
-    /// — `break` would silently truncate the result before the cap fires, and the
-    /// caller's post-check on `output.size() > MAX_ORACLE_OUTPUT_SIZE` would then never
-    /// trip (the output sits at exactly the cap). The caller catches the resulting
-    /// `TOO_MANY_ROWS` / `TOO_MANY_BYTES` exception and treats the query as skipped.
-    oracle_context->setSetting("max_result_rows", Field(UInt64(MAX_ORACLE_RESULT_ROWS)));
-    oracle_context->setSetting("max_result_bytes", Field(UInt64(MAX_ORACLE_OUTPUT_SIZE)));
-    oracle_context->setSetting("result_overflow_mode", String("throw"));
 
-    /// Run oracle sub-queries single-threaded so the nested pipeline cannot have
-    /// background-pool workers running while the outer call site (this thread)
-    /// is tearing the pipeline down. TSan caught a heap-use-after-free on
-    /// `shared_ptr<FunctionToExecutableFunctionAdaptor>::__on_zero_shared` that
-    /// fired exactly when a global-pool worker was still in
-    /// `FilterTransform::doTransform → castColumn` for the nested oracle query
-    /// at the moment `executeQuery(...)` returned and started destroying the
-    /// pipeline. Constraining the nested execution to the caller thread closes
-    /// that race (worker tasks run inline, finish before the executor returns).
-    oracle_context->setSetting("max_threads", Field(UInt64(1)));
-    oracle_context->setSetting("max_insert_threads", Field(UInt64(1)));
-    oracle_context->setSetting("max_final_threads", Field(UInt64(1)));
-    oracle_context->setSetting("output_format_parallel_formatting", Field(false));
+    /// Apply every neutralization from the single source of truth (QueryOracles/OracleSettings).
+    /// This is the ONLY place these pins are applied; `isPinnedByOracleContext` mirrors the same
+    /// list so the setting-flip sweep can never flip a pinned setting. Rationale for each pin
+    /// lives in the `why` field there (single-thread pin closes a pipeline-teardown UAF; the
+    /// read/result caps throw rather than truncate; `readonly`/`implicit_transaction` off keep
+    /// fixture DDL executable).
+    for (const auto & pin : oraclePinnedSettings())
+        oracle_context->setSetting(String(pin.name), pin.value);
 
     oracle_context->setCurrentQueryId("");
     return oracle_context;
