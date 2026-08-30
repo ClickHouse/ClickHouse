@@ -5,21 +5,14 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/Hash.h>
-
-
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-}
 
 
 /** Approximate calculation of anything, as usual, is constructed according to the following scheme:
@@ -86,17 +79,12 @@ private:
     using HashValue = UInt32;
     using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
 
-    /// Thinning leaves at most 2 ^ (32 - skip_degree) hashes, and `shrinkIfNeed()` raises the
-    /// degree only while more than UNIQUES_HASH_MAX_SIZE of them remain, so one degree past the
-    /// thinning budget is the last it can produce.
-    static constexpr UInt8 max_skip_degree = UNIQUES_HASH_BITS_FOR_SKIP + 1;
-
     UInt32 m_size;          /// Number of elements
-    UInt8 size_degree{};      /// The size of the table as a power of 2
+    UInt8 size_degree;      /// The size of the table as a power of 2
     UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
     bool has_zero;          /// The hash table contains an element with a hash value of 0.
 
-    HashValue * buf{};
+    HashValue * buf;
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
     /// For profiling.
@@ -281,11 +269,6 @@ private:
             {
                 while (m_size > UNIQUES_HASH_MAX_SIZE)
                 {
-                    if (unlikely(skip_degree >= max_skip_degree))
-                        throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
-                            "Cannot thin out UniquesHashSet: {} elements remain at the maximum skip degree of {}",
-                            static_cast<size_t>(m_size), static_cast<size_t>(max_skip_degree));
-
                     ++skip_degree;
                     rehash();
                 }
@@ -299,7 +282,7 @@ private:
 public:
     using value_type = Value;
 
-    UniquesHashSet() : // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
+    UniquesHashSet() :
         m_size(0),
         skip_degree(0),
         has_zero(false)
@@ -310,7 +293,7 @@ public:
 #endif
     }
 
-    UniquesHashSet(const UniquesHashSet & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
+    UniquesHashSet(const UniquesHashSet & rhs)
         : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
     {
         alloc(rhs.size_degree);
@@ -371,14 +354,14 @@ public:
                 /// We read and transform multiple values at once which allows both the compiler and the CPU to better optimize the code.
                 /// We calculate place() even for !good() hashes to maximize data independence and enable better out-of-order execution.
                 /// The extra work is negligible compared to the instruction level parallelization benefits.
-                std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+                std::array<HashValue, insert_many_batch_size> hash_value;
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     hash_value[j] = hash(Transform(data[i + j]));
                 }
                 i += insert_many_batch_size;
 
-                std::array<size_t, insert_many_batch_size> place_value_batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+                std::array<size_t, insert_many_batch_size> place_value_batch;
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     place_value_batch[j] = place(hash_value[j]);
@@ -442,19 +425,13 @@ public:
           */
         res += (intHashCRC32(m_size) & ((1ULL << skip_degree) - 1));
 
-        size_t p32 = 1ULL << 32;
-
-        /// The correction below is undefined once the thinned count reaches the hash space:
-        /// report the largest count it can express.
-        if (unlikely(res >= p32))
-            res = p32 - 1;
-
         /** Correction of a systematic error due to collisions during hashing in UInt32.
           * `fixed_res(res)` formula
           * - with how many different elements of fixed_res,
           *   when randomly scattered across 2^32 buckets,
           *   filled buckets with average of res is obtained.
           */
+        size_t p32 = 1ULL << 32;
         size_t fixed_res = static_cast<size_t>(round(static_cast<double>(p32) * (log(p32) - log(p32 - res))));
         return fixed_res;
     }
@@ -511,12 +488,6 @@ public:
         has_zero = false;
 
         DB::readBinaryLittleEndian(skip_degree, rb);
-
-        if (unlikely(skip_degree > max_skip_degree))
-            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
-                "Cannot read UniquesHashSet: skip degree is {}, which exceeds the maximum value of {}",
-                static_cast<size_t>(skip_degree), static_cast<size_t>(max_skip_degree));
-
         DB::readVarUInt(m_size, rb);
 
         if (m_size > UNIQUES_HASH_MAX_SIZE)

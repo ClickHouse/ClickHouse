@@ -2,24 +2,18 @@
 
 #include <DataTypes/IDataType.h>
 
-#include <algorithm>
-#include <map>
-#include <optional>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
-
 #include <pcg-random/pcg_random.hpp>
 
 #include <Core/Field.h>
-#include <Core/Names.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/IASTHash.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/SettingsChanges.h>
 #include <Common/randomSeed.h>
 
 
@@ -27,7 +21,6 @@ namespace DB
 {
 
 class ASTExpressionList;
-class ASTFunction;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
@@ -35,27 +28,9 @@ class ASTColumnDeclaration;
 class ASTDropQuery;
 class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
-class ASTRefreshStrategy;
 class ASTSetQuery;
-class ASTStorage;
 struct ASTTableExpression;
-struct ASTTableJoin;
 struct ASTWindowDefinition;
-
-class SettingsChanges;
-
-/// All aggregate-function combinator suffixes ClickHouse recognises (see
-/// `AggregateFunctionCombinatorFactory`). Shared between the fuzzer — which
-/// applies the subset it can build valid arguments for — and
-/// `QueryOracleChecker`, which strips suffixes to recognise the base aggregate
-/// name behind fuzzer-produced chains like `first_valueOrNullDistinct`.
-/// Combinator spelling is case-sensitive in ClickHouse (`sumIf` is valid,
-/// `sumif` is not), so these stay PascalCase.
-inline const Strings aggregate_combinator_suffixes = {
-    "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
-    "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
-    "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
-};
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -79,11 +54,6 @@ public:
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
 
-    /// When true, reduce probability of structure-destroying mutations
-    /// (removing GROUP BY, WHERE, converting to EXPLAIN) to preserve
-    /// query structure for oracle correctness testing.
-    bool oracle_mode = false;
-
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void notifyQueryFailed(ASTPtr ast);
 
@@ -93,10 +63,6 @@ public:
 
     /// Returns the total number of accumulated AST fragments (column-like + table-like).
     size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
-
-    /// Returns query parameters collected/generated during the last fuzzMain() call.
-    /// Callers should pass these to the execution context via setQueryParameters().
-    const NameToNameMap & getLastQueryParameters() const { return last_query_parameters; }
 
     void setSeed(const UInt64 new_seed)
     {
@@ -157,11 +123,11 @@ public:
         if (!parsed_query)
             return {};
 
-        const auto * query_ast = parsed_query->template as<ParsedAST>();
-        if (!query_ast || !query_ast->table)
+        const auto & query_ast = *parsed_query->template as<ParsedAST>();
+        if (!query_ast.table)
             return {};
 
-        auto table_name = query_ast->getTable();
+        auto table_name = query_ast.getTable();
         auto it = original_table_name_to_fuzzed.find(table_name);
         if (it == original_table_name_to_fuzzed.end())
             return {};
@@ -172,14 +138,8 @@ public:
             /// Parse query from scratch for each table instead of clone,
             /// to store proper pointers to inlined data,
             /// which are not copied during clone.
-            auto query = tryParseQueryForFuzzedTables<Parser>(full_query);
-            if (!query)
-                continue;
-            auto * fuzzed_ast = query->template as<ParsedAST>();
-            if (!fuzzed_ast)
-                continue;
-            fuzzed_ast->setTable(fuzzed_name);
-            queries.emplace_back(std::move(query));
+            auto & query = queries.emplace_back(tryParseQueryForFuzzedTables<Parser>(full_query));
+            query->template as<ParsedAST>()->setTable(fuzzed_name);
         }
 
         return queries;
@@ -198,15 +158,6 @@ private:
     // total depth of AST to prevent this.
     // This field is reset for each fuzzMain() call.
     size_t current_ast_depth = 0;
-
-    // Depth of SELECT-query nesting while fuzzing (1 = inside the outermost
-    // `ASTSelectQuery`). Unlike `current_ast_depth`, this counts only SELECT
-    // nodes, so the oracle-mode guards can reliably recognise the topmost
-    // query — a plain SELECT is wrapped in `ASTSelectWithUnionQuery` and an
-    // expression list, putting the real top-level SELECT at AST depth 3.
-    // Maintained by a `ScopedIncrement` in the `ASTSelectQuery` branch of
-    // `fuzz`, which spans the recursion into the SELECT's children.
-    size_t current_select_nesting = 0;
 
     // Used to track added tables in join clauses
     uint32_t alias_counter = 0;
@@ -244,79 +195,20 @@ private:
 
     // Some debug fields for detecting problematic ASTs with loops.
     // These are reset for each fuzzMain call.
-    // The map keeps a reference to every visited node instead of only its address: fuzzing
-    // legitimately drops parts of the query (a column list replaced by an inferred one, a dropped
-    // constraint or projection, a key clause removed from a storage definition), and once a visited
-    // node is destroyed the allocator is free to hand its address to a node created later, which
-    // would look exactly like a loop. Holding the node alive makes the address unique for the whole
-    // fuzzMain call, so pointer identity is a valid answer to "have I visited this node before".
-    std::unordered_map<const IAST *, ASTPtr> debug_visited_nodes;
+    std::unordered_set<const IAST *> debug_visited_nodes;
     ASTPtr * debug_top_ast = nullptr;
 
     std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
     std::set<IASTHash> created_tables_hashes;
 
-    /// Populated by fuzzMain(): name → string-serialized value for every {name:type} param in the fuzzed query.
-    NameToNameMap last_query_parameters;
-    /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
-    uint32_t param_counter = 0;
-
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
-    /// Builds a fuzzed asterisk/matcher (`*`, `* LIKE/ILIKE '<pattern>'`, `table.*`, `COLUMNS(...)`),
-    /// optionally with column transformers, exercising the parser path added in
-    /// https://github.com/ClickHouse/ClickHouse/pull/104569.
-    ASTPtr makeFuzzedAsteriskLikeMatcher();
-    /// Builds an `ASTColumnsTransformerList` with fuzzed `APPLY` / `EXCEPT` / `REPLACE` transformers.
-    ASTPtr makeFuzzedColumnTransformers();
-    /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
-    /// occasionally qualified with a known table name.
-    ASTPtr makeFuzzedVirtualColumn();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
-    /// Fuzz every element of a type list in place. Returns true if any element changed.
-    bool fuzzDataTypes(DataTypes & types);
-    /// Rebuild an Array/Tuple/Variant with its children fuzzed; nullptr for anything else.
-    DataTypePtr fuzzContainerChildren(const DataTypePtr & type);
-    /// Wrap or replace a type without touching its children; safe for a custom-named leaf alias.
-    DataTypePtr fuzzTypeWrapping(const DataTypePtr & type);
-    /// Every registered geo alias name, read out of Geometry's Variant storage.
-    static const std::unordered_set<String> & geoAliasNames();
-    /// Interchangeable aggregate names by arity, shared with the data-type fuzzing unit.
-    static const std::map<size_t, Strings> & swapAggregateNames();
-    /// Swap an aggregate's name for a compatible candidate of the same arity.
-    bool fuzzAggregateName(String & name, size_t nargs);
-    /// Fuzz an aggregate's literal parameters in place. Returns true if changed.
-    bool fuzzAggregateParameters(Array & parameters);
     DataTypePtr getRandomType();
-    /// A random QBit with a valid element type and a dimension/stride pair satisfying the type's invariants.
-    DataTypePtr makeRandomQBit();
-    /// Mutate a JSON `SKIP` path list. Replacements stay identifier-shaped so the type still parses.
-    std::unordered_set<String> fuzzObjectPathsToSkip(std::unordered_set<String> paths_to_skip);
-    /// Mutate a JSON `SKIP REGEXP` list. Replacements are RE2-compilable, which the type requires.
-    std::vector<String> fuzzObjectPathRegexpsToSkip(std::vector<String> path_regexps_to_skip);
-    /// A JSON Object with the given typed paths / SKIP lists and randomized numeric parameters. A source
-    /// limit, when given, is what an unfired randomization keeps.
-    DataTypePtr makeRandomObject(
-        std::unordered_map<String, DataTypePtr> typed_paths = {},
-        std::unordered_set<String> paths_to_skip = {},
-        std::vector<String> path_regexps_to_skip = {},
-        std::optional<size_t> source_max_dynamic_paths = std::nullopt,
-        std::optional<size_t> source_max_dynamic_types = std::nullopt);
-    /// An (Simple)AggregateFunction re-validated via the factory; nullptr if the aggregate rejects the
-    /// arguments or the emitted name does not reparse. version is the one parsed from the source AST.
-    DataTypePtr makeAggregateFunctionType(
-        const String & name,
-        const DataTypes & argument_types,
-        const Array & parameters,
-        bool simple,
-        std::optional<size_t> version = std::nullopt);
-    /// A DateTime / DateTime64, occasionally with an explicit valid timezone.
-    DataTypePtr makeRandomDateTime();
-    DataTypePtr makeRandomDateTime64(UInt32 scale);
     void fuzzJoinType(ASTTableJoin * table_join);
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast, size_t nproj);
@@ -325,51 +217,17 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
-    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
-    void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
-    void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
-    void fuzzColumnDeclarationList(ASTExpressionList & columns);
-    ASTPtr makeTextIndexTokenizer();
-    String makeTextTokenizerArgument();
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
-    void fuzzIndexDeclarationList(ASTExpressionList & indices);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
-    void fuzzProjectionDeclarationList(ASTExpressionList & projections);
-    void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
-    String pickFuzzedTableName(const String & full_name);
     void fuzzTableName(ASTTableExpression & table);
-
-    /// Point a statement that names an existing table at one of its live `__fuzz_N` clones, so the
-    /// rewritten definitions are exercised outside a `FROM` too. Takes any node exposing the
-    /// `table` / `getTable` / `setTable` trio; `setTable` re-registers the child, so there is
-    /// nothing else to keep in sync.
-    template <typename Query>
-    void fuzzTableName(Query & query)
-    {
-        if (!query.table || fuzz_rand() % 3 == 0)
-            return;
-
-        const auto new_table_name = pickFuzzedTableName(query.getTable());
-        if (!new_table_name.empty())
-            query.setTable(new_table_name);
-    }
-
-    void fuzzTableFunctionName(ASTPtr & table_function);
-    void fuzzClusterFunctionArguments(ASTFunction & fn);
-    void fuzzMergeFunctionArguments(ASTFunction & fn);
-    String makeBraceExpansion();
-    String makeRemoteHostDescriptor(bool secure);
-    void wrapTableAsDistributed(ASTTableExpression & table);
-    void wrapTableAsMerge(ASTTableExpression & table);
-    void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
-    ASTPtr fuzzPredicate(const ASTPtr & pred, int negProb);
+    ASTPtr tryNegateNextPredicate(const ASTPtr & pred, int prob);
     ASTPtr setIdentifierAliasOrNot(ASTPtr & exp);
     ASTPtr addJoinClause();
     ASTPtr addArrayJoinClause();
@@ -378,39 +236,18 @@ private:
     void fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
-    void fuzzChildrenWithAlias(IAST & parent, ASTPtr & aliased_member);
-    String nextFuzzedTableName(const String & full_name);
     void collectFuzzInfoMain(ASTPtr ast);
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
-    String generateParamValue();
     void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
     ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);
 
-    /// Reshape a declaration list - reorder it, and drop one of several entries - then fuzz the
-    /// declarations that survive. Dropping the last one is never worth it: an empty list puts the
-    /// whole feature out of reach for every later iteration over the same corpus.
-    template <typename ASTDeclaration, typename FuzzDeclaration>
-    void fuzzDeclarationList(ASTs & declarations, FuzzDeclaration && fuzz_declaration)
-    {
-        if (declarations.size() > 1 && fuzz_rand() % 5 == 0)
-            std::shuffle(declarations.begin(), declarations.end(), fuzz_rand);
-
-        if (declarations.size() > 1 && fuzz_rand() % 10 == 0)
-            declarations.erase(declarations.begin() + fuzz_rand() % declarations.size());
-
-        for (auto & declaration_ast : declarations)
-            if (auto * declaration = declaration_ast->as<ASTDeclaration>())
-                fuzz_declaration(*declaration, declaration_ast);
-    }
-
     template <typename Container>
     const auto & pickRandomly(pcg64 & rand, const Container & container)
     {
-        chassert(!container.empty());
         std::uniform_int_distribution<size_t> d{0, container.size() - 1};
         auto it = container.begin();
         std::advance(it, d(rand));

@@ -12,7 +12,7 @@ namespace ErrorCodes
 namespace
 {
 
-class ExecutableFunctionRandomConstant final : public IExecutableFunction
+class ExecutableFunctionRandomConstant : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionRandomConstant(UInt32 value_) : value(value_) {}
@@ -30,7 +30,7 @@ private:
     UInt32 value;
 };
 
-class FunctionBaseRandomConstant final : public IFunctionBase
+class FunctionBaseRandomConstant : public IFunctionBase
 {
 public:
     explicit FunctionBaseRandomConstant(UInt32 value_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -68,7 +68,7 @@ private:
     DataTypePtr return_type;
 };
 
-class RandomConstantOverloadResolver final : public IFunctionOverloadResolver
+class RandomConstantOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "randConstant";
@@ -104,7 +104,7 @@ public:
 
         ColumnVector<UInt32>::Container vec_to(1);
 
-        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(UInt32));
+        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(UInt32));
         UInt32 value = vec_to[0];
 
         return std::make_unique<FunctionBaseRandomConstant>(value, argument_types, return_type);
@@ -126,7 +126,7 @@ It is useful for applying consistent random seeds or identifiers across all rows
     )";
     FunctionDocumentation::Syntax syntax = "randConstant([x])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a column of type `UInt32` containing the same random value in each row.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {

@@ -11,7 +11,7 @@ namespace
 {
 
 /** Incremental number of row within all columns passed to this function. */
-class FunctionRowNumberInAllBlocks final : public IFunction
+class FunctionRowNumberInAllBlocks : public IFunction
 {
 private:
     mutable std::atomic<size_t> rows{0};
@@ -58,14 +58,7 @@ public:
 
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// Dry-run callers (e.g. `ActionsDAG::evaluatePartialResult` used by JOIN-conversion optimizers
-        /// in `Processors/QueryPlan/Optimizations/Utils.cpp`) read the returned column via
-        /// `IColumn::getBool` and similar accessors. The previous implementation allocated the buffer
-        /// without filling it, so MemorySanitizer reported `use-of-uninitialized-value` (issue #100469,
-        /// STID 1499-4a82). Fill the column with zeros to keep the contract that any returned column
-        /// is fully initialized. We do not bump the global `rows` counter -- dry-run must have no side
-        /// effects.
-        return ColumnUInt64::create(input_rows_count, 0);
+        return ColumnUInt64::create(input_rows_count);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -96,25 +89,36 @@ Returns a unique row number for each row processed.
         {
             "Usage example",
             R"(
--- The data is processed in blocks of two rows: rowNumberInBlock restarts from 0 in every block,
--- while rowNumberInAllBlocks keeps counting across them.
-SELECT
-    number,
-    rowNumberInBlock(),
-    rowNumberInAllBlocks()
-FROM system.numbers
-LIMIT 6
+SELECT rowNumberInAllBlocks()
+FROM
+(
+    SELECT *
+    FROM system.numbers_mt
+    LIMIT 10
+)
 SETTINGS max_block_size = 2
             )",
             R"(
-┌─number─┬─rowNumberInBlock()─┬─rowNumberInAllBlocks()─┐
-│      0 │                  0 │                      0 │
-│      1 │                  1 │                      1 │
-│      2 │                  0 │                      2 │
-│      3 │                  1 │                      3 │
-│      4 │                  0 │                      4 │
-│      5 │                  1 │                      5 │
-└────────┴────────────────────┴────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      0 │
+│                      1 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      4 │
+│                      5 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      2 │
+│                      3 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      6 │
+│                      7 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      8 │
+│                      9 │
+└────────────────────────┘
             )"
         }
     };
