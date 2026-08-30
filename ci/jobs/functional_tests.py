@@ -14,6 +14,7 @@ from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika import SecretFetchFailed
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -923,9 +924,17 @@ def main():
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
 
         def configure_log_export():
+            # `start_log_exports` guards on `log_export_host`, so an unconfigured
+            # export is a supported state. Only an unanswered fetch leaves the value
+            # unknown; every other failure here is fatal to the step.
             if not info.is_local_run:
                 print("prepare log export config")
-                return CH.create_log_export_config()
+                try:
+                    return CH.create_log_export_config()
+                except SecretFetchFailed as e:
+                    print(f"WARNING: Failed to configure log export: {e}")
+                    info.add_workflow_warning(f"Failed to configure log export: {e}")
+                    return True
             else:
                 print("skip log export config for local run")
 

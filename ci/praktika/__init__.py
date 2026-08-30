@@ -7,7 +7,16 @@ from .artifact import Artifact
 from .docker import Docker
 from .infrastructure.cloud import CloudInfrastructure
 from .job import Job
-from .secret import Secret
+from .secret import Secret, SecretFetchFailed, SecretMisconfigured
 from .workflow import Workflow
 
-__all__ = ["Artifact", "Docker", "Job", "Secret", "Workflow", "CloudInfrastructure"]
+__all__ = [
+    "Artifact",
+    "Docker",
+    "Job",
+    "Secret",
+    "SecretFetchFailed",
+    "SecretMisconfigured",
+    "Workflow",
+    "CloudInfrastructure",
+]

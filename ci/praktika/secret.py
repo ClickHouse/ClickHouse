@@ -6,6 +6,16 @@ from typing import List, Union
 from .utils import Shell
 
 
+class SecretFetchFailed(RuntimeError):
+    """The request for a secret's value did not complete, so the value is unknown. A
+    caller that can run without the secret may treat this as a transient lapse."""
+
+
+class SecretMisconfigured(RuntimeError):
+    """A secret's value is absent, empty or unusable: the request reached the store and
+    was answered, so retrying or tolerating it would hide a real misconfiguration."""
+
+
 class Secret:
 
     class Type:
@@ -66,17 +76,32 @@ class Secret:
             if self.region:
                 region = f" --region {self.region}"
             assert isinstance(self.name, list)
-            res = Shell.get_output(
-                f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}",
-                strict=True,
-            )
-            name_value_pairs = res.split("\n")
+            cmd = f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}"
+            try:
+                res = Shell.get_output(cmd, strict=True)
+            except Exception as e:
+                # Scoped to the request: every check below has an answer to judge, so
+                # only this raises with the value still unknown.
+                raise SecretFetchFailed(
+                    f"Failed to fetch parameters {self.name}: {e}"
+                ) from e
+            # `get-parameters` reports unknown names under `InvalidParameters` and still
+            # exits 0, so an answer naming none of them carries no pair to split. Decided
+            # over the whole answer, since a value may itself span lines.
+            name_value_pairs = res.split("\n") if "\t" in res else []
+            if any("\t" not in pair for pair in name_value_pairs):
+                # `--output text` prints a value verbatim, so one spanning lines arrives
+                # as continuations carrying no tab. Splitting them as pairs would use a
+                # value cut to its first line.
+                raise SecretMisconfigured(
+                    f"Unparseable answer for parameters {self.name}"
+                )
             names = [n.split("\t")[0].strip() for n in name_value_pairs]
             values = [n.split("\t")[1].strip() for n in name_value_pairs]
 
             for n in self.name:
                 if n not in names:
-                    raise RuntimeError(f"Failed to get value for parameter [{n}]")
+                    raise SecretMisconfigured(f"Failed to get value for parameter [{n}]")
 
             # Sort to match requested order and validate values:
             name_value_pairs = list(zip(names, values))
@@ -84,7 +109,7 @@ class Secret:
 
             for name, value in name_value_pairs:
                 if not value:
-                    raise RuntimeError(f"Empty value for parameter [{name}]")
+                    raise SecretMisconfigured(f"Empty value for parameter [{name}]")
 
             values = [pair[1] for pair in name_value_pairs]
             return values
