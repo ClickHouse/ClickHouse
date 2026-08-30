@@ -669,7 +669,12 @@ def shell_env_for(conn_index):
     env["CLICKHOUSE_PORT_HTTP"] = http_port
     env["CLICKHOUSE_DATABASE"] = "default"
     env["CLICKHOUSE_CLIENT"] = f"{binary} client --host {host} --port {tcp_port}"
-    env["CLICKHOUSE_LOCAL"] = f"{binary} local"
+    # `--tmp` keeps the old behavior of a unique temporary directory per
+    # process: without it, `clickhouse-local` uses the persistent default
+    # directory in the home, and a benchmark starting several of them at once
+    # (e.g. tests/performance/insert_direct_parallel.xml) would fail with
+    # `Another server instance in same directory is already running`.
+    env["CLICKHOUSE_LOCAL"] = f"{binary} local --tmp"
     # `--fail` makes curl exit non-zero on an HTTP 4xx/5xx response, and `-S`
     # prints the error even under `-s`. Unlike tests/queries/shell_config.sh
     # (which omits `--fail` because some stateless tests inspect error bodies),
