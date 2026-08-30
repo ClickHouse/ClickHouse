@@ -302,10 +302,6 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
         }
     }
 
-    std::cerr << "file metadata\n";
-    for (const auto & kv : file_metadata.key_value_metadata)
-        std::cerr << "  " << kv.key << " = " << kv.value << "\n";
-
     return file_metadata;
 }
 

@@ -22,7 +22,6 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
-#include <iostream>
 
 namespace DB::ErrorCodes
 {
@@ -94,15 +93,8 @@ struct Metadata
 
     std::string_view getName(UInt32 id) const
     {
-        if (id >= count)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Parquet variant field id {} is out of range, dictionary has {} entries", id, count);
-
         const UInt32 begin = readUnsigned(blob, offsets_pos + size_t(id) * offset_size, offset_size);
         const UInt32 end = readUnsigned(blob, offsets_pos + (size_t(id) + 1) * offset_size, offset_size);
-        if (end < begin || names_pos + end > blob.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant metadata offsets");
-
         return blob.substr(names_pos + begin, end - begin);
     }
 };
@@ -112,7 +104,6 @@ Metadata parseMetadata(std::string_view blob)
     if (blob.empty())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Empty Parquet variant metadata");
 
-    std::cerr << "blob size " << blob.size() << "\n";
     const UInt8 header = UInt8(blob[0]);
     const UInt8 version = header & 0x0F;
     if (version != 1)
@@ -124,9 +115,6 @@ Metadata parseMetadata(std::string_view blob)
     res.count = readUnsigned(blob, 1, res.offset_size);
     res.offsets_pos = 1 + res.offset_size;
     res.names_pos = res.offsets_pos + (size_t(res.count) + 1) * res.offset_size;
-    if (res.names_pos > blob.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Truncated Parquet variant metadata");
-
     return res;
 }
 
@@ -236,8 +224,6 @@ DecodedValue decodeObject(std::string_view data, size_t pos, UInt8 value_header,
     const size_t ids_pos = pos + (is_large ? 4 : 1);
     const size_t offsets_pos = ids_pos + size_t(num_elements) * id_size;
     const size_t values_pos = offsets_pos + (size_t(num_elements) + 1) * offset_size;
-    if (values_pos > data.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Truncated Parquet variant object");
 
     Map map;
     map.reserve(num_elements);
@@ -249,8 +235,11 @@ DecodedValue decodeObject(std::string_view data, size_t pos, UInt8 value_header,
         map.push_back(Tuple{Field(String(metadata.getName(field_id))), std::move(element.field)});
     }
 
-    return {std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeDynamic>()),
-            Field(std::move(map))};
+    return {
+        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(),
+        std::make_shared<DataTypeDynamic>()),
+        Field(std::move(map))
+    };
 }
 
 DecodedValue decodeArray(std::string_view data, size_t pos, UInt8 value_header, const Metadata & metadata, size_t depth)
@@ -261,8 +250,6 @@ DecodedValue decodeArray(std::string_view data, size_t pos, UInt8 value_header, 
     const UInt32 num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
     const size_t offsets_pos = pos + (is_large ? 4 : 1);
     const size_t values_pos = offsets_pos + (size_t(num_elements) + 1) * offset_size;
-    if (values_pos > data.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Truncated Parquet variant array");
 
     Array array;
     array.reserve(num_elements);
@@ -272,7 +259,10 @@ DecodedValue decodeArray(std::string_view data, size_t pos, UInt8 value_header, 
         array.push_back(decodeValue(data, values_pos + offset, metadata, depth + 1).field);
     }
 
-    return {std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>()), Field(std::move(array))};
+    return {
+        std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>()),
+        Field(std::move(array))
+    };
 }
 
 DecodedValue decodeValue(std::string_view data, size_t pos, const Metadata & metadata, size_t depth)
@@ -290,7 +280,6 @@ DecodedValue decodeValue(std::string_view data, size_t pos, const Metadata & met
         case BasicType::Object:
             return decodeObject(data, pos + 1, value_header, metadata, depth);
         default:
-            chassert(basic_type == BasicType::Array);
             return decodeArray(data, pos + 1, value_header, metadata, depth);
     }
 }
@@ -342,12 +331,8 @@ void decodeVariantColumn(const IColumn & metadata, const IColumn & value, Column
         }
 
         const std::string_view blob = metadata_strings.getDataAt(row);
-        for (size_t i = 0; i < blob.size(); ++i)
-        {
-            std::cerr << "blob: " << UInt16(blob[i]) << "\n";
-        }
-        auto cached_metadata = parseMetadata(blob);
-        const DecodedValue decoded = decodeValue(value_strings.getDataAt(row), 0, cached_metadata, 0);
+        auto metadata_parsed = parseMetadata(blob);
+        const DecodedValue decoded = decodeValue(value_strings.getDataAt(row), 0, metadata_parsed, 0);
 
         if (decoded.type)
             insertDynamicValue(output, decoded.type, decoded.field);
