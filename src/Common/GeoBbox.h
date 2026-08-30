@@ -595,6 +595,17 @@ inline bool isDeferredGeometryKindType(const IDataType & type)
 /// resolves as `Point` by `IDataType::equals`, with no `Point` custom name to report it under.
 /// `geoKindNameOfType` and `constGeoKindName` both return an empty kind for it, so the kind checks
 /// in `extractSpatialPredicateNodeBbox` cannot see it at all and would treat it as harmless.
+/// Whether `type` is no geometry at all: neither a named geometry kind (a WKB `String` included,
+/// see `geoKindNameOfType`), nor one of the unnamed shapes `callOnGeometryDataType` resolves
+/// structurally, nor a `Dynamic`/`Variant` whose kind is only known per row.
+inline bool isNonGeometryType(const IDataType & type)
+{
+    const IDataType & inner = unwrapGeoKindWrappers(type);
+    if (typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner))
+        return false;
+    return geoKindNameOfType(inner).empty() && structuralGeoKindName(inner).empty();
+}
+
 inline bool isRawPointTuple(const IDataType & type)
 {
     const IDataType & inner = unwrapGeoKindWrappers(type);
@@ -821,6 +832,20 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
             has_extra_non_constant = true;
             continue;
         }
+
+        /// A constant whose DECLARED type is no geometry at all carries no bbox and must not be
+        /// interpreted by the shape of its `Field` below: that shape cannot tell `CAST([], 'Ring')`
+        /// -- an empty geometry the execute-time `parseConstPolygon` rejects, which must fail closed
+        /// -- from `CAST([], 'Array(Int32)')`, an auxiliary argument an `is_spatial_predicate = 1`
+        /// WASM UDF declares and `FunctionUserDefinedWasm::getReturnTypeImpl` accepts, on which
+        /// execution never raises. Failing closed for the latter would cost pruning for a query that
+        /// cannot raise. The declared type tells the two apart, so read it rather than the shape.
+        ///
+        /// Skipping cannot hide an exception in the other direction either: a NATIVE predicate handed
+        /// a non-geometry argument raises from `callOnTwoGeometryDataTypes`, which dispatches on the
+        /// argument TYPES and so raises even on a fully pruned, zero-row block.
+        if (child->result_type && GeoBboxDetail::isNonGeometryType(*child->result_type))
+            continue;
 
         Field field;
         if (!tryExtractConstGeoField(*child, field))
