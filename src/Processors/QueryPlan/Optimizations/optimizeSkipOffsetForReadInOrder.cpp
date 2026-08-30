@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -51,22 +52,23 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
     if (const auto & input_order_info = reading->getInputOrder(); !input_order_info || input_order_info->direction != 1)
         return;
 
-    /// A stateful function (`rowNumberInAllBlocks`, `neighbor`, `runningDifference`) derives a row's result from
-    /// the rows preceding it in its stream, and skipping granules changes both those rows and the block
-    /// boundaries they are batched into. That is visible even above the offset, where the trimmed read shifts
-    /// what the offset step passes on, so bail out on a stateful function anywhere on the path to the root.
+    /// A function that is not deterministic within the query derives a row's result from the rows preceding it
+    /// in its stream (`rowNumberInAllBlocks`, `neighbor`, `runningDifference`) or from the block the row arrives
+    /// in (`blockSize`, `nowInBlock`), and skipping granules changes both those rows and the block boundaries
+    /// they are batched into. That is visible even above the offset, where the trimmed read shifts what the
+    /// offset step passes on, so bail out on such a function anywhere on the path to the root.
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         auto * step = iter->node->step.get();
 
         if (auto * expression_step = typeid_cast<ExpressionStep *>(step))
         {
-            if (expression_step->getExpression().hasStatefulFunctions())
+            if (dagContainsNonDeterministicFunction(expression_step->getExpression()))
                 return;
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(step))
         {
-            if (filter_step->getExpression().hasStatefulFunctions())
+            if (dagContainsNonDeterministicFunction(filter_step->getExpression()))
                 return;
         }
     }
