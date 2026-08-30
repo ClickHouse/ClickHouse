@@ -13,11 +13,12 @@ CREATE TABLE test_floor_main (ts DateTime('UTC')) ENGINE = MergeTree
 ORDER BY (toYYYYMM(ts), toDate(ts), ts)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_floor_main SELECT toDateTime('2026-03-30 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(24);
--- Direct predicates on key expressions.
+-- Direct predicates on key expressions. The preimage optimization rewrites them into `ts`
+-- ranges before index analysis; the pruning must stay as good as with the original predicates.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_floor_main WHERE toDate(ts) = toDate('2026-03-31')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 PrimaryKey
 Keys:
-Condition: (toDate(ts) in [20543, 20543])
+Condition: and(and((toDate(ts) in (-Inf, 20544]), and((toYYYYMM(ts) in (-Inf, 202604]), (ts in (-Inf, 1775001599]))), and((toDate(ts) in [20543, +Inf)), and((toYYYYMM(ts) in [202603, +Inf)), (ts in [1774915200, +Inf)))))
 Parts: 1/1
 Granules: 5/24
 Search Algorithm: generic exclusion search

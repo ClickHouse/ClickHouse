@@ -74,16 +74,17 @@ SELECT count() FROM test_part_prune WHERE ts IN (toDateTime('2026-03-31 06:00:00
 2
 SELECT count() FROM test_part_prune WHERE ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC')) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 2
--- Direct predicate on a partition subexpression.
+-- Direct predicate on a partition subexpression. The preimage optimization rewrites it into a
+-- `ts` range before index analysis; partition and minmax pruning must stay equivalent.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_prune WHERE toDate(ts) = toDate('2026-03-31')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 Min-Max
 Keys:
-Condition: (toDate(ts) in [20543, 20543])
+Condition: and((ts in (-Inf, 1775001599]), (ts in [1774915200, +Inf)))
 Parts: 1/6
 Granules: 4/24
 Partition
 Keys:
-Condition: (toDate(ts) in [20543, 20543])
+Condition: and(and((toDate(ts) in (-Inf, 20544]), (toYYYYMM(ts) in (-Inf, 202604])), and((toDate(ts) in [20543, +Inf)), (toYYYYMM(ts) in [202603, +Inf))))
 Parts: 1/1
 Granules: 4/4
 PrimaryKey

@@ -24,7 +24,8 @@ SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_floor_main SELECT toDateTime('2026-03-30 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(24);
 
--- Direct predicates on key expressions.
+-- Direct predicates on key expressions. The preimage optimization rewrites them into `ts`
+-- ranges before index analysis; the pruning must stay as good as with the original predicates.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_floor_main WHERE toDate(ts) = toDate('2026-03-31')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 SELECT count() FROM test_floor_main WHERE toDate(ts) = toDate('2026-03-31') SETTINGS force_primary_key = 1;
 

@@ -38,7 +38,8 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part
 SELECT count() FROM test_part_prune WHERE ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'));
 SELECT count() FROM test_part_prune WHERE ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC')) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
--- Direct predicate on a partition subexpression.
+-- Direct predicate on a partition subexpression. The preimage optimization rewrites it into a
+-- `ts` range before index analysis; partition and minmax pruning must stay equivalent.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_prune WHERE toDate(ts) = toDate('2026-03-31')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 SELECT count() FROM test_part_prune WHERE toDate(ts) = toDate('2026-03-31');
 SELECT count() FROM test_part_prune WHERE toDate(ts) = toDate('2026-03-31') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;

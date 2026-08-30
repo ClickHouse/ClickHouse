@@ -39,10 +39,18 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_rela
 SELECT count() FROM test_relax WHERE ts < toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS force_primary_key = 1;
 SELECT count() FROM test_relax WHERE ts < toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
--- Negation against the key expression itself stays exact.
+-- A negated equality against the key expression is rewritten by the preimage optimization
+-- (`optimize_time_filter_with_preimage`) into a disjunction of two `ts` range comparisons.
+-- Pushing their constants back through `toDate` weakens the strict bounds, so the branches
+-- overlap and no granules are pruned; the result must still be correct.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE toDate(ts) != toDate('2026-03-02')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 SELECT count() FROM test_relax WHERE toDate(ts) != toDate('2026-03-02') SETTINGS force_primary_key = 1;
 SELECT count() FROM test_relax WHERE toDate(ts) != toDate('2026-03-02') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- With the preimage rewrite disabled, the same negation reaches the index analysis as a direct
+-- predicate on the key expression and stays exact, pruning the granules of the negated day.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE toDate(ts) != toDate('2026-03-02') SETTINGS optimize_time_filter_with_preimage = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_relax WHERE toDate(ts) != toDate('2026-03-02') SETTINGS force_primary_key = 1, optimize_time_filter_with_preimage = 0;
 
 -- Tuple set deduplication: tuple(i, i) collapses to a single key column in the set
 -- index, making the check inexact; negation must not over-prune.
