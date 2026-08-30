@@ -16,7 +16,8 @@
         "chdb/install/go",
         "chdb/install/rust",
         "chdb/install/bun",
-        "chdb/install/c"
+        "chdb/install/c",
+        "chdb/install/adbc"
       ]
     },
     {
@@ -67,7 +68,8 @@
         "chdb/guides/pandas-cookbook",
         "chdb/guides/pandas-differences",
         "chdb/guides/pandas-performance",
-        "chdb/guides/pandas-to-sql"
+        "chdb/guides/pandas-to-sql",
+        "chdb/guides/python-udf"
       ]
     },
     {

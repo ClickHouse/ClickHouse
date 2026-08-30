@@ -400,7 +400,7 @@ SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12
 * 조건 `cond`가 0이 아닌 값으로 평가되면 함수는 `then` 표현식의 결과를 반환합니다.
 * `cond`가 0 또는 NULL로 평가되면 `else` 표현식의 결과를 반환합니다.
 
-[`short_circuit_function_evaluation`](/ko/reference/settings/session-settings#short_circuit_function_evaluation) 설정은 단락 평가를 사용할지 여부를 제어합니다.
+[`short_circuit_function_evaluation`](/ko/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) 설정은 단락 평가를 사용할지 여부를 제어합니다.
 
 이 기능이 활성화되면 `then` 표현식은 `cond`가 true인 행에서만 평가되고, `else` 표현식은 `cond`가 false인 행에서만 평가됩니다.
 
@@ -524,7 +524,7 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 각 조건을 순서대로 평가합니다. 처음으로 true(0이 아니고 `NULL`이 아닌 값)인 조건에 대해 해당 브랜치 값을 반환합니다.
 어떤 조건도 true가 아니면 `else` 값을 반환합니다.
 
-설정 [`short_circuit_function_evaluation`](/ko/reference/settings/session-settings#short_circuit_function_evaluation)은
+설정 [`short_circuit_function_evaluation`](/ko/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation)은
 단락 평가 사용 여부를 제어합니다. 이 설정이 활성화되면 `then_i` 표현식은
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)`가 true인 행에서만 평가됩니다.
 

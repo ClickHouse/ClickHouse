@@ -79,7 +79,8 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
-        bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -104,6 +105,10 @@ public:
     {
         virtual ~BloomFilter() = default;
 
+        /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
+        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
+        /// value set intersect the two sequences in one pass instead of searching for each hash
+        /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
@@ -321,8 +326,10 @@ public:
             /// this expression will be analyzed and then represented by following:
             ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
-            /// Special for pointInPolygon to utilize minmax indices.
+            /// Special for pointInPolygon to utilize primary key and minmax indices.
             /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
+            /// where x, y are key columns, or pointInPolygon(coord, [...])
+            /// where coord is a key column of type Point (Tuple of two coordinates).
             FUNCTION_POINT_IN_POLYGON,
             /// Can take any value.
             FUNCTION_UNKNOWN,
@@ -358,7 +365,8 @@ public:
         ///  * if FUNCTION[_NOT]_IN_SET: one or more elements in nondecreasing order, same as
         ///    set_index->getIndexesMapping()[..].key_index,
         ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
-        ///    as in pointInPolygon((x, y), ...).
+        ///    as in pointInPolygon((x, y), ...), or one element if the point is a whole
+        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...).
         std::vector<size_t> key_columns;
 
         /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
@@ -379,7 +387,8 @@ public:
 
         /// For FUNCTION_POINT_IN_POLYGON.
         /// Function name (e.g. 'pointInPolygon') and the polygon.
-        /// Additionally, `key_columns` has two elements for point coordinates (x, y).
+        /// Additionally, `key_columns` has two elements for point coordinates (x, y),
+        /// or one element if the point is a whole key column of Tuple type.
         std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
@@ -450,7 +459,8 @@ public:
     ///
     /// NOTE: we also need to examine special functions that generate atoms. For
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
-    /// on a given regular expression, which is relaxed for simplicity.
+    /// on a given regular expression. Such an atom is relaxed unless the regular
+    /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
 
     bool isSinglePoint() const { return single_point; }
@@ -492,6 +502,9 @@ private:
         const ExpressionActionsPtr key_expr;
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
+        /// If true, an `IN` atom whose set is not built yet is declined instead of building it.
+        /// Analysis passes that are not allowed to execute a user subquery set this.
+        const bool require_ready_sets = false;
     };
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);

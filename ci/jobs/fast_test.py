@@ -8,7 +8,7 @@ repo_path = Path(__file__).resolve().parent.parent.parent
 repo_path_normalized = str(repo_path)
 sys.path.append(str(repo_path / "ci"))
 
-from ci.defs.defs import ToolSet, chcache_secret
+from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
@@ -20,6 +20,9 @@ current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = Path(current_directory) / "ci" / "tmp"
 build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
+
+# Must match SQL_STACKTRACES_LOG and C_STACKTRACES_LOG in tests/clickhouse-test.
+STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
 
 
 def clone_submodules():
@@ -231,13 +234,6 @@ def main():
             print("NOTE: Using custom AWS credentials for sccache")
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
-    else:
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
     Utils.add_to_PATH(
         f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
@@ -344,9 +340,20 @@ def main():
         ch_config_dir=f"{temp_dir}/etc/clickhouse-server",
         ch_var_lib_dir=f"{temp_dir}/var/lib/clickhouse",
     )
+    # `fast_test_command` below prefixes `cd {temp_dir}`, so clients spawned by
+    # tests inherit that directory rather than the repository root this job runs
+    # from, and dump their cores there.
+    CH.client_core_path = str(temp_dir)
     CH.install_configs()
 
     attach_debug = False
+
+    # Not under `res`: a server-start failure reaches the attach below without
+    # running any test, so the clear has to happen even then.
+    if JobStages.TEST in stages:
+        for stacktrace_log in STACKTRACE_LOGS:
+            (temp_dir / stacktrace_log).unlink(missing_ok=True)
+
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -408,7 +415,7 @@ def main():
         # clickhouse-test runs with cwd=temp_dir, so the full server stacktrace
         # dumps it writes on a timeout / hung check land here. Attach them so
         # the report links the full dumps (stdout keeps only a trimmed preview).
-        for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        for stacktrace_log in STACKTRACE_LOGS:
             path = temp_dir / stacktrace_log
             if path.exists():
                 attach_files.append(path)
