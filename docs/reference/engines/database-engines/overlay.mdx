@@ -95,7 +95,7 @@ SHOW TABLES FROM dboverlay;                -- t_a, t_b
 SELECT * FROM dboverlay.t_a ORDER BY id;   -- rows from db_a.t_a
 SELECT * FROM dboverlay.t_b ORDER BY id;   -- rows from db_b.t_b
 
--- Add a new table in an underlying database
+-- Add a new table in an underlying database (`CREATE TABLE dboverlay.t_new` would create it in `db_a`, the first source)
 CREATE TABLE db_a.t_new (k UInt32, v String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO db_a.t_new VALUES (100,'x'), (200,'y');
 
