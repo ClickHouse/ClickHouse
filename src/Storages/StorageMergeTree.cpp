@@ -933,9 +933,9 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     }
 
     /// The entry keeps its own copy of the commands, and the resolved partition scope is
-    /// stored inside the commands, so resolve it on that copy.
+    /// pinned into the command text itself, so resolve it on that copy.
     MutationCommands commands_for_entry = commands;
-    auto partitions = resolvePartitionIdsForCommands(commands_for_entry, query_context);
+    auto partitions = rewritePartitionScopeToIds(commands_for_entry, query_context);
     MergeTreeMutationEntry entry(
         std::move(commands_for_entry), disk, relative_data_path, insert_increment.get(),
         std::move(partitions), current_tid, getContext()->getWriteSettings());

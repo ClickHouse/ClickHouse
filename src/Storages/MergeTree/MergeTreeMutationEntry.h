@@ -56,9 +56,9 @@ struct MergeTreeMutationEntry
     /// If empty, applied to all partitions.
     PartitionIds partition_ids;
 
-    /// True if the entry was loaded from a legacy `mutation_*.txt` file that has no
-    /// persisted `partition ids:` line although some of its commands are partition-scoped.
-    /// Such a file has to be upgraded to the current format after loading (see
+    /// True if the entry was loaded from a legacy `mutation_*.txt` file whose commands still
+    /// carry an `IN PARTITION <value>` literal instead of the pinned `IN PARTITION ID` form.
+    /// Such a file has to be rewritten after loading (see
     /// `upgradeFileWithResolvedPartitionScope`), otherwise every load resolves the
     /// `IN PARTITION` literal through the current table metadata again, which can throw
     /// after a safe partition key type change and make the table unloadable.
@@ -87,8 +87,9 @@ struct MergeTreeMutationEntry
 
     void writeCSN(CSN csn_);
 
-    /// Rewrite a legacy on-disk file (see `needs_file_upgrade`) in the current format,
-    /// with the resolved partition scope of the commands persisted next to them.
+    /// Rewrite a legacy on-disk file (see `needs_file_upgrade`) with the partition scope of
+    /// its commands pinned to `IN PARTITION ID`. The shape of the file is unchanged, so a
+    /// rewritten file is still readable by a binary without this feature.
     void upgradeFileWithResolvedPartitionScope(const WriteSettings & settings);
 
     std::shared_ptr<const IBackupEntry> backup() const;

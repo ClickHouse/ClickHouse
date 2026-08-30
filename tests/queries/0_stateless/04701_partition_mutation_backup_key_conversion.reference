@@ -1,4 +1,4 @@
-partition ids: 1 '1'
+IN PARTITION ID '1'
 1	1
 2	2
 0

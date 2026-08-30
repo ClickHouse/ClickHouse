@@ -101,7 +101,7 @@ SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp
 36	167711
 ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-46	251148
+46	251128
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
 SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
@@ -212,7 +212,7 @@ SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp
 36	167711
 ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-46	251148
+46	251128
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
 SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
@@ -323,7 +323,7 @@ SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp
 36	167711
 ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-46	251148
+46	251128
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
 SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0

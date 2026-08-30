@@ -1,6 +1,5 @@
-legacy 'partition ids' lines: 0
-upgraded 'partition ids' lines: 1
-partition ids: 1 '1'
+legacy 'IN PARTITION ID' occurrences: 0
+upgraded 'IN PARTITION ID' occurrences: 1
 1	101
 2	2
 0

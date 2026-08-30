@@ -21,46 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
-}
-
-namespace
-{
-
-/// The commands in the order in which `MutationCommands::writeText` serializes them here
-/// (pure metadata commands are not serialized, see `MutationCommands::ast`). `readText` parses
-/// exactly these commands back, so this order is used to associate the per-command partition
-/// ids persisted next to the commands with them.
-std::vector<const MutationCommand *> commandsInTextForm(const MutationCommands & commands)
-{
-    std::vector<const MutationCommand *> result;
-    result.reserve(commands.size());
-    for (const auto & command : commands)
-        if (!command.isPureMetadataCommand() && command.ast())
-            result.push_back(&command);
-    return result;
-}
-
-/// Persist the resolved partition scope of the commands so that neither loading the mutation
-/// nor executing it has to resolve the `IN PARTITION` literal through the current table
-/// metadata again. Resolving it again can throw after a safe partition key type change
-/// (e.g. `Enum8 -> Int8`), making an otherwise valid pending mutation block table loading or
-/// fail during execution.
-/// There is one (possibly empty, for a command without `IN PARTITION`) partition id per
-/// command serialized by `MutationCommands::writeText`, in the same order: `writeText` skips
-/// pure metadata commands, so they are skipped here too (see `MutationCommands::ast`).
-void writePartitionIdsOfCommands(const MutationCommands & commands, WriteBuffer & out)
-{
-    auto persisted_commands = commandsInTextForm(commands);
-    out << "partition ids: " << persisted_commands.size();
-    for (const auto * command : persisted_commands)
-    {
-        out << " ";
-        writeQuotedString(command->resolved_partition_id.value_or(""), out);
-    }
-    out << "\n";
-}
-
 }
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
@@ -117,7 +77,6 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
-        writePartitionIdsOfCommands(*commands, *out);
         if (tid.isNonTransactional())
         {
             csn = Tx::NonTransactionalCSN;
@@ -192,46 +151,6 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     commands->readText(*buf, false);
     *buf >> "\n";
 
-    /// `partition ids` is an optional line written after the commands (see the writing constructor above).
-    /// It holds one partition id per command, in the same order (an empty string for a command that is
-    /// not partition-scoped). Older mutation files (written before this line was introduced) do not
-    /// contain it; for those we fall back to resolving the affected partitions from the current table
-    /// metadata below. The `tid` and `csn` lines never start with 'p', so `checkString` cannot partially
-    /// consume them for old-format files.
-    bool partition_ids_loaded = false;
-    if (!buf->eof() && checkString("partition ids: ", *buf))
-    {
-        size_t num_partition_ids = 0;
-        readIntText(num_partition_ids, *buf);
-        if (num_partition_ids != commands->size())
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Mutation file {} contains partition ids of {} commands, while {} commands were read from it",
-                file_name, num_partition_ids, commands->size());
-
-        bool all_commands_are_partition_scoped = num_partition_ids != 0;
-        partition_ids.reserve(num_partition_ids);
-        for (size_t i = 0; i < num_partition_ids; ++i)
-        {
-            assertChar(' ', *buf);
-            String partition_id;
-            readQuotedString(partition_id, *buf);
-            if (partition_id.empty())
-            {
-                all_commands_are_partition_scoped = false;
-                continue;
-            }
-            (*commands)[i].resolved_partition_id = partition_id;
-            partition_ids.insert(partition_id);
-        }
-
-        /// A single command without `IN PARTITION` makes the whole mutation global.
-        if (!all_commands_are_partition_scoped)
-            partition_ids.clear();
-
-        *buf >> "\n";
-        partition_ids_loaded = true;
-    }
-
     if (buf->eof())
     {
         tid = Tx::NonTransactionalTID;
@@ -251,19 +170,17 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
 
     assertEOF(*buf);
 
-    if (!partition_ids_loaded)
-    {
-        partition_ids = storage_->resolvePartitionIdsForCommands(*commands, context_);
+    /// A file written by a binary that did not pin the partition scope yet still carries the
+    /// original `IN PARTITION <value>` literal, which has to be decoded through the current
+    /// table metadata. That only works while the partition key is the same as when the mutation
+    /// was created, so such a file is upgraded to the pinned `IN PARTITION ID` form right after
+    /// loading (see `upgradeFileWithResolvedPartitionScope`); otherwise a later key-safe
+    /// partition key type change (e.g. `Enum8 -> Int8`) would leave the table unloadable.
+    const bool has_unresolved_partition_scope = MergeTreeData::hasUnresolvedPartitionScope(*commands);
 
-        /// The resolution above decoded the `IN PARTITION` literals of the commands through
-        /// the current table metadata. That is only guaranteed to work while the partition
-        /// key stays the same as when the mutation was created, so the file has to be
-        /// upgraded to persist the resolved scope (see `upgradeFileWithResolvedPartitionScope`).
-        /// Files whose commands are not partition-scoped decode nothing and need no upgrade.
-        for (const auto & command : *commands)
-            if (command.resolved_partition_id)
-                needs_file_upgrade = true;
-    }
+    partition_ids = storage_->rewritePartitionScopeToIds(*commands, context_);
+
+    needs_file_upgrade = has_unresolved_partition_scope;
 }
 
 void MergeTreeMutationEntry::upgradeFileWithResolvedPartitionScope(const WriteSettings & settings)
@@ -280,7 +197,6 @@ void MergeTreeMutationEntry::upgradeFileWithResolvedPartitionScope(const WriteSe
     *out << "commands: ";
     commands->writeText(*out, /* with_pure_metadata_commands = */ false);
     *out << "\n";
-    writePartitionIdsOfCommands(*commands, *out);
     if (!tid.isNonTransactional())
     {
         *out << "tid: ";
@@ -364,9 +280,6 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
     out << "commands: ";
     commands->writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
-
-    /// Keep the resolved partition scope in the backup so it is not lost with the mutation file.
-    writePartitionIdsOfCommands(*commands, out);
 
     return std::make_shared<BackupEntryFromMemory>(out.str());
 }

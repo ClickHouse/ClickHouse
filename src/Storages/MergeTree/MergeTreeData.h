@@ -1217,20 +1217,23 @@ public:
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
     PartitionIds getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
 
-    /// Resolves the partition scope of every partition-scoped (`IN PARTITION`) command into
-    /// `MutationCommand::resolved_partition_id` and returns the set of partitions affected by
-    /// the mutation as a whole. The returned set is empty when at least one command is not
-    /// partition-scoped, i.e. when the mutation affects all partitions.
-    PartitionIds resolvePartitionIdsForCommands(MutationCommands & commands, ContextPtr query_context) const;
-
     /// Rewrites the `IN PARTITION <value>` clause of every partition-scoped command into the
     /// `IN PARTITION ID '<id>'` form, resolving the partition value through the current table
-    /// metadata once. Unlike a partition value, a partition id is decoded without the partition
-    /// key, so the rewritten command can be serialized, re-parsed and executed after a key-safe
-    /// partition key type change (e.g. `Enum8 -> Int8`) that makes the original value literal
-    /// unparseable. Used for `ReplicatedMergeTree` mutation entries, which persist commands only
-    /// in their serialized text form (see `resolved_partition_id` for the non-replicated path).
-    void rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const;
+    /// metadata once, pins the resolved id into `MutationCommand::resolved_partition_id` and
+    /// returns the set of partitions affected by the mutation as a whole. The returned set is
+    /// empty when at least one command is not partition-scoped, i.e. when the mutation affects
+    /// all partitions.
+    /// Unlike a partition value, a partition id is decoded without the partition key, so the
+    /// rewritten command can be serialized, re-parsed and executed after a key-safe partition
+    /// key type change (e.g. `Enum8 -> Int8`) that makes the original value literal
+    /// unparseable. Mutation entries persist their commands only in the serialized text form,
+    /// so this keeps their on-disk (and ZooKeeper) shape unchanged while making the scope
+    /// survive such a change.
+    PartitionIds rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const;
+
+    /// Does any command still carry an `IN PARTITION <value>` literal, i.e. a scope that has
+    /// not been rewritten into the `IN PARTITION ID` form yet (a legacy mutation entry)?
+    static bool hasUnresolvedPartitionScope(const MutationCommands & commands);
 
     /// Pins `MutationCommand::resolved_partition_id` for partition-scoped commands of a legacy
     /// `ReplicatedMergeTree` mutation entry, i.e. one whose znode was written before

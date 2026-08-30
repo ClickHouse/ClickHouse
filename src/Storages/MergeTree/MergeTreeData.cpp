@@ -9914,8 +9914,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands
     return affected_partition_ids;
 }
 
-PartitionIds MergeTreeData::resolvePartitionIdsForCommands(
-    MutationCommands & commands, ContextPtr query_context) const
+PartitionIds MergeTreeData::rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const
 {
     bool all_commands_are_partition_scoped = !commands.empty();
     std::vector<String> area;
@@ -9935,8 +9934,29 @@ PartitionIds MergeTreeData::resolvePartitionIdsForCommands(
             continue;
         }
 
-        command.resolved_partition_id = getPartitionIDFromQuery(ASTPtr(alter->partition), query_context);
-        area.push_back(*command.resolved_partition_id);
+        /// `ALL` is not a scope that has to survive a partition key change.
+        const auto & partition_ast = alter->partition->as<const ASTPartition &>();
+        if (partition_ast.all)
+        {
+            all_commands_are_partition_scoped = false;
+            continue;
+        }
+
+        /// A partition id is decoded without the partition key, so the command of a command that
+        /// already carries one is left as it is; only its scope is pinned.
+        String partition_id = getPartitionIDFromQuery(ASTPtr(alter->partition), query_context);
+
+        if (partition_ast.value)
+        {
+            auto handle = command.mutateAst();
+            auto new_partition = make_intrusive<ASTPartition>();
+            new_partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+            handle->setOrReplace(handle->partition, new_partition);
+            handle.commit();
+        }
+
+        area.push_back(partition_id);
+        command.resolved_partition_id = std::move(partition_id);
     }
 
     /// A single command without `IN PARTITION` makes the whole mutation global.
@@ -9946,30 +9966,19 @@ PartitionIds MergeTreeData::resolvePartitionIdsForCommands(
     return PartitionIds{area.begin(), area.end()};
 }
 
-void MergeTreeData::rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const
+bool MergeTreeData::hasUnresolvedPartitionScope(const MutationCommands & commands)
 {
-    for (auto & command : commands)
+    for (const auto & command : commands)
     {
         auto alter = command.ast();
         if (!alter || !alter->partition)
             continue;
 
-        /// Skip commands that already carry a partition id (nothing to pin) and `ALL`
-        /// (not a scope that has to survive a partition key change).
-        const auto & partition_ast = alter->partition->as<const ASTPartition &>();
-        if (!partition_ast.value)
-            continue;
-
-        String partition_id = getPartitionIDFromQuery(ASTPtr(alter->partition), query_context);
-
-        auto handle = command.mutateAst();
-        auto new_partition = make_intrusive<ASTPartition>();
-        new_partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
-        handle->setOrReplace(handle->partition, new_partition);
-        handle.commit();
-
-        command.resolved_partition_id = std::move(partition_id);
+        if (alter->partition->as<const ASTPartition &>().value)
+            return true;
     }
+
+    return false;
 }
 
 void MergeTreeData::pinPartitionScopeOfLegacyCommands(
