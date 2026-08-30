@@ -16,44 +16,48 @@ namespace
 class ExecutableFunctionYear final : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionYear(UInt16 year_) : year_value(year_) {}
+    explicit ExecutableFunctionYear(UInt16 year_) : year(year_) {}
 
     String getName() const override { return "year"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return DataTypeUInt16().createColumnConst(input_rows_count, year_value);
+        return DataTypeUInt16().createColumnConst(input_rows_count, year);
     }
 
 private:
-    UInt16 year_value;
+    UInt16 year;
 };
 
 class FunctionBaseYear final : public IFunctionBase
 {
 public:
-    explicit FunctionBaseYear(UInt16 year_) : year_value(year_), return_type(std::make_shared<DataTypeUInt16>()) {}
+    explicit FunctionBaseYear(UInt16 year_)
+        : year(year_), return_type(std::make_shared<DataTypeUInt16>()) {}
 
     String getName() const override { return "year"; }
 
     const DataTypes & getArgumentTypes() const override
     {
-        static const DataTypes argument_types;
-        return argument_types;
+        static const DataTypes no_arguments;
+        return no_arguments;
     }
 
-    const DataTypePtr & getResultType() const override { return return_type; }
+    const DataTypePtr & getResultType() const override
+    {
+        return return_type;
+    }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionYear>(year_value);
+        return std::make_unique<ExecutableFunctionYear>(year);
     }
 
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
-    UInt16 year_value;
+    UInt16 year;
     DataTypePtr return_type;
 };
 
@@ -88,8 +92,6 @@ public:
     bool isVariadic() const override { return true; }
     bool isDeterministic() const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
-
-    /// Forward everything about the argument form to `toYear`.
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return to_year->getArgumentsThatAreAlwaysConstant(); }
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
@@ -109,16 +111,15 @@ private:
 REGISTER_FUNCTION(Year)
 {
     FunctionDocumentation::Description description = R"(
-Returns the year component (AD) of a `Date` or `DateTime` value.
+Returns the year component of a `Date` or `DateTime` value.
 
-When called without arguments, `year()` returns the current year at the moment of query
-analysis (equivalent to `toYear(today())`), mirroring `now()` and `today()`.
+When called without arguments, returns the current year at the moment of query analysis.
     )";
     FunctionDocumentation::Syntax syntax = "year([datetime[, timezone]])";
     FunctionDocumentation::Arguments arguments =
     {
-        {"datetime", "Optional. Date or date with time to get the year from. When omitted, the current year is returned.", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"timezone", "Optional. Timezone name for the returned value. Only applicable together with `datetime`.", {"String"}}
+        {"datetime", "Optional. Date or date with time to get the year from.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the year of the given (or current) Date or DateTime", {"UInt16"}};
     FunctionDocumentation::Examples examples = {
@@ -151,17 +152,16 @@ SELECT year()
         )",
         R"(
 ┌─year()─┐
-│   2023 │
+│   2026 │
 └────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    /// Registered case-insensitively so the MySQL-style spelling `YEAR` (and `Year`, ...)
-    /// resolves here without a separate alias.
+    /// Case-insensitive for MySQL compatibility.
     factory.registerFunction<FunctionYearOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
 }
 
