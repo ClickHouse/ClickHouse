@@ -292,15 +292,24 @@ void spatialBboxIndexValidator(const IndexDescription & index, bool /*attach*/, 
     const DataTypePtr & type = index.data_types[0];
     const IDataType * inner = type.get();
 
+    /// `Point` is depth 0 and `Ring`/`Polygon`/`MultiPolygon` are one `Array` level apart each, so
+    /// depth 3 is the deepest shape any spatial predicate can consume -- `pointInPolygon` rejects
+    /// `array_depth > 3` in `getReturnTypeImpl`, and `callOnGeometryDataType` (`geometryConverters.h`)
+    /// falls through to `Unknown geometry type`. Accepting a deeper column would index it as if it
+    /// carried a geometry and let its granule bbox prune, for a column no predicate can read.
+    size_t array_depth = 0;
     while (const auto * arr = typeid_cast<const DataTypeArray *>(inner))
+    {
+        ++array_depth;
         inner = arr->getNestedType().get();
+    }
 
     const auto * tpl = typeid_cast<const DataTypeTuple *>(inner);
     bool is_point_tuple = tpl && tpl->getElements().size() == 2
         && typeid_cast<const DataTypeFloat64 *>(tpl->getElements()[0].get())
         && typeid_cast<const DataTypeFloat64 *>(tpl->getElements()[1].get());
 
-    if (!is_point_tuple)
+    if (!is_point_tuple || array_depth > 3)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "spatial_bbox index requires a column of type Point, Ring, Polygon, or MultiPolygon "
             "(Tuple(Float64,Float64) element type). Got: {}",
