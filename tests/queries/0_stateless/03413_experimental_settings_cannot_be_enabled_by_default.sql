@@ -7,5 +7,5 @@
 -- `reader_executor_use_long_connections` default to off; the stateless-test config
 -- (`users.d/use_reader_executor.xml`) enables them to exercise the executor read
 -- path in CI, so they show as enabled here.
-SELECT name, value FROM system.settings WHERE tier = 'Experimental' AND type = 'Bool' AND value != '0' AND name NOT IN ('throw_on_unsupported_query_inside_transaction', 'ai_function_throw_on_error', 'ai_function_throw_on_quota_exceeded', 'time_series_prefer_recent_samples_table', 'use_reader_executor', 'reader_executor_use_long_connections');
+SELECT name, value FROM system.settings WHERE tier = 'Experimental' AND type = 'Bool' AND value != '0' AND name NOT IN ('throw_on_unsupported_query_inside_transaction', 'time_series_prefer_recent_samples_table', 'use_reader_executor', 'reader_executor_use_long_connections');
 SELECT name, value FROM system.merge_tree_settings WHERE tier = 'Experimental' AND type = 'Bool' AND value != '0' AND name NOT IN ('remove_rolled_back_parts_immediately');
