@@ -21,14 +21,12 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -454,11 +452,6 @@ static void projectDagInputs(ActionsDAG & actions_dag)
     }
 }
 
-static bool isAnyInnerJoin(JoinKind kind, JoinStrictness strictness)
-{
-    return kind == JoinKind::Inner && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny);
-}
-
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
@@ -619,23 +612,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         right_stream_filter_push_down_input_columns_available = false;
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
-
-    /** `ANY INNER` join emits at most one row per key, deduplicating both sides.
-      * Both sides are blocked: filtering the right stream can change which match is taken for the left row.
-      * If the left side has multiple rows with the same value, only one survives
-      * and pushing the filter down to the left may affect which one survives.
-      * Also the optimizer is allowed to swap the sides of the join after that pass,
-      * thus a filter on the left may end up on the right.
-      * Predicates over the equi-join keys are still pushed to both sides through the equivalent-columns path below.
-      */
-    const bool is_any_inner_join = (table_join_ptr && isAnyInnerJoin(table_join_ptr->kind(), table_join_ptr->strictness()))
-        || (logical_join && isAnyInnerJoin(logical_join->getJoinOperator().kind, logical_join->getJoinOperator().strictness));
-
-    if (is_any_inner_join)
-    {
-        right_stream_filter_push_down_input_columns_available = false;
-        left_stream_filter_push_down_input_columns_available = false;
-    }
 
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
@@ -809,14 +785,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (is_any_inner_join
-        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi))
+    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// The `typeChangingSides` check is not needed in case of physical join, because
-        ///     1. `INNER` joins never widen the columns' types.
-        ///     2. On this path an `INNER` join cannot have been produced from an `OUTER` one by
-        ///        `tryConvertOuterJoinToInnerJoin` and thus it's not carrying the preserved nullability.
-        if (!logical_join || !logical_join->typeChangingSides().contains(JoinTableSide::Left))
+        if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
         {
             /// In this case we can also push down to left side of JOIN using equivalent sets.
             for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
@@ -829,14 +800,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (is_any_inner_join
-        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi))
+    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// The `typeChangingSides` check is not needed in case of physical join, because
-        ///     1. `INNER` joins never widen the columns' types.
-        ///     2. On this path an `INNER` join cannot have been produced from an `OUTER` one by
-        ///        `tryConvertOuterJoinToInnerJoin` and thus it's not carrying the preserved nullability.
-        if (!logical_join || !logical_join->typeChangingSides().contains(JoinTableSide::Right))
+        if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
         {
             /// In this case we can also push down to right side of JOIN using equivalent sets.
             for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
@@ -1171,50 +1137,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
           * since we can gen a result row when everything is filtered.
           */
         if (keys.empty())
-            return 0;
-
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
-            return updated_steps;
-    }
-
-    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
-    {
-        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
-        /// window: it only removes whole partitions, and dropping a partition never changes
-        /// any window value on a surviving row (regardless of the window function or frame).
-        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
-        Names partition_keys;
-        for (const auto & sort_column : window->getWindowDescription().partition_by)
-            partition_keys.push_back(sort_column.column_name);
-
-        if (partition_keys.empty())
-            return 0;
-
-        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
-        /// A predicate must be deterministic in the partition key, not merely reference only it:
-        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
-        /// inside a surviving partition before the window runs, which can change which row
-        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
-        /// rows in the partition, so non-deterministic filters are not safe to move below it.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys))
-            return updated_steps;
-    }
-
-    if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
-    {
-        /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
-        /// per-group rows (and therefore the result) are identical whether it runs above or
-        /// below the LIMIT BY. But it is only safe to push when every non-empty input group
-        /// keeps at least one output row, i.e. `OFFSET 0` and `LIMIT >= 1`. Otherwise a group
-        /// can be fully discarded by the step (OFFSET past its size, or `LIMIT 0 BY`), and a
-        /// pushed key predicate would then be evaluated on rows the original query never
-        /// reached -- changing exception semantics for throwing key expressions
-        /// (e.g. `intDiv(1, key)` on a group that OFFSET would have dropped). This mirrors
-        /// AggregatingStep, where GROUP BY likewise never empties a non-empty group.
-        /// `step_changes_the_number_of_rows = true`: LIMIT BY drops rows, so
-        /// non-deterministic key predicates must NOT be pushed.
-        const auto & keys = limit_by->getColumns();
-        if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))

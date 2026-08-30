@@ -2,7 +2,6 @@
 
 #include <Backups/BackupInfo.h>
 #include <Common/SettingsChanges.h>
-#include <map>
 #include <optional>
 
 
@@ -55,25 +54,7 @@ struct RestoreSettings
 
     /// If this is set to true then only create queries will be read from backup,
     /// without the data of tables.
-    /// Equivalent to setting restore_table_data=false, restore_access_entities=false,
-    /// restore_functions=false. The individual settings can override structure_only.
     bool structure_only = false;
-
-    /// Whether to restore table data. If not set, defaults to !structure_only
-    /// (i.e. true unless structure_only is set). Can be set explicitly to true to restore
-    /// data even when structure_only is set, or to false to skip data even when it is not.
-    std::optional<bool> restore_table_data;
-
-    /// Whether to restore access entities (users, roles, settings profiles,
-    /// row policies, quotas). If not set, defaults to !structure_only
-    /// (i.e. true unless structure_only is set). Can be set explicitly to true to restore
-    /// access entities even when structure_only is set, or to false to skip them even when it is not.
-    std::optional<bool> restore_access_entities;
-
-    /// Whether to restore user-defined functions. If not set, defaults to !structure_only
-    /// (i.e. true unless structure_only is set). Can be set explicitly to true to restore
-    /// UDFs even when structure_only is set, or to false to skip them even when it is not.
-    std::optional<bool> restore_functions;
 
     /// How RESTORE command should work if a table to restore already exists.
     RestoreTableCreationMode create_table = RestoreTableCreationMode::kCreateIfNotExists;
@@ -188,16 +169,8 @@ struct RestoreSettings
     /// Core settings specified in the query.
     SettingsChanges core_settings;
 
-    /// Effective values: explicit setting takes priority, otherwise structure_only inverts the default.
-    bool shouldRestoreTableData() const { return restore_table_data.value_or(!structure_only); }
-    bool shouldRestoreAccessEntities() const { return restore_access_entities.value_or(!structure_only); }
-    bool shouldRestoreFunctions() const { return restore_functions.value_or(!structure_only); }
-
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
-
-    /// Returns the restore-specific settings as a string map for observability (see `system.backups`).
-    std::map<String, String> getSerializedSettings() const;
 
     /// Returns only the non-restore-specific settings from a `RESTORE` query.
     /// In contrast to `fromRestoreQuery`, this helper does not touch the
