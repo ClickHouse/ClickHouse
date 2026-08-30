@@ -1,7 +1,7 @@
 ---
 title: '社区与合作伙伴集成'
 slug: /cloud/monitoring/integrations
-description: 'ClickHouse Cloud 的第三方监控集成以及 Billing & Usage API'
+description: 'ClickHouse Cloud 的第三方监控集成以及 计费与使用情况 API'
 keywords: ['cloud', 'monitoring', 'datadog', 'grafana', 'community', 'billing', 'usage api']
 sidebarTitle: '集成'
 doc_type: 'guide'
@@ -19,7 +19,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 | 集成                                                                                  | 文档                                                                                             | 部署          | 信号                   |
 | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | -------------------- |
 | [ClickHouse Cloud Datadog API 集成](#clickhouse-cloud-datadog-api-integration) *(推荐)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | 指标                   |
-| [ClickHouse Cloud Prometheus 集成](#clickhouse-cloud-prometheus-integration)          | [clickhouse.com/docs](/zh/integrations/prometheus)                                                | Cloud       | 指标                   |
+| [ClickHouse Cloud Prometheus 集成](#clickhouse-cloud-prometheus-integration)          | [clickhouse.com/docs](/zh/products/cloud/features/monitoring/prometheus)                          | Cloud       | 指标                   |
 | [ClickHouse Datadog Agent 集成](#clickhouse-datadog-agent-integration)                | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | 日志、指标                |
 | [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                   | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | 日志、指标、Query Insights |
 
@@ -46,7 +46,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 这是从 ClickHouse Cloud 收集服务级和组织级遥测数据最常见、最通用的方式。
 
-你可以通过 [OpenMetrics 集成](https://docs.datadoghq.com/integrations/openmetrics/) 配置 Datadog Agent，使其定期轮询 ClickHouse Cloud API 并收集指标。有关配置详情，请参见 [Prometheus 集成页面](/zh/integrations/prometheus#integrating-with-datadog)。
+你可以通过 [OpenMetrics 集成](https://docs.datadoghq.com/integrations/openmetrics/) 配置 Datadog Agent，使其定期轮询 ClickHouse Cloud API 并收集指标。有关配置详情，请参见 [Prometheus 集成页面](/zh/products/cloud/features/monitoring/prometheus#integrating-with-datadog)。
 
 * **仅限 Cloud** — 不适用于 OSS ClickHouse
 * Datadog 会将这些指标视为 **自定义指标**

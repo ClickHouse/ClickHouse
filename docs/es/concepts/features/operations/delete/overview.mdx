@@ -43,13 +43,13 @@ Obtenga más información sobre las [eliminaciones ligeras](/es/concepts/feature
 Las mutaciones de eliminación se pueden ejecutar con un comando `ALTER TABLE ... DELETE`, por ejemplo.
 
 ```sql
--- eliminar todos los datos de 2018 con una mutación. No recomendado.
+-- delete all data from 2018 with a mutation. Not recommended.
 ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
 ```
 
-Estas pueden ejecutarse de forma síncrona (de forma predeterminada si no son no replicadas) o asíncrona (según lo determine la configuración [mutations&#95;sync](/es/reference/settings/session-settings#mutations_sync)). Son operaciones extremadamente intensivas en I/O, ya que reescriben todas las partes que coinciden con la expresión `WHERE`. Este proceso no tiene atomicidad: las partes se sustituyen por partes mutadas en cuanto están listas, y una consulta `SELECT` que comience a ejecutarse durante una mutación verá datos de partes que ya han sido mutadas junto con datos de partes que aún no han sido mutadas. Los usuarios pueden seguir el progreso mediante la tabla [system.mutations](/es/reference/system-tables/mutations#monitoring-mutations). Estas son operaciones intensivas en I/O y deben usarse con moderación, ya que pueden afectar al rendimiento de `SELECT` en el cluster.
+Estas pueden ejecutarse de forma síncrona (de forma predeterminada si no son no replicadas) o asíncrona (según lo determine la configuración [mutations&#95;sync](/es/reference/settings/session-settings/mutations#mutations_sync)). Son operaciones extremadamente intensivas en E/S, ya que reescriben todas las partes que coinciden con la expresión `WHERE`. Este proceso no tiene atomicidad: las partes se sustituyen por partes mutadas en cuanto están listas, y una consulta `SELECT` que comience a ejecutarse durante una mutación verá datos de partes que ya han sido mutadas junto con datos de partes que aún no han sido mutadas. Los usuarios pueden seguir el progreso mediante la tabla [system.mutations](/es/reference/system-tables/mutations#monitoring-mutations). Estas son operaciones intensivas en E/S y deben usarse con moderación, ya que pueden afectar al rendimiento de `SELECT` en el cluster.
 
-Lea más sobre las [mutaciones de eliminación](/es/reference/statements/alter/delete).
+Lea más sobre las [mutaciones DELETE](/es/reference/statements/alter/delete).
 
 <div id="truncate-table">
   ## Truncar tabla

@@ -1,0 +1,94 @@
+---
+sidebarTitle: 'Autoscaling horizontal'
+slug: /cloud/features/autoscaling/horizontal-autoscaling
+description: 'Configurez l''autoscaling horizontal dans ClickHouse Cloud'
+keywords: ['autoscaling horizontal', 'mise à l''échelle automatique', 'répliques', 'requêtes simultanées', 'mise à l''échelle']
+title: 'Autoscaling horizontal'
+doc_type: 'guide'
+---
+
+<Note>
+  L&#39;autoscaling horizontal est disponible en Private Preview pour les plans Scale et Enterprise. Pour demander l&#39;accès, contactez votre équipe de compte ClickHouse ou le support.
+</Note>
+
+L&#39;autoscaling horizontal ajoute ou supprime automatiquement des répliques de votre service en fonction de la demande de charge de travail. Alors que l&#39;autoscaling vertical modifie la taille de chaque réplique, l&#39;autoscaling horizontal modifie le nombre de répliques. Elle est donc particulièrement adaptée aux charges de travail où la demande provient d&#39;un nombre accru de requêtes plutôt que de requêtes plus lourdes.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+L&#39;autoscaler surveille en continu votre service et émet des recommandations de mise à l&#39;échelle horizontale toutes les 10 minutes, en fonction de trois signaux :
+
+* **Requêtes simultanées :** Nombre maximal de requêtes exécutées simultanément sur l&#39;ensemble des répliques
+* **Utilisation du CPU :** Utilisation maximale du CPU sur l&#39;ensemble des répliques
+* **Utilisation de la mémoire :** Utilisation maximale de la mémoire sur l&#39;ensemble des répliques
+
+L&#39;autoscaler vise un taux d&#39;utilisation de 60 % à l&#39;échelle du service :
+
+* **Extension horizontale :** Lorsque l&#39;utilisation dépasse le seuil haut de 80 %, des répliques sont ajoutées jusqu&#39;au maximum configuré
+* **Réduction horizontale :** Lorsque l&#39;utilisation descend sous le seuil bas de 45 %, des répliques sont supprimées jusqu&#39;au minimum configuré
+
+L&#39;écart entre les seuils crée une hystérésis afin d&#39;éviter que le service n&#39;alterne entre extension et réduction horizontales. La réduction horizontale est volontairement plus prudente que l&#39;extension horizontale afin de protéger les charges de travail en cours d&#39;exécution.
+
+<div id="enable-horizontal-autoscaling">
+  ## Activer l’autoscaling horizontal
+</div>
+
+L’autoscaling horizontal se configure depuis la page **Settings** de votre service ou via l’[API de mise à l’échelle des répliques ClickHouse Cloud](/fr/products/cloud/api-reference/service/update-service-auto-scaling-settings).
+
+Pour l’activer :
+
+1. Fixez la taille verticale de vos répliques en définissant la mémoire minimale à la même valeur que la mémoire maximale. L’autoscaling horizontal nécessite actuellement une taille de réplique fixe ; l’autoscaling vertical et horizontal ne peuvent pas être actifs simultanément sur un même service.
+2. Définissez un nombre maximal de répliques supérieur au nombre minimal de répliques. L’autoscaler fonctionne dans ces limites. Définir les deux valeurs à l’identique fixe le nombre de répliques du service et désactive l’autoscaling horizontal.
+
+<Note>
+  Les services peuvent être mis à l’échelle horizontalement jusqu’à un maximum de 20 répliques. Si vous avez besoin de répliques supplémentaires, contactez notre équipe d’assistance.
+</Note>
+
+<div id="configure-your-clients">
+  ## Configurez vos clients
+</div>
+
+Les nouvelles répliques ne sont utiles que si vos clients s’y connectent. Les connexions de longue durée restent associées aux répliques qui existaient au moment de leur ouverture. Les clients doivent donc régulièrement renouveler leurs connexions afin de prendre en compte les nouvelles répliques.
+
+Configurez les clients de l’une des façons suivantes :
+
+* **Protocole HTTP (recommandé) :** les connexions sont courtes par défaut, le trafic est donc automatiquement réparti vers les nouvelles répliques.
+* **Protocole natif :** définissez la durée de vie maximale des connexions à environ 30 secondes afin qu’elles soient régulièrement rétablies.
+
+<div id="choose-the-right-replica-size">
+  ## Choisissez la taille de réplique adaptée
+</div>
+
+L’autoscaling horizontal fonctionne de manière optimale lorsque chaque réplique est suffisamment grande pour exécuter sans difficulté vos requêtes habituelles. L’ajout de répliques augmente le nombre de requêtes que le service peut exécuter en parallèle ; il n’augmente pas la mémoire disponible pour chaque requête.
+
+Approche recommandée :
+
+1. Déterminez une taille verticale à laquelle quelques-unes de vos requêtes habituelles s’exécutent sans difficulté ni erreurs de mémoire.
+2. Fixez le service à cette taille.
+3. Laissez l’autoscaling horizontal ajouter des répliques à mesure que le volume de requêtes augmente.
+
+Si les répliques sont trop petites pour la charge de travail, l’autoscaler peut ajouter des répliques qui ne peuvent pas traiter vos requêtes. L’autoscaler intègre des mécanismes de protection contre ce problème : par exemple, il ne procédera pas à une extension horizontale en réponse à une seule requête surdimensionnée que des répliques supplémentaires ne pourraient pas prendre en charge. Toutefois, un dimensionnement adéquat reste essentiel.
+
+<div id="load-distribution">
+  ## Répartition de la charge
+</div>
+
+L&#39;autoscaling horizontal suppose que la charge est répartie uniformément entre les répliques. Si une réplique affiche un taux d&#39;utilisation de 90 % alors que les autres sont à 10 %, ajouter des répliques ne résoudra pas le problème : il faut d&#39;abord corriger le déséquilibre de charge. L&#39;autoscaler détecte les déséquilibres de charge et ne recommande pas d&#39;augmenter le nombre de répliques tant qu&#39;ils persistent.
+
+Les causes fréquentes de déséquilibre incluent des connexions de longue durée concentrées sur quelques répliques (voir [Configurez vos clients](#configure-your-clients)) et des charges de travail liées à une session.
+
+<div id="observe-scaling-activity">
+  ## Observer l’activité de mise à l’échelle
+</div>
+
+Les événements de mise à l’échelle sont visibles dans le tableau de bord des métriques du service de la console ClickHouse Cloud, qui affiche le nombre actuel de répliques et l’allocation totale des ressources.
+
+<div id="known-limitations">
+  ## Limitations connues
+</div>
+
+* L&#39;autoscaling horizontal est en Private Preview et doit être activé pour votre organisation par l&#39;équipe d&#39;assistance ClickHouse.
+* La taille verticale des répliques doit être fixée en définissant la mémoire minimale sur une valeur égale à la mémoire maximale.
+* Chaque service est limité à 20 répliques maximum. Contactez l&#39;assistance si vous avez besoin de répliques supplémentaires.
+* Des recommandations sont formulées toutes les 10 minutes ; l&#39;autoscaling horizontal n&#39;est pas conçu pour absorber des pics de moins d&#39;une minute. Pour des pics prévisibles, envisagez le [scheduled scaling](/fr/products/cloud/features/autoscaling/scheduled-scaling).
