@@ -1,4 +1,5 @@
 import os
+import shlex
 import threading
 import time
 from contextlib import contextmanager
@@ -1897,6 +1898,19 @@ def test_query_passing_engine(started_cluster):
     conn.close()
 
 
+def clickhouse_local_error(query):
+    # `clickhouse local` prints the error to stderr, while `exec_in_container` returns
+    # only stdout, so redirect stderr to stdout to capture the error message.
+    return node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"clickhouse local --send_logs_level=fatal --query {shlex.quote(query)} 2>&1",
+        ],
+        nothrow=True,
+    )
+
+
 def test_clickhouse_local_preserves_mysql_error_messages(started_cluster):
     table_name = "local_mysql_error_message"
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
@@ -1910,42 +1924,28 @@ def test_clickhouse_local_preserves_mysql_error_messages(started_cluster):
             cursor.execute(f"INSERT INTO clickhouse.{table_name} VALUES (1)")
             conn.commit()
 
-        schema_error = node1.exec_in_container(
-            [
-                "clickhouse",
-                "local",
-                "--send_logs_level=fatal",
-                "--query",
-                f"""
-                SELECT *
-                FROM mysql(
-                    'mysql80:3306',
-                    'clickhouse',
-                    query($sql$
-                        SELECT count(*)
-                        FROM {table_name}
-                        WHERE (id = 1, id = 2)
-                    $sql$),
-                    'root',
-                    '{mysql_pass}'
-                )
-                """,
-            ],
-            nothrow=True,
+        schema_error = clickhouse_local_error(
+            f"""
+            SELECT *
+            FROM mysql(
+                'mysql80:3306',
+                'clickhouse',
+                query($sql$
+                    SELECT count(*)
+                    FROM {table_name}
+                    WHERE (id = 1, id = 2)
+                $sql$),
+                'root',
+                '{mysql_pass}'
+            )
+            """
         )
 
         assert "Operand should contain 1 column(s)" in schema_error
         assert "POCO_EXCEPTION" in schema_error
 
-        write_error = node1.exec_in_container(
-            [
-                "clickhouse",
-                "local",
-                "--send_logs_level=fatal",
-                "--query",
-                f"INSERT INTO FUNCTION mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') SELECT 1",
-            ],
-            nothrow=True,
+        write_error = clickhouse_local_error(
+            f"INSERT INTO FUNCTION mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') SELECT 1"
         )
 
         assert "Duplicate entry '1'" in write_error

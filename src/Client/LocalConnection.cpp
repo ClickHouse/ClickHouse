@@ -141,6 +141,31 @@ void LocalConnection::sendProfileEvents()
     state->block.emplace(ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, last_sent_snapshots));
 }
 
+void LocalConnection::captureCurrentException()
+{
+    state->io.onException();
+    try
+    {
+        throw;
+    }
+    catch (const Exception & e)
+    {
+        state->exception.reset(e.clone());
+    }
+    catch (const Poco::Exception & e)
+    {
+        state->exception = std::make_unique<Exception>(Exception::CreateFromPocoTag{}, e);
+    }
+    catch (const std::exception & e)
+    {
+        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+    }
+    catch (...) // Ok: wrap unknown exception for the client
+    {
+        state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+    }
+}
+
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
@@ -463,25 +488,9 @@ void LocalConnection::sendQuery(
         else if (state->block)
             next_packet_type = Protocol::Server::Data;
     }
-    catch (const Exception & e)
+    catch (...) // Ok: wrap the exception for the client
     {
-        state->io.onException();
-        state->exception.reset(e.clone());
-    }
-    catch (const Poco::Exception & e)
-    {
-        state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception::CreateFromPocoTag{}, e);
-    }
-    catch (const std::exception & e)
-    {
-        state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
-    }
-    catch (...) // Ok: wrap unknown exception for the client
-    {
-        state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+        captureCurrentException();
     }
 }
 
@@ -595,25 +604,33 @@ bool LocalConnection::poll(size_t)
                     return true;
             }
         }
-        catch (const Exception & e)
+        catch (...) // Ok: wrap the exception for the client
         {
-            state->io.onException();
-            state->exception.reset(e.clone());
+            captureCurrentException();
         }
-        catch (const Poco::Exception & e)
+    }
+
+    // pushing executors have to be finished before the final stats are sent
+    if (!state->exception && state->is_finished)
+    {
+        try
         {
-            state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception::CreateFromPocoTag{}, e);
+            if (state->executor)
+            {
+                // no op
+            }
+            else if (state->pushing_async_executor)
+            {
+                state->pushing_async_executor->finish();
+            }
+            else if (state->pushing_executor)
+            {
+                state->pushing_executor->finish();
+            }
         }
-        catch (const std::exception & e)
+        catch (...) // Ok: wrap the exception for the client; `finish` can rethrow an exception from a sink
         {
-            state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
-        }
-        catch (...) // Ok: wrap unknown exception for the client
-        {
-            state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+            captureCurrentException();
         }
     }
 
@@ -624,23 +641,6 @@ bool LocalConnection::poll(size_t)
 
         next_packet_type = Protocol::Server::Exception;
         return true;
-    }
-
-    // pushing executors have to be finished before the final stats are sent
-    if (state->is_finished)
-    {
-        if (state->executor)
-        {
-            // no op
-        }
-        else if (state->pushing_async_executor)
-        {
-            state->pushing_async_executor->finish();
-        }
-        else if (state->pushing_executor)
-        {
-            state->pushing_executor->finish();
-        }
     }
 
     if (state->is_finished && !state->sent_totals)
