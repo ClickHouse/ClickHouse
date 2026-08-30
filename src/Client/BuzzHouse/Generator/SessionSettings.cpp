@@ -1201,7 +1201,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 2)); }, {}, false)},
     {"intersect_default_mode", setSetting},
     {"interval_output_format",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'kusto'" : "'numeric'"; }, {}, false)},
+     CHSetting([](RandomGenerator &, FuzzConfig &) { return "'numeric'"; }, {}, false)},
     {"jemalloc_profile_text_collapsed_use_count", trueOrFalseSettingNoOracle},
     {"jemalloc_profile_text_output_format",
      CHSetting(
@@ -2352,10 +2352,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"stream_poll_timeout_ms", CHSetting(timeoutMillisRange, {}, false)},
              {"tcp_keep_alive_timeout", CHSetting(timeoutSecondsRange, {}, false)},
              {"timeout_before_checking_execution_speed", CHSetting(timeoutSecondsRange, {}, false)},
-             {"wait_for_async_insert_timeout", CHSetting(timeoutSecondsRange, {}, false)},
-             {"wait_for_window_view_fire_signal_timeout", CHSetting(timeoutSecondsRange, {}, false)},
-             {"window_view_clean_interval", CHSetting(timeoutSecondsRange, {}, false)},
-             {"window_view_heartbeat_interval", CHSetting(timeoutSecondsRange, {}, false)}});
+             {"wait_for_async_insert_timeout", CHSetting(timeoutSecondsRange, {}, false)}});
     }
     if (fc.enable_force_settings)
     {

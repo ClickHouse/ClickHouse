@@ -22,4 +22,5 @@ SYSTEM FLUSH LOGS query_log;
 -- under a second even on slow builds, so the threshold cannot flap in either direction.
 SELECT max(query_duration_ms) < 3000 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
-    AND log_comment = '05047_finished_stages_drain' AND event_date >= yesterday();
+    AND log_comment = '05047_finished_stages_drain' AND event_date >= yesterday()
+SETTINGS make_distributed_plan = 0;

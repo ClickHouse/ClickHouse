@@ -364,6 +364,25 @@ def test_tag_after_processing(started_cluster, engine_name):
         assert blob_count == files_num, f"blob count mismatch: {blob_count} != {files_num}"
 
 
+def wait_for_object_counts(count_objects, started_cluster, expected, timeout=60):
+    """Wait until every `(bucket, prefix): count` entry of `expected` holds, and return the counts.
+
+    The after-processing move is executed by `StorageObjectStorageQueue::postProcess`, which runs
+    only after the rows have been committed to the materialized view target. So a row count that
+    has already reached its final value does not imply the objects have been moved yet: the caller
+    must poll the object storage rather than assert on it once.
+    """
+    def counts():
+        return {key: count_objects(started_cluster, *key) for key in expected}
+
+    deadline = time.monotonic() + timeout
+    current = counts()
+    while current != expected and time.monotonic() < deadline:
+        time.sleep(0.1)
+        current = counts()
+    return current
+
+
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
 def test_move_after_processing(started_cluster, engine_name, move_to):
@@ -456,20 +475,24 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
 
     if engine_name == "S3Queue":
         src_bucket = started_cluster.minio_bucket
-        dst_bucket = processed_bucket if move_to == "another_bucket" else src_bucket
-        moved_count = count_minio_objects(started_cluster, dst_bucket, processed_prefix)
-        assert moved_count == files_num, f"moved object count mismatch: {moved_count} != {files_num}"
-
-        object_count = count_minio_objects(started_cluster, src_bucket, files_path)
-        assert object_count == 0, f"objects left: {object_count}"
+        count_objects = count_minio_objects
     else:
-        src_container = started_cluster.azurite_container
-        dst_container = processed_bucket if move_to == "another_bucket" else src_container
-        moved_count = count_azurite_blobs(started_cluster, dst_container, processed_prefix)
-        assert moved_count == files_num, f"moved blob count mismatch: {moved_count} != {files_num}"
+        src_bucket = started_cluster.azurite_container
+        count_objects = count_azurite_blobs
 
-        blob_count = count_azurite_blobs(started_cluster, src_container, files_path)
-        assert blob_count == 0, f"blobs left: {blob_count}"
+    dst_bucket = processed_bucket if move_to == "another_bucket" else src_bucket
+
+    expected_counts = {
+        (dst_bucket, processed_prefix): files_num,
+        (src_bucket, files_path): 0,
+    }
+    counts = wait_for_object_counts(count_objects, started_cluster, expected_counts)
+    assert counts[(dst_bucket, processed_prefix)] == files_num, (
+        f"moved object count mismatch: {counts[(dst_bucket, processed_prefix)]} != {files_num}"
+    )
+    assert counts[(src_bucket, files_path)] == 0, (
+        f"objects left: {counts[(src_bucket, files_path)]}"
+    )
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -538,9 +561,13 @@ def test_move_after_processing_preserve_path(started_cluster, engine_name, move_
 
     dst_bucket = processed_bucket if move_to == "another_bucket" else src_bucket
 
-    assert count_objects(started_cluster, dst_bucket, expected_key) == 1
-    assert count_objects(started_cluster, dst_bucket, processed_prefix) == 1
-    assert count_objects(started_cluster, src_bucket, files_path) == 0
+    expected_counts = {
+        (dst_bucket, expected_key): 1,
+        (dst_bucket, processed_prefix): 1,
+        (src_bucket, files_path): 0,
+    }
+    counts = wait_for_object_counts(count_objects, started_cluster, expected_counts)
+    assert counts == expected_counts
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])

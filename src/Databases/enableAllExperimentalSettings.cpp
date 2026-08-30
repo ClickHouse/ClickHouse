@@ -17,7 +17,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_codecs", 1);
     for (const auto & name : CompressionCodecFactory::instance().getGateSettingNames())
         context->setSetting(name, 1);
-    context->setSetting("allow_experimental_window_view", 1);
     context->setSetting("allow_experimental_funnel_functions", 1);
     context->setSetting("allow_experimental_nlp_functions", 1);
     context->setSetting("allow_fuzz_query_functions", 1);
