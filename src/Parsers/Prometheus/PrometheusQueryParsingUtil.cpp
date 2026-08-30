@@ -8,6 +8,8 @@
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -531,9 +533,7 @@ namespace
         if (discarded_digits <= 0)
             return true;
 
-        Int64 digits_to_check = discarded_digits;
-        if (digits_to_check > mantissa_digits)
-            digits_to_check = mantissa_digits;
+        const Int64 digits_to_check = std::min(discarded_digits, mantissa_digits);
 
         Int64 checked_digits = 0;
         for (auto it = mantissa.rbegin(); it != mantissa.rend() && checked_digits < digits_to_check; ++it)
