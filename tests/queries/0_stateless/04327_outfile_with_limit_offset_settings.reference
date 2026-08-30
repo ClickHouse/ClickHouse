@@ -1,8 +1,4 @@
---- INTO OUTFILE with limit setting (analyzer) ---
-0
-1
-2
---- INTO OUTFILE with limit setting (no analyzer) ---
+--- INTO OUTFILE with limit setting ---
 0
 1
 2

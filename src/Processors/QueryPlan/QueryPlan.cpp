@@ -176,6 +176,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
+        concurrency_control = concurrency_control || plan->concurrency_control;
         resources = std::move(plan->resources);
     }
 }
@@ -947,9 +948,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
         auto context = CurrentThread::tryGetQueryContext();
         chassert(context);
+        /// The query's single decision on where the plan runs. Every consumer below derives from it,
+        /// directly or from `task_to_host_map` being null, so none of them re-reads the setting from
+        /// the ambient context, which a subquery-scoped SETTINGS clause can leave disagreeing.
+        const bool execute_locally = optimization_settings.distributed_plan_execute_locally;
         /// Local execution runs every task in-process and needs no worker hosts; constructing
         /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
-        TaskToHostMapPtr task_to_host_map = optimization_settings.distributed_plan_execute_locally
+        TaskToHostMapPtr task_to_host_map = execute_locally
             ? nullptr
             : std::make_shared<TaskToHostMap>(distributed_plan, context);
 
@@ -975,7 +980,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             exchange_descriptions,
             task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
-            context);
+            context,
+            execute_locally);
 
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
@@ -1210,6 +1216,14 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
             new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
     }
 
+    /// A subplan extracted from this plan inherits the same execution limits and resource holder.
+    /// The splice above moves only the node tree; without this the extracted subplan would run with the
+    /// default thread fan-out and no concurrency control instead of this plan's caps. append copies the
+    /// shared handles, so ownership is only shared, never moved out of this plan.
+    new_plan.max_threads = max_threads;
+    new_plan.concurrency_control = concurrency_control;
+    new_plan.resources.append(resources);
+
     return new_plan;
 }
 
@@ -1227,6 +1241,18 @@ QueryPlan QueryPlan::clone() const
     result.cloneInplace(current_subplan_copy_root, root);
     result.root = current_subplan_copy_root;
 
+    /// Preserve the plan-level execution limits. They are not part of the node tree, so cloneInplace
+    /// does not copy them; without this a cloned plan runs with the default thread fan-out and no
+    /// concurrency control instead of the caps the source plan carries.
+    result.max_threads = max_threads;
+    result.concurrency_control = concurrency_control;
+
+    /// Preserve the resource holder (storage holders, table locks, interpreter contexts, etc.).
+    /// These keep the objects a cloned plan reads (e.g. MergeTree parts in the direct-join lookup
+    /// path) alive for as long as the clone lives. append copies the shared handles, so ownership is
+    /// only ever shared, never moved out of the source: strictly a lifetime extension for the clone.
+    result.resources.append(resources);
+
     return result;
 }
 
@@ -1239,6 +1265,15 @@ QueryPlan QueryPlan::cloneSubtree(Node * subplan_root)
     result.cloneInplace(subplan_copy_root, subplan_root);
     result.root = subplan_copy_root;
 
+    return result;
+}
+
+QueryPlan QueryPlan::cloneSubtree(Node * subplan_root, const QueryPlan & source_plan)
+{
+    auto result = cloneSubtree(subplan_root);
+    result.max_threads = source_plan.max_threads;
+    result.concurrency_control = source_plan.concurrency_control;
+    result.resources.append(source_plan.resources);
     return result;
 }
 
@@ -1339,6 +1374,7 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader ex
     node->children = std::move(plan.getRootNode()->children);
 
     max_threads = std::max(max_threads, plan.max_threads);
+    concurrency_control = concurrency_control || plan.concurrency_control;
     resources = std::move(plan.resources);
 }
 

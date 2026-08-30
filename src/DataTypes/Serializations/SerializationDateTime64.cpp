@@ -24,6 +24,7 @@ SerializationDateTime64::SerializationDateTime64(
     UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
     , TimezoneMixin(time_zone_)
+    , utc_time_zone(DateLUT::instance("UTC"))
 {
 }
 
