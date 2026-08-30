@@ -45,3 +45,35 @@ SELECT 'values intact', id, j.arr
 FROM retired_matcher_shared_variant_04839 WHERE id IN (999, 2000) ORDER BY id;
 
 DROP TABLE retired_matcher_shared_variant_04839;
+
+-- The same retired name also survives on the regular-variant route, which never touches the shared
+-- variant at all: with nothing else at `arr` the nested object takes a regular slot outright, so the
+-- payload rewrite above never sees it and only the cached variant name is wrong. That name is what a
+-- read reports and what the merge seeds its destination set from.
+DROP TABLE IF EXISTS retired_matcher_regular_variant_04839;
+
+CREATE TABLE retired_matcher_regular_variant_04839
+(
+    id UInt64,
+    j JSON(max_dynamic_paths=10, max_dynamic_types=2, SHARED REGEXP '^tag_')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO retired_matcher_regular_variant_04839 VALUES (1, '{"arr": [{"tag_x": 1}]}');
+OPTIMIZE TABLE retired_matcher_regular_variant_04839 FINAL;
+
+ALTER TABLE retired_matcher_regular_variant_04839 MODIFY COLUMN j JSON(max_dynamic_paths=10, max_dynamic_types=2);
+
+-- Row 2 is written after the retirement and shares the query below, so an empty read on row 1 cannot
+-- pass as a dead oracle.
+INSERT INTO retired_matcher_regular_variant_04839 VALUES (2, '{"arr": [{"tag_z": 3}]}');
+OPTIMIZE TABLE retired_matcher_regular_variant_04839 FINAL;
+
+SELECT id,
+       isDynamicElementInSharedData(j.arr) AS in_shared,
+       position(dynamicType(j.arr), 'tag_') = 0 AS matcher_gone,
+       dynamicElement(j.arr, 'Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))') AS via_declared_type
+FROM retired_matcher_regular_variant_04839 ORDER BY id;
+
+DROP TABLE retired_matcher_regular_variant_04839;
