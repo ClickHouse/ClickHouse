@@ -825,12 +825,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     /// An explicitly set table `optimize_row_order = 0` opts the table out of row order optimization
     /// even when `optimize_row_order_if_no_order_by` would enable it for a table without a sorting key.
-    const bool optimize_row_order_explicitly_set = metadata_snapshot->hasSettingsChanges()
-        && isOptimizeRowOrderExplicitlySet(metadata_snapshot->getSettingsChanges()->as<const ASTSetQuery &>().changes);
+    /// The conditions are ordered so that the table `SETTINGS` lookup happens only when the automatic
+    /// path is actually in play - it must not cost anything on the insert hot path otherwise.
     const bool optimize_row_order_enabled = (*data_settings)[MergeTreeSetting::optimize_row_order]
         || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]
-            && !optimize_row_order_explicitly_set
-            && !metadata_snapshot->hasSortingKey());
+            && !metadata_snapshot->hasSortingKey()
+            && !metadata_snapshot->hasSettingChange("optimize_row_order"));
     if (optimize_row_order_enabled
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
@@ -1215,14 +1215,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     /// projections, and we should not broaden the new default to them. Explicit `optimize_row_order` keeps applying
     /// to projections as before, and an explicitly set table or projection `optimize_row_order = 0` opts out here as well.
     const auto & table_metadata_snapshot = parent_part->getMetadataSnapshot();
-    const bool parent_table_has_sorting_key = table_metadata_snapshot->hasSortingKey();
-    const bool optimize_row_order_explicitly_set = (table_metadata_snapshot->hasSettingsChanges()
-            && isOptimizeRowOrderExplicitlySet(table_metadata_snapshot->getSettingsChanges()->as<const ASTSetQuery &>().changes))
-        || isOptimizeRowOrderExplicitlySet(projection.settings_changes);
     const bool optimize_row_order_enabled = (*data_settings)[MergeTreeSetting::optimize_row_order]
         || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]
-            && !optimize_row_order_explicitly_set
-            && !parent_table_has_sorting_key);
+            && !table_metadata_snapshot->hasSortingKey()
+            && !isOptimizeRowOrderExplicitlySet(projection.settings_changes)
+            && !table_metadata_snapshot->hasSettingChange("optimize_row_order"));
     if (optimize_row_order_enabled
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
