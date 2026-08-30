@@ -26,7 +26,6 @@ SET collect_hash_table_stats_during_aggregation = 0;
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET enable_adaptive_aggregator = 1;
-SET enable_sharding_aggregator = 0;
 SET adaptive_aggregator_freeze_threshold = 128;
 SET group_by_overflow_mode = 'throw';
 "
