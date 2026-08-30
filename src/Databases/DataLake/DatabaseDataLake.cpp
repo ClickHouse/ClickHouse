@@ -192,6 +192,27 @@ String getLocationSchemeForTableCreation(const std::shared_ptr<DataLake::ICatalo
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected catalog type in CREATE TABLE location scheme resolution");
 }
 
+/// The storage backend a catalog is pinned to when creating a table: what the catalog reports, or,
+/// for the catalogs whose backing storage is fixed by the service itself, the backend that
+/// `getLocationSchemeForTableCreation` falls back to. `CREATE TABLE` must validate the engine and
+/// `default_base_location` against this, not only against what the catalog reports: a `OneLake`
+/// catalog that does not expose `default-base-location` is still Azure-only.
+std::optional<DatabaseDataLakeStorageType> getFixedStorageTypeForTableCreation(const std::shared_ptr<DataLake::ICatalog> & catalog)
+{
+    if (auto storage_type = catalog->getStorageType(); storage_type.has_value())
+        return storage_type;
+
+    switch (catalog->getCatalogType())
+    {
+        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
+            return DatabaseDataLakeStorageType::Azure;
+        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+            return DatabaseDataLakeStorageType::S3; /// GCS via the S3 API
+        default:
+            return {};
+    }
+}
+
 /// Translate the database-layer `TablesFilter` into the catalog-layer
 /// `TableNameFilter` so the catalog can restrict which namespaces it lists.
 DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
@@ -1042,7 +1063,7 @@ void DatabaseDataLake::validateCreateTableEngine(const String & engine_name) con
     /// storage factory, after this database-level validation, so it cannot be safely checked here.
     /// A fixed-backend catalog must not accept it: it could create a table that the catalog reopens
     /// with a different backend.
-    if (engine_name == "Iceberg" && getCatalog()->getStorageType().has_value())
+    if (engine_name == "Iceberg" && getFixedStorageTypeForTableCreation(getCatalog()).has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The generic 'Iceberg' engine is not supported for a DataLakeCatalog with a fixed storage backend. "
             "Use the matching backend-specific Iceberg engine instead");
@@ -1062,7 +1083,7 @@ void DatabaseDataLake::validateCreateTableEngine(const String & engine_name) con
         return;
 
     /// A catalog without a fixed backend reopens the table using its own location, so any backend fits.
-    auto catalog_storage_type = getCatalog()->getStorageType();
+    auto catalog_storage_type = getFixedStorageTypeForTableCreation(getCatalog());
     if (!catalog_storage_type.has_value() || *catalog_storage_type == *engine_backend)
         return;
 
@@ -1156,7 +1177,7 @@ void DatabaseDataLake::createTable(
     String location;
     if (!base_location.empty())
     {
-        if (auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type.has_value()
+        if (auto catalog_storage_type = getFixedStorageTypeForTableCreation(catalog); catalog_storage_type.has_value()
             && DataLake::parseStorageTypeFromLocation(base_location) != *catalog_storage_type)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "`default_base_location` uses the {} storage backend, but this DataLakeCatalog stores tables on {}. "
