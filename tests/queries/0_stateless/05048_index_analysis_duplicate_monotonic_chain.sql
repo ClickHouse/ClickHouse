@@ -20,12 +20,15 @@ WHERE toStartOfHour(ts, 'UTC') >= toDateTime(1700010000) AND toStartOfDay(ts, 'U
 -- The same pair in the opposite order, so neither atom may adopt the other's transformation.
 SELECT count() FROM t_dup_chain_mm
 WHERE toStartOfDay(ts, 'UTC') <= toDateTime(1700092800) AND toStartOfHour(ts, 'UTC') >= toDateTime(1700010000);
--- Sharing one transformation between equivalent atoms must still prune granules.
+-- Sharing one transformation between equivalent atoms must still prune granules. Parallel replicas
+-- are off because without a local plan the initiator's plan holds no `ReadFromMergeTree`, so there is
+-- no `Granules:` text to read.
 SELECT countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0 FROM
 (
     EXPLAIN indexes = 1 SELECT count() FROM t_dup_chain_mm
     WHERE toStartOfHour(ts, 'UTC') >= toDateTime(1700010000) AND toStartOfHour(ts, 'UTC') <= toDateTime(1700020000)
-);
+)
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 -- Two equivalent atoms must apply the chain as many times as one atom does, otherwise the sharing
 -- has silently stopped: correct results and no other signal anywhere. The query condition cache is
@@ -156,3 +159,23 @@ WHERE (100::Int64 - z) >= 0 OR (z - 100::Int64) >= 3000
 SETTINGS use_skip_indexes_for_disjunctions = 1;
 
 DROP TABLE t_dup_chain_const_side;
+
+DROP TABLE IF EXISTS t_dup_chain_lambda;
+CREATE TABLE t_dup_chain_lambda (arr Array(UInt64), v UInt64)
+ENGINE = MergeTree PARTITION BY arr ORDER BY v;
+INSERT INTO t_dup_chain_lambda VALUES ([1], 1), ([3], 3), ([5], 5), ([10], 10);
+
+-- Partition pruning evaluates a chain at one value, so it admits any deterministic function, a lambda
+-- included. Both chains are `arrayMap` over the same partition key, with the same signature and no
+-- captured columns, so only the lambda body tells them apart, and a function-typed constant describes
+-- its captures rather than the expression it will run. Sharing a transformed range between the two
+-- drops the partition that only the second one matches. The analyzer is pinned because the old one
+-- builds no chain for this shape at all, which would leave the arm blind.
+SELECT arraySort(groupArray(v)) FROM
+(
+    SELECT v FROM t_dup_chain_lambda
+    WHERE arrayMap(x -> x * x, arr) = [100] OR arrayMap(x -> x + x, arr) = [6]
+)
+SETTINGS enable_analyzer = 1;
+
+DROP TABLE t_dup_chain_lambda;

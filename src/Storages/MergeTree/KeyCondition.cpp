@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/IDataTypeDummy.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/Context.h>
@@ -3025,6 +3026,11 @@ static std::optional<UInt128> monotonicFunctionsChainIdentity(const KeyCondition
             const auto & const_arg = with_const_arg->getConstArg();
             const auto * const_column = typeid_cast<const ColumnConst *>(const_arg.column.get());
             if (!const_column || !const_arg.type)
+                return {};
+
+            /// A dummy type's `Field` does not identify its value: a lambda's column reports its
+            /// captures and not the expression it will run, and a set's reports an empty `Field`.
+            if (dynamic_cast<const IDataTypeDummy *>(const_arg.type.get()))
                 return {};
 
             hash.update(static_cast<UInt8>(with_const_arg->getKind()));
