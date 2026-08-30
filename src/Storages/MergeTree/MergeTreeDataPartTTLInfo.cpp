@@ -74,14 +74,14 @@ void MergeTreeDataPartTTLInfos::recalculatePartMinMaxTTL()
     part_min_ttl = 0;
     part_max_ttl = 0;
 
-    for (const auto & [name, ttl_info] : columns_ttl)
-        updatePartMinMaxTTL(ttl_info);
+    for (const auto & column_ttl : columns_ttl)
+        updatePartMinMaxTTL(column_ttl.second);
 
-    for (const auto & [name, ttl_info] : rows_where_ttl)
-        updatePartMinMaxTTL(ttl_info);
+    for (const auto & rows_where : rows_where_ttl)
+        updatePartMinMaxTTL(rows_where.second);
 
-    for (const auto & [name, ttl_info] : group_by_ttl)
-        updatePartMinMaxTTL({ .min = ttl_info.min, .max = ttl_info.max, .ttl_finished = false });
+    for (const auto & group_by : group_by_ttl)
+        updatePartMinMaxTTL({ .min = group_by.second.min, .max = group_by.second.max, .ttl_finished = false });
 
     updatePartMinMaxTTL(table_ttl);
 }

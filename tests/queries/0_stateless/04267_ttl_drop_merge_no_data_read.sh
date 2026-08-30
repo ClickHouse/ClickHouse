@@ -897,8 +897,11 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_rows_where;"
 
 # Once their TTL is really due, a merge must still see the part as TTL work: a finished entry
 # would exclude it from the part's TTL bounds and the rows would survive every later OPTIMIZE.
+# The patched rows fall due 10 seconds after the UPDATE above, so wait past that deadline once
+# rather than polling through it - the retries below only absorb a slow merge, not the wait.
+sleep 11
 rows_where_left=""
-for _ in $(seq 1 90); do
+for _ in $(seq 1 15); do
     ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_ttl_patch_rows_where FINAL;"
     rows_where_left=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_rows_where;")
     [ "$rows_where_left" = "0" ] && break
@@ -926,7 +929,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
     -- The oldest ts belongs to a flag = 0 row, which this rule can never delete, so it must not
-    -- become the bound. Inserted before merges are stopped: STOP TTL MERGES blocks inserts here.
+    -- become the bound. Inserted before TTL merges are stopped so no background TTL pass can rewrite
+    -- the part first; STOP TTL MERGES stops those merges, it does not block inserts.
     INSERT INTO t_ttl_rows_where_predicate VALUES (1, '2000-01-01 00:00:00', 0), (3, '2030-01-01 00:00:00', 1);
     INSERT INTO t_ttl_rows_where_predicate VALUES (2, '2020-01-01 00:00:00', 1);
 
