@@ -1522,7 +1522,12 @@ static Coordination::Error preprocess(
         {
             /// Failed multi-write. Caller will roll back any changes we've made.
             /// (Caller has special case to preserve FailedMultiDelta but roll back everything before it.)
-            storage.staging.deltas.emplace_back(storage.staging.zxid, FailedMultiDelta{ .failed_pos = i, .failed_pos_error = error });
+            /// Report the failing operation's error as the transaction's aggregate error too.
+            /// It is not serialized (the wire format carries per-operation errors, which the
+            /// client promotes to the aggregate in ZooKeeperMultiResponse::readImpl), but an
+            /// in-process caller reads the response object directly and would otherwise see the
+            /// aggregate as ZOK for a rolled-back transaction.
+            storage.staging.deltas.emplace_back(storage.staging.zxid, FailedMultiDelta{ .failed_pos = i, .failed_pos_error = error, .global_error = error });
             return error;
         }
 

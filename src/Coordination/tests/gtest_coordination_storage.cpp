@@ -117,6 +117,51 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     }
 }
 
+TEST_P(CoordinationTest, TestFailedMultiReportsAggregateError)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    {
+        auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        create_request->path = "/cas";
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+        ASSERT_GE(responses.size(), 1u);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    }
+
+    /// A write transaction guarded by a version check. A stale version loses the
+    /// compare-and-set and rolls the whole transaction back.
+    Requests ops;
+    ops.push_back(zkutil::makeSetRequest("/cas", "a", -1));
+    ops.push_back(zkutil::makeCheckRequest("/cas", 9999)); /// wrong version -> ZBADVERSION
+    ops.push_back(zkutil::makeSetRequest("/cas", "b", -1));
+    auto multi_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+
+    int64_t new_zxid = ++zxid;
+    storage.preprocessRequest(multi_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    auto responses = storage.processRequest(multi_request, 1, new_zxid);
+    ASSERT_GE(responses.size(), 1u);
+    auto & multi_response = dynamic_cast<MultiResponse &>(*responses[0].response);
+
+    /// The transaction rolled back: the failing operation reports its real error,
+    /// the operations after it report ZRUNTIMEINCONSISTENCY, and the aggregate
+    /// reports the failing operation's error rather than ZOK. An in-process caller
+    /// (e.g. KeeperOverDispatcher) reads this response object directly, so a ZOK
+    /// aggregate here would make it treat a rolled-back multi as success.
+    ASSERT_EQ(multi_response.responses.size(), 3u);
+    EXPECT_EQ(multi_response.error, Error::ZBADVERSION);
+    EXPECT_EQ(multi_response.responses[0]->error, Error::ZOK);
+    EXPECT_EQ(multi_response.responses[1]->error, Error::ZBADVERSION);
+    EXPECT_EQ(multi_response.responses[2]->error, Error::ZRUNTIMEINCONSISTENCY);
+}
+
 TEST_P(CoordinationTest, TestDeterministicPreprocess)
 {
     using namespace DB;
