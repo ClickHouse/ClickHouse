@@ -1,0 +1,8 @@
+-- the tree is active above the threshold in the worker fragment: its bits differ from the forced recompute
+1
+1
+-- compatibility disables the tree in the worker fragment: its bits match the forced recompute
+1
+1
+-- exact integer aggregates above the threshold match between the distributed and the plain plan
+0

@@ -324,6 +324,53 @@ FROM
 GROUP BY frame_desc
 ORDER BY frame_desc;
 
+-- The same two RANGE frames against a ground truth that does not go through
+-- WindowTransform at all: the frame of a row is, by definition, the rows whose key lies in
+-- [key - width, key], so it is rebuilt with a self-join and aggregated with plain GROUP BY.
+-- The peer-group rows of the current row are included since the frame ends at CURRENT ROW.
+SELECT
+    frame_desc,
+    count() AS rows,
+    countIf(NOT (s = s_gt AND c = c_gt AND mn = mn_gt AND u = u_gt)) AS mismatches
+FROM
+(
+    SELECT
+        'range_dense' AS frame_desc, n,
+        sum(value) OVER w AS s, count(value) OVER w AS c, min(value) OVER w AS mn, uniqExact(str) OVER w AS u
+    FROM (SELECT *, intDiv(n, 10) AS range_key FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY range_key RANGE BETWEEN 25 PRECEDING AND CURRENT ROW)
+
+    UNION ALL
+
+    SELECT
+        'range_jumping' AS frame_desc, n,
+        sum(value) OVER w, count(value) OVER w, min(value) OVER w, uniqExact(str) OVER w
+    FROM (SELECT *, n + intDiv(n, 300) * 800 AS range_key FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY range_key RANGE BETWEEN 250 PRECEDING AND CURRENT ROW)
+) AS win
+INNER JOIN
+(
+    SELECT
+        frame_desc, cur.n AS n,
+        sum(peer.value) AS s_gt, count(peer.value) AS c_gt, min(peer.value) AS mn_gt, uniqExact(peer.str) AS u_gt
+    FROM
+    (
+        SELECT 'range_dense' AS frame_desc, 25 AS width, n, toInt64(intDiv(n, 10)) AS range_key FROM moving_aggregate_test
+        UNION ALL
+        SELECT 'range_jumping', 250, n, toInt64(n + intDiv(n, 300) * 800) FROM moving_aggregate_test
+    ) AS cur
+    INNER JOIN
+    (
+        SELECT 'range_dense' AS frame_desc, n, value, str, toInt64(intDiv(n, 10)) AS range_key FROM moving_aggregate_test
+        UNION ALL
+        SELECT 'range_jumping', n, value, str, toInt64(n + intDiv(n, 300) * 800) FROM moving_aggregate_test
+    ) AS peer
+    ON cur.frame_desc = peer.frame_desc AND peer.range_key >= cur.range_key - cur.width AND peer.range_key <= cur.range_key
+    GROUP BY frame_desc, cur.n
+) AS gt USING (frame_desc, n)
+GROUP BY frame_desc
+ORDER BY frame_desc;
+
 -- Floating point: a transient Inf/NaN inside the frame must not poison the results of
 -- later frames after the offending row leaves. The 20-row frame stays on the recompute
 -- path, the 250-row frame goes through the tree (the segments containing the Inf/NaN

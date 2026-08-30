@@ -16,6 +16,8 @@ range_100_50_preceding	0
 range_100_current	0
 range_dense	0
 range_jumping	0
+range_dense	600	0
+range_jumping	600	0
 20	0
 250	0
 0
