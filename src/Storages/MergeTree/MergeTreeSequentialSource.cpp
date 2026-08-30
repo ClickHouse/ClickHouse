@@ -154,21 +154,30 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     }
 
     const auto & context = storage.getContext();
-    ReadSettings read_settings;
+    std::optional<MergeTreeReaderSettings> reader_settings;
 
     if (read_context_)
     {
         /// A foreground read on behalf of a query (part aggregation cache warmup). Use the query's
-        /// own read settings so its read controls apply: read priority, per-query bandwidth
-        /// throttlers, filesystem-cache policy, read method and buffer sizes. The merge/mutation
-        /// overrides below (filesystem-cache bypass, forced `pread`, merges/mutations throttlers)
-        /// are deliberately not applied — they would make the first, cache-populating run of a
-        /// query scheduled and throttled as a background merge instead of as the query itself.
-        read_settings = read_context_->getReadSettings();
+        /// own reader settings so its read controls apply: read priority, per-query bandwidth
+        /// throttlers, filesystem-cache policy, read method and buffer sizes, and reader-level
+        /// flags such as `checksum_on_read` and `apply_deleted_mask`. The merge/mutation
+        /// overrides below (filesystem-cache bypass, forced `pread`, merges/mutations throttlers,
+        /// merge reader defaults) are deliberately not applied — they would make the first,
+        /// cache-populating run of a query read differently from the query itself; in particular,
+        /// with `checksum_on_read = 0` a checksum mismatch on the warmup read must not enqueue a
+        /// false-positive broken-part verification that the query's normal read path would avoid.
+        reader_settings = MergeTreeReaderSettings::createFromContext(read_context_);
+        /// This source reads sequentially without a read pool, PREWHERE or mark-range filtering,
+        /// so the pool- and PREWHERE-specific machinery is inapplicable here.
+        reader_settings->use_asynchronous_read_from_pool = false;
+        reader_settings->enable_multiple_prewhere_read_steps = false;
+        reader_settings->force_short_circuit_execution = false;
+        reader_settings->use_query_condition_cache = false;
     }
     else
     {
-        read_settings = context->getReadSettings();
+        ReadSettings read_settings = context->getReadSettings();
         const bool read_if_exists_otherwise_bypass
             = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
         read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
@@ -194,13 +203,15 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
                 addThrottler(read_settings.local_throttler, context->getMergesThrottler());
                 break;
         }
+
+        reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings));
     }
 
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
-        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
+        .reader_settings = std::move(*reader_settings),
         .storage_snapshot = storage_snapshot,
     };
 
