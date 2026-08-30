@@ -30,30 +30,9 @@ wire를 통해 행을 전달하는 모든 것은 **블록**입니다. **블록**
 
 컬럼의 `data`는 해당 타입이 속한 *family*에 따라 배치됩니다. 디코더 복잡도가 낮은 것부터 높은 것 순서로, *family*는 다음과 같습니다.
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="열 지향 wire 블록의 구조와 데이터 레이아웃 패밀리" width="1568" height="976" loading="lazy" />
 
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
-
-* **고정 폭(Fixed-width)** 타입은 `data`를 행별 프레이밍 없이 `bytes_per_value × num_rows` 크기의 raw bytes로 배치합니다.
+* **고정 길이(Fixed-width)** 타입은 `data`를 행별 프레이밍 없이 `bytes_per_value × num_rows` 크기의 raw bytes로 배치합니다.
 * **복합(Composite)** 타입(`Nullable`, `Array`, `Tuple`, `Map`, `Nested`)은 타입 문자열만으로 완전히 도출할 수 있는 재귀적 구조를 가지며, 버전 접두사도 없고 블록 간 상태도 없습니다.
 * **버전 지정 / 상태 유지(Versioned / stateful)** 타입(`LowCardinality`, `JSON`, `Variant`, `Dynamic`)은 비어 있지 않은 각 블록의 시작 부분에 serialization-version/state 접두사를 둡니다. `Native` wire에서는 이 접두사와 모든 딕셔너리가 **블록별**입니다 — 즉, 이 포맷은 블록 *간* 상태를 전달하지 않습니다(작성기는 모든 블록마다 새로운 serialization state를 생성하고 `low_cardinality_max_dictionary_size = 0`으로 설정합니다). 블록 간 상태는 Native wire 레이아웃이 아니라 MergeTree의 온디스크 관련 사항입니다.
 
@@ -191,15 +170,15 @@ BlockInfo는 여러 필드로 이루어진 시퀀스이며, 각 필드 앞에는
   ### 컬럼 wire 레이아웃
 </div>
 
-하나의 블록 안에는 Column이 `num_columns`번 나타납니다.
+하나의 블록 안에는 컬럼이 `num_columns`번 나타납니다.
 
-| # | Field                            | Type                             | Condition                               | Description                                                                                                                                                                                                        |
-| - | -------------------------------- | -------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1 | name                             | String                           | always                                  | 컬럼 이름                                                                                                                                                                                                              |
-| 2 | type                             | String *or* binary type encoding | always                                  | 기본적으로는 ClickHouse 타입 문자열(예: `"UInt64"`, `"Array(String)"`)입니다. `output_format_native_encode_types_in_binary_format = 1`일 때는 binary type encoding이 사용됩니다(아래 참고).                                                    |
-| 3 | has&#95;custom&#95;serialization | UInt8                            | feature `CUSTOM_SERIALIZATION` (v54454) | `0` = 기본값, `1` = 사용자 정의(`kind&#95;stack`이 뒤따름)                                                                                                                                                                     |
+| # | Field                            | 유형                             | Condition                               | Description                                                                                                                                                                                    |
+| - | -------------------------------- | -------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | name                             | String                           | always                                  | 컬럼 이름                                                                                                                                                                                          |
+| 2 | type                             | String *or* binary type encoding | always                                  | 기본적으로는 ClickHouse 타입 문자열(예: `"UInt64"`, `"Array(String)"`)입니다. `output_format_native_encode_types_in_binary_format = 1`일 때는 binary type encoding이 사용됩니다(아래 참고).                                |
+| 3 | has&#95;custom&#95;serialization | UInt8                            | feature `CUSTOM_SERIALIZATION` (v54454) | `0` = 기본값, `1` = 사용자 정의(`kind&#95;stack`이 뒤따름)                                                                                                                                                 |
 | 4 | kind&#95;stack                   | bytes                            | when field 3 = `1`                      | 기본값이 아닌 직렬화(희소 등)을 나타내는 UInt8 enum 바이트 1개입니다(아래 참고). 값이 `COMBINATION`이면 VarUInt 개수 값 뒤에 그 수만큼 추가 kind 바이트가 이어집니다. `Tuple`(및 요소 수준 직렬화 정보가 있는 다른 복합 타입)의 경우 payload는 재귀적입니다. 자세한 내용은 아래를 참조하세요. |
-| 5 | data                             | bytes                            | always                                  | 모든 `num_rows` 행의 컬럼 값입니다. 레이아웃은 타입별로 다릅니다. [데이터 타입](#data-types)을 참조하세요. 희소 컬럼은 아래를 참조하세요.                                                                                                                         |
+| 5 | data                             | bytes                            | always                                  | 모든 `num_rows` 행의 컬럼 값입니다. 레이아웃은 타입별로 다릅니다. [데이터 타입](#data-types)을 참조하세요. 희소 컬럼은 아래를 참조하세요.                                                                                                     |
 
 디코더는 `type` 문자열을 기준으로 분기합니다. 타입 문자열에는 괄호 안에 매개변수가 포함되는 경우가 많으므로, 디코더는 기본 타입을 찾기 위해 `(...)` 접미사를 제거한 다음 크기, scale 또는 내부 타입 판단에 필요한 매개변수를 파싱합니다. 중첩 타입이 포함된 매개변수 목록(예: `Array` 안의 `Tuple`)을 파싱하려면 `,`를 기준으로 단순 분할해서는 안 되며, 괄호 중첩을 추적하는 깊이 인식형 쉼표 분리기가 필요합니다.
 
@@ -209,16 +188,7 @@ BlockInfo는 여러 필드로 이루어진 시퀀스이며, 각 필드 앞에는
   `type` 필드는 기본 모드에서만 텍스트 `String`입니다. 쿼리 설정 `output_format_native_encode_types_in_binary_format = 1`이 설정되면 이 필드는 대신 **binary type encoding**이 됩니다. 이는 [데이터 타입 binary encoding](/ko/reference/data-types/data-types-binary-encoding)에 문서화된 것과 동일한 태그 기반 인코딩이며, 평탄화된 `Dynamic` 타입 목록도 타입별 이름에 동일한 binary encoding을 사용합니다. 필드 2를 항상 길이 접두사가 있는 문자열로 읽는 디코더는 첫 번째 바이너리 타입 태그를 문자열 길이로 잘못 해석해 동기화가 어긋나므로, 스트림이 어떤 모드를 사용하는지 반드시 알고 있어야 합니다.
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="타입 설명에서 해당 인코딩 계열로의 디코더 라우팅" width="1568" height="854" loading="lazy" />
 
 <div id="kind-stack-and-sparse-encoding">
   #### kind_stack 및 희소 인코딩
@@ -364,22 +334,23 @@ Native 바이트 스트림의 형태는 무엇보다도 writer와 reader가 사�
 
 각 기능에는 `DBMS_MIN_REVISION_WITH_*` 임계값이 있습니다. writer는 revision이 해당 임계값에 도달했을 때만 그 기능을 기록하고, reader도 정확히 같은 규칙으로 이를 확인하므로 양쪽이 보조를 맞춥니다. 어느 한쪽에서든 revision을 잘못 적용하면 서로 어긋나게 됩니다. Native 형식에서 중요한 제어 항목은 다음과 같습니다.
 
-| 기능                                  | 임계값 상수                                                             | revision | 임계값 미만일 때의 영향                                                                                                                                                               |
-| ----------------------------------- | ------------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BlockInfo` prefix                  | (임의의 값 `> 0`)                                                      | `1`      | [`BlockInfo`](#blockinfo) prefix가 완전히 생략되며, block은 `num_columns`, `num_rows`, columns만으로 구성됩니다.                                                                             |
-| `has_custom_serialization` byte     | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | 컬럼별 [`has_custom_serialization`](#column-wire-layout) byte가 생략되며, 모든 컬럼이 기본 직렬화를 사용합니다(희소, 복제된, 분리된 형식 없음).                                                       |
-| wire 상의 `LowCardinality`            | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | 특수한 경우로, 단순한 임계값 미만 규칙을 **따르지 않습니다**. `LowCardinality(T)`는 revision이 *0이 아니고* `54405` 미만일 때만 기본 타입 `T`로 벗겨지며, 또는 별도로 강제 제거될 때만 제거됩니다. revision `0`에서는 유지됩니다. 아래 참고를 확인하십시오. |
-| V2 `Dynamic` / `JSON` 직렬화 | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` 및 `JSON`/`Object`는 V2 대신 V1 직렬화(`max_dynamic_*` 매개변수 포함)을 사용합니다.                                                                                        |
-| 집계 함수 버전 관리                         | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | `AggregateFunction` state가 내장된 버전 없이 기록됩니다.                                                                                                                                 |
-| `BlockInfo`의 `out_of_order_buckets` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | `BlockInfo` field ID `3`이 기록되지 않습니다([BlockInfo](#blockinfo) 참고).                                                                                                            |
-| 병렬 block 마샬링 (`DETACHED`)           | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | 컬럼은 `ColumnBLOB`으로 래핑되지 않으며, `DETACHED` / `DETACHED_OVER_SPARSE` kind도 나타나지 않습니다([kind&#95;stack](#kind-stack-and-sparse-encoding) 참고).                                     |
-| `DateTime(tz)` type parameter       | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | `타입 문자열`에서 시간대 매개변수가 빠져 `DateTime('UTC')`가 단순한 `DateTime`으로 전달됩니다.                                                                                                        |
+| 기능                                           | 임계값 상수                                                             | revision | 임계값 미만일 때의 영향                                                                                                                                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BlockInfo` 접두사                           | (임의의 값 `> 0`)                                                      | `1`      | [`BlockInfo`](#blockinfo) 접두사가 완전히 생략되며, 블록은 `num_columns`, `num_rows`, 컬럼만으로 구성됩니다.                                                                                               |
+| `has_custom_serialization` 바이트              | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | 컬럼별 [`has_custom_serialization`](#column-wire-layout) 바이트가 생략되며, 모든 컬럼이 기본 직렬화를 사용합니다(희소, 복제된, 분리된 형식 없음).                                                                                   |
+| wire 상의 `LowCardinality`                     | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | 특수한 경우로, 단순한 임계값 미만 규칙을 **따르지 않습니다**. `LowCardinality(T)`는 revision이 *0이 아니고* `54405` 미만일 때만 기본 타입 `T`로 벗겨지며, 또는 별도로 강제 제거될 때만 제거됩니다. revision `0`에서는 유지됩니다. 아래 참고를 확인하십시오.                   |
+| V2 `Dynamic` / `JSON` 직렬화                    | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` 및 `JSON`/`Object`는 V2 대신 V1 직렬화(`max_dynamic_*` 매개변수 포함)을 사용합니다.                                                                                                                    |
+| 집계 함수 버전 관리                                  | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | `AggregateFunction` state가 내장된 버전 없이 기록됩니다.                                                                                                                                                   |
+| `quantileDeterministic` state의 `skip_degree` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491`  | `AggregateFunction(quantileDeterministic, ...)` state(및 같은 함수의 `quantiles`/`median` 표기)는 뒤따르는 `UInt8 skip_degree` 없이 state version `0`으로 기록됩니다. [type aliases](#type-aliases) 아래의 참고를 확인하십시오. |
+| `BlockInfo`의 `out_of_order_buckets`          | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | `BlockInfo` field ID `3`이 기록되지 않습니다([BlockInfo](#blockinfo) 참고).                                                                                                                              |
+| 병렬 블록 마샬링 (`DETACHED`)                    | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | 컬럼은 `ColumnBLOB`으로 래핑되지 않으며, `DETACHED` / `DETACHED_OVER_SPARSE` kind도 나타나지 않습니다([kind&#95;stack](#kind-stack-and-sparse-encoding) 참고).                                                       |
+| `DateTime(tz)` type parameter                | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | `타입 문자열`에서 시간대 매개변수가 빠져 `DateTime('UTC')`가 단순한 `DateTime`으로 전달됩니다.                                                                                                                            |
 
-즉, revision `0`은 거의 모든 항목에서 가장 보수적인 인코딩입니다. 스트림에는 `BlockInfo`가 없고, `has_custom_serialization` byte도 없으며, V1 `Dynamic`/`JSON`, 집계 함수 버전 정보 없음, 그리고 시간대 매개변수가 빠진 단순한 `DateTime`만 전달됩니다.
+즉, revision `0`은 거의 모든 항목에서 가장 보수적인 인코딩입니다. 스트림에는 `BlockInfo`가 없고, `has_custom_serialization` 바이트도 없으며, V1 `Dynamic`/`JSON`, 집계 함수 버전 정보 없음, 그리고 시간대 매개변수가 빠진 단순한 `DateTime`만 전달됩니다. 집계 함수 *state* version은 revision `0`에서 예외입니다. version을 도출할 상대가 없습니다. 스트림은 이를 생성한 주체(`StripeLog` data file, `Set`/`Join` backup, `Native` 형식 file)가 기록하고 다시 읽기 때문입니다. 따라서 writer는 state를 version `0`으로 낮추는 대신 type에 고정된 version을 유지하며(평소처럼 타입 문자열에 명시), version을 고정하지 않는 type만 version `0`으로 기록됩니다.
 
 예외는 `LowCardinality` 하나뿐이며, 이 점이 중요합니다. writer의 검사 조건은 `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`입니다. 여기서 핵심은 앞부분의 `client_revision &&`입니다. revision이 정확히 `0`이면 전체 조건은 단락 평가되어 false가 됩니다.
 
-따라서 revision `0` — `FORMAT Native`의 기본값 — 에서는 `LowCardinality(T)`가 **제거되지 않습니다**. 해당 타입 문자열과 block별 상태 접두사는 스트림에 그대로 남고, revision-`0` reader는 이를 그대로 다시 읽습니다. 제거는 `54405` 미만인 0이 아닌 revision에서만 시작되거나, revision과 무관하게 강제로 제거될 때만 적용됩니다.
+따라서 revision `0` — `FORMAT Native`의 기본값 — 에서는 `LowCardinality(T)`가 **제거되지 않습니다**. 해당 타입 문자열과 블록별 상태 접두사는 스트림에 그대로 남고, revision-`0` reader는 이를 그대로 다시 읽습니다. 제거는 `54405` 미만인 0이 아닌 revision에서만 시작되거나, revision과 무관하게 강제로 제거될 때만 적용됩니다.
 
 이 강제 동작을 제어하는 것이 `remove_low_cardinality` flag입니다. `FORMAT Native` 출력에서는 이 값을 절대 설정하지 않지만, 네이티브 TCP 경로에서는 `low_cardinality_allow_in_native_format = 0`일 때 설정합니다(기본값은 `1`). 다시 말해, 이 setting은 네이티브 TCP 출력에는 영향을 주지만 `FORMAT Native`에는 아무 영향도 주지 않습니다.
 
@@ -908,9 +879,9 @@ values 스트림에는 NULL 위치를 포함해 **모든** `num_rows`개 행에 
   #### Array(T)
 </div>
 
-유형 문자열: `Array(InnerType)`. 예시: `Array(UInt32)`, `Array(String)`, `Array(Nullable(UInt32))`, `Array(Array(UInt8))`.
+타입 문자열: `Array(InnerType)`. 예시: `Array(UInt32)`, `Array(String)`, `Array(Nullable(UInt32))`, `Array(Array(UInt8))`.
 
-wire 레이아웃은 내부 [prefix 단계](#composite-types)(내부 타입에 버전이 있는 경우가 아니면 비어 있음) 다음에 이어지는 2개의 연결된 스트림으로 구성되며, 먼저 offsets가 옵니다:
+wire 레이아웃은 내부 [prefix 단계](#composite-types)(내부 타입에 버전이 지정된 경우가 아니면 비어 있음) 다음에 이어지는 2개의 연결된 스트림으로 구성되며, 먼저 offsets가 옵니다:
 
 ```text
 [inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
@@ -946,16 +917,7 @@ Values (5 × UInt32 LE = 20 bytes):
 
 각 오프셋은 공유 값 스트림에서 해당 행의 슬라이스가 *끝나는* 누적 지점이며, 시작점은 이전 오프셋입니다(0번째 행은 `0`). 연속된 오프셋 값이 같으면 빈 행입니다:
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="공유 values 스트림에 행을 매핑하는 오프셋" width="1568" height="388" loading="lazy" />
 
 `Array(String)`에서 행이 `[["a", "bb"], []]`인 경우(총 20바이트):
 
@@ -975,7 +937,7 @@ Values (2 strings, 4 bytes total):
 * 가운데 `Array(UInt32)`는 offsets `[2, 3, 5]`로 3개의 행을 디코딩합니다.
 * 가장 안쪽 `UInt32`는 5개의 값을 디코딩합니다: `[1, 2, 3, 4, 5]`.
 
-즉, 24(외부 오프셋) + 24(중간 오프셋) + 20(값) = 68바이트입니다.
+따라서 24(바깥쪽 offsets) + 24(가운데 offsets) + 20(values) = 총 68바이트입니다.
 
 <div id="tuple">
   #### Tuple(T1, T2, ...)
@@ -1079,13 +1041,7 @@ Values (2 × UInt32 LE = 8 bytes):
 
 `Nested`의 wire 표현은 서버 측 `flatten_nested` 설정에 따라 달라지며, 크게 두 가지 경우로 나뉩니다.
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="평면화 적용 여부에 따른 복합 컬럼 레이아웃" width="1172" height="1068" loading="lazy" />
 
 **사례 A: `flatten_nested = 1` (서버 기본값).** 테이블이 기본 설정으로 생성된 경우 `Nested`는 **wire 타입이 아닙니다**. 서버는 해당 컬럼을 **점으로 구분된 이름**(`outer.field1`, `outer.field2` 등)을 사용하는 N개의 병렬 `Array(T_i)` 컬럼으로 저장하고 표시합니다. 포맷 계층에서는 새로운 것이 없으며, 점으로 구분된 각 컬럼은 일반적인 [배열](#array)입니다:
 
@@ -1096,7 +1052,7 @@ n.a    Array(UInt8)
 n.b    Array(String)
 ```
 
-**Case B: `flatten_nested = 0`.** 테이블이 `flatten_nested = 0`으로 생성된 경우, 이 컬럼은 wire 상에서 타입 문자열 `Nested(name1 T1, name2 T2, ...)`을 갖는 단일 컬럼으로 나타나며, 타입 문자열 뒤에 오는 레이아웃은 내부 [prefix 단계](#composite-types)까지 포함하여 **`Array(Tuple(T1, T2, ..., Tn))`와 바이트 수준에서 동일합니다**. 따라서 버전이 있는 각 필드 `T_i`는 offsets보다 앞서 state prefix를 먼저 출력합니다. 아래 예시에서는 버전이 없는 필드를 사용하므로 prefix 단계는 비어 있습니다:
+**Case B: `flatten_nested = 0`.** 테이블이 `flatten_nested = 0`으로 생성된 경우, 이 컬럼은 wire 상에서 타입 문자열 `Nested(name1 T1, name2 T2, ...)`을 갖는 단일 컬럼으로 나타나며, 타입 문자열 뒤에 오는 레이아웃은 내부 [prefix 단계](#composite-types)까지 포함하여 **`Array(Tuple(T1, T2, ..., Tn))`와 바이트 수준에서 동일합니다**. 따라서 버전이 지정된 각 필드 `T_i`는 offsets보다 앞서 상태 접두사를 먼저 출력합니다. 아래 예시에서는 버전이 지정되지 않은 필드를 사용하므로 prefix 단계는 비어 있습니다:
 
 ```text
 Nested(a UInt8, b String) bytes (after type string):
@@ -1112,9 +1068,9 @@ Array(Tuple(a UInt8, b String)) bytes (after type string):
   01 'x' 01 'y' 01 'z'           String stream
 ```
 
-유일한 차이점은 유형 문자열(type string) 텍스트입니다. `Nested`는 필드 이름(`a`, `b`)을 유지하지만, `Array(Tuple)`는 이를 이름이 있는 슬롯으로 유지하지 않습니다.
+유일한 차이점은 타입 문자열(type string) 텍스트입니다. `Nested`는 필드 이름(`a`, `b`)을 유지하지만, `Array(Tuple)`는 이를 이름이 있는 슬롯으로 유지하지 않습니다.
 
-Case B 유형 문자열은 쉼표로 구분된 (name, type) 쌍 목록입니다. 첫 번째 공백은 이름과 유형을 구분합니다. 유형 자체에는 추가 공백, 쉼표, 괄호가 포함될 수 있으므로, parsing에는 `Tuple`에 사용하는 것과 같은 깊이 인식 분할기(splitter)가 필요합니다. wire 레이아웃:
+Case B 타입 문자열은 쉼표로 구분된 (name, type) 쌍 목록입니다. 첫 번째 공백은 이름과 유형을 구분합니다. 유형 자체에는 추가 공백, 쉼표, 괄호가 포함될 수 있으므로, parsing에는 `Tuple`에 사용하는 것과 같은 깊이 인식 분할기(splitter)가 필요합니다. wire 레이아웃:
 
 ```text
 [offsets stream]    num_rows × UInt64 LE                       ← from Array
@@ -1126,7 +1082,7 @@ Case B 유형 문자열은 쉼표로 구분된 (name, type) 쌍 목록입니다.
 
 이때 `total_elements = offsets[num_rows - 1]`입니다(`num_rows == 0`이면 `0`). 오프셋은 단조 비감소하며, 모든 필드 스트림은 정확히 `total_elements`개의 값을 가집니다. 서버는 `INSERT` 시점에 단일 행 내의 모든 필드가 동일한 개수의 요소를 갖도록 강제합니다. 빈 컬럼은 0바이트를 기록합니다.
 
-2개의 행 `[(10,'x'),(20,'y')]` 및 `[(30,'z')]`가 있는 `Nested(a UInt8, b String)`(type 문자열 뒤에 25바이트):
+2개의 행 `[(10,'x'),(20,'y')]` 및 `[(30,'z')]`가 있는 `Nested(a UInt8, b String)`(타입 문자열 뒤에 25바이트):
 
 ```text
 Offsets (2 × UInt64 LE = 16 bytes):
@@ -1148,24 +1104,24 @@ Field 'b' stream (3 strings, 6 bytes):
 
 지리 공간 타입은 중첩된 배열과 튜플의 별칭입니다.
 
-| 타입 문자열                  | Underlying wire type      |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| 타입 문자열                             | Underlying wire type      |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 따라서 `Point` 컬럼은 정확히 `Tuple(Float64, Float64)`로 디코딩되며(`(1,2)`로 렌더링됨), `Ring`은 `Array(Tuple(Float64, Float64))`로 디코딩되고(`[(0,0),(1,1)]`), 그 위의 상위 계층 타입도 같은 방식으로 처리됩니다.
 
-`Geometry`도 별칭이지만, 중첩 배열이 아니라 [`Variant`](#variant)의 별칭입니다. 즉, 그 payload는 위 6개의 geo 타입으로 이루어진 variant입니다. 컬럼 헤더에는 타입 문자열 `Geometry`만 들어 있으며, variant가 **명시적으로 풀어서 표기되지는 않습니다**. 따라서 디코더가 이를 직접 확장해야 합니다. 모든 `Variant`와 마찬가지로 discriminator는 geo 별칭의 정식 이름을 기준으로 정렬한 표준 순서를 따릅니다. 즉 `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`입니다. 이후 선택된 각 값은 위의 해당 geo 별칭을 통해 디코딩됩니다(`NULL`은 `Variant`의 `NULL` discriminator `255`를 사용함).
+`Geometry`도 별칭이지만, 중첩 배열이 아니라 [`Variant`](#variant)의 별칭입니다. 즉, 그 페이로드는 위 7개의 geo 타입으로 이루어진 variant입니다. 컬럼 헤더에는 타입 문자열 `Geometry`만 들어 있으며, variant가 **명시적으로 풀어서 표기되지는 않습니다**. 따라서 디코더가 이를 직접 확장해야 합니다. 사용자가 직접 표기한 `Variant`와 달리 `Geometry`의 판별자는 이름순 정렬을 따르지 않습니다. 호환성을 위해 고정되어 있으며, 새 geo 타입은 항상 끝에만 추가됩니다. 매핑은 `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint`입니다(`MultiPoint`는 26.7에 추가되었으며, 이전 서버의 스트림에는 판별자 `6`이 포함되지 않음). 이후 선택된 각 값은 위의 해당 geo 별칭을 통해 디코딩됩니다(`NULL`은 `Variant`의 `NULL` 판별자 `255`를 사용함).
 
 `SimpleAggregateFunction(func, T)`는 값 타입 `T`의 별칭입니다. 이미 최종화된 집계 값을 저장하므로, wire 형식과 렌더링 결과가 정확히 `T`와 같습니다(`SimpleAggregateFunction(sum, UInt64)`는 `UInt64`로 디코딩됨). 이런 방식으로 별칭이 되는 것은 단일 값 타입 형식뿐이며, 기반 타입 자체는 복합 타입일 수 있습니다.
 
 <Note>
-  관련된 두 타입은 **별칭이 아닙니다**. 이들은 유효한 `Native` 컬럼 타입입니다. 예를 들어 클라이언트는 `-State` combinator나 분산 집계에서 `AggregateFunction` 컬럼을 받을 수 있습니다. 다만 각각 이 페이지의 범위를 벗어나는 자체적인 특수 payload를 가집니다.
+  서로 연관된 다음 두 타입은 별칭이 **아닙니다**. 예를 들어 클라이언트는 `-State` 조합자 또는 분산 집계에서 `AggregateFunction` 컬럼을 받을 수 있으므로, 둘 다 유효한 `Native` 컬럼 타입입니다. 하지만 각각 이 페이지의 범위를 벗어나는 고유한 특수 페이로드를 포함합니다.
 
-  * `AggregateFunction(func, ...)`는 *중간* 집계 상태를 담습니다(최종화된 값이 아님). 바이너리 레이아웃은 집계 함수와 버전에 따라 달라집니다.
-  * `QBit(T, N[, stride])`는 벡터 검색 workload를 위해 비트 평면이 전치된 벡터를 저장합니다. 이 타입의 on-wire 스트림 레이아웃(그룹 우선 `FixedString` 비트 평면 스트림이며, 명시적인 `stride`와 함께 `element_size * (N / stride)`개로 구성됨)과 바이너리 타입 인코딩(태그 `0x36`, 또는 `stride != N`일 때 `0x37` `QBitWithStride`)은 [`QBit` 데이터 타입 페이지](/ko/reference/data-types/qbit)와 [바이너리 타입 인코딩](/ko/reference/data-types/data-types-binary-encoding) 참고 문서에 설명되어 있으므로, `Native` reader가 이를 C++ 소스에서 직접 복원할 필요는 없습니다.
+  * `AggregateFunction(func, ...)`은 *중간* 집계 상태(최종 값이 아님)를 저장합니다. 바이너리 레이아웃은 집계 함수와 버전에 따라 달라집니다. 버전이 지정된 집계 함수는 타입 문자열의 첫 번째 인수로 0이 아닌 상태 버전을 명시합니다. 즉, `AggregateFunction(1, quantileDeterministic, UInt64, UInt64)`입니다. 반면 버전 `0`은 출력되지 않으므로 타입 문자열은 `AggregateFunction(quantileDeterministic, UInt64, UInt64)`로 유지됩니다. 협상된 연결(revision이 `0` 초과)에서는 작성기가 프로토콜 revision만을 기준으로 버전을 선택합니다. wire에서 버전 `0`은 &quot;발표된 버전 없음&quot;과 구별할 수 없으므로, 로컬 타입에 고정된 버전이 있더라도 이를 사용하지 않습니다. 따라서 동일한 함수가 연결마다 다른 버전을 발표할 수 있으며, 판독기는 최신 버전이라고 가정하지 말고 타입 문자열에서 버전을 가져와야 합니다. revision `0`에서는 버전을 도출할 피어가 없습니다. 스트림은 자체 기술적이며 작성자가 이를 다시 읽습니다. 따라서 타입에 고정된 버전은 `0`으로 다운그레이드되지 않고 스트림과 발표된 타입 문자열에 유지됩니다. `quantileDeterministic`(`quantilesDeterministic` 및 `medianDeterministic` 표기 포함)은 revision `54491`부터 버전이 지정됩니다. 버전 `1`은 상태 끝에 `UInt8 skip_degree`를 추가하며, 접두사는 버전 `0`과 바이트 수준에서 동일합니다. 이 revision 미만에서는 작성기가 버전 `0` 상태를 내보내므로 이전 피어에는 영향이 없습니다. 이 모든 내용은 컨테이너 타입 내부에 중첩된 상태에도 동일하게 적용됩니다. 즉, `Array`, `Tuple`, `Map`, `Nullable`, `Variant`(대안에 명시된 버전은 판별자 순서는 바꾸지 않고 타입 문자열만 변경함), 또는 `Nested` / `SimpleAggregateFunction` 래퍼 내부의 상태에도 적용됩니다. 한 가지 `Variant` 예외 사례에는 wire 표현이 전혀 없습니다. 두 대안이 명시된 상태 버전만 다른 경우(타입 문자열이 다르므로 컬럼 타입으로는 유효함), 협상된 revision에 맞춰 둘 다 버전을 변경하면 동일한 대안으로 합쳐집니다. 따라서 송신자는 페이로드가 기록된 버전과 다른 버전을 발표하는 대신 전송을 실패시켜야 합니다. `Dynamic`은 revision 기반 버전 관리의 의도적인 예외입니다. `Dynamic` 컬럼은 자체 타입 목록과 명시적 버전 필드에 명시된 상태 버전을 담는 [바이너리 타입 인코딩](/ko/reference/data-types/data-types-binary-encoding)을 통해 중첩 타입을 직접 발표합니다(공유 variant의 값은 저장된 상태에서도 이 방식으로 타입을 포함합니다). 이러한 발표는 컬럼 자체 데이터의 일부이며 모든 피어와 매체에서 동일하므로 협상된 revision에 맞춰 다시 작성되지 않습니다. 따라서 `Dynamic` 값 내부에 중첩된 상태는 타입에 명시된 버전으로 기록됩니다(`-State` 쿼리 결과는 버전을 명시하므로 새 상태에는 이 버전이 포함됩니다). 타입에 버전이 명시되지 않은 경우에는 버전 `0`으로 기록되며, 이는 모든 연결과 매체에서 동일합니다.
+  * `QBit(T, N[, stride])`는 벡터 검색 워크로드를 위해 비트 평면을 전치한 벡터를 저장합니다. wire 스트림 레이아웃(그룹 우선 `FixedString` 비트 평면 스트림, 명시적 `stride`를 포함하는 `element_size * (N / stride)`개)과 바이너리 타입 인코딩(태그 `0x36`, 또는 `stride != N`일 때 `0x37` `QBitWithStride`)은 [`QBit` 데이터 타입 페이지](/ko/reference/data-types/qbit) 및 [바이너리 타입 인코딩](/ko/reference/data-types/data-types-binary-encoding) 참고 문서에 설명되어 있습니다. 따라서 `Native` 판독기는 C++ 소스에서 이를 복원할 필요가 없습니다.
 </Note>
 
 <div id="versioned-types">
@@ -1189,9 +1145,9 @@ Field 'b' stream (3 strings, 6 bytes):
 | 범위       | 연결 전체               | 타입별, 컬럼별                     |
 | 협상 여부    | 예, handshake 시      | 아니요 — 송신자가 기록하고 수신기가 읽음      |
 | 제어 대상    | 어떤 패킷 수준 기능이 활성화되는지 | 한 타입의 어떤 wire 변형인지           |
-| 읽기 필수 여부 | 예                   | 예, 버전이 있는 각 컬럼마다             |
+| 읽기 필수 여부 | 예                   | 예, 버전이 지정된 각 컬럼마다             |
 
-버전이 있는 대부분의 타입은 다른 상태 접두사 데이터 바로 앞에 버전을 리틀 엔디언 UInt64로 기록하며, 일부는 VarUInt 또는 UInt8을 사용합니다. 디코더는 먼저 버전을 읽고 알 수 없는 값은 거부합니다. 더 높은 버전은 디코더가 이해하지 못하는 더 새로운 송신자 포맷을 뜻하며, 이를 잘못 parsing하면 이후의 모든 바이트 해석이 어긋나게 됩니다.
+버전이 지정된 대부분의 타입은 다른 상태 접두사 데이터 바로 앞에 버전을 리틀 엔디언 UInt64로 기록하며, 일부는 VarUInt 또는 UInt8을 사용합니다. 디코더는 먼저 버전을 읽고 알 수 없는 값은 거부합니다. 더 높은 버전은 디코더가 이해하지 못하는 더 새로운 송신자 포맷을 뜻하며, 이를 잘못 parsing하면 이후의 모든 바이트 해석이 어긋나게 됩니다.
 
 상태 접두사는 **행 수가 0보다 큰 모든 block의 시작 부분**에서 출력되며, 해당 block의 payload 바로 앞에 위치합니다.
 
@@ -1199,19 +1155,7 @@ Native writer와 reader는 block 간에 직렬화 상태를 유지하지 **않�
 
 따라서 헤더 block(rows = 0)과 빈 block은 아무것도 출력하지 않으며, 디코더는 비어 있지 않은 각 block의 시작에서 상태 접두사를 다시 읽어야 합니다. 접두부를 한 번만 읽고 이후 block을 payload만 있는 것으로 처리하는 디코더는 다음 block의 접두부를 데이터로 읽게 되어 동기화가 어긋납니다:
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="비어 있지 않은 모든 block에 반복되는 상태 접두사" width="1226" height="1162" loading="lazy" />
 
 <div id="serialization-version-reference">
   #### 직렬화 버전 참고
@@ -1387,24 +1331,7 @@ ClickHouse의 `JSON` 유형에는 여러 wire 인코딩이 있습니다([seriali
 
 판별자 스트림은 인덱스입니다. 각 non-NULL 판별자는 해당 유형의 조밀하게 저장된 run에서 다음 값을 가져오며, `255` (NULL)는 아무것도 소비하지 않습니다. 이와 동일한 방식으로 [Dynamic](#dynamic)도 복원되며, 차이점은 NULL이 인코딩되는 방식뿐입니다:
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="조밀하게 저장된 타입별 run에서 값을 선택하는 판별자" width="1568" height="624" loading="lazy" />
 
 <div id="dynamic">
   #### Dynamic
@@ -1551,19 +1478,7 @@ ClickHouse는 내부 프레임 포맷을 사용해 `Native` 스트림의 컬럼 
 
 전체 프레임 크기는 `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`입니다. 여기서 두 구간에 유의하십시오. `checksum`은 9바이트 `header`와 `body`를 포함하는 반면, `compressed_size`는 `header`와 `body`는 계산하지만 `checksum` 자체는 **포함하지 않습니다**:
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="압축 프레임 필드 및 압축 크기 경계" width="1568" height="206" loading="lazy" />
 
 <div id="method-byte-values">
   ### 메서드 바이트 값
@@ -1573,11 +1488,11 @@ flowchart LR
 
 | Byte   | Method | Body encoding                                              |
 | ------ | ------ | ---------------------------------------------------------- |
-| `0x02` | NONE   | 본문은 원시 바이트입니다(압축 없음). 프레임 자체는 그대로 출력되며, 수신기는 체크섬을 검증합니다.   |
-| `0x82` | LZ4    | 본문은 **LZ4 block 포맷**이며, *LZ4 frame 포맷이 아닙니다*. 매직 넘버는 없습니다. |
-| `0x90` | ZSTD   | 본문은 원시 zstd 단일 프레임 스트림입니다(표준 zstd 매직 넘버는 본문의 일부입니다).       |
+| `0x02` | NONE   | body는 원시 바이트입니다(압축 없음). 프레임 자체는 그대로 출력되며, 수신기는 체크섬을 검증합니다.   |
+| `0x82` | LZ4    | body는 **LZ4 block 포맷**이며, *LZ4 frame 포맷이 아닙니다*. 매직 넘버는 없습니다. |
+| `0x90` | ZSTD   | body는 원시 zstd 단일 프레임 스트림입니다(표준 zstd 매직 넘버는 body의 일부입니다).       |
 
-메서드 바이트는 [컬럼 수준 코덱](/ko/reference/statements/create/table#column_compression_codec)도 인코딩합니다. 이 코덱들은 전체 스트림 프레이밍이 아니라 MergeTree 온디스크 경로에서 컬럼별로 적용되지만, `decompress=1` HTTP 입력 경로는 각 프레임의 메서드 바이트에서 코덱을 읽어 오므로 입력에서는 이 바이트들 중 어떤 값이든 정상적으로 나타날 수 있습니다. 따라서 규격을 준수하는 디코더는 할당된 전체 범위를 인식해야 하며, 구현하지 않은 바이트는 본문을 잘못 해석하지 말고 거부해야 합니다. 이들의 본문은 코덱마다 다르며, 이 일반 프레임 계약의 범위 밖에 있습니다.
+메서드 바이트는 [컬럼 수준 코덱](/ko/reference/statements/create/table/codec)도 인코딩합니다. 이 코덱들은 전체 스트림 프레이밍이 아니라 MergeTree 온디스크 경로에서 컬럼별로 적용되지만, `decompress=1` HTTP 입력 경로는 각 프레임의 메서드 바이트에서 코덱을 읽어 오므로 입력에서는 이 바이트들 중 어떤 값이든 정상적으로 나타날 수 있습니다. 따라서 규격을 준수하는 디코더는 할당된 전체 범위를 인식해야 하며, 구현하지 않은 바이트는 body를 잘못 해석하지 말고 거부해야 합니다. 이들의 body는 코덱마다 다르며, 이 일반 프레임 계약의 범위 밖에 있습니다.
 
 | Byte   | Method                             |
 | ------ | ---------------------------------- |
@@ -1595,9 +1510,9 @@ flowchart LR
 | `0x9e` | `Quantized`                        |
 | `0x9f` | `ZXC`                              |
 
-`0x9d` (`SZ3`)는 `Float32`, `Float64`, 그리고 해당 타입의 `Array`를 위한 **실험적** 오차 한계 기반 *손실* 코덱입니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(SZ3)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. `0x9f` (`ZXC`)는 비대칭 LZ 코덱입니다. 압축은 느리지만 압축 해제는 매우 빠르며, 압축률은 `LZ4`와 `ZSTD` 사이입니다. 바이트 `0x99` (`DeflateQpl`)와 `0x9b` (`ZSTD_QPL`)는 이후 제거된 코덱에 할당되어 있던 값입니다. 이 값들은 예약되어 있으며 재사용되지 않습니다.
+`0x9d` (`SZ3`)는 `Float32`, `Float64`, 그리고 해당 타입의 `Array`를 위한 **실험적** 오차 한계 기반 *손실* 코덱입니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(SZ3)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. `0x9f` (`ZXC`)는 **실험적** 비대칭 LZ 코덱입니다. 압축은 느리지만 압축 해제는 매우 빠르며, 압축률은 `LZ4`와 `ZSTD` 사이입니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(ZXC)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. 바이트 `0x99` (`DeflateQpl`)와 `0x9b` (`ZSTD_QPL`)는 이후 제거된 코덱에 할당되어 있던 값입니다. 이 값들은 예약되어 있으며 재사용되지 않습니다.
 
-`0x9e` (`Quantized`)는 조밀한 벡터 컬럼(`Array(Float32)` 등)을 위한 **실험적** 컬럼 코덱입니다. `NONE`과 마찬가지로 패스스루 방식이므로 전체 정밀도 본문이 그대로 저장됩니다. 다만 이 코덱이 있으면 벡터 검색을 가속하기 위해 사용하는 압축된 양자화 보조 스트림을 기록하는 직렬화가 함께 적용됩니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(Quantized(...))`로 테이블을 생성할 수 있으며, 메서드 바이트는 압축 해제 시 항상 허용됩니다.
+`0x9e` (`Quantized`)는 조밀한 벡터 컬럼(`Array(Float32)` 등)을 위한 **실험적** 컬럼 코덱입니다. `NONE`과 마찬가지로 패스스루 방식이므로 전체 정밀도 body가 그대로 저장됩니다. 다만 이 코덱이 있으면 벡터 검색을 가속하기 위해 사용하는 압축된 양자화 보조 스트림을 기록하는 직렬화가 함께 적용됩니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(Quantized(...))`로 테이블을 생성할 수 있으며, 메서드 바이트는 압축 해제 시 항상 허용됩니다.
 
 <div id="checksum">
   ### 체크섬

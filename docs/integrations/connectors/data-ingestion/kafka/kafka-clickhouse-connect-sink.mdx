@@ -99,7 +99,7 @@ The full table of configuration options:
 | `hostname` (Required)                           | The hostname or IP address of the server                                                                                                                                                                                           | N/A                                                      |
 | `port`                                          | The ClickHouse port - default is 8443 (for HTTPS in the cloud), but for HTTP (the default for self-hosted) it should be 8123                                                                                                       | `8443`                                                   |
 | `ssl`                                           | Enable ssl connection to ClickHouse                                                                                                                                                                                                | `true`                                                   |
-| `jdbcConnectionProperties`                      | Connection properties when connecting to Clickhouse. Must start with `?` and joined by `&` between `param=value`                                                                                                                   | `""`                                                     |
+| `jdbcConnectionProperties`                      | Connection properties when connecting to ClickHouse. Must start with `?` and joined by `&` between `param=value`                                                                                                                   | `""`                                                     |
 | `username`                                      | ClickHouse database username                                                                                                                                                                                                       | `default`                                                |
 | `password` (Required)                           | ClickHouse database password                                                                                                                                                                                                       | N/A                                                      |
 | `database`                                      | ClickHouse database name                                                                                                                                                                                                           | `default`                                                |
@@ -869,7 +869,7 @@ For connector-level insert settings:
 The connector maintains HTTP connections to ClickHouse. Adjust timeouts for high-latency networks:
 
 ```json
-"clickhouseSettings": "socket_timeout=300000,connection_timeout=30000"
+"jdbcConnectionProperties": "?socket_timeout=300000,connection_timeout=30000"
 ```
 
 - **`socket_timeout`** (default: 30000 ms): Maximum time for read operations

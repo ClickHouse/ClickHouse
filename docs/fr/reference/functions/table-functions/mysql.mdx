@@ -38,6 +38,22 @@ Les clauses `WHERE` simples telles que `=, !=, >, >=, <, <=` sont actuellement e
 
 Le reste des conditions et la contrainte d’échantillonnage `LIMIT` ne sont exécutés dans ClickHouse qu’une fois la requête MySQL terminée.
 
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+Les identifiants d&#39;une connexion chiffrée à MySQL sont transmis sous forme de clés d&#39;une collection nommée (ou d&#39;arguments clé-valeur) :
+
+| Paramètre      | Description                                                                                                    |
+| -------------- | -------------------------------------------------------------------------------------------------------------- |
+| `ssl_ca_pem`   | Contenu du certificat de l&#39;autorité de certification utilisé pour vérifier le certificat du serveur MySQL. |
+| `ssl_cert_pem` | Contenu du certificat client, pour l&#39;authentification par certificat.                                      |
+| `ssl_key_pem`  | Contenu de la clé privée associée à `ssl_cert_pem`.                                                            |
+
+Les valeurs correspondent au contenu des fichiers PEM correspondants, qui peut être copié dans une collection nommée ou dans une requête. Elles sont masquées dans les logs et dans les requêtes `SHOW`, comme les mots de passe.
+
+Les mêmes identifiants peuvent également être fournis sous forme de chemins vers des fichiers sur le serveur, dans `ssl_ca`, `ssl_cert` et `ssl_key` — mais **uniquement dans une collection nommée définie dans le fichier de configuration du serveur** ; une telle valeur ne peut pas être remplacée dans une requête. Le serveur ouvre ces fichiers avec ses propres privilèges : accepter un chemin depuis SQL permettrait donc à tout utilisateur capable de définir une source MySQL d&#39;explorer le système de fichiers local et de s&#39;authentifier avec un certificat et une clé auxquels il n&#39;est pas autorisé à accéder.
+
 <div id="passing-a-query">
   ## Utilisation d’une requête à la place d’un nom de table
 </div>
@@ -54,7 +70,7 @@ Cela est utile pour déporter vers MySQL les jointures, agrégations ou tout aut
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse, puis re-sérialisée dans le dialecte MySQL (identifiants délimités par des accents graves) avant d&#39;être envoyée au serveur. Elle doit donc être valide en ClickHouse SQL. Pour transmettre une syntaxe propre à MySQL que ClickHouse n&#39;analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé à MySQL tel quel.
 
-  Tout `WHERE`, `LIMIT`, agrégation, etc. externe de la requête ClickHouse englobante n&#39;est **pas** déporté dans la requête transmise — il est appliqué dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis MySQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings#external_table_strict_query), un filtre externe qui ne peut pas être déporté est rejeté avec une exception au lieu d&#39;être appliqué localement.
+  Tout `WHERE`, `LIMIT`, agrégation, etc. externe de la requête ClickHouse englobante n&#39;est **pas** déporté dans la requête transmise — il est appliqué dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis MySQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe qui ne peut pas être déporté est rejeté avec une exception au lieu d&#39;être appliqué localement.
 </Note>
 
 Prend en charge plusieurs répliques, qui doivent être listées à l&#39;aide de `|`. Par exemple :
@@ -63,20 +79,20 @@ Prend en charge plusieurs répliques, qui doivent être listées à l&#39;aide d
 SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-or
+ou
 
 ```sql
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valeur retournée
 </div>
 
 Un objet de table avec les mêmes colonnes que la table MySQL d’origine.
 
 <Note>
-  Certains types de données MySQL peuvent correspondre à différents types de ClickHouse ; cela est géré par le paramètre au niveau de la requête [mysql&#95;datatypes&#95;support&#95;level](/fr/reference/settings/session-settings#mysql_datatypes_support_level)
+  Certains types de données MySQL peuvent correspondre à différents types de ClickHouse ; cela est géré par le paramètre au niveau de la requête [mysql&#95;datatypes&#95;support&#95;level](/fr/reference/settings/session-settings/mysql#mysql_datatypes_support_level)
 </Note>
 
 <Note>
@@ -205,9 +221,9 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 
 * [Le moteur de table « MySQL »](/fr/reference/engines/table-engines/integrations/mysql)
 * [Utiliser MySQL comme source d’un dictionnaire](/fr/reference/statements/create/dictionary/sources/mysql)
-* [mysql&#95;datatypes&#95;support&#95;level](/fr/reference/settings/session-settings#mysql_datatypes_support_level)
-* [mysql&#95;map&#95;fixed&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/fr/reference/settings/session-settings#mysql_map_fixed_string_to_text_in_show_columns)
-* [mysql&#95;map&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/fr/reference/settings/session-settings#mysql_map_string_to_text_in_show_columns)
-* [mysql&#95;max&#95;rows&#95;to&#95;insert](/fr/reference/settings/session-settings#mysql_max_rows_to_insert)
+* [mysql&#95;datatypes&#95;support&#95;level](/fr/reference/settings/session-settings/mysql#mysql_datatypes_support_level)
+* [mysql&#95;map&#95;fixed&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/fr/reference/settings/session-settings/mysql-map#mysql_map_fixed_string_to_text_in_show_columns)
+* [mysql&#95;map&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/fr/reference/settings/session-settings/mysql-map#mysql_map_string_to_text_in_show_columns)
+* [mysql&#95;max&#95;rows&#95;to&#95;insert](/fr/reference/settings/session-settings/mysql#mysql_max_rows_to_insert)
 
 {/*AUTOGENERATED_END*/}

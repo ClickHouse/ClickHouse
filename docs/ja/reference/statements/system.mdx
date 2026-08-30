@@ -21,7 +21,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 </div>
 
 `SYSTEM RELOAD DICTIONARIES` クエリは、ステータスが `LOADED` の Dictionary ([`system.dictionaries`](/ja/reference/system-tables/dictionaries) の `status` カラムを参照) 、つまり過去に正常に読み込まれたことのある Dictionary を再読み込みします。
-デフォルトでは、Dictionary は遅延読み込みされます ([dictionaries&#95;lazy&#95;load](/ja/reference/settings/server-settings/settings#dictionaries_lazy_load) を参照) 。そのため、起動時に自動で読み込まれるのではなく、[`dictGet`](/ja/reference/functions/regular-functions/ext-dict-functions#dictGet) 関数を使用したとき、または `ENGINE = Dictionary` のテーブルに対する `SELECT` による初回アクセス時に初期化されます。
+デフォルトでは、Dictionary は遅延読み込みされます ([dictionaries&#95;lazy&#95;load](/ja/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load) を参照) 。そのため、起動時に自動で読み込まれるのではなく、[`dictGet`](/ja/reference/functions/regular-functions/ext-dict-functions#dictGet) 関数を使用したとき、または `ENGINE = Dictionary` のテーブルに対する `SELECT` による初回アクセス時に初期化されます。
 
 **構文**
 
@@ -119,7 +119,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
   ## SYSTEM RELOAD ASYNCHRONOUS METRICS
 </div>
 
-すべての[非同期メトリクス](/ja/reference/system-tables/asynchronous_metrics)を再計算します。非同期メトリクスは設定 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ja/reference/settings/server-settings/settings) に基づいて定期的に更新されるため、通常、このステートメントで手動更新する必要はありません。
+すべての[非同期メトリクス](/ja/reference/system-tables/asynchronous_metrics)を再計算します。非同期メトリクスは設定 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ja/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s) に基づいて定期的に更新されるため、通常、このステートメントで手動更新する必要はありません。
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -144,7 +144,7 @@ mark cache をクリアします。
 </div>
 
 メモリ内に [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルの主キーを保持しているプライマリインデックスキャッシュをクリアします。
-そのサイズは、サーバーレベルの設定 [`primary_index_cache_size`](/ja/reference/settings/server-settings/settings#primary_index_cache_size) で設定します。
+そのサイズは、サーバーレベルの設定 [`primary_index_cache_size`](/ja/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) で設定します。
 
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
@@ -323,15 +323,15 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 非圧縮データcacheをクリアします。
-非圧縮データcacheは、クエリ/USER/profile レベルの設定 [`use_uncompressed_cache`](/ja/reference/settings/session-settings#use_uncompressed_cache) で有効または無効にできます。
-そのサイズは、サーバーレベルの設定 [`uncompressed_cache_size`](/ja/reference/settings/server-settings/settings#uncompressed_cache_size) で構成できます。
+非圧縮データcacheは、クエリ/USER/profile レベルの設定 [`use_uncompressed_cache`](/ja/reference/settings/session-settings/use#use_uncompressed_cache) で有効または無効にできます。
+そのサイズは、サーバーレベルの設定 [`uncompressed_cache_size`](/ja/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) で構成できます。
 
 <div id="drop-compiled-expression-cache">
   ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
 </div>
 
 コンパイル済み expression cache をクリアします。
-コンパイル済み expression cache は、クエリ/ユーザー/プロファイルレベルの設定 [`compile_expressions`](/ja/reference/settings/session-settings#compile_expressions) で有効/無効を切り替えられます。
+コンパイル済み expression cache は、クエリ/ユーザー/プロファイルレベルの設定 [`compile_expressions`](/ja/reference/settings/session-settings/compile#compile_expressions) で有効/無効を切り替えられます。
 
 <div id="drop-query-condition-cache">
   ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
@@ -361,12 +361,12 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
   ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
 </div>
 
-[`format_schema_path`](/ja/reference/settings/server-settings/settings#format_schema_path) から読み込まれたスキーマのキャッシュをクリアします。
+[`format_schema_path`](/ja/reference/settings/server-settings/settings/format#format_schema_path) から読み込まれたスキーマのキャッシュをクリアします。
 
 サポートされる対象:
 
 * Protobuf: インポートされた Protobuf メッセージ定義をメモリから削除します。
-* Files: `format_schema_source` が `query` に設定されているときに生成され、[`format_schema_path`](/ja/reference/settings/server-settings/settings#format_schema_path) にローカルに保存されたキャッシュ済みスキーマファイルを削除します。
+* Files: `format_schema_source` が `query` に設定されているときに生成され、[`format_schema_path`](/ja/reference/settings/server-settings/settings/format#format_schema_path) にローカルに保存されたキャッシュ済みスキーマファイルを削除します。
   注: 対象を指定しない場合は、両方のキャッシュがクリアされます。
 
 ```sql
@@ -522,7 +522,7 @@ SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
   ## 分散テーブルの管理
 </div>
 
-ClickHouse は[distributed](/ja/reference/engines/table-engines/special/distributed) テーブルを管理できます。ユーザーがこれらのテーブルにデータを挿入すると、ClickHouse はまずクラスターのノードに送信するデータのキューを作成し、その後それを非同期に送信します。キューの処理は、[`STOP DISTRIBUTED SENDS`](#stop-distributed-sends)、[FLUSH DISTRIBUTED](#flush-distributed)、および [`START DISTRIBUTED SENDS`](#start-distributed-sends) クエリで管理できます。また、[`distributed_foreground_insert`](/ja/reference/settings/session-settings#distributed_foreground_insert) 設定を使用して、分散データを同期的に挿入することもできます。
+ClickHouse は[distributed](/ja/reference/engines/table-engines/special/distributed) テーブルを管理できます。ユーザーがこれらのテーブルにデータを挿入すると、ClickHouse はまずクラスターのノードに送信するデータのキューを作成し、その後それを非同期に送信します。キューの処理は、[`STOP DISTRIBUTED SENDS`](#stop-distributed-sends)、[FLUSH DISTRIBUTED](#flush-distributed)、および [`START DISTRIBUTED SENDS`](#start-distributed-sends) クエリで管理できます。また、[`distributed_foreground_insert`](/ja/reference/settings/session-settings/distributed#distributed_foreground_insert) 設定を使用して、分散データを同期的に挿入することもできます。
 
 <div id="stop-distributed-sends">
   ### SYSTEM STOP DISTRIBUTED SENDS
@@ -535,7 +535,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-  [`prefer_localhost_replica`](/ja/reference/settings/session-settings#prefer_localhost_replica) が有効 (デフォルトで有効) な場合でも、データはローカル分片に挿入されます。
+  [`prefer_localhost_replica`](/ja/reference/settings/session-settings/prefer#prefer_localhost_replica) が有効 (デフォルトで有効) な場合でも、データはローカル分片に挿入されます。
 </Note>
 
 <div id="flush-distributed">
@@ -1069,6 +1069,88 @@ SYSTEM WAIT VIEW [db.]name
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+<div id="managing-background-activity">
+  ## バックグラウンド処理の管理
+</div>
+
+単一のテーブル、またはサーバー上の該当するすべてのテーブルのバックグラウンド処理を制御する、エンジンに依存しないコマンドです。対象は次のとおりです。
+
+* [リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) (定期的なリフレッシュ) 、および
+* 外部ソースから継続的にデータを取り込むストリーミングテーブルエンジン: [Kafka](/ja/reference/engines/table-engines/integrations/kafka)、[RabbitMQ](/ja/reference/engines/table-engines/integrations/rabbitmq)、[NATS](/ja/reference/engines/table-engines/integrations/nats)、[S3Queue](/ja/reference/engines/table-engines/integrations/s3queue)、[AzureQueue](/ja/reference/engines/table-engines/integrations/azure-queue)。
+
+リフレッシャブルmaterialized viewでは、各動詞は[リフレッシャブルmaterialized viewの管理](#managing-refreshable-materialized-views)で説明する対応する `SYSTEM ... VIEW` コマンドのエイリアスです。そのため、`SYSTEM STOP [db.]name` は `SYSTEM STOP VIEW [db.]name` とまったく同じように動作します。他の動詞についても同様です。
+
+テーブル単位の形式とワイルドカード形式では、バックグラウンド処理を持たないテーブルの扱いが異なります。テーブル単位の形式 (`SYSTEM STOP [db.]table`) では、指定したテーブルがストリーミングエンジンでもリフレッシャブルmaterialized viewでもない場合、エラーが発生します。ワイルドカード形式では、そのようなテーブルは暗黙的にスキップされるため、常に安全に実行できます。
+
+`STOP` と `CANCEL` は、可能な限り速やかに消費を中断します。[Kafka](/ja/reference/engines/table-engines/integrations/kafka)、[RabbitMQ](/ja/reference/engines/table-engines/integrations/rabbitmq)、[NATS](/ja/reference/engines/table-engines/integrations/nats) では、ソースからの読み取りは停止しますが、すでに開始されている挿入は中断しません。つまり、materialized view への書き込みがすでに始まっているブロックは、完了してコミットされます。[S3Queue](/ja/reference/engines/table-engines/integrations/s3queue) と [AzureQueue](/ja/reference/engines/table-engines/integrations/azure-queue) は、単一のパイプラインで読み取りと挿入を行います。重複排除が有効な場合 (デフォルト) は、挿入もキャンセルされ、ファイルは後で再処理されます。重複排除が無効な場合は、行の重複を避けるため、処理中のバッチが完了してコミットされます (上記のエンジンと同様) 。読み取り済みでまだコミットされていないデータは後で再度消費されるため、失われることはありません。ただし、再配信できずデータを破棄する JetStream なしのコア NATS は例外です。
+
+`PAUSE` は実行中の挿入を中断しないため、通常はデータが失われることはありません。コア NATS は例外です。一時停止すると消費が停止し、すでに受信したもののまだ挿入されていないメッセージが破棄されます。また、コア NATS はそれらを再配信できません。
+
+<Note>
+  これらの状態はいずれもサーバーの再起動後に維持されません。再起動後、リフレッシュ可能なビューは設定済みのスケジュールに従って再開され、ストリーミングエンジンは再び消費を開始します。
+</Note>
+
+<div id="stop-background">
+  ### SYSTEM STOP
+</div>
+
+バックグラウンド処理を停止し、その状態を維持します。現在実行中の処理を中断し、`SYSTEM START` が実行されるまで新たな処理は実行されません。`PAUSE` + `CANCEL` と同等です。
+
+```sql
+SYSTEM STOP [db.]table
+SYSTEM STOP ALL BACKGROUND
+```
+
+<div id="start-background">
+  ### SYSTEM START
+</div>
+
+以前の `SYSTEM STOP` または `SYSTEM PAUSE` を取り消し、アクティビティを再開します。アクティビティが中断されることはありません。
+
+```sql
+SYSTEM START [db.]table
+SYSTEM START ALL BACKGROUND
+```
+
+<div id="pause-background">
+  ### SYSTEM PAUSE
+</div>
+
+以降のバックグラウンド処理を停止しますが、現在実行中の処理は完了するまで待機します。
+
+```sql
+SYSTEM PAUSE [db.]table
+SYSTEM PAUSE ALL BACKGROUND
+```
+
+<div id="cancel-background">
+  ### SYSTEM CANCEL
+</div>
+
+現在実行中のアクティビティのみを中断します。今後のアクティビティはブロックされず、テーブルはスケジュールに従って引き続きリフレッシュまたは消費されます。進行中のアクティビティがない場合は何も行いません。
+
+```sql
+SYSTEM CANCEL [db.]table
+SYSTEM CANCEL ALL BACKGROUND
+```
+
+<div id="refresh-background">
+  ### SYSTEM REFRESH
+</div>
+
+スケジュール外で追加のサイクルを1回実行します。ストリーミングテーブル では、table が停止または一時停止中であっても、ただちに1回実行されます。リフレッシャブルmaterialized view では、`SYSTEM REFRESH VIEW` と同様に動作します。view が停止している場合、refresh は記憶され、`SYSTEM START` によって再開されると1回実行されます。
+
+```sql
+SYSTEM REFRESH [db.]table
+SYSTEM REFRESH ALL BACKGROUND
+```
+
+<div id="background-privileges">
+  ### 権限
+</div>
+
+各コマンドには、対象エンジンに対応する権限が必要です。リフレッシャブルmaterialized viewには `SYSTEM VIEWS`、ストリーミングテーブルには `SYSTEM STREAMING ENGINES` が必要です。どちらも `SYSTEM BACKGROUND` の子権限であるため、`SYSTEM BACKGROUND` を付与すると、このようなすべてのtableのバックグラウンド処理を制御できます。`ALL BACKGROUND` 形式は、ユーザーが制御を許可されているtableにのみ適用され、それ以外のtableは通知なくスキップされます。
 
 <div id="flush-object-storage-queue">
   ## SYSTEM FLUSH OBJECT STORAGE QUEUE
