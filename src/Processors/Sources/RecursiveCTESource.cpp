@@ -754,7 +754,30 @@ ParallelReplicasEngagement mayEngageParallelReplicas(IQueryTreeNode * root, cons
                 engagement.merge(mayEngageParallelReplicasForRemoteStorage(*storage, scope_context));
 
             if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
-                engagement.merge(mayEngageParallelReplicasForView(*view, table_function_node->getStorageSnapshot(), scope_context));
+            {
+                ParallelReplicasEngagement view_engagement
+                    = mayEngageParallelReplicasForView(*view, table_function_node->getStorageSnapshot(), scope_context);
+
+                /// Mirror of the `TableNode` branch above. The planner decides a table-function
+                /// leaf with the storage-level rule (`parallelReplicasEnabledForStorage`), which
+                /// accepts a `StorageView` when it unwraps to an eligible `MergeTree` table —
+                /// then the outer read is the local `MergeTree` read (subject to the row-count
+                /// estimate), and the view's inner query has parallel replicas disabled by
+                /// `StorageView::getViewContext`, contributing no read of its own. Reporting
+                /// only the inner-query engagement here would leave a leftmost
+                /// `view(...)` over an eligible `MergeTree` table looking unable to engage
+                /// parallel replicas, silently downgrading the forcing mode for a step the
+                /// planner would really parallelize.
+                if (parallelReplicasEnabledForViewStorage(*view, scope_context))
+                {
+                    engagement.local_merge_tree = true;
+                    /// Do not count the same view twice (see the `TableNode` branch).
+                    if (!view_engagement.local_merge_tree_read_count)
+                        ++engagement.local_merge_tree_read_count;
+                }
+
+                engagement.merge(view_engagement);
+            }
         }
 
         for (auto & child : subtree_node->getChildren())

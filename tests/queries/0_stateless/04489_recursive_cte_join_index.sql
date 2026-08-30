@@ -1413,6 +1413,39 @@ SELECT sum(n) FROM view_fn_left_dist_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
 
+-- The converse of shape 4: a leftmost `view(...)` over an eligible `MergeTree` table with
+-- `parallel_replicas_allow_view_over_mergetree = 1` *does* unwrap, so
+-- `allowParallelReplicasForJoinTree` accepts the join tree and the planner reads the
+-- underlying table with parallel replicas — the forcing mode must fail closed rather than
+-- silently downgrade the recursive step to a plain read.
+WITH RECURSIVE view_fn_left_mt_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT t.n + 1 FROM view(SELECT * FROM edges) AS e
+        LEFT JOIN view_fn_left_mt_pr_throw AS t ON e.from_id = t.n
+    WHERE t.n > 0 AND t.n < 10
+)
+SELECT sum(n) FROM view_fn_left_mt_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1,
+    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+-- ... and with the unwrapping off, the same query keeps the leftmost-view escape: the
+-- outer join tree is ineligible, the step runs plainly.
+WITH RECURSIVE view_fn_left_mt_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT t.n + 1 FROM view(SELECT * FROM edges) AS e
+        LEFT JOIN view_fn_left_mt_pr AS t ON e.from_id = t.n
+    WHERE t.n > 0 AND t.n < 10
+)
+SELECT sum(n) FROM view_fn_left_mt_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 0,
+    automatic_parallel_replicas_mode = 0;
+
 DROP TABLE edges_dist_replicas;
 
 DROP TABLE edges;
