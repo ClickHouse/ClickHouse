@@ -54,6 +54,7 @@ SELECT count() FROM timeSeriesSelector(currentDatabase(), 'ts_dist', 'up', 0, 0)
 -- The identifier spelling and the prometheusQuery functions resolve the table id in their own
 -- branches, so a regression in either would leave the two assertions above green.
 SELECT count() FROM timeSeriesData(ts_dist); -- { serverError UNEXPECTED_TABLE_ENGINE }
+SELECT count() FROM timeSeriesSelector(ts_dist, 'up', 0, 0); -- { serverError UNEXPECTED_TABLE_ENGINE }
 SELECT count() FROM prometheusQuery(ts_dist, 'up', 0); -- { serverError UNEXPECTED_TABLE_ENGINE }
 SELECT count() FROM prometheusQueryRange(currentDatabase(), 'ts_dist', 'up', 0, 0, 1); -- { serverError UNEXPECTED_TABLE_ENGINE }
 
