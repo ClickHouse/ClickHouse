@@ -116,15 +116,16 @@ SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_c
 SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 0;
 --    A result-only check stays green if the queries stop running the optimizer at all, so pin the
 --    pruning as well: given `> 5`, the sibling `> 3` is redundant and folded away, leaving the
---    Nullable-result `greater` plus one surviving constant comparison.
-SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) SETTINGS optimize_redundant_comparisons = 1) WHERE explain ILIKE '%function_name: greater,%';
-SELECT count() = 3 FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) SETTINGS optimize_redundant_comparisons = 0) WHERE explain ILIKE '%function_name: greater,%';
+--    Nullable-result `greater` plus one surviving constant comparison. Both settings are pinned on
+--    every query below because `clickhouse-test` randomizes `optimize_and_compare_chain`.
+SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1) WHERE explain ILIKE '%function_name: greater,%';
+SELECT count() = 3 FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (toNullable(t2.c0) > 0) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 0) WHERE explain ILIKE '%function_name: greater,%';
 --    The exact fuzzer query: here the Nullable-result comparison is over a correlated scalar
 --    subquery rather than a column. `optimize_and_compare_chain` does not gate this one -
 --    `tryOptimizeAndCompareChain` skips a chain holding a correlated subquery, while
 --    `tryOptimizeAndCompareNotEqualsChain` has no such guard - so it arrives only via
 --    `optimize_redundant_comparisons`. A correlated subquery is not supported in a join expression,
 --    so the query must report that handled exception instead of aborting.
-SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_redundant_comparisons = 1; -- { serverError NOT_IMPLEMENTED }
-SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_redundant_comparisons = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 0; -- { serverError NOT_IMPLEMENTED }
 DROP TABLE t_and_chain_array_join;
