@@ -128,8 +128,8 @@ Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pai
         },
         .returned_value = {"`1` if the text matches the condition, `0` otherwise. Returns the default value (`0`) if the request failed and `ai_function_throw_on_error` is disabled.", {"UInt8"}},
         .examples = {
-            {"Filter angry reviews", "SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')", ""},
-            {"Filter a column with explicit credentials", "SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5", ""},
+            {"Filter angry reviews", "CREATE TABLE reviews (body String) ENGINE = Memory;\nINSERT INTO reviews VALUES ('The package arrived three days late.');\nSELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')", ""},
+            {"Filter a column with explicit credentials", "CREATE TABLE issues (body String) ENGINE = Memory;\nINSERT INTO issues VALUES ('The application exits unexpectedly after login.');\nSELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5", ""},
         },
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::AI});
