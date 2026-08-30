@@ -32,6 +32,12 @@ SELECT count() FROM (SELECT n FROM generateRandom('n UInt8') LIMIT 1844674406941
 SETTINGS optimize_trivial_count_query = 0, max_block_size = 4294966784, preferred_block_size_bytes = 0,
     max_threads = 4, max_streams_to_max_threads_ratio = 1073741952; -- { serverError PARAMETER_OUT_OF_BOUND }
 
+-- With `max_rows_to_read` the planner asks for one row more than the limit it enforces, so the source
+-- count must be rounded up: one source is still needed when that limit is far below one block.
+SELECT count() FROM (SELECT s FROM generateRandom('s String') LIMIT 100000)
+SETTINGS optimize_trivial_count_query = 0, max_block_size = 65536, preferred_block_size_bytes = 0,
+    max_threads = 4, max_rows_to_read = 5; -- { serverError TOO_MANY_ROWS }
+
 -- The same request without the downstream resize.
 SELECT n FROM generateRandom('n UInt8') LIMIT 16
 SETTINGS max_block_size = 16, preferred_block_size_bytes = 0, max_threads = 4,
