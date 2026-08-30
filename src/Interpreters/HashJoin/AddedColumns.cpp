@@ -360,6 +360,9 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     ColumnsWithRowNumbers columns_with_row_numbers;
     [[maybe_unused]] auto & many_columns = columns_with_row_numbers.columns;
     [[maybe_unused]] auto & row_nums = columns_with_row_numbers.row_numbers;
+    /// `fillJoinOutputColumns` skips every gathered destination, so with all of them gathered nothing
+    /// reads this collection. A row store on the same chunk still reaches the code below.
+    [[maybe_unused]] const bool need_columnar_collect = num_direct_gather < num_columnar_dst;
     if constexpr (from_columns)
     {
         many_columns.reserve(size_to_reserve);
@@ -375,8 +378,11 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     {
         if constexpr (from_columns)
         {
-            many_columns.emplace_back(stored_columns[refWordBlockNo(row_ref_i)]);
-            row_nums.emplace_back(refWordRowNo(row_ref_i));
+            if (need_columnar_collect)
+            {
+                many_columns.emplace_back(stored_columns[refWordBlockNo(row_ref_i)]);
+                row_nums.emplace_back(refWordRowNo(row_ref_i));
+            }
         }
         if constexpr (from_row_store)
         {
@@ -391,9 +397,12 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     {
         if constexpr (from_columns)
         {
-            many_columns.emplace_back(nullptr);
-            row_nums.emplace_back(0);
-            columns_with_row_numbers.has_defaults = true;
+            if (need_columnar_collect)
+            {
+                many_columns.emplace_back(nullptr);
+                row_nums.emplace_back(0);
+                columns_with_row_numbers.has_defaults = true;
+            }
         }
         if constexpr (from_row_store)
         {

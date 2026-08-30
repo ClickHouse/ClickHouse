@@ -75,6 +75,17 @@ SELECT 'arm1 full_sorting_merge', count(), sum(cityHash64(*)) FROM dg_probe JOIN
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
     log_comment = 'dg_arm1_fsm', ast_fuzzer_runs = 0;
 
+-- Arm 1d: how many values were gathered, not merely that some were. Every other arm asserts only that
+-- one column took the gather, which stays true if a single admitted type falls back, because the values
+-- of the two paths are identical by construction. Pinning the row store off leaves all 30 payload
+-- columns of `dg_build` on the columnar path for all 1000 probe rows, with no planner estimate in the
+-- path, so 30000 is exact and dropping one type from `directGatherAdmits` moves it by 1000.
+SELECT 'arm1d per-type arming', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_build USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
+    enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm1d_per_type', ast_fuzzer_runs = 0;
+
 -- Arm 2: 100 probe keys have no match. With `join_use_nulls = 0` an unmatched right value is the type
 -- default, which is what a zero ref word makes the gather write. `Enum8` defaults to its first value
 -- instead of zero, so it is excluded from the gather and stays on the generic path in the same query.
@@ -201,7 +212,9 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     replaceOne(log_comment, 'dg_', '') AS arm,
-    max(ProfileEvents['HashJoinDirectGatheredRows']) > 0 AS gathered
+    if(log_comment = 'dg_arm1d_per_type',
+       toString(max(ProfileEvents['HashJoinDirectGatheredRows'])),
+       toString(max(ProfileEvents['HashJoinDirectGatheredRows']) > 0)) AS gathered
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'dg_arm%'
 GROUP BY log_comment

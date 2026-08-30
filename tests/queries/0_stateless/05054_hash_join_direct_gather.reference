@@ -1,6 +1,7 @@
 arm1 hash	1000	18410106349405487764
 arm1 parallel_hash	1000	18410106349405487764
 arm1 full_sorting_merge	1000	18410106349405487764
+arm1d per-type arming	1000	18410106349405487764
 arm2 unmatched defaults	600	10902851501620721112	101	100	100
 arm2 unmatched nulls	600	11429185386676192915	100	100	100
 arm3 row list	1000	749412854217235210
@@ -16,6 +17,7 @@ arm9 reranged control	1000	749412854217235210
 arm1_fsm	0
 arm1_hash	1
 arm1_parallel_hash	1
+arm1d_per_type	30000
 arm2_defaults	1
 arm2_nulls	1
 arm3_by_blocks	1

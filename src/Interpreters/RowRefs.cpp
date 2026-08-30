@@ -372,8 +372,8 @@ void StoredColumnsIndex::resolveEmitColumns(
                     continue;
                 }
                 const std::string_view raw_data = column.getRawData();
-                /// A positive invariant rather than a list of column classes to refuse: any other column
-                /// that delegates `getRawData` hands back a buffer not holding its own rows.
+                /// Any column that delegates `getRawData` hands back a buffer that does not hold its
+                /// own rows, so require the size to account for exactly this column's rows.
                 if (raw_data.size() != column.size() * stride)
                 {
                     gather_refused = true;
