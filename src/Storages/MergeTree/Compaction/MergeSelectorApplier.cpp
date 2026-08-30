@@ -130,7 +130,12 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
         simple_merge_settings.min_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_seconds];
 
     if (ctx.aggressive)
+    {
         simple_merge_settings.base = 1;
+        /// Aggressive selection (`OPTIMIZE` without `FINAL`) is an explicit user request that ignores
+        /// part novelty, so the background anti-churn gate for fresh small parts must not apply to it.
+        simple_merge_settings.small_parts_min_count = 0;
+    }
 
     return simple_merge_settings;
 }
