@@ -201,6 +201,7 @@ private:
         std::unordered_set<const void *> removed_edges;
     };
     RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
+    RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
     std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
     void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
 

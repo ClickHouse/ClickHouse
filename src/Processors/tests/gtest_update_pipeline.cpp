@@ -12,6 +12,9 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <functional>
+#include <utility>
+
 using namespace DB;
 
 namespace
@@ -60,6 +63,9 @@ public:
 
     String getName() const override { return "DynamicSourceCoordinator"; }
 
+    /// Called once, from `prepare`, right before the cycle that retires the current source.
+    void setBeforeRetireHook(std::function<void()> hook) { before_retire_hook = std::move(hook); }
+
     Status prepare() override
     {
         auto & output = outputs.front();
@@ -69,7 +75,12 @@ public:
 
         auto & input = inputs.back();
         if (input.isFinished())
+        {
+            if (before_retire_hook)
+                std::exchange(before_retire_hook, {})();
+
             return Status::UpdatePipeline;
+        }
 
         if (!output.canPush())
             return Status::PortFull;
@@ -129,6 +140,7 @@ private:
     const SharedHeader header;
     ProcessorPtr current_source;
     std::vector<std::weak_ptr<IProcessor>> source_history;
+    std::function<void()> before_retire_hook;
 };
 
 class FinishingSource final : public IProcessor
@@ -559,4 +571,36 @@ TEST(Processors, UpdatePipelineDeferredRemovalOfUnfinishedProcessors)
     }
 
     EXPECT_EQ(coordinator->getInputs().size(), 1u);
+}
+
+TEST(Processors, UpdatePipelineRemovalIsNotStrandedByCancellation)
+{
+    auto header = makeHeader();
+
+    auto coordinator = std::make_shared<DynamicSourceCoordinator>(header);
+    Pipe pipe(coordinator);
+
+    QueryPipeline pipeline(std::move(pipe));
+    {
+        PullingPipelineExecutor executor(pipeline);
+
+        /// Cancel from inside `prepare`, so that the `updatePipeline` retiring the first source is
+        /// the very one that observes the cancellation.
+        coordinator->setBeforeRetireHook([&] { executor.cancel(); });
+
+        Chunk chunk;
+        ASSERT_TRUE(executor.pull(chunk));
+        ASSERT_EQ(chunk.getNumRows(), 1u);
+
+        /// Drains whatever is left after the cancellation.
+        while (executor.pull(chunk))
+        {
+        }
+    }
+
+    ASSERT_EQ(coordinator->totalSourcesCreated(), 2u);
+
+    /// A source scheduled for removal must leave the pipeline even when the query is cancelled in
+    /// the middle of the update, otherwise it stays around until the whole pipeline is destroyed.
+    EXPECT_TRUE(coordinator->getSourceWeak(0).expired());
 }
