@@ -12,6 +12,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
@@ -422,8 +423,19 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     }
     else
     {
-        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
         auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+        /// A field name is required per the Iceberg spec, and an empty column name is not representable in ClickHouse.
+        for (size_t i = 0; i != fields->size(); ++i)
+        {
+            auto field = fields->getObject(static_cast<UInt32>(i));
+            if (field->getValue<String>(f_name).empty())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg schema with schema-id {} has a field with id {} whose name is empty",
+                    schema_id,
+                    field->getValue<Int32>(f_id));
+        }
+
         auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
         String current_full_name{};
         for (size_t i = 0; i != fields->size(); ++i)
@@ -438,6 +450,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
+        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
     }
     current_schema_id = std::nullopt;
 }
@@ -553,6 +566,9 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
 DataTypePtr
 IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
 {
+    /// The schema comes from the table metadata and can be nested arbitrarily deeply.
+    checkStackSize();
+
     String type_name = type->getValue<String>(f_type);
     if (type_name == f_list)
     {
@@ -719,7 +735,15 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 /// a whitespace-only difference is the same type and needs only a rename, not a cast.
                 if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
                 {
-                    if (old_json->getValue<String>(f_name) != name)
+                    /// Nullability is carried by the separate `required` key, so equal type strings
+                    /// can still resolve to different types. Only relaxing required to optional is
+                    /// legal evolution; the reverse keeps the plain passthrough.
+                    const bool old_required = old_json->getValue<bool>(f_required);
+                    if (old_required && !required && !old_node->result_type->equals(*type))
+                    {
+                        node = &dag->addCast(*old_node, type, name, nullptr);
+                    }
+                    else if (old_json->getValue<String>(f_name) != name)
                     {
                         node = &dag->addAlias(*old_node, name);
                     }
@@ -826,7 +850,7 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 }
 
 
-std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
+std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);
 
@@ -836,7 +860,7 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
     return it->second;
 }
 
-bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
+bool IcebergSchemaProcessor::hasClickHouseTableSchemaById(Int32 id) const
 {
     SharedLockGuard lock(mutex);
 
