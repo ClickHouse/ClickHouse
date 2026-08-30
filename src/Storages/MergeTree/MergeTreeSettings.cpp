@@ -309,7 +309,7 @@ subcolumns and can improve compression efficiency.
 
 Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
 are not affected, except when they appear in a `Tuple` or a declared `JSON` path with
-`propagate_types_serialization_versions_to_nested_types = 1` and `serialization_info_version = 'with_subcolumns'`.
+`propagate_types_serialization_versions_to_nested_types = 1`.
 
 Possible values:
 
