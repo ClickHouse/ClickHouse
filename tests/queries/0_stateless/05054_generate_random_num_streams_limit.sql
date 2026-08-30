@@ -66,7 +66,7 @@ SETTINGS optimize_trivial_count_query = 0, max_threads = 4;
 SELECT count() FROM (SELECT s FROM generateRandom('s String') LIMIT 1000)
 SETTINGS optimize_trivial_count_query = 0, max_threads = 4, max_streams_to_max_threads_ratio = 4;
 
--- A reduction to a few sources followed by the downstream resize back up to `max_threads`.
+-- A reduction to a few sources followed by the downstream resize back up to the requested count.
 SELECT count() FROM (SELECT s FROM generateRandom('s String') LIMIT 100000)
 SETTINGS optimize_trivial_count_query = 0, max_block_size = 65536, max_threads = 4,
     max_streams_to_max_threads_ratio = 4;
