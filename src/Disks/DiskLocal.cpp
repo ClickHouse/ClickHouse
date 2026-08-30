@@ -83,8 +83,6 @@ UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64
 /// Create a directory tree and make every level it creates durable. `mkdir` only writes the new
 /// entry into the parent directory, so it is the parent that has to be fsync'd; synchronizing the
 /// new directory itself would persist its contents, not its own existence.
-/// Best-effort on purpose: `open(parent, O_DIRECTORY)` needs read permission while creating a
-/// subdirectory does not, so a hardened (e.g. 0311) ancestor must not prevent the disk from starting.
 void createDirectoriesDurably(const String & path, LoggerPtr log)
 {
     /// A disk root is not required to be absolute, so anchor it; only trailing separators are
@@ -101,7 +99,9 @@ void createDirectoriesDurably(const String & path, LoggerPtr log)
 
     fs::create_directories(path);
 
-    /// Each created level's owning parent, independently: one level's failure must not stop the others.
+    /// Each created level's owning parent, independently: one level's failure must not stop the
+    /// others. `open(parent, O_DIRECTORY)` needs read permission while creating a subdirectory does
+    /// not, so a hardened (e.g. 0311) ancestor is logged and skipped instead of failing the disk.
     for (const auto & level : created_levels)
     {
         try
