@@ -112,7 +112,6 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    bool isExperimental() const override { return true; }
     String getDescription() const override;
 
 private:
@@ -2060,7 +2059,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 {
                     return bitsFromOrdered<T>(orderedFromBits(reconstructed_bits) + zigzagDecode(adjustments[i]));
                 };
-                const auto checkedAdd = [](SignedType lhs, SignedType rhs) ALWAYS_INLINE
+                const auto checked_add = [](SignedType lhs, SignedType rhs) ALWAYS_INLINE
                 {
                     if ((rhs > 0 && lhs > std::numeric_limits<SignedType>::max() - rhs)
                         || (rhs < 0 && lhs < std::numeric_limits<SignedType>::min() - rhs))
@@ -2072,10 +2071,10 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                     Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, T{0});
                     if (adjustment_bits == 0)
                         for (UInt32 i = 0; i < count; ++i)
-                            emit(i, reconstruct(checkedAdd(base, static_cast<SignedType>(unpacked[i]))));
+                            emit(i, reconstruct(checked_add(base, static_cast<SignedType>(unpacked[i]))));
                     else
                         for (UInt32 i = 0; i < count; ++i)
-                            emit(i, adjust(i, reconstruct(checkedAdd(base, static_cast<SignedType>(unpacked[i])))));
+                            emit(i, adjust(i, reconstruct(checked_add(base, static_cast<SignedType>(unpacked[i])))));
                 }
                 else
                 {
@@ -2111,7 +2110,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                         if (i > 0)
                         {
                             const SignedType delta = std::bit_cast<SignedType>(zigzagDecode(unpacked[i]));
-                            const SignedType next = checkedAdd(accumulator, delta);
+                            const SignedType next = checked_add(accumulator, delta);
                             if (is_exception[i] && quantizable_exception[i] && unpacked[i] != 0 && next != exception_quantized[i])
                                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt delta at a quantizable exception");
                             if (!is_exception[i] || unpacked[i] != 0)
