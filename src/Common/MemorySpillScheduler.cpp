@@ -7,85 +7,63 @@
 
 namespace DB
 {
-bool MemorySpillScheduler::checkAndSpill(IProcessor * processor)
+void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
 {
-    /// One controller decision gates every prepared task. Non-spillable work cannot contribute to
-    /// recovery and may allocate, so it stays parked for the complete graph-pressure episode too.
-    /// PipelineExecutor's outer scan boundary linearizes an episode which opens concurrently with
-    /// a task admitted just before this observation.
-    if (!processor->isSpillable())
-        return pressure_round.load(std::memory_order_acquire) != 0;
+    chassert(processor->isSpillable());
 
+    const UInt64 forced_epoch = forced_spill_request_epoch.load(std::memory_order_acquire);
+    const bool force_spill = forced_spill_completed_epoch.load(std::memory_order_acquire) < forced_epoch;
     const auto stats = processor->getMemoryStats();
-    UInt64 forced_epoch = 0;
-    bool pressure_active = false;
-    bool force_spill = false;
-    bool claimed = false;
-
-    {
-        std::lock_guard lock(mutex);
-        auto it = processor_states.find(processor);
-        chassert(it != processor_states.end());
-        if (it == processor_states.end())
-            return pressure_round.load(std::memory_order_relaxed) != 0;
-
-        /// Read the epoch only after collecting statistics and taking the scheduler mutex. If an
-        /// epoch opens while getMemoryStats() runs, this work must still observe and offer itself
-        /// to that epoch instead of letting the following graph scan prove false exhaustion.
-        forced_epoch = forced_spill_request_epoch.load(std::memory_order_relaxed);
-        pressure_active = pressure_round.load(std::memory_order_relaxed) != 0;
-        force_spill = pressure_active
-            && forced_spill_completed_epoch.load(std::memory_order_relaxed) < forced_epoch;
-
-        auto & state = it->second;
-        state.stats = stats;
-
-        /// Forced recovery belongs to the query. The first runnable processor that can actually
-        /// spill claims the epoch. The processor table is populated before pressure begins, so
-        /// this path performs no allocation.
-        if (force_spill
-            && state.retired_forced_epoch < forced_epoch
-            && stats.spillable_memory_bytes > 0
-            && forced_spill_claimed_epoch.load(std::memory_order_relaxed) < forced_epoch)
-        {
-            forced_spill_claimant = processor;
-            forced_spill_claimed_epoch.store(forced_epoch, std::memory_order_release);
-            claimed = true;
-        }
-        if (force_spill)
-            state.retired_forced_epoch = forced_epoch;
-    }
 
     if (force_spill)
     {
-        if (!claimed)
-            return true;
-
-        bool spill_succeeded = false;
-        Int64 reclaimed_bytes = 0;
-        try
+        bool claimed = false;
         {
-            const Int64 memory_before = getCurrentQueryMemoryUsage();
-            spill_succeeded = processor->spillOnSize(stats.spillable_memory_bytes);
-            const Int64 memory_after = getCurrentQueryMemoryUsage();
-            reclaimed_bytes = std::max<Int64>(memory_before - memory_after, 0);
-        }
-        catch (...)
-        {
-            /// A failed recovery task must not strand the graph in Pending. Publish the bounded
-            /// no-progress result before preserving the processor exception for normal query
-            /// cancellation/error handling.
             std::lock_guard lock(mutex);
-            if (forced_spill_request_epoch.load(std::memory_order_acquire) == forced_epoch
-                && forced_spill_claimant == processor)
+            auto & state = processor_states[processor];
+            state.stats = stats;
+            state.observed_forced_epoch = forced_epoch;
+
+            /// Forced recovery belongs to the query. The first runnable processor that can
+            /// actually spill claims the epoch; no cached processor choice may pin it.
+            if (stats.spillable_memory_bytes > 0
+                && forced_spill_claimed_epoch.load(std::memory_order_relaxed) < forced_epoch)
             {
-                forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
-                forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
-                forced_spill_result_epoch.store(forced_epoch, std::memory_order_release);
-                forced_spill_completed_epoch.store(forced_epoch, std::memory_order_release);
+                forced_spill_claimant = processor;
+                forced_spill_claimed_epoch.store(forced_epoch, std::memory_order_release);
+                claimed = true;
             }
-            throw;
+            else if (forced_spill_claimed_epoch.load(std::memory_order_relaxed) < forced_epoch)
+            {
+                /// Zero is proof of no candidate only after every registered processor has
+                /// supplied real statistics for this epoch.
+                const bool all_observed = !processor_states.empty() && std::all_of(
+                    processor_states.begin(), processor_states.end(), [forced_epoch](const auto & item)
+                    {
+                        return item.second.observed_forced_epoch >= forced_epoch;
+                    });
+                const bool any_spillable = std::any_of(
+                    processor_states.begin(), processor_states.end(), [](const auto & item)
+                    {
+                        return item.second.stats.spillable_memory_bytes > 0;
+                    });
+                if (all_observed && !any_spillable)
+                {
+                    forced_spill_claimant = nullptr;
+                    forced_spill_claimed_epoch.store(forced_epoch, std::memory_order_relaxed);
+                    forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
+                    forced_spill_completed_epoch.store(forced_epoch, std::memory_order_release);
+                }
+            }
         }
+
+        if (!claimed)
+            return;
+
+        const Int64 memory_before = getCurrentQueryMemoryUsage();
+        const bool spill_succeeded = processor->spillOnSize(stats.spillable_memory_bytes);
+        const Int64 memory_after = getCurrentQueryMemoryUsage();
+        const Int64 reclaimed_bytes = std::max<Int64>(memory_before - memory_after, 0);
 
         std::lock_guard lock(mutex);
         if (forced_spill_request_epoch.load(std::memory_order_acquire) == forced_epoch
@@ -98,24 +76,16 @@ bool MemorySpillScheduler::checkAndSpill(IProcessor * processor)
                     ? ForcedSpillOutcome::Progress
                     : ForcedSpillOutcome::NoProgress,
                 std::memory_order_relaxed);
-            forced_spill_result_epoch.store(forced_epoch, std::memory_order_release);
             forced_spill_completed_epoch.store(forced_epoch, std::memory_order_release);
         }
-        return true;
+        return;
     }
 
-    /// Completion is only the query-to-scheduler hand-off. Keep every prepared task in the
-    /// recovery lane until the allocation scheduler approves, kills, or otherwise resolves all
-    /// requesters in this dependency graph and closes pressure_round.
-    if (pressure_active)
-        return true;
-
     if (!enable || !getHardLimit())
-        return false;
+        return;
 
-    if (processor && processor == selectSpilledProcessor(processor, stats, false))
+    if (processor == selectSpilledProcessor(processor, stats, false))
         processor->spillOnSize(stats.spillable_memory_bytes);
-    return false;
 }
 
 void MemorySpillScheduler::registerProcessor(IProcessor * processor)
@@ -127,81 +97,9 @@ void MemorySpillScheduler::registerProcessor(IProcessor * processor)
     updateTopProcessor();
 }
 
-void MemorySpillScheduler::setProcessorRunnable(IProcessor * processor, bool runnable)
-{
-    if (!processor->isSpillable())
-        return;
-
-    std::lock_guard lock(mutex);
-    auto it = processor_states.find(processor);
-    if (it == processor_states.end())
-        return;
-
-    const bool became_runnable = runnable && !it->second.runnable;
-    it->second.runnable = runnable;
-
-    /// A stable all-zero census is allowed to finish immediately; we never reserve capacity for
-    /// hypothetical future work. If a concrete spillable node becomes executable before suction
-    /// priority is injected, that event opens exactly one new recovery epoch for the same graph.
-    /// The previous result stays monotonic for lagging observers, while the parked allocation's
-    /// next scheduler pass receives the new Pending epoch.
-    const UInt64 requested = forced_spill_request_epoch.load(std::memory_order_relaxed);
-    if (became_runnable
-        && pressure_round.load(std::memory_order_relaxed) == 1
-        && forced_spill_completed_epoch.load(std::memory_order_relaxed) >= requested
-        && forced_spill_outcome.load(std::memory_order_relaxed) == ForcedSpillOutcome::NoProgress)
-    {
-        forced_spill_claimant = nullptr;
-        forced_spill_request_epoch.store(requested + 1, std::memory_order_release);
-    }
-}
-
-void MemorySpillScheduler::beginForcedSpillScan()
+MemorySpillScheduler::ForcedSpillRequest MemorySpillScheduler::requestForcedSpill()
 {
     std::lock_guard lock(mutex);
-    ++active_forced_spill_scans;
-}
-
-void MemorySpillScheduler::finishForcedSpillScan()
-{
-    std::lock_guard lock(mutex);
-    chassert(active_forced_spill_scans > 0);
-    if (active_forced_spill_scans == 0)
-        return;
-    --active_forced_spill_scans;
-    if (active_forced_spill_scans != 0 || pressure_round.load(std::memory_order_relaxed) == 0)
-        return;
-
-    const UInt64 requested = forced_spill_request_epoch.load(std::memory_order_relaxed);
-    const bool pending = pressure_round.load(std::memory_order_relaxed) != 0
-        && forced_spill_completed_epoch.load(std::memory_order_relaxed) < requested
-        && forced_spill_claimed_epoch.load(std::memory_order_relaxed) < requested;
-    if (!pending)
-        return;
-
-    const bool has_recovery_candidate = std::any_of(
-        processor_states.begin(), processor_states.end(),
-        [requested](const auto & entry)
-        {
-            return entry.second.runnable && entry.second.retired_forced_epoch < requested;
-        });
-    if (!has_recovery_candidate)
-    {
-        forced_spill_claimant = nullptr;
-        forced_spill_claimed_epoch.store(requested, std::memory_order_relaxed);
-        forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
-        forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
-        forced_spill_result_epoch.store(requested, std::memory_order_release);
-        forced_spill_completed_epoch.store(requested, std::memory_order_release);
-    }
-}
-
-MemorySpillScheduler::ForcedSpillRequest MemorySpillScheduler::requestForcedSpill(bool register_requester)
-{
-    std::lock_guard lock(mutex);
-
-    if (register_requester)
-        ++pressure_requesters;
 
     const UInt64 current_round = pressure_round.load(std::memory_order_acquire);
     const UInt64 requested_epoch = forced_spill_request_epoch.load(std::memory_order_acquire);
@@ -211,23 +109,17 @@ MemorySpillScheduler::ForcedSpillRequest MemorySpillScheduler::requestForcedSpil
     {
         const UInt64 new_epoch = requested_epoch + 1;
         pressure_round.store(1, std::memory_order_release);
+        forced_spill_outcome.store(ForcedSpillOutcome::Pending, std::memory_order_relaxed);
+        forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
         forced_spill_claimant = nullptr;
         forced_spill_request_epoch.store(new_epoch, std::memory_order_release);
 
-        /// An empty runnable set at a stable graph boundary is an explicit no-candidate result,
-        /// not a timeout or a count of worker wakeups.
-        const bool has_recovery_candidate = std::any_of(
-            processor_states.begin(), processor_states.end(),
-            [new_epoch](const auto & entry)
-            {
-                return entry.second.runnable && entry.second.retired_forced_epoch < new_epoch;
-            });
-        if (!has_recovery_candidate && active_forced_spill_scans == 0)
+        /// An empty registered set is an explicit no-candidate result, not a timeout or a count of
+        /// worker wakeups. Pipelines register spillable processors before execution.
+        if (processor_states.empty())
         {
             forced_spill_claimed_epoch.store(new_epoch, std::memory_order_relaxed);
             forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
-            forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
-            forced_spill_result_epoch.store(new_epoch, std::memory_order_release);
             forced_spill_completed_epoch.store(new_epoch, std::memory_order_release);
         }
         return {.epoch = new_epoch, .inject_priority = false};
@@ -246,45 +138,22 @@ MemorySpillScheduler::ForcedSpillResult MemorySpillScheduler::getForcedSpillResu
 {
     if (epoch == 0 || forced_spill_completed_epoch.load(std::memory_order_acquire) < epoch)
         return {};
-    if (forced_spill_result_epoch.load(std::memory_order_acquire) != epoch)
-    {
-        /// A newer completed epoch may overwrite the single result slot before a lagging worker
-        /// observes this one. Completion is monotonic: report a completed sentinel rather than
-        /// turning an already-finished episode back into Pending. Current demand reconciliation
-        /// observes the actual memory movement independently.
-        return {.outcome = ForcedSpillOutcome::NoProgress, .reclaimed_bytes = 0};
-    }
     return {
         .outcome = forced_spill_outcome.load(std::memory_order_relaxed),
         .reclaimed_bytes = forced_spill_reclaimed_bytes.load(std::memory_order_relaxed),
     };
 }
 
-void MemorySpillScheduler::finishMemoryPressure(bool unregister_requester)
+void MemorySpillScheduler::finishMemoryPressure()
 {
     std::lock_guard lock(mutex);
-    if (unregister_requester)
-    {
-        chassert(pressure_requesters > 0);
-        if (pressure_requesters > 0)
-            --pressure_requesters;
-        if (pressure_requesters > 0)
-            return;
-    }
-    else
-        pressure_requesters = 0;
-
     pressure_round.store(0, std::memory_order_release);
     const UInt64 requested = forced_spill_request_epoch.load(std::memory_order_acquire);
-    if (forced_spill_completed_epoch.load(std::memory_order_relaxed) < requested)
-    {
-        forced_spill_claimed_epoch.store(requested, std::memory_order_relaxed);
-        forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
-        forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
-        forced_spill_result_epoch.store(requested, std::memory_order_release);
-        forced_spill_completed_epoch.store(requested, std::memory_order_release);
-    }
+    forced_spill_claimed_epoch.store(requested, std::memory_order_relaxed);
+    forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
+    forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
     forced_spill_claimant = nullptr;
+    forced_spill_completed_epoch.store(requested, std::memory_order_release);
 }
 
 Int64 MemorySpillScheduler::getHardLimit()
@@ -309,24 +178,30 @@ void MemorySpillScheduler::remove(IProcessor * processor)
     std::lock_guard lock(mutex);
     processor_states.erase(processor);
     const UInt64 requested = forced_spill_request_epoch.load(std::memory_order_relaxed);
-    if (forced_spill_claimant == processor)
+    if (forced_spill_claimant == processor
+        && forced_spill_completed_epoch.load(std::memory_order_relaxed) < requested)
     {
         forced_spill_claimant = nullptr;
-        if (forced_spill_completed_epoch.load(std::memory_order_relaxed) < requested)
-        {
-            forced_spill_claimed_epoch.store(requested - 1, std::memory_order_release);
-            /// The claimant disappeared before publishing a result. Re-offer the same epoch to
-            /// every still-runnable processor; the enclosing executor scan will either find a new
-            /// claimant or close the stable empty census as NoProgress.
-            for (auto & [_, state] : processor_states)
-            {
-                if (state.runnable && state.retired_forced_epoch == requested)
-                    state.retired_forced_epoch = requested - 1;
-            }
-        }
+        forced_spill_claimed_epoch.store(requested - 1, std::memory_order_relaxed);
     }
-    /// Do not close on an individual transition: this graph update may make a downstream
-    /// processor runnable. finishForcedSpillScan() observes the stable post-update set.
+    const bool forced_spill_is_pending = pressure_round.load(std::memory_order_relaxed) != 0
+        && forced_spill_completed_epoch.load(std::memory_order_relaxed) < requested;
+    const bool all_remaining_observed = std::all_of(
+        processor_states.begin(), processor_states.end(), [requested](const auto & item)
+        {
+            return item.second.observed_forced_epoch >= requested;
+        });
+    const bool any_remaining_spillable = std::any_of(
+        processor_states.begin(), processor_states.end(), [](const auto & item)
+        {
+            return item.second.stats.spillable_memory_bytes > 0;
+        });
+    if (forced_spill_is_pending && all_remaining_observed && !any_remaining_spillable)
+    {
+        forced_spill_claimed_epoch.store(requested, std::memory_order_relaxed);
+        forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
+        forced_spill_completed_epoch.store(requested, std::memory_order_release);
+    }
     updateTopProcessor();
 }
 
@@ -353,11 +228,7 @@ IProcessor * MemorySpillScheduler::selectSpilledProcessor(
     const auto current_mem_used = force_spill ? 0 : getCurrentQueryMemoryUsage();
     const auto limit = force_spill ? 0 : getHardLimit();
     std::lock_guard lock(mutex);
-    auto it = processor_states.find(current_processor);
-    chassert(it != processor_states.end());
-    if (it == processor_states.end())
-        return nullptr;
-    it->second.stats = mem_stats;
+    processor_states[current_processor].stats = mem_stats;
 
     // quick check
     max_reserved_memory_bytes = std::max(mem_stats.need_reserved_memory_bytes, max_reserved_memory_bytes);

@@ -72,6 +72,11 @@ struct WorkloadResources
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
         }
+        if (reservation)
+        {
+            if (auto group = CurrentThread::getGroup())
+                reservation->setMemorySpillScheduler(group->memory_spill_scheduler);
+        }
     }
 
     WorkloadResources(WorkloadResources && other) = default;
@@ -141,78 +146,23 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
 
         throw;
     }
-    try
+    if (auto group = CurrentThread::getGroup())
     {
-        bindMemorySpillScheduler();
-        if (process_list_element)
-        {
-            // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw
-            // as that would leave the executor "linked"
-            process_list_element->addPipelineExecutor(this);
-        }
+        for (const auto & processor : *processors)
+            group->memory_spill_scheduler->registerProcessor(processor.get());
     }
-    catch (...)
-    {
-        /// Construction failure does not run ~PipelineExecutor. Remove every possible partial
-        /// registration now so the query scheduler cannot retain raw processor pointers.
-        if (memory_spill_scheduler)
-        {
-            memory_spill_scheduler->beginForcedSpillScan();
-            for (const auto & processor : *processors)
-                memory_spill_scheduler->remove(processor.get());
-            memory_spill_scheduler->finishForcedSpillScan();
-        }
-        throw;
-    }
-}
-
-void PipelineExecutor::bindMemorySpillScheduler()
-{
-    if (memory_spill_scheduler || !graph)
-        return;
-
-    auto group = CurrentThread::getGroup();
-    auto scheduler = group ? group->memory_spill_scheduler : nullptr;
     if (process_list_element)
     {
-        if (auto * reservation = process_list_element->getMemoryReservation())
-            scheduler = reservation->bindMemorySpillScheduler(scheduler);
+        // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw
+        // as that would leave the executor "linked"
+        process_list_element->addPipelineExecutor(this);
     }
-
-    /// A nested executor may be created outside a ThreadGroup while sharing a reservation which
-    /// is already bound to the dependency graph controller. Do not let that executor escape the
-    /// graph merely because it cannot propose a new controller of its own.
-    if (!scheduler)
-        return;
-
-    memory_spill_scheduler = std::move(scheduler);
-    graph->setMemorySpillScheduler(memory_spill_scheduler);
-    for (const auto & processor : graph->getProcessors())
-        memory_spill_scheduler->registerProcessor(processor.get());
-}
-
-void PipelineExecutor::setMemorySpillSchedulerActive(bool active)
-{
-    if (!memory_spill_scheduler || !graph)
-        return;
-
-    /// Do not reserve recovery opportunity for a cooperatively paused executor. Mark its prepared
-    /// nodes dormant at the stable boundary; resuming them is a concrete runnable event and may
-    /// open one new epoch before suction, via MemorySpillScheduler::setProcessorRunnable().
-    graph->setMemorySpillSchedulerActive(active);
 }
 
 PipelineExecutor::~PipelineExecutor()
 {
     if (process_list_element)
         process_list_element->removePipelineExecutor(this);
-    if (memory_spill_scheduler && graph)
-    {
-        memory_spill_scheduler->beginForcedSpillScan();
-        for (const auto & processor : graph->getProcessors())
-            memory_spill_scheduler->remove(processor.get());
-        memory_spill_scheduler->finishForcedSpillScan();
-    }
 }
 
 const Processors & PipelineExecutor::getProcessors() const
@@ -254,10 +204,6 @@ void PipelineExecutor::cancelReading()
 void PipelineExecutor::finish()
 {
     tasks.finish();
-    /// A cancelled/failed executor may share its graph controller with live nested work. Retire
-    /// its candidates durably so a late prepare/async notification cannot pin that graph's next
-    /// recovery epoch to work which will never execute.
-    setMemorySpillSchedulerActive(false);
 }
 
 bool PipelineExecutor::tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired)
@@ -315,17 +261,9 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
 
         if (yield_flag && *yield_flag)
-        {
-            setMemorySpillSchedulerActive(false);
             return true;
-        }
     }
 
-    setMemorySpillSchedulerActive(true);
-    SCOPE_EXIT({
-        if (!tasks.isFinished())
-            setMemorySpillSchedulerActive(false);
-    });
     executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
 
     if (!tasks.isFinished())
@@ -458,60 +396,38 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 
         while (!tasks.isFinished() && context.hasTask() && !yield)
         {
-            bool recovery_only_task = false;
+            if (!context.executeTask())
+                cancel(ExecutionStatus::Exception);
+
+            if (tasks.isFinished())
+                break;
+
+            if (!checkTimeLimitSoft())
+                break;
+
+#ifndef NDEBUG
+            Stopwatch processing_time_watch;
+#endif
+
+            /// Try to execute neighbour processor.
             size_t spawn_count = 0;
             {
-                /// This whole execute/update pair is one stable query-graph census boundary. An
-                /// epoch opening concurrently with ordinary work waits for the corresponding graph
-                /// update; a recovery-only task is explicitly retired and deferred before the
-                /// boundary closes.
-                if (memory_spill_scheduler)
-                    memory_spill_scheduler->beginForcedSpillScan();
-                SCOPE_EXIT({
-                    if (memory_spill_scheduler)
-                        memory_spill_scheduler->finishForcedSpillScan();
-                });
+                Queue queue;
+                Queue async_queue;
 
-                if (!context.executeTask())
+                /// Prepare processor after execution.
+                auto status = graph->updateNode(context.getTask(), queue, async_queue);
+                if (status == ExecutingGraph::UpdateNodeStatus::Exception)
                     cancel(ExecutionStatus::Exception);
-                recovery_only_task = context.wasTaskConsumedForRecovery();
 
-                if (tasks.isFinished())
-                    break;
-
-                if (!checkTimeLimitSoft())
-                    break;
-
-#ifndef NDEBUG
-                Stopwatch processing_time_watch;
-#endif
-
-                if (recovery_only_task)
-                {
-                    /// IProcessor::prepare() may already have pulled input into processor-owned
-                    /// state. Preserve this exact task before CPU renewal can preempt the context;
-                    /// re-preparing it could overwrite or lose that input.
-                    tasks.deferTaskForRecovery(context);
-                }
-                else
-                {
-                    Queue queue;
-                    Queue async_queue;
-
-                    /// Prepare processor after execution.
-                    auto status = graph->updateNode(context.getTask(), queue, async_queue);
-                    if (status == ExecutingGraph::UpdateNodeStatus::Exception)
-                        cancel(ExecutionStatus::Exception);
-
-                    /// Push other tasks to global queue.
-                    if (status == ExecutingGraph::UpdateNodeStatus::Done)
-                        spawn_count = tasks.pushTasks(queue, async_queue, context);
-                }
-
-#ifndef NDEBUG
-                context.processing_time_ns += processing_time_watch.elapsed();
-#endif
+                /// Push other tasks to global queue.
+                if (status == ExecutingGraph::UpdateNodeStatus::Done)
+                    spawn_count = tasks.pushTasks(queue, async_queue, context);
             }
+
+#ifndef NDEBUG
+            context.processing_time_ns += processing_time_watch.elapsed();
+#endif
 
 
             /// Upscaling: `pushTasks` tells us how many additional threads would usefully
@@ -598,9 +514,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     throw;
                 }
             }
-
-            if (recovery_only_task)
-                std::this_thread::yield();
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
@@ -734,27 +647,14 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// to the full ceiling so the growth check in the block becomes a no-op.
     desired_threads = lazy_allocation ? 1 : num_threads;
 
-    /// Construction may happen before a ThreadGroup is installed (notably nested executors).
-    /// Bind at the first execution point as a fallback, and canonicalize through the shared
-    /// MemoryReservation so the whole dependency graph uses one processor census.
-    bindMemorySpillScheduler();
-
     Queue queue;
     Queue async_queue;
-    if (memory_spill_scheduler)
-        memory_spill_scheduler->beginForcedSpillScan();
-    SCOPE_EXIT({
-        if (memory_spill_scheduler)
-            memory_spill_scheduler->finishForcedSpillScan();
-    });
     graph->initializeExecution(queue, async_queue);
 
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
-    tasks.init(
-        num_threads, 1, cpu_slots, memory_spill_scheduler,
-        profile_processors, trace_processors, step_wall_clock_registry, read_progress_callback.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, step_wall_clock_registry, read_progress_callback.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
 
     /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to

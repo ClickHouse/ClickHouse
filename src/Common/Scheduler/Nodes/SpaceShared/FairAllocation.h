@@ -19,16 +19,6 @@ public:
     ISchedulerNode * getChild(const String & child_name) override;
 
     // ISpaceSharedNode
-    UnusedCapacityReclaimResult reclaimUnusedCapacity(
-        IncreaseRequest & requester, ResourceCost max_size, bool allow_local_handoff) override;
-    bool hasUnusedCapacityReclaimPending() const override;
-    bool isUnusedCapacityReclaimBeneficiary(const IncreaseRequest & request) const override;
-    bool hasUnusedCapacityReclaimBeneficiary() const override;
-    void expireUnusedCapacityReclaimBeneficiariesExcept(const IncreaseRequest & selected) override;
-    void notifyUnusedCapacityReclaimStarted() override;
-    void notifyUnusedCapacityReclaimCompleted() override;
-    IncreaseRequest * selectFittingIncreaseForHandoff(ResourceCost max_size) override;
-    void clearFittingIncreaseForHandoff() override;
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override;
     void approveIncrease() override;
     void approveDecrease() override;
@@ -39,7 +29,6 @@ public:
 
 private:
     bool setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
-    bool updateIncreaseSelection(const ISpaceSharedNode * ignored_child = nullptr);
     bool setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child);
     void updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
 
@@ -51,7 +40,6 @@ private:
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`
     ISpaceSharedNode * decrease_child = nullptr; /// Child that requested the current `decrease`
-    ISpaceSharedNode * fitting_handoff_child = nullptr; /// Node-owned path for one released-capacity turn.
     std::unordered_map<String, SpaceSharedNodePtr> children; // basename -> child
 };
 

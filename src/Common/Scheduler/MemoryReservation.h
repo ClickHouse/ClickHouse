@@ -5,7 +5,6 @@
 #include <Common/CurrentMetrics.h>
 
 #include <memory>
-#include <condition_variable>
 #include <mutex>
 
 class MemoryTracker;
@@ -20,10 +19,8 @@ class MemorySpillScheduler;
 ///   CREATE RESOURCE memory (MEMORY RESERVATION)
 ///   CREATE WORKLOAD all SETTINGS max_memory = '1Gi'
 ///   SELECT ... SETTINGS workload = 'all', reserve_memory = '100Mi'
-/// The scheduler charges at least `max(actual_size, reserve_memory)`. Capacity released inside a
-/// query may remain temporarily charged as reusable graph-local slack; the nearest contended limit
-/// reclaims only what another request needs. Total charged `allocated` still never exceeds the
-/// workload's `max_memory` limit.
+/// The scheduler sees usage as `allocated = max(actual_size, reserve_memory)` and guarantees the
+/// total `allocated` under each workload does not exceed its `max_memory` limit.
 /// A single scheduler thread (top) serves many query/pipeline threads (bottom):
 ///
 ///    SpaceSharedScheduler    <-- dedicated thread + EventQueue (root)
@@ -44,8 +41,8 @@ class MemorySpillScheduler;
 ///
 /// The `workload` setting resolves (via `WorkloadResourceManager`) to a `ResourceLink` naming that
 /// workload's `AllocationQueue`. A reservation's life: construct (`insertAllocation`; blocks until
-/// admitted when `reserve_memory > 0`), sync (`syncWithMemoryTracker` grows on demand and reports
-/// reusable slack; may be killed under pressure), destruct (`removeAllocation`, wait for removal).
+/// admitted when `reserve_memory > 0`), sync (`syncWithMemoryTracker` issues at most one increase or
+/// decrease per call; may be killed under pressure), destruct (`removeAllocation`, wait for removal).
 /// Requests bubble up to the root and are approved on the scheduler thread; the scheduler-side nodes
 /// (`AllocationLimit`, `Fair`/`PrecedenceAllocation`, `AllocationQueue`) form one `ISpaceSharedNode`
 /// subtree per `WorkloadNode`. See also `IAllocationQueue`, `ISpaceSharedNode`,
@@ -60,11 +57,8 @@ public:
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
 
-    /// Bind one spill controller to the whole reservation/dependency graph. Nested executors which
-    /// arrive with another thread-local controller join the already-bound graph controller instead
-    /// of splitting recovery across two independent processor censuses.
-    std::shared_ptr<MemorySpillScheduler> bindMemorySpillScheduler(
-        const std::shared_ptr<MemorySpillScheduler> & scheduler);
+    /// Pipeline threads bind the query-scoped spill controller once their ThreadGroup exists.
+    void setMemorySpillScheduler(const std::shared_ptr<MemorySpillScheduler> & scheduler);
 
 private:
     void throwIfNeeded();
@@ -82,11 +76,8 @@ private:
     GrowthPressureAction onGrowthPressure() override;
     void onGrowthPressureResolved() override;
     bool isGrowthRecoveryActive() override;
-    bool acceptRecoveryProgress(UInt64 epoch) override;
     ResourceCost reconcilePendingIncrease(ResourceCost scheduler_allocated_size, ResourceCost requested_size) override;
     void increaseCancelled() override;
-    ResourceCost reclaimUnusedCapacity(ResourceCost max_size) override;
-    bool takeUnusedCapacityNotification() override;
 
     const ResourceCost reserved_size; // value of `reserve_memory` query setting
 
@@ -104,14 +95,9 @@ private:
     bool removed = false;
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost actual_size = 0; // real size of the resource used by the allocation
-    ResourceCost pending_reclaim_size = 0; // committed decrease; no longer available to query threads
-    bool unused_capacity_notification_pending = false;
     ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued (for accurate rollback)
 
     std::weak_ptr<MemorySpillScheduler> memory_spill_scheduler;
-    /// Controller identity is part of a recovery episode. Keep a strong pin while the request is
-    /// parked so result observation and unregister stay on the controller that opened the epoch.
-    std::shared_ptr<MemorySpillScheduler> recovery_spill_scheduler;
     bool growth_recovery_active = false;
     UInt64 recovery_epoch = 0;
     UInt64 reported_recovery_epoch = 0;

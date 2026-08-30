@@ -28,7 +28,6 @@ class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
 class StepWallClockRegistry;
-class MemorySpillScheduler;
 struct WorkloadResources;
 
 /// Executes query pipeline.
@@ -79,9 +78,6 @@ public:
 
 private:
     ExecutingGraphPtr graph;
-    /// Retained independently of the destructor's current thread so unfinished/cancelled
-    /// processors cannot leave raw graph-lifetime entries in the query spill controller.
-    std::shared_ptr<MemorySpillScheduler> memory_spill_scheduler;
 
     ExecutorTasks tasks;
 
@@ -132,8 +128,6 @@ private:
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
-    void bindMemorySpillScheduler();
-    void setMemorySpillSchedulerActive(bool active);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);

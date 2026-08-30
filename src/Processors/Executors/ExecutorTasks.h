@@ -11,7 +11,6 @@ namespace DB
 {
 
 class StepWallClockRegistry;
-class MemorySpillScheduler;
 
 /// Manage tasks which are ready for execution. Used in PipelineExecutor.
 class ExecutorTasks
@@ -30,12 +29,6 @@ class ExecutorTasks
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue<ExecutingGraph::Node> task_queue;
-
-    /// Already-prepared tasks whose execution slot was consumed by forced recovery. Nodes carry
-    /// the links, so deferring them cannot allocate in the memory-pressure path.
-    ExecutingGraph::Node * recovery_deferred_head = nullptr;
-    ExecutingGraph::Node * recovery_deferred_tail = nullptr;
-    size_t recovery_deferred_size = 0;
 
     /// Async tasks should be processed with higher priority, but also require task stealing logic.
     /// So we have a separate queue specifically for them.
@@ -65,16 +58,8 @@ class ExecutorTasks
     /// CPU slots for each thread.
     SlotAllocationPtr cpu_slots;
 
-    /// Shared query controller used to publish Async -> runnable transitions within the same
-    /// graph-census boundary as ordinary executor tasks.
-    std::shared_ptr<MemorySpillScheduler> memory_spill_scheduler;
-
     /// Threshold found by rolling dice.
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
-
-    /// Publish the Async -> executable transition inside the same graph-census boundary used by
-    /// ordinary tasks. Used by both the single-thread direct path and the polling worker.
-    void activateAsyncTask(ExecutingGraph::Node * node);
 
 public:
     using Stack = std::stack<UInt64>;
@@ -103,10 +88,6 @@ public:
     ///   4. Regular tasks from task_queue for other threads
     void tryGetTask(ExecutionThreadContext & context);
 
-    /// Preserve and requeue an already-prepared task after a recovery-only execution. It must not
-    /// pass through ExecutingGraph::updateNode()/IProcessor::prepare() first.
-    void deferTaskForRecovery(ExecutionThreadContext & context);
-
     // Adds regular tasks from `queue` and async tasks from `async_queue` into queues for specified thread `context`.
     // Local task optimization: the first regular task could be placed directly into thread to be executed next.
     // For async tasks proessor->schedule() is called.
@@ -115,11 +96,7 @@ public:
     // threads can cover the push, or no new tasks were added).
     size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(
-        size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_,
-        const std::shared_ptr<MemorySpillScheduler> & memory_spill_scheduler_,
-        bool profile_processors, bool trace_processors,
-        const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback);
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback);
 
     /// Push initial tasks. Returns the count of tasks pushed (regular + async) — used by
     /// `PipelineExecutor::initializeExecution` to size the slot-allocation ceiling via
