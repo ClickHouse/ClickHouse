@@ -437,7 +437,7 @@ private:
         /// The split marker is a unary pass-through; the fragment to distribute is the subtree below
         /// it. Clone it structurally: `QueryPlan::addStep` can only replay a linear chain and would
         /// throw on a branching fragment (e.g. a view expanding to UNION ALL, or a JOIN).
-        auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front()));
+        auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front(), query_plan));
 
         /// `cloneSubtree` cannot know the plan the subtree was split from, so carry over the
         /// plan-level resource contract explicitly: the fragment must keep the thread cap and
