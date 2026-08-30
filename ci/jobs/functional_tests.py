@@ -1458,6 +1458,9 @@ def main():
                 f" -- {' '.join(failed_tests)}"
             )
             print(f"Running diagnostics for {len(failed_tests)} test(s)...")
+            # Not a hard bound: the timeout signals only this process group, so a
+            # rerun leaving a live descendant that holds the runner's stdout keeps
+            # the reader waiting past the deadline. The reserve absorbs that.
             diag_exit_code = Shell.run(
                 diag_command, verbose=True, timeout=diag_stage_timeout
             )
