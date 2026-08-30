@@ -2632,7 +2632,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             Transaction transaction(*this, NO_TRANSACTION_RAW);
 
             part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
-            renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
+            /// The table size limits are not checked when executing a replication log entry:
+            /// the data has been already accepted by another replica.
+            renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true, /*check_table_size_limits=*/ false);
             transaction.renameParts();
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
 
@@ -3410,7 +3412,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             {
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
-                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
+                .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(part_desc->src_table_part->info),
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
@@ -3473,7 +3475,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             auto lock = lockParts();
             for (PartDescriptionPtr & part_desc : final_parts)
             {
-                renameTempPartAndReplaceUnlocked(part_desc->res_part, lock, transaction, /*rename_in_transaction=*/ true);
+                /// The table size limits are not checked when executing a replication log entry:
+                /// the data has been already accepted by another replica.
+                renameTempPartAndReplaceUnlocked(part_desc->res_part, lock, transaction, /*rename_in_transaction=*/ true, /*check_table_size_limits=*/ false);
                 getCommitPartOps(ops, part_desc->res_part);
                 lockSharedData(*part_desc->res_part, /*replace_existing_lock=*/ true, part_desc->hardlinked_files);
             }
@@ -5713,7 +5717,10 @@ bool StorageReplicatedMergeTree::fetchPart(
         if (!to_detached)
         {
             Transaction transaction(*this, NO_TRANSACTION_RAW);
-            renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
+            /// The table size limits are not checked on replicated fetches: the data has been already
+            /// accepted by another replica. This permits a race condition when parallel inserts into
+            /// multiple replicas overdraft the limits.
+            renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true, /*check_table_size_limits=*/ false);
             transaction.renameParts();
 
             chassert(!part_to_clone || !is_zero_copy_part(part));
@@ -9368,7 +9375,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             {
                 .copy_instead_of_hardlink = always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
-                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
+                .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
             };
             if (replace)
             {
@@ -9460,8 +9467,17 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             Transaction transaction(*this, NO_TRANSACTION_RAW);
             {
                 auto data_parts_lock = lockParts();
+
+                /// The new parts are committed first and the destination partition is removed only afterwards,
+                /// through `removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper`, so the parts being
+                /// replaced are not covered by any of the new parts and the per-part check of the
+                /// 'max_table_size_*' limits cannot see them. Check the limits for the operation as a whole instead.
+                throwIfTableSizeLimitsExceededForReplacement(
+                    data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
+
                 for (auto & part : dst_parts)
-                    renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ true);
+                    renameTempPartAndReplaceUnlocked(
+                        part, transaction, data_parts_lock, /*rename_in_transaction=*/ true, /*check_table_size_limits=*/ false);
             }
             transaction.renameParts();
 
@@ -9660,7 +9676,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             {
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion(),
-                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
+                .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
             };
             auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
                 src_part,

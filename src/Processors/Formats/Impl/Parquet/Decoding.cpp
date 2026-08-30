@@ -87,6 +87,69 @@ struct BitPackedRLEDecoder : public PageDecoder
         skipOrDecode<false>(num_values, &out[start]);
     }
 
+    bool decodeAndIndex(size_t num_values, Dictionary & dictionary, IColumn & out) override
+    {
+        /// For Mode::Column the gather goes through IColumn::index, which needs the indexes as a
+        /// column anyway; let the caller take the unfused path.
+        if (dictionary.mode == Dictionary::Mode::Column)
+            return false;
+
+        if (bit_width == 0)
+        {
+            /// All indexes are 0.
+            if (limit == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
+            dictionary.appendRepeated(0, num_values, out);
+            return true;
+        }
+
+        const T value_mask = T((1ul << bit_width) - 1);
+        while (num_values)
+        {
+            if (run_length == 0)
+                startRun();
+
+            size_t n = std::min(run_length, num_values);
+            run_length -= n;
+            num_values -= n;
+
+            if (run_is_rle)
+            {
+                /// `val` was bounds-checked in startRun.
+                dictionary.appendRepeated(size_t(val), n, out);
+            }
+            else
+            {
+                /// Unpack a batch of indexes into a stack buffer, bounds-check the whole batch at
+                /// once (keeping the throw out of the inner loop), then gather the batch.
+                while (n)
+                {
+                    constexpr size_t batch = 512;
+                    UInt32 buf[batch];
+                    size_t m = std::min(n, batch);
+                    size_t max_seen = 0;
+                    for (size_t i = 0; i < m; ++i)
+                    {
+                        size_t x = 0;
+                        memcpy(&x, data + (bit_idx >> 3), 8);
+                        x = (x >> (bit_idx & 7)) & value_mask;
+                        max_seen = std::max(max_seen, x);
+                        buf[i] = static_cast<UInt32>(x);
+                        bit_idx += bit_width;
+                    }
+                    if (max_seen >= limit)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
+                    dictionary.appendIndexes(buf, m, out);
+                    n -= m;
+                }
+
+                if (!run_length)
+                    data += run_bytes;
+            }
+        }
+        return true;
+    }
+
     void startRun()
     {
         UInt64 len = 0;
@@ -1356,9 +1419,8 @@ size_t Dictionary::decodedFootprintUpperBound(
 }
 
 template<size_t value_size>
-static void indexImpl(const PaddedPODArray<UInt32> & indexes, std::span<const char> data, std::span<char> to)
+static void indexImpl(const UInt32 * indexes, size_t size, std::span<const char> data, std::span<char> to)
 {
-    size_t size = indexes.size();
     for (size_t i = 0; i < size; ++i)
         memcpy(to.data() + i * value_size, data.data() + indexes[i] * value_size, value_size);
 }
@@ -1366,24 +1428,35 @@ static void indexImpl(const PaddedPODArray<UInt32> & indexes, std::span<const ch
 void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
 {
     const PaddedPODArray<UInt32> & indexes = indexes_col.getData();
+    if (mode == Mode::Column)
+    {
+        ColumnPtr temp = col->index(indexes_col, /*limit*/ 0);
+        out.insertRangeFrom(*temp, 0, indexes.size());
+        return;
+    }
+    appendIndexes(indexes.data(), indexes.size(), out);
+}
+
+void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out)
+{
     switch (mode)
     {
         case Mode::FixedSize:
         {
-            auto to = out.insertRawUninitialized(indexes.size());
-            chassert(to.size() == value_size * indexes.size());
+            auto to = out.insertRawUninitialized(n);
+            chassert(to.size() == value_size * n);
             /// Short variable-length memcpy is very slow compared to a simple mov, so we dispatch
             /// to specialized loops covering basic int types.
             switch (value_size)
             {
-                case 1: indexImpl<1>(indexes, data, to); break;
-                case 2: indexImpl<2>(indexes, data, to); break;
-                case 3: indexImpl<3>(indexes, data, to); break;
-                case 4: indexImpl<4>(indexes, data, to); break;
-                case 8: indexImpl<8>(indexes, data, to); break;
-                case 16: indexImpl<16>(indexes, data, to); break;
+                case 1: indexImpl<1>(indexes, n, data, to); break;
+                case 2: indexImpl<2>(indexes, n, data, to); break;
+                case 3: indexImpl<3>(indexes, n, data, to); break;
+                case 4: indexImpl<4>(indexes, n, data, to); break;
+                case 8: indexImpl<8>(indexes, n, data, to); break;
+                case 16: indexImpl<16>(indexes, n, data, to); break;
                 default:
-                    for (size_t i = 0; i < indexes.size(); ++i)
+                    for (size_t i = 0; i < n; ++i)
                         memcpy(to.data() + i * value_size, data.data() + indexes[i] * value_size, value_size);
             }
             break;
@@ -1391,9 +1464,10 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
         case Mode::StringPlain:
         {
             auto & c = assert_cast<ColumnString &>(out);
-            c.reserve(c.size() + indexes.size());
-            for (UInt32 idx : indexes)
+            c.reserve(c.size() + n);
+            for (size_t i = 0; i < n; ++i)
             {
+                UInt32 idx = indexes[i];
                 size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
                 size_t len = offsets[idx] - start;
                 /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
@@ -1402,11 +1476,56 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
             break;
         }
         case Mode::Column:
+            /// Handled in `index` (needs the indexes as a column); the fused decode-and-index path
+            /// declines Mode::Column before getting here (see PageDecoder::decodeAndIndex).
+        case Mode::Uninitialized: chassert(false);
+    }
+}
+
+template <size_t value_size>
+static void fillImpl(const char * src, std::span<char> to, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        memcpy(to.data() + i * value_size, src, value_size);
+}
+
+void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
+{
+    chassert(idx < count);
+    switch (mode)
+    {
+        case Mode::FixedSize:
         {
-            ColumnPtr temp = col->index(indexes_col, /*limit*/ 0);
-            out.insertRangeFrom(*temp, 0, indexes.size());
+            auto to = out.insertRawUninitialized(n);
+            chassert(to.size() == value_size * n);
+            const char * src = data.data() + idx * value_size;
+            switch (value_size)
+            {
+                case 1: memset(to.data(), *src, n); break;
+                case 2: fillImpl<2>(src, to, n); break;
+                case 3: fillImpl<3>(src, to, n); break;
+                case 4: fillImpl<4>(src, to, n); break;
+                case 8: fillImpl<8>(src, to, n); break;
+                case 16: fillImpl<16>(src, to, n); break;
+                default:
+                    for (size_t i = 0; i < n; ++i)
+                        memcpy(to.data() + i * value_size, src, value_size);
+            }
             break;
         }
+        case Mode::StringPlain:
+        {
+            auto & c = assert_cast<ColumnString &>(out);
+            size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
+            size_t len = offsets[idx] - start;
+            c.reserve(c.size() + n);
+            for (size_t i = 0; i < n; ++i)
+                c.insertData(data.data() + start, len);
+            break;
+        }
+        case Mode::Column:
+            out.insertManyFrom(*col, idx, n);
+            break;
         case Mode::Uninitialized: chassert(false);
     }
 }
