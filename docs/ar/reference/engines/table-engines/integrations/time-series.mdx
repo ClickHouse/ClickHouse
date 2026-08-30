@@ -115,7 +115,7 @@ CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSer
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 إذا استُخدمت الصيغتان كلتاهما ضمن عبارة `CREATE TABLE` نفسها، فيجب أن تتطابق الأنواع المُعلنة.
@@ -151,7 +151,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | `value`     | [x]     | `Float64`             | `Float32` أو `Float64` | قيمة مرتبطة بـ `timestamp`             |
 
 تستخدم الأعمدة التي ينشئها المحرك تلقائيًا برامج ترميز ضغط للسلاسل الزمنية:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` و`value CODEC(Gorilla, ZSTD(1))`. بالكاد
+`timestamp CODEC(DoubleDelta, ZSTD(1))` و`value CODEC(ZSTD(3))`. بالكاد
 تُضغط الطوابع الزمنية شبه الرتيبة باستخدام برامج الترميز العامة، وقد تستحوذ لولا ذلك على معظم حجم جدول العينات على القرص.
 انظر أيضًا [ضبط أنواع الأعمدة](#adjusting-column-types).
 
@@ -216,7 +216,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla, ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
@@ -250,7 +250,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -306,7 +306,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 يعني تحديد الأعمدة الداخلية دون برامج ترميز الضغط استخدام برنامج ترميز الضغط الافتراضي لها:
