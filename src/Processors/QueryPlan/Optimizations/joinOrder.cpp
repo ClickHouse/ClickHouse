@@ -962,7 +962,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 auto edges = getApplicableExpressions(left->relations, right->relations);
                 bool connected = !edges.empty()
                     || query_graph.areTransitivelyConnected(left->relations, right->relations);
-                if (!connected && best_plan)
+                if (!connected)
                     continue;
 
                 auto selectivity = computeSelectivity(edges, left->relations, right->relations);
