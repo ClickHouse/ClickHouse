@@ -8,6 +8,11 @@ SET max_threads = 8;
 SET enable_parallel_replicas = 0;
 SET max_rows_in_distinct = 0;
 SET max_bytes_in_distinct = 0;
+-- The stateless CI profile sets these to 10G, and a nonzero limit disables per-partition
+-- aggregation and per-partition window reading outright.
+SET max_rows_to_group_by = 0;
+SET max_rows_to_sort = 0;
+SET max_bytes_to_sort = 0;
 SET optimize_use_implicit_projections = 0;
 SET allow_suspicious_low_cardinality_types = 1;
 -- The EXPLAIN QUERY TREE arms below are analyzer-only; old-analyzer jobs would error on them.
