@@ -11,8 +11,9 @@
 # only `FunctionNameNormalizer` over it, so the chain stays flat and is accepted; startup
 # applies `SelectIntersectExceptQueryVisitor` first, and only then is the view validated.
 #
-# Each case prints the result in the creating session, the stored SQL, then the result in
-# a fresh process. The two results must agree.
+# Each UDF case prints the result in the creating session, the stored SQL, then the result
+# in a fresh process; the two results must agree. The materialized-view case has no result
+# to compare, because without the fix the second process cannot load the view at all.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
