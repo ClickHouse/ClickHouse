@@ -19,6 +19,8 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -173,11 +175,19 @@ private:
 void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context)
 {
     std::vector<QueryTreeNodePtr> pending_source_expressions{node};
+    /// Every link of a `DEFAULT` chain is reachable from each link above it, so without this the
+    /// worklist would visit link `i` once per link above it: `2 * N^2` root visits for a chain of N
+    /// columns, against `4 * N` with it. Skipping a repeat visit changes nothing, because every set
+    /// registration in `enterImpl` is already guarded by `findTuple`, `findStorage` or `findSubquery`.
+    std::unordered_set<QueryTreeNodePtr> visited_source_expressions;
 
     while (!pending_source_expressions.empty())
     {
         auto node_to_visit = pending_source_expressions.back();
         pending_source_expressions.pop_back();
+
+        if (!visited_source_expressions.insert(node_to_visit).second)
+            continue;
 
         /// Each pending node is visited as a root: needChildVisit refuses QUERY and UNION
         /// children, so a source expression that is itself a query must start its own visit.
