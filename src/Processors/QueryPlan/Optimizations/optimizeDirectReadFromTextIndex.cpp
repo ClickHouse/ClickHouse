@@ -615,6 +615,11 @@ private:
             if (!search_query)
                 continue;
 
+            /// The search query is built from the canonicalized subtree, but the rewrites below apply to
+            /// the original node, so check that node as well.
+            if (!text_index_condition.canAnswerFunctionNode(function_node))
+                continue;
+
             const bool is_index_analyzed
                 = !require_index_analyzed_predicate || isIndexAnalyzedPredicate(index_name, info, canonical_node);
 
@@ -687,7 +692,7 @@ private:
         const ContextPtr & context)
     {
         const auto & function_node = *replacement.node;
-        if (selected_conditions.size() != 1 || function_node.children.size() != 2)
+        if (selected_conditions.size() != 1 || function_node.children.size() < 2 || function_node.children.size() > 3)
             return;
 
         auto new_children = function_node.children;
@@ -758,12 +763,16 @@ private:
         {
             const String tokenizer_description = tokenizer->getDescription();
 
-            /// Add argument with tokenizer definition.
+            /// Set the argument with the tokenizer definition. Assign when one is already present, so
+            /// the argument count stays the same however often this runs over the same node.
             DataTypePtr arg_type = std::make_shared<DataTypeString>();
             MutableColumnConstPtr arg_column = arg_type->createColumnConst(0, Field(tokenizer_description));
             String name = quoteString(tokenizer_description);
             const ActionsDAG::Node & new_child = actions_dag.addColumn(std::move(arg_column), std::move(arg_type), std::move(name));
-            new_children.push_back(&new_child);
+            if (new_children.size() == 3)
+                new_children[2] = &new_child;
+            else
+                new_children.push_back(&new_child);
 
             /// Convert needles to array if they are a string by applying a tokenizer.
             /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.

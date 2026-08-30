@@ -1,5 +1,6 @@
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
@@ -24,7 +25,6 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_in_partition(Keyword::IN_PARTITION);
 
     ParserExpression parser_exp_elem;
-    ParserPartition parser_partition;
 
     ParserList parser_assignment_list(
         std::make_unique<ParserAssignment>(),
@@ -52,8 +52,17 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (s_in_partition.ignore(pos, expected))
     {
-        if (!parser_partition.parse(pos, query->partition, expected))
+        ParserList partition_list_parser(
+            std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+        ASTPtr partition_list_ast;
+        if (!partition_list_parser.parse(pos, partition_list_ast, expected))
             return false;
+
+        auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
+        if (partition_list.children.size() == 1)
+            query->partition = std::move(partition_list.children[0]);
+        else
+            query->partitions = std::move(partition_list_ast);
     }
 
     if (!s_where.ignore(pos, expected))
@@ -90,6 +99,7 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     add_to_children(query->database);
     add_to_children(query->table);
     add_to_children(query->partition);
+    add_to_children(query->partitions);
     add_to_children(query->predicate);
     add_to_children(query->assignments);
     add_to_children(query->settings_ast);
@@ -121,11 +131,13 @@ It is called "lightweight update" to contrast it to the [`ALTER TABLE ... UPDATE
 It is only available for the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) table engine family.
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
 ```
 
 The `filter_expr` must be of type `UInt8`. This query updates values of the specified columns to the values of the corresponding expressions in rows for which the `filter_expr` takes a non-zero value.
 Values are cast to the column type using the `CAST` operator. Updating columns used in the calculation of the primary or partition keys is not supported.
+
+The `IN PARTITION` clause limits the update to the listed partitions. Without it, on tables of the `ReplicatedMergeTree` family, when the [optimize_mutations_with_partition_pruning](/reference/settings/session-settings/optimize) setting is enabled (the default), ClickHouse automatically detects partition key conditions in `filter_expr` and only updates the affected partitions. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit an update to specific partitions.
 
 ## Examples {#examples}
 
@@ -225,7 +237,7 @@ The join mode is slower and requires more memory than the merge mode, but it is 
 - [`APPLY PATCHES`](/reference/statements/alter/apply-patches) - Force physical materialization of patches to data parts (mutation operation)
 )DOCS_MD",
         .syntax = R"(
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 )",
         .related = {"ALTER TABLE ... UPDATE", "ALTER TABLE ... APPLY PATCHES", "DELETE", "INSERT INTO"},
     });

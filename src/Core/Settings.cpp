@@ -1849,6 +1849,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, optimize_mutations_with_partition_pruning, true, R"(
+When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of `ALTER TABLE UPDATE`/`DELETE` mutations and lightweight `UPDATE`/`DELETE` statements on tables of the `ReplicatedMergeTree` family and only processes the affected partitions instead of all partitions.
+
+This automatic pruning currently applies only to replicated tables. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit a mutation to specific partitions.
+
+Possible values:
+
+- 0 — Disabled. Mutations and lightweight updates will process all partitions.
+- 1 — Enabled. Mutations and lightweight updates will only process partitions that match the WHERE condition.
+)", 0) \
     DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
 Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
 
@@ -3636,6 +3646,9 @@ The fuzzer accumulates AST fragments from all queries across all sessions, produ
     DECLARE(Bool, ast_fuzzer_any_query, false, R"(
 When false (default), the server-side AST fuzzer (controlled by `ast_fuzzer_runs`) only fuzzes read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). When true, all query types including DDL and INSERT are fuzzed.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, ast_fuzzer_oracle, false, R"(
+When enabled together with `ast_fuzzer_runs`, applies a suite of correctness oracle checks to successfully executed fuzzed SELECT queries: TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate, NoREC, DQP (toggling individual optimizer settings), Identity WHERE, and Subquery wrap. A mismatch throws an `AST_FUZZER_ORACLE_MISMATCH` exception.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_fuzz_query_functions, false, R"(
 Enables the `fuzzQuery` function that applies random AST mutations to a query string.
 )", EXPERIMENTAL) \
@@ -5387,7 +5400,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 ```
 )", 0) \
  DECLARE(Bool, validate_mutation_query, true, R"(
-Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query will cause mutations to get stuck, requiring manual intervention.
+Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query can cause mutations to get stuck, requiring manual intervention.
 
 Only change this setting if you encounter a backward-incompatible bug.
 )", 0) \
@@ -8941,7 +8954,7 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
-Enable Kusto Query Language (KQL) - an alternative to SQL.
+Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
