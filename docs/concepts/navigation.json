@@ -105,7 +105,6 @@
               "pages": [
                 "concepts/features/operations/update/index",
                 "concepts/features/operations/update/overview",
-                "concepts/features/operations/update/on-fly-mutations",
                 "concepts/features/operations/update/replacing-merge-tree"
               ]
             },
@@ -114,7 +113,6 @@
               "pages": [
                 "concepts/features/operations/delete/index",
                 "concepts/features/operations/delete/overview",
-                "concepts/features/operations/delete/delete-mutations",
                 "concepts/features/operations/delete/drop-partition",
                 "concepts/features/operations/delete/lightweight-delete",
                 "concepts/features/operations/delete/truncate",
@@ -151,7 +149,8 @@
                 "concepts/features/configuration/server-config/workload-scheduling",
                 "concepts/features/configuration/server-config/quotas",
                 "concepts/features/configuration/server-config/composable-protocols",
-                "concepts/features/configuration/server-config/startup-scripts"
+                "concepts/features/configuration/server-config/startup-scripts",
+                "concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -199,6 +198,7 @@
           "group": "Backup and restore",
           "pages": [
             "concepts/features/backup-restore/overview",
+            "concepts/features/backup-restore/restore-settings",
             "concepts/features/backup-restore/local-disk",
             "concepts/features/backup-restore/s3-endpoint",
             "concepts/features/backup-restore/azure-blob-storage",
@@ -212,15 +212,18 @@
             "concepts/features/interfaces/native-clients-interfaces-index",
             "concepts/features/interfaces/cli",
             "concepts/features/interfaces/client",
+            "concepts/features/interfaces/mcp",
             {
               "group": "Drivers and interfaces",
               "pages": [
                 "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
+                "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
+                "concepts/features/interfaces/adbc",
                 "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
-                "concepts/features/interfaces/odbc",
+                { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",
                 "concepts/features/interfaces/ssh",
@@ -234,6 +237,7 @@
             "concepts/features/interfaces/web-sql",
             "concepts/features/interfaces/web-ui-color-coding",
             "concepts/features/interfaces/web-ui-pinned-columns",
+            "concepts/features/interfaces/web-ui-result-shaping",
             "concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",

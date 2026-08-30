@@ -400,7 +400,7 @@ Introduced in: v1.1.0
 * 如果条件 `cond` 的求值结果为非零值，则函数返回表达式 `then` 的结果。
 * 如果 `cond` 的求值结果为零或 NULL，则返回 `else` 表达式的结果。
 
-设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings#short_circuit_function_evaluation) 用于控制是否启用短路求值。
+设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) 用于控制是否启用短路求值。
 
 启用后，仅在 `cond` 为 true 的行上计算 `then` 表达式，而仅在 `cond` 为 false 的行上计算 `else` 表达式。
 
@@ -524,7 +524,7 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 按顺序计算各个条件。对于第一个为 true (非零且不为 `NULL`) 的条件，返回对应的分支值。
 如果没有任何条件为 true，则返回 `else` 值。
 
-设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings#short_circuit_function_evaluation) 用于控制
+设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) 用于控制
 是否使用短路求值。如果启用，`then_i` 表达式仅会在
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` 为 true 的行上计算。
 

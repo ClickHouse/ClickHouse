@@ -124,11 +124,11 @@ def _protected_docs_guard():
     # The checkout can be shallow and contain neither the merge base nor the
     # actual PR head when GitHub checked out its synthetic merge commit. Fetch
     # both revisions explicitly so the comparison does not depend on checkout
-    # depth or on whether merge-commit checkout is enabled.
-    pull_ref = f"refs/pull/{info.pr_number}/head"
+    # depth or on whether merge-commit checkout is enabled. The guard compares
+    # the two endpoint trees directly, so their ancestry is not needed.
     if not Shell.check(
-        "git fetch --no-tags --filter=blob:none origin "
-        f"{shlex.quote(merge_base)} {shlex.quote(pull_ref)}",
+        "git fetch --no-tags --depth=1 --filter=blob:none origin "
+        f"{shlex.quote(merge_base)} {shlex.quote(info.sha)}",
         verbose=True,
     ):
         print("Error: could not fetch the PR revisions, cannot run the check.")
@@ -149,11 +149,10 @@ if __name__ == "__main__":
         # Case-insensitive substring match; an empty pattern runs every check.
         return testpattern.lower() in name.lower()
 
-    # The mint check definitions are shared with the standalone driver
+    # The default mint check definitions are shared with the standalone driver
     # (ci/jobs/scripts/docs/mintlify_docs_check.py). This job already runs inside
     # the docs-builder image with the docs present natively, so it runs them
-    # directly; add new checks to DEFAULT_CHECKS, not here. --test selects a
-    # subset by sub-check name.
+    # directly. --test selects a subset by sub-check name.
     results = [
         Result.from_commands_run(name=name, command=command, workdir=docs_dir)
         for name, command in DEFAULT_CHECKS

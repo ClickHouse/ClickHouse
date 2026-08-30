@@ -64,6 +64,7 @@ public:
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
+    std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name) override;
 
     void copyDataToFile(
         const String & path_in_backup,
