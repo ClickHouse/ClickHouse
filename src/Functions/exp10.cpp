@@ -28,7 +28,7 @@ Returns 10 to the power of the given argument.
         {"x", "The exponent.", {"(U)Int*", "Float*", "Decimal*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns 10^x", {"Float*"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT exp10(2);", "100"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT round(exp10(2));", "100"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

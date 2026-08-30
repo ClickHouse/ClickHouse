@@ -29,7 +29,7 @@ Returns the decimal logarithm of the argument.
         {"x", "Number for which to compute the decimal logarithm of.", {"(U)Int*", "Float*", "Decimal*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the decimal logarithm of `x`.", {"Float*"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT log10(100);", "2"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT round(log10(100));", "2"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
