@@ -41,7 +41,8 @@ SELECT metric_name, tags['host'], time_series FROM ts_dist WHERE metric_name = '
 -- If the key were evaluated differently on read than on write this would prune to the wrong shard
 -- and return nothing.
 SELECT '--- with shard pruning on, the sharding key picks the shard holding the series ---';
-SELECT metric_name FROM ts_dist WHERE metric_name = 'metric_7' SETTINGS optimize_skip_unused_shards = 1;
+SELECT metric_name FROM ts_dist WHERE metric_name = 'metric_7'
+    SETTINGS optimize_skip_unused_shards = 1, force_optimize_skip_unused_shards = 1;
 
 SELECT '--- an aggregate over the samples themselves is merged across shards ---';
 SELECT sum(arraySum(arrayMap(x -> x.2, time_series))) FROM ts_dist;
