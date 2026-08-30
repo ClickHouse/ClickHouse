@@ -1835,6 +1835,18 @@ class JobConfigs:
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
         ),
     )
+    libfuzzer_corpus_minimization_job = Job.Config(
+        name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command=(
+            "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
+            "'libFuzzer corpus minimization'"
+        ),
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+        ),
+    )
     collect_clickhouse_profiles_jobs = Job.Config(
         name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
         runs_on=[],  # from parametrize()
