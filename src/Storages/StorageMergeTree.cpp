@@ -1928,6 +1928,13 @@ bool StorageMergeTree::merge(
             reserved_merge_slot = merge_mutate_executor->tryReserveTaskSlots(1);
             if (reserved_merge_slot == 0)
             {
+                /// The discarded selection may have booked a TTL merge
+                /// (`max_number_of_merges_with_ttl_in_pool`); give the booking back, since no TTL
+                /// merge is going to run for it. A retried selection books again if it picks a TTL
+                /// merge once more.
+                if (isTTLMergeType(merge_entry->future_part->merge_type))
+                    getContext()->getMergeList().cancelMergeWithTTL();
+
                 /// Untag the parts and release the disk reservation of the discarded selection.
                 merge_entry->finalize();
                 merge_entry.reset();
