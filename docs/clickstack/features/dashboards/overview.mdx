@@ -62,10 +62,6 @@ To build a series similar to an existing one, you can duplicate it instead of st
 
 <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg"/>
 
-To build a series similar to an existing one, you can duplicate it instead of starting from scratch. Click the copy icon (`Duplicate series`) on a series row to insert a copy directly below. The copy keeps the source series' settings, such as the metric, column, and filter. You then change only the fields that differ (for example the aggregation) and give the copy its own alias. Duplicating is available wherever multiple series are supported. It is hidden for visualization types that allow only one series, such as `Number`, `Pie`, and `Heatmap`.
-
-<Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg"/>
-
 <Note>
 Visualizations can be created from any data source — metrics, traces, or logs. ClickStack treats all of these as wide events. Any **numeric column** can be charted over time, and **string**, **date**, or **numeric** columns can be used for groupings.
 
@@ -197,6 +193,43 @@ To remove, edit, or duplicate a visualization, hover over it and use the corresp
 
 Each tile has a **Display Settings** drawer for options that control how its value is rendered. Open it from the tile editor by clicking **Display Settings**. The available options depend on the visualization type.
 
+#### Number tile color {#number-tile-color}
+
+Number tiles support a static **Color** choice from the curated chart palette. With a number tile selected, open **Display Settings** and use the **Color** control (labeled **Number tile color** for accessibility) to pick a swatch, or clear the selection to use the default text color.
+
+Colors are stored as palette tokens, not raw hex values, so the same tile reflows correctly across light, dark, and IDE themes.
+
+**Categorical tokens** (multi-series hues):
+
+| Token | Label |
+|---|---|
+| `chart-blue` | Blue |
+| `chart-orange` | Orange |
+| `chart-red` | Red |
+| `chart-cyan` | Cyan |
+| `chart-green` | Green |
+| `chart-pink` | Pink |
+| `chart-purple` | Purple |
+| `chart-light-blue` | Light Blue |
+| `chart-brown` | Brown |
+| `chart-gray` | Gray |
+
+**Semantic tokens** (status-oriented):
+
+| Token | Label |
+|---|---|
+| `chart-success` | Success |
+| `chart-warning` | Warning |
+| `chart-error` | Error |
+
+Use semantic tokens when the number represents a status (for example error count in `chart-error`, or a healthy rate in `chart-success`). Use categorical tokens when you want visual distinction between related KPI tiles without implying status.
+
+Older configs may still store legacy numeric tokens (`chart-1` through `chart-10`). ClickStack maps those to the hue-named tokens above when loading a dashboard.
+
+The same palette powers optional **color rules** in the same drawer: ordered conditions evaluated against the displayed value (last match wins). When no rule matches, the static color applies, then the default text color.
+
+#### Number tile background chart {#number-tile-background-chart}
+
 Number tiles can show a **background chart**: a trend sparkline drawn behind the value, so its movement over the selected time range is visible at a glance. This is useful for SLO and error-budget tiles, where how a value is trending matters as much as its current reading.
 
 With a number tile selected, open **Display Settings** and set **Background chart** to **Line** or **Area** (or **None** to turn it off). The sparkline is derived from a time-bucketed version of the tile's query, so no extra configuration is needed. It inherits the tile color by default; set a **Background color** to override it with a specific palette color.
@@ -213,6 +246,44 @@ With a table tile selected, open **Display Settings** and turn on **Alternate Ro
 
 Table tiles also keep a separator between the header row and the data as you scroll, so the column headers stay distinct.
 
+#### Dashboards API: number tile color {#api-number-tile-color}
+
+When creating or updating dashboards through the external API (`POST` / `PUT` `/api/v2/dashboards`), set `color` on a builder number-tile config to a palette token. Raw hex values are rejected.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` accepts any token from the categorical and semantic lists above (for example `chart-blue` or `chart-success`). Optional `backgroundChart.color` overrides the sparkline color with the same token enum. See the [ClickStack API reference](/use-cases/observability/clickstack/api-reference) for authentication and base URLs.
+
 ## Dashboard - Listing and search {#dashboard-listing-search}
 
 Dashboards are accessible on the dashboards page. They are organized by tag, with built-in search and filtering to quickly locate specific dashboards.
@@ -224,28 +295,37 @@ Dashboards can be favorited for easy access on the sidebar and at the top of the
 ## Dashboards - tagging {#tagging}
 <Tagging />
 
-## Custom filters {#custom-filters}
+## Custom filters and variables {#custom-filters}
 
 In addition to the [free-text filters](#filter-dashboards) available on all dashboards, saved dashboards support custom dropdown filters populated by data queried from ClickHouse. These provide reusable, point-and-click filter controls so that dashboard viewers can filter without writing expressions manually.
 
 <Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Services dropdown filter showing available service names" size="lg"/>
 
-The following steps demonstrate adding a custom filter to the dashboard created in the ["Creating dashboards"](#creating-dashboards) section.
+Each filter allows the viewer to choose one or more values, and does one or both of the following with them:
+
+- **Broadcast** — applies the selection as a filter condition on matching tiles. Tiles do not need to be updated to reference the filter.
+- **Variable** — exposes the selection to tile queries as `$variableName`, so each tile decides where and how the value is used.
+
+A filter must do at least one of the two. Broadcast is enabled by default when creating a filter.
+
+The following steps demonstrate adding a filter to the dashboard created in the ["Creating dashboards"](#creating-dashboards) section.
 
 <Steps>
 <Step title="Open the Edit Filters dialog" id="open-edit-filters">
 
-Open a saved dashboard and select **Edit Filters** from the toolbar.
+Open a saved dashboard and select **Edit Filters and Variables** from the toolbar.
 
 <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Edit Filters button in the dashboard toolbar" size="lg"/>
 </Step>
 <Step title="Add a new filter" id="add-new-filter">
 
-Click **Add new filter**. Configure the filter by providing a **Name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
+Click **Add new filter**. Configure the filter by providing a **Display Name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
 
 For example, to add a service filter for trace data, use `ServiceName` as the filter expression with the `Traces` data source. The "Dropdown values filter" is optional, and provides a way to restrict which values appear in the dropdown.
 
-<Image img="/images/clickstack/dashboards/add-filter.webp" alt="Add filter dialog with Name, Data source, and Filter expression fields" size="md"/>
+<Image img="/images/clickstack/dashboards/add-filter.webp" alt="Add filter dialog with Display Name, Data source, and Filter expression fields" size="md"/>
+
+The same dialog also controls whether the filter [broadcasts](#broadcast-filters) its value and whether it is [available as a variable](#dashboard-variables), both described below.
 
 The Filters modal shows all configured filters for the dashboard. From here you can edit or delete existing filters, or add additional ones.
 
@@ -267,6 +347,75 @@ To persist a filter selection as the dashboard default, choose **Save Query & Fi
 
 <Note>
 Custom dropdown filters are available on saved dashboards. For an example of this pattern in action, see the [Kubernetes dashboard](#kubernetes-dashboard), which provides built-in dropdown filters for Pod, Deployment, Node name, Namespace, and Cluster.
+</Note>
+
+### Broadcasting {#broadcast-filters}
+
+With **Broadcast filter condition** enabled, the selected values are applied as a filter condition on the dashboard's tiles, without any tile explicitly referencing the filter. By default the condition reaches every tile. Use **Applies to sources** to restrict it to tiles that use a given set of sources — useful when the filter's expression only makes sense for some of the data on the dashboard.
+
+Chart builder tiles pick up broadcast filters automatically. Raw SQL tiles must include the [`$__filters` macro](/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) and have a source selected, since ClickStack cannot infer where the condition belongs in a hand-written query.
+
+### Variables {#dashboard-variables}
+
+With **Available as variable** enabled, the filter's selection is also exposed to tile queries as `$variableName`. The **Variable name** defaults to the filter's display name with illegal characters removed, and can be overridden. Names must start with a letter and may contain only letters, digits, and underscores.
+
+Use a variable when broadcasting a `WHERE` condition is not what you want — for example, to put the value in a `SELECT` expression, a `HAVING` clause, or a join key, or to filter a tile on a column other than the filter's own expression.
+
+#### Referencing a variable {#referencing-variables}
+
+A variable expands to the values currently selected in its dropdown. The reference form controls the rendering:
+
+| Reference             | Expands to                                                                                        | Empty selection |
+|-----------------------|---------------------------------------------------------------------------------------------------|-----------------|
+| `$name`, `${name}`    | The selected values, in `sqlstring` or `lucene` format, depending on context. Braces delimit the name when it is followed by word characters, as in `${name}_total`. | `NULL`          |
+| `${name:sqlstring}`   | The selected values, single-quoted, comma-separated, and escaped as SQL values, eg. `'a', 'b'`    | `NULL`          |
+| `${name:csv}`         | Unquoted and comma-separated: `a,b`. Not escaped for SQL.                                         | empty string    |
+| `${name:regex}`       | A regex alternation, regex-escaped: `(a\|b)`.                                                     | `.*`            |
+| `${name:lucene}`      | An `OR` of quoted terms, for Lucene inputs: `("a" OR "b")`.                                       | `("")`          |
+
+Because `$name` renders as `NULL` before anything is selected, prefer the following macros wherever a SQL predicate is expected. Both macros expand to `1=1` while their variable has no selection, so the query stays valid:
+
+| Macro                                          | Description                                                                                                              |
+|------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `$__filter($<variable>)`                        | Expands to `toString(<filter expression>) IN ($variable)` when values are selected for `variable`, and `1=1` otherwise.  |
+| `$__filter(<expression>, $<variable>)`          | Expands to `<expression> IN ($variable)` when values are selected for `variable`, and `1=1` otherwise.                   |
+| `$__conditionalAll(<condition>, $<variable>)`   | Expands to `<condition>` when the variable has a selection, `1=1` otherwise.                                             |
+
+#### Using variables in chart builder tiles {#variables-in-builder-tiles}
+
+Every SQL expression input in the chart builder accepts variable references: `SELECT` columns and per-series expressions, `WHERE`, `GROUP BY`, and `HAVING`. The editor autocompletes the dashboard's variables and shows what each reference expands to for the current selection.
+
+Prefer using the `$__filter` and `$__conditionalAll` macros when in SQL mode, so that queries remain valid when variable selections are empty. Macros are not available in Lucene inputs — reference raw variables there instead (eg. `ServiceName:$service`).
+
+In a Lucene input, whether the variable reference itself is quoted controls how a multi-value selection is matched. Given `$service` selected as `a,b`:
+
+| Reference                | Expands to                             | Matching behavior                                                                            |
+|---------------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------|
+| `ServiceName:$service`    | `ServiceName:("a" OR "b")`             | Substring match — translated to SQL as `ServiceName ILIKE '%a%' OR ServiceName ILIKE '%b%'`   |
+| `ServiceName:"$service"`  | `(ServiceName:"a" OR ServiceName:"b")` | Exact match on each selected value                                                            |
+
+Quote the variable reference — `Field:"$var"` — when the selected values should match `Field` exactly rather than as substrings.
+
+#### Using variables in SQL tiles {#variables-in-sql-tiles}
+
+Raw SQL tiles reference variables the same way, anywhere in the query:
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+See [SQL-based visualizations](/clickstack/features/dashboards/sql-visualizations#dashboard-variables) for the full list of macros available to SQL tiles.
+
+<Note>
+Alerts on a tile that references a dashboard variable evaluate with every variable in its empty state, not the values selected on the dashboard.
 </Note>
 
 ## Drilldown to search {#drilldown-to-search}

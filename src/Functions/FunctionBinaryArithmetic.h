@@ -1618,7 +1618,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         /// The valid range for the result, expressed in the result's own units:
         ///   DateTime:   seconds in [0, 2^32-1], covering ~1970 to ~2106.
         ///   DateTime64: scaled values in [MIN_DATETIME64_TIMESTAMP * 10^scale, MAX_DATETIME64_TIMESTAMP * 10^scale],
-        ///               covering ~1900 to ~2299 (but narrower at scale 9 due to Int64 capacity).
+        ///               covering years 0000 to 9999 (but narrower at high scales due to Int64 capacity).
         Int64 result_min = 0;
         Int64 result_max = static_cast<Int64>(MAX_DATETIME_TIMESTAMP);
         UInt32 result_scale = 0;
@@ -3518,13 +3518,25 @@ public:
         if (isCompoundForMonotonicity(type) || (return_type && isCompoundForMonotonicity(*return_type)))
             return {false, true, false, false};
 
-        const bool is_div_function = name_view == "divide" || name_view == "intDiv";
+        if ((name_view == "divide" || name_view == "intDiv") && left.column && isColumnConst(*left.column))
+        {
+            // `const / variable` monotonicity is modelled only for plain numeric operands. `IPv4`/`IPv6`
+            // are substituted with `UInt32`/`UInt128`, so their declared width does not describe the
+            // arithmetic, and their `Field` cannot be compared with a numeric zero (the comparisons
+            // against zero below would raise `BAD_TYPE_OF_FIELD` during key analysis).
+            if (!isNumber(removeNullable(recursiveRemoveLowCardinality(left.type)))
+                || !isNumber(removeNullable(recursiveRemoveLowCardinality(right.type))))
+                return {false, true, false, false};
+        }
 
-        // Normalized once so every divisor-zero check below compares the value the division actually
-        // uses. Stays `Null` for a non-division name, and `Null` never compares equal to zero.
-        const Field right_constant = (is_div_function && right.column && isColumnConst(*right.column))
-            ? substituteIPField((*right.column)[0])
-            : Field();
+        if ((name_view == "divide" || name_view == "intDiv") && right.column && isColumnConst(*right.column))
+        {
+            // The `variable / constant` branch compares the constant with numeric zero. An
+            // `IPv4`/`IPv6` divisor has an IP-tagged `Field`, for which that comparison raises
+            // `BAD_TYPE_OF_FIELD`; conservatively decline monotonicity instead.
+            if (!isNumber(removeNullable(recursiveRemoveLowCardinality(right.type))))
+                return {false, true, false, false};
+        }
 
         // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
         if (left_point.isNull() || right_point.isNull())
@@ -3534,32 +3546,42 @@ public:
                 // variable / constant
                 if (right.column && isColumnConst(*right.column))
                 {
-                    const Field & constant = right_constant;
+                    auto constant = (*right.column)[0];
                     if (accurateEquals(constant, Field(0)))
                         return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
                     bool is_constant_positive = accurateLess(Field(0), constant);
 
-                    auto arg_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(left.type)));
-                    auto divisor_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(right.type)));
+                    auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+                    auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+                    auto arithmetic_arg_type = getArithmeticType(arg_type);
 
-                    // A Decimal divisor divides in the decimal's own signed width after scaling the
-                    // dividend, so it wraps at a boundary that is not cheaply modelled here.
+                    // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
+                    // width (`DecimalBinaryOperation` feeds both operands into
+                    // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
+                    // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
+                    // truncates at a boundary that depends on the decimal width and scale, not on the
+                    // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
+                    // Only a Decimal divisor takes this integral path; a Float divisor computes through
+                    // floating point and stays monotonic.
                     if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
                         return {false, true, false, false};
 
-                    // `intDiv(unsigned, signed const)` casts the dividend to signed, so it is a step
-                    // function. An unbounded range always contains the step: never always-monotonic.
-                    if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
+                    // `intDiv(unsigned, signed-integer-const)` reinterprets the dividend through a signed
+                    // cast (see `DivideIntegralImpl`/`intDivRangeCrossesSignedWrap`); a Float divisor
+                    // computes through floating point and never wraps. An unbounded range over an unsigned
+                    // domain always contains the discontinuity, so it is never always-monotonic; report
+                    // monotonicity only when an endpoint keeps the range on one side of it.
+                    if (name_view == "intDiv" && isUInt(arithmetic_arg_type) && isInt(divisor_type))
                     {
-                        // A non-null endpoint here can still be IP-tagged.
                         if (intDivRangeCrossesSignedWrap(
-                                arg_type, substituteIPField(left_point), substituteIPField(right_point)))
+                                arithmetic_arg_type, getArithmeticField(left_point), getArithmeticField(right_point)))
                             return {false, true, false, false};
                         return {true, is_constant_positive, false};
                     }
 
-                    // Mirror case: an unsigned constant divisor with its high bit set casts to a negative
-                    // divisor, so the function decreases even though the raw constant looks positive.
+                    // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
+                    // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
+                    // so the function is monotonic decreasing even though the raw constant looks positive.
                     if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
                         is_constant_positive = false;
 
@@ -3577,8 +3599,9 @@ public:
             // Division is undefined at zero, so we must not report monotonicity:
             // - divide(const, x) or intDiv(const, x) at x = 0 (right_arg_is_zero)
             // - divide(x, 0) or intDiv(x, 0) where the constant divisor is 0 (right_const_is_zero)
+            bool is_div_function = name_view == "divide" || name_view == "intDiv";
             bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
-            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals(right_constant, Field(0));
+            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
 
             if (is_div_function && (right_arg_is_zero || right_const_is_zero))
                 return {false, true, false, false};
@@ -3661,6 +3684,20 @@ public:
             if (left.column && isColumnConst(*left.column))
             {
                 auto constant = (*left.column)[0];
+
+                auto const_type = removeNullable(recursiveRemoveLowCardinality(left.type));  // the constant
+                auto arg_type = removeNullable(recursiveRemoveLowCardinality(right.type));   // the variable
+
+                // With a `Decimal` operand and no `Float` operand the division computes in the decimal's
+                // native width (`DecimalBinaryOperation` casts both operands to `NativeResultType` and
+                // substitutes the integral operation even for `divide`), so the divisor is truncated and
+                // an unsigned constant reinterprets at a boundary set by the decimal width and scale
+                // rather than by either operand's own type. The quotient is then not even monotonic in
+                // the variable. A `Decimal`/`Float` pair is converted to `Float64` beforehand and is
+                // unaffected.
+                if ((isDecimal(const_type) || isDecimal(arg_type)) && !isFloat(const_type) && !isFloat(arg_type))
+                    return {false, true, false, false};
+
                 if (accurateEquals(constant, Field(0)))
                 {
                     /// `0 / x` is 0 for any `x` != 0, but undefined at `x` = 0
@@ -3675,47 +3712,58 @@ public:
                 }
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
-                if (accurateLess(left_point, Field(0))
-                    && accurateLess(right_point, Field(0)))
-                {
-                    return {true, is_constant_positive, false, is_strict};
-                }
-                if (accurateLess(Field(0), left_point)
-                    && accurateLess(Field(0), right_point))
-                {
+                if (name_view == "intDiv"
+                    && intDivConstDividendReinterpretsNegative(const_type, arg_type, constant))
+                    is_constant_positive = false;
+
+                // `c / x` has derivative `-c / x^2`, whose sign is `-sign(c)` for every `x != 0`: the
+                // direction is the same on the negative and the positive branch, only the values differ.
+                // The range must strictly exclude 0 (the function is undefined there and the two
+                // branches are not joined).
+                if ((accurateLess(left_point, Field(0)) && accurateLess(right_point, Field(0)))
+                    || (accurateLess(Field(0), left_point) && accurateLess(Field(0), right_point)))
                     return {true, !is_constant_positive, false, is_strict};
-                }
             }
             // variable / constant
             else if (right.column && isColumnConst(*right.column))
             {
-                const Field & constant = right_constant;
+                auto constant = (*right.column)[0];
                 if (accurateEquals(constant, Field(0)))
                     return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
 
-                auto arg_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(left.type)));
-                auto divisor_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(right.type)));
+                auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+                auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+                auto arithmetic_arg_type = getArithmeticType(arg_type);
 
-                // A Decimal divisor divides in the decimal's own signed width after scaling the
-                // dividend, so it wraps at a boundary that is not cheaply modelled here.
+                // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
+                // width (`DecimalBinaryOperation` feeds both operands into
+                // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
+                // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
+                // truncates at a boundary that depends on the decimal width and scale, not on the
+                // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
+                // Only a Decimal divisor takes this integral path; a Float divisor computes through
+                // floating point and stays monotonic.
                 if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
                     return {false, true, false, false};
 
-                // `intDiv(unsigned, signed const)` casts the dividend to signed, so it is a step
-                // function: reject a range crossing the step, report monotonicity for one that does not.
-                if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
+                // `intDiv(unsigned, signed-integer-const)` is a step function (see
+                // `intDivRangeCrossesSignedWrap`): a range crossing the discontinuity is non-monotonic,
+                // so reject it (no pruning); a range on one side is monotonic on that range but not
+                // always-monotonic. The wrap is exclusive to the signed-integer divisor path; a Float
+                // divisor computes through floating point and never wraps.
+                if (name_view == "intDiv" && isUInt(arithmetic_arg_type) && isInt(divisor_type))
                 {
-                    // The endpoints carry the declared key type, so an IP key yields IP-tagged `Field`s.
                     if (intDivRangeCrossesSignedWrap(
-                            arg_type, substituteIPField(left_point), substituteIPField(right_point)))
+                            arithmetic_arg_type, getArithmeticField(left_point), getArithmeticField(right_point)))
                         return {false, true, false, false};
                     return {true, is_constant_positive, false, is_strict};
                 }
 
-                // Mirror case: an unsigned constant divisor with its high bit set casts to a negative
-                // divisor, so the function decreases even though the raw constant looks positive.
+                // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
+                // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
+                // so the function is monotonic decreasing even though the raw constant looks positive.
                 if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
                     is_constant_positive = false;
 
@@ -3837,6 +3885,32 @@ public:
         return isArray(*unwrapped) || isTuple(*unwrapped) || isMap(*unwrapped);
     }
 
+    /// Arithmetic substitutes `IPv4` and `IPv6` with their respective unsigned integer types
+    /// before execution. Monotonicity checks that depend on the integer width must use that
+    /// substituted type as well.
+    static DataTypePtr getArithmeticType(const DataTypePtr & type)
+    {
+        if (isIPv4(type))
+            return std::make_shared<DataTypeUInt32>();
+        if (isIPv6(type))
+            return std::make_shared<DataTypeUInt128>();
+        return type;
+    }
+
+    /// The value counterpart of `getArithmeticType`. An `IPv6` value must be cast instead of
+    /// reinterpreted because execution swaps its stored limbs and byteswaps each limb.
+    static Field getArithmeticField(const Field & field)
+    {
+        const bool is_ipv4 = field.getType() == Field::Types::IPv4;
+        if (!is_ipv4 && field.getType() != Field::Types::IPv6)
+            return field;
+
+        const DataTypePtr from = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeIPv4>()) : std::make_shared<DataTypeIPv6>();
+        const DataTypePtr to = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeUInt32>()) : std::make_shared<DataTypeUInt128>();
+        const ColumnWithTypeAndName argument{from->createColumnConst(1, field), from, ""};
+        return (*castColumn(argument, to))[0];
+    }
+
     /// `intDiv` casts the dividend to a signed type when the divisor is signed (see `DivideIntegralImpl`),
     /// so an unsigned dividend whose value is >= 2^(width-1) reinterprets as negative
     /// (e.g. `intDiv(UInt64, Int64-const)` has an `Int64` result, and `intDiv(2^63, c)` flips sign
@@ -3883,29 +3957,20 @@ public:
         return accurateLessOrEqual(wrap_field, constant);
     }
 
-    /// The arithmetic substitutes an `IPv4`/`IPv6` operand with `UInt32`/`UInt128`, so the type
-    /// predicates must describe the substituted type, not the declared one.
-    static DataTypePtr substituteIPType(const DataTypePtr & type)
+    /// `intDiv` casts the dividend through `make_signed_t` whenever either operand is a signed integer
+    /// (see `DivideIntegralImpl`), so a constant *dividend* of unsigned type whose high bit is set
+    /// (`>= 2^(8 * width - 1)`) divides as a negative number even though the raw `Field` compares as
+    /// positive (`intDiv(toUInt8(200), x)` == `intDiv(toInt8(-56), x)`). Unlike
+    /// `intDivConstReinterpretsNegative` the operand widths do not matter: the dividend is cast in its
+    /// own width.
+    static bool intDivConstDividendReinterpretsNegative(
+        const DataTypePtr & dividend_type, const DataTypePtr & divisor_type, const Field & constant)
     {
-        if (isIPv4(type))
-            return std::make_shared<DataTypeUInt32>();
-        if (isIPv6(type))
-            return std::make_shared<DataTypeUInt128>();
-        return type;
-    }
-
-    /// Value counterpart: an IP-tagged `Field` cannot be compared against a number. Must cast rather
-    /// than copy the bits, because `IPv6` is stored big-endian and the cast byte-swaps it.
-    static Field substituteIPField(const Field & field)
-    {
-        const bool is_ipv4 = field.getType() == Field::Types::IPv4;
-        if (!is_ipv4 && field.getType() != Field::Types::IPv6)
-            return field;
-
-        const DataTypePtr from = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeIPv4>()) : std::make_shared<DataTypeIPv6>();
-        const DataTypePtr to = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeUInt32>()) : std::make_shared<DataTypeUInt128>();
-        const ColumnWithTypeAndName arg{from->createColumnConst(1, field), from, ""};
-        return (*castColumn(arg, to))[0];
+        if (!isUInt(dividend_type) || !isInt(divisor_type))
+            return false;
+        const size_t width_bytes = dividend_type->getSizeOfValueInMemory();
+        const Field wrap_field(UInt256(1) << (8 * width_bytes - 1));
+        return accurateLessOrEqual(wrap_field, constant);
     }
 
 private:

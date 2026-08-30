@@ -15,10 +15,6 @@ b ipv4 key ip const	1
 b divide ip const	1
 b divide ipv6 const	1
 b1 single point	1
-b intdiv ipv4 const prunes	1
-b intdiv ipv6 const prunes	1
-b divide ipv4 const prunes	1
-b divide ipv6 const prunes	1
 c unsigned const	1
 c unsigned const prunes	1
 c one sided	1

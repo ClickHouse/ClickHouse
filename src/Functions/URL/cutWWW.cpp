@@ -30,7 +30,7 @@ struct ExtractWWW
                     return;
             }
 
-            if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
+            if (end - pos < 2 || *pos != '/' || *(pos + 1) != '/')
                 return;
 
             const char *start_of_host = (pos += 2);

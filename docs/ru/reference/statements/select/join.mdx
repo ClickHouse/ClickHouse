@@ -32,7 +32,7 @@ FROM <left_table>
 | `LEFT OUTER JOIN`  | помимо совпадающих строк возвращаются несовпадающие строки из левой таблицы.                                                                                                                                                                                                                                                 |
 | `RIGHT OUTER JOIN` | помимо совпадающих строк возвращаются несовпадающие строки из правой таблицы.                                                                                                                                                                                                                                                |
 | `FULL OUTER JOIN`  | помимо совпадающих строк возвращаются несовпадающие строки из обеих таблиц.                                                                                                                                                                                                                                                  |
-| `CROSS JOIN`       | создает декартово произведение всех строк таблиц; &quot;ключи JOIN&quot; **не** указываются.                                                                                                                                                                                                                                  |
+| `CROSS JOIN`       | создает декартово произведение всех строк таблиц; &quot;ключи JOIN&quot; **не** указываются.                                                                                                                                                                                                                                 |
 | `NATURAL JOIN`     | автоматически выполняет JOIN по всем столбцам с одинаковыми именами в обеих таблицах; каждый общий столбец появляется в результате только один раз. Поддерживает варианты `INNER` (по умолчанию), `LEFT`, `RIGHT` и `FULL`. Эквивалентен `JOIN ... USING (col1, col2, ...)`, где список столбцов определяется автоматически. |
 
 * `JOIN` без указания типа подразумевает `INNER`.
@@ -44,32 +44,32 @@ FROM <left_table>
 
 | Тип                                                 | Описание                                                                                                                                                    |
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | Разрешающий список по &quot;ключам JOIN&quot; без построения декартова произведения.                                                                          |
-| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | Запрещающий список по &quot;ключам JOIN&quot; без построения декартова произведения.                                                                          |
+| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | Разрешающий список по &quot;ключам JOIN&quot; без построения декартова произведения.                                                                        |
+| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | Запрещающий список по &quot;ключам JOIN&quot; без построения декартова произведения.                                                                        |
 | `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Частично (для противоположной стороны `LEFT` и `RIGHT`) или полностью (для `INNER` и `FULL`) отключает декартово произведение для стандартных типов `JOIN`. |
 | `ASOF JOIN`, `LEFT ASOF JOIN`                       | Объединение последовательностей с неточным совпадением. Использование `ASOF JOIN` описано ниже.                                                             |
 | `PASTE JOIN`                                        | Выполняет горизонтальную конкатенацию двух таблиц.                                                                                                          |
 
 <Note>
-  Если для [join&#95;algorithm](/ru/reference/settings/session-settings#join_algorithm) задано значение `partial_merge`, то `RIGHT JOIN` и `FULL JOIN` поддерживаются только со strictness `ALL` (`SEMI`, `ANTI`, `ANY` и `ASOF` не поддерживаются).
+  Когда для [join&#95;algorithm](/ru/reference/settings/session-settings/join#join_algorithm) задано значение `partial_merge`, `RIGHT JOIN` и `FULL JOIN` поддерживаются только со strictness `ALL` (`SEMI`, `ANTI`, `ANY` и `ASOF` не поддерживаются).
 </Note>
 
 <div id="settings">
   ## Настройки
 </div>
 
-Тип JOIN по умолчанию можно переопределить с помощью настройки [`join_default_strictness`](/ru/reference/settings/session-settings#join_default_strictness).
+Тип JOIN по умолчанию можно переопределить с помощью настройки [`join_default_strictness`](/ru/reference/settings/session-settings/join#join_default_strictness).
 
-Поведение сервера ClickHouse для операций `ANY JOIN` зависит от настройки [`any_join_distinct_right_table_keys`](/ru/reference/settings/session-settings#any_join_distinct_right_table_keys).
+Поведение сервера ClickHouse для операций `ANY JOIN` зависит от настройки [`any_join_distinct_right_table_keys`](/ru/reference/settings/session-settings/other#any_join_distinct_right_table_keys).
 
 **См. также**
 
-* [`join_algorithm`](/ru/reference/settings/session-settings#join_algorithm)
-* [`join_any_take_last_row`](/ru/reference/settings/session-settings#join_any_take_last_row)
-* [`join_use_nulls`](/ru/reference/settings/session-settings#join_use_nulls)
-* [`partial_merge_join_rows_in_right_blocks`](/ru/reference/settings/session-settings#partial_merge_join_rows_in_right_blocks)
-* [`join_on_disk_max_files_to_merge`](/ru/reference/settings/session-settings#join_on_disk_max_files_to_merge)
-* [`any_join_distinct_right_table_keys`](/ru/reference/settings/session-settings#any_join_distinct_right_table_keys)
+* [`join_algorithm`](/ru/reference/settings/session-settings/join#join_algorithm)
+* [`join_any_take_last_row`](/ru/reference/settings/session-settings/join#join_any_take_last_row)
+* [`join_use_nulls`](/ru/reference/settings/session-settings/join#join_use_nulls)
+* [`partial_merge_join_rows_in_right_blocks`](/ru/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
+* [`join_on_disk_max_files_to_merge`](/ru/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
+* [`any_join_distinct_right_table_keys`](/ru/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
 
 Используйте настройку `cross_to_inner_join_rewrite`, чтобы задать поведение, если ClickHouse не удаётся преобразовать `CROSS JOIN` в `INNER JOIN`. Значение по умолчанию — `1`, что позволяет продолжить выполнение JOIN, но он будет медленнее. Установите `cross_to_inner_join_rewrite` в `0`, если хотите, чтобы было сгенерировано исключение, и в `2`, чтобы не выполнять cross joins, а вместо этого принудительно преобразовывать все joins через запятую и cross joins. Если преобразование не удастся при значении `2`, вы получите сообщение об ошибке: &quot;Please, try to simplify `WHERE` section&quot;.
 
@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## JOIN с условиями неравенства для столбцов из разных таблиц
 </div>
 
-В настоящее время ClickHouse поддерживает `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` не только с условиями равенства, но и с условиями неравенства. Условия неравенства поддерживаются только для алгоритмов JOIN `hash` и `grace_hash`. Условия неравенства не поддерживаются при использовании `join_use_nulls`.
+В настоящее время ClickHouse поддерживает `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` не только с условиями равенства, но и с условиями неравенства. Условия неравенства поддерживаются только для алгоритмов JOIN `hash`, `parallel_hash` и `grace_hash`. Условие неравенства, вычисляемое во время JOIN, не может содержать `arrayJoin`, поскольку оно должно сохранять количество строк; условие, применяемое только к одной стороне, и ключ равенства с `arrayJoin` извлекаются до JOIN и не затрагиваются; недизъюнктивное условие `ALL INNER JOIN` также не затрагивается, поскольку в этом случае условие применяется после JOIN. Если разворачивание зависит только от одной стороны, перенесите его в `ARRAY JOIN` в подзапросе перед JOIN; условие, аргумент `arrayJoin` которого читает столбцы с обеих сторон, необходимо реструктурировать.
 
 **Пример**
 
@@ -231,7 +231,7 @@ key4    f    2    3    4            0    0    \N
 ```
 
 <div id="null-values-in-join-keys">
-  ## Значения NULL в ключах JOIN
+  ## Значения NULL и NaN в ключах JOIN
 </div>
 
 `NULL` не равно никакому значению, включая само себя. Это означает, что если ключ `JOIN` в одной таблице имеет значение `NULL`, он не будет сопоставлен со значением `NULL` в другой таблице.
@@ -285,6 +285,13 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 │ Charlie │    88 │
 └─────────┴───────┘
 ```
+
+Значения `NaN` в ключах `JOIN` типа float не подчиняются приведённому выше правилу для `NULL`.
+Скалярное сравнение двух значений `NaN` (`NaN = NaN`) равно `0`, однако ключи `JOIN` сравниваются не по правилам скалярной семантики — ключи `NaN` могут сопоставляться.
+Будут ли они фактически сопоставлены, зависит от деталей реализации, алгоритма JOIN, типа ключа и настроек сеанса.
+Не полагайтесь на конкретное поведение.
+Если необходимо, чтобы строки с `NaN` не сопоставлялись, преобразуйте их в значения `NULL`: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
+В `ASOF JOIN` столбец для поиска ближайшего совпадения сравнивается по порядку, который `NaN` не поддерживает — отфильтруйте такие строки с обеих сторон.
 
 <div id="asof-join-usage">
   ## Использование ASOF JOIN
@@ -465,7 +472,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
   ### Обработка пустых ячеек или ячеек со значением NULL
 </div>
 
-При JOIN таблиц могут появляться пустые ячейки. Настройка [join&#95;use&#95;nulls](/ru/reference/settings/session-settings#join_use_nulls) определяет, как ClickHouse заполняет эти ячейки.
+При JOIN таблиц могут появляться пустые ячейки. Настройка [join&#95;use&#95;nulls](/ru/reference/settings/session-settings/join#join_use_nulls) определяет, как ClickHouse заполняет эти ячейки.
 
 Если ключи `JOIN` — это поля [Nullable](/ru/reference/data-types/nullable), то строки, в которых хотя бы один из ключей имеет значение [NULL](/ru/reference/syntax#null), не объединяются.
 
@@ -507,14 +514,14 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
   ### Ограничения памяти
 </div>
 
-По умолчанию ClickHouse использует алгоритм [hash join](https://en.wikipedia.org/wiki/Hash_join). ClickHouse берет `right_table` и создает для нее хеш-таблицу в оперативной памяти. Если включен параметр `join_algorithm = 'auto'`, то после достижения определенного порога потребления памяти ClickHouse переключается на алгоритм [merge](https://en.wikipedia.org/wiki/Sort-merge_join) JOIN. Описание алгоритмов `JOIN` см. в настройке [join&#95;algorithm](/ru/reference/settings/session-settings#join_algorithm).
+По умолчанию ClickHouse использует алгоритм [hash join](https://en.wikipedia.org/wiki/Hash_join). ClickHouse берет `right_table` и создает для нее хеш-таблицу в оперативной памяти. Если включен параметр `join_algorithm = 'auto'`, то после достижения определенного порога потребления памяти ClickHouse переключается на алгоритм [merge](https://en.wikipedia.org/wiki/Sort-merge_join) JOIN. Описание алгоритмов `JOIN` см. в настройке [join&#95;algorithm](/ru/reference/settings/session-settings/join#join_algorithm).
 
 Если вам нужно ограничить потребление памяти операцией `JOIN`, используйте следующие настройки:
 
-* [max&#95;rows&#95;in&#95;join](/ru/reference/settings/session-settings#max_rows_in_join) — Ограничивает количество строк в хеш-таблице.
-* [max&#95;bytes&#95;in&#95;join](/ru/reference/settings/session-settings#max_bytes_in_join) — Ограничивает размер хеш-таблицы.
+* [max&#95;rows&#95;in&#95;join](/ru/reference/settings/session-settings/max-rows#max_rows_in_join) — Ограничивает количество строк в хеш-таблице.
+* [max&#95;bytes&#95;in&#95;join](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Ограничивает размер хеш-таблицы.
 
-При достижении любого из этих ограничений ClickHouse действует в соответствии с настройкой [join&#95;overflow&#95;mode](/ru/reference/settings/session-settings#join_overflow_mode).
+При достижении любого из этих ограничений ClickHouse действует в соответствии с настройкой [join&#95;overflow&#95;mode](/ru/reference/settings/session-settings/join#join_overflow_mode).
 
 <div id="examples">
   ## Примеры

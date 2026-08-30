@@ -17,6 +17,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -36,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -164,8 +166,11 @@ DataTypePtr QueryNode::getResultType() const
             return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
         }
         else
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+            /// Reachable from plain SQL: dropping `EXISTS` from `NOT EXISTS (SELECT * FROM t WHERE t.a = o.b)`
+            /// leaves a correlated subquery of several columns where a single value is expected, so describe
+            /// the query rather than the method that could not answer for it.
+            throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "A correlated subquery used as an expression must return exactly one column, but it returns {}",
                 projection_columns.size());
     }
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
@@ -415,6 +420,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     {
         state.update(setting_change.name.size());
         state.update(setting_change.name);
+        state.update(setting_change.shorthand);
 
         auto setting_change_value_dump = setting_change.value.dump();
         state.update(setting_change_value_dump.size());
@@ -493,6 +499,18 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
+
+            /// The parser leaves `ASTWithElement::aliases` out of `children`, so match it here.
+            const auto & cte_column_aliases = getColumnAliasesToRestore(with_node);
+            if (!cte_column_aliases.empty())
+            {
+                auto cte_column_aliases_ast = make_intrusive<ASTExpressionList>();
+                cte_column_aliases_ast->children.reserve(cte_column_aliases.size());
+                for (const auto & cte_column_alias : cte_column_aliases)
+                    cte_column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(cte_column_alias));
+
+                with_element_ast->aliases = std::move(cte_column_aliases_ast);
+            }
 
             expression_list_ast->children.back() = std::move(with_element_ast);
         }

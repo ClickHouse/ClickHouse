@@ -34,7 +34,7 @@ When continuous ingestion is enabled, ClickPipes continuously ingests data from 
 
 The ABS ClickPipe assumes files are added to a container in lexicographical order, and relies on this implicit order to ingest files sequentially. This means that any new file **must** be lexically greater than the last ingested file. For example, files named `file1`, `file2`, and `file3` will be ingested sequentially, but if a new `file 0` is added to the container, it will be **ignored** because the file name isn't lexically greater than the last ingested file.
 
-In this mode, the ABS ClickPipe does an initial load of **all files** in the specified path, and then polls for new files at a configurable interval (by default, 30 seconds). It is **not possible** to start ingestion from a specific file or point in time — ClickPipes will always load all files in the specified path.
+In this mode, the ABS ClickPipe does an initial load of **all files** in the specified path, and then polls for new files at a configurable interval (by default, 30 seconds). To begin continuous ingestion after a specific file, configure **Start after**. ClickPipes will skip files that are lexicographically less than or equal to the configured value and continue ingesting newer files from that point.
 
 ### File pattern matching {#file-pattern-matching}
 
@@ -140,6 +140,7 @@ ClickPipes provides sensible defaults that cover the requirements of most use ca
 | `Min insert block size bytes`      | 1GB           | [Minimum size of bytes in the block](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) which can be inserted into a table. |
 | `Max download threads`             | 4             | [Maximum number of concurrent download threads](/reference/settings/session-settings/max-download#max_download_threads). |
 | `Object storage polling interval`  | 30s           | Configures the maximum wait period before inserting data into the ClickHouse cluster. |
+| `Start after`                      | None          | For ordered continuous ingestion, skips files that are lexicographically less than or equal to the configured filename or path. |
 | `Parallel distributed insert select` | 2           | [Parallel distributed insert select setting](/reference/settings/session-settings/parallel#parallel_distributed_insert_select). |
 | `Parallel view processing`         | false         | Whether to enable pushing to attached views [concurrently instead of sequentially](/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`             | true          | Whether to process files in parallel across multiple nodes. |

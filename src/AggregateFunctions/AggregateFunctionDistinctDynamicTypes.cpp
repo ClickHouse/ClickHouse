@@ -160,7 +160,7 @@ void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & fa
 {
     /// distinctDynamicTypes documentation
     FunctionDocumentation::Description description_distinctDynamicTypes = R"(
-Calculates the list of distinct data types stored in [Dynamic](https://clickhouse.com/docs/sql-reference/data-types/dynamic) column.
+Calculates the list of distinct data types stored in [Dynamic](/reference/data-types/dynamic) column.
     )";
     FunctionDocumentation::Syntax syntax_distinctDynamicTypes = R"(
 distinctDynamicTypes(dynamic)
@@ -180,9 +180,9 @@ INSERT INTO test_dynamic VALUES (42), (NULL), ('Hello'), ([1, 2, 3]), ('2020-01-
 SELECT distinctDynamicTypes(d) FROM test_dynamic;
         )",
         R"(
-┌─distinctDynamicTypes(d)──────────────────────────────────────────┐
-│ ['Array(Int64)', 'Date', 'Int64', 'Map(UInt8, UInt8)', 'String'] │
-└──────────────────────────────────────────────────────────────────┘
+┌─distinctDynamicTypes(d)──────────────────────────────────────┐
+│ ['Array(Int64)','Date','Int64','Map(UInt8, UInt8)','String'] │
+└──────────────────────────────────────────────────────────────┘
         )"
     }
     };

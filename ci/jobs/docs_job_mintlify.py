@@ -149,11 +149,10 @@ if __name__ == "__main__":
         # Case-insensitive substring match; an empty pattern runs every check.
         return testpattern.lower() in name.lower()
 
-    # The mint check definitions are shared with the standalone driver
+    # The default mint check definitions are shared with the standalone driver
     # (ci/jobs/scripts/docs/mintlify_docs_check.py). This job already runs inside
     # the docs-builder image with the docs present natively, so it runs them
-    # directly; add new checks to DEFAULT_CHECKS, not here. --test selects a
-    # subset by sub-check name.
+    # directly. --test selects a subset by sub-check name.
     results = [
         Result.from_commands_run(name=name, command=command, workdir=docs_dir)
         for name, command in DEFAULT_CHECKS

@@ -37,10 +37,10 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 </div>
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
-Добавляет в таблицу новый столбец с указанными `name`, `type`, [`codec`](/ru/reference/statements/create/table#column_compression_codec) и `default_expr` (см. раздел [Выражения по умолчанию](/ru/reference/statements/create/table#default_values)).
+Добавляет в таблицу новый столбец с указанными `name`, `type`, [`кодек`](/ru/reference/statements/create/table/codec) и `default_expr` (см. раздел [Выражения по умолчанию](/ru/reference/statements/create/table#default_values)). Модификаторы, следующие после типа, можно записывать в любом порядке, каждый — не более одного раза — см. [описание столбца](/ru/reference/statements/create/table#with-explicit-schema).
 
 Если указано условие `IF NOT EXISTS`, запрос не вернёт ошибку, если столбец уже существует. Если указать `AFTER name_after` (имя другого столбца), столбец будет добавлен после него в списке столбцов таблицы. Если вы хотите добавить столбец в начало таблицы, используйте условие `FIRST`. В противном случае столбец добавляется в конец таблицы. В цепочке действий `name_after` может быть именем столбца, добавленного одним из предыдущих действий.
 
@@ -154,12 +154,14 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
+
+Модификаторы после типа можно указывать в любом порядке, при этом каждый из них — не более одного раза; см. [описание столбца](/ru/reference/statements/create/table#with-explicit-schema).
 
 Этот запрос изменяет свойства столбца `name`:
 
@@ -175,7 +177,7 @@ ALTER COLUMN [IF EXISTS] name
 
 * Значения Enum для типов Enum/Enum8/Enum16
 
-Примеры изменения кодеков сжатия столбцов см. в разделе [Column Compression Codecs](/ru/reference/statements/create/table#column_compression_codec).
+Примеры изменения кодеков сжатия столбцов см. в разделе [Column Compression Codecs](/ru/reference/statements/create/table/codec).
 
 Примеры изменения TTL столбцов см. в разделе [Column TTL](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
@@ -377,9 +379,20 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 └───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
+<Note>
+  `MATERIALIZE COLUMN` всегда перезаписывает **значения столбца**. Перестраиваются ли при этом [индексы пропуска данных](/ru/reference/statements/alter/skipping-index) (включая текстовые индексы), зависит от структуры части и способа хранения индекса:
+
+  * В частях со структурой **wide + full-storage** **автономные** файлы индексов пропуска данных (и текстовые индексы) **не** перестраиваются автоматически, если перезаписывается только столбец. После изменения данных исходного столбца, от которых зависит индекс, выполните [`ALTER TABLE ... MATERIALIZE INDEX`](/ru/reference/statements/alter/skipping-index#materialize-index), если требуется обновить эти файлы индексов.
+  * **Исключение:** обычные индексы пропуска данных, упакованные в `skp_idx.packed` (небольшие подстримы индексов пропуска данных, размер которых не превышает значения [`packed_skip_index_max_bytes`](/ru/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) по умолчанию; полнотекстовые индексы таким образом не упаковываются), принудительно пересчитываются даже в частях wide + full-storage.
+  * В **любой части, структура которой отличается от wide + full-storage** (включая **compact + full**, **compact + packed** и **wide + packed**), мутация выполняется по пути полной перезаписи части и принудительно пересчитывает существующие в ней вторичные индексы. Небольшие части обычно имеют структуру compact, но при этом по умолчанию используют полное хранилище части, поэтому этот вариант типичен для недавно выполненных вставок.
+
+  Кроме того, `ADD INDEX` обновляет только метаданные: он **не** материализует новый индекс (включая текстовые индексы) в исторических частях сразу. Исторические части материализуются либо явной командой [`MATERIALIZE INDEX`](/ru/reference/statements/alter/skipping-index#materialize-index), либо при последующем слиянии, если включён [`materialize_skip_indexes_on_merge`](/ru/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) и индекс не указан в [`exclude_materialize_skip_indexes_on_merge`](/ru/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). Явный `MATERIALIZE INDEX` — детерминированный способ построить индекс, не дожидаясь слияния и его настроек.
+</Note>
+
 **См. также**
 
 * [MATERIALIZED](/ru/reference/statements/create/view#materialized-view).
+* [MATERIALIZE INDEX](/ru/reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## Ограничения
