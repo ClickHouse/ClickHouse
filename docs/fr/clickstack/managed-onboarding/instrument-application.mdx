@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/instrument-application
+title: 'Instrumenter une application en 5 min avec Managed ClickStack'
+description: 'Instrumenter une application Node.js avec OpenTelemetry et envoyer ses logs, ses métriques et ses traces dans Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed', 'observability', 'sdk', 'nodejs']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import InstrumentApplication from '/snippets/fr/clickstack/_instrument_application.mdx';
+
+Ce guide explique comment instrumenter une petite application Node.js avec OpenTelemetry et envoyer ses logs, métriques et traces vers Managed ClickStack. Le backend est instrumenté sans modifier le code source de l’application.
+
+Le [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) est une application Node.js qui interroge le jeu de données HackerNews hébergé dans la démo publique de ClickHouse. Chaque graphique, tableau et champ de recherche repose sur une véritable requête ClickHouse, de sorte que chaque interaction produit une trace dont le span principal correspond à l’appel HTTPS émis par le backend vers ClickHouse.
+
+Ce guide suppose que vous avez terminé [Configuration de votre OpenTelemetry Collector](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) et qu’un collecteur ClickStack est en cours d’exécution et accessible depuis la machine sur laquelle vous exécutez cette application. **Assurez-vous d’avoir noté son endpoint OTLP** ainsi que le `OTLP_AUTH_TOKEN` que vous avez défini lors de son déploiement.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un collecteur ClickStack accessible depuis cette machine. Si vous n&#39;en avez pas encore déployé un, suivez d&#39;abord [Configurer votre OpenTelemetry Collector](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
+* L&#39;endpoint OTLP de ce collecteur et le `OTLP_AUTH_TOKEN` que vous y avez configuré.
+* Node 18+ et npm.
+
+<InstrumentApplication />
+
+<div id="further-reading">
+  ## Pour aller plus loin
+</div>
+
+* [Surveiller Kubernetes](/fr/clickstack/managed-onboarding/monitoring-kubernetes) : collecter les logs, les métriques d’infrastructure et les événements Kubernetes dans un cluster.
+* [Surveiller les logs AWS CloudWatch](/fr/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs) : transférer les logs CloudWatch via le receiver CloudWatch d’OpenTelemetry.
+* [Session Replay](/fr/clickstack/features/session-replay) : présentation de la fonctionnalité, options du SDK et contrôles de confidentialité.
+* [Passer en production](/fr/clickstack/managing/production) pour des recommandations sur le passage en production.

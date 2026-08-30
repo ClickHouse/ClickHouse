@@ -1,11 +1,12 @@
 import dataclasses
 import hashlib
 import json
+import os
 import platform
+import shlex
 import sys
 import traceback
 from pathlib import Path
-from typing import Dict
 
 from . import Job, Workflow
 from ._environment import _Environment
@@ -13,6 +14,8 @@ from .cidb import CIDB
 from .digest import Digest
 from .docker import Docker
 from .gh import GH
+from .gh_auth import GHAuth
+from .git import Git
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
@@ -24,16 +27,6 @@ from .settings import Settings
 from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
-
-
-# TODO: find the right place to not dublicate
-def _GH_Auth(force=False):
-    if not Settings.USE_CUSTOM_GH_AUTH:
-        return
-    from .gh_auth import GHAuth
-
-    if force or not Shell.check(f"gh auth status", verbose=True):
-        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -48,7 +41,11 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
-    timeout=600,
+    # On a submodule-cache miss this job does a full shallow clone of all
+    # submodules (see _prepare_submodule_cache), which can take well over 10
+    # minutes. Keep a generous timeout so the config job doesn't get killed
+    # mid-clone.
+    timeout=1800,
 )
 
 _docker_build_manifest_job = Job.Config(
@@ -222,7 +219,22 @@ def _clean_buildx_volumes():
     )
 
 
-def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
+def _submodule_auth_env(workflow) -> dict:
+    """Prepare the environment and access permissions for submodule clones."""
+    env = os.environ.copy()
+    if not Settings.ENABLE_SUBMODULE_CLONE_AUTH:
+        return env
+    if not GHAuth.auth(workflow, no_strict=True):
+        print("WARNING: no GH token available, submodule clones run anonymously")
+        return env
+    token = Shell.get_output("gh auth token", strict=True)
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = f"url.https://x-access-token:{token}@github.com/.insteadOf"
+    env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+    return env
+
+
+def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     """Compute a content-addressed hash of submodule SHAs and ensure a cache
     archive exists in S3.  Stores the hash in workflow_config so that downstream
     jobs with needs_submodules=True can restore it."""
@@ -256,6 +268,7 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
                 verbose=True,
                 strict=True,
                 retries=3,
+                env=_submodule_auth_env(workflow),
             )
             archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
             Shell.check(
@@ -263,9 +276,27 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
                 verbose=True,
                 strict=True,
             )
-            S3.copy_file_to_s3(s3_path=s3_path, local_path=archive_path, with_rename=True)
+            # Write-once conditional create (If-None-Match: *) instead of an
+            # unconditional overwrite. The object is content-addressed by the
+            # submodule SHAs, so it never legitimately changes; making it
+            # immutable closes a race where two concurrent writers (both saw a
+            # cache miss above) overwrite the same key while a third job is
+            # downloading it, causing the reader's multipart download to abort
+            # with an ETag mismatch. On a lost race S3.put returns False
+            # (PreconditionFailed) — the other writer already populated the
+            # object, so this is a success, not an error.
+            created = S3.put(
+                s3_path=s3_path,
+                local_path=archive_path,
+                if_none_matched=True,
+                no_strict=True,
+            )
             Shell.check(f"rm -f {archive_path}")
-            info = f"cache miss, created: {cache_hash}"
+            info = (
+                f"cache miss, created: {cache_hash}"
+                if created
+                else f"cache miss, created concurrently: {cache_hash}"
+            )
 
         workflow_config.submodule_cache_hash = cache_hash
         workflow_config.dump()
@@ -371,16 +402,149 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
 
     def _check_yaml_up_to_date():
+        # Workflow YAML files under .github/workflows are generated from the
+        # Python definitions in ci/workflows by `praktika yaml`. They must never
+        # be edited by hand. Here we regenerate them and check whether the result
+        # differs from what is committed. A difference means the source definitions
+        # (or the generator itself) changed without the generated YAML being
+        # updated - or the YAML was edited manually.
+        #
+        # When that happens on a pull request, the robot commits the regenerated
+        # files and pushes them back to the PR head branch. That push starts a fresh
+        # CI run which picks up the new workflows, so the current (now stale) run is
+        # stopped by reporting this check as failed. This works for internal PRs and
+        # for fork PRs whose author allowed edits from maintainers; when the push is
+        # not permitted we fall back to failing the check and asking the contributor
+        # to regenerate and commit the files themselves.
         print("Check workflows are up to date")
-        commands = [
-            f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
-        ]
+        stop_watch = Utils.Stopwatch()
 
-        return Result.from_commands_run(
-            name="Check Workflows",
-            command=commands,
-            fail_fast=True,
+        Shell.check(
+            f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
+            verbose=True,
+            strict=True,
+        )
+
+        changed = Shell.get_output(
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+            verbose=True,
+        ).strip()
+
+        def _result(status, info):
+            return Result(
+                name="Check Workflows",
+                status=status,
+                start_time=stop_watch.start_time,
+                duration=stop_watch.duration,
+                info=info,
+            )
+
+        if not changed:
+            return _result(Result.Status.OK, "")
+
+        print("Workflows are outdated. Changed files:")
+        print(changed)
+
+        info = Info()
+        is_pr = info.pr_number and info.pr_number > 0
+        is_fork = info.repo_name != info.fork_name
+        branch = info.git_branch
+
+        if not (is_pr and branch):
+            # Not a pull request - nothing to push back to.
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows are outdated - regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), "
+                f"commit and push the following files:\n{changed}",
+            )
+
+        if is_fork:
+            # We can only push to a fork's branch if its author allowed edits from
+            # maintainers; otherwise the contributor has to regenerate themselves.
+            maintainer_can_modify = (
+                Shell.get_output(
+                    f"gh pr view {info.pr_number} --json maintainerCanModify --jq .maintainerCanModify",
+                    verbose=True,
+                ).strip()
+                == "true"
+            )
+            if not maintainer_can_modify:
+                return _result(
+                    Result.Status.FAIL,
+                    f"Workflows are outdated and the fork does not allow edits from maintainers - "
+                    f"regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), commit and push "
+                    f"the following files:\n{changed}",
+                )
+
+        # The branch name comes from the PR event and is attacker-controlled for fork
+        # PRs. Git accepts ref names such as `foo$(id)`, so interpolating it into the
+        # push command below - where the GitHub App token is in scope - would allow a
+        # fork PR to execute arbitrary shell. Validate it as a real ref before use, and
+        # additionally quote it (and the repository) as data in the command itself.
+        if not Shell.check(
+            f"git check-ref-format {shlex.quote('refs/heads/' + branch)}",
+            verbose=True,
+        ):
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows are outdated and the branch name is not a valid git ref - "
+                f"regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), commit "
+                f"and push the following files:\n{changed}",
+            )
+
+        head_sha = info.sha
+        # The head branch lives in the head repository, which is the fork for fork PRs
+        # and the base repository (== fork_name here) for internal PRs.
+        repo = info.fork_name
+        temp_index = f"{Settings.TEMP_DIR}/regenerate_workflows.index"
+        commit_message = "Automatically regenerate workflow YAML files"
+
+        # Assemble the fixup commit on top of the real PR head SHA (env.SHA) through a
+        # temporary index, so neither HEAD nor the working tree of this job is disturbed
+        # and the ephemeral PR merge commit (the checked-out ref by default) is never
+        # pushed to the branch. Only the regenerated workflow files are taken from the
+        # working tree; everything else comes from the head tree.
+        build_commit = [
+            "git config user.name 'robot-clickhouse'",
+            "git config user.email 'robot-clickhouse@users.noreply.github.com'",
+            f"git fetch --no-recurse-submodules origin {head_sha} ||:",
+            f"rm -f {temp_index}",
+            f"GIT_INDEX_FILE={temp_index} git read-tree {head_sha}",
+            f"GIT_INDEX_FILE={temp_index} git add -A {Settings.WORKFLOW_PATH_PREFIX}",
+        ]
+        new_commit = ""
+        if Shell.check(" && ".join(build_commit), verbose=True):
+            new_tree = Shell.get_output(
+                f"GIT_INDEX_FILE={temp_index} git write-tree", verbose=True
+            ).strip()
+            if new_tree:
+                new_commit = Shell.get_output(
+                    f"git commit-tree {new_tree} -p {head_sha} -m '{commit_message}'",
+                    verbose=True,
+                ).strip()
+        Shell.check(f"rm -f {temp_index}", verbose=True)
+
+        pushed = False
+        if new_commit:
+            # Push with the GitHub App token rather than the default GITHUB_TOKEN
+            # the checkout action persists: only a push authenticated as the App
+            # (or a PAT) re-triggers workflows, so the regenerated YAML is picked
+            # up by a fresh CI run. `repo`/`branch` are attacker-controlled on fork
+            # PRs, so Git.push passes them shell-quoted.
+            pushed = Git.push(repo, f"{new_commit}:refs/heads/{branch}")
+
+        if pushed:
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows were outdated. Regenerated them and pushed a commit to branch "
+                f"'{branch}'. A new CI run will start on that commit. Changed files:\n{changed}",
+            )
+
+        return _result(
+            Result.Status.FAIL,
+            f"Workflows are outdated and could not be pushed automatically to branch "
+            f"'{branch}' - regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), "
+            f"commit and push the following files:\n{changed}",
         )
 
     def _check_secrets(secrets):
@@ -427,7 +591,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # - all authors who contributed to the PR
     # - the original commit messages before GitHub's ephemeral merge commit
     commands = [
-        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+        "git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
     ]
     if env.BASE_BRANCH and env.PR_NUMBER:
         commands.append(
@@ -446,10 +610,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         env.dump()
 
-    try:
-        _GH_Auth(force=True)
-    except Exception as e:
-        print(f"WARNING: Failed to auth with GH: [{e}]")
+    if not GHAuth.auth(workflow, force=True, no_strict=True):
+        print("WARNING: Failed to auth with GH")
 
     # refresh PR data
     if env.PR_NUMBER > 0:
@@ -482,6 +644,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 "param_1": "",
                 "summary": "",
                 "review": "",
+                "coverage": "",
             },
         )
         res1 = GH.post_commit_status(
@@ -520,7 +683,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res_.append(Result.from_commands_run(name=name, command=pre_check))
 
         results.append(
-            Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
+            Result.create_from(
+                name="Pre Hooks",
+                results=res_,
+                stopwatch=sw_,
+                with_info_from_results=True,
+            )
         )
         # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
         env = _Environment.get()
@@ -529,7 +697,10 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if not results or results[-1].is_ok():
         result_ = _check_yaml_up_to_date()
         if result_.status != Result.Status.OK:
-            print("ERROR: yaml files are outdated - regenerate, commit and push")
+            print(
+                "ERROR: yaml files are outdated - the robot regenerates and pushes "
+                "them on internal PRs; on fork PRs regenerate, commit and push manually"
+            )
         results.append(result_)
 
     # TODO: commented out to decrease risk of throttling:
@@ -595,12 +766,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             status = Result.Status.ERROR
             print(f"ERROR: Exception in workflow config hook: {e}")
             traceback.print_exc()
-            info = f"{traceback.print_exc()}"
+            info = traceback.format_exc()
         results.append(
             Result.create_from(
                 name="Filter Hooks", status=status, stopwatch=sw_, info=info
             )
         )
+        # Reload the environment because workflow filter hooks may have written
+        # report messages through a separate Info instance.
+        env = _Environment.get()
 
     if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
         print("Filter not affected jobs")
@@ -653,7 +827,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
-        except Exception as e:
+        except Exception:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
@@ -669,7 +843,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     if results[-1].is_ok() and workflow.enable_cache and Settings.ENABLE_SUBMODULE_CACHE:
-        result = _prepare_submodule_cache(workflow_config)
+        result = _prepare_submodule_cache(workflow, workflow_config)
         results.append(result)
 
     if workflow.enable_slack_feed:
@@ -742,6 +916,27 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 env.COMMIT_AUTHORS = list(commit_authors)
                 env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
                 env.dump()
+        elif not env.COMMIT_AUTHORS:
+            # A push event already has COMMIT_AUTHORS seeded from the webhook
+            # payload by `_Environment.from_env`, so only fill it here when it is
+            # still empty (workflow_dispatch / scheduled runs, e.g. releases).
+            # Those have no PR author, so the Slack feed would notify no one and a
+            # failure would be silent; fall back to the head commit's author so
+            # failures still reach a human. Never overwrite an already-populated
+            # author set — that would drop the full authors of a multi-commit push.
+            author_email = ""
+            try:
+                head_email = Shell.get_output(
+                    f"git log -1 --format='%ae' {env.SHA}", verbose=True
+                ).strip()
+                if head_email and "@" in head_email and "+" not in head_email:
+                    author_email = head_email
+            except Exception as e:
+                print(f"WARNING: Failed to get head commit author: {e}")
+            authors = [author_email] if author_email else []
+            env.COMMIT_AUTHORS = authors
+            env.JOB_KV_DATA["commit_authors"] = authors
+            env.dump()
 
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
@@ -829,7 +1024,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth()
+        GHAuth.auth(workflow, no_strict=True)
 
     update_final_report = False
     results = []
@@ -845,7 +1040,12 @@ def _finish_workflow(workflow, job_name):
             results_.append(Result.from_commands_run(name=name, command=check))
 
         results.append(
-            Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            Result.create_from(
+                name="Post Hooks",
+                results=results_,
+                stopwatch=sw_,
+                with_info_from_results=True,
+            )
         )
 
     ready_for_merge_status = Result.Status.OK
@@ -913,6 +1113,7 @@ def _finish_workflow(workflow, job_name):
                     f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
                 )
                 result.status = Result.Status.ERROR
+                result.add_error(ResultInfo.NOT_FINALIZED)
                 # dump workflow result after update - to have an updated result in post
                 workflow_result.dump()
                 # Attribute the error to the failed job (not Finish Workflow)
@@ -945,7 +1146,7 @@ def _finish_workflow(workflow, job_name):
         )
         if not fast_test_failed and ready_for_merge_status != Result.Status.OK:
             print(
-                f"NOTE: Revert PR detected - setting merge status to success despite failures"
+                "NOTE: Revert PR detected - setting merge status to success despite failures"
             )
             ready_for_merge_status = Result.Status.OK
             ready_for_merge_description = "Revert PR"
@@ -958,7 +1159,7 @@ def _finish_workflow(workflow, job_name):
             description=ready_for_merge_description,
             url="",
         ):
-            print(f"ERROR: failed to set ReadyForMerge status")
+            print("ERROR: failed to set ReadyForMerge status")
             env.add_workflow_error(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
@@ -1001,8 +1202,13 @@ if __name__ == "__main__":
             name=job_name,
             status=Result.Status.ERROR,
             stopwatch=sw,
-            # try out .info generated in runner._run() which works for all jobs automatically
-            # info=f"Failed with Exception [{e}]\n{error_traceback}",
+            info=f"Failed with Exception:\n{error_traceback}",
+        )
+        # An exception message can embed command output of any size, so the traceback is
+        # truncated from the top, which discards the leading lines that name the exception.
+        first_message_line = (str(e).splitlines() or [""])[0][:500]
+        result.info = f"Failed with {type(e).__name__}: {first_message_line}\n" + (
+            result.get_info_truncated(max_info_lines_cnt=100, max_line_length=1000)
         )
 
     result.dump().complete_job(with_job_summary_in_info=False)

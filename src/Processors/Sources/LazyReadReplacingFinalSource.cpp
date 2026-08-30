@@ -1,5 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -24,13 +26,25 @@ namespace DB
 
 namespace Setting
 {
+extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
+extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+extern const SettingsBool collect_hash_table_stats_during_aggregation;
+extern const SettingsBool enable_adaptive_aggregator;
+extern const SettingsBool enable_packed_string_keys_in_aggregation;
+extern const SettingsBool enable_parallel_single_level_merge;
 extern const SettingsBool enable_software_prefetch_in_aggregation;
 extern const SettingsUInt64 group_by_two_level_threshold;
 extern const SettingsUInt64 group_by_two_level_threshold_bytes;
 extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+}
+
+namespace ServerSetting
+{
+extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
 LazyReadReplacingFinalSource::LazyReadReplacingFinalSource(
@@ -158,11 +172,9 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
                 auto to_int64 = FunctionFactory::instance().get("toInt64", nullptr);
                 auto reinterpret_func = FunctionFactory::instance().get("reinterpretAsUInt64", nullptr);
                 auto bitxor_func = FunctionFactory::instance().get("bitXor", nullptr);
-                ColumnWithTypeAndName sign_bit_const;
-                sign_bit_const.type = std::make_shared<DataTypeUInt64>();
-                sign_bit_const.column = sign_bit_const.type->createColumnConst(1, Field(UInt64(1) << 63));
-                sign_bit_const.name = "__sign_bit";
-                const auto * sign_bit_node = &dag.addColumn(std::move(sign_bit_const));
+                auto sign_bit_type = std::make_shared<DataTypeUInt64>();
+                auto sign_bit_column = sign_bit_type->createColumnConst(0, Field(UInt64(1) << 63));
+                const auto * sign_bit_node = &dag.addColumn(std::move(sign_bit_column), std::move(sign_bit_type), "__sign_bit");
                 const auto * version_int64 = &dag.addFunction(to_int64, {version_node}, {});
                 const auto * version_uint64 = &dag.addFunction(reinterpret_func, {version_int64}, {});
                 version_node = &dag.addFunction(bitxor_func, {version_uint64, sign_bit_node}, {});
@@ -170,11 +182,9 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
 
             const auto * version_128 = &dag.addFunction(to_uint128, {version_node}, {});
             const auto * row_index_128 = &dag.addFunction(to_uint128, {row_index_node}, {});
-            ColumnWithTypeAndName shift_const;
-            shift_const.type = std::make_shared<DataTypeUInt8>();
-            shift_const.column = shift_const.type->createColumnConst(1, Field(UInt8(64)));
-            shift_const.name = "__shift_64";
-            const auto * shift_amount = &dag.addColumn(std::move(shift_const));
+            auto shift_type = std::make_shared<DataTypeUInt8>();
+            auto shift_column = shift_type->createColumnConst(0, Field(UInt8(64)));
+            const auto * shift_amount = &dag.addColumn(std::move(shift_column), std::move(shift_type), "__shift_64");
             const auto * shifted = &dag.addFunction(bit_shift_left, {version_128, shift_amount}, {});
             const auto * tiebreaker = &dag.addFunction(plus_func, {shifted, row_index_128}, {});
             tiebreaker = &dag.addAlias(*tiebreaker, tiebreaker_column_name);
@@ -240,6 +250,17 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             aggregates.push_back(std::move(desc));
         }
 
+        /// The cache key is stamped later by `setAggregationHashTableCacheKeys` when this plan is
+        /// optimized in `work` (key == 0 keeps preallocation disabled until then), but the other
+        /// fields must be real, exactly like in `Planner`: with a default-constructed
+        /// `max_entries_for_hash_table_stats` of 0 this dedup aggregation would keep no statistics
+        /// at all, so repeated `FINAL` queries would never get a size hint for it.
+        const auto stats_collecting_params = StatsCollectingParams(
+            /*key_=*/0,
+            settings[Setting::collect_hash_table_stats_during_aggregation],
+            query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
+            settings[Setting::max_size_to_preallocate_for_aggregation]);
+
         Aggregator::Params params(
             sorting_key.column_names,
             aggregates,
@@ -260,9 +281,14 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*only_merge_=*/false,
             /*optimize_group_by_constant_keys_=*/false,
             /*min_hit_rate_to_use_consecutive_keys_optimization_=*/settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-            /*stats_collecting_params_=*/{},
+            stats_collecting_params,
             /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
-            /*serialize_string_with_zero_byte_=*/false);
+            /*serialize_string_with_zero_byte_=*/false,
+            /*enable_parallel_single_level_merge_=*/settings[Setting::enable_parallel_single_level_merge],
+            /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation],
+            /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
+            /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
+            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
 
         auto merge_threads = settings[Setting::max_threads];
         auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
@@ -284,8 +310,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*group_by_sort_description_=*/SortDescription{},
             /*should_produce_results_in_order_of_bucket_number_=*/false,
             /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
-            /*explicit_sorting_required_for_aggregation_in_order_=*/false,
-            /*enable_sharding_aggregator_=*/false);
+            /*explicit_sorting_required_for_aggregation_in_order_=*/false);
         plan.addStep(std::move(aggregating_step));
 
         /// Rename aggregate columns back to original names and project only needed columns.
@@ -347,6 +372,10 @@ IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
     inputs.emplace_back(pipeline_output->getHeader(), this);
     connect(*pipeline_output, inputs.back());
     inputs.back().setNeeded();
+
+    /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
+    for (auto & processor : processors)
+        processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 

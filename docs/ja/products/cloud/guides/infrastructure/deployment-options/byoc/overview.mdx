@@ -1,0 +1,86 @@
+---
+title: '概要'
+slug: /cloud/reference/byoc/overview
+sidebarTitle: '概要'
+keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud']
+description: 'お使いのクラウドインフラストラクチャに ClickHouse をデプロイ'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="overview">
+  ## 概要
+</div>
+
+Bring Your Own Cloud (BYOC) を利用すると、デフォルトの ClickHouse Cloud インフラストラクチャに依存することなく、お客様自身のクラウドアカウント内に ClickHouse サービスをデプロイし、データを直接保存できます。このアプローチは、データに対する完全な管理権と主権が求められるような、厳格なセキュリティポリシーや規制コンプライアンス要件を持つ組織に特に適しています。
+
+BYOC では大きく分けて、ClickHouse VPC 内で稼働し ClickHouse Cloud によって管理される ClickHouse のコントロールプレーンと、お客様のクラウドアカウント内で完全に稼働し、ClickHouse クラスター、データ、backups を含むデータプレーンが分離されています。関連するコンポーネントや、それらの間のトラフィックフローの詳細については、[Architecture](/ja/products/bring-your-own-cloud/overview/architecture) ページを参照してください。
+
+> **アクセスをご希望の場合は、[お問い合わせ](https://clickhouse.com/cloud/bring-your-own-cloud)ください。** 詳細については、[Terms of Service](https://clickhouse.com/legal/agreements/terms-of-service)を参照してください。
+
+<Note>
+  BYOC は大規模なデプロイメント向けに特化して設計されており、ご利用にはコミットメント契約の締結が必要です。
+</Note>
+
+**サポート対象の Cloud サービスプロバイダー:**
+
+* AWS (GA)
+* GCP (GA)
+* Azure (GA)
+
+**サポート対象の Cloud リージョン:**
+BYOC デプロイメントでは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions) のドキュメントに記載されているすべての**パブリックリージョン**を利用できます。プライベートリージョンは現在サポートされていません。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+以下の要件は、BYOCの構築および運用における基本要件です。すべてのデプロイメントに適用され、免除や代替手段は認められません。
+
+* **サポート対象リージョン。** BYOCは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)のドキュメントに記載されているパブリックリージョンにのみデプロイできます。AWS Local Zonesおよび単一ゾーンのリージョンはサポートされません。必要なリージョンが記載されていない場合は、デプロイメントを計画する前にClickHouseの担当者にご相談ください。
+* **3つのアベイラビリティゾーン。** すべてのBYOCインフラストラクチャは3つのアベイラビリティゾーンにまたがって構成されます。これにより、ClickHouseサーバーおよびClickHouse Keeperの高可用性が実現されます。ゾーンが3つ未満のリージョンではBYOCをホストできず、単一ゾーンまたは2ゾーンでのデプロイメントは提供していません。
+* **オンボーディングアーティファクトを変更せずに適用すること。** CloudFormationテンプレートまたはTerraformモジュールは、提供されたとおりに正確に適用する必要があります。リソース名 (`ClickHouseManagementRole` IAMロールなど) および[文書化されたベースライン権限](/ja/products/bring-your-own-cloud/reference/privilege)は、ClickHouseの自動化処理にハードコードされています。変更にはClickHouseによる明示的な承認が必要です。サポートされるカスタマイズは、Template パラメータとして公開されています。[標準オンボーディング](/ja/products/bring-your-own-cloud/onboarding/standard)を参照してください。
+* **ClickHouse管理のKubernetesクラスター。** EKS/GKE/AKSクラスターはClickHouseが作成し、全面的に運用します。既存のKubernetesクラスターへのインストールはサポートされていません。また、クラスター全体に適用されるadmission controllerやpolicy engineをインストールしてはなりません。
+* **ネットワークの基本要件。** すべての構成で、正常に機能するDNS解決とアウトバウンドのインターネットアクセス (直接またはNAT経由) が必要です。ClickHouse管理のVPC/VNetでは、CIDR範囲はAWSおよびAzureでは少なくとも`/23`、GCPでは少なくとも`/20`である必要があります。GCPでは、この範囲の半分がGKEクラスターのPod範囲に割り当てられます。これらは推奨値ではなく、最低要件です。各レプリカがIPアドレスを消費するため、大規模なデプロイメントにはより大きな範囲が必要です。顧客管理VPCには、クラウドごとにサブネット要件があります。[AWS](/ja/products/bring-your-own-cloud/onboarding/customization-aws)および[GCP](/ja/products/bring-your-own-cloud/onboarding/customization-gcp)のカスタマイズガイドを参照してください。
+
+<div id="features">
+  ## 機能
+</div>
+
+<div id="supported-features">
+  ### サポートされている機能
+</div>
+
+* **SharedMergeTree**: ClickHouse Cloud と BYOC は同じバイナリと設定を使用します。そのため、SharedMergeTree をはじめとする ClickHouse コアのすべての機能が BYOC でもサポートされます。
+* **Shared Catalog**
+* **サービス状態を管理するための Console アクセス**:
+  * start、stop、terminate などの操作をサポートします。
+  * サービスとステータスを表示できます。
+* **マネージドバックアップとリストア**
+* **手動の垂直スケーリングおよび水平スケーリング**
+* **自動アイドリング/ウェイクアップ**
+* **Warehouses**: コンピュート-コンピュート分離
+* **Tailscale による Zero Trust Network**
+* **監視**:
+  * Prometheus、Grafana、Datadog を使用した一元的な監視のための Prometheus スクレイピング。設定手順については、[BYOC Observability](/ja/products/bring-your-own-cloud/reference/observability-aws) を参照してください。
+* **VPC Peering**
+* **セキュアな S3**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
+* **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
+* **[Azure プライベートリンク](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview)**
+* **Integrations**: 完全な一覧は[こちらのページ](/ja/integrations/home)を参照してください。
+
+<div id="planned-features-currently-unsupported">
+  ### 今後予定されている機能 (現在は未サポート)
+</div>
+
+以下の機能は、Bring Your Own Cloud (BYOC) デプロイメントでは制限があるか、まだ完全にはサポートされていません。
+
+* SQL Console: BYOC デプロイメントでは利用できませんが、ロードマップには含まれています。
+* ClickPipes: BYOC デプロイメントでは利用できませんが、ロードマップには含まれています。
+* Autoscaling: 今後のリリースで追加予定です。
+* MySQL インターフェイス
+* AWS KMS aka CMEK (顧客管理暗号化キー)
+* 高度なダッシュボード: ブラウザから直接アクセスでき、エンドポイントを使用して ClickHouseサーバー に直接接続できる必要がある、クライアント専用の UI です。VPC のネットワークポリシーによって ClickHouse エンドポイントへのブラウザからのインバウンドアクセスが制限されている場合、高度なダッシュボードは機能しません。
+* 監視ダッシュボード: 現在、監視ダッシュボードで利用できるのはメモリ割り当てメトリクスのみです。追加のメトリクスのサポートは現在進行中で、今後のリリースで利用可能になる予定です。

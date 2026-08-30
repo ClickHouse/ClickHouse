@@ -1,0 +1,13 @@
+<svg width="24" height="24" viewBox="0 0 260 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+<style>
+  rect { fill: currentColor; }
+  @media (prefers-color-scheme: dark) {
+    rect { fill: #fdff75; }
+  }
+</style>
+<rect x="42.25" y="42.25" width="19.5" height="175.5" rx="2"/>
+<rect x="81.25" y="42.25" width="19.5" height="175.5" rx="2"/>
+<rect x="120.25" y="42.25" width="19.5" height="175.5" rx="2"/>
+<rect x="159.25" y="42.25" width="19.5" height="175.5" rx="2"/>
+<rect x="198.25" y="110.5" width="19.5" height="39" rx="2"/>
+</svg>

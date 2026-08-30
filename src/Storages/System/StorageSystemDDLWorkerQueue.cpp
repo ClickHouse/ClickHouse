@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/DDLTask.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -391,3 +392,6 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDDLWorkerQueue) }

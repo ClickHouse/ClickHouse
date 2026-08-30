@@ -6,6 +6,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
@@ -129,7 +131,7 @@ MatchedTrees::Matches matchTrees(
                 {
                     if (frame.mapped_children[i])
                         any_child = frame.mapped_children[i];
-                    else if (!frame.node->children[i]->column || !isColumnConst(*frame.node->children[i]->column))
+                    else if (!frame.node->children[i]->column)
                         found_all_children = false;
                 }
 
@@ -186,13 +188,11 @@ MatchedTrees::Matches matchTrees(
                                         {
                                             const auto * inner_col = children[i]->column.get();
                                             const auto * outer_col = frame.node->children[i]->column.get();
-                                            if (!inner_col || !isColumnConst(*inner_col)
-                                                || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
+                                            if (!inner_col || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
                                             {
                                                 all_children_matched = false;
                                             }
-                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(
-                                                         &assert_cast<const ColumnConst &>(*inner_col).getDataColumn()))
+                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner_col->getDataColumn()))
                                             {
                                                 /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
                                                 /// set contents, so `getField()` cannot distinguish different
@@ -202,8 +202,7 @@ MatchedTrees::Matches matchTrees(
                                                 /// non-matching: their content isn't known at planning time, and
                                                 /// matching them structurally here would be unsound.
                                                 all_children_matched = false;
-                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(
-                                                    &assert_cast<const ColumnConst &>(*outer_col).getDataColumn()) : nullptr;
+                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(&outer_col->getDataColumn()) : nullptr;
                                                 if (outer_set && max_size_for_sets_from_tuple_to_compare > 0)
                                                 {
                                                     const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(
@@ -227,9 +226,7 @@ MatchedTrees::Matches matchTrees(
                                             }
                                             else
                                             {
-                                                all_children_matched =
-                                                    assert_cast<const ColumnConst &>(*inner_col).getField()
-                                                    == assert_cast<const ColumnConst &>(*outer_col).getField();
+                                                all_children_matched = inner_col->getField() == outer_col->getField();
                                             }
                                         }
                                         else
@@ -272,15 +269,6 @@ MatchedTrees::Matches matchTrees(
                                 monotonicity.strict = info.is_strict;
                                 monotonicity.child_match = &child_match;
                                 monotonicity.child_node = monotonic_child;
-
-                                /// `materialize` does not change values, so it is effectively
-                                /// strictly monotonic. Without this override the `ORDER BY`
-                                /// prefix that can be served from the sorting key gets truncated
-                                /// when filter push-down injects a `materialize(...)` wrapper
-                                /// (e.g. for queries through `ReadFromMerge` after
-                                /// `convertAndFilterSourceStream`).
-                                if (frame.node->function_base->getName() == "materialize")
-                                    monotonicity.strict = true;
 
                                 if (child_match.monotonicity)
                                 {
@@ -564,6 +552,105 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     return new_inputs;
 }
 
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true};
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
+        return {};
+
+    const auto function_name = node.function_base->getName();
+    ActionsDAGLineageKind kind{};
+    if ((function_name == "materialize" || function_name == "toNullable") && node.children.size() == 1)
+        kind = ActionsDAGLineageKind::ValuePreserving;
+    else if (function_name == "_CAST" || function_name == "CAST")
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    else if (node.children.size() == 1 && node.function_base->isDeterministic())
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    else
+        return {};
+
+    /// NDV counts only non-null values. A hop turning a Nullable first argument into a
+    /// non-Nullable result can map NULL to one additional counted value.
+    const bool collapses_null
+        = isNullableOrLowCardinalityNullable(node.children[0]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
+    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
+        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
+    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
+}
+
+std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
+{
+    using TraceState = std::optional<ActionsDAGInputLineage>;
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> input_positions;
+    const auto & inputs = actions.getInputs();
+    for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
+        input_positions[inputs[input_position]] = input_position;
+
+    std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
+    const auto & outputs = actions.getOutputs();
+    for (const auto * output : outputs)
+    {
+        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
+        nodes_to_process.push({output, false});
+        while (!nodes_to_process.empty())
+        {
+            auto [node, child_pushed] = nodes_to_process.top();
+            if (traced.contains(node))
+            {
+                nodes_to_process.pop();
+                continue;
+            }
+
+            if (auto input = input_positions.find(node); input != input_positions.end())
+            {
+                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
+                nodes_to_process.pop();
+                continue;
+            }
+
+            const auto hop = describeActionsDAGLineageHop(*node);
+            if (hop && !child_pushed)
+            {
+                nodes_to_process.top().second = true;
+                nodes_to_process.push({node->children[0], false});
+                continue;
+            }
+
+            TraceState result;
+            if (hop)
+            {
+                const auto & child = traced.at(node->children[0]);
+                if (child)
+                {
+                    ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
+                    if (hop->kind == ActionsDAGLineageKind::DistinctValuesBound
+                        || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
+                        kind = ActionsDAGLineageKind::DistinctValuesBound;
+                    else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
+                        || child->kind == ActionsDAGLineageKind::ValuePreserving)
+                        kind = ActionsDAGLineageKind::ValuePreserving;
+                    result = ActionsDAGInputLineage{
+                        child->input_position,
+                        kind,
+                        child->ndv_delta + hop->ndv_delta,
+                        child->preserves_width && hop->preserves_width};
+                }
+            }
+            traced[node] = result;
+            nodes_to_process.pop();
+        }
+    }
+
+    std::vector<ActionsDAGOutputLineage> result;
+    result.reserve(outputs.size());
+    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
+        result.push_back({output_position, traced.at(outputs[output_position])});
+    return result;
+}
+
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
     if (node->function_base->isInjective({}))
@@ -599,7 +686,10 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            UNREACHABLE();
+            /// The result of an ARRAY JOIN is not a per-row function of its child, so it cannot be
+            /// reduced any further (see `buildArrayJoinDAG` for how such nodes enter key expressions).
+            irreducible.insert(node);
+            break;
         case ActionsDAG::ActionType::COLUMN:
             irreducible.insert(node);
             break;

@@ -1,12 +1,8 @@
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 
-#include <algorithm>
-#include <queue>
-
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/HashUtils.h>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
 
@@ -50,97 +46,18 @@ public:
         if (!query->hasGroupBy())
             return;
 
-        if (query->isGroupByWithCube() || query->isGroupByWithRollup())
+        /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
+        /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH
+        /// TOTALS row. In such a row the key is output as its column default. Dropping a key that is
+        /// a function of other keys makes the output projection recompute it from those keys' totals
+        /// defaults (e.g. toString(number) from number = 0 gives '0' instead of the required String
+        /// default ''), which changes the result. See #110715.
+        if (query->isGroupByWithCube() || query->isGroupByWithRollup()
+            || query->isGroupByWithGroupingSets() || query->isGroupByWithTotals())
             return;
 
         auto & group_by = query->getGroupBy().getNodes();
-        if (query->isGroupByWithGroupingSets())
-        {
-            for (auto & set : group_by)
-            {
-                auto & grouping_set = set->as<ListNode>()->getNodes();
-                optimizeGroupingSet(grouping_set);
-            }
-        }
-        else
-            optimizeGroupingSet(group_by);
-    }
-private:
-    struct NodeWithInfo
-    {
-        QueryTreeNodePtr node;
-        bool parents_are_only_deterministic = false;
-    };
-
-    static bool canBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
-    {
-        auto * function = node->as<FunctionNode>();
-        if (!function || function->getArguments().getNodes().empty())
-            return false;
-
-        std::vector<NodeWithInfo> candidates;
-        auto & function_arguments = function->getArguments().getNodes();
-        bool is_deterministic = function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
-        for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
-            candidates.push_back({ *it, is_deterministic });
-
-        /// Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
-        bool found_at_least_one_usage = false;
-        while (!candidates.empty())
-        {
-            auto [candidate, parents_are_only_deterministic] = candidates.back();
-            candidates.pop_back();
-
-            bool found = group_by_keys.contains(candidate);
-            found_at_least_one_usage |= found;
-
-            switch (candidate->getNodeType())
-            {
-                case QueryTreeNodeType::FUNCTION:
-                {
-                    auto * func = candidate->as<FunctionNode>();
-                    auto & arguments = func->getArguments().getNodes();
-                    if (arguments.empty())
-                        return false;
-
-                    if (!found)
-                    {
-                        bool is_deterministic_function = parents_are_only_deterministic &&
-                            func->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
-                        for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
-                            candidates.push_back({ *it, is_deterministic_function });
-                    }
-                    break;
-                }
-                case QueryTreeNodeType::COLUMN:
-                    if (!found)
-                        return false;
-                    break;
-                case QueryTreeNodeType::CONSTANT:
-                    if (!parents_are_only_deterministic)
-                        return false;
-                    break;
-                default:
-                    return false;
-            }
-        }
-
-        return found_at_least_one_usage;
-    }
-
-    static void optimizeGroupingSet(QueryTreeNodes & grouping_set)
-    {
-        QueryTreeNodePtrWithHashSet group_by_keys(grouping_set.begin(), grouping_set.end());
-
-        QueryTreeNodes new_group_by_keys;
-        new_group_by_keys.reserve(grouping_set.size());
-        for (auto & group_by_elem : grouping_set)
-        {
-            if (!canBeEliminated(group_by_elem, group_by_keys))
-                new_group_by_keys.push_back(group_by_elem);
-        }
-
-        grouping_set = std::move(new_group_by_keys);
+        removeKeysThatAreFunctionsOfOtherKeys(group_by);
     }
 };
 

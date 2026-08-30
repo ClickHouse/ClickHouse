@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -39,6 +40,7 @@
 
 #include <base/range.h>
 
+#include <climits>
 #include <filesystem>
 
 
@@ -53,6 +55,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event DistributedSyncInsertionTimeoutExceeded;
+    extern const Event DistributedShardsSkipped;
 }
 
 namespace fs = std::filesystem;
@@ -61,8 +64,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
     extern const SettingsBool insert_allow_materialized_columns;
@@ -75,6 +76,8 @@ namespace Setting
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsBool use_compact_format_in_distributed_parts_names;
 }
 
@@ -86,11 +89,47 @@ namespace DistributedSetting
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ABORTED;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
+}
+
+namespace
+{
+
+/// Decides whether an exception from a shard should be silently ignored on INSERT
+/// according to `skip_unavailable_shards` and `skip_unavailable_shards_mode`.
+/// This is checked while establishing the connection and sending the query to the shard,
+/// i.e. before any data has been pushed, so `unavailable_or_exception_before_processing` applies here.
+bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
+{
+    if (!settings[Setting::skip_unavailable_shards])
+        return false;
+
+    /// `LOGICAL_ERROR` denotes a local invariant violation (an impossible job layout, a missing
+    /// connection pool, an empty connection) rather than an error reported by the shard. Never
+    /// silence it as a shard skip, even in the catch-all `unavailable_or_exception_before_processing`
+    /// mode, otherwise genuine programming/configuration errors would be hidden and rows silently dropped.
+    if (exception_code == ErrorCodes::LOGICAL_ERROR)
+        return false;
+
+    const SkipUnavailableShardsMode mode = settings[Setting::skip_unavailable_shards_mode];
+    switch (mode)
+    {
+        case SkipUnavailableShardsMode::UNAVAILABLE:
+            return false;
+        case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
+            return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
+        case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
+            return true;
+    }
+}
+
 }
 
 static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
@@ -372,7 +411,16 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings settings = context->getSettingsCopy();
+        Settings settings = context->getSettingsCopy();
+        /// Strip the initiator-only settings (the query-shaping `select` / `filter` / `order` / `sort`
+        /// / `limit` / `offset` / `page`, the result-serialisation `format` / `input_format` /
+        /// `output_format` / `default_format` / `compression`, and `database`) before sending them to
+        /// the shard. They are irrelevant to a remote `INSERT` (the rows are already shaped and sent as
+        /// `Native` blocks), and forwarding the new ones breaks rolling upgrades: an older shard
+        /// rejects the settings packet with `UNKNOWN_SETTING`. `database` in particular must be left
+        /// off so a `Distributed` table created with an empty database argument resolves the remote
+        /// table against the shard's own default database.
+        ClusterProxy::stripInitiatorOnlySettings(settings);
 
         size_t rows = shard_block.rows();
 
@@ -387,44 +435,69 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (rows == 0)
             return;
 
+        /// The shard reported an ignorable error on a previous block; keep discarding its data.
+        if (job.skip)
+            return;
+
         if (!job.is_local_job || !settings[Setting::prefer_localhost_replica])
         {
             if (!job.executor)
             {
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-                if (shard_info.hasInternalReplication())
+                try
                 {
-                    /// Skip replica_index in case of internal replication
-                    if (shard_job.replicas_jobs.size() != 1)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
+                    if (shard_info.hasInternalReplication())
+                    {
+                        /// Skip replica_index in case of internal replication
+                        if (shard_job.replicas_jobs.size() != 1)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
 
-                    /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
-                    /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
-                    auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    auto result = shard_info.pool->getValidTryResult(results, settings[Setting::distributed_insert_skip_read_only_replicas]);
-                    job.connection_entry = std::move(result.entry);
+                        /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
+                        /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
+                        /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
+                        auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+                        auto result = shard_info.pool->getValidTryResult(results, settings[Setting::distributed_insert_skip_read_only_replicas]);
+                        job.connection_entry = std::move(result.entry);
+                    }
+                    else
+                    {
+                        const auto & replica = addresses.at(job.shard_index).at(job.replica_index);
+
+                        const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
+                        if (!connection_pool)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
+
+                        job.connection_entry = connection_pool->get(timeouts, settings);
+                        if (job.connection_entry.isNull())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
+                    }
+
+                    if (throttler)
+                        job.connection_entry->setThrottler(throttler);
+
+                    /// The RemoteSink constructor sends the query to the shard and reads its header,
+                    /// so a missing table or any other "before processing" exception surfaces here.
+                    job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                    job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                    job.executor->start();
                 }
-                else
+                catch (const Exception & e)
                 {
-                    const auto & replica = addresses.at(job.shard_index).at(job.replica_index);
+                    if (!shouldSkipShardOnInsert(settings, e.code()))
+                        throw;
 
-                    const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
-                    if (!connection_pool)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
+                    LOG_WARNING(log,
+                        "Skipping shard {} on INSERT due to `skip_unavailable_shards_mode` setting: {}",
+                        shard_info.shard_num, e.displayText());
 
-                    job.connection_entry = connection_pool->get(timeouts, settings);
-                    if (job.connection_entry.isNull())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
+                    ProfileEvents::increment(ProfileEvents::DistributedShardsSkipped);
+                    job.skip = true;
+                    job.executor.reset();
+                    job.pipeline = QueryPipeline();
+                    job.connection_entry = {};
+                    return;
                 }
-
-                if (throttler)
-                    job.connection_entry->setThrottler(throttler);
-
-                job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
-                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
-                job.executor->start();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
@@ -574,7 +647,7 @@ void DistributedSink::onFinish()
     auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, static_cast<double>(inserted_rows) / elapsed, getCurrentStateDescription());
+        LOG_DEBUG(log, "It took {:.3f} sec. to insert {} blocks, {:.3f} rows per second. {}", elapsed, inserted_blocks, static_cast<double>(inserted_rows) / elapsed, getCurrentStateDescription());
     };
 
     std::lock_guard lock(execution_mutex);
@@ -583,7 +656,7 @@ void DistributedSink::onFinish()
 
     /// Pool finished means that some exception had been thrown before,
     /// and scheduling new jobs will return "Cannot schedule a task" error.
-    if (insert_sync && pool && !pool->finished())
+    if (insert_sync && pool && !pool->isFinished())
     {
         finished_jobs_count = 0;
         try
@@ -627,7 +700,7 @@ void DistributedSink::onFinish()
 void DistributedSink::onCancel() noexcept
 {
     std::lock_guard lock(execution_mutex);
-    if (pool && !pool->finished())
+    if (pool && !pool->isFinished())
     {
         try
         {
@@ -728,13 +801,17 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
     }
     else
     {
-        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
-            writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
-
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local || !settings[Setting::prefer_localhost_replica])
                 dir_names.push_back(address.toFullString(settings[Setting::use_compact_format_in_distributed_parts_names]));
+
+        /// Reject before the local write below, otherwise a shard holding both this server and a
+        /// too long remote destination inserts locally and still reports the INSERT as failed.
+        checkDirectoryNameLengths(shard_info, dir_names);
+
+        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
+            writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
 
         if (!dir_names.empty())
             writeToShard(shard_info, block_to_send, dir_names);
@@ -777,10 +854,25 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 }
 
 
+void DistributedSink::checkDirectoryNameLengths(const Cluster::ShardInfo & shard_info, const std::vector<std::string> & dir_names) const
+{
+    /// The name embeds `user:password@host:port`, hence it is not reported
+    /// (see `maskDataPath` in StorageSystemDistributionQueue.cpp).
+    for (const auto & dir_name : dir_names)
+        if (dir_name.size() > NAME_MAX)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "The max length of a directory name for async distributed INSERT into table {} (cluster {}, shard {}) is {}, current length is {}",
+                storage.getStorageID().getFullNameNotQuoted(), storage.getClusterName(), shard_info.shard_num, NAME_MAX, dir_name.size());
+}
+
+
 void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names)
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+
+    /// Every directory this function creates is named after an element of `dir_names`.
+    checkDirectoryNameLengths(shard_info, dir_names);
 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
@@ -803,11 +895,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     if (compression_method == "ZSTD")
         compression_level = settings[Setting::network_zstd_compression_level];
 
-    CompressionCodecFactory::instance().validateCodec(
-        compression_method,
-        compression_level,
-        !settings[Setting::allow_suspicious_codecs],
-        settings[Setting::allow_experimental_codecs]);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, CodecValidationSettings(settings));
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
@@ -863,18 +951,31 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             WriteBufferFromOwnString header_buf;
             writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
-            context->getSettingsRef().write(header_buf);
+            {
+                /// Strip the initiator-only settings (query-shaping, result-serialisation, and
+                /// `database`; see `stripInitiatorOnlySettings`) before persisting them in the queue
+                /// file. They are replayed on the connection to the remote shard, which must resolve an
+                /// unqualified remote table against its own default database and never needs the
+                /// query-shaping / format settings for a `Native`-block `INSERT`; forwarding the new
+                /// ones would make an older shard reject the replayed settings with `UNKNOWN_SETTING`.
+                Settings insert_settings = context->getSettingsCopy();
+                ClusterProxy::stripInitiatorOnlySettings(insert_settings);
+                insert_settings.write(header_buf);
+            }
 
+            /// `client_agent` is intentionally excluded from the embedded `ClientInfo` here and written
+            /// as a trailing header field below, so that older binaries draining these queue files read
+            /// the embedded `ClientInfo` in the old, append-compatible layout.
             if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
                 // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
                 client_info.client_trace_context = OpenTelemetry::CurrentContext();
-                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
             }
             else
             {
-                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
             }
 
             writeVarUInt(block.rows(), header_buf);
@@ -891,6 +992,20 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             writeStringBinary(storage.cluster_name, header_buf);
             writeStringBinary(storage.getStorageID().getFullNameNotQuoted(), header_buf);
             writeStringBinary(storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(), header_buf);
+
+            /// Trailing field: the detected AI coding agent of the initiating client.
+            /// Kept here (rather than inside the embedded `ClientInfo` above) so older binaries can
+            /// safely ignore it when draining queue files written by a newer binary.
+            writeStringBinary(context->getClientInfo().client_agent, header_buf);
+
+            /// Trailing field: whether the initiating query is internal.
+            writeBinary(context->getClientInfo().is_internal, header_buf);
+
+            /// Trailing fields: the SQL-defined HTTP handler name and the request URL of the initiating
+            /// query. Kept out of the embedded `ClientInfo` above for the same layout-compatibility reason
+            /// as `client_agent`.
+            writeStringBinary(context->getClientInfo().http_handler_name, header_buf);
+            writeStringBinary(context->getClientInfo().http_request_url, header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);

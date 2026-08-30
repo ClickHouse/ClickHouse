@@ -127,7 +127,7 @@ public:
             this->data(place).set(*columns[0], 0, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (!this->data(place).has())
             this->data(place).set(this->data(rhs), arena);
@@ -316,7 +316,7 @@ public:
         this->data(place).set(*columns[0], 0, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).set(this->data(rhs), arena);
     }
@@ -460,7 +460,7 @@ Selects the last encountered value of a column.
 
 :::warning
 As a query can be executed in arbitrary order, the result of this function is non-deterministic.
-If you need an arbitrary but deterministic result, use functions [min](/sql-reference/aggregate-functions/reference/min) or [max](/sql-reference/aggregate-functions/reference/max).
+If you need an arbitrary but deterministic result, use functions [min](/reference/functions/aggregate-functions/min) or [max](/reference/functions/aggregate-functions/max).
 :::
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.

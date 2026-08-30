@@ -3,6 +3,7 @@
 
 #include <Core/Field.h>
 #include <Common/IntervalKind.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/Collator.h>
 
@@ -134,9 +135,9 @@ struct SortColumnDescriptionWithColumnIndex
 class CompiledSortDescriptionFunctionHolder;
 
 /// Description of the sorting rule for several columns.
-using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
+using SortDescriptionWithPositions = VectorWithMemoryTracking<SortColumnDescriptionWithColumnIndex>;
 
-class SortDescription : public std::vector<SortColumnDescription>
+class SortDescription : public VectorWithMemoryTracking<SortColumnDescription>
 {
 public:
     /// Can be safely cast into JITSortDescriptionFunc
@@ -146,11 +147,17 @@ public:
     bool compile_sort_description = false;
 
     bool hasPrefix(const SortDescription & prefix) const;
-    bool hasPrefix(const Names & prefix) const;
 };
 
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs);
+
+/// The leading run of `description` whose column names all belong to `columns` (compared as a set) and
+/// are ordered by value. A collated column is ordered by its collation key, not by value, so equal
+/// values are not adjacent; it stops the prefix (in-order DISTINCT / LIMIT BY rely on value-adjacency).
+/// If the result has `columns.size()` entries, then `columns` -- in any order -- form such a prefix, so
+/// grouping by them yields contiguous groups.
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns);
 
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.

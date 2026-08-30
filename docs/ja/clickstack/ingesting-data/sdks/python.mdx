@@ -1,0 +1,159 @@
+---
+slug: /use-cases/observability/clickstack/sdks/python
+description: 'ClickStack 向け Python - ClickHouse オブザーバビリティ スタック'
+title: 'Python'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'ログ', 'インテグレーション', 'アプリケーション監視']
+---
+
+ClickStack は、テレメトリーデータ (ログと
+トレース) の収集に OpenTelemetry 標準を使用します。トレースは自動インストルメンテーションによって生成されるため、トレーシングの価値を得るのに手動の
+インストルメンテーションは必要ありません。
+
+このガイドでは、以下を統合します:
+
+* **ログ**
+* **メトリクス**
+* **トレース**
+
+<div id="getting-started">
+  ## はじめに
+</div>
+
+<div id="install-clickstack-otel-instrumentation-package">
+  ### ClickStack OpenTelemetry インストルメンテーション パッケージをインストールする
+</div>
+
+次のコマンドで、[ClickStack OpenTelemetry パッケージ](https://pypi.org/project/hyperdx-opentelemetry/)をインストールします。
+
+```shell
+pip install hyperdx-opentelemetry
+```
+
+Python アプリケーションで使用しているパッケージ向けの OpenTelemetry 自動インストルメンテーション ライブラリをインストールします。OpenTelemetry Python SDK に付属する
+`opentelemetry-bootstrap` ツールを使用してアプリケーションのパッケージをスキャンし、利用可能なライブラリの一覧を生成することをおすすめします。
+
+```shell
+opentelemetry-bootstrap -a install
+```
+
+<div id="configure-environment-variables">
+  ### 環境変数を設定する
+</div>
+
+次に、OpenTelemetry Collector 経由でテレメトリーを ClickStack に送信するため、シェルで以下の環境変数を設定する必要があります。
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+</Tabs>
+
+*`OTEL_SERVICE_NAME` 環境変数は、HyperDX アプリ内でサービスを識別するために使用されます。値には任意の名前を指定できます。*
+
+<div id="run-the-application-with-otel-python-agent">
+  ### OpenTelemetry Pythonエージェントを使用してアプリケーションを実行する
+</div>
+
+これで、OpenTelemetry Pythonエージェント (`opentelemetry-instrument`) を使用してアプリケーションを実行できます。
+
+```shell
+opentelemetry-instrument python app.py
+```
+
+<div id="using-uvicorn-gunicorn-uwsgi">
+  #### `Gunicorn`、`uWSGI`、`uvicorn` を使用している場合
+</div>
+
+この場合、OpenTelemetry Pythonエージェントを動作させるには追加の設定変更が必要です。
+
+pre-fork Webサーバーモードを使用するアプリケーションサーバーで OpenTelemetry を設定するには、post-fork フック内で `configure_opentelemetry` メソッドを呼び出してください。
+
+<Tabs>
+  <Tab title="Gunicorn">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+
+    def post_fork(server, worker):
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uWSGI">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+    from uwsgidecorators import postfork
+
+    @postfork
+    def init_tracing():
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uvicorn">
+    OpenTelemetry は現在、`--reload` フラグを付けて実行した `uvicorn`、またはマルチワーカー (`--workers`) では [動作しません](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/385)。
+    テスト時にはこれらのフラグを無効にするか、Gunicorn を使用することを推奨します。
+  </Tab>
+</Tabs>
+
+<div id="advanced-configuration">
+  ## 高度な設定
+</div>
+
+<div id="network-capture">
+  #### ネットワークキャプチャ
+</div>
+
+ネットワークキャプチャ機能を有効にすると、開発者は
+HTTPリクエストのヘッダーやボディ内のペイロードを効果的にデバッグできるようになります。これは
+`HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE` フラグを 1 に設定するだけで
+実現できます。
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="logs-not-appearing-due-to-log-level">
+  ### ログレベルが原因でログが表示されない
+</div>
+
+デフォルトでは、OpenTelemetry のログ用ハンドラーは `logging.NOTSET` レベルを使用しており、実際には WARNING レベルとして扱われます。ロガーの作成時にログレベルを指定できます:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+```
+
+<div id="exporting-to-the-console">
+  ### コンソールへのエクスポート
+</div>
+
+OpenTelemetry Python SDK は通常、エラーが発生するとその内容をコンソールに表示します。
+ただし、エラーは発生していないのに、データが想定どおり HyperDX に表示されない場合は、
+デバッグモードを有効にすることもできます。
+デバッグモードを有効にすると、すべてのテレメトリーがコンソールに出力されるため、
+アプリケーションが想定どおりのデータを出力するよう適切にインストルメントされているかを確認できます。
+
+```shell
+export DEBUG=true
+```
+
+Python OpenTelemetry のインストルメンテーションの詳細については、こちらをご覧ください。
+[https://opentelemetry.io/docs/instrumentation/python/manual/](https://opentelemetry.io/docs/instrumentation/python/manual/)

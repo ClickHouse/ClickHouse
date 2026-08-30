@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/hasNullable.h>
 
@@ -27,6 +28,27 @@ bool hasNullable(const DataTypePtr & type)
         // Key type cannot be nullable. We only check value type.
         return hasNullable(type_map->getValueType());
     }
+    return false;
+}
+
+bool hasTypeThatCanContainNulls(const DataTypePtr & type)
+{
+    if (canContainNull(*type))
+        return true;
+
+    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        return hasTypeThatCanContainNulls(type_array->getNestedType());
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & subtype : type_tuple->getElements())
+        {
+            if (hasTypeThatCanContainNulls(subtype))
+                return true;
+        }
+        return false;
+    }
+    if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+        return hasTypeThatCanContainNulls(type_map->getKeyType()) || hasTypeThatCanContainNulls(type_map->getValueType());
     return false;
 }
 

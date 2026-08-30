@@ -4,6 +4,8 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+# shellcheck source=./mergetree_mutations.lib
+. "$CURDIR"/mergetree_mutations.lib
 
 # test1: insert with transaction and mutation without transaction
 ${CLICKHOUSE_CLIENT} -n -q "
@@ -15,6 +17,11 @@ ${CLICKHOUSE_CLIENT} -n -q "
     COMMIT;
 
     DELETE FROM t0 WHERE TRUE;
+"
+# DELETE is non-transactional, so its mutation is async at lightweight_deletes_sync=0.
+# Wait for it before DETACH SYNC, else ATTACH AS REPLICATED reloads the pre-delete part.
+wait_for_all_mutations "t0"
+${CLICKHOUSE_CLIENT} -n -q "
     DETACH TABLE t0 SYNC;
     ATTACH TABLE t0 AS REPLICATED;
 
@@ -57,7 +64,10 @@ ${CLICKHOUSE_CLIENT} -n -q "
     OPTIMIZE TABLE t0 FINAL;
     COMMIT;
     DELETE FROM t0 WHERE TRUE;
-
+"
+# Wait for the non-transactional DELETE mutation before DETACH SYNC (see test1).
+wait_for_all_mutations "t0"
+${CLICKHOUSE_CLIENT} -n -q "
     DETACH TABLE t0 SYNC;
     ATTACH TABLE t0 AS REPLICATED;
 

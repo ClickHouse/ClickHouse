@@ -1,9 +1,11 @@
 #include <charconv>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <base/scope_guard.h>
 
@@ -34,8 +36,9 @@
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <fmt/core.h>
 
 using namespace std::literals;
@@ -468,6 +471,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+
+    ParserAllCollectionsOfLiterals collections_parser(/* allow_map_= */ false);
     ParserFunction func_parser;
 
     ASTPtr identifier;
@@ -476,8 +481,10 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    /// If it's neither literal, nor identifier, nor function, than it's possible list of pairs
-    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    /// If it's neither literal (scalar or collection), nor identifier, nor function, then it's possibly a list of pairs
+    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected)
+        && !(pos->type == TokenType::OpeningSquareBracket && collections_parser.parse(pos, value, expected))
+        && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;
         ParserToken open(TokenType::OpeningRoundBracket);
@@ -518,7 +525,18 @@ namespace
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
             ParserCompoundIdentifier parser(false, true, Highlight::function);
-            return parser.parse(pos, node, expected);
+            if (!parser.parse(pos, node, expected))
+                return false;
+
+            /// Function names containing query parameters (for example, `{x:Identifier}(...)`)
+            /// are not supported.
+            if (node->as<ASTIdentifier>()->isParam())
+            {
+                node = nullptr;
+                return false;
+            }
+
+            return true;
         }
     };
 }
@@ -681,6 +699,14 @@ public:
         return operators.back().type;
     }
 
+    const Operator * previousOperator() const
+    {
+        if (operators.empty())
+            return nullptr;
+
+        return &operators.back();
+    }
+
     /// True when any operator of the given type is pending anywhere on the
     /// operators stack of the current element. Used to detect a pending lambda
     /// in `SubstringLayer` / `PositionLayer` state-0 closing-bracket handling:
@@ -762,26 +788,6 @@ public:
             }
             else
             {
-                /// enable using subscript operator for kql_array_sort
-                if (cur_op.function_name == "arrayElement" && !operands.empty())
-                {
-                    auto* first_arg_as_node = operands.front()->as<ASTFunction>();
-                    if (first_arg_as_node)
-                    {
-                        if (first_arg_as_node->name == "kql_array_sort_asc" || first_arg_as_node->name == "kql_array_sort_desc")
-                        {
-                            cur_op.function_name = "tupleElement";
-                            cur_op.type = OperatorType::TupleElement;
-                        }
-                        else if (first_arg_as_node->name == "arrayElement" && !first_arg_as_node->arguments->children.empty())
-                        {
-                            auto *arg_inside = first_arg_as_node->arguments->children[0]->as<ASTFunction>();
-                            if (arg_inside && (arg_inside->name == "kql_array_sort_asc" || arg_inside->name == "kql_array_sort_desc"))
-                                first_arg_as_node->name = "tupleElement";
-                        }
-                    }
-                }
-
                 function = makeASTFunction(cur_op);
 
                 if (!popLastNOperands(function->children[0]->children, cur_op.arity))
@@ -927,7 +933,8 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     {
         is_like = true;
     }
-    else if (func->name == "match"
+    else if (func->name == "match" || func->name == "notMatch"
+             || func->name == "matchCaseInsensitive" || func->name == "notMatchCaseInsensitive"
              || func->name == "extract" || func->name == "extractAll"
              || func->name == "extractGroups" || func->name == "extractAllGroups"
              || func->name == "replaceRegexpOne" || func->name == "replaceRegexpAll"
@@ -951,18 +958,23 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
+    /// Only literals actually tokenized from the query carry valid token info; a synthesized
+    /// literal may have inherited a stale map entry from a freed literal that reused its address.
+    if (!literal->hasTokenInfo())
+        return;
+
     /// Look up token position from the map stored in Expected
     if (!expected.literal_token_map)
         return;
 
-    auto it = expected.literal_token_map->find(literal);
-    if (it == expected.literal_token_map->end())
+    const auto * token_info = expected.literal_token_map->find(literal);
+    if (!token_info)
         return;
 
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = it->second.begin,
-       .end = it->second.end,
+       .begin = token_info->begin,
+       .end = token_info->end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1035,6 +1047,7 @@ public:
             /// We support trailing commas at the end of the column declaration:
             ///  - SELECT a, b, c, FROM table
             ///  - SELECT 1,
+            ///  - FROM table |> SELECT a, b, c, |> LIMIT 1
 
             /// For this purpose we need to eliminate the following cases:
             ///  1. WITH 1 AS from SELECT 2, from
@@ -1046,8 +1059,9 @@ public:
             auto test_pos = pos;
             ++test_pos;
 
-            /// End of query
-            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
+            /// End of query, or the end of a pipe operator: the `|>` token cannot continue an expression list,
+            /// so a comma in front of it is unambiguously a trailing comma.
+            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon && test_pos->type != TokenType::PipeOperator)
             {
                 /// If we can't parse FROM then return
                 if (!ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
@@ -1515,7 +1529,7 @@ public:
         /// expr AS type
         if (state == 0)
         {
-            ASTPtr type_node;
+            std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
             {
@@ -1523,7 +1537,7 @@ public:
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
                     as_keyword_parser.ignore(pos, expected) &&
-                    ParserDataType().parse(pos, type_node, expected) &&
+                    (type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!insertAlias(alias))
@@ -1532,7 +1546,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1555,13 +1569,13 @@ public:
 
                 pos = old_pos;
 
-                if (ParserDataType().parse(pos, type_node, expected) &&
+                if ((type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1611,6 +1625,8 @@ enum class ExtractUnit : uint8_t
     Century,
     Decade,
     Millennium,
+    TimezoneHour,
+    TimezoneMinute,
 };
 
 /// Builds the AST corresponding to `EXTRACT(unit FROM expr)` /
@@ -1637,23 +1653,40 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
             return makeASTFunction("toISOYear", expr);
         case ExtractUnit::Century:
             /// century = (year - 1) / 100 + 1
+            /// `__toYearCalendarOnly` rejects `Interval` operands; the plain `toYear`
+            /// accepts `IntervalYear` (used by `EXTRACT(YEAR FROM INTERVAL ...)`),
+            /// which would otherwise let `EXTRACT(CENTURY FROM INTERVAL 5 YEAR)` slip
+            /// through the same-kind contract and silently compute `(5-1)/100+1 = 1`.
             return makeASTFunction("plus",
                 makeASTFunction("intDiv",
-                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    makeASTFunction("minus", makeASTFunction("__toYearCalendarOnly", expr), make_intrusive<ASTLiteral>(UInt64(1))),
                     make_intrusive<ASTLiteral>(UInt64(100))),
                 make_intrusive<ASTLiteral>(UInt64(1)));
         case ExtractUnit::Decade:
             /// decade = year / 10
             return makeASTFunction("intDiv",
-                makeASTFunction("toYear", expr),
+                makeASTFunction("__toYearCalendarOnly", expr),
                 make_intrusive<ASTLiteral>(UInt64(10)));
         case ExtractUnit::Millennium:
             /// millennium = (year - 1) / 1000 + 1
             return makeASTFunction("plus",
                 makeASTFunction("intDiv",
-                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    makeASTFunction("minus", makeASTFunction("__toYearCalendarOnly", expr), make_intrusive<ASTLiteral>(UInt64(1))),
                     make_intrusive<ASTLiteral>(UInt64(1000))),
                 make_intrusive<ASTLiteral>(UInt64(1)));
+        case ExtractUnit::TimezoneHour:
+            /// `toInt64(...)` keeps the divisor signed without using a bare `Int64` literal,
+            /// which would format as plain "3600" and re-parse as UInt64, breaking the AST
+            /// roundtrip check.
+            return makeASTFunction("intDiv",
+                makeASTFunction("timezoneOffset", expr),
+                makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(3600))));
+        case ExtractUnit::TimezoneMinute:
+            return makeASTFunction("intDiv",
+                makeASTFunction("modulo",
+                    makeASTFunction("timezoneOffset", expr),
+                    makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(3600)))),
+                makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(60))));
         case ExtractUnit::None:
             UNREACHABLE();
     }
@@ -1755,6 +1788,10 @@ static bool tryParseExtractUnitFromString(const std::string & unit_lower, Interv
         extract_unit = ExtractUnit::Decade;
     else if (unit_lower == "millennium")
         extract_unit = ExtractUnit::Millennium;
+    else if (unit_lower == "timezone_hour")
+        extract_unit = ExtractUnit::TimezoneHour;
+    else if (unit_lower == "timezone_minute")
+        extract_unit = ExtractUnit::TimezoneMinute;
     else
         return false;
 
@@ -1853,6 +1890,10 @@ private:
             extract_unit = ExtractUnit::Decade;
         else if (ParserKeyword(Keyword::MILLENNIUM).ignore(pos, expected))
             extract_unit = ExtractUnit::Millennium;
+        else if (ParserKeyword(Keyword::TIMEZONE_HOUR).ignore(pos, expected))
+            extract_unit = ExtractUnit::TimezoneHour;
+        else if (ParserKeyword(Keyword::TIMEZONE_MINUTE).ignore(pos, expected))
+            extract_unit = ExtractUnit::TimezoneMinute;
         else
             return false;
 
@@ -1892,23 +1933,36 @@ protected:
 
 class SubstringLayer : public Layer
 {
+    bool comma_mode = false; /// true when the first separator was a comma
+    bool second_separator_was_comma = false; /// true when the second separator was a comma
 public:
     SubstringLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
+        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length, ...)
         ///
         /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
         ///    when a lambda is pending (round-trip for the merged-tuple lambda
         ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
+        /// 2: Parse further commas, but only when every separator so far was a
+        ///    comma, i.e. in the purely functional form (stays at 2)
         /// 1 or 2: Parse closing bracket (finished)
 
         if (state == 0)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                comma_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+            else if (ParserKeyword(Keyword::FROM).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1944,8 +1998,17 @@ public:
 
         if (state == 1)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                second_separator_was_comma = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+            else if (ParserKeyword(Keyword::FOR).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1953,6 +2016,26 @@ public:
                     return false;
 
                 state = 2;
+            }
+        }
+        /// In the purely functional form, accept further arguments so that a too-long call is
+        /// reported by the function as `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` rather than as a
+        /// syntax error. `substr`/`mid`/`byteSlice` go through the generic `FunctionLayer` and
+        /// already accept any argument count, so a definition that was persisted after DDL
+        /// normalization rewrote one of them to `substring` (see `canonicalNameCanReparseShape`
+        /// in `FunctionNameNormalizer.cpp`, which now prevents that rewrite) would otherwise
+        /// not re-parse.
+        /// Both flags are required: a further comma is accepted only when EVERY separator so
+        /// far was a comma, so a form that used the SQL-standard FROM or FOR keyword anywhere
+        /// keeps its fixed shape and stays a syntax error, exactly as before this change.
+        else if (comma_mode && second_separator_was_comma && state == 2)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
             }
         }
 
@@ -2959,6 +3042,61 @@ private:
     bool if_permitted;
 };
 
+/// Layer for table function `eval`, which accepts either a usual expression argument
+/// or a bare `SELECT` query argument. The query argument is wrapped into a subquery,
+/// so `eval(SELECT ...)` is just syntactic sugar for `eval((SELECT ...))`.
+class EvalLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            state = 1;
+
+            ASTPtr query;
+            auto select_pos = pos;
+            auto select_expected = expected;
+
+            if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
+            {
+                pos = select_pos;
+                expected = select_expected;
+                elements = {make_intrusive<ASTSubquery>(std::move(query))};
+                finished = true;
+                return true;
+            }
+        }
+
+        if (ParserToken(TokenType::Comma).ignore(pos, expected))
+        {
+            action = Action::OPERAND;
+            return mergeElement();
+        }
+
+        if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            action = Action::OPERATOR;
+
+            if (!isCurrentElementEmpty() || !elements.empty())
+                if (!mergeElement())
+                    return false;
+
+            finished = true;
+        }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("eval", std::move(elements));
+        return true;
+    }
+};
+
 /// We use Layers to parse elements consisting of other elements.
 /// In some cases, we are interested in the first element that is an identifier
 /// e.g. for a table function it would be the name of the function
@@ -2996,6 +3134,7 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
     /// OVERLAY(x PLACING y FROM a FOR b)
 
     String function_name = getIdentifierName(identifier);
+    chassert(!function_name.empty());
     String function_name_lowercase = Poco::toLower(function_name);
 
     if (is_table_function)
@@ -3004,6 +3143,8 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
+        if (function_name_lowercase == "eval")
+            return std::make_unique<EvalLayer>();
     }
 
     if (function_name == "tuple")
@@ -3210,11 +3351,16 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_LIKE),      Operator("notLike",         9,  2)},
     {toStringView(Keyword::NOT_ILIKE),     Operator("notILike",        9,  2)},
     {toStringView(Keyword::REGEXP),        Operator("match",           9,  2)},
+    {"~",              Operator("match",                    9, 2)},
+    {"~*",             Operator("matchCaseInsensitive",     9, 2)},
+    {"!~",             Operator("notMatch",                 9, 2)},
+    {"!~*",            Operator("notMatchCaseInsensitive",  9, 2)},
     {toStringView(Keyword::IN),            Operator("in",              9,  2)},
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+    {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
     {"−",             Operator("minus",           11, 2)},
@@ -3254,7 +3400,13 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
                 || op.type == OperatorType::StartNotBetween
                 || op.type == OperatorType::Cast)
                 return;
-            if (op.function_name == "match")
+            if (op.function_name == "match" || op.function_name == "matchCaseInsensitive"
+                || op.function_name == "notMatch" || op.function_name == "notMatchCaseInsensitive")
+                return;
+            /// AT TIME ZONE desugars to toTimeZone at parse time; do not register toTimeZone as a
+            /// pretty-printer infix symbol — any toTimezone() node in the ActionsDAG may have been
+            /// written directly by the user, not via AT TIME ZONE.
+            if (op.function_name == "toTimeZone")
                 return;
 
             result.insert_or_assign(op.function_name, ExpressionOperatorPrettyInfo{lexeme, op.priority});
@@ -3350,6 +3502,28 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
     }
 }
 
+/// Comparison and string-search predicates that are valid on the left of `SOME`/`ALL` for
+/// the array (non-subquery) right-hand side, but are not tagged `OperatorType::Comparison`
+/// in `operators_table` (the keyword and string-search forms have the default
+/// `OperatorType::None`). These are routed only through the `arrayExists`/`arrayAll` lambda
+/// form, never the subquery -> `IN` rewrite, which has no meaning for them.
+///
+/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`) are
+/// included: `MatchImpl` supports a constant haystack with a non-constant needle, so
+/// `'abc' LIKE SOME(['a%', 'b%'])` rewrites to `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])`
+/// and evaluates without throwing. Keep this in sync with the operator documentation for the
+/// array quantifier.
+static bool isArrayQuantifierPredicate(std::string_view function_name)
+{
+    static const std::unordered_set<std::string_view> predicates
+    {
+        "isDistinctFrom", "isNotDistinctFrom",
+        "like", "ilike", "notLike", "notILike",
+        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive"
+    };
+    return predicates.contains(function_name);
+}
+
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
@@ -3395,21 +3569,73 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         return Action::OPERATOR;
     }
 
-    if (layers.back()->previousType() == OperatorType::Comparison)
+    const auto * prev_operator = layers.back()->previousOperator();
+    const bool prev_is_comparison = prev_operator && prev_operator->type == OperatorType::Comparison;
+    /// The keyword comparison predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` and the
+    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` are not
+    /// tagged `OperatorType::Comparison`. They are valid on the left of the array form of
+    /// `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
+    const bool prev_is_array_predicate
+        = prev_operator && !prev_is_comparison && isArrayQuantifierPredicate(prev_operator->function_name);
+
+    if (prev_is_comparison || prev_is_array_predicate)
     {
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+        bool is_subquery = true;
 
-        /// ANY and SOME are semantically identical
-        if ((any_parser.ignore(pos, expected) || some_parser.ignore(pos, expected)) && subquery_parser.parse(pos, tmp, expected))
-            subquery_function_type = SubqueryFunctionType::ANY;
-        else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
-            subquery_function_type = SubqueryFunctionType::ALL;
+        /// `ANY`/`SOME`/`ALL` with a subquery right-hand side is the existing
+        /// quantifier syntax, rewritten to `IN`/`NOT IN` via `modifyAST`. This form is
+        /// only valid after a symbolic comparison operator (`=`, `<>`, `<`, ...).
+        ///
+        /// `SOME`/`ALL` (but deliberately not `ANY`) additionally accept a
+        /// non-subquery array expression (PostgreSQL-style), rewritten here to
+        /// `has`/`NOT has` for the `=`/`<>` special cases that have an optimized
+        /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise. The array
+        /// form also supports the keyword comparison predicates `IS DISTINCT FROM` and
+        /// `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`,
+        /// `NOT LIKE`, `NOT ILIKE`, and `REGEXP`, which only go through the lambda form.
+        /// `ANY` is excluded from the array form because `any` is also an aggregate
+        /// function, so `expr = any(x)` must keep its function-call meaning.
+        const bool any_kw = any_parser.ignore(pos, expected);
+        const bool some_kw = !any_kw && some_parser.ignore(pos, expected);
+        const bool all_kw = !any_kw && !some_kw && all_parser.ignore(pos, expected);
+
+        if (any_kw || some_kw || all_kw)
+        {
+            subquery_function_type = all_kw ? SubqueryFunctionType::ALL : SubqueryFunctionType::ANY;
+
+            if (prev_is_comparison && subquery_parser.parse(pos, tmp, expected))
+            {
+                /// Existing subquery path: leave `is_subquery = true`.
+            }
+            else if ((some_kw || all_kw) && pos->type == TokenType::OpeningRoundBracket)
+            {
+                auto pos_at_open = pos;
+                ++pos;
+                ParserExpression expr_parser;
+                if (expr_parser.parse(pos, tmp, expected) && pos->type == TokenType::ClosingRoundBracket)
+                {
+                    ++pos;
+                    is_subquery = false;
+                }
+                else
+                {
+                    pos = pos_at_open;
+                    subquery_function_type = SubqueryFunctionType::NONE;
+                }
+            }
+            else
+            {
+                /// `ANY(<non-subquery>)` is not a quantifier; rewind (below) so the
+                /// `any(...)` aggregate function call is parsed normally.
+                subquery_function_type = SubqueryFunctionType::NONE;
+            }
+        }
 
         if (subquery_function_type != SubqueryFunctionType::NONE)
         {
             Operator prev_op;
-            ASTPtr function;
             ASTPtr argument;
 
             if (!layers.back()->popOperator(prev_op))
@@ -3417,10 +3643,68 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             if (!layers.back()->popOperand(argument))
                 return Action::NONE;
 
-            function = makeASTFunction(prev_op, argument, tmp);
+            ASTPtr function;
+            if (is_subquery)
+            {
+                function = makeASTFunction(prev_op, argument, tmp);
 
-            if (!modifyAST(function, subquery_function_type))
-                return Action::NONE;
+                if (!modifyAST(function, subquery_function_type))
+                    return Action::NONE;
+            }
+            else
+            {
+                /// `expr = SOME(arr)` and `expr <> ALL(arr)` map to the optimized
+                /// `has`/`NOT has` (this is what `IN`/`NOT IN` already lowers to
+                /// for non-subquery RHS, but spelled directly here so we don't
+                /// depend on the analyzer recognising the lambda form).
+                const bool is_equals = prev_op.function_name == "equals";
+                const bool is_not_equals = prev_op.function_name == "notEquals";
+
+                if (some_kw && is_equals)
+                {
+                    function = makeASTFunction("has", tmp, argument);
+                }
+                else if (all_kw && is_not_equals)
+                {
+                    function = makeASTOperator("not", makeASTFunction("has", tmp, argument));
+                }
+                else
+                {
+                    /// General form: lambda `_a -> argument OP _a` wrapped in
+                    /// `arrayExists` (for `SOME`) or `arrayAll` (for `ALL`). Walk
+                    /// `argument` to find a lambda variable name that does not
+                    /// collide with any identifier it references (otherwise the
+                    /// lambda parameter would shadow that identifier).
+                    std::unordered_set<String> used_identifiers;
+                    std::function<void(const IAST *)> collect_identifiers = [&](const IAST * node)
+                    {
+                        if (!node)
+                            return;
+                        if (const auto * ident = node->as<ASTIdentifier>())
+                        {
+                            /// Record the full name and every part. A compound identifier
+                            /// such as `_a.x` binds its first part (`_a`) during analysis,
+                            /// so the lambda variable must avoid colliding with `_a`, not
+                            /// just with the whole `_a.x`.
+                            used_identifiers.insert(ident->name());
+                            for (const auto & part : ident->name_parts)
+                                used_identifiers.insert(part);
+                        }
+                        for (const auto & child : node->children)
+                            collect_identifiers(child.get());
+                    };
+                    collect_identifiers(argument.get());
+
+                    String lambda_var = "_a";
+                    for (size_t suffix = 1; used_identifiers.contains(lambda_var); ++suffix)
+                        lambda_var = "_a" + std::to_string(suffix);
+
+                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
+                    auto lambda = makeASTLambda({lambda_var}, std::move(body));
+                    const char * fn_name = some_kw ? "arrayExists" : "arrayAll";
+                    function = makeASTFunction(fn_name, std::move(lambda), tmp);
+                }
+            }
 
             layers.back()->pushOperand(std::move(function));
             return Action::OPERATOR;
@@ -3604,6 +3888,40 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
             layers.back()->pushOperator(top_op);
     }
 
+    /// 'expr AT LOCAL' → toTimeZone(expr, timeZone()). Must be checked before the
+    /// operators_table loop so it takes precedence over any 'AT ...' entry there.
+    if (ParserKeyword(Keyword::AT).checkWithoutMoving(pos, stub))
+    {
+        auto at_local_pos = pos;
+        ParserKeyword(Keyword::AT).ignore(at_local_pos, expected);
+        if (ParserKeyword(Keyword::LOCAL).ignore(at_local_pos, expected))
+        {
+            /// Fold pending operators with priority >= 13 (AT TIME ZONE priority) so that
+            /// e.g. 'a * ts AT LOCAL' gives a * toTimeZone(ts, ...), matching PostgreSQL.
+            constexpr int at_local_priority = 13;
+            while (layers.back()->previousPriority() >= at_local_priority)
+            {
+                Operator prev_op;
+                layers.back()->popOperator(prev_op);
+                ASTPtr function = makeASTFunction(prev_op);
+                if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
+                    return Action::NONE;
+                layers.back()->pushOperand(std::move(function));
+            }
+
+            ASTPtr operand;
+            if (layers.back()->popOperand(operand))
+            {
+                pos = at_local_pos;
+                auto tz_func = makeASTFunction("timeZone");
+                auto function = makeASTFunction("toTimeZone", std::move(operand), std::move(tz_func));
+                function->setIsOperator(true);
+                layers.back()->pushOperand(std::move(function));
+                return Action::OPERATOR;
+            }
+        }
+    }
+
     /// Try to find operators from 'operators_table'
     auto saved_pos = pos;
     auto cur_op = operators_table.begin();
@@ -3760,11 +4078,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (op.type == OperatorType::Cast)
     {
-        ASTPtr type_ast;
-        if (!ParserDataType().parse(pos, type_ast, expected))
+        std::optional<String> type_text = parseDataTypeAsText(pos, expected);
+        if (!type_text)
             return Action::NONE;
 
-        layers.back()->pushOperand(make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
+        layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
     }
 
@@ -3775,6 +4093,323 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         ++layers.back()->between_counter;
 
     return Action::OPERAND;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementIn(StatementFactory & factory)
+{
+    factory.registerStatement("IN",
+    {
+        .description = R"DOCS_MD(
+The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
+
+The left side of the operator is either a single column or a tuple.
+
+Examples:
+
+```sql
+SELECT UserID IN (123, 456) FROM ...
+SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
+```
+
+If the left side is a single column that is in the index, and the right side is a set of constants, the system uses the index for processing the query.
+
+Don't list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section [External data for query processing](/reference/engines/table-engines/special/external-data)), then use a subquery.
+
+The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or `SELECT` subquery in brackets.
+
+For historical compatibility, when the right side is a single `tuple` expression, it can be interpreted either as a set of values or as one tuple value, depending on the left side of the `IN` operator. If the left side is a scalar value, ClickHouse treats the elements of this single right-side `tuple` expression as separate `IN` values:
+
+```sql title="Query"
+SELECT
+    1 IN (tuple(1, 2)) AS one_in_tuple,
+    2 IN (tuple(1, 2)) AS two_in_tuple,
+    3 IN (tuple(1, 2)) AS three_in_tuple;
+```
+
+```text title="Response"
+┌─one_in_tuple─┬─two_in_tuple─┬─three_in_tuple─┐
+│            1 │            1 │              0 │
+└──────────────┴──────────────┴────────────────┘
+```
+
+This behaves like `SELECT 1 IN (1, 2)`. If the left side is also a tuple, the right side is interpreted as a set of tuple values:
+
+```sql title="Query"
+SELECT tuple(1, 2) IN (tuple(1, 2)) AS tuple_in_tuple;
+```
+
+```text title="Response"
+┌─tuple_in_tuple─┐
+│              1 │
+└────────────────┘
+```
+
+This special handling applies only when the right side is a single `tuple` expression. A scalar left side cannot be matched against a right side that contains multiple tuple values:
+
+```sql title="Query"
+SELECT 1 IN (tuple(1, 2), tuple(3, 4));
+```
+
+```text title="Response"
+Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Second argument type Tuple(Tuple(UInt8, UInt8), Tuple(UInt8, UInt8)). (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+ClickHouse allows types to differ in the left and the right parts of the `IN` subquery.
+In this case, it converts the right side value to the type of the left side, as
+if the [accurateCastOrNull](/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) function were applied to the right side.
+
+This means that the data type becomes [Nullable](/reference/data-types/nullable), and if the conversion
+cannot be performed, it returns [NULL](/reference/settings/formats/input-format#input_format_null_as_default).
+
+**Example**
+
+```sql title="Query"
+SELECT '1' IN (SELECT 1);
+```
+
+```text title="Response"
+┌─in('1', _subquery49)─┐
+│                    1 │
+└──────────────────────┘
+```
+
+If the right side of the operator is the name of a table (for example, `UserID IN users`), this is equivalent to the subquery `UserID IN (SELECT * FROM users)`. Use this when working with external data that is sent along with the query. For example, the query can be sent together with a set of user IDs loaded to the 'users' temporary table, which should be filtered.
+
+If the right side of the operator is a table name that has the Set engine (a prepared data set that is always in RAM), the data set will not be created over again for each query.
+
+The subquery may specify more than one column for filtering tuples.
+
+Example:
+
+```sql title="Query"
+SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
+```
+
+The columns to the left and right of the `IN` operator should have the same type.
+
+The `IN` operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
+Example:
+
+```sql title="Query"
+SELECT
+    EventDate,
+    avg(UserID IN
+    (
+        SELECT UserID
+        FROM test.hits
+        WHERE EventDate = toDate('2014-03-17')
+    )) AS ratio
+FROM test.hits
+GROUP BY EventDate
+ORDER BY EventDate ASC
+```
+
+```text title="Response"
+┌──EventDate─┬────ratio─┐
+│ 2014-03-17 │        1 │
+│ 2014-03-18 │ 0.807696 │
+│ 2014-03-19 │ 0.755406 │
+│ 2014-03-20 │ 0.723218 │
+│ 2014-03-21 │ 0.697021 │
+│ 2014-03-22 │ 0.647851 │
+│ 2014-03-23 │ 0.648416 │
+└────────────┴──────────┘
+```
+
+For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
+A subquery in the `IN` clause is always run just one time on a single server. There are no dependent subqueries.
+
+## NULL Processing {#null-processing}
+
+During request processing, the `IN` operator assumes that the result of an operation with [NULL](/reference/settings/formats/input-format#input_format_null_as_default) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](/reference/settings/session-settings/other#transform_null_in).
+
+Here is an example with the `t_null` table:
+
+```text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    3 │
+└───┴──────┘
+```
+
+Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the following result:
+
+```text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
+You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
+
+```sql
+SELECT y IN (NULL, 3)
+FROM t_null
+```
+
+```text
+┌─in(y, tuple(NULL, 3))─┐
+│                     0 │
+│                     1 │
+└───────────────────────┘
+```
+
+## Distributed Subqueries {#distributed-subqueries}
+
+There are two options for `IN` operators with subqueries (similar to `JOIN` operators): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
+
+<Note>
+Remember that the algorithms described below may work differently depending on the [settings](/reference/settings/session-settings) `distributed_product_mode` setting.
+</Note>
+
+When using the regular `IN`, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
+
+When using `GLOBAL IN` / `GLOBAL JOIN`, first all the subqueries are run for `GLOBAL IN` / `GLOBAL JOIN`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
+
+For `GLOBAL ... JOIN`, which side of the join is calculated as the subquery depends on the join kind: for `LEFT` and `INNER` joins, the right table is calculated; for `RIGHT` joins, the left table is calculated instead, since the right table is the preserved side and should be read from shards.
+
+For a non-distributed query, use the regular `IN` / `JOIN`.
+
+Be careful when using subqueries in the `IN` / `JOIN` clauses for distributed query processing.
+
+Let's look at some examples. Assume that each server in the cluster has a normal **local_table**. Each server also has a **distributed_table** table with the **Distributed** type, which looks at all the servers in the cluster.
+
+For a query to the **distributed_table**, the query will be sent to all the remote servers and run on them using the **local_table**.
+
+For example, the query
+
+```sql
+SELECT uniq(UserID) FROM distributed_table
+```
+
+will be sent to all remote servers as
+
+```sql
+SELECT uniq(UserID) FROM local_table
+```
+
+and run on each of them in parallel, until it reaches the stage where intermediate results can be combined. Then the intermediate results will be returned to the requestor server and merged on it, and the final result will be sent to the client.
+
+Now let's examine a query with `IN`:
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
+```
+
+- Calculation of the intersection of audiences of two sites.
+
+This query will be sent to all remote servers as
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
+```
+
+In other words, the data set in the `IN` clause will be collected on each server independently, only across the data that is stored locally on each of the servers.
+
+This will work correctly and optimally if you are prepared for this case and have spread data across the cluster servers such that the data for a single UserID resides entirely on a single server. In this case, all the necessary data will be available locally on each server. Otherwise, the result will be inaccurate. We refer to this variation of the query as "local IN".
+
+To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+This query will be sent to all remote servers as
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+The subquery will begin running on each remote server. Since the subquery uses a distributed table, the subquery that is on each remote server will be resent to every remote server as:
+
+```sql
+SELECT UserID FROM local_table WHERE CounterID = 34
+```
+
+For example, if you have a cluster of 100 servers, executing the entire query will require 10,000 elementary requests, which is generally considered unacceptable.
+
+In such cases, you should always use `GLOBAL IN` instead of `IN`. Let's look at how it works for the query:
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+The requestor server will run the subquery:
+
+```sql
+SELECT UserID FROM distributed_table WHERE CounterID = 34
+```
+
+and the result will be put in a temporary table in RAM. Then the request will be sent to each remote server as:
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
+```
+
+The temporary table `_data1` will be sent to every remote server with the query (the name of the temporary table is implementation-defined).
+
+This is more optimal than using the normal `IN`. However, keep the following points in mind:
+
+1.  When creating a temporary table, data is not made unique. To reduce the volume of data transmitted over the network, specify DISTINCT in the subquery. (You do not need to do this for a normal `IN`.)
+2.  The temporary table will be sent to all the remote servers. Transmission does not account for network topology. For example, if 10 remote servers reside in a datacenter that is very remote in relation to the requestor server, the data will be sent 10 times over the channel to the remote datacenter. Try to avoid large data sets when using `GLOBAL IN`.
+3.  When transmitting data to remote servers, restrictions on network bandwidth are not configurable. You might overload the network.
+4.  Try to distribute data across servers so that you do not need to use `GLOBAL IN` on a regular basis.
+5.  If you need to use `GLOBAL IN` often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center with a fast network between them, so that a query can be processed entirely within a single data center.
+
+It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
+
+### Distributed Subqueries and max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
+
+You can use [`max_rows_in_set`](/reference/settings/session-settings/max-rows#max_rows_in_set) and [`max_bytes_in_set`](/reference/settings/session-settings/max-bytes#max_bytes_in_set) to control how much data is transferred during distributed queries.
+
+This is specially important if the `GLOBAL IN` query returns a large amount of data. Consider the following SQL:
+
+```sql
+SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
+```
+
+If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](/reference/settings/session-settings/other#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
+
+### Distributed Subqueries and max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
+
+When [max_parallel_replicas](#distributed-subqueries-and-max_parallel_replicas) is greater than 1, distributed queries are further transformed.
+
+For example, the following:
+
+```sql
+SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS max_parallel_replicas=3
+```
+
+is transformed on each server into:
+
+```sql
+SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
+```
+
+where `M` is between `1` and `3` depending on which replica the local query is executing on.
+
+These settings affect every MergeTree-family table in the query and have the same effect as applying `SAMPLE 1/3 OFFSET (M-1)/3` on each table.
+
+Therefore adding the [max_parallel_replicas](#distributed-subqueries-and-max_parallel_replicas) setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if `local_table_2` does not have a sampling key, incorrect results will be produced. The same rule applies to `JOIN`.
+
+One workaround if `local_table_2` does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
+
+If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.
+)DOCS_MD",
+        .syntax = R"(
+expr IN (literal [, ...])
+expr IN table | (subquery) | table_function(...)
+expr [GLOBAL] [NOT] IN ...
+)",
+        .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
+    });
 }
 
 }

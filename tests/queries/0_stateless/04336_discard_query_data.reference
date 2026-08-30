@@ -1,0 +1,13 @@
+select with discard enabled
+select with discard disabled
+0
+1
+2
+empty result, totals and extremes with discard enabled
+exception still propagates
+the header is still sent
+number
+insert with discard enabled, and the setting is not propagated to remote subqueries feeding the initiator
+42
+43
+distributed query is executed fully, only the final result is discarded

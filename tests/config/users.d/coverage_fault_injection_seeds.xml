@@ -1,0 +1,24 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!--
+                Pin the seeds of random-by-default fault injection mechanisms so the set
+                of branches exercised inside the server is stable run-to-run under LLVM
+                coverage (without this the coverage report flickers on files reachable
+                from these injection points).
+
+                These are set in the `default` profile (server side) rather than injected
+                as per-query client/URL settings on purpose: as per-query settings they
+                were re-applied on every statement, so a statement issued after switching
+                to readonly mode (e.g. `SET profile = 'readonly'` / `SET readonly = 1`)
+                failed with "Cannot modify '...' setting in readonly mode". As session
+                defaults they are not re-applied per statement, so tests that exercise
+                readonly mode (01187_set_profile_as_setting, 00543_..., etc.) are
+                unaffected. Installed only for coverage runs by install.sh, gated on
+                its llvm-coverage flag.
+            -->
+            <backup_restore_keeper_fault_injection_seed>1</backup_restore_keeper_fault_injection_seed>
+            <insert_keeper_fault_injection_seed>1</insert_keeper_fault_injection_seed>
+        </default>
+    </profiles>
+</clickhouse>

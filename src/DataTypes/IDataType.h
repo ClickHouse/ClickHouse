@@ -30,6 +30,10 @@ class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
+class ColumnConst;
+using ColumnConstPtr = COW<IColumn>::immutable_ptr<ColumnConst>;
+using MutableColumnConstPtr = COW<IColumn>::mutable_ptr<ColumnConst>;
+
 class Field;
 
 struct NameAndTypePair;
@@ -119,7 +123,11 @@ public:
     Names getSubcolumnNames() const;
 
     virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const;
-    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
+    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const;
+    /// Convenience overload that enables all supported serializations. Callers that do not care about
+    /// the serialization versions (most of them) use this one; only the Native writer/reader pass
+    /// explicit settings to pick the protocol-version-dependent variants.
+    SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
@@ -162,12 +170,12 @@ public:
 
     /** Create empty column for corresponding type and serialization.
      */
-    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    virtual ColumnPtr createColumnConst(size_t size, const Field & field) const;
-    ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
+    virtual MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const;
+    MutableColumnConstPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.

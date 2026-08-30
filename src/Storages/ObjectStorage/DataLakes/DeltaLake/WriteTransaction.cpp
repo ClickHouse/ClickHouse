@@ -10,11 +10,13 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 #include <base/scope_guard.h>
@@ -33,6 +35,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace DeltaLake
@@ -53,8 +56,7 @@ void exportTable(
 {
     auto batch = table->CombineChunksToBatch();
     if (!batch.ok())
-        throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed to create chunks batch: {}", batch.status().ToString());
+        DB::throwFromArrowStatus(batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
 
     arrow::Status status = arrow::ExportRecordBatch(
         **batch,
@@ -62,12 +64,7 @@ void exportTable(
         reinterpret_cast<ArrowSchema *>(&schema));
 
     if (!status.ok())
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed to export record batch: {}",
-            status.ToString());
-    }
+        DB::throwFromArrowStatus(status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to export record batch");
 }
 
 std::shared_ptr<arrow::Table> getWriteMetadata(
@@ -76,9 +73,11 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 {
     DB::ColumnsWithTypeAndName names_and_types{
         {std::make_shared<DB::DataTypeString>(), "path"},
+        /// Partition values are nullable: Delta commits a JSON null for a null-equivalent
+        /// partition value (SQL NULL or empty string), distinct from the string "null".
         {std::make_shared<DB::DataTypeMap>(
             std::make_shared<DB::DataTypeString>(),
-            std::make_shared<DB::DataTypeString>()), "partitionValues"},
+            std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
         {std::make_shared<DB::DataTypeTuple>(
@@ -151,7 +150,13 @@ const std::string & WriteTransaction::getDataPath() const
     return path_prefix;
 }
 
-void WriteTransaction::create()
+const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
+{
+    assertTransactionCreated();
+    return write_schema;
+}
+
+void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -168,16 +173,28 @@ void WriteTransaction::create()
             engine.get()),
         "with_engine_info");
 
-    write_context = ffi::get_write_context(transaction.get());
-    write_schema = DeltaLake::getWriteSchema(write_context.get());
+    if (partition_columns.empty())
+    {
+        /// Unpartitioned tables: let the kernel build the write context.
+        unpartitioned_write_context = DeltaLake::KernelUtils::unwrapResult(
+            ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
+            "get_unpartitioned_write_context");
+        write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
 
-    auto * write_path_raw = static_cast<std::string *>(
-        ffi::get_write_path(write_context.get(), DeltaLake::KernelUtils::allocateString));
-    if (!write_path_raw)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
+        std::unique_ptr<std::string> write_path_raw(static_cast<std::string *>(
+            ffi::get_write_path(unpartitioned_write_context.get(), DeltaLake::KernelUtils::allocateString)));
+        if (!write_path_raw)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
 
-    write_path = *write_path_raw;
-    delete write_path_raw;
+        write_path = *write_path_raw;
+    }
+    else
+    {
+        /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
+        /// write schema and path directly; per-partition values are handled when committing.
+        write_schema = table_schema;
+        write_path = kernel_helper->getTableLocation();
+    }
 
     auto pos = write_path.find("://");
     if (pos == std::string::npos)
@@ -217,9 +234,11 @@ void WriteTransaction::validateSchema(const DB::Block & header) const
     auto header_column_names = header.getNamesAndTypesList().getNameSet();
     if (write_column_names != header_column_names)
     {
+        /// Reachable from user input (e.g. Nested subcolumns, explicit column subsets),
+        /// so this is a user error, not an internal invariant violation.
         throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "Header does not match write schema. Expected: {}, got: {}",
+            DB::ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Inserted columns do not match the DeltaLake table schema. Expected: {}, got: {}",
             fmt::join(write_column_names, ", "), fmt::join(header_column_names, ", "));
     }
 }
@@ -255,7 +274,12 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
-    auto version = DeltaLake::KernelUtils::unwrapResult(ffi::commit(transaction.release(), engine.get()), "commit");
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
+        ffi::commit(transaction.release(), engine.get()),
+        "commit"));
+    auto * committed_handle = committed.get();
+    auto version = ffi::committed_transaction_version(&committed_handle);
 
     LOG_TEST(log, "Commit version: {}", version);
 }

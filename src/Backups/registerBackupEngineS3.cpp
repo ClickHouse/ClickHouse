@@ -8,7 +8,9 @@
 #include <Backups/BackupIO_S3.h>
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupSourceAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -16,8 +18,21 @@
 
 namespace DB::S3AuthSetting
 {
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsString secret_access_key;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsBool use_environment_credentials;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 #endif
@@ -40,6 +55,16 @@ extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 #if USE_AWS_S3
 namespace
 {
+    struct ResolvedS3BackupLocation
+    {
+        String uri;
+        String archive_name;
+        NamedCollectionPtr collection;
+        /// `uri` before a trailing archive filename is stripped off it, which is the form the `s3`
+        /// table function authorizes.
+        String uri_with_archive;
+    };
+
     String removeFileNameFromURL(String & url)
     {
         Poco::URI url2{url};
@@ -50,6 +75,129 @@ namespace
         url2.setPath(path);
         url = url2.toString();
         return file_name;
+    }
+
+    String stripTrailingSlashes(String str)
+    {
+        /// `S3::URI` rejects repeated slashes, and path joining consumes the only valid trailing slash.
+        while (str.size() > 1 && str.back() == '/')
+            str.pop_back();
+        return str;
+    }
+
+    String removeURLUserInfo(const String & uri)
+    {
+        try
+        {
+            Poco::URI sanitized_uri(uri);
+            sanitized_uri.setUserInfo("");
+            return sanitized_uri.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse S3 backup destination");
+        }
+    }
+
+    ResolvedS3BackupLocation resolveS3BackupLocation(const BackupInfo & backup_info, ContextPtr context)
+    {
+        ResolvedS3BackupLocation location;
+        location.collection = backup_info.getNamedCollection(context);
+        const auto & args = backup_info.args;
+
+        if (location.collection)
+        {
+            location.uri = location.collection->get<String>("url");
+            if (location.collection->has("filename"))
+                location.uri = std::filesystem::path(location.uri) / location.collection->get<String>("filename");
+
+            if (args.size() > 1)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
+            if (args.size() == 1)
+                location.uri = std::filesystem::path(location.uri) / args[0].safeGet<String>();
+        }
+        else
+        {
+            if (args.size() != 1 && args.size() != 3)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
+            location.uri = args[0].safeGet<String>();
+        }
+
+        location.uri = removeURLUserInfo(location.uri);
+        location.uri_with_archive = location.uri;
+        if (hasRegisteredArchiveFileExtension(location.uri))
+            location.archive_name = removeFileNameFromURL(location.uri);
+        return location;
+    }
+
+    void validateS3CredentialsForIdentity(const BackupInfo & backup_info, const ResolvedS3BackupLocation & location, ContextPtr context)
+    {
+        if (location.collection)
+            return;
+
+        if (backup_info.args.size() == 3)
+        {
+            backup_info.args[1].safeGet<String>();
+            backup_info.args[2].safeGet<String>();
+        }
+
+        if (backup_info.function_arg)
+        {
+            S3::S3AuthSettings auth_settings;
+            try
+            {
+                if (!StorageS3Configuration::collectCredentials(backup_info.function_arg->clone(), auth_settings, context))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials");
+            }
+            catch (const Exception &)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials for backup destination identity");
+            }
+        }
+    }
+
+    std::optional<BackupFactory::SourceAccessTarget>
+    getS3SourceAccess(const BackupInfo & backup_info, ContextPtr context, IBackup::OpenMode open_mode)
+    {
+        BackupFactory::SourceAccessTarget target{
+            AccessTypeObjects::Source::S3, "", backupSourceAccessFlagsForReaderUnlock(open_mode)};
+
+        /// A collection can be re-pointed after this check, so it is authorized whole-source rather
+        /// than on the URL it currently resolves to. Resolving it is still required: that is where
+        /// `NAMED_COLLECTION` is enforced.
+        if (!backup_info.id_arg.empty())
+        {
+            backup_info.getNamedCollection(context);
+            return target;
+        }
+
+        target.uri = resolveS3BackupLocation(backup_info, context).uri_with_archive;
+        return target;
+    }
+
+    Strings getS3DestinationIdentity(const BackupInfo & backup_info, ContextPtr context)
+    {
+        auto location = resolveS3BackupLocation(backup_info, context);
+        validateS3CredentialsForIdentity(backup_info, location, context);
+        try
+        {
+            S3::URI uri(location.uri);
+            return {
+                "endpoint=" + uri.endpoint,
+                "bucket=" + uri.bucket,
+                "key=" + stripTrailingSlashes(uri.key),
+                "version_id=" + uri.version_id,
+                "archive=" + location.archive_name,
+            };
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse S3 backup destination for identity");
+        }
     }
 }
 #endif
@@ -63,37 +211,85 @@ void registerBackupEngineS3(BackupFactory & factory)
     {
 #if USE_AWS_S3
         const auto & args = params.backup_info.args;
-
-        String s3_uri;
+        auto location = resolveS3BackupLocation(params.backup_info, params.context);
+        String & s3_uri = location.uri;
         String access_key_id;
         String secret_access_key;
         String role_arn;
         String role_session_name;
+        String external_id;
+        /// Set for named collections (a full override of the server-managed credential mechanisms,
+        /// mirroring `S3StorageParsedArguments::fromNamedCollection`); nullopt for explicit url/key args,
+        /// which keep the server `<s3>` config values.
+        std::optional<S3::S3AuthSettings> named_collection_auth;
 
-        if (auto collection = params.backup_info.getNamedCollection(params.context))
+        if (const auto & collection = location.collection)
         {
-            s3_uri = collection->get<String>("url");
             access_key_id = collection->getOrDefault<String>("access_key_id", "");
             secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
+            external_id = collection->getOrDefault<String>("external_id", "");
 
-            if (collection->has("filename"))
-                s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
+            /// A query-overridden `role_arn` (`S3(collection, role_arn = ...)`) is honored even under the
+            /// restriction, but it must not be assumed using the collection's operator-provisioned keys as the
+            /// STS base. When the same query did not also override the base key pair, drop the collection keys
+            /// so the assume-role call is signed by the server's ambient identity instead (mirrors
+            /// `S3StorageParsedArguments::fromNamedCollection`). A `role_arn` from the stored collection
+            /// definition is left untouched and keeps the collection's own keys as its base.
+            bool drop_collection_keys_for_query_role = false;
+            if (params.context->shouldRestrictUserQueryS3Credentials() && collection->isQueryOverridden("role_arn")
+                && !(collection->isQueryOverridden("access_key_id") && collection->isQueryOverridden("secret_access_key")))
+            {
+                access_key_id.clear();
+                secret_access_key.clear();
+                drop_collection_keys_for_query_role = true;
+            }
 
-            if (args.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
+            /// A query that supplies its own key pair but no `session_token` must not inherit the collection's
+            /// token: it was issued for the collection's keys and would be sent with the query's keys instead
+            /// (and would break the STS base when a query-supplied `role_arn` is also present).
+            const bool drop_inherited_token = collection->isQueryOverridden("access_key_id")
+                && collection->isQueryOverridden("secret_access_key") && !collection->isQueryOverridden("session_token");
 
-            if (args.size() == 1)
-                s3_uri = std::filesystem::path(s3_uri) / args[0].safeGet<String>();
+            /// A query-overridden `role_arn` must not silently inherit the collection's `external_id` (the
+            /// secret half of the STS triple, tied to the collection's own role); drop it unless the query
+            /// supplied its own. Mirrors `S3StorageParsedArguments::fromNamedCollection`.
+            if (params.context->shouldRestrictUserQueryS3Credentials() && collection->isQueryOverridden("role_arn")
+                && !collection->isQueryOverridden("external_id"))
+                external_id.clear();
+
+            /// Take every credential field (mechanisms and the static key pair) from the collection, defaulting
+            /// to empty/0, so none is inherited from the server `<s3>` config: a URL-only backup collection
+            /// stays anonymous and a role-only collection has no base keys to assume the role with (matches
+            /// the s3 table function).
+            named_collection_auth.emplace();
+            auto & auth = *named_collection_auth;
+            auth[S3AuthSetting::access_key_id] = access_key_id;
+            auth[S3AuthSetting::secret_access_key] = secret_access_key;
+            auth[S3AuthSetting::use_environment_credentials]
+                = collection->getOrDefault<bool>("use_environment_credentials", false);
+            auth[S3AuthSetting::no_sign_request] = collection->getOrDefault<bool>("no_sign_request", false);
+            /// Carry the collection's own `session_token` so temporary credentials are signed with it, unless
+            /// the collection keys were dropped above (the token belongs to those keys) or the query supplied
+            /// its own key pair without a token.
+            auth[S3AuthSetting::session_token]
+                = (drop_collection_keys_for_query_role || drop_inherited_token)
+                ? "" : collection->getOrDefault<String>("session_token", "");
+            auth[S3AuthSetting::role_arn] = role_arn;
+            auth[S3AuthSetting::role_session_name] = role_session_name;
+            auth[S3AuthSetting::external_id] = external_id;
+            auth[S3AuthSetting::http_client] = collection->getOrDefault<String>("http_client", "");
+            auth[S3AuthSetting::service_account] = collection->getOrDefault<String>("service_account", "");
+            auth[S3AuthSetting::metadata_service] = collection->getOrDefault<String>("metadata_service", "");
+            auth[S3AuthSetting::request_token_path] = collection->getOrDefault<String>("request_token_path", "");
+            auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
+            auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
+            auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
+
         }
         else
         {
-            if ((args.size() != 1) && (args.size() != 3))
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
-
-            s3_uri = args[0].safeGet<String>();
             if (args.size() >= 3)
             {
                 access_key_id = args[1].safeGet<String>();
@@ -109,16 +305,22 @@ void registerBackupEngineS3(BackupFactory & factory)
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);
+                external_id = std::move(auth_settings[S3AuthSetting::external_id]);
             }
         }
 
         BackupImpl::ArchiveParams archive_params;
-        if (hasRegisteredArchiveFileExtension(s3_uri))
+        if (!location.archive_name.empty())
         {
+            if (hasSupportedZipExtension(location.archive_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Zip archive format is not supported for S3 backups because zip requires seeking which S3 does not support efficiently. "
+                    "Use tar.gz or other tar-based formats instead");
+
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
-            archive_params.archive_name = removeFileNameFromURL(s3_uri);
+            archive_params.archive_name = location.archive_name;
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
@@ -138,6 +340,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                external_id,
+                named_collection_auth,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -157,6 +361,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                external_id,
+                named_collection_auth,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -176,6 +382,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                     secret_access_key,
                     role_arn,
                     role_session_name,
+                    external_id,
+                    named_collection_auth,
                     params.allow_s3_native_copy,
                     params.read_settings,
                     params.write_settings,
@@ -193,6 +401,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 std::move(role_arn),
                 std::move(role_session_name),
+                std::move(external_id),
+                named_collection_auth,
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,
@@ -207,7 +417,27 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn);
+    auto destination_identity_fn = []([[maybe_unused]] const BackupInfo & backup_info, [[maybe_unused]] ContextPtr context) -> Strings
+    {
+#if USE_AWS_S3
+        return getS3DestinationIdentity(backup_info, context);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
+#endif
+    };
+
+    auto source_access_fn = []([[maybe_unused]] const BackupInfo & backup_info,
+                               [[maybe_unused]] ContextPtr context,
+                               [[maybe_unused]] IBackup::OpenMode open_mode) -> std::optional<BackupFactory::SourceAccessTarget>
+    {
+#if USE_AWS_S3
+        return getS3SourceAccess(backup_info, context, open_mode);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
+#endif
+    };
+
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn);
 }
 
 }

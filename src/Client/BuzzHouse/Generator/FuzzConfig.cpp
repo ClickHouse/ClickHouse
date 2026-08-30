@@ -2,6 +2,8 @@
 
 #include <ranges>
 #include <IO/copyData.h>
+#include <fmt/ranges.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -21,7 +23,20 @@ const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
 const DB::Strings codecs
-    = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "ALP", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
+    = {"LZ4",
+       "LZ4HC",
+       "ZSTD",
+       "ZXC",
+       "Delta",
+       "DoubleDelta",
+       "Gorilla",
+       "T64",
+       "FPC",
+       "GCD",
+       "ALP",
+       "AES_128_GCM_SIV",
+       "AES_256_GCM_SIV",
+       "NONE"};
 
 String escapeSQLString(const String & s, const char escape_char)
 {
@@ -352,6 +367,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"paimonlocal", allow_paimonLocal},
            {"merge", allow_merge},
            {"distributed", allow_distributed},
+           {"remote", allow_remote},
            {"dictionary", allow_dictionary},
            {"generaterandom", allow_generaterandom},
            {"azureblobstorage", allow_AzureBlobStorage},
@@ -395,6 +411,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_policies", [&](const JSONObjectType & value) { max_policies = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_hypotheticals", [&](const JSONObjectType & value) { max_hypotheticals = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
@@ -672,7 +689,7 @@ ORDER BY f.name)sql";
 
     String buf;
     static const std::unordered_set<String> nulls_clause_funcs = {"any", "anyLast", "first_value", "last_value"};
-    static const std::unordered_set<String> common_func_names = {"arrayJoin", "if", "materialize", "toNullable", "toLowCardinality"};
+    static const std::unordered_set<String> common_func_names = {"if", "materialize", "toNullable", "toLowCardinality"};
     static const std::unordered_set<String> two_arg_aggrs
         = {"analysisOfVariance",
            "approx_top_count",
@@ -814,7 +831,6 @@ ORDER BY f.name)sql";
             else
             {
                 CHFunction func(name, lambda_kind, min_args, max_args);
-                /// arrayJoin may not be deterministic
                 if (common_func_names.contains(name))
                     common_funcs.push_back(func);
                 if (is_deterministic)
@@ -889,6 +905,19 @@ ORDER BY f.name)sql";
 void FuzzConfig::loadServerConfigurations()
 {
     loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
+    loadServerSettings<String>(this->in_formats, "input formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1)");
+    loadServerSettings<String>(this->out_formats, "output formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_output" = 1)");
+    loadServerSettings<String>(
+        this->in_out_formats,
+        "input and output formats",
+        R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1 AND "is_output" = 1)");
+    if (this->in_formats.empty() || this->out_formats.empty() || this->in_out_formats.empty())
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::BUZZHOUSE,
+            "No {} formats were loaded from the server; cannot continue fuzzing",
+            this->in_formats.empty() ? "input" : (this->out_formats.empty() ? "output" : "input and output"));
+    }
     loadServerSettings<String>(
         this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
     loadServerSettings<String>(
@@ -923,15 +952,47 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
-    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
+    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion, trigger_sanitizer_error - The server aborts legitimately, can't be used
     /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
+    ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
+    /// attach_to_group_failure, thread_group_switcher_post_attach_failure - Break the "a query thread has a thread
+    ///     group" invariant on whatever thread happens to hit them next. `ThreadGroupSwitcher` is `noexcept` and only
+    ///     logs the injected failure, so the thread continues with no group and the next `executeQuery` on it fails
+    ///     with the `No thread group attached to the thread` logical error. They are meant for the in-process unit
+    ///     test `gtest_thread_group_switcher`, which enables them around a single controlled switch.
+    /// pauseable, pauseable_once - Block the next thread to reach them until a NOTIFY or DISABLE names that same
+    ///     failpoint, with no timeout. Each statement below picks its name at random, so a resume rarely follows.
+    /// I am limiting the number of failpoints per run, so the WAIT and NOTIFY failpoint can suceed more
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
         "SELECT \"name\" FROM \"system\".\"fail_points\""
-        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
-        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
+        " WHERE \"type\" NOT IN ('pauseable', 'pauseable_once')"
+        " AND \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
+        "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup', 'attach_to_group_failure', "
+        "'thread_group_switcher_post_attach_failure') ORDER BY rand() LIMIT 10");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
+    /// Probe which function_implementation values the server supports. They depend on how the binary
+    /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an
+    /// unsupported value raises NO_SUITABLE_FUNCTION_IMPLEMENTATION, so test each candidate. Only
+    /// default, x86-64-v3 and x86-64-v4 implementations are registered in the server's source.
+    this->function_implementations.clear();
+    for (const auto & entry : {"default", "x86-64-v3", "x86-64-v4"})
+    {
+        if (processServerQuery(
+                false, fmt::format("SELECT ignore(sipHash64(materialize(1))) SETTINGS function_implementation = '{}' FORMAT Null;", entry)))
+        {
+            this->function_implementations.emplace_back(entry);
+        }
+    }
+    LOG_INFO(
+        log,
+        "Found {} entries for function implementations{}{}",
+        this->function_implementations.size(),
+        this->function_implementations.empty() ? "" : ": ",
+        fmt::join(this->function_implementations, ", "));
     loadFunctions();
 }
 
@@ -1084,7 +1145,10 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
         if (!res.empty() && res.back() == '\r')
             res.pop_back();
     }
-    return res.empty() ? "-1" : res;
+    /// Empty history (e.g. a table with no snapshots yet). Return the DEFAULT keyword so a
+    /// `SET iceberg_snapshot_id/iceberg_timestamp_ms = DEFAULT` resets the pin and clears its
+    /// `changed` flag, instead of pinning the never-valid -1 snapshot and poisoning the session.
+    return res.empty() ? "DEFAULT" : res;
 }
 
 String FuzzConfig::getRandomFileSystemCacheValue()
@@ -1134,6 +1198,51 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
         std::getline(infile, res);
         if (!res.empty() && res.back() == '\r')
             res.pop_back();
+    }
+    return res;
+}
+
+String FuzzConfig::tableGetRandomPartitionValue(const uint64_t rand_val, const String & database, const String & table)
+{
+    String res;
+    const String db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
+
+    /// base64-encode the partition value so raw bytes survive the TabSeparated OUTFILE unescaped.
+    if (processServerQuery(
+            true,
+            fmt::format(
+                "SELECT base64Encode(z.y) FROM (SELECT (row_number() OVER () - 1) AS x, \"partition\" AS y FROM \"system\".\"parts\" "
+                "WHERE {}\"table\" = '{}' AND \"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM "
+                "\"system\".\"parts\" WHERE {}\"table\" = '{}' AND \"partition_id\" != 'all') INTO OUTFILE '{}' TRUNCATE FORMAT "
+                "TabSeparated;",
+                db_clause,
+                escapeSQLString(table),
+                rand_val,
+                db_clause,
+                escapeSQLString(table),
+                fuzzer_out_file.generic_string())))
+    {
+        String encoded;
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
+
+        std::getline(infile, encoded);
+        if (!encoded.empty() && encoded.back() == '\r')
+            encoded.pop_back();
+        if (!encoded.empty())
+            res = DB::base64Decode(encoded);
+    }
+    /// Only emit values re-parseable as a bare `PARTITION <expr>`: the quoted tuple form
+    /// `(202101, 'x')` or a bare integer. Unquoted single-column string keys fall back to PARTITION ID.
+    const bool is_tuple = res.size() > 1 && res.front() == '(' && res.back() == ')';
+    bool is_integer = !res.empty();
+    for (size_t i = (!res.empty() && res.front() == '-') ? 1 : 0; is_integer && i < res.size(); i++)
+    {
+        is_integer &= res[i] >= '0' && res[i] <= '9';
+    }
+    is_integer &= !(res.size() == 1 && res.front() == '-'); /// reject a lone "-"
+    if (!is_tuple && !is_integer)
+    {
+        res.clear();
     }
     return res;
 }
@@ -1211,6 +1320,16 @@ String FuzzConfig::tableGetRandomProjection(const uint64_t rand_val, const Strin
     return tableGetRandomSystemName(rand_val, "projections", database, table);
 }
 
+uint32_t FuzzConfig::tableCountConstraints(const String & database, const String & table)
+{
+    return tableCountSystemRows("constraints", database, table);
+}
+
+String FuzzConfig::tableGetRandomConstraint(const uint64_t rand_val, const String & database, const String & table)
+{
+    return tableGetRandomSystemName(rand_val, "constraints", database, table);
+}
+
 void FuzzConfig::validateClickHouseHealth()
 {
     if (processServerQuery(
@@ -1229,8 +1348,9 @@ void FuzzConfig::validateClickHouseHealth()
                 " countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),"
                 " countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),"
                 " countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),"
-                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%'))],"
-                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12)])) AS t"
+                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%')),"
+                " countIf(message ILIKE concat('%','DATA','_AFTER','_MERGE','_DIFF','_FROM','_EXPECTED','%'))],"
+                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12),toUInt64(13)])) AS t"
                 " FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60)) tlog)"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
@@ -1245,6 +1365,9 @@ void FuzzConfig::validateClickHouseHealth()
                 " WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
+                " UNION ALL "
+                "(SELECT count() x, 14 y FROM \"system\".\"replication_queue\""
+                " WHERE \"last_exception\" != '' AND \"num_tries\" > 5)"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
                 fuzzer_out_file.generic_string())))
@@ -1264,7 +1387,9 @@ void FuzzConfig::validateClickHouseHealth()
                "replication queue exception(s)",
                "LOGICAL_ERROR(s) in text_log",
                "CORRUPTED_DATA(s) in text_log",
-               "CHECKSUM_DOESNT_MATCH error(s) in text_log"};
+               "CHECKSUM_DOESNT_MATCH error(s) in text_log",
+               "DATA_AFTER_MERGE_DIFF_FROM_EXPECTED error(s) in text_log",
+               "stuck replication queue task(s) (>5 retries)"};
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
@@ -1277,7 +1402,9 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)"};
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE "last_exception" != '' AND "num_tries" > 5 ORDER BY "num_tries" DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {

@@ -2,8 +2,11 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
+
+namespace Poco::JSON { class Object; }
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
+#include <base/EnumReflection.h>
 
 #include "config.h"
 
@@ -40,10 +43,13 @@ public:
         CLEAR_TEXT_INDEX_CACHES,
         CLEAR_MMAP_CACHE,
         CLEAR_QUERY_CONDITION_CACHE,
+        CLEAR_ENCRYPTION_HEADERS_CACHE,
         CLEAR_QUERY_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
+        CLEAR_PAIMON_METADATA_CACHE,
         CLEAR_PARQUET_METADATA_CACHE,
+        CLEAR_POINT_IN_POLYGON_CACHE,
         CLEAR_FILESYSTEM_CACHE,
         CLEAR_DISTRIBUTED_CACHE,
         CLEAR_DISK_METADATA_CACHE,
@@ -59,6 +65,7 @@ public:
         RESTORE_REPLICA,
         RESTORE_DATABASE_REPLICA,
         WAIT_LOADING_PARTS,
+        WAIT_QUERY_RUNNER,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
         DROP_CATALOG_REPLICA,
@@ -74,6 +81,8 @@ public:
         REPLICA_UNREADY,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
+        UNLOAD_DICTIONARY,
+        UNLOAD_DICTIONARIES,
         RELOAD_MODEL,
         RELOAD_MODELS,
         RELOAD_FUNCTION,
@@ -146,6 +155,16 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        STOP_ALL_BACKGROUND,
+        START_ALL_BACKGROUND,
+        PAUSE_ALL_BACKGROUND,
+        CANCEL_ALL_BACKGROUND,
+        REFRESH_ALL_BACKGROUND,
+        STOP,
+        START,
+        PAUSE,
+        CANCEL,
+        REFRESH,
         END
     };
 
@@ -232,11 +251,15 @@ public:
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.
-    std::optional<Int64> fake_time_for_view;
+    /// The literal text of `SET FAKE TIME '...'`. Converting it to a timestamp needs a timezone,
+    /// which is a property of the running server, not of the query text, so the interpreter does it.
+    std::optional<String> fake_time_for_view;
 
     ASTPtr scheduled_merge_parts;
 
     String getID(char) const override { return "SYSTEM query"; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr clone() const override
     {
@@ -265,3 +288,12 @@ protected:
 
 
 }
+
+/// ASTSystemQuery::Type has more than 128 values, which is outside the default magic_enum range
+/// [-128, 127]. ParserSystemQuery matches SYSTEM keywords via magic_enum::enum_values, so any
+/// out-of-range value silently drops from the keyword list and stops parsing.
+template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 512;
+};

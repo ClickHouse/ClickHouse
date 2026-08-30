@@ -1,0 +1,31 @@
+---
+title: 避免 Nullable 列
+---
+
+[`Nullable` 列](/zh/reference/data-types/nullable) (例如 `Nullable(String)`) 会额外创建一个 `UInt8` 类型的独立列。每次用户操作 Nullable 列时，都必须处理这个附加列。这会占用额外的存储空间，并且几乎总会对性能产生负面影响。
+
+为了避免使用 `Nullable` 列，可以考虑为该列设置默认值。例如，不要这样写：
+
+```sql highlight={4}
+CREATE TABLE default.sample
+(
+    `x` Int8,
+    `y` Nullable(Int8)
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+使用
+
+```sql highlight={4}
+CREATE TABLE default.sample2
+(
+    `x` Int8,
+    `y` Int8 DEFAULT 0
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+请根据你的使用场景进行判断；默认值可能并不适用。

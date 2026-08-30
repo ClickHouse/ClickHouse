@@ -4,7 +4,9 @@
 #include <Common/Documentation.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
@@ -15,6 +17,10 @@
 
 namespace DB
 {
+
+class IDataPartStorage;
+class IMergeTreeDataPart;
+class IMergeTreeDataPartInfoForReader;
 
 namespace Internal
 {
@@ -103,7 +109,7 @@ struct IMergeTreeIndexGranule
     ///
     /// See also:
     /// - IMergeTreeIndex::getSubstreams()
-    /// - IMergeTreeIndex::getDeserializedFormat()
+    /// - IMergeTreeIndex::getPhysicalFormat()
     /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
@@ -242,8 +248,9 @@ using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 
 struct IMergeTreeIndex
 {
-    explicit IMergeTreeIndex(const IndexDescription & index_)
-        : index(index_)
+    IMergeTreeIndex(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+        : metadata_snapshot(std::move(metadata_snapshot_))
+        , index(index_)
     {
     }
 
@@ -257,13 +264,61 @@ struct IMergeTreeIndex
     /// Reimplement if you want new index format.
     ///
     /// NOTE: In case getSubstreams() is reimplemented,
-    /// getDeserializedFormat() should be reimplemented too,
+    /// getPhysicalFormat() should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
-    /// Returns substreams and version for deserialization.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const;
+    /// Two distinct questions are asked about a part's copy of an index, and they must not be conflated:
+    ///
+    /// - getPhysicalFormat(): what is ON DISK? Discovers the substreams and format version actually
+    ///   present in the part, including legacy layouts. Callers that manipulate the files or their
+    ///   cache entries (e.g. evicting index marks) need this, even for an index we refuse to read.
+    /// - getDeserializedFormat(): may this part's copy of the index be DESERIALIZED? Physical
+    ///   discovery plus usability checks. Every read path must use this one.
+    ///
+    /// Mutate decides whether to carry a part's existing index files forward from file existence
+    /// (IMergeTreeDataPart::hasSecondaryIndex), not from this verdict. Merge's two text-index sites
+    /// (MergeTask::MergeTextIndexStage::prepare and MergeTask::addBuildTextIndexesStep) do consult
+    /// it, so a part's stale text index is rebuilt during the merge rather than carried forward.
+    ///
+    /// @part's storage is consulted so that packed substreams (whose virtual filenames are not in
+    /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
+    ///
+    /// The physical question needs only the checksums and the storage, so it is answered without a part:
+    /// it is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
+    virtual MergeTreeIndexFormat getPhysicalFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
+
+    /// Deliberately NON-virtual: the usability checks below must not be bypassable by a format
+    /// override. Reimplement getPhysicalFormat() instead.
+    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
+    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+
+    /// True when @part's recorded physical types for the columns this index requires are
+    /// representation-compatible with the types the current metadata snapshot declares, i.e. when
+    /// the granules on disk decode identically under the new types AND still mean the same thing:
+    /// for an expression index a timezone change, or UInt8 -> Bool, leaves the bytes alone but alters
+    /// what the expression computes from them. The part-side types come from the part's own column
+    /// list rather than from its interned ColumnsDescription, whose key equality is
+    /// IDataType::equals() and therefore erases exactly those attributes. Ask this only about a part
+    /// that HAS the index on disk: a required column whose type the part does not record is refused,
+    /// because such a part can still carry the index's granules.
+    bool isPartTypeCompatible(const IMergeTreeDataPartInfoForReader & part_info) const;
+    bool isPartTypeCompatible(const IMergeTreeDataPart & part) const;
+
+    /// Union of every checksummed or packed on-disk version present (unlike
+    /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
+    /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
+    /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
+    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & relative_path_prefix,
+        const IDataPartStorage * storage) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -292,8 +347,15 @@ struct IMergeTreeIndex
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
 
-    Names getColumnsRequiredForIndexCalc() const;
+    /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
+    /// tables that still reference a removed index type stay attachable. Merge and mutation must
+    /// never schedule it for recalculation, otherwise those operations get wedged.
+    virtual bool isInert() const { return false; }
 
+    Names getColumnsRequiredForIndexCalc() const;
+    const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
+
+    StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
 };
 
@@ -303,30 +365,31 @@ using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 struct MergeTreeIndexWithCondition
 {
     MergeTreeIndexPtr index;
-    MergeTreeIndexConditionPtr condition;
+    ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template;
 
-    MergeTreeIndexWithCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-        : index(std::move(index_)), condition(std::move(condition_))
+    MergeTreeIndexWithCondition(
+        MergeTreeIndexPtr index_,
+        ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template_)
+        : index(std::move(index_)), condition_template(std::move(condition_template_))
     {
     }
 
     MergeTreeIndexWithCondition() = default;
 };
 
+struct MergeTreeSettings;
+
 class MergeTreeIndexFactory : private boost::noncopyable
 {
 public:
     static MergeTreeIndexFactory & instance();
 
-    using Creator = std::function<MergeTreeIndexPtr(const IndexDescription & index)>;
+    using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)>;
+    void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const;
 
-    using Validator = std::function<void(const IndexDescription & index, bool attach)>;
-
-    void validate(const IndexDescription & index, bool attach) const;
-
-    MergeTreeIndexPtr get(const IndexDescription & index) const;
-
-    MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
+    using Creator = std::function<MergeTreeIndexPtr(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)>;
+    MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;
+    MergeTreeIndices getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const;
 
     void registerCreator(const std::string & index_type, Creator creator, Documentation documentation = {});
     void registerValidator(const std::string & index_type, Validator validator);
@@ -348,35 +411,38 @@ private:
     Documentations documentations;
 };
 
-MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);
-void minmaxIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr minmaxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
-void setIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 #if USE_USEARCH
-MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 #endif
 
-MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
-void ginIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr ginIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void ginIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
-void textIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
-/// Check if index file exists in checksums, checking both original and hashed filenames.
-/// This supports long index names that were hashed due to replace_long_file_name_to_hash setting.
+/// Check if an index substream file exists for the part. Returns true if the file is listed
+/// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
+/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
+/// the archive check, which is fine for callers that only see standalone per-file layouts.
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
-    const std::string & extension);
+    const std::string & extension,
+    const IDataPartStorage * storage = nullptr);
 }

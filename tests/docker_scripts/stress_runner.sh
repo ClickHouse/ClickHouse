@@ -14,7 +14,7 @@ ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 source /repo/tests/docker_scripts/stress_tests.lib
 
 
-install_packages package_folder
+install_binary /package_folder/clickhouse
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
@@ -47,10 +47,10 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-# run before start_minio to have valid aws creds
+# run before start_seaweedfs to have valid aws creds
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || { echo "Failed to start seaweedfs"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 
 # Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
@@ -229,7 +229,10 @@ stop_server
 # Let's enable S3 storage by default
 export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
-export THREAD_POOL_FAULT_INJECTION=1
+# THREAD_POOL_FAULT_INJECTION is not exported here: if `cannot_allocate_thread_injection.xml`
+# is installed before the server starts, the smoke-check `CREATE DATABASE ... ON CLUSTER`
+# can hit `CANNOT_SCHEDULE_TASK` and break the HTTP response. `stress.py` installs the
+# config and `SYSTEM RELOAD CONFIG`s the server after the smoke check passes.
 export CLICKHOUSE_FAILPOINTS_INJECTION=1
 configure
 configure_limits
@@ -283,10 +286,26 @@ if [ $((RANDOM % 2)) -eq 1 ]; then
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
 
+# Cap the recursion-controlling parser/AST settings. The stress test ignores `no-*` build
+# tags and runs the query fuzzer over every query, so deeply nested expressions (e.g. test
+# 04412's formatQuery of a 20000-deep array literal) would otherwise build huge queries that
+# hang the server under sanitizers and trip the hung check.
+cp -av --dereference /repo/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml /etc/clickhouse-server/users.d/
+
 start_server || { echo "Failed to start server"; exit 1; }
 
+# clickhouse-test must know which storage backend the server actually uses, or its storage skip
+# tags are inert and incompatible tests run on an unsupported backend. Both variables are already
+# final here: the policy choice above, including its RANDOM % 3 fallback, exports them.
+test_cmd_opts=""
+if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    test_cmd_opts=" --s3-storage"
+elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    test_cmd_opts=" --azure-blob-storage"
+fi
+
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
+python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
@@ -296,15 +315,15 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
 unset "${!THREAD_@}"
-# Also disable cannot_allocate_thread_fault_injection_probability, since this
-# will not allow to load tables asynchronously. Anyway the stress tests was
-# running with fault injection.
-rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
+# Disable cannot_allocate_thread_fault_injection_probability so the post-stress
+# restart can load tables asynchronously. `-f` covers the case where the smoke
+# check aborted before stress.py installed the symlink.
+rm -f /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
-start_server 30 || { echo "Failed to start server"; exit 1; }
+start_server 10 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 

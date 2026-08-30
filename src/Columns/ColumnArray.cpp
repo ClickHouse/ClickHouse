@@ -13,9 +13,9 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
+#include <algorithm>
 #include <cstring> // memcpy
 
 
@@ -49,9 +49,17 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
 
-    if (!offsets_concrete->empty() && data && !data->empty())
+    /// The nested column and the offsets are expected to be fully populated before the array is created,
+    /// so the consistency of the offsets is checked for an empty nested column as well:
+    /// otherwise a column with, say, offsets = [1] and no elements at all passes unnoticed,
+    /// and then sizeAt returns a size that is not there and the consumers read the nested column out of bounds.
+    /// Empty offsets mean zero rows, i.e. an implicit last offset of 0, so the nested column must be empty too:
+    /// otherwise the column reports zero rows while carrying hidden elements.
+    const auto & offsets_data = offsets_concrete->getData();
+
+    if (data)
     {
-        Offset last_offset = offsets_concrete->getData().back();
+        Offset last_offset = offsets_data.empty() ? 0 : offsets_data.back();
 
         /// This will also prevent possible overflow in offset.
         if (data->size() != last_offset)
@@ -59,6 +67,18 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
                 "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
                 data->size(), last_offset);
     }
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Matching the last offset with the size of the nested column is not enough: a decreasing offset
+    /// in the middle makes `sizeAt` underflow to a huge value, and the consumers read the nested column
+    /// out of bounds even though the last offset is correct. The offsets have to be non-decreasing.
+    /// The scan is linear - a heavy assertion, hence debug and sanitizer builds only.
+    const auto * non_monotonic = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater<>());
+    if (non_monotonic != offsets_data.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "offsets_column is not monotonically increasing: the offset {} at position {} is greater than the next offset {}",
+            *non_monotonic, non_monotonic - offsets_data.begin(), *(non_monotonic + 1));
+#endif
 
     /** NOTE
       * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
@@ -197,6 +217,17 @@ bool ColumnArray::isDefaultAt(size_t n) const
     return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
 }
 
+UInt64 ColumnArray::getNumberOfDefaultRows() const
+{
+    /// Avoid the per-row cross-TU call to `isDefaultAt` of the IColumnHelper default;
+    /// inline the offsets comparison so the loop vectorises.
+    const auto & offsets_data = getOffsets();
+    const size_t num_rows = offsets_data.size();
+    UInt64 result = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+        result += static_cast<UInt64>(offsets_data[i] == offsets_data[static_cast<ssize_t>(i) - 1]);
+    return result;
+}
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
@@ -308,37 +339,43 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     size_t nested_begin = offsetAt(begin);
     size_t nested_end = offsetAt(end);
     getData().updateHashWithValueRange(nested_begin, nested_end, hash);
-    hash.update(reinterpret_cast<const char *>(&getOffsets()[begin]), (end - begin) * sizeof(getOffsets()[0]));
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
+    for (size_t i = begin; i < end; ++i)
+    {
+        UInt64 relative_offset = getOffsets()[i] - nested_begin;
+        hash.update(relative_offset);
+    }
 }
 
-WeakHash32 ColumnArray::getWeakHash32() const
+void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = offsets->size();
-    WeakHash32 hash(s);
-
-    WeakHash32 internal_hash = data->getWeakHash32();
-
-    Offset prev_offset = 0;
     const auto & offsets_data = getOffsets();
-    auto & hash_data = hash.getData();
-    auto & internal_hash_data = internal_hash.getData();
 
-    for (size_t i = 0; i < s; ++i)
+    /// Hash only the elements that belong to the requested row range.
+    const size_t elem_begin = row_begin == 0 ? 0 : offsets_data[row_begin - 1];
+    const size_t elem_end = row_end == row_begin ? elem_begin : offsets_data[row_end - 1];
+    const size_t num_elems = elem_end - elem_begin;
+
+    PaddedPODArray<UInt32> elem_hash(num_elems);
+    if (num_elems)
+        data->computeHashInto(elem_begin, elem_end, elem_hash.data(), true);
+
+    Offset prev_offset = elem_begin;
+    for (size_t i = row_begin; i < row_end; ++i)
     {
-        /// This row improves hash a little bit according to integration tests.
-        /// It is the same as to use previous hash value as the first element of array.
-        hash_data[i] = static_cast<UInt32>(intHashCRC32(hash_data[i]));
+        /// Fold all element hashes of this row through a CRC32C chain seeded with
+        /// `WEAK_HASH32_INITIAL_VALUE`, self-mixed once. Each element extends the chain, so the
+        /// array length is implicitly mixed in and arrays like [], [0], [0, 0], ... do not collide.
+        /// See IColumn::computeHashInto.
+        UInt32 acc = static_cast<UInt32>(intHashCRC32(WEAK_HASH32_INITIAL_VALUE));
+        for (Offset row = prev_offset; row < offsets_data[i]; ++row)
+            acc = combineWeakHash32(elem_hash[row - elem_begin], acc);
 
-        for (size_t row = prev_offset; row < offsets_data[i]; ++row)
-            /// It is probably not the best way to combine hashes.
-            /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
-            /// Much better implementation - to add offsets as an optional argument to updateWeakHash32.
-            hash_data[i] = static_cast<UInt32>(intHashCRC32(internal_hash_data[row], hash_data[i]));
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? acc : combineWeakHash32(acc, out);
 
         prev_offset = offsets_data[i];
     }
-
-    return hash;
 }
 
 void ColumnArray::updateHashFast(SipHash & hash) const
@@ -397,6 +434,17 @@ void ColumnArray::insertDefault()
     /// NOTE 2: We cannot use reference in push_back, because reference get invalidated if array is reallocated.
     auto last_offset = getOffsets().back();
     getOffsets().push_back(last_offset);
+}
+
+
+void ColumnArray::insertManyDefaults(size_t length)
+{
+    /// Not IColumn::insertManyDefaults: its reserve(size() + length) would size the nested column for elements
+    /// that default arrays never hold, and ColumnArray::reserve passes that count down unchanged. Appending the
+    /// offsets grows them geometrically instead, so repeated calls stay amortized without reserving nested data.
+    auto last_offset = getOffsets().back();
+    for (size_t i = 0; i < length; ++i)
+        getOffsets().push_back(last_offset);
 }
 
 

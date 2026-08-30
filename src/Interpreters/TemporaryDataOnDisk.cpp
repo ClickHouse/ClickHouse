@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <memory>
 #include <DataTypes/DataTypeArray.h>
 #include <mutex>
@@ -103,7 +104,8 @@ public:
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
         chassert(segment_holder->size() == 1);
-        segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
+        if (auto ec = segment_holder->front().getKeyMetadata()->createBaseDirectory(); ec)
+            throw std::filesystem::filesystem_error(fmt::format("createBaseDirectory failed for {}", key), ec);
     }
 
     std::unique_ptr<WriteBuffer> write() override
@@ -143,7 +145,7 @@ public:
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();
         write_settings = context->getWriteSettings();
-        timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
+        timeouts = ConnectionTimeouts::getDistributedCacheTimeouts(context->getSettingsRef());
         receive_throttler = context->getDistributedCacheReadThrottler();
         send_throttler = context->getDistributedCacheWriteThrottler();
         distributed_cache_log = context->getDistributedCacheLog();
@@ -160,7 +162,11 @@ public:
         try
         {
             if (cache_client)
+            {
                 cache_client->makeDropCacheRequest(file_key, /*connection_info_hash=*/0, /*is_temporary_data=*/true);
+                /// The hold is released — the connection can be reused by someone else.
+                cache_client->setForbidReconnect(false);
+            }
         }
         catch (...)
         {

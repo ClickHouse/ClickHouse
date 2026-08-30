@@ -1,3 +1,5 @@
+#include <ranges>
+#include <algorithm>
 #include <exception>
 #include <optional>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -12,10 +14,13 @@
 #include <Common/getRandomASCIIString.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 
+#include <azure/storage/files/datalake/datalake_file_client.hpp>
+#include <azure/storage/files/datalake/datalake_options.hpp>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -192,15 +197,17 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
+    /// Re-issue ListBlobs per page through the client wrapper (which strips the endpoint prefix); the SDK's
+    /// MoveToNextPage refetches pages 2..N directly and would leave the raw Azure prefix on their blob names.
+    while (true)
     {
+        auto blob_list_response = client_ptr->ListBlobs(options);
+
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
         if (client_ptr->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
-        const auto & blobs_list = blob_list_response.Blobs;
-
-        for (const auto & blob : blobs_list)
+        for (const auto & blob : blob_list_response.Blobs)
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
@@ -217,6 +224,11 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         if (max_keys && children.size() >= max_keys)
             break;
+
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            break;
+
+        options.ContinuationToken = blob_list_response.NextPageToken;
     }
 }
 
@@ -267,7 +279,17 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
 }
 
 
-/// Open the file for write and return WriteBufferFromFileBase object.
+std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient>
+AzureObjectStorage::buildDataLakeFileClient(const String & blob_path) const
+{
+    return std::make_unique<Azure::Storage::Files::DataLake::DataLakeFileClient>(
+        makeAdlsGen2FileClient(
+            connection_params.endpoint,
+            auth_method,
+            connection_params.client_options,
+            blob_path));
+}
+
 std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
@@ -280,13 +302,30 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     LOG_TEST(log, "Writing file: {}", object.remote_path);
 
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
+
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.azure_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
-    auto blob_storage_log = BlobStorageLogWriter::create(name);
-    if (blob_storage_log)
-        blob_storage_log->local_path = object.local_path;
+    if (isAdlsGen2Endpoint(connection_params.endpoint))
+    {
+        return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
+            connection_params.endpoint,
+            auth_method,
+            connection_params.client_options,
+            object.remote_path,
+            /// The adaptive initial size must not exceed buf_size (the maximum); this writer
+            /// forwards the value straight to the allocator, so an out-of-range adaptive
+            /// initial size would otherwise abort the server (see WriteBufferFromFileDescriptor).
+            write_settings.use_adaptive_write_buffer ? std::min(write_settings.adaptive_write_buffer_initial_size, buf_size) : buf_size,
+            patchSettings(write_settings),
+            settings.get(),
+            connection_params.getContainer(),
+            std::move(blob_storage_log));
+    }
 
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
@@ -318,12 +357,20 @@ void AzureObjectStorage::removeObjectImpl(
     bool success = false;
     try
     {
-        auto delete_info = client_ptr->GetBlobClient(path).Delete();
-        success = delete_info.Value.Deleted;
-        if (!if_exists && !delete_info.Value.Deleted)
-            throw Exception(
-                ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
-                path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
+        if (isAdlsGen2Endpoint(connection_params.endpoint))
+        {
+            buildDataLakeFileClient(path)->Delete();
+            success = true;
+        }
+        else
+        {
+            auto delete_info = client_ptr->GetBlobClient(path).Delete();
+            success = delete_info.Value.Deleted;
+            if (!if_exists && !delete_info.Value.Deleted)
+                throw Exception(
+                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
+                    path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
+        }
     }
     catch (const Azure::Storage::StorageException & e)
     {
@@ -425,11 +472,33 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         for (const auto & object : object_batch)
             responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
 
-        client_ptr->SubmitBatch(requests);
-
         ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
         if (is_disk)
             ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
+
+        try
+        {
+            client_ptr->SubmitBatch(requests);
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            /// A batch-level failure skips the per-object response loop below, so record one Delete attempt
+            /// per object before rethrowing. Preserve the real HTTP status (as the per-object path below
+            /// does) so these failures stay queryable by error_code.
+            const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
+            for (const auto & object : object_batch)
+                add_log_entry(object, elapsed, static_cast<Int32>(e.StatusCode), e.Message);
+            throw;
+        }
+        catch (...)
+        {
+            /// Non-Azure failure (e.g. a credential AuthenticationException) carries no HTTP status.
+            const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
+            const auto batch_error = getCurrentExceptionMessage(false);
+            for (const auto & object : object_batch)
+                add_log_entry(object, elapsed, -1, batch_error);
+            throw;
+        }
 
         size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
         std::exception_ptr throw_at_end;
@@ -470,6 +539,13 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
     auto client_ptr = client.get();
     auto blob_storage_log = BlobStorageLogWriter::create(name);
+
+    if (isAdlsGen2Endpoint(connection_params.endpoint))
+    {
+        for (const auto & object : objects)
+            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log);
+        return;
+    }
 
     removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
 }
@@ -518,6 +594,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
+    result.etag = properties.ETag.ToString();
     if (!properties.Metadata.empty())
     {
         result.attributes.emplace();

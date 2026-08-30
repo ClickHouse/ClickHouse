@@ -1,0 +1,405 @@
+---
+slug: /cloud/bestpractices/multi-tenancy
+sidebarTitle: 'تعدد المستأجرين'
+title: 'تعدد المستأجرين'
+description: 'أفضل الممارسات لتطبيق تعدد المستأجرين'
+doc_type: 'guide'
+keywords: ['تعدد المستأجرين', 'العزل', 'أفضل الممارسات', 'البنية المعمارية', 'متعدد المستأجرين']
+---
+
+في منصة SaaS لتحليلات البيانات، من الشائع أن يشترك عدة مستأجرين، مثل المؤسسات أو العملاء أو وحدات الأعمال، في البنية التحتية نفسها لقاعدة البيانات مع الحفاظ على عزل منطقي لبياناتهم. ويتيح ذلك لمستخدمين مختلفين الوصول بأمان إلى بياناتهم الخاصة ضمن المنصة نفسها.
+
+واستنادًا إلى المتطلبات، توجد طرق مختلفة لتطبيق تعدد المستأجرين. وفيما يلي دليل يوضح كيفية تنفيذ ذلك باستخدام ClickHouse Cloud.
+
+<div id="shared-table">
+  ## الجدول المشترك
+</div>
+
+في هذا النهج، تُخزَّن بيانات جميع المستأجرين في جدول مشترك واحد، مع استخدام حقل (أو مجموعة من الحقول) لتحديد بيانات كل مستأجر. ولتحقيق أقصى أداء، ينبغي تضمين هذا الحقل في [المفتاح الأساسي](/ar/reference/statements/create/table#primary-key). ولضمان عدم تمكّنك من الوصول إلا إلى البيانات التابعة للمستأجرين المعنيين بك، نستخدم [التحكم في الوصول المستند إلى الأدوار](/ar/concepts/features/security/access-rights)، ويُنفَّذ ذلك من خلال [سياسات الصفوف](/ar/concepts/features/security/access-rights#row-policy-management).
+
+> **نوصي بهذا النهج لأنه الأسهل من حيث الإدارة، لا سيما عندما يشترك جميع المستأجرين في مخطط البيانات نفسه وتكون أحجام البيانات متوسطة (&lt; TBs)**
+
+من خلال تجميع جميع بيانات المستأجرين في جدول واحد، تتحسن كفاءة التخزين بفضل تحسين ضغط البيانات وتقليل العبء الإضافي للبيانات الوصفية. بالإضافة إلى ذلك، تصبح تحديثات المخطط أبسط لأن جميع البيانات تُدار مركزيًا.
+
+تكون هذه الطريقة فعّالة بشكل خاص عند التعامل مع عدد كبير من المستأجرين (قد يصل إلى الملايين).
+
+ومع ذلك، قد تكون الأساليب البديلة أنسب إذا كانت لدى المستأجرين مخططات بيانات مختلفة أو كان من المتوقع أن تتباعد بمرور الوقت.
+
+في الحالات التي يوجد فيها تفاوت كبير في حجم البيانات بين المستأجرين، قد يتأثر أداء الاستعلام لدى المستأجرين الأصغر سلبًا بشكل غير ضروري. لاحظ أن هذه المشكلة يجري التخفيف منها إلى حد كبير عبر تضمين حقل المستأجر في المفتاح الأساسي.
+
+<div id="shared-table-example">
+  ### مثال
+</div>
+
+يوضح هذا المثال كيفية تنفيذ نموذج تعدد المستأجرين باستخدام جدول مشترك.
+
+أولًا، لنُنشئ جدولًا مشتركًا يتضمن الحقل `tenant_id` ضمن المفتاح الأساسي.
+
+```sql
+--- Create table events. Using tenant_id as part of the primary key
+CREATE TABLE events
+(
+    tenant_id UInt32,                 -- Tenant identifier
+    id UUID,                    -- Unique event ID
+    type LowCardinality(String), -- Type of event
+    timestamp DateTime,          -- Timestamp of the event
+    user_id UInt32,               -- ID of the user who triggered the event
+    data String,                 -- Event data
+)
+ORDER BY (tenant_id, timestamp)
+```
+
+لنُدرِج بيانات وهمية.
+
+```sql
+-- Insert some dummy rows
+INSERT INTO events (tenant_id, id, type, timestamp, user_id, data)
+VALUES
+(1, '7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(1, '846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+(1, '6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(2, '7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(2, '6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+(2, '43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(1, '83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+(1, '975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}'),
+(2, 'f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+(2, '5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}'),
+```
+
+ثم لنُنشئ مستخدمَين `user_1` و`user_2`.
+
+```sql
+-- Create users 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+نُنشئ [سياسات الصفوف](/ar/reference/statements/create/row-policy) التي تقيّد `user_1` و`user_2` بحيث لا يتمكنان من الوصول إلا إلى بيانات المستأجرين الخاصة بكلٍّ منهما.
+
+```sql
+-- Create row policies
+CREATE ROW POLICY user_filter_1 ON default.events USING tenant_id=1 TO user_1
+CREATE ROW POLICY user_filter_2 ON default.events USING tenant_id=2 TO user_2
+```
+
+ثم امنح امتيازات [`GRANT SELECT`](/ar/reference/statements/grant#usage) على الجدول المشترك باستخدام دور عام.
+
+```sql
+-- Create role
+CREATE ROLE user_role
+
+-- Grant read only to events table.
+GRANT SELECT ON default.events TO user_role
+GRANT user_role TO user_1
+GRANT user_role TO user_2
+```
+
+الآن يمكنك الاتصال باسم `user_1` وتشغيل استعلام SELECT بسيط. لن تُعاد إلا الصفوف التابعة للمستأجر الأول.
+
+```sql
+-- Logged as user_1
+SELECT *
+FROM events
+```
+
+```response
+   ┌─tenant_id─┬─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │         1 │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │         1 │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │         1 │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │         1 │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │         1 │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-tables">
+  ## جداول منفصلة
+</div>
+
+في هذا النهج، تُخزَّن بيانات كل مستأجر في جدول منفصل داخل قاعدة البيانات نفسها، ما يلغي الحاجة إلى حقل مخصص لتحديد المستأجرين. ويُدار وصول المستخدمين باستخدام [عبارة GRANT](/ar/reference/statements/grant)، بما يضمن أن كل مستخدم لا يمكنه الوصول إلا إلى الجداول التي تحتوي على بيانات المستأجرين الخاصة به.
+
+> **يُعد استخدام جداول منفصلة خيارًا جيدًا عندما تختلف مخططات البيانات بين المستأجرين.**
+
+في السيناريوهات التي تتضمن عددًا قليلًا من المستأجرين مع مجموعات بيانات كبيرة جدًا، حيث يكون أداء الاستعلامات عاملًا حاسمًا، قد يتفوّق هذا النهج على نموذج الجدول المشترك. وبما أنه لا توجد حاجة إلى تصفية بيانات المستأجرين الآخرين، يمكن أن تكون الاستعلامات أكثر كفاءة. بالإضافة إلى ذلك، يمكن تحسين المفاتيح الأساسية بدرجة أكبر، إذ لا حاجة إلى تضمين حقل إضافي (مثل معرّف المستأجر) في المفتاح الأساسي.
+
+لاحظ أن هذا النهج لا يتدرّج جيدًا عند التعامل مع آلاف المستأجرين. راجع [حدود الاستخدام](/ar/products/cloud/guides/best-practices/usagelimits).
+
+<div id="shared-table-example">
+  ### مثال
+</div>
+
+هذا مثال على تطبيق نموذج تعدد المستأجرين باستخدام جداول منفصلة.
+
+أولاً، لننشئ جدولين، أحدهما لأحداث `tenant_1` والآخر لأحداث `tenant_2`.
+
+```sql
+-- Create table for tenant 1 
+CREATE TABLE events_tenant_1
+(
+    id UUID,                    -- Unique event ID
+    type LowCardinality(String), -- Type of event
+    timestamp DateTime,          -- Timestamp of the event
+    user_id UInt32,               -- ID of the user who triggered the event
+    data String,                 -- Event data
+)
+ORDER BY (timestamp, user_id) -- Primary key can focus on other attributes
+
+-- Create table for tenant 2 
+CREATE TABLE events_tenant_2
+(
+    id UUID,                    -- Unique event ID
+    type LowCardinality(String), -- Type of event
+    timestamp DateTime,          -- Timestamp of the event
+    user_id UInt32,               -- ID of the user who triggered the event
+    data String,                 -- Event data
+)
+ORDER BY (timestamp, user_id) -- Primary key can focus on other attributes
+```
+
+لنقم بإدراج بيانات وهمية.
+
+```sql
+INSERT INTO events_tenant_1 (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO events_tenant_2 (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+ثم لنقم بإنشاء مستخدمَين `user_1` و`user_2`.
+
+```sql
+-- Create users 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+ثم امنح صلاحيات `GRANT SELECT` على الجدول المقابل.
+
+```sql
+-- Grant read only to events table.
+GRANT SELECT ON default.events_tenant_1 TO user_1
+GRANT SELECT ON default.events_tenant_2 TO user_2
+```
+
+يمكنك الآن الاتصال بوصفك `user_1` وتنفيذ استعلام select بسيط من الجدول المخصص لهذا المستخدم. ستُعاد فقط الصفوف الخاصة بالمستأجر الأول.
+
+```sql
+-- Logged as user_1
+SELECT *
+FROM default.events_tenant_1
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-databases">
+  ## قواعد بيانات منفصلة
+</div>
+
+تُخزَّن بيانات كل مستأجر في قاعدة بيانات منفصلة ضمن خدمة ClickHouse نفسها.
+
+> **يكون هذا النهج مفيدًا إذا كان كل مستأجر يحتاج إلى عدد كبير من الجداول، وربما إلى عروض مادية أيضًا، وكان لديه مخطط بيانات مختلف. ومع ذلك، قد تصبح إدارته صعبة إذا كان عدد المستأجرين كبيرًا.**
+
+يشبه التنفيذ نهج الجداول المنفصلة، ولكن بدلًا من منح الامتيازات على مستوى الجدول، تُمنَح الامتيازات على مستوى قاعدة البيانات.
+
+لاحظ أن هذا النهج لا يتوسع جيدًا عند وجود آلاف المستأجرين. راجع [حدود الاستخدام](/ar/products/cloud/guides/best-practices/usagelimits).
+
+<div id="shared-table-example">
+  ### مثال
+</div>
+
+هذا مثال على تطبيق نموذج تعدد المستأجرين باستخدام قواعد بيانات منفصلة.
+
+أولًا، لننشئ قاعدتي بيانات، واحدة لـ `tenant_1` وأخرى لـ `tenant_2`.
+
+```sql
+-- Create database for tenant_1
+CREATE DATABASE tenant_1;
+
+-- Create database for tenant_2
+CREATE DATABASE tenant_2;
+```
+
+```sql
+-- Create table for tenant_1
+CREATE TABLE tenant_1.events
+(
+    id UUID,                    -- Unique event ID
+    type LowCardinality(String), -- Type of event
+    timestamp DateTime,          -- Timestamp of the event
+    user_id UInt32,               -- ID of the user who triggered the event
+    data String,                 -- Event data
+)
+ORDER BY (timestamp, user_id);
+
+-- Create table for tenant_2
+CREATE TABLE tenant_2.events
+(
+    id UUID,                    -- Unique event ID
+    type LowCardinality(String), -- Type of event
+    timestamp DateTime,          -- Timestamp of the event
+    user_id UInt32,               -- ID of the user who triggered the event
+    data String,                 -- Event data
+)
+ORDER BY (timestamp, user_id);
+```
+
+لنُدرِج بيانات وهمية.
+
+```sql
+INSERT INTO tenant_1.events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO tenant_2.events (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+ثم لنُنشئ مستخدمَين هما `user_1` و`user_2`.
+
+```sql
+-- Create users 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+ثم امنح امتياز `GRANT SELECT` على الجدول المعني.
+
+```sql
+-- Grant read only to events table.
+GRANT SELECT ON tenant_1.events TO user_1
+GRANT SELECT ON tenant_2.events TO user_2
+```
+
+الآن يمكنك الاتصال باستخدام `user_1` وتشغيل استعلام select بسيط على جدول events في قاعدة البيانات المناسبة. لا تُرجع النتيجة إلا الصفوف الخاصة بالمستأجر الأول.
+
+```sql
+-- Logged as user_1
+SELECT *
+FROM tenant_1.events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="compute-compute-separation">
+  ## فصل الحوسبة عن الحوسبة
+</div>
+
+يمكن أيضًا زيادة عزل الأساليب الثلاثة الموضحة أعلاه باستخدام [المستودعات](/ar/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse). تتم مشاركة البيانات عبر تخزين كائنات مشترك، لكن يمكن أن يكون لكل مستأجر خدمة حوسبة خاصة به بفضل [فصل الحوسبة عن الحوسبة](/ar/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation) مع نسبة CPU/الذاكرة مختلفة.
+
+إدارة المستخدمين مماثلة للأساليب الموضحة سابقًا، لأن جميع الخدمات في المستودع [تتشارك عناصر التحكم بالوصول](/ar/products/cloud/features/infrastructure/warehouses#database-credentials).
+
+لاحظ أن عدد الخدمات الفرعية في المستودع محدود ويقتصر على عدد صغير. راجع [قيود المستودع](/ar/products/cloud/features/infrastructure/warehouses#limitations).
+
+<div id="separate-service">
+  ## خدمة سحابية منفصلة
+</div>
+
+النهج الأكثر جذرية هو استخدام خدمة ClickHouse مختلفة لكل مستأجر.
+
+> **قد يكون هذا الأسلوب، وهو أقل شيوعًا، مناسبًا إذا كان من المطلوب تخزين بيانات المستأجرين في مناطق مختلفة لأسباب قانونية أو أمنية أو لقربها الجغرافي.**
+
+يجب إنشاء حساب مستخدم على كل خدمة، بحيث يتمكن المستخدم من الوصول إلى بيانات المستأجر التابعة له على تلك الخدمة.
+
+يصعب إدارة هذا النهج، كما يضيف عبئًا إضافيًا مع كل خدمة، إذ تتطلب كل واحدة منها بنية تحتية خاصة بها للتشغيل. ويمكن إدارة الخدمات عبر [ClickHouse Cloud API](/ar/products/cloud/features/admin-features/api/api-overview)، مع إمكانية الأتمتة كذلك باستخدام [موفّر Terraform الرسمي](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs).
+
+<div id="shared-table-example">
+  ### مثال
+</div>
+
+هذا مثال على تطبيق نموذج تعدد المستأجرين باستخدام خدمة منفصلة. لاحظ أن المثال يوضح إنشاء الجداول والمستخدمين على خدمة ClickHouse واحدة، وسيكون عليك تكرار ذلك على جميع الخدمات.
+
+أولًا، لننشئ الجدول `events`
+
+```sql
+-- Create table for tenant_1
+CREATE TABLE events
+(
+    id UUID,                    -- Unique event ID
+    type LowCardinality(String), -- Type of event
+    timestamp DateTime,          -- Timestamp of the event
+    user_id UInt32,               -- ID of the user who triggered the event
+    data String,                 -- Event data
+)
+ORDER BY (timestamp, user_id);
+```
+
+لنُدرِج بيانات تجريبية.
+
+```sql
+INSERT INTO events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+```
+
+ثم لننشئ مستخدمَين `user_1`
+
+```sql
+-- Create users 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+```
+
+ثم امنح امتياز `GRANT SELECT` على الجدول المعني.
+
+```sql
+-- Grant read only to events table.
+GRANT SELECT ON events TO user_1
+```
+
+الآن يمكنك الاتصال باسم `user_1` في الخدمة الخاصة بالمستأجر 1 وتشغيل استعلام SELECT بسيط. لا تُعاد إلا الصفوف التابعة للمستأجر الأول.
+
+```sql
+-- Logged as user_1
+SELECT *
+FROM events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```

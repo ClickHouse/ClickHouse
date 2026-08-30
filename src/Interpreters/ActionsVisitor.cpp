@@ -27,32 +27,40 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnTuple.h>
 
 #include <Storages/StorageSet.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedSetJoin.h>
 #endif
 
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTQueryParameter.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/misc.h>
@@ -100,7 +108,12 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 
 namespace
 {
-std::pair<Field, DataTypePtr> buildCollectionFieldAndTypeFromASTFunction(
+/// Build the constant right-hand side of `IN` as a single-row column plus its exact type, without
+/// materializing a `Field`. Each `tuple`/`array` element is evaluated individually
+/// (`evaluateConstantExpressionAsColumn` fast-paths literals) and assembled column-natively, because
+/// interpreting a large tuple/array as a whole function through `evaluateConstantExpression` is
+/// extremely slow.
+std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
     const boost::intrusive_ptr<ASTFunction> & func, ContextPtr context)
 {
     if (!func)
@@ -108,55 +121,40 @@ std::pair<Field, DataTypePtr> buildCollectionFieldAndTypeFromASTFunction(
 
     const auto & args = func->arguments->children;
 
-    if (func->name == "tuple")
+    /// An empty `tuple()` is not handled here: `ColumnTuple::create` rejects a zero-column tuple, so it
+    /// falls through to the generic path below, which builds a size-1 empty-tuple column of type `Tuple()`.
+    if (func->name == "tuple" && !args.empty())
     {
-        Tuple rhs_tuple;
-        rhs_tuple.reserve(args.size());
+        Columns element_columns;
+        element_columns.reserve(args.size());
 
         DataTypes element_types;
         element_types.reserve(args.size());
 
         for (const auto & arg : args)
         {
-            if (const auto * lit = arg->as<ASTLiteral>())
-            {
-                const Field & value = lit->value;
-                rhs_tuple.emplace_back(value);
-                element_types.emplace_back(applyVisitor(FieldToDataType(), value));
-            }
-            else
-            {
-                auto value_raw = evaluateConstantExpression(arg, context);
-                rhs_tuple.emplace_back(std::move(value_raw.first));
-                element_types.emplace_back(std::move(value_raw.second));
-            }
+            const auto value = evaluateConstantExpressionAsColumn(arg, context);
+            element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
+            element_types.emplace_back(value.getType());
         }
 
-        return {Field(std::move(rhs_tuple)), std::make_shared<DataTypeTuple>(std::move(element_types))};
+        auto tuple_column = ColumnTuple::create(std::move(element_columns));
+        return {std::move(tuple_column), std::make_shared<DataTypeTuple>(std::move(element_types))};
     }
 
     if (func->name == "array")
     {
-        Array rhs_array;
-        rhs_array.reserve(args.size());
+        Columns element_columns;
+        element_columns.reserve(args.size());
 
         DataTypes element_types;
         element_types.reserve(args.size());
 
         for (const auto & arg : args)
         {
-            if (const auto * lit = arg->as<ASTLiteral>())
-            {
-                const Field & value = lit->value;
-                rhs_array.emplace_back(value);
-                element_types.emplace_back(applyVisitor(FieldToDataType(), value));
-            }
-            else
-            {
-                auto value_raw = evaluateConstantExpression(arg, context);
-                rhs_array.emplace_back(std::move(value_raw.first));
-                element_types.emplace_back(std::move(value_raw.second));
-            }
+            const auto value = evaluateConstantExpressionAsColumn(arg, context);
+            element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
+            element_types.emplace_back(value.getType());
         }
 
         DataTypePtr nested_type;
@@ -165,19 +163,25 @@ std::pair<Field, DataTypePtr> buildCollectionFieldAndTypeFromASTFunction(
         else
             nested_type = getLeastSupertype(element_types);
 
-        for (size_t i = 0; i < rhs_array.size(); ++i)
+        auto data = nested_type->createColumn();
+        data->reserve(element_columns.size());
+        for (size_t i = 0; i < element_columns.size(); ++i)
         {
-            if (!rhs_array[i].isNull())
-                rhs_array[i] = convertFieldToType(rhs_array[i], *nested_type, element_types[i].get());
+            /// Every element is convertible to the common supertype, so this never fails.
+            ColumnPtr converted = convertColumnToTypeOrThrow(*element_columns[i], element_types[i], nested_type);
+            data->insertRangeFrom(*converted, 0, 1);
         }
 
-        return {Field(std::move(rhs_array)), std::make_shared<DataTypeArray>(std::move(nested_type))};
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        offsets->insertValue(element_columns.size());
+        auto array_column = ColumnArray::create(std::move(data), std::move(offsets));
+        return {std::move(array_column), std::make_shared<DataTypeArray>(std::move(nested_type))};
     }
 
     /// For non tuple/array functions, we fall back to the generic path
     ASTPtr func_ast = func;
-    auto value_raw = evaluateConstantExpression(func_ast, context);
-    return value_raw;
+    const auto value = evaluateConstantExpressionAsColumn(func_ast, context);
+    return {value.getColumn(), value.getType()};
 }
 
 
@@ -193,7 +197,9 @@ ColumnsWithTypeAndName createBlockForSet(
     const ASTPtr & right_arg,
     ContextPtr context)
 {
-    auto [right_arg_value, right_arg_type] = evaluateConstantExpression(right_arg, context);
+    const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
+    const auto & right_arg_column = right_value.getColumn();
+    const auto & right_arg_type = right_value.getType();
 
     GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
@@ -201,7 +207,7 @@ ColumnsWithTypeAndName createBlockForSet(
     };
 
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
+    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
 }
 
 /** Create a block for set from literal.
@@ -218,10 +224,294 @@ ColumnsWithTypeAndName createBlockForSet(
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
-    auto [right_arg_value, right_arg_type] = buildCollectionFieldAndTypeFromASTFunction(right_arg, context);
+    auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);
 
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
+    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
+}
+
+bool hasIdentifiers(const ASTPtr & ast)
+{
+    IdentifierNameSet identifiers;
+    ast->collectIdentifierNames(identifiers);
+    return !identifiers.empty();
+}
+
+/// A literal, or an enumeration of values (the `tuple` and `array` functions) built from literals only,
+/// e.g. `(1, 2)`, `[[1], [2, 3]]` or `((1, 'a'), (2, 'b'))`. Such a right-hand side of `IN` is always
+/// constant, so it can keep the constant-`Set` path without building it in the actions DAG first.
+bool isLiteralEnumeration(const ASTPtr & ast)
+{
+    if (ast->as<ASTLiteral>())
+        return true;
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || (function->name != "tuple" && function->name != "array"))
+        return false;
+
+    for (const auto & child : function->arguments->children)
+        if (!isLiteralEnumeration(child))
+            return false;
+
+    return true;
+}
+
+bool isNegativeInFunctionName(const String & name)
+{
+    return name == "notIn" || name == "globalNotIn" || name == "notNullIn" || name == "globalNotNullIn";
+}
+
+bool inFunctionComparesNulls(const String & name)
+{
+    return name == "nullIn" || name == "globalNullIn" || name == "notNullIn" || name == "globalNotNullIn";
+}
+
+bool isTupleType(const DataTypePtr & type)
+{
+    return type && typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+}
+
+bool isTupleFunction(const ASTPtr & ast)
+{
+    const auto * function = ast->as<ASTFunction>();
+    return function && function->name == "tuple";
+}
+
+size_t getTupleElementCount(const DataTypePtr & type, const ASTPtr & ast)
+{
+    if (type)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+        if (tuple_type)
+            return tuple_type->getElements().size();
+    }
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "tuple")
+        return function->arguments->children.size();
+
+    return 0;
+}
+
+ASTPtr makeTupleHasNoNullElementsPredicate(const ASTPtr & tuple_value, size_t tuple_size)
+{
+    ASTPtr result;
+    for (size_t i = 0; i != tuple_size; ++i)
+    {
+        auto element_is_not_null = makeASTFunction(
+            "not",
+            makeASTFunction(
+                "isNull",
+                makeASTFunction(
+                    "tupleElement",
+                    tuple_value->clone(),
+                    make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1)))));
+
+        if (result)
+            result = makeASTFunction("and", std::move(result), std::move(element_is_not_null));
+        else
+            result = std::move(element_is_not_null);
+    }
+
+    return result;
+}
+
+ASTPtr makeArrayForNonConstantInRightOperand(
+    const ASTPtr & right_operand,
+    bool right_operand_is_array,
+    bool right_operand_tuple_function_is_set,
+    bool include_right_operand_tuple_value,
+    const DataTypePtr & right_operand_type,
+    bool left_operand_is_tuple,
+    const DataTypePtr & cast_elements_to)
+{
+    if (right_operand_is_array)
+        return right_operand->clone();
+
+    auto make_element = [&](ASTPtr element) -> ASTPtr
+    {
+        if (cast_elements_to)
+            return makeASTFunction("CAST", std::move(element), make_intrusive<ASTLiteral>(cast_elements_to->getName()));
+        return element;
+    };
+
+    if (const auto * function = right_operand->as<ASTFunction>())
+    {
+        if (function->name == "tuple" && right_operand_tuple_function_is_set)
+        {
+            auto array_function = makeASTFunction("array");
+            auto & array_arguments = array_function->arguments->children;
+            array_arguments.reserve(function->arguments->children.size() + include_right_operand_tuple_value);
+            for (const auto & child : function->arguments->children)
+                array_arguments.push_back(make_element(child->clone()));
+            if (include_right_operand_tuple_value)
+                array_arguments.push_back(make_element(right_operand->clone()));
+            return array_function;
+        }
+    }
+
+    const auto * right_operand_tuple_type = right_operand_type
+        ? typeid_cast<const DataTypeTuple *>(removeNullable(right_operand_type).get())
+        : nullptr;
+    if (right_operand_tuple_type && !left_operand_is_tuple)
+    {
+        auto array_function = makeASTFunction("array");
+        auto & array_arguments = array_function->arguments->children;
+        array_arguments.reserve(right_operand_tuple_type->getElements().size());
+        for (size_t i = 0; i != right_operand_tuple_type->getElements().size(); ++i)
+            array_arguments.push_back(make_element(
+                makeASTFunction("tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1)))));
+        return array_function;
+    }
+
+    return makeASTFunction("array", make_element(right_operand->clone()));
+}
+
+ASTPtr makeFunctionCall(const String & function_name, ASTs arguments)
+{
+    auto function = makeASTFunction(function_name);
+    function->arguments->children = std::move(arguments);
+    return function;
+}
+
+ASTPtr makeScalarNonConstantInReplacement(const ASTFunction & node, bool left_operand_can_be_null)
+{
+    const auto & left_operand = node.arguments->children.at(0);
+    const auto & right_operand = node.arguments->children.at(1);
+    const bool is_negative = isNegativeInFunctionName(node.name);
+
+    if (inFunctionComparesNulls(node.name))
+        return makeASTFunction(
+            is_negative ? "isDistinctFrom" : "isNotDistinctFrom",
+            left_operand->clone(),
+            right_operand->clone());
+
+    ASTPtr result = makeASTFunction(
+        "ifNull",
+        makeASTFunction(is_negative ? "notEquals" : "equals", left_operand->clone(), right_operand->clone()),
+        make_intrusive<ASTLiteral>(is_negative ? 1u : 0u));
+
+    if (left_operand_can_be_null)
+        result = makeASTFunction(
+            "if",
+            makeASTFunction("isNull", left_operand->clone()),
+            make_intrusive<ASTLiteral>(Field{}),
+            std::move(result));
+
+    return result;
+}
+
+ASTPtr makeNonConstantInReplacement(
+    const ASTFunction & node,
+    bool right_operand_is_array,
+    bool right_operand_tuple_function_is_set,
+    bool include_right_operand_tuple_value,
+    const DataTypePtr & right_operand_type,
+    bool left_operand_is_tuple,
+    size_t left_operand_tuple_size,
+    bool left_operand_is_always_null,
+    const DataTypePtr & cast_elements_to)
+{
+    const auto & arguments = node.arguments->children;
+    const auto & left_operand = arguments.at(0);
+    const auto & right_operand = arguments.at(1);
+
+    /// The constant `Set` path decides `NULL IN (...)` under compare-nulls semantics purely
+    /// by `NULL` presence among the set elements, without requiring a common element type.
+    /// Mirror it row-wise as `or(isNull(e1), ..., isNull(en))` instead of building an
+    /// `array(...)` of the elements, which could fail with `NO_COMMON_TYPE` for a
+    /// heterogeneous RHS. An array RHS keeps the `has` rewrite: `has(arr, NULL)` already
+    /// tests `NULL` presence and the array has a common element type by construction.
+    /// A left-hand side of type `Nullable(Nothing)`, such as `materialize(NULL)`, is `NULL`
+    /// in every row and follows the same rewrite as a literal `NULL`.
+    const auto * left_literal = left_operand->as<ASTLiteral>();
+    const bool left_operand_is_null = (left_literal && left_literal->value.isNull()) || left_operand_is_always_null;
+    if (left_operand_is_null && inFunctionComparesNulls(node.name) && !right_operand_is_array)
+    {
+        ASTPtr null_presence;
+        auto add_element_is_null = [&](ASTPtr element)
+        {
+            ASTPtr element_is_null = makeASTFunction("isNull", std::move(element));
+            if (null_presence)
+                null_presence = makeASTFunction("or", std::move(null_presence), std::move(element_is_null));
+            else
+                null_presence = std::move(element_is_null);
+        };
+
+        const auto * right_operand_function = right_operand->as<ASTFunction>();
+        const auto * right_operand_tuple_type = right_operand_type
+            ? typeid_cast<const DataTypeTuple *>(removeNullable(right_operand_type).get())
+            : nullptr;
+        if (right_operand_function && right_operand_function->name == "tuple" && right_operand_tuple_function_is_set)
+        {
+            for (const auto & child : right_operand_function->arguments->children)
+                add_element_is_null(child->clone());
+        }
+        else if (right_operand_tuple_type && !left_operand_is_tuple)
+        {
+            for (size_t i = 0; i != right_operand_tuple_type->getElements().size(); ++i)
+                add_element_is_null(
+                    makeASTFunction("tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1))));
+        }
+        else
+        {
+            add_element_is_null(right_operand->clone());
+        }
+
+        if (!null_presence)
+            null_presence = make_intrusive<ASTLiteral>(0u);
+
+        if (isNegativeInFunctionName(node.name))
+            null_presence = makeASTFunction("not", std::move(null_presence));
+
+        return null_presence;
+    }
+
+    /// `NULL IN (...)` with `transform_null_in = 0` is `NULL` regardless of the set elements,
+    /// and the elements are not required to share a common type with each other. Mirror the
+    /// analyzer and return a typed `NULL` directly instead of building an `array(...)` of the
+    /// elements, which could fail with `NO_COMMON_TYPE` for a heterogeneous RHS.
+    if (left_operand_is_null && !inFunctionComparesNulls(node.name) && !right_operand_is_array)
+        return makeASTFunction(
+            "CAST", make_intrusive<ASTLiteral>(Field{}), make_intrusive<ASTLiteral>(String("Nullable(UInt8)")));
+
+    ASTPtr right_operand_array = makeArrayForNonConstantInRightOperand(
+        right_operand,
+        right_operand_is_array,
+        right_operand_tuple_function_is_set,
+        include_right_operand_tuple_value,
+        right_operand_type,
+        left_operand_is_tuple,
+        cast_elements_to);
+
+    auto has_function = makeASTFunction(
+        "has",
+        std::move(right_operand_array),
+        left_operand->clone());
+
+    ASTPtr result = has_function;
+    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
+    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
+    /// elements to preserve `IN` semantics in the row-wise rewrite.
+    if (!inFunctionComparesNulls(node.name) && left_operand_tuple_size != 0)
+        result = makeASTFunction(
+            "and",
+            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_tuple_size),
+            std::move(result));
+
+    if (!inFunctionComparesNulls(node.name))
+    {
+        result = makeFunctionCall("if",
+            {
+                makeASTFunction("isNull", left_operand->clone()),
+                make_intrusive<ASTLiteral>(Field{}),
+                std::move(result),
+            });
+    }
+
+    if (isNegativeInFunctionName(node.name))
+        result = makeASTFunction("not", std::move(result));
+
+    return result;
 }
 }
 
@@ -419,9 +709,9 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
     throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: {}", name);
 }
 
-void ScopeStack::addColumn(ColumnWithTypeAndName column)
+void ScopeStack::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name)
 {
-    const auto & node = stack[0].actions_dag.addColumn(std::move(column));
+    const auto & node = stack[0].actions_dag.addColumn(std::move(column), std::move(type), std::move(name));
     stack[0].index->addNode(&node);
 
     for (size_t j = 1; j < stack.size(); ++j)
@@ -781,6 +1071,236 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
+        DataTypePtr left_argument_type;
+        if (auto name_and_type = getNameAndTypeFromAST(node.arguments->children.at(0), data))
+            left_argument_type = name_and_type->type;
+        const bool left_argument_is_tuple = isTupleType(left_argument_type) || isTupleFunction(node.arguments->children.at(0));
+
+        const auto & right_argument = node.arguments->children.at(1);
+        bool rewrite_row_wise = false;
+        if (!right_argument->as<ASTSubquery>() && !right_argument->as<ASTTableIdentifier>())
+        {
+            if (hasIdentifiers(right_argument))
+            {
+                rewrite_row_wise = true;
+            }
+            else if (right_argument->as<ASTFunction>() && !isLiteralEnumeration(right_argument))
+            {
+                /// An identifier-free function right-hand side can still be non-constant, e.g. `materialize(1)`,
+                /// in which case building a constant `Set` from it would fail. Build it in the actions DAG and
+                /// check whether it folded into a constant; rewrite row-wise when it did not. Literal
+                /// enumerations are skipped above to keep the constant-`Set` path free of the extra folding.
+                visit(right_argument, data);
+                const auto * dag_node = data.actions_stack.getLastActionsIndex().tryGetNode(right_argument->getColumnName());
+                /// A missing node means the expression could not be computed in `only_consts` mode, i.e. it is not constant.
+                rewrite_row_wise = !dag_node || !dag_node->column || !isColumnConst(*dag_node->column);
+            }
+        }
+
+        if (rewrite_row_wise)
+        {
+            if (!data.only_consts)
+            {
+                bool right_argument_is_array = false;
+                bool right_argument_tuple_function_is_set = false;
+                bool include_right_argument_tuple_value = false;
+                DataTypePtr right_argument_type;
+                const auto * right_argument_function = right_argument->as<ASTFunction>();
+                if (right_argument_function && right_argument_function->name == "tuple")
+                {
+                    if (!left_argument_is_tuple)
+                    {
+                        right_argument_tuple_function_is_set = true;
+                    }
+                    else
+                    {
+                        visit(right_argument, data);
+                        if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
+                            right_argument_type = name_and_type->type;
+
+                        bool rhs_tuple_all_null = !right_argument_function->arguments->children.empty();
+                        for (const auto & child : right_argument_function->arguments->children)
+                        {
+                            if (isTupleFunction(child))
+                            {
+                                right_argument_tuple_function_is_set = true;
+                                rhs_tuple_all_null = false;
+                                break;
+                            }
+
+                            /// A tuple already in the index is a no-op to visit, so its children may still be unnamed.
+                            visit(child, data);
+
+                            auto name_and_type = getNameAndTypeFromAST(child, data);
+                            if (name_and_type && isTupleType(name_and_type->type))
+                            {
+                                right_argument_tuple_function_is_set = true;
+                                rhs_tuple_all_null = false;
+                                break;
+                            }
+                            if (!name_and_type || !name_and_type->type->onlyNull())
+                                rhs_tuple_all_null = false;
+                        }
+
+                        const auto * nullable_left_type = typeid_cast<const DataTypeNullable *>(left_argument_type.get());
+                        const auto * nullable_left_tuple_type = nullable_left_type
+                            ? typeid_cast<const DataTypeTuple *>(nullable_left_type->getNestedType().get())
+                            : nullptr;
+                        if (nullable_left_tuple_type && rhs_tuple_all_null)
+                        {
+                            right_argument_tuple_function_is_set = true;
+                            /// Match the constant `Set` path: an explicit all-`NULL` tuple contributes
+                            /// top-level `NULL` set elements and, when representable, the tuple value too.
+                            include_right_argument_tuple_value = inFunctionComparesNulls(node.name)
+                                && right_argument_function->arguments->children.size() == nullable_left_tuple_type->getElements().size()
+                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
+                                    [](const auto & type) { return type->isNullable(); });
+                        }
+                    }
+                }
+                else if (right_argument_function && right_argument_function->name == "array")
+                {
+                    right_argument_is_array = true;
+                }
+                else
+                {
+                    visit(right_argument, data);
+                    if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
+                    {
+                        right_argument_type = name_and_type->type;
+                        right_argument_is_array = typeid_cast<const DataTypeArray *>(name_and_type->type.get()) != nullptr;
+                    }
+                }
+
+                ASTPtr replacement;
+                const bool right_argument_is_scalar = !right_argument_is_array
+                    && !right_argument_tuple_function_is_set && !isTupleType(right_argument_type);
+                /// A scalar RHS whose type and the LHS type are numbers without a lossless
+                /// supertype (e.g. `Int64` and `Float64`) keeps the direct comparison of
+                /// makeScalarNonConstantInReplacement: the comparison functions compare numbers
+                /// accurately, while the `has(array(...))` rewrite would need a common type and the
+                /// cast-to-LHS-type fallback would truncate the value (`CAST(-0.6 AS Int64)` is
+                /// `0`) and break the `Set` contract of the constant path. This mirrors the scalar
+                /// fast path of the analyzer.
+                const bool number_comparison_without_supertype = right_argument_is_scalar
+                    && left_argument_type && right_argument_type
+                    && isNumber(removeNullable(removeLowCardinality(left_argument_type)))
+                    && isNumber(removeNullable(removeLowCardinality(right_argument_type)))
+                    && !tryGetLeastSupertype(DataTypes{left_argument_type, right_argument_type});
+
+                if (right_argument_is_scalar && (left_argument_is_tuple || number_comparison_without_supertype))
+                {
+                    replacement = makeScalarNonConstantInReplacement(
+                        node,
+                        isNullableOrLowCardinalityNullable(left_argument_type));
+                }
+                else
+                {
+                    /// The row-wise rewrite compares the left-hand side against an `array(...)` of the
+                    /// set elements, which requires a common supertype of the left-hand side and all
+                    /// elements. When no such supertype exists, the analyzer instead casts each element
+                    /// to the left-hand side type (a failed `CAST` to a `Nullable` target produces
+                    /// `NULL`, mirroring how the constant `Set` path skips unrepresentable elements).
+                    /// Mirror that fallback here to keep both analyzers in agreement.
+                    DataTypePtr cast_elements_to;
+                    if (!right_argument_is_array && left_argument_type && !left_argument_type->onlyNull())
+                    {
+                        DataTypes element_types;
+                        bool element_types_known = true;
+                        bool rhs_has_null_element = false;
+
+                        if (right_argument_function && right_argument_function->name == "tuple"
+                            && right_argument_tuple_function_is_set)
+                        {
+                            visit(right_argument, data);
+                            const auto & actions_index = data.actions_stack.getLastActionsIndex();
+                            for (const auto & child : right_argument_function->arguments->children)
+                            {
+                                /// A literal child of an already-visited identical tuple may not have its
+                                /// unique column name assigned, so take its type from the value directly.
+                                if (const auto * child_literal = child->as<ASTLiteral>())
+                                {
+                                    rhs_has_null_element |= child_literal->value.isNull();
+                                    element_types.push_back(applyVisitor(FieldToDataType(), child_literal->value));
+                                    continue;
+                                }
+                                const auto * child_node = actions_index.tryGetNode(child->getColumnName());
+                                if (!child_node)
+                                {
+                                    element_types_known = false;
+                                    break;
+                                }
+                                rhs_has_null_element |= isNullableOrLowCardinalityNullable(child_node->result_type);
+                                element_types.push_back(child_node->result_type);
+                            }
+                        }
+                        else if (const auto * right_argument_tuple_type = right_argument_type
+                                     ? typeid_cast<const DataTypeTuple *>(removeNullable(right_argument_type).get())
+                                     : nullptr;
+                                 right_argument_tuple_type && !left_argument_is_tuple)
+                        {
+                            for (const auto & element_type : right_argument_tuple_type->getElements())
+                            {
+                                rhs_has_null_element |= isNullableOrLowCardinalityNullable(element_type);
+                                element_types.push_back(element_type);
+                            }
+                        }
+                        else if (right_argument_type)
+                        {
+                            rhs_has_null_element = isNullableOrLowCardinalityNullable(right_argument_type);
+                            element_types.push_back(right_argument_type);
+                        }
+                        else
+                        {
+                            element_types_known = false;
+                        }
+
+                        if (element_types_known && !element_types.empty())
+                        {
+                            DataTypes supertype_candidates;
+                            supertype_candidates.reserve(element_types.size() + 1);
+                            supertype_candidates.push_back(left_argument_type);
+                            supertype_candidates.insert(supertype_candidates.end(), element_types.begin(), element_types.end());
+                            if (!tryGetLeastSupertype(supertype_candidates))
+                            {
+                                cast_elements_to = left_argument_type;
+                                /// The `Nullable` target is used when the right-hand side can contain `NULL`
+                                /// values or when `NULL` values must not match - a property of the resolved
+                                /// function (`nullIn` compares `NULL`s, `in` does not), not of the
+                                /// `transform_null_in` setting, which only renames `in` to `nullIn` before
+                                /// this rewrite.
+                                if ((rhs_has_null_element || !inFunctionComparesNulls(node.name))
+                                    && !isTupleType(cast_elements_to))
+                                    cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
+                            }
+                        }
+                    }
+
+                    replacement = makeNonConstantInReplacement(
+                        node,
+                        right_argument_is_array,
+                        right_argument_tuple_function_is_set,
+                        include_right_argument_tuple_value,
+                        right_argument_type,
+                        left_argument_is_tuple,
+                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
+                        left_argument_type && left_argument_type->onlyNull(),
+                        cast_elements_to);
+                }
+
+                visit(replacement, data);
+
+                auto replacement_name = replacement->getColumnName();
+                if (replacement_name != column_name)
+                    data.addAlias(replacement_name, column_name);
+                return;
+            }
+            else
+            {
+                return;
+            }
+        }
+
         if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
             prepared_set = makeSet(node, data, data.no_subqueries);
 
@@ -795,10 +1315,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
                 /// Do not evaluate subquery and create sets. We replace "in*" function to "in*IgnoreSet".
 
+                /// Pass the left operand alone: the `IgnoreSet` variants never read the set, and the
+                /// real `in` always gets its set as a constant column, so a constant is what the
+                /// `LowCardinality` bookkeeping in `IFunctionOverloadResolver::getReturnType` expects
+                /// to see there. Passing the left operand twice instead would count two full
+                /// `LowCardinality` columns and type the expression as plain `UInt8` while execution
+                /// yields `LowCardinality(UInt8)`, so a query reading such a column across a subquery
+                /// boundary would fail the type check in `ActionsDAG::updateHeader`. A stand-in
+                /// constant column is not an option either: it would become part of the captured
+                /// arguments of an enclosing lambda and be looked up in later analysis passes that
+                /// never created it.
                 auto argument_name = node.arguments->children.at(0)->getColumnName();
                 data.addFunction(
                     FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
-                    {argument_name, argument_name},
+                    {argument_name},
                     column_name);
             }
             return;
@@ -931,6 +1461,18 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     }
 
+    bool is_user_defined_wasm_function = false;
+    if (!function_builder)
+    {
+        auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(node.name);
+        if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+        {
+            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(current_context);
+            function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
+            is_user_defined_wasm_function = function_builder != nullptr;
+        }
+    }
+
     if (!function_builder)
     {
         try
@@ -949,6 +1491,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (node.parameters)
             throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
     }
+    else if (is_user_defined_wasm_function && node.parameters)
+        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
 
     checkFunctionHasEmptyNullsAction(node);
 
@@ -1009,26 +1553,25 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
             else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
             {
-                ColumnWithTypeAndName column;
-                column.type = std::make_shared<DataTypeSet>();
+                auto type = std::make_shared<DataTypeSet>();
+                std::string name;
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
                 const bool is_constant_set = typeid_cast<const FutureSetFromSubquery *>(prepared_set.get()) == nullptr;
                 if (is_constant_set)
-                    column.name = data.getUniqueName("__set");
+                    name = data.getUniqueName("__set");
                 else
-                    column.name = child->getColumnName();
+                    name = child->getColumnName();
 
-                if (!data.hasColumn(column.name))
+                if (!data.hasColumn(name))
                 {
-                    auto column_set = ColumnSet::create(1, prepared_set);
-                    column.column = ColumnConst::create(std::move(column_set), 1);
-                    data.addColumn(column);
+                    ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, prepared_set), 0);
+                    data.addColumn(std::move(column), type, name);
                 }
 
-                argument_types.push_back(column.type);
-                argument_names.push_back(column.name);
+                argument_types.push_back(std::move(type));
+                argument_names.push_back(std::move(name));
             }
             else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
             {
@@ -1036,23 +1579,24 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
                 auto column_string = ColumnString::create();
                 column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
-                ColumnWithTypeAndName column(
-                    ColumnConst::create(std::move(column_string), 1),
-                    std::make_shared<DataTypeString>(),
-                    data.getUniqueName("__" + node.name));
-                data.addColumn(column);
-                argument_types.push_back(column.type);
-                argument_names.push_back(column.name);
+                ColumnConstPtr column = ColumnConst::create(std::move(column_string), 1);
+                auto type = std::make_shared<DataTypeString>();
+                auto name = data.getUniqueName("__" + node.name);
+                data.addColumn(std::move(column), type, name);
+                argument_types.push_back(std::move(type));
+                argument_names.push_back(std::move(name));
             }
             else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
                 /// During analysis for CREATE VIEW of a parameterized view, if parameter is
-                /// used multiple times, column is only added once
+                /// used multiple times, column is only added once.
+                /// The placeholder column carries no runtime value: parameter substitution
+                /// happens later, before the view is actually executed.
                 if (!data.hasColumn(query_parameter->name))
                 {
-                    ColumnWithTypeAndName column(data_type, query_parameter->name);
-                    data.addColumn(column);
+                    ColumnConstPtr column = data_type->createColumnConstWithDefaultValue(0);
+                    data.addColumn(std::move(column), data_type, query_parameter->name);
                 }
 
                 argument_types.push_back(data_type);
@@ -1079,6 +1623,33 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (has_lambda_arguments && !data.only_consts)
         {
             function_builder->getLambdaArgumentTypes(argument_types);
+
+            /// Validate every lambda argument BEFORE visiting any lambda body. getLambdaArgumentTypes
+            /// only fills in the placeholder argument types for positions that actually expect a lambda;
+            /// where it does not (e.g. arrayFold's accumulator: arrayFold(lambda, arr, another_lambda)),
+            /// the placeholder DataTypeFunction keeps null argument/return types. Those nulls must be
+            /// rejected up front: a later lambda that stays unresolved can be copied into an earlier
+            /// lambda's argument type, so visiting the earlier lambda's body first would take the
+            /// non-lambda path and dereference the null return type (FunctionArrayMapped::getReturnTypeImpl).
+            for (size_t i = 0; i < node.arguments->children.size(); ++i)
+            {
+                const auto * lambda = node.arguments->children[i]->as<ASTFunction>();
+                if (!lambda || lambda->name != "lambda")
+                    continue;
+
+                const auto * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
+                bool lambda_types_resolved = lambda_type != nullptr;
+                if (lambda_type)
+                    for (const auto & arg_type : lambda_type->getArgumentTypes())
+                        if (!arg_type)
+                        {
+                            lambda_types_resolved = false;
+                            break;
+                        }
+                if (!lambda_types_resolved)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function '{}' does not expect a lambda expression as argument {}", node.name, i + 1);
+            }
 
             /// Call recursively for lambda expressions.
             for (size_t i = 0; i < node.arguments->children.size(); ++i)
@@ -1182,9 +1753,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
          */
         if (existing_column
             && existing_column->column
-            && isColumnConst(*existing_column->column)
-            && existing_column->column->size() == 1
-            && existing_column->column->operator[](0) == value)
+            && existing_column->column->getField() == value)
         {
             const_cast<ASTLiteral &>(literal).unique_column_name = default_name;
         }
@@ -1200,12 +1769,8 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
         return;
     }
 
-    ColumnWithTypeAndName column;
-    column.name = literal.unique_column_name;
-    column.column = type->createColumnConst(1, value);
-    column.type = type;
-
-    data.addColumn(std::move(column));
+    ColumnConstPtr column = type->createColumnConst(1, value);
+    data.addColumn(std::move(column), type, literal.unique_column_name);
 }
 
 FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)

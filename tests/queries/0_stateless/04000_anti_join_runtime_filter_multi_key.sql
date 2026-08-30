@@ -27,7 +27,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a, t1.b
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -53,7 +53,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b, t1.c FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb AND t1.c = t2.cc
 ORDER BY t1.a, t1.b, t1.c
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -79,7 +79,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a, t1.b
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -101,7 +101,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a, t1.b
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -124,7 +124,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a, t1.b
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -147,7 +147,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa
 ORDER BY t1.a, t1.b
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -175,7 +175,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa
 ORDER BY t1.b
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -198,7 +198,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 INNER JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a, t1.b
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -224,7 +224,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a, t1.b
-SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_exact_values_limit = 10;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_runtime_filter_exact_values_limit = 10;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -255,7 +255,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a NULLS LAST, t1.b NULLS LAST
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -283,7 +283,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a NULLS LAST, t1.b NULLS LAST
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -312,7 +312,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa
 ORDER BY t1.b
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -341,7 +341,7 @@ SETTINGS enable_join_runtime_filters = 0;
 
 SELECT t1.a, t1.b FROM t1 LEFT ANTI JOIN t2 ON t1.a = t2.aa AND t1.b = t2.bb
 ORDER BY t1.a NULLS LAST, t1.b NULLS LAST
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE t1;
 DROP TABLE t2;

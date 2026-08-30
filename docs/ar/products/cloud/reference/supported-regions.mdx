@@ -1,0 +1,106 @@
+---
+title: 'المناطق السحابية المدعومة'
+sidebarTitle: 'المناطق السحابية المدعومة'
+keywords: ['aws', 'gcp', 'Google Cloud', 'azure', 'السحابة', 'المناطق']
+description: 'المناطق المدعومة لـ ClickHouse Cloud'
+slug: /cloud/reference/supported-regions
+doc_type: 'reference'
+---
+
+import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="supported-regions">
+  ## المناطق المدعومة
+</div>
+
+توضح الجداول التالية المناطق المدعومة حسب مزود السحابة. تشير الشارات إلى توفر منطقة خاصة وHIPAA وPCI. أما المناطق التي لا تحمل شارة، فلا تتوفر فيها حاليًا أي من هذه الخيارات.
+
+<Tabs>
+  <Tab title="AWS" id="aws-regions" icon="aws">
+    | المنطقة          | التوافر                                                                                              |
+    | ---------------- | ---------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">خاص</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">خاص</Badge>                                                                    |
+    | `ap-northeast-1` | —                                                                                                    |
+    | `ap-northeast-2` | —                                                                                                    |
+    | `ap-south-1`     | —                                                                                                    |
+    | `ap-southeast-1` | —                                                                                                    |
+    | `ap-southeast-2` | —                                                                                                    |
+    | `ap-southeast-3` | <Badge color="purple">خاص</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">خاص</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `eu-north-1`     | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `il-central-1`   | —                                                                                                    |
+    | `mx-central-1`   | <Badge color="purple">خاص</Badge> <Badge color="blue">PCI</Badge>                                    |
+    | `sa-east-1`      | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+  </Tab>
+
+  <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
+    | المنطقة                   | التوافر                                                            |
+    | ------------------------- | ------------------------------------------------------------------ |
+    | `asia-northeast1`         | —                                                                  |
+    | `asia-southeast1`         | —                                                                  |
+    | `australia-southeast1`    | <Badge color="purple">خاص</Badge>                                  |
+    | `europe-west2`            | —                                                                  |
+    | `europe-west3`            | <Badge color="purple">خاص</Badge>                                  |
+    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">خاص</Badge>                                  |
+    | `northamerica-northeast1` | <Badge color="purple">خاص</Badge>                                  |
+    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">خاص</Badge>                                  |
+  </Tab>
+
+  <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
+    | المنطقة                | التوافر                           |
+    | ---------------------- | --------------------------------- |
+    | `Australia East`       | <Badge color="purple">خاص</Badge> |
+    | `East US 2`            | —                                 |
+    | `Germany West Central` | —                                 |
+    | `Japan East`           | <Badge color="purple">خاص</Badge> |
+    | `UAE North`            | <Badge color="purple">خاص</Badge> |
+    | `West US 3`            | —                                 |
+  </Tab>
+</Tabs>
+
+<Note>
+  هل تحتاج إلى النشر في منطقة غير مدرجة حاليًا؟ [أرسل طلبًا](https://clickhouse.com/pricing?modal=open).
+</Note>
+
+<div id="private-regions">
+  ## المناطق الخاصة
+</div>
+
+<EnterprisePlanFeatureBadge feature="ميزة المناطق الخاصة" />
+
+نوفر مناطق خاصة للخدمات من فئة Enterprise. يُرجى [التواصل معنا](https://clickhouse.com/company/contact) لطلب منطقة خاصة.
+
+اعتبارات أساسية بشأن المناطق الخاصة:
+
+* لن تتوسع الخدمات تلقائيًا؛ ومع ذلك، يتوفر التوسع الرأسي والأفقي يدويًا.
+* لا يمكن تحويل الخدمات إلى حالة الخمول.
+
+قد تنطبق متطلبات إضافية للامتثال لمتطلبات HIPAA، بما في ذلك توقيع اتفاقية الشريك التجاري (BAA). يتوفر HIPAA حاليًا فقط للخدمات من فئة Enterprise.
+
+<div id="hipaa-compliant-regions">
+  ## المناطق المتوافقة مع HIPAA
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
+
+يجب على العملاء توقيع اتفاقية الشريك التجاري (BAA) وطلب عملية الإعداد عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المحددة في الجدول على أنها متوافقة مع HIPAA.
+
+<div id="pci-compliant-regions">
+  ## المناطق المتوافقة مع PCI
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI" support="true" />
+
+يجب على العملاء طلب عملية الإعداد عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المعلَّمة في الجدول بأنها متوافقة مع PCI.

@@ -38,6 +38,7 @@ struct GroupConcatData : public GroupConcatDataBase
     UInt64 getSize(size_t i) const;
     UInt64 getString(size_t i) const;
 
+    void insertString(std::string_view str, Arena * arena);
     void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena);
 };
 
@@ -63,7 +64,7 @@ public:
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override;
+    void mergeImpl(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override;
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override;
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override;
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override;

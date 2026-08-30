@@ -1,7 +1,12 @@
 CREATE TABLE system.aggregate_function_combinators
 (
     `name` String,
-    `is_internal` UInt8
+    `is_internal` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemAggregateFunctionCombinators
 COMMENT 'Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.'
@@ -22,6 +27,7 @@ CREATE TABLE system.asynchronous_metrics
 (
     `metric` String,
     `value` Float64,
+    `key_values` Map(LowCardinality(String), Float64),
     `description` String,
     `name` String ALIAS metric
 )
@@ -122,7 +128,7 @@ CREATE TABLE system.data_skipping_index_types
     `related` Array(String)
 )
 ENGINE = SystemDataSkippingIndexTypes
-COMMENT 'Contains a list of all available data skipping index types along with their embedded documentation.'
+COMMENT 'Contains a list of all available data skipping index types.'
 CREATE TABLE system.data_skipping_indices
 (
     `database` String,
@@ -143,7 +149,12 @@ CREATE TABLE system.data_type_families
 (
     `name` String,
     `case_insensitive` UInt8,
-    `alias_to` String
+    `alias_to` String,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemTableDataTypeFamilies
 COMMENT 'Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.'
@@ -209,6 +220,18 @@ CREATE TABLE system.dictionaries
 )
 ENGINE = SystemDictionaries
 COMMENT 'Contains information about dictionaries.'
+CREATE TABLE system.dictionary_layouts
+(
+    `name` String,
+    `is_complex` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
+)
+ENGINE = SystemDictionaryLayouts
+COMMENT 'Contains a list of all available dictionary layouts.'
 CREATE TABLE system.disks
 (
     `name` String,
@@ -311,7 +334,11 @@ CREATE TABLE system.formats
     `has_external_schema` UInt8,
     `prefers_large_blocks` UInt8,
     `supports_append` UInt8,
-    `supports_subsets_of_columns` UInt8
+    `supports_subsets_of_columns` UInt8,
+    `description` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
@@ -380,7 +407,7 @@ CREATE TABLE system.merge_tree_settings
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
-    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12)
+    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)
 )
 ENGINE = SystemMergeTreeSettings
 COMMENT 'Contains a list of all MergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.'
@@ -448,6 +475,7 @@ CREATE TABLE system.mutations
     `mutation_id` String,
     `command` String,
     `create_time` DateTime,
+    `finish_time` DateTime,
     `block_numbers.partition_id` Array(String),
     `block_numbers.number` Array(Int64),
     `parts_in_progress_names` Array(String),
@@ -506,6 +534,7 @@ CREATE TABLE system.parts
     `name` String,
     `uuid` UUID,
     `part_type` String,
+    `part_storage_type` String,
     `active` UInt8,
     `marks` UInt64,
     `rows` UInt64,
@@ -628,6 +657,8 @@ CREATE TABLE system.parts_columns
     `estimates.min` Nullable(String),
     `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
+    `estimates.null_count` Nullable(UInt64),
+    `estimates.default_count` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -659,6 +690,7 @@ CREATE TABLE system.processes
     `os_user` String,
     `client_hostname` String,
     `client_name` String,
+    `client_agent` LowCardinality(String),
     `client_revision` UInt64,
     `client_version_major` UInt64,
     `client_version_minor` UInt64,
@@ -882,7 +914,9 @@ CREATE TABLE system.quotas
     `durations` Array(UInt32),
     `apply_to_all` UInt8,
     `apply_to_list` Array(String),
-    `apply_to_except` Array(String)
+    `apply_to_except` Array(String),
+    `ipv4_prefix_bits` Nullable(UInt8),
+    `ipv6_prefix_bits` Nullable(UInt8)
 )
 ENGINE = SystemQuotas
 COMMENT 'Contains information about quotas.'
@@ -998,7 +1032,7 @@ CREATE TABLE system.replicated_merge_tree_settings
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
-    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12)
+    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)
 )
 ENGINE = SystemReplicatedMergeTreeSettings
 COMMENT 'Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. '
@@ -1077,7 +1111,7 @@ CREATE TABLE system.settings
     `default` String,
     `alias_for` String,
     `is_obsolete` UInt8,
-    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12)
+    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)
 )
 ENGINE = SystemSettings
 COMMENT 'Contains a list of all user-level settings (which can be modified in a scope of query or session), their current and default values along with descriptions.'
@@ -1143,7 +1177,12 @@ CREATE TABLE system.table_engines
     `supports_ttl` UInt8,
     `supports_replication` UInt8,
     `supports_deduplication` UInt8,
-    `supports_parallel_insert` UInt8
+    `supports_parallel_insert` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemTableEngines
 COMMENT 'Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)'
@@ -1179,6 +1218,7 @@ CREATE TABLE system.tables
     `primary_key` String,
     `sampling_key` String,
     `unique_key` String,
+    `skipping_indices_types` Array(String),
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
@@ -1227,7 +1267,8 @@ CREATE TABLE system.users
     `storage` String,
     `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11, 'no_authentication' = 12)),
     `auth_params` Array(String),
-    `valid_until` Array(DateTime),
+    `valid_until` Array(DateTime64(0)),
+    `auth_grants` Array(String),
     `host_ip` Array(String),
     `host_names` Array(String),
     `host_names_regexp` Array(String),

@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <vector>
-#include <deque>
 
 #include <Parsers/IAST_fwd.h>
 #include <Common/Exception.h>
@@ -18,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
+extern const int LOGICAL_ERROR;
 }
 
 class IDataType;
@@ -36,6 +36,7 @@ enum class QueryTreeNodeType : uint8_t
     FUNCTION,
     COLUMN,
     LAMBDA,
+    LAMBDA_ARGS,
     SORT,
     INTERPOLATE,
     WINDOW,
@@ -65,14 +66,18 @@ const char * toString(QueryTreeNodeType type);
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
-using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
-using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
-using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
+
+class ITableExpressionNode;
+using TableExpressionNodePtr = std::shared_ptr<ITableExpressionNode>;
+using TableExpressionNodeWeakPtr = std::weak_ptr<ITableExpressionNode>;
+using TableExpressionNodes = std::vector<TableExpressionNodePtr>;
 
 struct ConvertToASTOptions
 {
     /// Add _CAST if constant literal type is different from column type
     bool add_cast_for_constants = true;
+
+    bool use_source_expression_for_constants = false;
 
     /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
     bool fully_qualified_identifiers = true;
@@ -115,7 +120,6 @@ public:
     struct CompareOptions
     {
         bool compare_aliases = true;
-        bool compare_types = true;
         /// Do not compare the cte name or check the is_cte flag for the query node.
         /// Calculate a hash as if is_cte is false and cte_name is empty.
         bool ignore_cte = false;
@@ -126,7 +130,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .compare_types = true, .ignore_cte = false }) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -135,8 +139,18 @@ public:
       *
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
+      *
+      * The result is not cached: every call traverses the whole subtree, so the cost is
+      * proportional to the subtree size. Nodes referenced through weak pointers are hashed too:
+      * for example, hashing a `ColumnNode` also hashes its column source (a `TableNode` or
+      * `QueryNode` with all its columns). Because of that, computing the hash per node — e.g.
+      * looking up each projection node in a container keyed by tree hash, such as
+      * `QueryTreeNodePtrWithHashSet` — can make query analysis quadratic in the number of
+      * columns for queries over wide tables. When such a container is usually empty, skip
+      * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
+      * and `PlannerActionsVisitorImpl::visitColumn`).
       */
-    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true, .ignore_cte = false }) const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
@@ -145,13 +159,13 @@ public:
       * If node to clone is key in replacement map, then instead of clone it
       * use value node from replacement map.
       */
-    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
+    using ReplacementMap = std::unordered_map<const ITableExpressionNode *, TableExpressionNodePtr>;
     QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is node to replace, then instead of clone it use replacement node.
       */
-    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
+    QueryTreeNodePtr cloneAndReplace(const TableExpressionNodePtr & node_to_replace, TableExpressionNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const
@@ -273,13 +287,18 @@ public:
         return children;
     }
 
-protected:
-    /** Construct query tree node.
-      * Resize children to children size.
-      * Resize weak pointers to weak pointers size.
-      */
-    explicit IQueryTreeNode(size_t children_size, size_t weak_pointers_size);
+    virtual const ITableExpressionNode * asTableExpression() const { return nullptr; }
 
+    const ITableExpressionNode & assertTableExpression() const
+    {
+        const auto * ptr = asTableExpression();
+        if (!ptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not a table expression", getNodeTypeName());
+
+        return *ptr;
+    }
+
+protected:
     /// Construct query tree node and resize children to children size
     explicit IQueryTreeNode(size_t children_size);
 
@@ -302,7 +321,6 @@ protected:
     virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
     QueryTreeNodes children;
-    QueryTreeWeakNodes weak_pointers;
 
 private:
     String alias;
@@ -312,6 +330,14 @@ private:
     ASTPtr original_ast;
     /// If the expression has extra parentheses around it in the original query
     bool parenthesized = false;
+};
+
+class ITableExpressionNode : public IQueryTreeNode
+{
+public:
+    using IQueryTreeNode::IQueryTreeNode;
+
+    const ITableExpressionNode * asTableExpression() const final { return this; }
 };
 
 }

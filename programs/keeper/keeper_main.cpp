@@ -65,7 +65,7 @@ int printHelp(int, char **)
 }
 
 
-static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
     if (argv.size() >= 2)
@@ -170,7 +170,7 @@ static __attribute__((constructor(202))) void init_ssl()
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-static bool inside_main = false;
+bool inside_main = false;
 
 int main(int argc_, char ** argv_)
 {
@@ -201,7 +201,7 @@ int main(int argc_, char ** argv_)
     /// Print a basic help if nothing was matched
     MainFunc main_func = mainEntryClickHouseKeeper;
 
-    if (isClickhouseApp("help", argv))
+    if (isClickHouseApp("help", argv))
     {
         main_func = printHelp;
     }
@@ -209,7 +209,7 @@ int main(int argc_, char ** argv_)
     {
         for (auto & application : clickhouse_applications)
         {
-            if (isClickhouseApp(application.first, argv))
+            if (isClickHouseApp(application.first, argv))
             {
                 main_func = application.second;
                 break;

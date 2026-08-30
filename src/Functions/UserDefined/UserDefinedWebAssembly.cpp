@@ -276,7 +276,7 @@ public:
 
             if (chunk && chunk.getNumColumns() != result_block.columns())
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::WASM_ERROR,
                     "Different number of columns in result chunks, expected {}, got {}",
                     result_block.dumpStructure(),
                     chunk.dumpStructure());
@@ -289,6 +289,13 @@ public:
             if (!has_data)
                 break;
         }
+
+        if (result_chunk.getNumColumns() != result_block.columns())
+            throw Exception(
+                ErrorCodes::WASM_ERROR,
+                "WebAssembly function returned a result with {} columns, expected {}",
+                result_chunk.getNumColumns(), result_block.columns());
+
         result_block.setColumns(result_chunk.detachColumns());
     }
 
@@ -480,6 +487,13 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
+    bool isSpatialPredicate() const override
+    {
+        auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");
+        if (val.getType() == Field::Types::Bool)
+            return val.safeGet<bool>();
+        return val.safeGet<UInt64>() != 0;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
@@ -618,8 +632,8 @@ private:
     mutable WasmCompartmentPool compartment_pool;
 };
 
-std::shared_ptr<UserDefinedWebAssemblyFunction>
-UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager)
+UserDefinedWebAssemblyFunctionFactory::RegisteredFunction
+UserDefinedWebAssemblyFunctionFactory::prepareFunction(ASTPtr create_function_query, WasmModuleManager & module_manager) const
 {
     auto * create_query = typeid_cast<ASTCreateWasmFunctionQuery *>(create_function_query.get());
     if (!create_query)
@@ -659,15 +673,47 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
         function_def.settings,
         function_def.is_deterministic);
 
-    std::unique_lock lock(registry_mutex);
-    registry[function_def.function_name] = RegistryEntry{wasm_func, create_function_query};
+    return RegisteredFunction{function_def.function_name, std::move(wasm_func), std::move(create_function_query)};
+}
+
+std::shared_ptr<UserDefinedWebAssemblyFunction>
+UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager)
+{
+    auto registered_function = prepareFunction(std::move(create_function_query), module_manager);
+    auto wasm_func = registered_function.function;
+    addOrReplace(std::move(registered_function));
     return wasm_func;
+}
+
+void UserDefinedWebAssemblyFunctionFactory::addOrReplace(RegisteredFunction registered_function)
+{
+    std::unique_lock lock(registry_mutex);
+    registry[registered_function.sql_name] = RegistryEntry{std::move(registered_function.function), std::move(registered_function.create_query)};
+}
+
+void UserDefinedWebAssemblyFunctionFactory::replaceAll(VectorWithMemoryTracking<RegisteredFunction> registered_functions)
+{
+    UnorderedMapWithMemoryTracking<String, RegistryEntry> new_registry;
+    new_registry.reserve(registered_functions.size());
+    for (auto & registered_function : registered_functions)
+        new_registry[registered_function.sql_name] = RegistryEntry{std::move(registered_function.function), std::move(registered_function.create_query)};
+
+    std::unique_lock lock(registry_mutex);
+    registry = std::move(new_registry);
 }
 
 bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) const
 {
     std::shared_lock lock(registry_mutex);
     return registry.contains(function_name);
+}
+
+void UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(const ContextPtr & context)
+{
+    /// `getWasmModuleManager` always throws `SUPPORT_IS_DISABLED` here, and it is the single place that
+    /// words the difference between the engine being turned off and being absent from the build.
+    if (!context->hasWasmModuleManager())
+        context->getWasmModuleManager();
 }
 
 FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name, ContextPtr context)
@@ -801,11 +847,13 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
+        /// Whether bbox-disjoint pruning is safe for this function (see IFunctionBase::isSpatialPredicate).
+        {"is_spatial_predicate", SettingBool{}.withDefault(false)},
     };
 
-    Strings getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        Strings result;
+        VectorWithMemoryTracking<String> result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);

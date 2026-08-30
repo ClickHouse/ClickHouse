@@ -1,0 +1,511 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/naive-bayes
+title: 'Словари Naive Bayes'
+sidebarTitle: 'Naive Bayes'
+description: 'Настройка словарей NAIVE_BAYES для классификации текста.'
+doc_type: 'reference'
+---
+
+Класс словаря `naive_bayes` (`NAIVE_BAYES`) классифицирует текст с помощью мультиномиальной модели [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) — стандартной модели событий для текста: для каждого класса вычисляется оценка по тому, как часто в нём встречаются n-граммы входного текста. На вход подаётся таблица с **счётчиками n-грамм** для каждого класса, которая при загрузке один раз компилируется в модель, а затем используется для классификации любого переданного текста.
+
+Он подходит для быстрой, легковесной классификации текста — например, для анализа тональности, маркировки тем или спама, а также определения языка или письменности.
+
+Вы можете обращаться к словарю с помощью одной из трёх функций:
+
+* [`naiveBayesClassifier`](/ru/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) возвращает идентификатор предсказанного класса.
+* [`naiveBayesClassifierWithProb`](/ru/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithProb) возвращает предсказанный класс и его вероятность.
+* [`naiveBayesClassifierWithAllProbs`](/ru/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithAllProbs) возвращает все классы и их вероятности.
+
+Обычный [`dictGet`](/ru/reference/functions/regular-functions/ext-dict-functions#dictGet) тоже выполняет классификацию (см. [Примечания](#notes)). Ещё одна функция, [`naiveBayesNgrams`](/ru/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams), не классифицирует текст — она разбивает его на n-граммы так же, как это делает словарь, чтобы вы могли формировать обучающие данные из исходного текста (см. [Построение обучающих данных из исходного текста](#build-training-data-from-raw-text)).
+
+<div id="quickstart">
+  ## Краткое руководство
+</div>
+
+Здесь мы создадим униграммную (`n = 1`) модель анализа тональности в режиме token.
+
+**1. Создайте исходную таблицу** со счётчиками n-грамм по каждому классу:
+
+```sql
+CREATE TABLE training_data (class_id UInt32, ngram String, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+```
+
+**2. Вставьте обучающие данные** — отдельные слова (униграммы) и частота встречаемости каждого в положительном (`1`) и отрицательном (`0`) классе:
+
+```sql
+INSERT INTO training_data VALUES
+    (1,'good',10),(1,'great',8),(1,'excellent',6),(1,'love',7),(1,'happy',5),
+    (1,'amazing',4),(1,'wonderful',3),(1,'best',3),(1,'fantastic',2),(1,'nice',4),
+    (0,'bad',10),(0,'terrible',8),(0,'awful',6),(0,'hate',7),(0,'worst',5),
+    (0,'horrible',4),(0,'poor',3),(0,'disappointing',3),(0,'ugly',2),(0,'sad',4);
+```
+
+**3. Создайте словарь** со структурой `NAIVE_BAYES`:
+
+```sql
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+```
+
+`PRIMARY KEY ngram` делает столбец `ngram` ключом — но для словаря `NAIVE_BAYES` этот &quot;ключ&quot; представляет собой текст, который вы передаёте для классификации, а не сохранённое значение, которое извлекается по ключу (см. [Структура словаря](#dictionary-structure)). `LAYOUT` настраивает модель: `class_attribute 'class_id'` помечает `class_id` как метку класса (то есть другой атрибут, `count`, — это число вхождений для каждого класса), `n 1` использует униграммы, а `mode 'token'` разбивает текст на слова, разделённые пробелами (см. [Параметры структуры](#layout-parameters)).
+
+**4. Классифицируйте** — `naiveBayesClassifier` возвращает идентификатор класса:
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+`1` соответствует положительному классу согласно обучающим данным, которые мы добавили на шаге 2.
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is terrible') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               0 │
+   └─────────────────┘
+```
+
+Аналогично, `0` соответствует отрицательному классу.
+
+Тот же результат с помощью `dictGet`:
+
+```sql
+SELECT dictGet('sentiment', 'class_id', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+Получите вероятность предсказания или вероятности для всех классов:
+
+```sql
+SELECT naiveBayesClassifierWithProb('sentiment', 'amazing food but terrible service') as predicted_id_with_prob;
+```
+
+```response
+   ┌─predicted_id_with_prob─────────────┐
+1. │ {                                 ↴│
+   │↳  "class_id": 0,                  ↴│
+   │↳  "probability": 0.642857145060626↴│
+   │↳}                                  │
+   └────────────────────────────────────┘
+```
+
+Предсказанный класс — `0` (отрицательный) с вероятностью `0.64`.
+
+```sql
+SELECT naiveBayesClassifierWithAllProbs('sentiment', 'amazing food but terrible service') as all_predicted_ids_with_probs;
+```
+
+```response
+   ┌─all_predicted_ids_with_probs─────────┐
+1. │ [{                                  ↴│
+   │↳  "class_id": 0,                    ↴│
+   │↳  "probability": 0.642857145060626  ↴│
+   │↳},{                                 ↴│
+   │↳  "class_id": 1,                    ↴│
+   │↳  "probability": 0.35714285493937414↴│
+   │↳}]                                   │
+   └──────────────────────────────────────┘
+```
+
+`naiveBayesClassifierWithAllProbs` возвращает все классы, упорядоченные от наиболее к наименее вероятному, с вероятностями, сумма которых равна `1.0`: здесь `0.64` для отрицательного класса и `0.36` для положительного.
+
+<div id="how-it-works">
+  ## Как это работает
+</div>
+
+**Обучение (при загрузке).** Каждая строка источника — это наблюдение `(n-gram, class, count)`. Когда словарь загружается, строки однократно компилируются в модель. Повторяющиеся строки `(n-gram, class)` суммируются, а строки с `count = 0` игнорируются.
+
+**Классификация (при выполнении запроса).** Чтобы классифицировать строку, модель:
+
+1. Разбивает её на n-граммы в соответствии с `mode` и `n` (см. [Режимы токенизации](#tokenization-modes)).
+2. Вычисляет оценку для каждого класса, сочетая априорную вероятность класса с тем, насколько часто n-граммы входной строки встречались в этом классе.
+3. Ранжирует классы по оценке. Класс с наивысшей оценкой — это предсказание, которое возвращает `naiveBayesClassifier`; `naiveBayesClassifierWithProb` и `naiveBayesClassifierWithAllProbs` также возвращают вероятности — для этого класса или для всех классов.
+
+На оценку каждого класса влияют две вещи. Первая — `alpha`, который используется для сглаживания. Сглаживание не даёт модели присвоить классу нулевую оценку только потому, что какая-то n-грамма не встретилась в этом классе при обучении. Чем меньше `alpha`, тем сильнее модель опирается на обучающие данные, поэтому один класс может получить гораздо более высокую оценку, чем остальные, но при этом модель может стать слишком чувствительной, если обучающих данных мало или они распределены неравномерно. Чем больше `alpha`, тем меньшее значение имеют количества n-грамм, поэтому оценки разных классов становятся более похожими. Если `alpha` очень велик, информация о n-граммах почти не влияет, и оценка в основном определяется априорной вероятностью класса (о ней — ниже).
+
+Второй фактор — априорная вероятность класса: то, что модель предполагает о вероятности каждого класса ещё до анализа текста. Она служит начальной оценкой, которую получает каждый класс до учёта каких-либо n-грамм, поэтому более высокая априорная вероятность повышает вероятность того, что будет предсказан именно этот класс. То, как она задаётся, зависит от `priors_mode`. По умолчанию (`proportional`) класс с большим суммарным количеством n-грамм в обучающих данных получает более высокую начальную оценку. При `uniform` все классы начинают с равных позиций, поэтому всё решают только n-граммы. При `explicit` вы сами задаёте начальное значение для каждого класса. См. [Режимы априорных вероятностей](#prior-modes).
+
+N-грамма, которая ни разу не встречалась в обучающих данных, игнорируется: она не входит в словарь модели, поэтому не помогает и не вредит ни одному классу.
+
+Алгоритм следует мультиномиальной модели Naive Bayes для классификации текста; см. [Manning, Raghavan &amp; Schütze, *Introduction to Information Retrieval*, ch. 13 (*Text Classification and Naive Bayes*)](https://nlp.stanford.edu/IR-book/html/htmledition/text-classification-and-naive-bayes-1.html).
+
+<div id="dictionary-structure">
+  ## Структура словаря
+</div>
+
+Словарь `NAIVE_BAYES` имеет фиксированную структуру:
+
+* `PRIMARY KEY` — это один столбец `String`, то есть n-грамма. При выполнении запроса этот &quot;ключ&quot; — текст, который вы передаёте для классификации, а не сохранённый ключ для поиска.
+* Наряду с ним объявите **ровно два атрибута беззнаковых целочисленных типов**: метку класса и счётчик вхождений. Идентификаторы классов всегда внутренне представлены как `UInt32`, поэтому метка класса должна помещаться в `UInt32` (не более `4294967295`), даже если её атрибут объявлен как `UInt64`. Большее значение будет отклонено при загрузке словаря, а не при его создании. То же верно и для объявленных типов: если идентификатор класса или счётчик в источнике не помещается в объявленный тип атрибута, загрузка завершится ошибкой, а не будет молча усечена.
+* Параметр структуры `class_attribute` указывает, какой атрибут является меткой класса; второй автоматически считается счётчиком. Эти два атрибута можно объявить в любом порядке.
+
+Исходная таблица хранит **предварительно агрегированные** счётчики: по одной строке на `(n-gram, class)` с числом появлений этой n-граммы в данном классе. Вы получаете эти счётчики, токенизируя корпус и группируя результат, — либо в собственном конвейере обучения, либо в ClickHouse из исходного размеченного текста (см. [Подготовка обучающих данных из исходного текста](#build-training-data-from-raw-text)). Сам словарь лишь использует их.
+
+**Обновление модели.** Поскольку модель представляет собой словарь на основе таблицы, для повторного обучения обновите таблицу и перезагрузите словарь:
+
+```sql
+INSERT INTO training_data VALUES (1, 'awesome', 5);
+SYSTEM RELOAD DICTIONARY sentiment;
+```
+
+<div id="layout-parameters">
+  ## Параметры структуры
+</div>
+
+| Параметр          | Описание                                                                                                                                                                                                                                                  | Пример                 | По умолчанию       |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------ |
+| `class_attribute` | Имя атрибута, который содержит метку класса; другой атрибут содержит количество.                                                                                                                                                                          | `'class_id'`           | *Обязательно*      |
+| `n`               | Размер n-граммы: `1` = униграммы, `2` = биграммы, `3` = триграммы, … (`1`–`1024`).                                                                                                                                                                        | `2`                    | *Обязательно*      |
+| `mode`            | Метод токенизации: `byte`, `codepoint` или `token`. См. [Режимы токенизации](#tokenization-modes).                                                                                                                                                        | `'token'`              | *Обязательно*      |
+| `alpha`           | Аддитивное сглаживание (Lidstone) для вероятностей n-грамм; `alpha = 1` — это сглаживание Лапласа (значение должно быть конечным и `> 0`).                                                                                                                | `0.5`                  | `1.0`              |
+| `priors_mode`     | Как определяются априорные вероятности классов: `uniform`, `proportional` или `explicit`. См. [Режимы априорных вероятностей](#prior-modes).                                                                                                              | `'uniform'`            | `'proportional'`   |
+| `priors`          | Явно заданные априорные вероятности для каждого класса: набор пар `(class, probability)`. Допустимо только с `priors_mode 'explicit'`, где этот параметр обязателен; указание его в любом другом режиме приводит к ошибке. Сумма должна быть равна `1.0`. | `[(0, 0.6), (1, 0.4)]` | —                  |
+| `store_source`    | Сохранять исходные строки, чтобы работало `SELECT * FROM dictionary`. Примерно удваивает расход памяти.                                                                                                                                                   | `1`                    | `0`                |
+| `start_token`     | Граничный токен, добавляемый в начало входных данных `(n-1)` раз. См. [Граничные токены](#boundary-tokens-padding).                                                                                                                                       | `'0x01'` / `'<s>'`     | — (без дополнения) |
+| `end_token`       | Граничный токен, добавляемый в конец входных данных `(n-1)` раз.                                                                                                                                                                                          | `'0xFF'` / `'</s>'`    | — (без дополнения) |
+
+Вы можете определить словарь с помощью DDL `CREATE DICTIONARY` (как в кратком руководстве выше) или в XML-файле конфигурации; информацию о том, где должен находиться этот файл, см. в разделе [Структуры словарей](/ru/reference/statements/create/dictionary/layouts/overview). В примере ниже заданы все параметры структуры, чтобы показать их целиком: обязательны только `class_attribute`, `n` и `mode`, а значения по умолчанию для остальных приведены в таблице выше. В файле конфигурации априорные вероятности записываются как повторяющиеся элементы `prior` (по одному на класс, как показано ниже), токены дополнения для `byte` и `codepoint` задаются числами (файл конфигурации не может содержать raw bytes), а литерал `token` при необходимости экранируется по правилам XML, поэтому `<s>` становится `&lt;s&gt;`.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY naive_bayes (ngram String, class_id UInt32, count UInt64)
+    PRIMARY KEY ngram
+    SOURCE(CLICKHOUSE(TABLE 'training_data'))
+    LAYOUT(NAIVE_BAYES(
+        class_attribute 'class_id'
+        n 2
+        mode 'token'
+        alpha 0.5
+        priors_mode 'explicit'
+        priors [(0, 0.6), (1, 0.4)]
+        store_source 1
+        start_token '<s>'
+        end_token '</s>'
+    ))
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <dictionary>
+        <name>naive_bayes</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>ngram</name>
+                    <type>String</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>class_id</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>count</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+        <source>
+            <clickhouse>
+                <table>training_data</table>
+            </clickhouse>
+        </source>
+        <layout>
+            <naive_bayes>
+                <class_attribute>class_id</class_attribute>
+                <n>2</n>
+                <mode>token</mode>
+                <alpha>0.5</alpha>
+                <priors_mode>explicit</priors_mode>
+                <priors>
+                    <prior>
+                        <class>0</class>
+                        <probability>0.6</probability>
+                    </prior>
+                    <prior>
+                        <class>1</class>
+                        <probability>0.4</probability>
+                    </prior>
+                </priors>
+                <store_source>1</store_source>
+                <start_token>&lt;s&gt;</start_token>
+                <end_token>&lt;/s&gt;</end_token>
+            </naive_bayes>
+        </layout>
+        <lifetime>3600</lifetime>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="tokenization-modes">
+  ## Режимы токенизации
+</div>
+
+`mode` определяет, что считается «токеном», и, следовательно, как выглядят n-граммы. Исходные n-граммы должны быть созданы с **теми же** `mode` и `n`.
+
+* `byte` — каждый токен представляет собой один байт; никакого предположения об использовании UTF-8 не делается. При `n = 2` строка `'abc'` дает байтовые биграммы `'ab'`, `'bc'`. *Подходит для* определения языка или кодирования в произвольных байтовых последовательностях, а также для любых данных, где важен сигнал на уровне ниже символа. Обычно используется вместе с `n >= 2`.
+* `codepoint` — каждый токен представляет собой одну кодовую точку Unicode; входные данные интерпретируются как UTF-8. При `n = 1` строка `'café'` дает кодовые точки `'c'`, `'a'`, `'f'`, `'é'`. *Подходит для* определения письменности и языка, а также для коротких текстов или текста на языках CJK, где границы слов по пробелам ненадежны. (Исходные n-граммы должны быть в корректном UTF-8; входные данные запроса декодируются нестрого — см. [Примечания](#notes).)
+* `token` — каждый токен представляет собой слово, отделенное **ASCII-пробельными символами** (пробел, табуляция, перевод строки, возврат каретки, перевод страницы, вертикальная табуляция; последовательности схлопываются в один разделитель). Пробельные символы Unicode вне ASCII, такие как `U+00A0` (неразрывный пробел) или `U+2003` (em space), **не** считаются разделителями и остаются внутри токена. Разделение выполняется только по пробельным символам — ничего не приводится к нижнему регистру и не удаляется — поэтому `'Hello, World!'` превращается в токены `'Hello,'` и `'World!'` (запятая, `!` и заглавные буквы сохраняются), а при `n = 2` они образуют единственную биграмму `'Hello, World!'`. *Подходит для* классификации на уровне слов в языках с разделением по пробелам — тональность, тема, спам, язык предложения.
+
+<div id="prior-modes">
+  ## Режимы априорных вероятностей
+</div>
+
+Априорная вероятность — это представление модели о вероятности каждого класса *до* анализа текста. `priors_mode` определяет, как она задаётся.
+
+* `proportional` (по умолчанию) — априорная вероятность каждого класса пропорциональна общему числу n-грамм этого класса в обучающих данных — то есть сумме значений в столбце `count` для данного класса, а не числу строк или обучающих документов, — поэтому классы, которые встречались чаще, изначально считаются более вероятными. **Выбирайте этот режим**, если пропорции классов в обучении (по общему числу n-грамм) соответствуют частотам, которые вы ожидаете при выполнении запроса. **Ничего задавать не нужно** — значения вычисляются на основе исходных счётчиков.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional'))
+  ```
+
+* `uniform` — изначально все классы равновероятны, поэтому ни один из них не получает преимущества на старте, и предсказание полностью определяется n-граммами входных данных. **Выбирайте этот режим**, когда классы сбалансированы или когда частоты в обучающих данных не отражают, как часто каждый класс встречается при выполнении запроса. **Ничего задавать не нужно.**
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'uniform'))
+  ```
+
+* `explicit` — вы задаёте априорные вероятности через `priors [(0, 0.6), (1, 0.4)]`: по одной паре `(класс, вероятность)` на каждый класс; каждая вероятность должна быть больше 0 и не больше 1, а их сумма должна составлять `1.0`. **Выбирайте этот режим**, если вы знаете реальные базовые доли классов и они отличаются от обучающих — например, только 1% трафика в продакшне является спамом, хотя обучающая выборка была сбалансированной. **Вычисляйте их** исходя из ожидаемой реальной доли каждого класса.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.9), (1, 0.1)]))
+  ```
+
+<div id="boundary-tokens-padding">
+  ## Граничные токены (дополнение)
+</div>
+
+Дополнение по умолчанию отключено. Оно важно только при `n > 1`, где может повысить точность, позволяя модели использовать сигналы в начале и конце текста.
+
+**Почему это помогает.** При `n > 1` н-граммы в середине текста получают полный левый и правый контекст, а первый и последний токены — нет. Добавление граничных токенов создаёт н-граммы, помечающие «начало текста» и «конец текста», чтобы модель могла изучать шаблоны, связанные с позицией, — например, слово, которое особенно характерно, когда *стоит в начале* сообщения, или символ, типичный для *конца* слова.
+
+**Что нужно сделать:**
+
+1. **Решайте отдельно для каждой стороны.** `start_token` и `end_token` независимы — задайте один, оба или ни один. Пустое значение означает, что для этой стороны дополнение не используется.
+2. **Выбирайте редкие значения**, которые не будут пересекаться с реальными данными, например `0x01` / `0xFF` для `byte`, `U+10FFFE` / `U+10FFFF` для `codepoint` или `<s>` / `</s>` для `token`.
+3. **Формируйте обучающие н-граммы с тем же дополнением.** Словарь дополняет входные данные запроса, но никогда не дополняет исходные данные, поэтому граничные токены должны уже быть встроены в загружаемые вами н-граммы. Самый простой способ гарантировать совпадение — сформировать исходные данные с помощью [`naiveBayesNgrams`](/ru/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams), передав ему те же `start_token` и `end_token` (а также `n` и `mode`), что и в структуру. В этом случае функция сгенерирует ровно те дополненные н-граммы, которые словарь создаёт во время выполнения запроса.
+
+Формат токена дополнения зависит от режима:
+
+* `byte` — число, задающее значение байта, в десятичной или шестнадцатеричной форме с префиксом `0x` (то есть `'1'` и `'0x01'` — это одно и то же):
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token '0x01' end_token '0xFF'))
+  ```
+
+* `codepoint` — число, задающее кодовую точку UTF-8, в десятичной или шестнадцатеричной форме с префиксом `0x` (то есть `'1114110'` и `'0x10FFFE'` — это одно и то же):
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF'))
+  ```
+
+* `token` — буквальное строковое значение токена:
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token' start_token '<s>' end_token '</s>'))
+  ```
+
+<div id="build-training-data-from-raw-text">
+  ## Создание обучающих данных из исходного текста
+</div>
+
+Если вы работаете с исходным размеченным текстом, а не с предварительно агрегированными счётчиками, используйте функцию [`naiveBayesNgrams`](/ru/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams), чтобы разбить его на n-граммы. Передайте ей те же `n`, `mode`, `start_token` и `end_token`, что и в вашей структуре, — тогда она создаст именно те n-граммы, которые ожидает словарь, и обучающие данные будут точно соответствовать тому, что модель видит во время выполнения запроса.
+
+Для таблицы со строками `(class_id, text)` создайте источник `(ngram, class_id, count)` с помощью одного `GROUP BY`:
+
+```sql
+CREATE TABLE docs (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO docs VALUES
+    (1, 'The food was amazing and the service was great'),
+    (0, 'The service was terrible and the food was awful'),
+    (1, 'I loved this cozy little place and the friendly staff'),
+    (0, 'I hated the bad weather and the long wait'),
+    (1, 'Best dinner we have had here, everything was delicious');
+
+CREATE TABLE training_data (ngram String, class_id UInt32, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+
+INSERT INTO training_data
+SELECT ngram, class_id, count()
+FROM docs
+ARRAY JOIN naiveBayesNgrams(text, 1, 'token') AS ngram
+GROUP BY ngram, class_id;
+```
+
+```sql
+SELECT * FROM training_data ORDER BY ngram LIMIT 5;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ Best  │        1 │     1 │
+2. │ I     │        1 │     1 │
+3. │ I     │        0 │     1 │
+4. │ The   │        0 │     1 │
+5. │ The   │        1 │     1 │
+   └───────┴──────────┴───────┘
+```
+
+`training_data` теперь может служить допустимым источником для словаря `NAIVE_BAYES` (здесь используются униграммы токенов; измените аргументы `n` и `mode` в соответствии с вашей структурой). Словарь токенизирует входной запрос ровно в том виде, в каком он передан, поэтому, если обучающий текст приведён к нижнему регистру, а текст запроса — нет, их n-граммы не совпадут, и точность модели снизится.
+
+<Info>
+  **Априорные вероятности и число документов**
+
+  Априорная вероятность `proportional` (по умолчанию) взвешивается по **общему числу n-грамм** в каждом классе, а не по числу документов. Если вам нужна классическая априорная вероятность по частоте документов (`documents_in_class / total_documents`), вычислите её по исходной таблице `docs` и передайте с `priors_mode 'explicit'`:
+
+  ```sql
+  SELECT groupArray((class_id, frac)) AS priors
+  FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY class_id);
+  ```
+
+  ```response
+     ┌─priors────────────┐
+  1. │ [(0,0.4),(1,0.6)] │
+     └───────────────────┘
+  ```
+</Info>
+
+Затем создайте словарь из `training_data`, передав явно заданную априорную вероятность, вычисленную выше, и классифицируйте новые отзывы:
+
+```sql
+CREATE DICTIONARY review_sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.4), (1, 0.6)]))
+LIFETIME(0);
+```
+
+```sql
+SELECT
+    naiveBayesClassifier('review_sentiment', 'amazing food and friendly staff') AS positive_review,
+    naiveBayesClassifier('review_sentiment', 'awful service and a terrible meal') AS negative_review;
+```
+
+```response
+   ┌─positive_review─┬─negative_review─┐
+1. │               1 │               0 │
+   └─────────────────┴─────────────────┘
+```
+
+Класс `1` — положительный, а `0` — отрицательный, поэтому оба отзыва классифицированы верно.
+
+<div id="more-examples">
+  ## Ещё примеры
+</div>
+
+**Байтовый режим** — байтовые биграммы (`n = 2`, `mode 'byte'`; класс `0` = строки из букв `a`–`d`, класс `1` = буквы `x`–`z`):
+
+```sql
+CREATE TABLE byte_patterns_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO byte_patterns_src VALUES (0,'ab',5),(0,'bc',5),(0,'cd',5),(1,'xy',5),(1,'yz',5),(1,'zw',5);
+
+CREATE DICTIONARY byte_patterns (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'byte_patterns_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('byte_patterns', 'abcd') AS abcd, naiveBayesClassifier('byte_patterns', 'xyzw') AS xyzw;
+```
+
+```response
+   ┌─abcd─┬─xyzw─┐
+1. │    0 │    1 │
+   └──────┴──────┘
+```
+
+**Режим кодовых точек** — определение письменности для каждого символа (`n = 1`, `mode 'codepoint'`; класс `0` = латиница, `1` = кириллица):
+
+```sql
+CREATE TABLE script_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO script_src VALUES (0,'a',5),(0,'b',5),(0,'c',5),(0,'d',5),(1,'а',5),(1,'б',5),(1,'в',5),(1,'г',5);
+
+CREATE DICTIONARY script (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'script_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'codepoint')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('script', 'abcd') AS latin, naiveBayesClassifier('script', 'абвг') AS cyrillic;
+```
+
+```response
+   ┌─latin─┬─cyrillic─┐
+1. │     0 │        1 │
+   └───────┴──────────┘
+```
+
+**Считайте обучающие данные из хранилища** с помощью `store_source`:
+
+```sql
+CREATE TABLE stored_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO stored_src VALUES (0,'alpha',3),(0,'beta',2),(1,'gamma',4);
+
+CREATE DICTIONARY stored (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'stored_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1)) LIFETIME(0);
+
+SELECT ngram, class_id, count FROM stored ORDER BY ngram;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ alpha │        0 │     3 │
+2. │ beta  │        0 │     2 │
+3. │ gamma │        1 │     4 │
+   └───────┴──────────┴───────┘
+```
+
+**Определение языка по необработанному тексту** — короткие слова с дополнением по границам (`n = 2`, `mode 'codepoint'`; класс `0` = английский, `1` = испанский). Обучающие n-граммы строятся из необработанных слов с помощью [`naiveBayesNgrams`](/ru/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams), а граничные токены, передаваемые и в функцию, и в структуру, позволяют модели использовать первые и последние буквы каждого слова:
+
+```sql
+CREATE TABLE words (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO words VALUES
+    (0,'dog'),(0,'cat'),(0,'fish'),(0,'bird'),(0,'book'),(0,'hand'),(0,'tree'),(0,'milk'),(0,'duck'),(0,'frog'),(0,'lamp'),(0,'desk'),
+    (1,'gato'),(1,'casa'),(1,'perro'),(1,'libro'),(1,'mano'),(1,'leche'),(1,'arbol'),(1,'agua'),(1,'queso'),(1,'fuego'),(1,'mesa'),(1,'silla');
+
+CREATE TABLE word_ngrams (ngram String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO word_ngrams
+SELECT ngram, class_id, count()
+FROM words
+ARRAY JOIN naiveBayesNgrams(text, 2, 'codepoint', '0x10FFFE', '0x10FFFF') AS ngram
+GROUP BY ngram, class_id;
+
+CREATE DICTIONARY lang (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'word_ngrams'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('lang', 'window') AS window, naiveBayesClassifier('lang', 'fiesta') AS fiesta;
+```
+
+```response
+   ┌─window─┬─fiesta─┐
+1. │      0 │      1 │
+   └────────┴────────┘
+```
+
+<div id="notes">
+  ## Примечания
+</div>
+
+* **Семантика вычислительного словаря.** Это *вычислительный* словарь: `dictGet(dict, '<class_attribute>', text)` классифицирует `text` (ключ здесь — это входные данные для классификации, а не сохранённый ключ), к атрибуту count нельзя обращаться в запросах, а `dictHas` всегда возвращает `1`.
+* **Проверка источника при загрузке.** Каждая n-грамма источника должна соответствовать заданным `n` и `mode` (в режиме `codepoint` она также должна быть корректной последовательностью UTF-8); при несоответствии загрузка завершается ошибкой. Поскольку строки с нулевым значением count игнорируются (см. [Как это работает](#how-it-works)), пустой источник или источник, содержащий только нулевые значения count, не даёт данных для обучения и не загружается.
+* **Нестрогая токенизация во время выполнения запроса.** В отличие от проверки источника, входные данные запроса никогда не отклоняются. В режиме `codepoint` байты, не являющиеся корректным UTF-8, декодируются по мере возможности вместо завершения запроса с ошибкой; в режиме `token` слова разделяются только пробельными символами ASCII (пробельные символы Unicode, такие как `U+00A0`, остаются внутри токена). Даже некорректные входные данные всё равно классифицируются — обычно на основе априорных вероятностей, поскольку их n-граммы не совпадут с обученными.

@@ -28,11 +28,28 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+}
+
+template <typename FieldType>
+static typename DataTypeEnum<FieldType>::Values checkAndBuildEnumValues(
+    const std::vector<std::pair<String, Int64>> & values, const char * type_name)
+{
+    typename DataTypeEnum<FieldType>::Values enum_values;
+    enum_values.reserve(values.size());
+    for (const auto & [name, value] : values)
+    {
+        if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
+                value, name, type_name);
+        enum_values.emplace_back(name, static_cast<FieldType>(value));
+    }
+    return enum_values;
 }
 
 /// Helper to create Enum data type from ASTEnumDataType values
@@ -55,21 +72,8 @@ static DataTypePtr createEnumFromValues(const String & type_name, const std::vec
     }
 
     if (use_enum16)
-    {
-        DataTypeEnum16::Values enum_values;
-        enum_values.reserve(values.size());
-        for (const auto & [name, value] : values)
-            enum_values.emplace_back(name, static_cast<Int16>(value));
-        return std::make_shared<DataTypeEnum16>(enum_values);
-    }
-    else
-    {
-        DataTypeEnum8::Values enum_values;
-        enum_values.reserve(values.size());
-        for (const auto & [name, value] : values)
-            enum_values.emplace_back(name, static_cast<Int8>(value));
-        return std::make_shared<DataTypeEnum8>(enum_values);
-    }
+        return std::make_shared<DataTypeEnum16>(checkAndBuildEnumValues<Int16>(values, "Enum16"));
+    return std::make_shared<DataTypeEnum8>(checkAndBuildEnumValues<Int8>(values, "Enum8"));
 }
 
 /// Helper to create Tuple data type from ASTTupleDataType
@@ -158,13 +162,45 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
+    /// These specialized branches construct the type directly, bypassing the registered-creator
+    /// try/catch below, so they must honor nullptr_on_error themselves: tryGet promises nullptr
+    /// (not an exception) on invalid type text, e.g. an out-of-range enum value.
+
     /// Handle specialized ASTEnumDataType directly
     if (const auto * enum_type = ast->as<ASTEnumDataType>())
-        return createEnumFromValues(enum_type->name, enum_type->values);
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createEnumFromValues(enum_type->name, enum_type->values);
+            }
+            catch (...) // Ok: tryGet is a try-pattern
+            {
+                return nullptr;
+            }
+        }
+        else
+            return createEnumFromValues(enum_type->name, enum_type->values);
+    }
 
     /// Handle specialized ASTTupleDataType directly
     if (const auto * tuple_type = ast->as<ASTTupleDataType>())
-        return createTupleFromAST(tuple_type);
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createTupleFromAST(tuple_type);
+            }
+            catch (...) // Ok: tryGet is a try-pattern
+            {
+                return nullptr;
+            }
+        }
+        else
+            return createTupleFromAST(tuple_type);
+    }
 
     if (const auto * type = ast->as<ASTDataType>())
     {
@@ -250,7 +286,7 @@ DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomD
     return type;
 }
 
-void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness, Documentation documentation)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
@@ -267,9 +303,11 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
     if (case_sensitiveness == Case::Insensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
+
+    data_type_documentations.emplace(family_name, std::move(documentation));
 }
 
-void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness, Documentation documentation)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
@@ -280,10 +318,10 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
 }
 
-void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness, Documentation documentation)
 {
     registerDataType(family_name, [creator](const ASTPtr & ast)
     {
@@ -291,17 +329,24 @@ void DataTypeFactory::registerDataTypeCustom(const String & family_name, Creator
         res.first->setCustomization(std::move(res.second));
 
         return res.first;
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness, Documentation documentation)
 {
     registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
     {
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
+}
+
+Documentation DataTypeFactory::getDocumentation(const String & family_name) const
+{
+    if (auto it = data_type_documentations.find(family_name); it != data_type_documentations.end())
+        return it->second;
+    return {};
 }
 
 template <bool nullptr_on_error>

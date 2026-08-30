@@ -1,0 +1,98 @@
+---
+slug: /integrations/integration-development/building-integrations
+title: 'ClickHouse 向けインテグレーションの構築'
+sidebarTitle: 'インテグレーションの構築'
+description: 'ClickHouse インテグレーションにおけるインジェスト、利用、ワイヤープロトコル、クライアントの慣例の概要。'
+keywords: ['パートナー', 'インテグレーション', 'インジェスト', '利用', 'ClickPipes', '言語クライアント', 'ユーザーエージェント']
+doc_type: 'guide'
+---
+
+このページでは、インテグレーションの対象範囲を理解し、インジェストと利用に関する作業範囲を整理できるように説明します。検証と公開については、[Testing your integration](/ja/resources/develop-contribute/integrations/testing-your-integration) および [Documenting your integration](/ja/resources/develop-contribute/integrations/documenting-your-integration) を参照してください。
+
+<div id="ingestion">
+  ## インジェスト
+</div>
+
+ClickHouse にデータを取り込む経路は 2 つあります。製品側でインジェスト基盤を担うか、委任するかに応じて選択してください。
+
+<div id="path-a-clickpipes">
+  ### パス A: ClickPipes (マネージド、ClickHouse Cloud のみ)
+</div>
+
+インジェスト基盤を自分で構築・運用したくない場合は、[ClickPipes](/ja/integrations/clickpipes/home) を利用できます。これは、顧客のデータソースから顧客の ClickHouse Cloud サービスへデータを取り込むマネージドサービスです。ClickPipes は、スケーリング、並列化、再試行、遅延レポートを処理します。
+
+現在サポートされているソースは次のとおりです。
+
+* **ストリーミング:** Apache Kafka (MSK、Confluent Cloud、Redpanda、Azure Event Hubs、WarpStream を含む) 、Amazon Kinesis
+* **オブジェクトストレージ:** Amazon S3 (および S3 互換ストレージ) 、Google Cloud Storage、Azure Blob Storage
+* **CDC:** PostgreSQL、MySQL、MongoDB、BigQuery
+
+<div id="path-b-language-client">
+  ### パス B: 公式言語クライアントを使った自前のインジェスト
+</div>
+
+パイプラインを自分で管理している場合は、[公式言語クライアント](/ja/integrations/language-clients/index) のいずれかを使用してください。これらのクライアントが、シリアライゼーション、バッチ処理、TLS、圧縮、接続プーリングを担います。渡すのはランタイムのプリミティブ値だけで、ワイヤ形式の処理はクライアントが行います。
+
+* 公式クライアント: Python、Go、Java、JavaScript、Rust、C#、C++
+* 両方のワイヤープロトコル: HTTP (すべてのクライアント) とネイティブ TCP (Go と C++ クライアントのみ)
+* 認証: デフォルトでは TLS 上でのユーザー名とパスワードによる認証。mTLS と SSL クライアント証明書認証は、主要なすべてのクライアントでサポートされています
+* データフォーマットは通常、実装の詳細です。クライアントはランタイム型を ClickHouse Native または RowBinary フォーマットに変換します。すでに Arrow、Parquet、JSONEachRow、または別のフォーマットを生成している場合は、ほとんどのクライアントで、事前にシリアライズ済みのデータ向け raw-bytes API を利用できます
+* スループットを確保するには、**1万〜10万行**を 1 バッチの目安とし、同期挿入では上限の目安として**1 秒あたりおよそ 1 回の挿入**を目指してください。クライアント側でのバッチ処理が現実的でない場合は、[非同期挿入](/ja/concepts/features/operations/insert/asyncinserts) を使用してバッチ処理をサーバー側に移してください
+
+関連項目: [バルク挿入](/ja/concepts/features/operations/insert/bulkinserts)。
+
+<div id="consumption">
+  ## 利用
+</div>
+
+HTTP とネイティブ TCP は、どちらもクエリのやり取りに使用されます。ネイティブはバイナリで、オーバーヘッドも低めです。HTTP はロードバランサーやプロキシを経由して利用できます。どちらも第一級の選択肢なので、機能差ではなくインフラストラクチャに基づいて選択してください。
+
+* **アプリケーションコード:** インジェストと同じ [公式言語クライアント](/ja/integrations/language-clients/index) を使用します
+* **BI および SQL ツール:** ClickHouse は公式の [JDBC v2 ドライバー](/ja/integrations/language-clients/java/index) (Java) と [ODBC ドライバ](/ja/concepts/features/interfaces/odbc) を提供しています。Tableau、Looker、Power BI、Metabase、Apache Superset、Grafana は、これらのドライバー、または ClickHouse とパートナーが保守する専用コネクタ経由で連携できます
+* **結果フォーマット:** 通常、シリアライゼーションはクライアント側で処理します。製品上必要であれば、転送時のフォーマットとして Arrow、Parquet、またはその他の列指向フォーマットを指定できます
+
+<div id="result-set-sizing">
+  ### 結果セットのサイズ設計
+</div>
+
+ほとんどの分析クエリは小さな結果セット (集計、要約、top-N) を返すため、転送がボトルネックになることはほとんどありません。ClickHouse のテーブルは数十億行を保持できるため、大規模なファクトテーブルに対して制限なしで `SELECT *` を実行すると、テラバイト級のデータが منتقلされる可能性があります。**アプリケーション側でリクエストを適切に設計してください。** `LIMIT`、ページネーション、ストリーミング読み取り、明示的なカラムリストを活用します。ユーザー向け分析機能を構築する場合、制限のない結果セットは転送の問題ではなく、UX の問題として捉えてください。
+
+ClickHouse は豊富な型システムを備えており、Array、Tuple、Map、JSON、Nested、LowCardinality などをサポートしています。公式クライアントはこれらを各言語で自然に扱える型へマッピングします。製品で ClickHouse のデータをエンドユーザーに提示する場合は、早い段階で型マッピング戦略を検討してください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+いずれかの方法を選び、[ClickHouse Cloud のトライアル](https://clickhouse.com/cloud) でプロトタイプを作成したら、[パートナーポータル](https://clickhouse.com/partners) でインテグレーションを登録してください。
+
+<div id="user-agent-string-convention">
+  ## ユーザーエージェント文字列の規約
+</div>
+
+HTTP クライアントは、インテグレーションを識別できる `User-Agent` 文字列を設定する必要があります。ClickHouse はこれをサーバー側で解析し、導入状況の追跡、使用状況テレメトリーの把握、ロードマップへの反映に役立てます。
+
+フォーマット:
+
+```text
+<app_name>/<app_version> <client_name>/<client_version> (<comment>; <key1>: <value1>; <key2>: <value2>)
+```
+
+例:
+
+* `clickhouse-java/0.8.0`
+* `my-analytics-app/3.1.2 clickhouse-js/1.2.0 (env: staging; region: us-east-1; lv: node/20.10)`
+
+ルール:
+
+* クライアント名やバージョンに空白を含めないこと
+* コメントを含める場合は、先頭に置く必要があります
+* 標準メタデータキー: `lv` (言語またはフレームワークのバージョン) 、`os`、`arch`
+* TCP およびネイティブプロトコルのクライアントは、`User-Agent` ではなくプロトコルのフィールドを通じてクライアント名とバージョンを送信します
+
+JDBC を使用する場合は、ドライバーが `User-Agent` と関連フィールドをどのように設定するかについて、[クライアント識別](/ja/integrations/language-clients/java/jdbc#client-identification) を参照してください。
+
+<div id="sandbox-and-trial-access">
+  ## サンドボックスとトライアルの利用
+</div>
+
+[ClickHouse Cloud](https://clickhouse.com/cloud) では、開発やインテグレーションの検証向けに無料トライアルを提供しています。House Mate パートナーの方は、[パートナーポータル](https://clickhouse.com/partners) から追加の開発用クレジットを申請できます。

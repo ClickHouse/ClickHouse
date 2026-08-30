@@ -1,0 +1,294 @@
+---
+slug: /whats-new/security-changelog
+sidebarTitle: '安全更新日志'
+title: '安全更新日志'
+description: '详细记录安全相关更新与变更的更新日志'
+doc_type: 'changelog'
+keywords: ['安全', 'CVE', '漏洞', '安全修复', '补丁']
+---
+
+<div id="fixed-in-clickhouse-release-2025-01-05">
+  ## 已在 ClickHouse v25.1.5.5 (2025-01-05) 中修复
+</div>
+
+<div id="CVE-2025-1385">
+  ### [CVE-2025-1385](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-5phv-x8x4-83x5)
+</div>
+
+启用 library bridge 功能后，clickhouse-library-bridge 会在 localhost 上开放一个 HTTP API。这使 clickhouse-server 能够从指定路径动态加载库，并在隔离进程中执行。再结合 ClickHouse 表引擎可将文件上传到特定目录的功能，如果服务器配置不当，拥有访问这两种表引擎权限的攻击者就可能利用这一点，在 ClickHouse 服务器上执行任意代码。
+
+修复已推送到以下开源版本：v24.3.18.6、v24.8.14.27、v24.11.5.34、v24.12.5.65、v25.1.5.5
+
+ClickHouse Cloud 不受此漏洞影响。
+
+致谢：[Arseniy Dugin](https://github.com/ZerLes)
+
+<div id="fixed-in-clickhouse-release-2024-08-01">
+  ## 已在 ClickHouse v24.5 (2024-08-01) 中修复
+</div>
+
+<div id="CVE-2024-6873">
+  ### [CVE-2024-6873](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-432f-r822-j66f)
+</div>
+
+攻击者可通过未经身份验证的途径，向 ClickHouse server 的原生接口 发送精心构造的请求，从而重定向 ClickHouse 服务器进程 的执行流。这种重定向仅限于执行时内存中 256 字节范围内可用的内容。该漏洞通过我们的 Bugbounty 计划发现，目前尚无已知的概念验证远程代码执行 (RCE) 代码被编写或利用。
+
+修复已推送到以下开源版本：v23.8.15.35-lts、v24.3.4.147-lts、v24.4.2.141-stable、v24.5.1.1763、v24.6.1.4423-stable
+
+ClickHouse Cloud 使用不同的版本编号方式，并且该漏洞的修复已应用于所有运行 v24.2 及以上版本的 instance。
+
+致谢：malacupa (独立研究员)
+
+<div id="fixed-in-clickhouse-release-24-01-30">
+  ## 在 ClickHouse v24.1 中已修复，2024-01-30
+</div>
+
+<div id="CVE-2024-22412">
+  ### [CVE-2024-22412](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-45h5-f7g3-gr8r)
+</div>
+
+在启用查询缓存的情况下使用 ClickHouse 时，如果在不同用户角色之间切换，可能会获取到不准确的数据。ClickHouse 建议，使用存在此漏洞版本的 ClickHouse 的用户，如果其应用程序会在不同角色之间动态切换，请勿使用查询缓存。
+
+修复已推送至以下开源版本：v24.1.1.2048、v24.1.8.22-stable、v23.12.6.19-stable、v23.8.12.13-lts、v23.3.22.3-lts
+
+ClickHouse Cloud 使用不同的版本体系，此漏洞的修复已在 v24.0.2.54535 中应用。
+
+致谢：Runreveal 团队的 Evan Johnson 和 Alan Braithwaite。更多信息请参阅[他们的博客文章](https://blog.runreveal.com/cve-2024-22412-behind-the-bug-a-classic-caching-problem-in-the-clickhouse-query-cache/)。
+
+<div id="fixed-in-clickhouse-release-23-10-5-20-2023-11-26">
+  ## 已在 ClickHouse v23.10.5.20 (2023-11-26) 中修复
+</div>
+
+<div id="CVE-2023-47118">
+  ### [CVE-2023-47118](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-g22g-p6q2-x39v)
+</div>
+
+这是一个堆缓冲区溢出漏洞，影响默认在 9000/tcp 端口运行的 原生接口。攻击者可通过触发 T64 压缩编解码器中的一个缺陷，导致 ClickHouse 服务器进程崩溃。利用此漏洞无需身份验证。
+
+修复已推送到以下开源版本：v23.10.2.13、v23.9.4.11、v23.8.6.16、v23.3.16.7
+
+ClickHouse Cloud 使用不同的版本号体系，该漏洞的修复已在 v23.9.2.47475 中应用。
+
+鸣谢：malacupa (独立研究员)
+
+<div id="CVE-2023-48298">
+  ### [CVE-2023-48298](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-qw9f-qv29-8938)
+</div>
+
+FPC 压缩编解码器中存在一个整数下溢漏洞。攻击者可利用该漏洞使 ClickHouse 服务器进程崩溃。利用此漏洞无需身份验证。
+
+修复已发布到以下开源版本：v23.10.4.25、v23.9.5.29、v23.8.7.24、v23.3.17.13。
+
+ClickHouse Cloud 使用不同的版本编号，该漏洞已在 v23.9.2.47475 中修复。
+
+鸣谢：malacupa (独立研究员)
+
+<div id="CVE-2023-48704">
+  ### [CVE-2023-48704](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-5rmf-5g48-xv63)
+</div>
+
+这是一个堆缓冲区溢出漏洞，影响默认在 9000/tcp 端口上运行的原生接口。攻击者可通过触发 Gorilla codec 中的一个缺陷，导致 ClickHouse 服务器进程崩溃。利用此漏洞无需身份验证。
+
+修复已推送到以下开源版本：v23.10.5.20、v23.9.6.20、v23.8.8.20、v23.3.18.15。
+
+ClickHouse Cloud 使用不同的版本编号体系，此漏洞已在 v23.9.2.47551 中修复。
+
+致谢：malacupa (独立研究员)
+
+<div id="fixed-in-clickhouse-release-22-9-1-2603-2022-9-22">
+  ## 已在 ClickHouse 22.9.1.2603 版本中修复，2022-09-22
+</div>
+
+<div id="CVE-2022-44011">
+  ### CVE-2022-44011
+</div>
+
+在 ClickHouse 服务器 中发现一个堆缓冲区溢出漏洞。恶意用户如果能够向 ClickHouse 服务器 导入数据，就可以通过插入格式错误的 CapnProto 对象使 ClickHouse 服务器 崩溃。
+
+该修复已推送至版本 22.9.1.2603、22.8.2.11、22.7.4.16、22.6.6.16、22.3.12.19
+
+致谢：Kiojj (独立研究员)
+
+<div id="CVE-2022-44010">
+  ### CVE-2022-44010
+</div>
+
+在 ClickHouse server 中发现了一个堆缓冲区溢出漏洞。攻击者可向 HTTP 端点 (默认监听 8123 端口) 发送特制的 HTTP 请求，从而触发堆缓冲区溢出，导致 ClickHouse server 进程崩溃。此攻击不需要身份验证。
+
+修复已发布到版本 22.9.1.2603、22.8.2.11、22.7.4.16、22.6.6.16、22.3.12.19
+
+致谢：Kiojj (独立研究员)
+
+<div id="fixed-in-clickhouse-release-21-10-2-215-2021-10-18">
+  ## 在 ClickHouse 21.10.2.15 中已修复，2021-10-18
+</div>
+
+<div id="cve-2021-43304">
+  ### CVE-2021-43304
+</div>
+
+在解析恶意查询时，ClickHouse 的 LZ4 压缩编解码器中存在堆缓冲区溢出漏洞。由于缺少校验，无法确保 LZ4::decompressImpl 循环中的复制操作，尤其是任意复制操作 `wildCopy<copy_amount>(op, ip, copy_end)`，不会超出目标缓冲区的边界。
+
+致谢：JFrog Security Research Team
+
+<div id="cve-2021-43305">
+  ### CVE-2021-43305
+</div>
+
+在解析恶意查询时，ClickHouse 的 LZ4 压缩编解码器中存在堆缓冲区溢出漏洞。LZ4::decompressImpl 循环中的复制操作，尤其是任意复制操作 `wildCopy<copy_amount>(op, ip, copy_end)`，未验证是否会超出目标缓冲区的边界。该问题与 CVE-2021-43304 非常相似，但存在漏洞的复制操作位于另一个 wildCopy 调用中。
+
+鸣谢：JFrog Security Research Team
+
+<div id="cve-2021-42387">
+  ### CVE-2021-42387
+</div>
+
+在解析恶意查询时，ClickHouse 的 LZ4 压缩编解码器存在堆越界读取漏洞。在 LZ4::decompressImpl() 循环中，会从压缩数据里读取一个由用户提供的 16 位无符号值 (`offset`) 。随后，该 `offset` 会被用作一次复制操作的长度，但未检查复制操作源的上界。
+
+致谢：JFrog Security Research Team
+
+<div id="cve-2021-42388">
+  ### CVE-2021-42388
+</div>
+
+在解析恶意查询时，ClickHouse 的 LZ4 压缩编解码器中存在堆越界读取漏洞。在 LZ4::decompressImpl() 循环中，会从压缩数据中读取一个由用户提供的 16 位无符号值 (`offset`) 。随后，该 offset 会被用作一次复制操作的长度，但未检查复制操作源地址的下界。
+
+致谢：JFrog Security Research Team
+
+<div id="cve-2021-42389">
+  ### CVE-2021-42389
+</div>
+
+在解析恶意查询时，ClickHouse 的 Delta 压缩编解码器存在除零漏洞。压缩缓冲区的第一个字节在未检查是否为 0 的情况下即用于取模运算。
+
+致谢：JFrog Security Research Team
+
+<div id="cve-2021-42390">
+  ### CVE-2021-42390
+</div>
+
+在解析恶意查询时，ClickHouse 的 DeltaDouble 压缩编解码器中存在除零漏洞。压缩缓冲区的第一个字节在未检查其是否为 0 的情况下，被用于取模运算。
+
+致谢：JFrog Security Research Team
+
+<div id="cve-2021-42391">
+  ### CVE-2021-42391
+</div>
+
+在解析恶意查询时，ClickHouse 的 Gorilla 压缩编解码器中存在除零漏洞。压缩缓冲区的第一个字节在未检查是否为 0 的情况下就被用于取模运算。
+
+致谢：JFrog Security Research Team
+
+<div id="fixed-in-clickhouse-release-21-4-3-21-2021-04-12">
+  ## 已在 ClickHouse 21.4.3.21 中修复，2021-04-12
+</div>
+
+<div id="cve-2021-25263">
+  ### CVE-2021-25263
+</div>
+
+拥有 CREATE DICTIONARY 权限的攻击者可以读取允许目录之外的任意文件。
+
+该问题已在 20.8.18.32-lts、21.1.9.41-stable、21.2.9.41-stable、21.3.6.55-lts、21.4.3.21-stable 及后续版本中修复。
+
+致谢：[Vyacheslav Egoshin](https://twitter.com/vegoshin)
+
+<div id="fixed-in-clickhouse-release-19-14-3-3-2019-09-10">
+  ## 在 ClickHouse 19.14.3.3 版本 (2019-09-10) 中已修复
+</div>
+
+<div id="cve-2019-15024">
+  ### CVE-2019-15024
+</div>
+
+如果攻击者拥有 ZooKeeper 的写入权限，并且能够运行一台可从 ClickHouse 所在网络访问的自定义服务器，就可以构造一台恶意服务器，使其充当 ClickHouse 副本并注册到 ZooKeeper 中。当另一个副本从这个恶意副本拉取数据分区片段时，它可以强制 clickhouse-server 向文件系统中的任意路径写入。
+
+鸣谢：Yandex Information Security Team 的 Eldar Zaitov
+
+<div id="cve-2019-16535">
+  ### CVE-2019-16535
+</div>
+
+解压算法中的越界读取、越界写入和整数下溢可通过原生协议加以利用，从而实现 RCE 或 DoS。
+
+致谢：Yandex Information Security Team 的 Eldar Zaitov
+
+<div id="cve-2019-16536">
+  ### CVE-2019-16536
+</div>
+
+经过身份验证的恶意客户端可触发栈溢出，导致 DoS。
+
+致谢：Yandex Information Security Team 的 Eldar Zaitov
+
+<div id="fixed-in-clickhouse-release-19-13-6-1-2019-09-20">
+  ## 已在 ClickHouse 版本 19.13.6.1 (2019-09-20) 中修复
+</div>
+
+<div id="cve-2019-18657">
+  ### CVE-2019-18657
+</div>
+
+表函数 `url` 存在一个漏洞，攻击者可借此在请求中注入任意 HTTP 请求头。
+
+鸣谢：[Nikita Tikhomirov](https://github.com/NSTikhomirov)
+
+<div id="fixed-in-clickhouse-release-18-12-13-2018-09-10">
+  ## 已在 ClickHouse 18.12.13 版本 (2018-09-10) 中修复
+</div>
+
+<div id="cve-2018-14672">
+  ### CVE-2018-14672
+</div>
+
+用于加载 CatBoost 模型的函数存在路径遍历漏洞，可通过错误信息读取任意文件。
+
+致谢：Yandex Information Security Team 的 Andrey Krasichkov
+
+<div id="fixed-in-clickhouse-release-18-10-3-2018-08-13">
+  ## 已在 ClickHouse 18.10.3 版本 (2018-08-13) 中修复
+</div>
+
+<div id="cve-2018-14671">
+  ### CVE-2018-14671
+</div>
+
+unixODBC 允许从文件系统加载任意共享对象，从而导致远程代码执行漏洞。
+
+致谢：来自 Yandex Information Security Team 的 Andrey Krasichkov 和 Evgeny Sidorov
+
+<div id="fixed-in-clickhouse-release-1-1-54388-2018-06-28">
+  ## 已在 ClickHouse 1.1.54388 版本 (2018-06-28) 中修复
+</div>
+
+<div id="cve-2018-14668">
+  ### CVE-2018-14668
+</div>
+
+“remote” 表函数允许在 “user”、“password” 和 “default&#95;database” 字段中使用任意字符，从而引发跨协议请求伪造攻击。
+
+致谢：Yandex Information Security Team 的 Andrey Krasichkov
+
+<div id="fixed-in-clickhouse-release-1-1-54390-2018-07-06">
+  ## 已在 ClickHouse Release 1.1.54390 (2018-07-06) 中修复
+</div>
+
+<div id="cve-2018-14669">
+  ### CVE-2018-14669
+</div>
+
+ClickHouse MySQL 客户端启用了“LOAD DATA LOCAL INFILE”功能，这使恶意 MySQL 数据库能够从与其连接的 ClickHouse 服务器 读取任意文件。
+
+致谢：Yandex Information Security Team 的 Andrey Krasichkov 和 Evgeny Sidorov
+
+<div id="fixed-in-clickhouse-release-1-1-54131-2017-01-10">
+  ## 已在 ClickHouse 版本 1.1.54131 (2017-01-10) 中修复
+</div>
+
+<div id="cve-2018-14670">
+  ### CVE-2018-14670
+</div>
+
+deb 软件包中的配置错误可能导致数据库被未授权使用。
+
+致谢：英国国家网络安全中心 (NCSC)

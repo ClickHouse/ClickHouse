@@ -4,6 +4,9 @@
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/JSONUtils.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -12,6 +15,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
+#include <Common/saturatedDuration.h>
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
@@ -40,6 +44,29 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     format_settings.pretty_format = true;
     format_settings.json = FormatSettings::JSON{};
     format_settings.json.pretty_print_indent_multiplier = 1;
+
+    use_nbsp_for_padding = format_settings.pretty.use_nbsp_for_padding
+        && format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
+}
+
+namespace
+{
+    /// `U+00A0` survives tools that compress or trim runs of regular spaces.
+    constexpr std::string_view nbsp_utf8{"\xC2\xA0"};
+}
+
+void PrettyBlockOutputFormat::writePaddingSpace()
+{
+    if (use_nbsp_for_padding)
+        writeString(nbsp_utf8, out);
+    else
+        writeChar(' ', out);
+}
+
+void PrettyBlockOutputFormat::writePaddingSpaces(size_t count)
+{
+    for (size_t i = 0; i < count; ++i)
+        writePaddingSpace();
 }
 
 bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows)
@@ -199,7 +226,7 @@ void PrettyBlockOutputFormat::writingThread()
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     while (!finish)
     {
-        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, std::chrono::milliseconds(format_settings.pretty.squash_consecutive_ms))
+        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
             || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
         {
             writeMonoChunkIfNeeded();
@@ -265,7 +292,16 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     String left_blank;
     if (format_settings.pretty.row_numbers)
-        left_blank.assign(row_number_width, ' ');
+    {
+        if (use_nbsp_for_padding)
+        {
+            left_blank.reserve(row_number_width * nbsp_utf8.size());
+            for (size_t i = 0; i < row_number_width; ++i)
+                left_blank.append(nbsp_utf8);
+        }
+        else
+            left_blank.assign(row_number_width, ' ');
+    }
 
     String header_begin;    /// ┏━━┳━━━┓
     String header_end;      /// ┡━━╇━━━┩
@@ -410,22 +446,29 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         writeString(left_blank, out);
 
         if (style == Style::Full)
-            out << vertical_bold_bar << " ";
+        {
+            out << vertical_bold_bar;
+            writePaddingSpace();
+        }
         else if (style == Style::Compact)
             out << grid[is_top ? 6 : 3][0] << horizontal_bar;
         else if (style == Style::Space)
-            out << " ";
+            writePaddingSpace();
 
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (i != 0)
             {
                 if (style == Style::Full)
-                    out << " " << vertical_bold_bar << " ";
+                {
+                    writePaddingSpace();
+                    out << vertical_bold_bar;
+                    writePaddingSpace();
+                }
                 else if (style == Style::Compact)
                     out << horizontal_bar << grid[is_top ? 6 : 3][2] << horizontal_bar;
                 else if (style == Style::Space)
-                    out << "   ";
+                    writePaddingSpaces(3);
             }
 
             const auto & col = header->getByPosition(i);
@@ -446,7 +489,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     if (style == Style::Compact)
                         out << horizontal_bar;
                     else
-                        out << " ";
+                        writePaddingSpace();
                 }
             };
 
@@ -462,7 +505,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             }
         }
         if (style == Style::Full)
-            out << " " << vertical_bold_bar;
+        {
+            writePaddingSpace();
+            out << vertical_bold_bar;
+        }
         else if (style == Style::Compact)
             out << horizontal_bar << grid[is_top ? 6 : 3][3];
 
@@ -532,8 +578,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     {
                         /// Write row number;
                         auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
-                        for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
-                            writeChar(' ', out);
+                        writePaddingSpaces(row_number_width - row_num_string.size());
 
                         if (color)
                             out << "\033[90m";
@@ -553,7 +598,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     if (style != Style::Space)
                         out << vertical_bar;
                     else if (j != 0)
-                        out << " ";
+                        writePaddingSpace();
 
                     const auto & type = header->getByPosition(j).type;
                     writeValueWithPadding(
@@ -700,8 +745,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     auto write_padding = [&]()
     {
         if (pad_to_width > value_width)
-            for (size_t k = 0; k < pad_to_width - value_width; ++k)
-                writeChar(' ', out);
+            writePaddingSpaces(pad_to_width - value_width);
     };
 
     if (is_continuation)
@@ -713,7 +757,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             out << "\033[0m";
     }
     else
-        out.write(' ');
+        writePaddingSpace();
 
     if (align_right)
     {
@@ -735,7 +779,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             out << "\033[0m";
     }
     else if (!is_cut)
-        out.write(' ');
+        writePaddingSpace();
 
     if (start_from_offset < serialized_value->size())
         ++start_from_offset;
@@ -846,9 +890,361 @@ void registerOutputFormatPretty(FormatFactory & factory)
                         && (format_settings.pretty.glue_chunks == 1 || (format_settings.pretty.glue_chunks == 2 && format_settings.is_writing_to_terminal));
                     return std::make_shared<PrettyBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, style, mono_block, color, glue_chunks);
                 });
+
+                /// The header (and, for many rows, the footer) column names are written verbatim, so a
+                /// name that is not valid UTF-8 makes the output not valid UTF-8 either. The values are
+                /// written through the plain `serializeText` kind, which writes the `Bool`
+                /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`). With
+                /// `output_format_pretty_named_tuples_as_json` (on by default), that kind renders a
+                /// named `Tuple` through `SerializationTuple::serializeTextJSONPretty` (the format sets
+                /// `FormatSettings::pretty_format`), which synthesizes JSON object keys from the element
+                /// names - verbatim, and `Pretty` installs no UTF-8 validating buffer at all (see
+                /// `tupleElementNamesMayProduceRawBytesInJSON`). The check mirrors the constructor's
+                /// reset of the JSON sub-settings to their defaults: the user's JSON settings (such as
+                /// `output_format_json_named_tuples_as_objects = 0`) do not turn the element names off
+                /// here, only `output_format_pretty_named_tuples_as_json` does.
+                /// The text framings reject or base64-encode the output in these cases (see
+                /// `checkIfOutputFormatMayProduceRawBytes`). `Pretty` does not write the data type names.
+                factory.registerOutputFormatMayProduceRawBytesChecker(
+                    name,
+                    [](const FormatSettings & settings, const Block & header)
+                    {
+                        FormatSettings tuple_settings = settings;
+                        tuple_settings.json = FormatSettings::JSON{};
+                        return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
+                            || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None)
+                            || (settings.pretty.named_tuples_as_json
+                                && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, tuple_settings, /*validate_utf8=*/ false));
+                    });
             }
         }
     }
+
+    factory.setDocumentation("Pretty", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+The `Pretty` format outputs data as Unicode-art tables, 
+using ANSI-escape sequences for displaying colors in the terminal.
+A full grid of the table is drawn, and each row occupies two lines in the terminal.
+Each result block is output as a separate table. 
+This is necessary so that blocks can be output without buffering results (buffering would be necessary to pre-calculate the visible width of all the values).
+
+[NULL](/reference/syntax) is output as `ᴺᵁᴸᴸ`.
+
+## Example usage {#example-usage}
+
+Example (shown for the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format):
+
+```sql title="Query"
+SELECT * FROM t_null
+```
+
+```response title="Response"
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+Rows are not escaped in any of the `Pretty` formats. The following example is shown for the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format:
+
+```sql title="Query"
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+```
+
+```response title="Response"
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and      character │
+└──────────────────────────────────────┘
+```
+
+To avoid dumping too much data to the terminal, only the first `10,000` rows are printed. 
+If the number of rows is greater than or equal to `10,000`, the message "Showed first 10 000" is printed.
+
+<Note>
+This format is only appropriate for outputting a query result, but not for parsing data.
+</Note>
+
+The Pretty format supports outputting total values (when using `WITH TOTALS`) and extremes (when 'extremes' is set to 1). 
+In these cases, total values and extreme values are output after the main data, in separate tables. 
+This is shown in the following example which uses the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format:
+
+```sql title="Query"
+SELECT EventDate, count() AS c 
+FROM test.hits 
+GROUP BY EventDate 
+WITH TOTALS 
+ORDER BY EventDate 
+FORMAT PrettyCompact
+```
+
+```response title="Response"
+┌──EventDate─┬───────c─┐
+│ 2014-03-17 │ 1406958 │
+│ 2014-03-18 │ 1383658 │
+│ 2014-03-19 │ 1405797 │
+│ 2014-03-20 │ 1353623 │
+│ 2014-03-21 │ 1245779 │
+│ 2014-03-22 │ 1031592 │
+│ 2014-03-23 │ 1046491 │
+└────────────┴─────────┘
+
+Totals:
+┌──EventDate─┬───────c─┐
+│ 1970-01-01 │ 8873898 │
+└────────────┴─────────┘
+
+Extremes:
+┌──EventDate─┬───────c─┐
+│ 2014-03-17 │ 1031592 │
+│ 2014-03-23 │ 1406958 │
+└────────────┴─────────┘
+```
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettyCompact", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`Pretty`](/reference/formats/Pretty/Pretty) format in that the table is displayed with a grid drawn between rows. 
+Because of this the result is more compact.
+
+<Note>
+This format is used by default in the command-line client in interactive mode.
+</Note>
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings />
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettyCompactMonoBlock", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format in that up to `10,000` rows are buffered, 
+and then output as a single table, and not by [blocks](/resources/develop-contribute/introduction/architecture#block).
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettyCompactNoEscapes", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) aren't used. 
+This is necessary for displaying the format in a browser, as well as for using the 'watch' command-line utility.
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettyCompactNoEscapesMonoBlock", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`PrettyCompactNoEscapes`](/reference/formats/Pretty/PrettyCompactNoEscapes) format in that up to `10,000` rows are buffered, 
+and then output as a single table, and not by [blocks](/resources/develop-contribute/introduction/architecture#block).
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettyMonoBlock", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`Pretty`](/reference/formats/Pretty/Pretty) format in that up to `10,000` rows are buffered,
+and then output as a single table, and not by [blocks](/resources/develop-contribute/introduction/architecture#block).
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettyNoEscapes", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from [Pretty](/reference/formats/Pretty/Pretty) in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) aren't used. 
+This is necessary for displaying the format in a browser, as well as for using the 'watch' command-line utility.
+
+## Example usage {#example-usage}
+
+Example:
+
+```bash
+$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
+```
+
+<Note>
+The [HTTP interface](/concepts/features/interfaces/http) can be used for displaying this format in the browser.
+</Note>
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettyNoEscapesMonoBlock", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`PrettyNoEscapes`](/reference/formats/Pretty/PrettyNoEscapes) format in that up to `10,000` rows are buffered, 
+and then output as a single table, and not by blocks.
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettySpace", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format in that whitespace 
+(space characters) is used for displaying the table instead of a grid.
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettySpaceMonoBlock", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`PrettySpace`](/reference/formats/Pretty/PrettySpace) format in that up to `10,000` rows are buffered, 
+and then output as a single table, and not by [blocks](/resources/develop-contribute/introduction/architecture#block).
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettySpaceNoEscapes", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`PrettySpace`](/reference/formats/Pretty/PrettySpace) format in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) are not used. 
+This is necessary for displaying this format in a browser, as well as for using the 'watch' command-line utility.
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
+
+    factory.setDocumentation("PrettySpaceNoEscapesMonoBlock", Documentation{
+        .description = R"DOCS_MD(
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`PrettySpaceNoEscapes`](/reference/formats/Pretty/PrettySpaceNoEscapes) format in that up to `10,000` rows are buffered, 
+and then output as a single table, and not by [blocks](/resources/develop-contribute/introduction/architecture#block).
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>
+)DOCS_MD"});
 }
 
 }

@@ -1,0 +1,70 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/cache
+title: 'layout de dictionnaire cache'
+sidebarTitle: 'cache'
+description: 'Stocke un dictionnaire dans un cache en mémoire de taille fixe.'
+doc_type: 'référence'
+---
+
+Le type de layout de dictionnaire `cached` stocke le dictionnaire dans un cache comportant un nombre fixe de cellules.
+Ces cellules contiennent des éléments fréquemment utilisés.
+
+La clé du dictionnaire est de type [UInt64](/fr/reference/data-types/int-uint).
+
+Lors d&#39;une recherche dans un dictionnaire, le cache est consulté en premier. Pour chaque bloc de données, toutes les clés qui ne sont pas trouvées dans le cache ou qui sont obsolètes sont demandées à la source à l&#39;aide de `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Les données reçues sont ensuite écrites dans le cache.
+
+Si des clés ne sont pas trouvées dans le dictionnaire, une tâche de mise à jour du cache est créée et ajoutée à la file d&#39;attente de mise à jour. Les propriétés de cette file d&#39;attente peuvent être contrôlées avec les paramètres `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
+
+Pour les dictionnaires cache, la [durée de vie](/fr/reference/statements/create/dictionary/lifetime) des données dans le cache peut être définie. Si un délai supérieur à `lifetime` s&#39;est écoulé depuis le chargement des données dans une cellule, la valeur de la cellule n&#39;est pas utilisée et la clé expire. La clé est redemandée la prochaine fois qu&#39;elle doit être utilisée. Ce comportement peut être configuré avec le paramètre `allow_read_expired_keys`.
+
+C&#39;est la méthode la moins efficace de toutes pour stocker des dictionnaires. La vitesse du cache dépend fortement du bon réglage des paramètres et du scénario d&#39;utilisation. Un dictionnaire de type cache n&#39;est performant que lorsque le taux de réussite est suffisamment élevé (99 % ou plus recommandé). Vous pouvez consulter le taux de réussite moyen dans la table [system.dictionaries](/fr/reference/system-tables/dictionaries).
+
+Si le paramètre `allow_read_expired_keys` est défini sur 1 (0 par défaut), le dictionnaire peut alors prendre en charge des mises à jour asynchrones. Si un client demande des clés et qu&#39;elles sont toutes dans le cache, mais que certaines ont expiré, le dictionnaire renverra au client les clés expirées et les redemandera de manière asynchrone à la source.
+
+Pour améliorer les performances du cache, utilisez une sous-requête avec `LIMIT` et appelez la fonction avec le dictionnaire à l&#39;extérieur.
+
+Tous les types de sources sont pris en charge.
+
+Exemple de paramètres :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <layout>
+        <cache>
+            <!-- La taille du cache, en nombre de cellules. Arrondie à une puissance de deux. -->
+            <size_in_cells>1000000000</size_in_cells>
+            <!-- Permet de lire les clés expirées. -->
+            <allow_read_expired_keys>0</allow_read_expired_keys>
+            <!-- Taille maximale de la file d'attente de mise à jour. -->
+            <max_update_queue_size>100000</max_update_queue_size>
+            <!-- Délai d'attente maximal, en millisecondes, pour ajouter une tâche de mise à jour à la file d'attente. -->
+            <update_queue_push_timeout_milliseconds>10</update_queue_push_timeout_milliseconds>
+            <!-- Délai d'attente maximal, en millisecondes, pour que la tâche de mise à jour se termine. -->
+            <query_wait_timeout_milliseconds>60000</query_wait_timeout_milliseconds>
+            <!-- Nombre maximal de threads pour la mise à jour du dictionnaire cache. -->
+            <max_threads_for_updates>4</max_threads_for_updates>
+        </cache>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Définissez une taille de cache suffisamment grande. Vous devrez faire des essais pour choisir le nombre de cellules :
+
+1. Définissez une valeur.
+2. Exécutez des requêtes jusqu&#39;à ce que le cache soit complètement rempli.
+3. Évaluez la consommation de mémoire à l&#39;aide de la table `system.dictionaries`.
+4. Augmentez ou diminuez le nombre de cellules jusqu&#39;à atteindre la consommation mémoire souhaitée.
+
+<Note>
+  ClickHouse n&#39;est pas recommandé comme source pour ce layout. Les recherches dans le dictionnaire nécessitent des lectures ponctuelles aléatoires, ce qui ne correspond pas au modèle d&#39;accès pour lequel ClickHouse est optimisé.
+</Note>

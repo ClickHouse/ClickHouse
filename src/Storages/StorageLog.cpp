@@ -4,6 +4,7 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -74,6 +75,7 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int INCORRECT_DATA;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -178,7 +180,8 @@ private:
     DeserializeStates deserialize_states;
 
     void readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache);
-    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
+    void readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
+    void checkArrayOffsets(const IColumn & column, const String & column_name) const;
     bool isFinished();
 };
 
@@ -266,12 +269,12 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
     /// Second, read the data of all physical columns/subcolumns.
     for (const auto & name_type : physical_columns)
     {
-        ColumnPtr column;
+        MutableColumnPtr column;
         auto name_type_on_disk = getColumnOnDisk(name_type);
 
         try
         {
-            column = name_type_on_disk.type->createColumn();
+            column = name_type_on_disk.type->createColumn(*IDataType::getSerialization(name_type_on_disk));
             readData(name_type_on_disk, column, max_rows_to_read, caches[getCacheKey(name_type_on_disk)]);
         }
         catch (Exception & e)
@@ -321,7 +324,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name_and_type.name], &deserialize_state_cache);
 }
 
-void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
+void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
@@ -347,7 +350,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
         return &it->second.compressed.value();
     };
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(*column, max_rows_to_read, settings, deserialize_states[name], &cache);
     if (column->getDataType() != name_and_type.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -356,6 +359,30 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
             storage->getStorageID().getFullTableName(),
             name_and_type.type->getColumnType(),
             column->getDataType());
+
+    checkArrayOffsets(*column, name_and_type.name);
+    column->forEachSubcolumnRecursively([&](const IColumn & subcolumn) { checkArrayOffsets(subcolumn, name_and_type.name); });
+}
+
+void LogSource::checkArrayOffsets(const IColumn & column, const String & column_name) const
+{
+    const auto * array = typeid_cast<const ColumnArray *>(&column);
+    if (!array)
+        return;
+
+    /// An array holds as many elements as its last offset says: a shorter elements column makes
+    /// sizeAt() report a size that is not there, and consumers read past the end of the elements.
+    const auto & array_offsets = array->getOffsets();
+    size_t last_offset = array_offsets.empty() ? 0 : array_offsets.back();
+    if (last_offset != array->getData().size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Array offsets of column '{}' in {} are inconsistent with its elements: the last offset is {}, "
+            "but there are {} elements. The data is likely damaged",
+            column_name,
+            storage->getStorageID().getFullTableName(),
+            last_offset,
+            array->getData().size());
 }
 
 bool LogSource::isFinished()
@@ -539,8 +566,7 @@ void LogSink::onFinish()
         stream.finalize();
     streams.clear();
 
-    storage.saveMarks(lock);
-    storage.saveFileSizes(lock);
+    storage.saveMarksAndFileSizes(lock);
     storage.updateTotalRows(lock);
 
     done = true;
@@ -907,14 +933,34 @@ void StorageLog::removeUnsavedMarks(const WriteLock & /* already locked for writ
 
 void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
+    std::vector<String> paths;
+    paths.reserve(data_files.size() + 1);
     for (const auto & data_file : data_files)
-        file_checker.update(data_file.path);
+        paths.push_back(data_file.path);
 
     if (use_marks_file)
-        file_checker.update(marks_file_path);
+        paths.push_back(marks_file_path);
 
-    file_checker.save();
+    file_checker.updateAndSave(paths);
     total_bytes = file_checker.getTotalSize();
+}
+
+
+void StorageLog::saveMarksAndFileSizes(const WriteLock & lock)
+{
+    /// The marks file is itself one of the files whose size is recorded, so the count of saved marks
+    /// is only valid while those sizes are: repair() truncates the file back to the recorded size.
+    size_t num_marks_saved_before = num_marks_saved;
+    try
+    {
+        saveMarks(lock);
+        saveFileSizes(lock);
+    }
+    catch (...)
+    {
+        num_marks_saved = num_marks_saved_before;
+        throw;
+    }
 }
 
 
@@ -943,6 +989,22 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
+}
+
+size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
+{
+    if (!use_marks_file)
+        return 1;
+
+    const auto lock_timeout = getLockTimeout(local_context);
+    loadMarks(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    /// An empty table still produces one `NullSource` in `createReadingPipe`.
+    return std::min(num_streams, std::max(1uz, data_files[INDEX_WITH_REAL_ROW_COUNT].marks.size()));
 }
 
 void StorageLog::drop()
@@ -1113,7 +1175,8 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 
     ColumnSizeByName column_sizes;
 
-    for (const auto & column : getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical())
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
@@ -1215,9 +1278,10 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(metadata_snapshot->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     if (use_marks_file)
@@ -1269,7 +1333,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append);
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append, /* sync= */ false);
         }
 
         if (use_marks_file)
@@ -1316,8 +1380,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
         }
 
         /// Finish writing.
-        saveMarks(lock);
-        saveFileSizes(lock);
+        saveMarksAndFileSizes(lock);
         updateTotalRows(lock);
     }
     catch (...)
@@ -1382,8 +1445,192 @@ void registerStorageLog(StorageFactory & factory)
             args.getContext());
     };
 
-    factory.registerStorage("Log", create_fn, features);
-    factory.registerStorage("TinyLog", create_fn, features);
+    factory.registerStorage("Log", create_fn, features, Documentation{
+        .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# Log table engine
+
+<CloudNotSupportedBadge/>
+
+The engine belongs to the family of `Log` engines. See the common properties of `Log` engines and their differences in the [Log Engine Family](/reference/engines/table-engines/log-family/index) article.
+
+`Log` differs from [TinyLog](/reference/engines/table-engines/log-family/tinylog) in that a small file of "marks" resides with the column files. These marks are written on every data block and contain offsets that indicate where to start reading the file in order to skip the specified number of rows. This makes it possible to read table data in multiple threads.
+For concurrent data access, the read operations can be performed simultaneously, while write operations block reads and each other.
+The `Log` engine does not support indexes. Similarly, if writing to a table failed, the table is broken, and reading from it returns an error. The `Log` engine is appropriate for temporary data, write-once tables, and for testing or demonstration purposes.
+
+## Creating a table {#table_engines-log-creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = Log
+```
+
+See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+
+## Writing the data {#table_engines-log-writing-the-data}
+
+The `Log` engine efficiently stores data by writing each column to its own file.  For every table, the Log engine writes the following files to the specified storage path:
+
+- `<column>.bin`: A data file for each column, containing the serialized and compressed data.
+`__marks.mrk`: A marks file, storing offsets and row counts for each data block inserted. Marks are used to facilitate efficient query execution by allowing the engine to skip irrelevant data blocks during reads.
+
+### Writing process {#writing-process}
+
+When data is written to a `Log` table:
+
+1.    Data is serialized and compressed into blocks.
+2.    For each column, the compressed data is appended to its respective `<column>.bin` file.
+3.    Corresponding entries are added to the `__marks.mrk` file to record the offset and row count of the newly inserted data.
+
+## Reading the data {#table_engines-log-reading-the-data}
+
+The file with marks allows ClickHouse to parallelize the reading of data. This means that a `SELECT` query returns rows in an unpredictable order. Use the `ORDER BY` clause to sort rows.
+
+## Example of use {#table_engines-log-example-of-use}
+
+Creating a table:
+
+```sql
+CREATE TABLE log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = Log
+```
+
+Inserting data:
+
+```sql
+INSERT INTO log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+We used two `INSERT` queries to create two data blocks inside the `<column>.bin` files.
+
+ClickHouse uses multiple threads when selecting data. Each thread reads a separate data block and returns resulting rows independently as it finishes. As a result, the order of blocks of rows in the output may not match the order of the same blocks in the input. For example:
+
+```sql
+SELECT * FROM log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+└─────────────────────┴──────────────┴───────────────────────────┘
+```
+
+Sorting the results (ascending order by default):
+
+```sql
+SELECT * FROM log_table ORDER BY timestamp
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```
+)DOCS_MD",
+        .syntax = "ENGINE = Log",
+        .related = {"TinyLog", "StripeLog"}});
+
+    factory.registerStorage("TinyLog", create_fn, features, Documentation{
+        .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# TinyLog table engine
+
+<CloudNotSupportedBadge/>
+
+The engine belongs to the log engine family. See [Log Engine Family](/reference/engines/table-engines/log-family/index) for common properties of log engines and their differences.
+
+This table engine is typically used with the write-once method: write data one time, then read it as many times as necessary. For example, you can use `TinyLog`-type tables for intermediary data that is processed in small batches. Note that storing data in a large number of small tables is inefficient.
+
+Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it's simpler than the [Log](/reference/engines/table-engines/log-family/log) engine (fewer files need to be opened).
+
+## Characteristics {#characteristics}
+
+- **Simpler Structure**: Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for large datasets.
+- **Single Stream Queries**: Queries on TinyLog tables are executed in a single stream, making it suitable for relatively small tables, typically up to 1,000,000 rows.
+- **Efficient for Small Table**: The simplicity of the TinyLog engine makes it advantageous when managing many small tables, as it requires fewer file operations compared to the Log engine.
+
+Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for larger datasets.
+
+## Creating a table {#table_engines-tinylog-creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = TinyLog
+```
+
+See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+
+## Writing the data {#table_engines-tinylog-writing-the-data}
+
+The `TinyLog` engine stores all the columns in one file. For each `INSERT` query, ClickHouse appends the data block to the end of a table file, writing columns one by one.
+
+For each table ClickHouse writes the files:
+
+- `<column>.bin`: A data file for each column, containing the serialized and compressed data.
+
+The `TinyLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
+
+## Example of use {#table_engines-tinylog-example-of-use}
+
+Creating a table:
+
+```sql
+CREATE TABLE tiny_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = TinyLog
+```
+
+Inserting data:
+
+```sql
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+We used two `INSERT` queries to create two data blocks inside the `<column>.bin` files.
+
+ClickHouse uses a single stream selecting data. As a result, the order of blocks of rows in the output matches the order of the same blocks in the input. For example:
+
+```sql
+SELECT * FROM tiny_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2024-12-10 13:11:58 │ REGULAR      │ The first regular message  │
+│ 2024-12-10 13:12:12 │ REGULAR      │ The second regular message │
+│ 2024-12-10 13:12:12 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```
+)DOCS_MD",
+        .syntax = "ENGINE = TinyLog",
+        .related = {"Log", "StripeLog"}});
 }
 
 }

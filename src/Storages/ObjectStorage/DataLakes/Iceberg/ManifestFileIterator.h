@@ -56,7 +56,15 @@ public:
 
         bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
-        std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+        /// Whether LIMIT lazy materialization can re-read every data file of this manifest
+        /// by physical row numbers: all data files are Parquet, none of them needs schema
+        /// evolution, and there are no equality deletes (both schema evolution and equality
+        /// deletes force reading all physical columns, see IcebergMetadata::getInitialSchemaByPath).
+        bool areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const;
+
+        /// Sum of the file-level `record_count` over the live files of the given content type.
+        /// Returns std::nullopt if any file carries a malformed (negative) record count.
+        std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
         std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
@@ -78,11 +86,11 @@ public:
     static std::shared_ptr<ManifestFileIterator> create(
         std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
         const IcebergPathFromMetadata & path_to_manifest_file,
-        Int32 format_version_,
         const IcebergPathResolver & path_resolver,
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
+        std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_);
@@ -118,6 +126,7 @@ private:
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
+        std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         Int32 manifest_schema_id,
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
@@ -136,6 +145,7 @@ private:
     // always zero in case of format version 1
     const Int64 inherited_sequence_number;
     const Int64 inherited_snapshot_id;
+    std::vector<std::optional<UInt64>> entry_first_row_ids;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;

@@ -44,11 +44,30 @@ no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
+# -Wunique-object-duplication is enabled: a mutable object defined in a header, with external
+# linkage and hidden visibility, gets one copy per shared object rather than one per process, so
+# any "singleton" declared that way silently stops being one. It only has anything to report under
+# `-fvisibility=hidden`, which is why the default build never used to trip it - but see the CFI
+# block in the top-level CMakeLists.txt: hidden visibility made the binary SIGSEGV before main.
 # Hard-code knowledge of clang version-specific warnings rather than probing the compiler.
 # `lifetime-safety-*` were introduced in clang 23.
 if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     no_warning(lifetime-safety-intra-tu-suggestions)
     no_warning(lifetime-safety-cross-tu-suggestions)
+    # Too many false positives: it treats mutation of a container captured by
+    # reference in a lambda (e.g. `push_back`, `clear`, `+=`) as invalidating the
+    # captured reference to the container variable itself, while in reality only
+    # references to the container's elements would be invalidated.
+    no_warning(lifetime-safety-invalidation)
+endif ()
+if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 24)
+    # Too many false positives: it flags the pervasive idiom of taking a raw pointer out
+    # of a `unique_ptr`, moving the owner into a container and returning the pointer -
+    # the storage is on the heap and outlives the local, and the diagnostic text itself
+    # concedes it "could be a false positive as the storage may have been moved".
+    # Nothing links clang 24 today except the Emscripten build (its clang is ahead of the
+    # default toolchain); re-evaluate when the default toolchain catches up.
+    no_warning(lifetime-safety-return-stack-addr-moved)
 endif ()
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning

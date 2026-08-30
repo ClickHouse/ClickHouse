@@ -59,7 +59,10 @@ SELECT * FROM t1 ALL INNER JOIN tj USING (key2, key3); -- { serverError INCOMPAT
 SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.attr; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key2 = tj.key2 AND t1.key3 = tj.attr; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key2 = tj.key2 AND t1.key3 = tj.key3 AND t1.key1 = tj.key1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key2 = tj.key2 AND t1.key3 = tj.key3 AND t1.key1 = tj.key1 SETTINGS enable_join_transitive_predicates = 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+
+SELECT '--- duplicated predicate removed ---';
+SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key2 = tj.key2 AND t1.key3 = tj.key3 AND t1.key1 = tj.key1 SETTINGS enable_analyzer = 1, enable_join_transitive_predicates = 1, query_plan_optimize_join_order_limit = 10;
 
 SELECT '--- reuse column from left ---';
 SELECT * FROM t1 ALL INNER JOIN tjj ON t1.key1 = tjj.key1 AND t1.key1 = tjj.key2 AND t1.key1 = tjj.key3 ORDER BY t1.key1;
