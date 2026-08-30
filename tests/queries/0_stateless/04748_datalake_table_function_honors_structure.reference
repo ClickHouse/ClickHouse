@@ -1,0 +1,75 @@
+-- paimon: DESC and SELECT report the same declared type
+f_int Nullable(Int64)
+Nullable(Int64)
+-- paimon: the declared subset is honored and the values are intact
+[1,3,5,7,9]
+-- paimon: a declared column absent from the metadata reads as a default, as for file()
+Nullable(String)	10
+-- iceberg: DESC and SELECT report the same declared type
+c0 LowCardinality(String)
+LowCardinality(String)	a
+-- iceberg: a conflicting declared type is rejected instead of silently using the metadata schema
+Code: 53
+-- paimon: a conflicting declared type is rejected instead of silently using the metadata schema
+Code: 53
+-- iceberg: a declared column absent from the metadata reads as a default after schema evolution
+[0,1,2]
+3	3	Nullable(String)
+[0,1,2]	3	3
+zzz UInt64 DEFAULT 42   
+3
+3
+[0,1,2]
+Code: 10
+Code: 10
+-- iceberg: a subcolumn of a column the metadata declares is not a missing column
+[0,1,2]	[(100),(101),(102)]	3
+[100,101,102]	3
+-- iceberg: a declared DEFAULT on a column added by schema evolution reads the file's values
+3	3
+3	3
+[0,1,2]	3	3	Int64
+[500,501]
+-- iceberg: a filtered column declared at another nullability is read after schema evolution
+[0,1,2]	3	3
+[0,1,2]	3	3
+[0,1,2]	3	3
+-- iceberg: a declared DEFAULT is not applied to a table with deleted rows
+5
+[0,1,3,4,5]
+-- iceberg: a declaration with a MATERIALIZED column stays rejected
+-- iceberg: a defaulted declaration survives CREATE, DETACH and ATTACH unchanged
+1
+1
+5
+-- iceberg: a retyped identity partition column is read as declared
+['10','2']
+['ten','two']
+['ten','two']
+[2,10]
+[2]
+-- iceberg: a retyped date identity partition column reads as the date, not as its day count
+['2024-01-02','2024-01-10']
+['2024-01-02','2024-01-10']
+-- iceberg cluster: DESC and SELECT report the same declared type
+c0 LowCardinality(String)
+LowCardinality(String)
+-- control: a cluster read without a structure argument still works
+a	String
+-- control: without a structure argument the metadata schema is still used
+44
+Nullable(Int32)
+Nullable(Int32)
+10
+-- control: the persistent engine still takes its schema from the metadata
+Nullable(Int32)
+-- control: a column added externally stays visible on a table created with columns
+1
+-- control: an INSERT writes with the authoritative iceberg schema, not the declared one
+7	String
+2
+-- control: deltaLake is unchanged at its default
+Nullable(Int64)	10
+Nullable(Int64)	20
+-- control: deltaLake with an explicit schema reload still prefers the metadata schema
+Tuple(\n    `values` Nullable(String),\n    id Nullable(Int32))

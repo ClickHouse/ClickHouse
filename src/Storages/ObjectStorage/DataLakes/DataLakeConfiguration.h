@@ -275,6 +275,18 @@ public:
         return current_metadata->shouldReloadSchemaForConsistency(context);
     }
 
+    /// Type-based, so it is answerable before the metadata is initialized.
+    bool schemaReloadIgnoresExplicitStructure() const override
+    {
+#if USE_AVRO
+        /// Paimon and Iceberg reload unconditionally. DeltaLake reloads only under the explicit
+        /// `delta_lake_reload_schema_for_consistency` opt-in, which asks for the metadata schema to win.
+        return std::is_same_v<DataLakeMetadata, PaimonMetadata> || std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+        return false;
+#endif
+    }
+
     IDataLakeMetadata * getExternalMetadata() override
     {
         assertInitialized();

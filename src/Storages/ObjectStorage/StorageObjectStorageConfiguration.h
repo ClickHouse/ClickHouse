@@ -191,6 +191,9 @@ public:
     virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
     virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const;
     virtual bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
+    /// True when shouldReloadSchemaForConsistency is not a user opt-in, so the reload would
+    /// silently discard an explicitly supplied `structure` argument instead of honoring it.
+    virtual bool schemaReloadIgnoresExplicitStructure() const { return false; }
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }

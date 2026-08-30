@@ -634,3 +634,140 @@ def test_identity_partition_column_renamed_after_write(started_cluster_iceberg_n
         ).strip()
         == "1\n3"
     )
+
+
+NESTED_RETYPE_SCHEMA = Schema(
+    NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+    NestedField(field_id=2, name="s", field_type=StructType(
+        NestedField(field_id=3, name="c", field_type=LongType(), required=False),
+        NestedField(field_id=4, name="d", field_type=StringType(), required=False),
+    ), required=False),
+)
+
+NESTED_RETYPE_ARROW_SCHEMA = pa.schema(
+    [
+        pa.field("id", pa.int64(), nullable=True),
+        pa.field(
+            "s",
+            pa.struct(
+                [
+                    pa.field("c", pa.int64(), nullable=True),
+                    pa.field("d", pa.string(), nullable=True),
+                ]
+            ),
+            nullable=True,
+        ),
+    ]
+)
+
+
+def test_identity_partition_column_nested_field_retyped(
+    started_cluster_iceberg_no_spark,
+):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    location = "nested_retype_" + get_uuid_str()
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    table = catalog.create_table(
+        identifier=f"{namespace}.t_nested_retype",
+        schema=NESTED_RETYPE_SCHEMA,
+        location=f"s3://warehouse-rest/{location}",
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="s.c"),
+        ),
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 1, "s": {"c": 2, "d": "two"}},
+                {"id": 2, "s": {"c": 10, "d": "ten"}},
+            ],
+            schema=NESTED_RETYPE_ARROW_SCHEMA,
+        )
+    )
+
+    files = data_file_paths(table)
+    assert len(files) == 2
+    for path in files:
+        drop_column_from_data_file(started_cluster_iceberg_no_spark, path, "s")
+
+    def table_function(structure):
+        declaration = f", structure = '{structure}'" if structure else ""
+        return (
+            f"icebergS3(s3, filename = '{location}/', format = Parquet,"
+            f" url = 'http://minio1:9001/warehouse-rest/'{declaration})"
+        )
+
+    retyped = table_function("id Int64, s Tuple(c String, d String)")
+    assert (
+        instance.query(f"SELECT id, s.c FROM {retyped} ORDER BY id").strip()
+        == "1\t2\n2\t10"
+    )
+    # The bound is a string, so both '2' and '10' sort below '4' while only 2 is below 4: the row set
+    # holds only if the comparison runs at the declared type.
+    assert (
+        instance.query(f"SELECT id FROM {retyped} WHERE s.c < '4' ORDER BY id").strip()
+        == "1\n2"
+    )
+    # Reading with no declaration, and with one that agrees, are the pair: both must be unchanged.
+    for structure in ["", "id Int64, s Tuple(c Int64, d String)"]:
+        assert (
+            instance.query(
+                f"SELECT id, s.c FROM {table_function(structure)} ORDER BY id"
+            ).strip()
+            == "1\t2\n2\t10"
+        ), structure
+
+
+def test_identity_partition_column_retyped_and_absent_from_data_file(
+    started_cluster_iceberg_no_spark,
+):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    bucket = started_cluster_iceberg_no_spark.minio_bucket
+    table_name = "test_identity_partition_retyped_absent_" + get_uuid_str()
+
+    create_iceberg_table(
+        "s3",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(id Int64, d Date32, n Int64)",
+        format_version=2,
+        partition_by="(d, n)",
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES (1, '2024-05-17', 42), (2, '2020-01-02', -7)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    prefix = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
+    data_files = [
+        object.object_name
+        for object in started_cluster_iceberg_no_spark.minio_client.list_objects(
+            bucket, prefix, recursive=True
+        )
+        if object.object_name.endswith(".parquet")
+    ]
+    assert len(data_files) == 2
+    for key in data_files:
+        for column in ["d", "n"]:
+            drop_column_from_data_file(
+                started_cluster_iceberg_no_spark, f"s3://{bucket}/{key}", column
+            )
+
+    base = get_creation_expression(
+        "s3", table_name, started_cluster_iceberg_no_spark, table_function=True
+    )
+    # Neither partition column is in the data file, so a read that declined to substitute the
+    # manifest value would return the declared type's default rather than the value below.
+    retyped = base[:-1] + ", structure = 'id Int64, d Date32, n String')"
+    expected = "1\t2024-05-17\t42\n2\t2020-01-02\t-7"
+    assert (
+        instance.query(f"SELECT id, toString(d), n FROM {retyped} ORDER BY id").strip()
+        == expected
+    )
+    assert (
+        instance.query(f"SELECT id, toString(d), n FROM {base} ORDER BY id").strip()
+        == expected
+    )

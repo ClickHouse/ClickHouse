@@ -147,13 +147,15 @@ StorageObjectStorage::StorageObjectStorage(
     ASTPtr partition_by_,
     ASTPtr order_by_,
     bool is_table_function_,
-    bool lazy_init)
+    bool lazy_init,
+    bool preserve_structure_for_reads_)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
     , is_table_function(is_table_function_)
+    , preserve_structure_for_reads(preserve_structure_for_reads_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , catalog(catalog_)
     , storage_id(table_id_)
@@ -321,21 +323,7 @@ StorageObjectStorage::StorageObjectStorage(
         /// updateExternalDynamicMetadataIfExists.
         configuration->lazyInitializeIfNeeded(object_storage, context);
         if (auto state = configuration->getTableStateSnapshot(context))
-        {
-            metadata.setDataLakeTableState(*state);
-
-            /// Reload schema state if needed.
-            /// Schema reload for consistency can be disabled, because
-            /// 1. user can want to define a table with only
-            ///    a subset of columns from remote delta table
-            /// 2. user want to override some data types
-            ///    (for example, LawCardinality<String> instead of just String)
-            if (configuration->shouldReloadSchemaForConsistency(context))
-            {
-                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context))
-                    metadata = *metadata_snapshot;
-            }
-        }
+            applyDataLakeSnapshotToMetadata(metadata, *state, context);
     }
 
     metadata.setConstraints(constraints_);
@@ -346,6 +334,33 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setVirtuals(createVirtualColumns(metadata.columns, sample_path, context));
 
     setInMemoryMetadata(metadata);
+}
+
+bool StorageObjectStorage::applyDataLakeSnapshotToMetadata(
+    StorageInMemoryMetadata & metadata, const DataLakeTableStateSnapshot & state, const ContextPtr & context) const
+{
+    /// Always pin the current snapshot version to prevent logical races between query
+    /// analysis (which picks the schema) and query execution (which iterates files).
+    metadata.setDataLakeTableState(state);
+
+    /// Schema reload for consistency can be disabled, because
+    /// 1. user can want to define a table with only
+    ///    a subset of columns from remote delta table
+    /// 2. user want to override some data types
+    ///    (for example, LawCardinality<String> instead of just String)
+    if (!configuration->shouldReloadSchemaForConsistency(context))
+        return false;
+
+    auto metadata_snapshot = configuration->buildStorageMetadataFromState(state, context);
+    if (!metadata_snapshot)
+        return false;
+
+    auto columns = metadata.getColumns();
+    metadata = *metadata_snapshot;
+    if (preserve_structure_for_reads)
+        metadata.setColumns(std::move(columns));
+    dropSortingKeyIfItDoesNotDescribeColumns(metadata);
+    return true;
 }
 
 VirtualColumnsDescription StorageObjectStorage::createVirtualColumns(
@@ -547,17 +562,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 
     auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
-    /// Always pin the current snapshot version to prevent logical races between query
-    /// analysis (which picks the schema) and query execution (which iterates files).
-    new_metadata.setDataLakeTableState(*state);
-
-    /// Optionally also refresh the columns (and other schema-derived fields such as the
-    /// Iceberg sort key) when the per-format reload setting is enabled.
-    if (configuration->shouldReloadSchemaForConsistency(query_context))
-    {
-        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
-            new_metadata = *metadata_snapshot;
-    }
+    applyDataLakeSnapshotToMetadata(new_metadata, *state, query_context);
 
     setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         new_metadata.columns,
@@ -646,15 +651,10 @@ void StorageObjectStorage::read(
         if (auto state = configuration->getTableStateSnapshot(local_context))
         {
             StorageInMemoryMetadata pinned = *storage_snapshot->metadata;
-            pinned.setDataLakeTableState(*state);
-
-            /// Reload columns and sorting key from the same state so they cannot diverge.
-            if (configuration->shouldReloadSchemaForConsistency(local_context))
-            {
-                if (auto rebuilt = configuration->buildStorageMetadataFromState(*state, local_context))
-                    pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-                        rebuilt->columns, local_context, format_settings, configuration->partition_strategy_type));
-            }
+            /// Reloads columns and sorting key from the same state so they cannot diverge.
+            if (applyDataLakeSnapshotToMetadata(pinned, *state, local_context))
+                pinned = pinned.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+                    pinned.columns, local_context, format_settings, configuration->partition_strategy_type));
 
             storage_snapshot = std::make_shared<StorageSnapshot>(
                 *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));

@@ -76,11 +76,13 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const ConstraintsDescription & constraints_,
     const ASTPtr & partition_by,
     ContextPtr context_,
-    bool is_table_function)
+    bool is_table_function,
+    bool preserve_structure_for_reads_)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
+    , preserve_structure_for_reads(preserve_structure_for_reads_)
 {
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
     /// We allow exceptions to be thrown on update(),
@@ -112,18 +114,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     if (is_table_function && configuration->isDataLakeConfiguration())
     {
-        /// For datalake table functions, always pin the current snapshot version so that
-        /// query execution uses the same snapshot as query analysis (logical-race fix).
-        /// Additionally reload columns from the snapshot when the per-format setting is enabled.
         if (auto state = configuration->getTableStateSnapshot(context_))
-        {
-            metadata.setDataLakeTableState(*state);
-            if (configuration->shouldReloadSchemaForConsistency(context_))
-            {
-                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context_))
-                    metadata = *metadata_snapshot;
-            }
-        }
+            applyDataLakeSnapshotToMetadata(metadata, *state, context_);
     }
 
     metadata.setConstraints(constraints_);
@@ -247,19 +239,35 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
 
     auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
-    new_metadata.setDataLakeTableState(*state);
-
-    if (configuration->shouldReloadSchemaForConsistency(query_context))
-    {
-        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
-            new_metadata = *metadata_snapshot;
-    }
+    applyDataLakeSnapshotToMetadata(new_metadata, *state, query_context);
 
     setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         new_metadata.columns,
         query_context,
         /* format_settings */ std::nullopt,
         configuration->partition_strategy_type)));
+}
+
+void StorageObjectStorageCluster::applyDataLakeSnapshotToMetadata(
+    StorageInMemoryMetadata & metadata, const DataLakeTableStateSnapshot & state, const ContextPtr & context) const
+{
+    /// Always pin the snapshot version so that query analysis and query execution observe the
+    /// same one (logical-race fix). Reloading the columns is additionally gated on the per-format
+    /// setting; see StorageObjectStorage::applyDataLakeSnapshotToMetadata.
+    metadata.setDataLakeTableState(state);
+
+    if (!configuration->shouldReloadSchemaForConsistency(context))
+        return;
+
+    auto metadata_snapshot = configuration->buildStorageMetadataFromState(state, context);
+    if (!metadata_snapshot)
+        return;
+
+    auto columns = metadata.getColumns();
+    metadata = *metadata_snapshot;
+    if (preserve_structure_for_reads)
+        metadata.setColumns(std::move(columns));
+    dropSortingKeyIfItDoesNotDescribeColumns(metadata);
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(

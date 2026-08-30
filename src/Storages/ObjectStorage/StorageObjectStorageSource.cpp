@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -30,6 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -259,8 +261,76 @@ static bool readsIdentityPartitionColumn(
     return false;
 }
 
+/// True when `header` types a column the row-level or PREWHERE filter reads differently from the type
+/// that filter was planned on, so evaluating it against `header` would compare values of a type its
+/// plan does not state. A required input `header` does not name is left to whatever resolves it
+/// downstream.
+static bool filtersReadRetypedColumns(
+    const Block & header,
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info)
+{
+    auto any_retyped = [&](const ActionsDAG & dag)
+    {
+        for (const auto & required : dag.getRequiredColumns())
+        {
+            const auto * elem = header.findByName(required.getNameInStorage());
+            if (elem && !elem->type->equals(*required.getTypeInStorage()))
+                return true;
+        }
+        return false;
+    };
+
+    return (row_level_filter && any_retyped(row_level_filter->actions))
+        || (prewhere_info && any_retyped(prewhere_info->prewhere_actions));
+}
+
+/// True when `dag` cannot be turned into pruning against this file's statistics. A bound is compared against the type
+/// the lake gives the column now (`current_types`), so one planned on a type that orders values differently can discard
+/// data holding matching rows; nullability and low-cardinality do not reorder values, and only evaluation
+/// (`filtersReadRetypedColumns`) needs the exact planned type. A column the lake no longer types is unsafe only while
+/// the reader can still bind it, which is what `file_types` records; a name in neither has statistics to prune with.
+static bool filterCannotPruneAgainst(const Block & current_types, const Block & file_types, const ActionsDAG & dag)
+{
+    auto comparable_type = [](const DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
+    for (const auto & required : dag.getRequiredColumns())
+    {
+        const auto & name = required.getNameInStorage();
+        if (const auto * current = current_types.findByName(name))
+        {
+            if (!comparable_type(current->type)->equals(*comparable_type(required.getTypeInStorage())))
+                return true;
+        }
+        else if (file_types.has(name))
+            return true;
+    }
+    return false;
+}
+
+/// A partition value is extracted from the manifest at the type the lake gives the column, so a read
+/// planned on a different type has to convert it rather than reinterpret it: a `Date` partition value
+/// is a day count, which taken as a `String` would be that number instead of the date it denotes.
+static const ActionsDAG::Node & addIdentityPartitionConstant(
+    ActionsDAG & dag,
+    const String & name,
+    const Field & value,
+    const DataTypePtr & target_type,
+    const NamesAndTypesList & lake_types,
+    const ContextPtr & context)
+{
+    auto lake_column = lake_types.tryGetByName(name);
+    if (!lake_column || lake_column->type->equals(*target_type))
+        return dag.addColumn(target_type->createColumnConst(0, value), target_type, name);
+
+    const auto & constant = dag.addColumn(lake_column->type->createColumnConst(0, value), lake_column->type, name);
+    return dag.addCast(constant, target_type, name, context);
+}
+
 static ActionsDAG substituteIdentityPartitionColumns(
-    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+    const ActionsDAG & dag,
+    const std::vector<std::pair<String, Field>> & identity_partition_columns,
+    const NamesAndTypesList & lake_types,
+    const ContextPtr & context)
 {
     std::unordered_map<std::string_view, const Field *> values_by_name;
     for (const auto & [name, value] : identity_partition_columns)
@@ -274,7 +344,7 @@ static ActionsDAG substituteIdentityPartitionColumns(
             continue;
 
         const auto & constant
-            = substitution.addColumn(required.type->createColumnConst(0, *it->second), required.type, required.name);
+            = addIdentityPartitionConstant(substitution, required.name, *it->second, required.type, lake_types, context);
         substitution.getOutputs().push_back(&substitution.materializeNode(constant));
     }
 
@@ -282,7 +352,10 @@ static ActionsDAG substituteIdentityPartitionColumns(
 }
 
 static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
-    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+    const Block & header,
+    const std::vector<std::pair<String, Field>> & identity_partition_columns,
+    const NamesAndTypesList & lake_types,
+    const ContextPtr & context)
 {
     std::unordered_map<std::string_view, const Field *> values_by_name;
     for (const auto & [name, value] : identity_partition_columns)
@@ -304,7 +377,8 @@ static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
             continue;
         }
 
-        const auto & constant = dag.addColumn(column.type->createColumnConst(1, *it->second), column.type, column.name);
+        const auto & constant
+            = addIdentityPartitionConstant(dag, column.name, *it->second, column.type, lake_types, context);
         outputs.push_back(&dag.materializeNode(constant));
     }
     return dag;
@@ -1205,15 +1279,45 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 initial_header.insert({rowLineageColumnType()->createColumn(), rowLineageColumnType(), column_name});
         }
         std::vector<std::pair<String, Field>> identity_partition_columns;
+        /// The schema those values were extracted under is this file's own, which is the current one
+        /// unless the file predates a schema change; `initial_header` holds it only in the latter case,
+        /// and a declared `structure` replaces it in the former, so it is looked up rather than reused.
+        NamesAndTypesList identity_partition_lake_types;
 #if USE_AVRO
         if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+        {
             identity_partition_columns = iceberg_info->info.identity_partition_columns;
+            const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(configuration->getExternalMetadata());
+            if (!identity_partition_columns.empty() && iceberg_metadata)
+            {
+                const auto & schema_processor = iceberg_metadata->getPersistentComponents().schema_processor;
+                const auto schema_id = iceberg_info->info.underlying_format_read_schema_id;
+                if (schema_processor->hasClickHouseTableSchemaById(schema_id))
+                    identity_partition_lake_types = *schema_processor->getClickHouseTableSchemaById(schema_id);
+                /// That list holds top-level fields only. A nested field is registered under its
+                /// dotted full name, which is also the name the value carries, so it is resolved by
+                /// field id from the same schema.
+                for (const auto & [name, _] : identity_partition_columns)
+                {
+                    if (identity_partition_lake_types.contains(name))
+                        continue;
+                    const auto source_id = schema_processor->tryGetColumnIDByName(schema_id, name);
+                    if (!source_id)
+                        continue;
+                    if (auto field = schema_processor->tryGetFieldCharacteristics(schema_id, *source_id))
+                        identity_partition_lake_types.push_back(*field);
+                }
+            }
+        }
 #endif
 
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
         /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
         PrewhereInfoPtr stripped_prewhere_info;
+        /// Set when a filter was stripped because the reader retypes an input of it, so the
+        /// conversion below must land on the exact type it was planned on.
+        bool filter_inputs_retyped = false;
 
         auto filter_info = [&]() -> FormatFilterInfoPtr
         {
@@ -1240,16 +1344,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto row_level_filter = format_filter_info->row_level_filter;
             auto prewhere_info = format_filter_info->prewhere_info;
             bool filters_substituted = false;
+            /// Non-null only for a schema-id mismatch, so a file that merely carries equality deletes
+            /// has none even though `schema_changed` holds for it.
+            const auto schema_transformer
+                = schema_changed ? configuration->getSchemaTransformer(context_, object_info) : nullptr;
+            const bool has_schema_transform = schema_transformer != nullptr;
             /// A filter evaluated inside the reader must see the identity-partitioned columns of this
             /// data file as the manifest defines them, because the file itself need not store them.
-            if (format_supports_prewhere && !identity_partition_columns.empty()
-                && (!schema_changed || configuration->getSchemaTransformer(context_, object_info) == nullptr))
+            if (format_supports_prewhere && !identity_partition_columns.empty() && !has_schema_transform)
             {
                 if (row_level_filter && readsIdentityPartitionColumn(row_level_filter->actions, identity_partition_columns))
                 {
                     auto substituted = std::make_shared<FilterDAGInfo>();
-                    substituted->actions
-                        = substituteIdentityPartitionColumns(row_level_filter->actions, identity_partition_columns);
+                    substituted->actions = substituteIdentityPartitionColumns(
+                        row_level_filter->actions, identity_partition_columns, identity_partition_lake_types, context_);
                     substituted->column_name = row_level_filter->column_name;
                     substituted->do_remove_column = row_level_filter->do_remove_column;
                     row_level_filter = std::move(substituted);
@@ -1258,14 +1366,32 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (prewhere_info && readsIdentityPartitionColumn(prewhere_info->prewhere_actions, identity_partition_columns))
                 {
                     auto substituted = std::make_shared<PrewhereInfo>();
-                    substituted->prewhere_actions
-                        = substituteIdentityPartitionColumns(prewhere_info->prewhere_actions, identity_partition_columns);
+                    substituted->prewhere_actions = substituteIdentityPartitionColumns(
+                        prewhere_info->prewhere_actions, identity_partition_columns, identity_partition_lake_types, context_);
                     substituted->prewhere_column_name = prewhere_info->prewhere_column_name;
                     substituted->remove_prewhere_column = prewhere_info->remove_prewhere_column;
                     substituted->need_filter = prewhere_info->need_filter;
                     prewhere_info = std::move(substituted);
                     filters_substituted = true;
                 }
+            }
+
+            /// Pruning built from this DAG runs before anything downstream can correct types, so it is
+            /// measured against the type the lake gives a column now, never the one this file stored.
+            /// The two coincide for a file written under the current schema; where they do not, the
+            /// transform's outputs carry the current types. The native ORC reader builds such pruning
+            /// without supporting PREWHERE, so this does not test `format_supports_prewhere`.
+            bool pruning_dag_retyped = false;
+            if (schema_changed && format_filter_info->filter_actions_dag)
+            {
+                Block transform_outputs;
+                if (has_schema_transform)
+                    for (const auto & column : schema_transformer->getResultColumns())
+                        transform_outputs.insertUnique({column.type->createColumn(), column.type, column.name});
+                pruning_dag_retyped = filterCannotPruneAgainst(
+                    has_schema_transform ? transform_outputs : initial_header,
+                    initial_header,
+                    *format_filter_info->filter_actions_dag);
             }
 
             if (schema_changed)
@@ -1275,16 +1401,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// `schema_changed` is true for real schema evolution (a schema-id
                     /// mismatch: renamed / type-changed columns) AND for current-schema
                     /// files that merely carry equality deletes. Strip the reader-side
-                    /// filters ONLY for the former: there the old-schema mapper resolves
-                    /// field-ids to the file's OLD names while PREWHERE / row-level filter
-                    /// reference the CURRENT names, so in-reader evaluation matches nothing
-                    /// (re-applied as fallback FilterTransforms after the schema transform
-                    /// renames the columns below). For equality-delete-only files
-                    /// (getSchemaTransformer() == null, no rename) the mapper already yields
-                    /// the current names, so keep the filters in the reader to preserve
-                    /// Parquet row-group / page pruning.
-                    const bool has_schema_transform
-                        = configuration->getSchemaTransformer(context_, object_info) != nullptr;
+                    /// filters for the former: the old-schema mapper resolves field-ids to
+                    /// the file's OLD names while PREWHERE / row-level filter reference the
+                    /// CURRENT names, so in-reader evaluation matches nothing (re-applied as
+                    /// fallback FilterTransforms after the schema transform renames the
+                    /// columns below). For equality-delete-only files (no rename) the mapper
+                    /// already yields the current names, so the filters stay in the reader
+                    /// to preserve Parquet row-group / page pruning unless it emits a type
+                    /// they were not planned on.
                     if (format_supports_prewhere && has_schema_transform)
                     {
                         if (format_filter_info->row_level_filter)
@@ -1292,9 +1416,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         if (format_filter_info->prewhere_info)
                             stripped_prewhere_info = format_filter_info->prewhere_info;
                     }
-                    const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
+                    filter_inputs_retyped = format_supports_prewhere && !has_schema_transform
+                        && filtersReadRetypedColumns(initial_header, row_level_filter, prewhere_info);
+                    if (filter_inputs_retyped)
+                    {
+                        if (format_filter_info->row_level_filter)
+                            stripped_row_level_filter = format_filter_info->row_level_filter;
+                        if (format_filter_info->prewhere_info)
+                            stripped_prewhere_info = format_filter_info->prewhere_info;
+                    }
+                    const bool keep_in_reader
+                        = format_supports_prewhere && !has_schema_transform && !filter_inputs_retyped;
                     auto result = std::make_shared<FormatFilterInfo>(
-                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        pruning_dag_retyped ? nullptr : format_filter_info->filter_actions_dag,
+                        format_filter_info->context.lock(),
                         mapper,
                         keep_in_reader ? row_level_filter : nullptr,
                         keep_in_reader ? prewhere_info : nullptr);
@@ -1310,7 +1445,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             if (!format_supports_prewhere)
                 return std::make_shared<FormatFilterInfo>(
-                    format_filter_info->filter_actions_dag,
+                    pruning_dag_retyped ? nullptr : format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
@@ -1433,7 +1568,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!identity_partition_columns.empty())
         {
-            if (auto dag = buildIdentityPartitionColumnsDag(builder.getHeader(), identity_partition_columns))
+            if (auto dag = buildIdentityPartitionColumnsDag(
+                    builder.getHeader(), identity_partition_columns, identity_partition_lake_types, context_))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*dag));
                 builder.addSimpleTransform([&](const SharedHeader & header)
@@ -1502,6 +1638,131 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
+        }
+
+        /// A data lake schema transform emits exactly the lake's own schema, so a requested column
+        /// that no schema declares is absent from the block and reads as a default. It has to exist
+        /// before the fallback filters below, which may reference it.
+        if (schema_changed)
+        {
+            const Block & header_after_transform = builder.getHeader();
+            NamesAndTypesList columns_with_synthesized;
+            NameSet seen_names;
+            bool has_synthesized_columns = false;
+            /// The inputs of a stripped filter are not in `requested_columns`, which is
+            /// post-`PREWHERE`, yet the fallback filters below evaluate against them.
+            NamesAndTypesList wanted_columns = read_from_format_info.requested_columns;
+            NamesAndTypesList filter_input_columns;
+            auto add_filter_inputs = [&](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                {
+                    wanted_columns.push_back(required);
+                    filter_input_columns.push_back(required);
+                }
+            };
+            if (stripped_row_level_filter)
+                add_filter_inputs(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_filter_inputs(stripped_prewhere_info->prewhere_actions);
+
+            /// A required filter input reaches here as one flat name, so a subcolumn arrives as
+            /// `t.x` with no storage parent recorded. Its value lives in the parent column, which
+            /// the block carries, so it is not a missing column.
+            auto names_a_subcolumn_of_a_present_column = [](const Block & block, const String & column_name)
+            {
+                for (auto [parent, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+                    if (const auto * elem = block.findByName(parent); elem && elem->type->tryGetSubcolumnType(subcolumn))
+                        return true;
+                return false;
+            };
+
+            for (const auto & wanted_column : wanted_columns)
+            {
+                /// Keyed by name in storage: several requested subcolumns can share one parent.
+                auto name_in_storage = wanted_column.getNameInStorage();
+                if (!seen_names.emplace(name_in_storage).second)
+                    continue;
+                /// A name the file's own schema carries is left alone even when the transform does
+                /// not emit it: the reader resolves it by field id, so it denotes that physical
+                /// column rather than a missing one, and filters on it are evaluated there. It is
+                /// kept out of the list below too, which is what any column in it is created from.
+                const bool emitted = header_after_transform.has(name_in_storage);
+                if (!emitted
+                    && (initial_header.has(name_in_storage)
+                        || names_a_subcolumn_of_a_present_column(header_after_transform, name_in_storage)
+                        || names_a_subcolumn_of_a_present_column(initial_header, name_in_storage)))
+                    continue;
+                columns_with_synthesized.emplace_back(name_in_storage, wanted_column.getTypeInStorage());
+                if (!emitted)
+                    has_synthesized_columns = true;
+            }
+
+            /// The transform emits the lake's own types, but a fallback filter below was planned
+            /// against the declared ones, so its function would return a differently-nullable
+            /// result than the plan states. Only what those filters read needs converting; the
+            /// columns merely being returned are converted after extraction as before.
+            NamesAndTypesList columns_to_align;
+            NameSet aligned_names;
+            for (const auto & filter_input : filter_input_columns)
+            {
+                auto name_in_storage = filter_input.getNameInStorage();
+                if (!header_after_transform.has(name_in_storage))
+                    continue;
+                const auto & type_in_block = header_after_transform.getByName(name_in_storage).type;
+                /// A file written under an older schema may hold a column as optional that the current
+                /// schema declares required, so its target keeps the column's own nullability: dropping
+                /// the null map would fail on such a row. A file written under the current schema
+                /// cannot disagree that way, and `filter_inputs_retyped` is set only for those.
+                auto type_to_align_to = filter_input.getTypeInStorage();
+                if (!filter_inputs_retyped && isNullableOrLowCardinalityNullable(type_in_block))
+                    type_to_align_to = makeNullableOrLowCardinalityNullableSafe(type_to_align_to);
+                if (type_in_block->equals(*type_to_align_to))
+                    continue;
+                if (aligned_names.emplace(name_in_storage).second)
+                    columns_to_align.emplace_back(name_in_storage, type_to_align_to);
+            }
+
+            if (has_synthesized_columns || !columns_to_align.empty())
+            {
+                Block header_to_synthesize_from = header_after_transform;
+                if (!columns_to_align.empty())
+                {
+                    ActionsDAG align_dag(header_after_transform.getColumnsWithTypeAndName());
+                    for (const auto & column : columns_to_align)
+                    {
+                        const auto & cast_node
+                            = align_dag.addCast(align_dag.findInOutputs(column.name), column.type, column.name, context_);
+                        for (auto & output : align_dag.getOutputs())
+                            if (output->result_name == column.name)
+                                output = &cast_node;
+                    }
+                    header_to_synthesize_from = Block(align_dag.getResultColumns());
+
+                    auto align_actions = std::make_shared<ExpressionActions>(std::move(align_dag));
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExpressionTransform>(header, align_actions);
+                    });
+                }
+
+                if (has_synthesized_columns)
+                {
+                    for (const auto & column : header_to_synthesize_from)
+                        if (seen_names.emplace(column.name).second)
+                            columns_with_synthesized.emplace_back(column.name, column.type);
+
+                    auto synthesize_actions = std::make_shared<ExpressionActions>(addMissingDefaults(
+                        header_to_synthesize_from,
+                        columns_with_synthesized,
+                        read_from_format_info.columns_description,
+                        context_));
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExpressionTransform>(header, synthesize_actions);
+                    });
+                }
+            }
         }
 
         /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s

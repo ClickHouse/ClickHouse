@@ -1,0 +1,98 @@
+{
+    "current-schema-id" : 0,
+    "current-snapshot-id" : 3363451931851745282,
+    "default-sort-order-id" : 0,
+    "default-spec-id" : 0,
+    "format-version" : 2,
+    "last-column-id" : 2,
+    "last-partition-id" : 0,
+    "last-sequence-number" : 1,
+    "last-updated-ms" : 1785986325208,
+    "location" : "/sorted1/",
+    "metadata-log" : [
+        {
+            "metadata-file" : "/sorted1/metadata/v2.metadata.json",
+            "timestamp-ms" : 1785986325208
+        }
+    ],
+    "partition-specs" : [
+        {
+            "fields" : [
+
+            ],
+            "spec-id" : 0
+        }
+    ],
+    "refs" : {
+        "main" : {
+            "snapshot-id" : 3363451931851745282,
+            "type" : "branch"
+        }
+    },
+    "schemas" : [
+        {
+            "fields" : [
+                {
+                    "id" : 1,
+                    "name" : "id",
+                    "required" : true,
+                    "type" : "long"
+                },
+                {
+                    "id" : 2,
+                    "name" : "data",
+                    "required" : true,
+                    "type" : "string"
+                }
+            ],
+            "schema-id" : 0,
+            "type" : "struct"
+        }
+    ],
+    "snapshot-log" : [
+        {
+            "snapshot-id" : 3363451931851745282,
+            "timestamp-ms" : 1785986325208
+        }
+    ],
+    "snapshots" : [
+        {
+            "manifest-list" : "/sorted1/metadata/snap-3363451931851745282-2-1c54a567-f57e-4617-832c-214909d993ed.avro",
+            "parent-snapshot-id" : -1,
+            "schema-id" : 0,
+            "sequence-number" : 1,
+            "snapshot-id" : 3363451931851745282,
+            "summary" : {
+                "added-data-files" : "1",
+                "added-files-size" : "935",
+                "added-records" : "3",
+                "changed-partition-count" : "1",
+                "operation" : "append",
+                "total-data-files" : "1",
+                "total-delete-files" : "0",
+                "total-equality-deletes" : "0",
+                "total-files-size" : "935",
+                "total-position-deletes" : "0",
+                "total-records" : "3"
+            },
+            "timestamp-ms" : 1785986325208
+        }
+    ],
+    "sort-orders" : [
+        {
+            "fields" : [
+                {
+                    "direction" : "asc",
+                    "null-order" : "nulls-first",
+                    "source-id" : 1,
+                    "transform" : "identity"
+                }
+            ],
+            "order-id" : 0
+        }
+    ],
+    "statistics" : [
+
+    ],
+    "table-uuid" : "4a4ad1fb-d979-484e-b976-2444bdc4ecf8"
+}

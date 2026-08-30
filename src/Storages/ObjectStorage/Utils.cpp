@@ -148,6 +148,23 @@ void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string
     }
 }
 
+void dropSortingKeyIfItDoesNotDescribeColumns(StorageInMemoryMetadata & metadata)
+{
+    if (!metadata.hasSortingKey())
+        return;
+
+    const auto & columns = metadata.getColumns();
+    for (const auto & required : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required.name);
+        if (!column || !column->type->equals(*required.type))
+        {
+            metadata.sorting_key = {};
+            return;
+        }
+    }
+}
+
 std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path)
 {
     if (prefix.empty())

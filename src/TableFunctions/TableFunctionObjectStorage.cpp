@@ -241,6 +241,11 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     else if (!cached_columns.empty())
         columns = cached_columns;
 
+    /// Only a format whose schema reload is not a user opt-in overwrites the explicit structure in the
+    /// storage, and a write is authoritative from the lake schema. A declared default is excluded: it is
+    /// materialized from one reader's missing-value bitmask, so it exists only where that reader does.
+    const bool preserve_structure_for_reads = configuration->structure != "auto" && !is_insert_query
+        && configuration->schemaReloadIgnoresExplicitStructure() && !columns.hasDefaults();
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
 
@@ -267,7 +272,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             ConstraintsDescription{},
             partition_by,
             context,
-            /* is_table_function */true);
+            /* is_table_function */true,
+            preserve_structure_for_reads);
 
         storage->startup();
         return storage;
@@ -305,7 +311,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* distributed_processing */ false,
         /* partition_by */ partition_by,
         /* order_by */ nullptr,
-        /* is_table_function */true);
+        /* is_table_function */true,
+        /* lazy_init */ false,
+        preserve_structure_for_reads);
 
     storage->startup();
     return storage;
@@ -1481,16 +1489,16 @@ Provides a table-like interface to Apache [Iceberg](https://iceberg.apache.org/)
 ## Syntax {#syntax}
 
 ```sql
-icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method] [,extra_credentials])
 icebergS3(named_collection[, option=value [,..]])
 
-icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method] [,structure])
 icebergAzure(named_collection[, option=value [,..]])
 
-icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(path_to_table, [,format] [,structure] [,compression_method])
 icebergHDFS(named_collection[, option=value [,..]])
 
-icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(path_to_table, [,format] [,structure] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
@@ -1500,6 +1508,12 @@ Description of the arguments coincides with description of arguments in table fu
 `format` stands for the format of data files in the Iceberg table.
 
 For `icebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
+
+A `structure` that declares names and types is used for reads, so it can select a subset of the
+columns or override their types. A declared type the data files cannot supply raises an error rather
+than falling back to the schema from the Iceberg metadata. A `structure` that also declares a column
+`DEFAULT` is not used for reads: the Iceberg schema is used instead. Omit the argument to read with
+that schema. Inserts always use the schema from the metadata.
 
 ### Returned value {#returned-value}
 
@@ -2240,11 +2254,11 @@ paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compress
 
 paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
-paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method] [,structure])
 
-paimonHDFS(path_to_table, [,format] [,compression_method])
+paimonHDFS(path_to_table, [,format] [,structure] [,compression_method])
 
-paimonLocal(path_to_table, [,format] [,compression_method])
+paimonLocal(path_to_table, [,format] [,structure] [,compression_method])
 ```
 
 ## Arguments {#arguments}
@@ -2253,6 +2267,12 @@ Description of the arguments coincides with description of arguments in table fu
 `format` stands for the format of data files in the Paimon table.
 
 For `paimonS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
+
+A `structure` that declares names and types is used for reads, so it can select a subset of the
+columns or override their types. A declared type the data files cannot supply raises an error rather
+than falling back to the schema from the Paimon metadata. A `structure` that also declares a column
+`DEFAULT` is not used for reads: the Paimon schema is used instead. Omit the argument to read with
+that schema.
 
 ### Returned value {#returned-value}
 

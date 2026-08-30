@@ -38,6 +38,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     else if (!cached_columns.empty())
         columns = cached_columns;
 
+    /// See TableFunctionObjectStorage::executeImpl.
+    const bool preserve_structure_for_reads = configuration->structure != "auto" && !is_insert_query
+        && configuration->schemaReloadIgnoresExplicitStructure() && !columns.hasDefaults();
+
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
 
@@ -67,7 +71,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* partition_by_ */Base::partition_by,
             /* order_by_ */nullptr,
             /* is_table_function */true,
-            /* lazy_init */ true);
+            /* lazy_init */ true,
+            preserve_structure_for_reads);
     }
     else
     {
@@ -80,7 +85,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             ConstraintsDescription{},
             Base::partition_by,
             context,
-            /* is_table_function */true);
+            /* is_table_function */true,
+            preserve_structure_for_reads);
     }
 
     storage->startup();
@@ -313,7 +319,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionIcebergLocalCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on shared storage in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergLocalCluster(cluster, filename, format, [,compression])",
+            .syntax = "icebergLocalCluster(cluster, filename, [format], [structure], [compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -329,13 +335,13 @@ Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in pa
 ## Syntax {#syntax}
 
 ```sql
-icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method] [,extra_credentials])
 icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
-icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method] [,structure])
 icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
 
-icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+icebergHDFSCluster(cluster_name, path_to_table, [,format] [,structure] [,compression_method])
 icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
@@ -374,7 +380,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergS3Cluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
+            .syntax = "icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], [format], [structure], [compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -385,7 +391,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergAzureCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .syntax = "icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -425,9 +431,9 @@ Allows processing files from Apache [Paimon](https://paimon.apache.org/) in para
 ```sql
 paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
-paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method] [,structure])
 
-paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+paimonHDFSCluster(cluster_name, path_to_table, [,format] [,structure] [,compression_method])
 ```
 
 ## Arguments {#arguments}
@@ -458,7 +464,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonS3Cluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
+            .syntax = "paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], [format], [structure], [compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -469,7 +475,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonAzureCluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .syntax = "paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
