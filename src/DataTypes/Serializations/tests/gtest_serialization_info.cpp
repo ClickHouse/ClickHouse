@@ -293,6 +293,26 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPaths)
     EXPECT_THROW(object_info->getTypedPathInfo("y"), DB::Exception);
 }
 
+TEST(SerializationInfoObject, AddAcrossNullableWrapper)
+{
+    auto object_type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
+    auto nullable_type = DataTypeFactory::instance().get("Nullable(JSON(x String, max_dynamic_paths=0))");
+    auto settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+    auto object_info = object_type->createSerializationInfo(settings);
+    object_info->addDefaults(100);
+    auto nullable_info = nullable_type->createSerializationInfo(settings);
+    nullable_info->add(*object_info);
+
+    auto merged_object_info = object_type->createSerializationInfo(settings);
+    merged_object_info->add(*nullable_info);
+    const auto & typed_path_info
+        = assert_cast<const SerializationInfoObject &>(*merged_object_info).getTypedPathInfo("x");
+    EXPECT_EQ(typed_path_info->getData().num_rows, 100);
+    EXPECT_EQ(typed_path_info->getData().num_defaults, 100);
+}
+
 TEST(SerializationInfoObject, DoesNotScanDefaultsForOuterColumn)
 {
     auto type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");

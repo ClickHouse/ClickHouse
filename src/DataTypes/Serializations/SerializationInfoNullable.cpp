@@ -35,7 +35,10 @@ void SerializationInfoNullable::add(const IColumn & column)
 
 void SerializationInfoNullable::add(const SerializationInfo & other)
 {
-    nested->add(*assert_cast<const SerializationInfoNullable &>(other).nested);
+    if (const auto * other_nullable = typeid_cast<const SerializationInfoNullable *>(&other))
+        nested->add(*other_nullable->nested);
+    else
+        nested->add(other);
     syncData();
 }
 

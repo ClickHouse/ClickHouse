@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <DataTypes/Serializations/SerializationInfoNullable.h>
 #include <IO/WriteHelpers.h>
 
 #include <Poco/JSON/Object.h>
@@ -66,6 +67,12 @@ void SerializationInfoNamed::add(const IColumn & column)
 
 void SerializationInfoNamed::add(const SerializationInfo & other)
 {
+    if (const auto * other_nullable = dynamic_cast<const SerializationInfoNullable *>(&other))
+    {
+        add(*other_nullable->getNestedInfo());
+        return;
+    }
+
     SerializationInfo::add(other);
 
     if (typeid(*this) != typeid(other))
