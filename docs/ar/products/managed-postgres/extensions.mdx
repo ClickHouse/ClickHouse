@@ -11,7 +11,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.extensions-beta" />
 
-يتضمن Managed Postgres مجموعة مختارة من الامتدادات لتوسيع وظائف قاعدة البيانات لديك. في ما يلي قائمة بالامتدادات المتاحة.
+يتضمن ClickHouse Managed Postgres مجموعة مختارة من الامتدادات لتوسيع وظائف قاعدة البيانات لديك. في ما يلي قائمة بالامتدادات المتاحة.
 
 <div id="installing-extensions">
   ## تثبيت الامتدادات
@@ -141,7 +141,7 @@ SELECT * FROM pg_available_extensions;
   ## امتداد pg_clickhouse
 </div>
 
-امتداد `pg_clickhouse` مُثبّتة مسبقًا على كل مثيل من Managed Postgres. وتتيح لك الاستعلام مباشرةً عن قواعد بيانات ClickHouse من PostgreSQL، مما يوفر طبقة استعلام موحّدة لكلٍّ من المعاملات والتحليلات.
+امتداد `pg_clickhouse` مُثبّتة مسبقًا على كل مثيل من ClickHouse Managed Postgres. وتتيح لك الاستعلام مباشرةً عن قواعد بيانات ClickHouse من PostgreSQL، مما يوفر طبقة استعلام موحّدة لكلٍّ من المعاملات والتحليلات.
 
 راجع [وثائق pg&#95;clickhouse](/ar/products/managed-postgres/extensions/pg_clickhouse/introduction) للاطلاع على تعليمات الإعداد وتفاصيل الاستخدام.
 
@@ -149,10 +149,10 @@ SELECT * FROM pg_available_extensions;
   ## امتداد pg_stat_ch
 </div>
 
-يوفّر امتداد `pg_stat_ch` إمكانات observability على مستوى الاستعلام لمثيل Managed Postgres لديك. ويجمع بيانات telemetry لكل استعلام على حدة (التوقيتات، الصفوف، المخازن المؤقتة، WAL، الأخطاء) ويرسلها إلى UI في ClickHouse Cloud، حيث تظهر على شكل عروض الاستعلامات البطيئة والأخطاء وأحمال العمل. لا يتطلب أي إعداد.
+يوفّر امتداد `pg_stat_ch` إمكانات observability على مستوى الاستعلام لمثيل ClickHouse Managed Postgres لديك. ويجمع بيانات telemetry لكل استعلام على حدة (التوقيتات، الصفوف، المخازن المؤقتة، WAL، الأخطاء) ويرسلها إلى UI في ClickHouse Cloud، حيث تظهر على شكل عروض الاستعلامات البطيئة والأخطاء وأحمال العمل. لا يتطلب أي إعداد.
 
 <div id="pg-re2">
   ## امتداد pg_re2
 </div>
 
-يضيف امتداد `pg_re2` إلى Managed Postgres دوال للتعبيرات النمطية متوافقة مع ClickHouse، ومدعومة بمحرك RE2 من Google. ويكون ذلك مفيدًا عند نقل الاستعلامات بينهما أو تشغيل أعباء عمل هجينة تتطلب دلالات متطابقة لمطابقة الأنماط على كلا الجانبين.
+يضيف امتداد `pg_re2` إلى ClickHouse Managed Postgres دوال للتعبيرات النمطية متوافقة مع ClickHouse، ومدعومة بمحرك RE2 من Google. ويكون ذلك مفيدًا عند نقل الاستعلامات بينهما أو تشغيل أعباء عمل هجينة تتطلب دلالات متطابقة لمطابقة الأنماط على كلا الجانبين.
