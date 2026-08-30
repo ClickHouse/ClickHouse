@@ -1,0 +1,87 @@
+<test>
+    <!--
+        Benchmark deferred materialization after merging ordered `MergeTree` streams.
+
+        Eight independently sorted partitions have fully interleaved sorting keys, so
+        `MergingSortedTransform` switches source on every output row. The payload uses
+        representative expensive column shapes: disjoint and overlapping
+        `LowCardinality(String)` dictionaries, a moderately wide `String`, and arrays
+        including `Array(LowCardinality(UInt128))`.
+
+        The first query intentionally relies on the setting default (disabled), so it
+        also runs on a reference server that predates
+        `max_parallel_ordered_merge_materialization_threads`. The second query enables
+        four materialization workers and is reported as a backward-incompatible query
+        on such a reference server. On the new server their medians provide the matched
+        serial/parallel comparison.
+    -->
+
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <max_threads>8</max_threads>
+        <max_streams_for_merge_tree_reading>8</max_streams_for_merge_tree_reading>
+        <max_block_size>1024</max_block_size>
+        <preferred_block_size_bytes>0</preferred_block_size_bytes>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <read_in_order_use_virtual_row>0</read_in_order_use_virtual_row>
+        <read_in_order_use_buffering>1</read_in_order_use_buffering>
+        <read_in_order_two_level_merge_threshold>100</read_in_order_two_level_merge_threshold>
+        <max_memory_usage>4G</max_memory_usage>
+    </settings>
+
+    <create_query>
+        CREATE TABLE parallel_ordered_merge_materialization_perf
+        (
+            key UInt64,
+            disjoint_tag LowCardinality(String),
+            overlapping_tag LowCardinality(String),
+            payload String,
+            ids Array(LowCardinality(UInt128)),
+            values Array(UInt64)
+        )
+        ENGINE = MergeTree
+        PARTITION BY key % 8
+        ORDER BY key
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES parallel_ordered_merge_materialization_perf</fill_query>
+    <fill_query>
+        INSERT INTO parallel_ordered_merge_materialization_perf
+        SELECT
+            number,
+            toString(number % 256),
+            toString(intDiv(number, 8) % 256),
+            repeat(hex(sipHash128(number)), 4),
+            arrayMap(
+                element -> bitOr(
+                    bitShiftLeft(toUInt128(number % 8 + 1), 120),
+                    toUInt128(intDiv(number, 8) * 16 + element)),
+                range(16)),
+            arrayMap(element -> number + element, range(16))
+        FROM numbers(196608)
+        SETTINGS
+            max_insert_threads = 1,
+            max_insert_block_size = 196608,
+            min_insert_block_size_rows = 196608,
+            min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <!-- Serial materialization; the setting defaults to zero. -->
+    <query>
+        SELECT *
+        FROM parallel_ordered_merge_materialization_perf
+        ORDER BY key
+        FORMAT Null
+    </query>
+
+    <!-- The merge stays serial, while four workers build completed output blocks. -->
+    <query>
+        SELECT *
+        FROM parallel_ordered_merge_materialization_perf
+        ORDER BY key
+        FORMAT Null
+        SETTINGS max_parallel_ordered_merge_materialization_threads = 4
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS parallel_ordered_merge_materialization_perf</drop_query>
+</test>

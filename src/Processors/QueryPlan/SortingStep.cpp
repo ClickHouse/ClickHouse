@@ -1,9 +1,11 @@
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
+#include <Processors/QueryPlan/ParallelMergingSortedMaterialization.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -88,6 +90,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool read_in_order_use_buffering;
+    extern const SettingsUInt64 max_parallel_ordered_merge_materialization_threads;
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsString temporary_files_codec;
@@ -101,6 +104,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_to_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_parallel_ordered_merge_materialization_threads;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_sort;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
@@ -163,6 +167,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_virtual_row_per_block = settings[Setting::read_in_order_use_virtual_row] && settings[Setting::read_in_order_use_virtual_row_per_block];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
+    max_parallel_ordered_merge_materialization_threads = settings[Setting::max_parallel_ordered_merge_materialization_threads];
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
 }
@@ -186,12 +191,14 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
+    max_parallel_ordered_merge_materialization_threads
+        = settings[QueryPlanSerializationSetting::max_parallel_ordered_merge_materialization_threads];
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
 }
 
-void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
@@ -204,6 +211,11 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort] = max_bytes_ratio_before_external_sort;
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_ORDERED_MERGE_MATERIALIZATION)
+    {
+        settings[QueryPlanSerializationSetting::max_parallel_ordered_merge_materialization_threads]
+            = max_parallel_ordered_merge_materialization_threads;
+    }
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
@@ -430,6 +442,14 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             });
         }
 
+        const size_t materialization_threads = std::min(
+            sort_settings.max_parallel_ordered_merge_materialization_threads,
+            pipeline.getNumThreads());
+        const bool defer_materialization = materialization_threads > 1;
+        MergingSortedTransformStatsPtr parallel_materialization_stats;
+        if (defer_materialization)
+            parallel_materialization_stats = std::make_shared<MergingSortedTransformStats>(materialization_threads);
+
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getSharedHeader(),
             pipeline.getNumStreams(),
@@ -447,9 +467,24 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /// Allow this many sources deferred behind virtual rows to read ahead in
             /// parallel, so that the merge does not serialize reads that previously
             /// ran concurrently. Bounds the number of concurrently open readers.
-            /*virtual_row_prefetch_window=*/ pipeline.getNumThreads());
+            /*virtual_row_prefetch_window=*/ pipeline.getNumThreads(),
+            /*have_all_inputs_=*/ true,
+            defer_materialization,
+            parallel_materialization_stats);
 
         pipeline.addTransform(std::move(transform));
+
+        if (defer_materialization)
+        {
+            /// The merge above has already fixed the exact row and block order. Distribute
+            /// its metadata-only block plans across a bounded number of workers, then restore
+            /// their sequence before exposing materialized blocks to the rest of the pipeline.
+            addParallelMergingSortedMaterialization(
+                pipeline,
+                materialization_threads,
+                sort_settings.max_block_size,
+                parallel_materialization_stats);
+        }
     }
     else if (apply_virtual_row_conversions)
     {
@@ -730,9 +765,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    sort_settings.updatePlanSettings(settings);
+    sort_settings.updatePlanSettings(settings, version);
 }
 
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;

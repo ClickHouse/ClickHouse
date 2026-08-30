@@ -43,6 +43,7 @@
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/ParallelMergingSortedMaterialization.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Sources/NullSource.h>
@@ -254,6 +255,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parallel_ordered_merge_materialization_threads;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 merge_tree_max_bytes_to_use_cache;
@@ -1195,9 +1197,18 @@ Pipe ReadFromMergeTree::readByLayers(
         }
 
         ReadType in_order_read_type = input_order_info->direction > 0 ? ReadType::InOrder : ReadType::InReverseOrder;
+        const size_t max_materialization_threads = settings[Setting::max_parallel_ordered_merge_materialization_threads];
 
         reading_step_getter
-            = [this, &index_build_context, &in_order_column_names_to_read, &info, sorting_expr, &sort_description, in_order_read_type](auto parts)
+            = [
+                this,
+                &index_build_context,
+                &in_order_column_names_to_read,
+                &info,
+                sorting_expr,
+                &sort_description,
+                in_order_read_type,
+                max_materialization_threads](auto parts)
         {
             auto pipe = this->read(
                 std::move(parts),
@@ -1224,6 +1235,12 @@ Pipe ReadFromMergeTree::readByLayers(
 
             if (pipe.numOutputPorts() != 1)
             {
+                const size_t materialization_threads = std::min(max_materialization_threads, pipe.maxParallelStreams());
+                const bool defer_materialization = materialization_threads > 1;
+                MergingSortedTransformStatsPtr parallel_materialization_stats;
+                if (defer_materialization)
+                    parallel_materialization_stats = std::make_shared<MergingSortedTransformStats>(materialization_threads);
+
                 auto transform = std::make_shared<MergingSortedTransform>(
                     pipe.getSharedHeader(),
                     pipe.numOutputPorts(),
@@ -1237,9 +1254,20 @@ Pipe ReadFromMergeTree::readByLayers(
                     /*out_row_sources_buf=*/ nullptr,
                     /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
-                    /*apply_virtual_row_conversions=*/ false);
+                    /*apply_virtual_row_conversions=*/ false,
+                    /*virtual_row_prefetch_window=*/ 0,
+                    /*have_all_inputs=*/ true,
+                    defer_materialization,
+                    parallel_materialization_stats);
 
                 pipe.addTransform(std::move(transform));
+
+                if (defer_materialization)
+                    addParallelMergingSortedMaterialization(
+                        pipe,
+                        materialization_threads,
+                        block_size.max_block_size_rows,
+                        parallel_materialization_stats);
             }
 
             return pipe;
@@ -2131,6 +2159,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             if (pipe.numOutputPorts() > 1)
             {
+                const size_t max_materialization_threads
+                    = settings[Setting::max_parallel_ordered_merge_materialization_threads];
+                const size_t materialization_threads = std::min(
+                    max_materialization_threads,
+                    pipe.maxParallelStreams());
+                const bool defer_materialization = materialization_threads > 1;
+                MergingSortedTransformStatsPtr parallel_materialization_stats;
+                if (defer_materialization)
+                    parallel_materialization_stats = std::make_shared<MergingSortedTransformStats>(materialization_threads);
+
                 auto transform = std::make_shared<MergingSortedTransform>(
                     pipe.getSharedHeader(),
                     pipe.numOutputPorts(),
@@ -2144,9 +2182,20 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     /*out_row_sources_buf=*/ nullptr,
                     /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
-                    /*apply_virtual_row_conversions*/ false);
+                    /*apply_virtual_row_conversions*/ false,
+                    /*virtual_row_prefetch_window=*/ 0,
+                    /*have_all_inputs=*/ true,
+                    defer_materialization,
+                    parallel_materialization_stats);
 
                 pipe.addTransform(std::move(transform));
+
+                if (defer_materialization)
+                    addParallelMergingSortedMaterialization(
+                        pipe,
+                        materialization_threads,
+                        block_size.max_block_size_rows,
+                        parallel_materialization_stats);
             }
         };
 
