@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/tests/gtest_ephemeral_certificate.h>
+#include <IO/SocketPeerClosed.h>
 
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
@@ -219,6 +220,29 @@ TEST(SSLErrorQueue, FatalReadSkipsTLSShutdown)
 
     /// `shutdown` must close the transport directly. Calling `SSL_shutdown` after the fatal read
     /// would raise another SSL exception and could contaminate the thread's error queue.
+    EXPECT_NO_THROW(pair.getClient().shutdown());
+    EXPECT_EQ(ERR_peek_error(), 0UL);
+}
+
+
+TEST(SSLErrorQueue, FatalPeekSkipsTLSShutdown)
+{
+    LiveTLSPair pair;
+    pair.sendMalformedRecord();
+
+    auto state = DB::SocketState::Idle;
+    /// `poll` can first wake for a TLS 1.3 post-handshake message. Repeat while `SSL_peek`
+    /// consumes only such control records, with a total timeout of five seconds.
+    for (int attempt = 0; attempt < 50 && state == DB::SocketState::Idle; ++attempt)
+    {
+        if (pair.getClient().poll(Poco::Timespan(0, 100'000), Poco::Net::Socket::SELECT_READ))
+            state = DB::getSocketState(pair.getClient());
+    }
+    EXPECT_EQ(state, DB::SocketState::Closed);
+    EXPECT_EQ(ERR_peek_error(), 0UL);
+
+    /// The diagnostic `SSL_peek` saw a fatal TLS error, so `shutdown` must close the transport
+    /// directly instead of attempting the forbidden `SSL_shutdown` operation.
     EXPECT_NO_THROW(pair.getClient().shutdown());
     EXPECT_EQ(ERR_peek_error(), 0UL);
 }

@@ -150,6 +150,13 @@ void SecureSocketImpl::setMutex(std::unique_ptr<RecursiveMutex> mutex)
 }
 
 
+void SecureSocketImpl::markFatalError()
+{
+	ScopedLock lock(*_mutex);
+	_fatalError = true;
+}
+
+
 const BIO_METHOD * SecureSocketImpl::getBioMethod() const
 {
 	return _bioMethod ? _bioMethod : BIO_s_socket();

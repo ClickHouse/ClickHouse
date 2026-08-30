@@ -149,6 +149,10 @@ namespace Net
         /// The object is normally guarded by the socket's mutex; a caller that uses it
         /// directly must ensure the socket is not accessed concurrently.
 
+        void markFatalError();
+        /// Records that an external operation on the underlying `SSL` object failed fatally.
+        /// An orderly SSL shutdown must not be attempted afterwards.
+
         X509 * peerCertificate() const;
         /// Returns the peer's certificate.
 
