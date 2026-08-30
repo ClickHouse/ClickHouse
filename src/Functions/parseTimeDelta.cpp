@@ -13,6 +13,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -114,6 +116,13 @@ namespace
         String getSignatureString() const override
         {
             return "(String) -> Float64";
+        }
+
+        /// `parseTimeDelta` distinguished the two arity errors before it adopted the declarative
+        /// signature, and its tests pin those codes.
+        int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+        {
+            return number_of_arguments < 1 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -27,6 +27,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+}
+
 struct NameAnd { static constexpr auto name = "and"; };
 struct NameOr { static constexpr auto name = "or"; };
 struct NameXor { static constexpr auto name = "xor"; };
@@ -234,6 +239,13 @@ public:
                    "selectIf(anyNullable(A1, A2, ...), Nullable(selectIf(anyBool(A1, A2, ...), Bool, UInt8)), selectIf(anyBool(A1, A2, ...), Bool, UInt8))";
         }
         return "(A1 : NativeNumber, A2 : NativeNumber, ...) -> selectIf(anyBool(A1, A2, ...), Bool, UInt8)";
+    }
+
+    /// The signature accepts two or more arguments, so the only possible arity error is a call with
+    /// fewer than two - the legacy resolver reported it as `TOO_FEW_ARGUMENTS_FOR_FUNCTION`.
+    int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
+    {
+        return ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override;

@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int NOT_IMPLEMENTED;
 }
@@ -53,6 +54,14 @@ public:
         /// and the trailing E is the else branch. The when-positions are matched as Any
         /// since CASE WHEN equality semantics handles arbitrary types.
         return "(Any, Any, V1, ..., E) -> leastSupertype(V1, ..., E)";
+    }
+
+    /// Before the declarative signature, an empty call was `TOO_FEW_ARGUMENTS_FOR_FUNCTION` and any
+    /// other unusable arity - fewer than four arguments, or an odd number of them - was
+    /// `BAD_ARGUMENTS`. Both codes are pinned by the tests of the `CASE` construction.
+    int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+    {
+        return number_of_arguments == 0 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::BAD_ARGUMENTS;
     }
 
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true

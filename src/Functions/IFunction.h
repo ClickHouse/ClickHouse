@@ -462,6 +462,16 @@ public:
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
     virtual bool allowsOmittingParentheses() const { return false; }
 
+    /** The error code reported when the number of arguments does not fit the function's signature.
+      *
+      * Several functions historically reported a code more specific than
+      * `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` - `TOO_FEW_ARGUMENTS_FOR_FUNCTION`,
+      * `TOO_MANY_ARGUMENTS_FOR_FUNCTION` or `BAD_ARGUMENTS` - and that code is part of their
+      * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
+      * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
+      */
+    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
+
     /** Declarative signature of this function, see DataTypes/FunctionSignature.h.
       *
       * When non-empty, the default getReturnTypeImpl uses this signature to validate argument
@@ -714,6 +724,16 @@ public:
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
+
+    /** The error code reported when the number of arguments does not fit the function's signature.
+      *
+      * Several functions historically reported a code more specific than
+      * `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` - `TOO_FEW_ARGUMENTS_FOR_FUNCTION`,
+      * `TOO_MANY_ARGUMENTS_FOR_FUNCTION` or `BAD_ARGUMENTS` - and that code is part of their
+      * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
+      * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
+      */
+    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
 
     /// Declarative signature, see IFunction::getSignatureString. Same opt-in mechanism.
     virtual String getSignatureString() const { return {}; }

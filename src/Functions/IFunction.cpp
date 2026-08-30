@@ -757,11 +757,21 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
 
     if (number_of_arguments != expected_number_of_arguments)
         throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            getWrongNumberOfArgumentsErrorCode(number_of_arguments),
             "Number of arguments for function {} doesn't match: passed {}, should be {}",
             getName(),
             number_of_arguments,
             expected_number_of_arguments);
+}
+
+int IFunctionOverloadResolver::getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const
+{
+    return ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+int IFunction::getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const
+{
+    return ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
@@ -920,7 +930,7 @@ FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndNam
 namespace
 {
     /// Parse and cache function signatures globally.
-    DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments, bool types_only = false, bool propagate_nullability = false)
+    DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments, bool types_only = false, bool propagate_nullability = false, int wrong_arity_error_code = ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
     {
         static std::mutex cache_mutex;
         static std::unordered_map<String, std::shared_ptr<FunctionSignature>> cache; // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -961,7 +971,7 @@ namespace
             if (null_presence.has_nullable)
             {
                 const ColumnsWithTypeAndName nested_columns = createBlockWithNestedColumns(arguments);
-                return makeNullable(applyFunctionSignature(signature_str, function_name, nested_columns, types_only, /*propagate_nullability=*/false));
+                return makeNullable(applyFunctionSignature(signature_str, function_name, nested_columns, types_only, /*propagate_nullability=*/false, wrong_arity_error_code));
             }
         }
 
@@ -969,16 +979,16 @@ namespace
         DataTypePtr result = sig->check(arguments, reason, types_only);
         if (!result)
         {
-            /// Surface the legacy `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` code when every
+            /// Surface the legacy arity code (`NUMBER_OF_ARGUMENTS_DOESNT_MATCH` by default,
+            /// or whatever the function's `getWrongNumberOfArgumentsErrorCode` selects) when every
             /// alternative failed for arity reasons only. The DSL phrases arity
             /// problems with one of three exact prefixes ("too few arguments...",
             /// "too many arguments...", "number of arguments..."); type problems
             /// never start with those words. So: if the reason contains any of
             /// those phrases *and* nothing that looks like a type mismatch
             /// (a matcher's "value provided as Nth argument ... has type X that is not Y" prefix),
-            /// we're confident this is an arity-only failure. This keeps existing
-            /// `serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH` test annotations
-            /// valid after a function adopts a declarative signature.
+            /// we're confident this is an arity-only failure. This keeps the arity
+            /// diagnostics of a function unchanged after it adopts a declarative signature.
             const bool mentions_arity =
                 reason.contains("too few arguments")
                 || reason.contains("too many arguments")
@@ -1008,7 +1018,7 @@ namespace
 
             int code = ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT;
             if (argument_count_out_of_range || (mentions_arity && !mentions_type_mismatch && !mentions_non_const))
-                code = ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+                code = wrong_arity_error_code;
             else if (mentions_non_const && !mentions_type_mismatch)
                 code = ErrorCodes::ILLEGAL_COLUMN;
 
@@ -1023,7 +1033,7 @@ namespace
 DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (auto signature_str = getSignatureString(); !signature_str.empty())
-        return applyFunctionSignature(signature_str, getName(), arguments, /*types_only=*/false, signaturePropagatesNullability());
+        return applyFunctionSignature(signature_str, getName(), arguments, /*types_only=*/false, signaturePropagatesNullability(), getWrongNumberOfArgumentsErrorCode(arguments.size()));
 
     DataTypes data_types(arguments.size());
     for (size_t i = 0; i < arguments.size(); ++i)
@@ -1061,7 +1071,7 @@ DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & arguments) const
             columns.emplace_back(nullptr, type, String{});
         try
         {
-            return applyFunctionSignature(signature_str, getName(), columns, /*types_only=*/true, signaturePropagatesNullability());
+            return applyFunctionSignature(signature_str, getName(), columns, /*types_only=*/true, signaturePropagatesNullability(), getWrongNumberOfArgumentsErrorCode(arguments.size()));
         }
         catch (const Exception & e)
         {
@@ -1084,7 +1094,7 @@ DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & arguments) const
 DataTypePtr IFunction::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (auto signature_str = getSignatureString(); !signature_str.empty())
-        return applyFunctionSignature(signature_str, getName(), arguments, /*types_only=*/false, signaturePropagatesNullability());
+        return applyFunctionSignature(signature_str, getName(), arguments, /*types_only=*/false, signaturePropagatesNullability(), getWrongNumberOfArgumentsErrorCode(arguments.size()));
 
     DataTypes data_types(arguments.size());
     for (size_t i = 0; i < arguments.size(); ++i)

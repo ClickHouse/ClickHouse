@@ -45,12 +45,17 @@ except
 drop table if exists hilbert_numbers_1_03131;
 
 select '----- ERRORS -----';
-select hilbertEncode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select hilbertEncode(); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 select hilbertEncode(1, 2, 3); -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
+select hilbertEncode((1, 2, 3), 1, 2, 3); -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
 select hilbertDecode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select hilbertEncode('text'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select hilbertDecode('text', 'text'); -- { serverError ILLEGAL_COLUMN }
 select hilbertEncode((1, 2), 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+select '----- SIGNATURE -----';
+-- The declared signature must not advertise more dimensions than `hilbertEncode` implements.
+select signature from system.functions where name = 'hilbertEncode';
 
 SELECT '----- END -----';
 drop table if exists hilbert_numbers_03131;
