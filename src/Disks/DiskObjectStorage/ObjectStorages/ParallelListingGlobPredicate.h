@@ -38,6 +38,21 @@ bool globPathHasRecursiveWildcard(const std::string & glob_path);
 /// `glob_path` must not contain `**`.
 std::function<bool(const std::string & common_prefix)> makeShouldDescendPredicate(const std::string & glob_path);
 
+/// Builds the predicate telling whether a "directory" the walk descends into is *terminal*: the only key
+/// under it that `glob_path` can match is its own directory-marker object (the key equal to the prefix
+/// itself). This happens only for a trailing-slash glob (`root/*/`), whose matching keys are the markers:
+/// `makeShouldDescendPredicate` descends one extra level into `root/dir/` precisely to surface the marker,
+/// which `S3` reports as a `CommonPrefixes` entry of the parent and as a `Contents` entry of the prefix's
+/// own listing.
+///
+/// A marker sorts before every other key under the prefix (it is their strict prefix), so the first page of
+/// `ListObjectsV2(Prefix = 'root/dir/', Delimiter = '/')` either returns it or proves it absent. Everything
+/// after that page — further pages, and the keyspace split of a file-only directory — can only produce keys
+/// that cannot match, so a caller must stop the range there: without this, a marker-less layout such as
+/// `root/dNNN/file.csv` would scan every subtree in full just to prove the markers are absent, which is far
+/// more requests than the serial listing needs.
+std::function<bool(const std::string & common_prefix)> makeIsMarkerOnlyPrefixPredicate(const std::string & glob_path);
+
 /// Chooses the prefix the parallel delimiter walk of `glob_path` starts from, or `std::nullopt` when it
 /// must stay on the serial iterator. `key_prefix` is the glob's fixed prefix (`cutGlobs`) and
 /// `is_prefix_allowed` answers whether the storage accepts a delimited listing that starts from a given

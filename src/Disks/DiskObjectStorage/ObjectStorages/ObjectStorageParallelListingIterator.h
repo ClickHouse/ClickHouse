@@ -142,6 +142,13 @@ public:
     /// at the end of the fixed prefix's key region instead of paging through every later loose object.
     /// Sub-"directories" discovered within the bound are walked unbounded — their keys share the
     /// discovered prefix and therefore sort within the bound already.
+    /// `is_marker_only_prefix(common_prefix)`, when set, tells that the only key of interest under a
+    /// discovered "directory" is its own directory-marker object (the key equal to the prefix). Such a
+    /// range is listed for exactly one page — the marker sorts before every other key under the prefix, so
+    /// the first page either returns it or proves it absent — and the page's other keys are dropped. Used
+    /// for trailing-slash globs (`root/*/`), whose matching keys are the markers themselves; see
+    /// `makeIsMarkerOnlyPrefixPredicate`. Without it a marker-less layout would paginate (and keyspace-split)
+    /// every subtree in full only to prove the markers are absent.
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
@@ -154,7 +161,8 @@ public:
         size_t max_pending_range_bytes_ = DEFAULT_MAX_PENDING_RANGE_BYTES,
         size_t max_buffered_object_bytes_ = DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
         bool allow_start_after_ = true,
-        std::string root_range_end_ = {});
+        std::string root_range_end_ = {},
+        std::function<bool(const std::string & common_prefix)> is_marker_only_prefix_ = {});
 
     ~ObjectStorageParallelListingIterator() override;
 
@@ -216,6 +224,12 @@ private:
                                    /// semantics. Never set on keyspace-split slices, whose `start_after` is
                                    /// a plain key boundary (its byte past the shared base comes from keys of
                                    /// a delimited page, so it never falls inside a sub-directory group).
+        bool marker_only = false;  /// The only key of interest under `prefix` is its own directory-marker
+                                   /// object (the key equal to `prefix`), which sorts before every other
+                                   /// key under it. Such a range is listed for a single page and is never
+                                   /// paginated or keyspace-split: after that page the marker is either
+                                   /// found or proven absent, and every other key of the subtree is
+                                   /// irrelevant. See `makeIsMarkerOnlyPrefixPredicate`.
         bool resume_by_relisting = false; /// Set on a budget-trim "resume" range when the storage rejects
                                    /// `StartAfter` (S3 Express / directory buckets, see
                                    /// `IObjectStorage::supportsStartAfterListing`): the range is then listed
@@ -294,6 +308,9 @@ private:
     /// Tags-free existence probe for the flat keyspace split; see `ProbeLevelFunction`.
     const ProbeLevelFunction probe_level;
     const std::function<bool(const std::string & common_prefix)> should_descend;
+    /// Marks a discovered "directory" whose only key of interest is its own directory marker; see the
+    /// constructor. Empty when no such directory exists for the glob being listed.
+    const std::function<bool(const std::string & common_prefix)> is_marker_only_prefix;
     /// Throws (the proper `TIMEOUT_EXCEEDED` / `QUERY_WAS_CANCELLED`) when the owning query was
     /// cancelled; empty in non-query contexts. Polled by the consumer while waiting for a batch.
     const std::function<void()> check_cancellation;

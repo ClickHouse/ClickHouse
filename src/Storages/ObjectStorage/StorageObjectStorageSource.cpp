@@ -1983,7 +1983,12 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
                 ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
                 /* allow_start_after */ object_storage->supportsStartAfterListing(),
-                std::move(root_range_end));
+                std::move(root_range_end),
+                /// A trailing-slash glob (`root/*/`) matches directory markers, and the walk descends one
+                /// level into every matching directory only to surface its marker. Tell the iterator so
+                /// that such a range stops after its first page instead of paginating (and splitting) the
+                /// whole subtree to prove a marker is absent.
+                makeIsMarkerOnlyPrefixPredicate(key_with_globs.path));
         }
         else
         {

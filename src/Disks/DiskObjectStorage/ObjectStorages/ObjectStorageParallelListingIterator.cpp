@@ -52,7 +52,8 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     size_t max_pending_range_bytes_,
     size_t max_buffered_object_bytes_,
     bool allow_start_after_,
-    std::string root_range_end_)
+    std::string root_range_end_,
+    std::function<bool(const std::string & common_prefix)> is_marker_only_prefix_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , max_buffered_object_bytes(std::max<size_t>(max_buffered_object_bytes_, 1))
@@ -64,6 +65,7 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     , list_level(std::move(list_level_))
     , probe_level(std::move(probe_level_))
     , should_descend(std::move(should_descend_))
+    , is_marker_only_prefix(std::move(is_marker_only_prefix_))
     , check_cancellation(std::move(check_cancellation_))
     , thread_group(getCurrentThreadGroup())
     , pool(
@@ -569,6 +571,9 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                     child.split_pos = common_prefix.size();
                     child.split_budget = range.split_budget;
                     child.use_delimiter = true;
+                    /// A terminal "directory" is descended into only to surface its own directory marker,
+                    /// so its range must not paginate or split past the first page; see `ListRange`.
+                    child.marker_only = is_marker_only_prefix && is_marker_only_prefix(common_prefix);
                     child.prefix = std::move(common_prefix);
                     new_ranges.push_back(std::move(child));
                 }
@@ -582,6 +587,11 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                     reached_end = true;
                     break;
                 }
+                /// Only the directory marker of this prefix can match; everything else the page returned
+                /// lives below it and is filtered out by the caller's per-key match anyway, so do not
+                /// carry it through the buffered-object budget.
+                if (range.marker_only && object->getPath() != range.prefix)
+                    continue;
                 /// The lower bound that `StartAfter` would have enforced, applied locally on a re-listing
                 /// resume: these objects were already emitted by the page that the trim replaced.
                 if (range.resume_by_relisting && object->getPath() <= range.start_after)
@@ -596,7 +606,12 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
             std::vector<ListRange> follow_up = std::move(new_ranges);
             bool keep_paginating = false;
 
-            if (!reached_end && result.is_truncated)
+            /// A marker-only range is done after its first page: the marker sorts before every other key
+            /// under the prefix, so this page either returned it or proved it absent, and no later page can
+            /// hold a matching key. Neither paginate nor keyspace-split (which is why the flag is checked
+            /// before the split decision below): doing so would scan the whole subtree of every matching
+            /// directory just to prove the marker is absent.
+            if (!reached_end && result.is_truncated && !range.marker_only)
             {
                 continuation_token = result.next_continuation_token;
                 if (had_common_prefixes)
@@ -647,7 +662,7 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                 enqueueLocked(follow_up, batch, local_frontier, lock);
             }
 
-            if (reached_end || !result.is_truncated || !keep_paginating)
+            if (reached_end || !result.is_truncated || range.marker_only || !keep_paginating)
                 return true;
         }
     }

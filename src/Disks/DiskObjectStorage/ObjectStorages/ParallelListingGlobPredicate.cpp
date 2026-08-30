@@ -102,6 +102,20 @@ std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::s
     };
 }
 
+std::function<bool(const std::string &)> makeIsMarkerOnlyPrefixPredicate(const std::string & glob_path)
+{
+    /// Only a trailing-slash glob matches directory markers at all; for any other glob the walk descends
+    /// into a directory to look for keys *below* it, so no directory is terminal.
+    if (glob_path.empty() || glob_path.back() != '/')
+        return [](const std::string &) { return false; };
+
+    const size_t num_segments = splitPathComponents(glob_path).size();
+    return [num_segments](const std::string & common_prefix)
+    {
+        return splitPathComponents(common_prefix).size() == num_segments;
+    };
+}
+
 std::optional<std::string> chooseDelimitedListingStartPrefix(
     const std::string & glob_path,
     const std::string & key_prefix,

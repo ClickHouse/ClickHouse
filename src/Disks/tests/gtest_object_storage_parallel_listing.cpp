@@ -1324,6 +1324,73 @@ TEST(ObjectStorageParallelListing, DirectoryMarkerOnTruncatedPageBoundary)
     }
 }
 
+TEST(ObjectStorageParallelListing, TrailingSlashGlobStopsAtTheFirstPageOfEachDirectory)
+{
+    /// Regression: for a trailing-slash glob (`root/*/`) the walk descends one level into every matching
+    /// directory only to surface its directory-marker object. The marker is a strict prefix of every other
+    /// key under `root/dNNN/`, so it sorts first: once the first page of that prefix came back without it,
+    /// no later page can hold a matching key. Paginating (or keyspace-splitting) the child anyway scans the
+    /// whole subtree of every directory just to prove the marker is absent — on the common marker-less
+    /// layout that is far more requests than the serial listing needs.
+    const std::string glob = "root/*/";
+
+    /// The predicate marks exactly the level of the markers as terminal.
+    auto is_marker_only = makeIsMarkerOnlyPrefixPredicate(glob);
+    EXPECT_TRUE(is_marker_only("root/dir/"));
+    EXPECT_FALSE(is_marker_only("root/"));
+    EXPECT_FALSE(is_marker_only("root/dir/sub/"));
+    /// A glob without a trailing slash matches keys below the directories, so no directory is terminal.
+    EXPECT_FALSE(makeIsMarkerOnlyPrefixPredicate("root/*/data.csv")("root/dir/"));
+
+    constexpr size_t num_directories = 200;
+    constexpr size_t files_per_directory = 20;
+
+    FakeS3 s3;
+    s3.page_size = 5;
+    for (size_t d = 0; d < num_directories; ++d)
+    {
+        /// Only the first two directories carry a marker object; the rest model the usual layout where
+        /// nothing but the files exists.
+        if (d < 2)
+            s3.add(fmt::format("root/d{:03}/", d));
+        for (size_t f = 0; f < files_per_directory; ++f)
+            s3.add(fmt::format("root/d{:03}/file_{:03}.csv", d, f));
+    }
+    s3.finalize();
+
+    const re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
+    ASSERT_TRUE(matcher.ok());
+    const std::vector<std::string> expected{"root/d000/", "root/d001/"};
+
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        s3.requests.store(0);
+        ObjectStorageParallelListingIterator iterator(
+            "root/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3),
+            makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ true, /* check_cancellation */ {},
+            /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ true,
+            /* root_range_end */ {},
+            is_marker_only);
+        auto listed = drain(iterator);
+
+        std::vector<std::string> matched;
+        for (const auto & key : listed)
+        {
+            if (re2::RE2::FullMatch(key, matcher))
+                matched.push_back(key);
+        }
+        std::sort(matched.begin(), matched.end());
+        EXPECT_EQ(matched, expected) << "threads=" << threads;
+
+        /// One request per directory plus the root level's own pages — instead of one per page of every
+        /// directory's files (which alone would be `num_directories * files_per_directory / page_size`).
+        EXPECT_LE(s3.requests.load(), 2 * num_directories) << "threads=" << threads;
+    }
+}
+
 TEST(ObjectStorageParallelListing, ExceptionPropagates)
 {
     auto list_level = [](const std::string & prefix, const std::string &, const std::string &, const std::string &) -> ObjectStorageListResult
