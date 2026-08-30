@@ -160,7 +160,8 @@ struct ReplaceRegexpImpl
         return result.is_trivial && result.required_substring_is_prefix && result.required_substring == needle;
     }
 
-    static void processString(
+    /// Returns whether at least one match was found.
+    static bool processString(
         const char * haystack_data,
         size_t haystack_length,
         ColumnString::Chars & res_data,
@@ -173,6 +174,7 @@ struct ReplaceRegexpImpl
         std::string_view haystack(haystack_data, haystack_length);
         std::string_view matches[max_captures];
 
+        bool found_match = false;
         size_t copy_pos = 0;
         size_t match_pos = 0;
 
@@ -184,6 +186,8 @@ struct ReplaceRegexpImpl
 
             if (searcher.Match(haystack, match_pos, haystack_length, re2::RE2::Anchor::UNANCHORED, matches, num_captures))
             {
+                found_match = true;
+
                 const auto & match = matches[0]; /// Complete match
                 size_t bytes_to_copy = (match.data() - haystack.data()) - copy_pos;
 
@@ -258,6 +262,8 @@ struct ReplaceRegexpImpl
                 break;
             }
         }
+
+        return found_match;
     }
 
     /// `processString` for a JIT-compiled matcher (see `CompileRegexp.h`). Mirrors the loop above,
@@ -364,6 +370,10 @@ struct ReplaceRegexpImpl
     /// Haystacks are often repetitive (e.g. URLs), so run the regexp once per distinct value and copy the
     /// cached result for repeats. Only worth it for RE2 matches: a JIT-compiled match is about as cheap as
     /// the hash table probe it would save, which is why the JIT loop processes every row directly.
+    /// A row without a match comes out identical to its input, so caching it saves only the match attempt,
+    /// and for short-circuiting patterns such as '^foo' that attempt is cheaper than hashing the haystack.
+    /// Once a block proves to be almost entirely non-matching, a capture-free existence check therefore runs
+    /// first and rejected rows are copied through directly, at the cost of the plain loop.
     /// `get_haystack(i)` must stay valid for the whole call.
     template <typename GetHaystack>
     static void processStringsDeduplicated(
@@ -381,16 +391,20 @@ struct ReplaceRegexpImpl
         {
             UInt64 start;
             UInt64 length;
+            bool matched;
         };
 
         HashMap<std::string_view, CachedResult> results_cache;
         bool map_enabled = true;
         /// Low, so that short blocks are never written off as distinct before they can repeat.
-        size_t next_distinct_ratio_check = 256;
+        size_t next_ratio_check = 256;
+
+        bool precheck_non_matching = false;
+        size_t matched_rows = 0;
 
         std::string_view prev_haystack;
         bool has_prev_haystack = false;
-        CachedResult prev_result{0, 0};
+        CachedResult prev_result{0, 0, false};
 
         auto copy_cached = [&](const CachedResult & cached)
         {
@@ -409,24 +423,41 @@ struct ReplaceRegexpImpl
 
             const std::string_view haystack = get_haystack(i);
 
-            if (has_prev_haystack && haystack == prev_haystack)
+            /// Before the prev-value compare: for a rejected row this check plus the copy is exactly the
+            /// plain loop's cost, while the compare would read the whole haystack.
+            if (precheck_non_matching
+                && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
             {
-                copy_cached(prev_result);
+                res_data.resize(res_data.size() + haystack.size());
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
+                res_offset += haystack.size();
+                budget.charge();
+                budget.charge(haystack.size());
                 res_offsets[i] = res_offset;
                 continue;
             }
 
-            if (map_enabled && i >= next_distinct_ratio_check)
+            if (has_prev_haystack && haystack == prev_haystack)
+            {
+                copy_cached(prev_result);
+                matched_rows += prev_result.matched;
+                res_offsets[i] = res_offset;
+                continue;
+            }
+
+            if (map_enabled && i >= next_ratio_check)
             {
                 if (results_cache.size() * 10 > i * 9)
                 {
                     map_enabled = false;
                     results_cache.clearAndShrink();
                 }
-                next_distinct_ratio_check *= 2;
+                precheck_non_matching = matched_rows * 20 < i;
+                next_ratio_check *= 2;
             }
 
             const UInt64 result_start = res_offset;
+            bool row_matched;
 
             if (map_enabled)
             {
@@ -434,19 +465,23 @@ struct ReplaceRegexpImpl
                 bool inserted = false;
                 results_cache.emplace(haystack, it, inserted);
                 if (!inserted)
+                {
                     copy_cached(it->getMapped());
+                    row_matched = it->getMapped().matched;
+                }
                 else
                 {
-                    processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
-                    it->getMapped() = {result_start, res_offset - result_start};
+                    row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+                    it->getMapped() = {result_start, res_offset - result_start, row_matched};
                 }
             }
             else
-                processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+                row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
 
+            matched_rows += row_matched;
             prev_haystack = haystack;
             has_prev_haystack = true;
-            prev_result = {result_start, res_offset - result_start};
+            prev_result = {result_start, res_offset - result_start, row_matched};
             res_offsets[i] = res_offset;
         }
     }

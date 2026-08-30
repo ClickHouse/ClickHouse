@@ -11,6 +11,11 @@
     <!-- FixedString haystacks, which go through their own entry point. -->
     <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpAll(toFixedString(substring(Referer, 1, 64), 64), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
 
+    <!-- Short-circuiting patterns that reject almost every row: the match-ratio guard must switch to
+         the capture-free pre-check so these do not pay for hashing the haystacks. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpOne(URL, '^missing', 'X'))</query>
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '^missing', 'X'))</query>
+
     <!-- Mostly-distinct haystacks: the distinct-ratio guard must disable deduplication. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
 
