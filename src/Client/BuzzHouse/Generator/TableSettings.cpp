@@ -79,6 +79,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {"'throw'", "'drop'", "'rebuild'", "'compatibility'"},
          false)},
     {"always_fetch_merged_part", trueOrFalseSetting},
+    {"always_fetch_mutated_part", trueOrFalseSetting},
     {"always_use_copy_instead_of_hardlinks", trueOrFalseSetting},
     {"apply_patches_on_merge", trueOrFalseSetting},
     {"assign_part_uuids", trueOrFalseSetting},
@@ -149,6 +150,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'v1'", "'v2'", "'v3'"},
          false)},
+    /// Picks a codec per block on merge, so the data read back must stay the same
+    {"enable_adaptive_codec_selection", trueOrFalseSetting},
     {"enable_block_number_column", trueOrFalseSetting},
     {"enable_block_offset_column", trueOrFalseSetting},
     {"enable_index_granularity_compression", trueOrFalseSetting},
@@ -592,6 +595,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"shared_merge_tree_max_suspicious_broken_parts", rowsRangeSetting},
     {"shared_merge_tree_max_suspicious_broken_parts_bytes", bytesRangeSetting},
     {"shared_merge_tree_memo_ids_remove_timeout_seconds", highRangeSetting},
+    {"shared_merge_tree_merge_coordinator_distribution_algorithm",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'water_filling'" : "'sainte_lague'"; },
+         {"'water_filling'", "'sainte_lague'"},
+         false)},
     {"shared_merge_tree_merge_coordinator_election_check_period_ms", highRangeSetting},
     {"shared_merge_tree_merge_coordinator_factor", highRangeSetting},
     {"shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms", highRangeSetting},
@@ -647,6 +655,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"temporary_directories_lifetime", highRangeSetting},
     {"text_index_dictionary_block_frontcoding_compression", trueOrFalseSetting},
     {"text_index_dictionary_block_size", highRangeNonZeroSetting},
+    {"text_index_max_memory_usage_before_flush", bytesRangeNonZeroSetting},
+    {"text_index_max_processed_tokens_before_flush", highRangeNonZeroSetting},
     {"text_index_posting_list_block_size", bytesRangeNonZeroSetting},
     {"text_index_posting_list_codec",
      CHSetting(

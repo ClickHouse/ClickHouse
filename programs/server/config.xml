@@ -951,6 +951,14 @@
     <!-- Default database. -->
     <default_database>default</default_database>
 
+    <!-- The user to authenticate as when a client connects without specifying a user name
+         (e.g. an HTTP request without the 'user' parameter, or a native protocol Hello packet
+         with an empty user name). Set to an empty value to reject such connections.
+         Never applied to interserver connections.
+         Can be overridden per endpoint in the <protocols> section with the same tag.
+    -->
+    <!-- <default_session_user>default</default_session_user> -->
+
     <!-- Server time zone could be set here.
 
          Time zone is used when converting between String and DateTime types,
