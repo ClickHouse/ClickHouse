@@ -6,7 +6,9 @@ Allow different compression codecs to be declared for elements of a `Tuple` colu
 
 Codec policy remains table metadata. It must not become part of `IColumn`, the identity of `IDataType`, or a permanently configured `ISerialization` object.
 
-Exact SQL parsing is outside the scope of this document. It is assumed that `CREATE TABLE` and `ALTER TABLE` can provide a root codec and zero or more subcolumn codec declarations.
+The selected SQL model is specified in `SQLNoModifySubcolumnNoDots.MD`. Element declarations are local modifiers inside a stored column's `Tuple` declaration. An `ALTER TABLE ... MODIFY COLUMN` restates the owning top-level column type and carries set, remove, or preserve operations for its tuple elements. There is no `MODIFY SUBCOLUMN` command and no dotted codec target.
+
+The initial syntax is limited to an owning `Tuple` column and elements reached through a direct chain of nested `Tuple` declarations. A `Tuple` used only in an expression has no storage codec policy. An annotation reached through `Array`, `Map`, or another non-`Tuple` wrapper is rejected rather than ignored.
 
 ## Codec Metadata Model
 
@@ -32,7 +34,7 @@ Existing metadata with a single codec is interpreted as a policy containing only
 
 ## Metadata Lifecycle
 
-Populate the codec policy when interpreting `CREATE TABLE` and when parsing an `AlterCommand`.
+Populate the codec policy when interpreting `CREATE TABLE` and when parsing an `AlterCommand`. A typed `MODIFY COLUMN` is a complete logical-type declaration but a codec-policy patch: an element `CODEC(...)` sets that path, an element `REMOVE CODEC` removes that path, and an omitted element codec operation preserves the existing declaration.
 
 Update all `ColumnDescription` operations to preserve the complete policy:
 
@@ -44,7 +46,7 @@ Update all `ColumnDescription` operations to preserve the complete policy:
 - Metadata reload and attach.
 - Backup and restore.
 
-`ALTER` must support adding, replacing, and removing an individual subcolumn declaration. A codec-only change remains metadata-only and does not immediately rewrite existing parts.
+`ALTER` must support adding, replacing, and removing individual tuple-element declarations from the restated owner declaration. A codec-only change remains metadata-only and does not immediately rewrite existing parts.
 
 Validation must reject:
 
@@ -128,7 +130,7 @@ Update user-visible metadata consistently:
 - `SHOW CREATE TABLE` round-trips the complete policy.
 - `DESCRIBE TABLE` shows the root declaration for the top-level column.
 - `DESCRIBE TABLE` with subcolumns enabled shows each subcolumn's effective codec.
-- `system.columns.codec_expression` returns the normalized complete policy.
+- `system.columns.compression_codec` returns the normalized complete policy.
 - Physical codec introspection continues reporting codecs found in data blocks.
 
 ## Compatibility
@@ -144,23 +146,4 @@ Compatibility with older server versions requires a feature/version gate if the 
 
 ## Test Plan
 
-Add functional tests for:
-
-- Named and positional tuples with different element codecs.
-- A root codec inherited by elements.
-- An element codec overriding its parent.
-- Explicit `Default` overriding a parent codec.
-- Nested tuples and nested overrides.
-- Mixed element types, such as `Delta` for integers and `ZSTD` for strings.
-- `Nullable`, `Array`, and other multi-stream element types.
-- Structural-stream generic codec filtering.
-- `Quantized` and other codec-driven serialization customization.
-- Wide and compact parts.
-- Inserts, reads, merges, mutations, restart, attach, backup, and restore.
-- Replicated metadata round-trips.
-- Codec-only `ALTER` affecting future writes without immediately rewriting old parts.
-- Removing one subcolumn codec without changing sibling declarations.
-- Invalid paths, incompatible codecs, duplicates, and shared-stream conflicts.
-- Existing tables with one root codec retaining their current behavior.
-
-Use physical codec inspection to verify that each tuple element's stream was actually written with the expected codec, rather than relying only on `SHOW CREATE TABLE` output.
+The executable test matrix, concrete table definitions, queries, and planned stateless test filenames are specified in `SQLTestPlan.MD`.

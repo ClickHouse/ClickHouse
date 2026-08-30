@@ -2,16 +2,17 @@
 
 ## Scope and assumptions
 
-This document describes the metadata and storage changes needed to implement the SQL behavior in `SQL.MD`. Exact lexer, parser, and AST node layout changes are intentionally out of scope. The parser-facing contract assumed here is:
+This document describes the metadata and storage changes needed to implement the selected SQL behavior in `SQLNoModifySubcolumnNoDots.MD`. The parser-facing contract is:
 
 - A column declaration yields its ordinary logical `IDataType` without codec annotations embedded in the type identity.
-- It also yields zero or one root codec AST and zero or more pairs of `(logical tuple path, codec AST)`.
-- An `ALTER TABLE ... MODIFY SUBCOLUMN` command yields an owning top-level column name, a segmented logical tuple path, and either a set or remove operation.
-- Quoting is resolved by the parser. A quoted element called `metadata.source` arrives as one path segment, while `metadata.source` without quotes arrives as two segments.
+- It also yields zero or one root codec AST and zero or more element codec operations collected from the local `Tuple` declaration.
+- `CREATE TABLE` and `ADD COLUMN` element annotations are concrete codec declarations.
+- A typed `ALTER TABLE ... MODIFY COLUMN` targets only the owning top-level column. Its tuple declaration carries a patch in which an element can set `CODEC(...)`, use `REMOVE CODEC`, or omit an operation to preserve the existing declaration.
+- A nested tuple element's path is derived by walking the tuple type AST and logical `DataTypeTuple` together. It is never parsed from the `MODIFY COLUMN` target or recovered by splitting text on dots.
 
 The implementation must not recover paths by splitting a formatted identifier on dots. It must not place codec state in `IColumn`, in `IDataType::equals`, or in a pooled `ISerialization` object.
 
-The first implementation may restrict declarations to `Tuple` elements, including nested `Tuple` elements. Physical subcolumns such as array sizes, null maps, dictionary indexes, `Dynamic` paths, and `JSON` paths are not declaration targets. They still inherit the policy of the nearest containing tuple element.
+The first implementation restricts declarations to an owning `Tuple` column and elements reached through a direct chain of nested `Tuple` elements. An annotation reached through `Array`, `Map`, `Nullable`, or another non-`Tuple` wrapper is rejected. Physical subcolumns such as array sizes, null maps, dictionary indexes, `Dynamic` paths, and `JSON` paths are not declaration targets. They still inherit the policy of the nearest containing tuple element.
 
 ## Metadata representation
 
@@ -66,12 +67,12 @@ For compatibility during the conversion, provide narrow convenience methods such
 
 ## Canonical logical paths
 
-A canonical path is a vector of tuple-element names relative to the owning top-level storage column:
+A canonical path is a vector of tuple-element names relative to the owning top-level storage column. The notation below is diagnostic notation for the internal vector; it is not SQL target syntax:
 
 ```text
-payload.metadata.source -> {"metadata", "source"}
-pair.`1`                -> {"1"}
-payload.`metadata.source` -> {"metadata.source"}
+payload / metadata / source -> {"metadata", "source"}
+pair / first position       -> {"1"}
+payload / literal-dot name  -> {"metadata.source"}
 ```
 
 For named tuples, use the exact names in `DataTypeTuple::getElementNames`. For unnamed tuples, use the one-based names returned by `DataTypeTuple::getNameByPosition`. Canonicalization walks the type tree one segment at a time with `DataTypeTuple::tryGetPositionByName` and replaces the supplied segment with `getNameByPosition`. It returns both the canonical path and the selected subtree type. A segment is invalid if the current node is not a `DataTypeTuple`, the element does not exist, or more segments remain after a non-tuple element.
@@ -218,7 +219,7 @@ Update `ColumnDescription` copy assignment, move assignment, constructors, and `
 
 `ColumnDescription::type`, every `NamesAndTypes` entry, and part `columns.txt` type identity remain an undecorated logical `DataTypePtr`. A codec annotation is never accepted as part of an `IDataType` name and is never passed as a codec-bearing string to `DataTypeFactory`.
 
-When subcolumn declarations exist, `ColumnDescription::writeText` constructs a normalized `ASTColumnDeclaration` from the undecorated type plus the codec-policy metadata using `applyCodecDescriptionToAST`, and serializes that declaration through the column-metadata grammar. The annotation can appear syntactically inside the declaration's tuple type, as required by `SQL.MD`, but it remains a modifier in the column-declaration AST rather than part of the resulting `IDataType` identity. The existing escaped fields may be refactored to carry this normalized declaration, provided the legacy root-only byte representation remains unchanged.
+When subcolumn declarations exist, `ColumnDescription::writeText` constructs a normalized `ASTColumnDeclaration` from the undecorated type plus the codec-policy metadata using `applyCodecDescriptionToAST`, and serializes that declaration through the column-metadata grammar. The annotation appears syntactically inside the declaration's tuple type, as required by `SQLNoModifySubcolumnNoDots.MD`, but it remains a modifier in the column-declaration AST rather than part of the resulting `IDataType` identity. The existing escaped fields may be refactored to carry this normalized declaration, provided the legacy root-only byte representation remains unchanged.
 
 `ColumnDescription::readText` first recognizes the legacy form or parses the complete normalized column declaration. It then asks the ordinary type-AST conversion to produce an undecorated `DataTypePtr` and separately calls `codecDescriptionFromAST` to extract the policy. It must not call `DataTypeFactory::get` on text containing codec annotations. The precise AST fields and tokens belong to the parser work, but these persistence properties are required:
 
@@ -233,31 +234,35 @@ Use `CodecValidationSettings::trusted` when reading already persisted column met
 
 ## `ALTER TABLE` application
 
-Extend `AlterCommand` with a codec-policy operation rather than overloading a nullable AST:
+Keep the existing root `codec` field in `AlterCommand` and add tuple-element patch data extracted from the restated type declaration:
 
 ```cpp
-struct CodecAlter
+ColumnCodecDescription declared_codec;
+
+struct TupleCodecRemoval
 {
-    enum class Action : uint8_t { Set, Remove };
-    CodecPath path; // empty means root
-    Action action;
-    ASTPtr codec;   // non-null only for Set
+    CodecPath path;
+    std::vector<size_t> positions;
 };
 
-std::optional<CodecAlter> codec_alter;
+std::vector<TupleCodecRemoval> codec_removals;
 ```
 
-`AlterCommand::parse` transfers the already segmented parser result. In `AlterCommand::apply`:
+`declared_codec` contains only element `CODEC(...)` operations from this statement. It is a patch, not a replacement policy. `codec_removals` contains explicit element `REMOVE CODEC` operations. Positional identity is retained so a typed ALTER which renames a tuple element can still identify the declaration being removed from the old type.
+
+`AlterCommand::parse` walks the type AST and resulting logical `DataTypeTuple` together. It derives canonical paths from tuple nesting and rejects element operations reached through a non-`Tuple` wrapper. In `AlterCommand::apply`:
 
 - Fetch the owning top-level `ColumnDescription`.
 - Work on a clone of the complete policy.
-- Canonicalize the path against the resulting column type.
-- Set, replace, or erase only that declaration.
-- Reject `REMOVE CODEC` if the specific root or path has no declaration; an inherited codec does not count.
+- Apply every explicit element removal, resolving positional identity against the old and resulting tuple types where necessary.
+- Reject `REMOVE CODEC` if that exact old declaration does not exist; an inherited codec does not count.
+- Apply every element declaration from `declared_codec`, replacing only the matching paths.
+- Preserve every omitted tuple-element declaration whose path is still valid in the resulting logical type.
+- Apply the existing root `CODEC(...)` or root `REMOVE CODEC` operation independently.
 - Run `validateAndNormalize` on the complete resulting policy.
 - Rebuild codec-driven custom serializations before installing the column.
 
-An ordinary root `MODIFY COLUMN ... CODEC` uses an empty path. A subcolumn operation never changes the root or sibling entries. A typed `MODIFY COLUMN` must revalidate every retained path against the new type and reject the command if a path disappears or a codec becomes incompatible. The sequential metadata snapshot in `AlterCommands::validate` must apply the same rules so multiple modifications in one statement observe preceding ones.
+The command target remains the owning column name. Neither `MODIFY SUBCOLUMN` nor `MODIFY COLUMN payload.element CODEC(...)` is introduced. A typed `MODIFY COLUMN` must revalidate every retained path against the new type and reject the command if a retained path disappears or a codec becomes incompatible. The sequential metadata snapshot in `AlterCommands::validate` must apply the same rules so multiple modifications in one statement observe preceding ones.
 
 Codec-only changes remain metadata-only. They do not schedule a mutation. Inserts and later merges or mutations use the new policy; old compressed blocks remain readable from their block headers.
 
@@ -409,44 +414,6 @@ Do not add a fallback that drops unknown entries. Failure to parse or support a 
 
 ## Test plan
 
-Prefer new functional tests under `tests/queries/0_stateless`, created with `add-test`, plus focused unit tests only for the segmented-path and policy value types.
+The detailed functional-test matrix, planned stateless test filenames, table definitions, queries, physical codec assertions, and negative syntax cases are in `SQLTestPlan.MD`.
 
-Metadata tests:
-
-- Named, unnamed, nested, and quoted-dot tuple paths.
-- Deterministic `SHOW CREATE TABLE`, `DESCRIBE TABLE`, and `system.columns` output.
-- `ColumnDescription::writeText` and `readText` round-trips for empty, root-only, and mixed policies while the resulting `DataTypePtr` and `NamesAndTypes` stay undecorated.
-- Restart, `ATTACH`, replicated metadata synchronization, backup, and restore.
-- Legacy root-only metadata retains identical text and behavior.
-
-Resolution and validation tests:
-
-- Root inheritance, nearest-ancestor override, deeper override, and `CODEC(Default)` inheritance blocking.
-- A root or ancestor declaration is not type-checked against descendant leaves shadowed by deeper declarations; removing the override re-exposes and revalidates it.
-- Factory preprocessing over one effective leaf substitutes implicit type parameters, while a declaration governing differently sized leaves retains the unparameterized expression and instantiates correctly per stream.
-- A fully shadowed declaration receives syntax and feature-gate validation without invented leaf-type parameters or a call to a type-requiring codec creator with `nullptr`.
-- Mixed `Delta` integer and `ZSTD` string elements.
-- Invalid non-tuple paths, missing elements, extra path segments, duplicates after canonicalization, incompatible leaf codecs, lossy key elements, and shared-stream conflicts.
-- `Nullable`, `Array`, `LowCardinality`, `Map`, `Variant`, `Dynamic`, and `JSON` structural streams, including generic-only filtering.
-- Literal-dot names are distinct from multi-segment paths and unnamed elements use one-based positions.
-- Logical shared-stream identity is stable across wide/compact choices and filename settings; concrete writer checks still catch final-name aliases.
-
-Writer tests:
-
-- Both forced wide and forced compact parts.
-- Physical block-codec counts for every tuple element, not only successful reads.
-- Inserts, horizontal merges, vertical merges, partial mutations, and mutations that rewrite all columns.
-- Shared offsets written in different vertical stages agree or fail deterministically.
-- Adaptive selection applies only to streams whose winner is missing or `Default`.
-- A `RECOMPRESS` TTL changes defaulted elements but preserves explicitly coded siblings.
-- Existing parts retain their original codecs after codec-only `ALTER`; new or later rewritten parts use the new policy.
-
-Codec-driven serialization tests:
-
-- `Quantized` on one `Array(Float32)` tuple element exposes companion subcolumns only beneath that element and does not customize an equal-typed sibling.
-- Reads, merges, part `columns.txt` restoration, and shared-part metadata preserve the custom serialization.
-- Unsupported `Quantized` target types fail at DDL time.
-- Path-aware `Quantized` immutability checks reject add, remove, parameter change, and type change through `ALTER`.
-- `Quantized('product', ...)` inside a tuple forces the required wide/full part layout.
-
-Finally, run existing top-level codec, adaptive codec, TTL recompression, vertical merge, compact part, lossy codec, and `Quantized` suites unchanged. Their passing is the compatibility criterion for policies containing only a root declaration.
+Use new functional tests under `tests/queries/0_stateless`, created with `add-test`. Keep focused unit coverage for `ColumnCodecDescription`, AST extraction/application, and stream-path resolution. Existing top-level codec, adaptive codec, TTL recompression, vertical merge, compact-part, lossy-codec, and `Quantized` suites must continue to pass unchanged; they are the compatibility criterion for root-only policies.
