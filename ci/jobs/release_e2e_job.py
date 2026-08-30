@@ -99,6 +99,41 @@ def flag_values(command, flag):
     ]
 
 
+def api_fields(command):
+    """The payload fields `gh api` will send, in the spellings pflag accepts. A bare
+    `key=value` is not one: `gh` reads it as a second positional and refuses the call
+    with "accepts 1 arg(s), received 2"."""
+    fields = {}
+    tokens = command.split()
+    for i, token in enumerate(tokens):
+        if token in ("-f", "--raw-field", "-F", "--field"):
+            pair = tokens[i + 1] if i + 1 < len(tokens) else ""
+        elif token.startswith(("--raw-field=", "--field=")):
+            pair = token.split("=", 1)[1]
+        elif len(token) > 2 and token[0] == "-" and token[1] in "fF":
+            pair = token[2:]
+        else:
+            continue
+        key, _, value = pair.partition("=")
+        fields[key] = value
+    return fields
+
+
+def api_method(command):
+    """The method `gh api` will use: an explicit override in any of the spellings
+    pflag accepts, else POST because the command adds parameters (`gh api --help`).
+    A `GET` merely reads the endpoint."""
+    tokens = command.split()
+    for i, token in enumerate(tokens):
+        if token in ("--method", "-X"):
+            return tokens[i + 1] if i + 1 < len(tokens) else ""
+        if token.startswith("--method="):
+            return token.split("=", 1)[1]
+        if token.startswith("-X") and len(token) > 2:
+            return token[2:]
+    return "POST" if api_fields(command) else "GET"
+
+
 class ReleaseE2E:
     def __init__(self, root, log):
         self.root = root
@@ -209,7 +244,7 @@ class ReleaseE2E:
         )
         # The sentinel a `pr create` writes is keyed on repository, head and the states
         # under which the resulting open PR is visible -- the three inputs
-        # `get_pr_url_by_branch` varies. Everything else gets `[]`, the answer a
+        # `get_pr_url_by_branch` varies. An unmatched `pr list` gets `[]`, the answer a
         # successful `gh pr list --json` prints when nothing matches, so the retried
         # strict reads succeed and report "no PR".
         (self.bindir / "gh").write_text(
@@ -250,7 +285,18 @@ class ReleaseE2E:
             "      exit 0 ;;\n"
             "  esac\n"
             "fi\n"
-            "echo '[]'\n",
+            # Like the `aws` stub, an unknown call fails rather than succeeds: a
+            # catch-all success answers every `gh` path no assertion covers, which
+            # makes not issuing one indistinguishable from issuing it. The listed
+            # subcommands are what the `new` path issues.
+            'case "$sub" in\n'
+            "  \"pr list\") echo '[]' ;;\n"
+            '  "pr create"|"auth setup-git") ;;\n'
+            f'  "api repos/{REPO}/labels") ;;\n'
+            f'  *) printf "%s\\n" "$*" >> "{self.root}/gh.unexpected"\n'
+            '     echo "release-e2e stub: unexpected gh call [$*]" >&2\n'
+            "     exit 1 ;;\n"
+            "esac\n",
             encoding="utf-8",
         )
         for name in ("aws", "gh"):
@@ -342,6 +388,14 @@ class ReleaseE2E:
         )
         with open(self.log, "a", encoding="utf-8") as f:
             f.write(f"$ {' '.join(argv)}\nrc={res.returncode}\n{res.stdout}{res.stderr}\n")
+        # A call the stubs do not model was not tested, whatever the run's own rc says:
+        # the release code reads some `gh` failures as warnings.
+        unexpected = Path(self.root, "gh.unexpected")
+        if unexpected.is_file():
+            raise RuntimeError(
+                f"gh calls this harness does not model: "
+                f"{unexpected.read_text(encoding='utf-8').splitlines()}"
+            )
         return res.returncode, res.stdout + res.stderr
 
     def stub_log(self, name):
@@ -491,6 +545,29 @@ class ReleaseE2E:
                 got in want,
                 f"the release PR was created with {flag} {got}, want one of {list(want)}",
             )
+        # The backport labels the cut branch needs before anything can be backported
+        # to it. A request creates a label only if endpoint, method, name and color
+        # all hold, so all four are matched; compared as a list, so a duplicate of one
+        # call is not a match for the other.
+        labels = []
+        for line in gh_log.splitlines():
+            tokens = line.split()
+            if tokens[:1] == ["api"]:
+                fields = api_fields(line)
+                labels.append((
+                    tokens[1],
+                    api_method(line),
+                    fields.get("name", ""),
+                    fields.get("color", ""),
+                ))
+        want_labels = [
+            (f"repos/{REPO}/labels", "POST", "v26.8-affected", "c2bfff"),
+            (f"repos/{REPO}/labels", "POST", "v26.8-must-backport", "10dbed"),
+        ]
+        check(
+            sorted(labels) == want_labels,
+            f"the backport labels created were {sorted(labels)}, want {want_labels}",
+        )
         reads = [line for line in self.stub_log("aws").splitlines() if "get-parameter" in line]
         check(
             len(reads) == 1 and flag_value(reads[0], "--name") == ROBOT_TOKEN_PARAM,
