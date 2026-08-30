@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -27,6 +28,12 @@
 #include <Common/CurrentMetrics.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include "config.h"
+
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric StorageObjectStorageThreads;
@@ -41,6 +48,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
+    extern const SettingsBool s3_validate_etag_on_read;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
@@ -157,6 +165,7 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(const ContextPtr & local_contex
             parser_shared_resources,
             format_filter_info,
             need_only_count,
+            /*lazy_row_index_registry_=*/ nullptr,
             shared_reader_pool));
     }
 
@@ -281,7 +290,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             iterator_wrapper,
             parser_shared_resources,
             format_filter_info,
-            need_only_count);
+            need_only_count,
+            lazy_row_index_registry);
 
         pipes.emplace_back(std::move(source));
     }
@@ -328,6 +338,113 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
+bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
+{
+    if (need_only_count)
+        return false;
+
+    /// Reading in order (granted earlier in this optimization pass) rebuilds the pipeline as one
+    /// sorted run per file, without the row-index registry the lazy branch needs, so the two
+    /// rewrites do not compose; the in-order read was promised first, decline the lazy rewrite.
+    if (read_in_order)
+        return false;
+
+    /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
+    /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
+    /// Only the Parquet reader supports both.
+    if (!boost::iequals(configuration->format, "Parquet"))
+        return false;
+
+    /// Data lakes can have per-file formats, deletes, and schema evolution; the configuration
+    /// proves against the concrete data snapshot that every file can take the lazy path.
+    if (!configuration->supportsLazyMaterialization(storage_snapshot->metadata, getContext()))
+        return false;
+
+    /// The lazy pass rereads the surviving files and must prove it sees the same generation of
+    /// each object (see `LazyRowsObjectIterator::validateObjectGeneration`). A backend whose
+    /// metadata may carry no comparable token at all (no `ETag`, unknown size and modification
+    /// time — e.g. a web origin) would fail close on that reread even without any concurrent
+    /// overwrite, so keep it on the single-pass plan.
+    if (!object_storage->supportsObjectGenerationComparison())
+        return false;
+
+    /// Even when the two generations are comparable, on most backends the second pass opens an
+    /// unconditional read: `AzureObjectStorage`, `HDFSObjectStorage` and the local disk ignore
+    /// `StoredObject::etag`, so a concurrent in-place overwrite between the metadata probe and the
+    /// read could still stitch together rows of two versions of the file. The reread is only
+    /// generation-safe when either:
+    ///   - the data files are immutable by the format's contract — a data lake never overwrites a
+    ///     data file in place, so a file identified by path is always the same generation; or
+    ///   - the backend pins the actual read to the captured generation — S3 with
+    ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag and
+    ///     rejects a response whose ETag drifted from it (see `ReadBufferFromS3`), which is atomic
+    ///     with respect to an overwrite.
+    /// The pin only takes effect when the captured metadata actually carries a non-empty `ETag`
+    /// (see `createReadBuffer`), and `GCS` accessed through the S3 API is documented to legitimately
+    /// return objects without one — so a `GCS`-provider client is not pinned even with the setting
+    /// on. Any other provider that unexpectedly yields an empty `ETag` at read time fails close in
+    /// `LazyRowsObjectIterator::validateObjectGeneration` instead of degrading to an unpinned read.
+    /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
+    bool reread_is_generation_pinned = false;
+#if USE_AWS_S3
+    if (object_storage->getType() == ObjectStorageType::S3
+        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
+    {
+        const auto s3_client = object_storage->tryGetS3StorageClient();
+        reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
+    }
+#endif
+    if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
+        return false;
+
+#if CLICKHOUSE_CLOUD
+    /// The transformed plan is not serializable.
+    if (distributed_read_bucket_count)
+        return false;
+#endif
+
+    return true;
+}
+
+std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
+{
+    /// `StorageObjectStorage::read` propagates a bare row policy (no PREWHERE) into
+    /// `info.row_level_filter`, which the split pins to the main pass; keep this guard in case a
+    /// caller constructs the step without that propagation, since the source would still evaluate
+    /// the filter in the main pass via `FormatFilterInfo`.
+    NameSet names_to_keep = required_names;
+    if (!info.row_level_filter && query_info.row_level_filter)
+        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
+            names_to_keep.insert(column.name);
+
+    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, names_to_keep);
+    if (!lazy_info)
+        return {};
+
+    output_header = std::make_shared<const Block>(info.source_header);
+
+    NameSet lazy_names;
+    for (const auto & column : lazy_info->source_header)
+        lazy_names.insert(column.name);
+    std::erase_if(required_source_columns, [&](const String & name) { return lazy_names.contains(name); });
+
+    lazy_row_index_registry = std::make_shared<LazyObjectStorageFileRegistry>();
+
+    auto lazy_source_header = std::make_shared<const Block>(lazy_info->source_header);
+    auto lazy_step = std::make_unique<LazilyReadFromObjectStorage>(
+        std::move(lazy_source_header),
+        storage_id,
+        object_storage,
+        configuration,
+        storage_snapshot,
+        format_settings,
+        std::move(*lazy_info),
+        getContext(),
+        max_block_size);
+
+    return lazy_step;
+}
+
 /// Can this format deliver a single file as a sorted run? Only Parquet has a preserve_order
 /// setting, so every other format must be refused rather than assumed.
 static bool formatCanDeliverSortedRun(const String & format)
@@ -342,6 +459,12 @@ bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const Query
     if (read_in_order_attempted)
         return read_in_order && direction == 1;
     read_in_order_attempted = true;
+
+    /// The lazy-materialization split needs every source to carry the row-index registry, which
+    /// the in-order pipe does not, so the two rewrites must stay mutually exclusive (see the
+    /// mirror guard in canUseLazyMaterialization).
+    if (lazy_row_index_registry)
+        return false;
 
     if (!configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext()))
         return false;
