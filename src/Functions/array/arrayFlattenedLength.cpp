@@ -26,7 +26,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// Only offsets are touched, so lazy evaluation would cost more than the function itself, same as for `length`.
+    /// Only the offsets of the argument are read, so lazy evaluation would cost more than the function itself, same as for `length`.
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -45,9 +45,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /** Only offsets are needed: descend to the innermost level the same way as `arrayFlatten` does, by selecting
-          * elements of the deeper offsets by values of the ancestor offsets, and take the differences of the result.
+        /** Only the offsets of the argument column are needed: descend to the innermost level the same way as
+          * `arrayFlatten` does, by selecting elements of the deeper offsets by values of the ancestor offsets,
+          * and take the differences of the result.
           * See the comment in arrayFlatten.cpp for a detailed description of the offsets cascade.
+          * The elements are still read from storage: unlike `length`, this function is not rewritten to the
+          * `sizeN` subcolumns in `FunctionToSubcolumnsPass`.
           */
 
         const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
