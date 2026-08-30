@@ -49,6 +49,7 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) /// NOLINT(hicpp-noexcept-move,per
     exception_callbacks     = std::move(rhs.exception_callbacks);
 
     null_format             = rhs.null_format;
+    dispatched              = rhs.dispatched;
 
     return *this;
 }

@@ -248,7 +248,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-默认情况下，遇到不匹配的行时，ClickHouse 会报错。如果你想改为跳过不匹配的行，可以启用 [format&#95;regexp&#95;skip&#95;unmatched](/zh/reference/settings/formats#format_regexp_skip_unmatched) 选项：
+默认情况下，遇到不匹配的行时，ClickHouse 会报错。如果你想改为跳过不匹配的行，可以启用 [format&#95;regexp&#95;skip&#95;unmatched](/zh/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) 选项：
 
 ```sql
 SET format_regexp_skip_unmatched = 1;
