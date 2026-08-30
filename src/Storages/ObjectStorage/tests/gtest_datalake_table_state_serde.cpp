@@ -16,12 +16,16 @@ std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
         .metadata_version = std::numeric_limits<Int32>::min(),
         .schema_id = std::numeric_limits<Int32>::max(),
         .snapshot_id = std::optional{std::numeric_limits<Int64>::max()},
+        /// Purely local: it identifies an incarnation counted by this server's own
+        /// `TrustedTableUuid`, so it is deliberately not put on the wire.
+        .trusted_uuid_incarnation = 42,
     },
     Iceberg::TableStateSnapshot{
         .metadata_file_path = "",
         .metadata_version = 0,
         .schema_id = std::numeric_limits<Int32>::max(),
         .snapshot_id = std::nullopt,
+        .trusted_uuid_incarnation = std::nullopt,
     },
 };
 }
@@ -40,6 +44,9 @@ TEST(DatalakeStateSerde, IcebergStateSerde)
         Iceberg::TableStateSnapshot serde_state = Iceberg::TableStateSnapshot::deserialize(read_buffer, DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION);
         ASSERT_TRUE(read_buffer.eof());
         ASSERT_EQ(iceberg_state, serde_state);
+        /// The receiving server counts its own incarnations, so a pin never travels with the
+        /// state; the file it names is read from storage there rather than out of the cache.
+        ASSERT_EQ(serde_state.trusted_uuid_incarnation, std::nullopt);
     }
 }
 

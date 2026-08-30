@@ -39,20 +39,34 @@ public:
         return uuid;
     }
 
-    /// The `table-uuid` under which `metadata_file_path` may be used as a metadata *content*
-    /// cache key, or `std::nullopt` when it may not be.
+    /// How many times an in-place replacement has been observed at this table root. Every
+    /// `TableStateSnapshot` records the value in effect when it was pinned, so that a later
+    /// reopen of the pinned metadata file can tell whether it is still looking at the same
+    /// incarnation of the table.
+    UInt64 getIncarnation() const
+    {
+        SharedLockGuard lock(mutex);
+        return incarnation;
+    }
+
+    /// The `table-uuid` under which a file pinned during `pinned_incarnation` may be used as a
+    /// metadata *content* cache key, or `std::nullopt` when it may not be.
     ///
     /// A `TableStateSnapshot` pins one metadata file from analysis through execution, and the
     /// content read for it at execution time must be the content of the incarnation that was
     /// analyzed. The trusted UUID is shared and mutable, so by then a concurrent query may have
-    /// moved it to a table that replaced the analyzed one in place - and a replacement can put a
-    /// different file at the very same path. Probing the cache with the moved UUID would then
-    /// return the wrong table's metadata, so the file is only cache-keyed while it is still the
-    /// one this cell has validated; otherwise the caller reads it from storage.
-    std::optional<String> getForValidatedFile(const String & metadata_file_path) const
+    /// moved it to a table that replaced the analyzed one in place - and a replacement may reuse
+    /// the very same metadata file path, so the path proves nothing. Only an unchanged
+    /// incarnation does: while it holds, the trusted UUID is still the one that was in effect at
+    /// the pin. Otherwise the caller reads the file from storage instead of probing the cache
+    /// with a UUID that may belong to another table.
+    ///
+    /// A pin that carries no incarnation - one deserialized on another server, whose cell tracks
+    /// its own incarnations - is never cache-keyed.
+    std::optional<String> getForPinnedIncarnation(std::optional<UInt64> pinned_incarnation) const
     {
         SharedLockGuard lock(mutex);
-        if (!last_validated.has_value() || last_validated->path != metadata_file_path)
+        if (pinned_incarnation != incarnation)
             return std::nullopt;
         return uuid;
     }
@@ -74,7 +88,10 @@ public:
         bool changed = uuid != new_uuid;
         uuid = std::move(new_uuid);
         if (changed)
+        {
+            ++incarnation;
             last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity};
+        }
         else
             advanceWatermark(metadata_version, metadata_file_path, identity);
         return changed;
@@ -145,6 +162,7 @@ private:
 
     mutable SharedMutex mutex;
     std::optional<String> uuid TSA_GUARDED_BY(mutex);
+    UInt64 incarnation TSA_GUARDED_BY(mutex) = 0;
     std::optional<ValidatedMetadataFile> last_validated TSA_GUARDED_BY(mutex);
 };
 

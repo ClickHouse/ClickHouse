@@ -224,6 +224,11 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
+    /// Read before the metadata file is selected: a replacement committed in between then makes
+    /// the pin look stale, which costs an uncached read later, while reading it afterwards could
+    /// stamp an old file with the incarnation of the table that replaced it.
+    const auto pinned_incarnation = persistent_components.trusted_table_uuid->getIncarnation();
+
     const auto [metadata_version, metadata_file_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
@@ -234,7 +239,9 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         persistent_components.getTableUuid(),
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
-    return getState(context, metadata_file_path, metadata_version);
+    auto state = getState(context, metadata_file_path, metadata_version);
+    state.second.trusted_uuid_incarnation = pinned_incarnation;
+    return state;
 }
 
 void IcebergMetadata::update(const ContextPtr & local_context)
@@ -941,10 +948,10 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const
 {
     IcebergDataSnapshotPtr data_snapshot;
-    /// The pinned file is content-cached only under the UUID this cell has validated it against.
-    /// A concurrent query may have moved the trusted UUID to a table that replaced this one in
-    /// place, and a replacement can put a different file at the very same path, so keying the
-    /// cache with the moved UUID could hand the pinned query the wrong table's metadata.
+    /// The pinned file is content-cached only while the table is still the incarnation that was
+    /// analyzed. A concurrent query may have moved the trusted UUID to a table that replaced this
+    /// one in place - possibly reusing the very same metadata file path - and keying the cache
+    /// with the moved UUID would then hand the pinned query the wrong table's metadata.
     auto metadata_object = getMetadataJSONObject(
         table_state_snapshot.metadata_file_path,
         object_storage,
@@ -952,7 +959,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         local_context,
         log,
         persistent_components.metadata_compression_method,
-        persistent_components.trusted_table_uuid->getForValidatedFile(table_state_snapshot.metadata_file_path));
+        persistent_components.trusted_table_uuid->getForPinnedIncarnation(table_state_snapshot.trusted_uuid_incarnation));
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
@@ -1600,6 +1607,9 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
 
 KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
 {
+    /// Same pin as in `getRelevantDataSnapshotFromTableStateSnapshot`: reading this file under a
+    /// UUID that has since moved to a replacement would mix the pinned state's `schema_id` with
+    /// the other incarnation's sort order, and `sort_order_id` is only meaningful within one.
     auto metadata_object = getMetadataJSONObject(
         actual_table_state_snapshot.metadata_file_path,
         object_storage,
@@ -1607,7 +1617,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         local_context,
         log,
         persistent_components.metadata_compression_method,
-        persistent_components.getTableUuid());
+        persistent_components.trusted_table_uuid->getForPinnedIncarnation(actual_table_state_snapshot.trusted_uuid_incarnation));
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);

@@ -69,28 +69,44 @@ TEST(IcebergTrustedTableUuid, RevalidatesWhenTheFileWasRewritten)
 }
 
 /// A pinned `TableStateSnapshot` reopens its metadata file at execution time, and it may only be
-/// content-cached while the shared cell still describes the incarnation that was analyzed.
-TEST(IcebergTrustedTableUuid, PinnedFileIsCacheKeyedOnlyWhileItIsTheValidatedOne)
+/// content-cached while the table is still the incarnation that was analyzed.
+TEST(IcebergTrustedTableUuid, PinnedFileIsCacheKeyedOnlyWithinItsOwnIncarnation)
 {
     TrustedTableUuid uuid("11111111-1111-1111-1111-111111111111");
-    uuid.markValidated(3, "metadata/v3.metadata.json", identity("etag-v3"));
+    const auto pinned = uuid.getIncarnation();
+    uuid.markValidated(1, "metadata/v1.metadata.json", identity("etag-v1"));
 
-    EXPECT_EQ(uuid.getForValidatedFile("metadata/v3.metadata.json"), std::optional<String>("11111111-1111-1111-1111-111111111111"));
-    /// Some other file: nothing says the trusted UUID belongs to it.
-    EXPECT_EQ(uuid.getForValidatedFile("metadata/v2.metadata.json"), std::nullopt);
+    EXPECT_EQ(uuid.getForPinnedIncarnation(pinned), std::optional<String>("11111111-1111-1111-1111-111111111111"));
 
-    /// A concurrent query detects an in-place replacement and moves the shared cell. The pinned
-    /// file must no longer be keyed by it - the replacement may have put a different file at the
-    /// same path.
+    /// A concurrent query detects an in-place replacement and moves the shared cell. The
+    /// replacement reuses the very same metadata file path, so the path proves nothing - only the
+    /// incarnation does, and the pinned query must stop keying the cache by the moved UUID.
     ASSERT_TRUE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-new-v1")));
-    EXPECT_EQ(uuid.getForValidatedFile("metadata/v3.metadata.json"), std::nullopt);
+    EXPECT_EQ(uuid.getForPinnedIncarnation(pinned), std::nullopt);
+
+    /// A query that pins after the replacement keys the cache by the new UUID again.
+    EXPECT_EQ(
+        uuid.getForPinnedIncarnation(uuid.getIncarnation()), std::optional<String>("22222222-2222-2222-2222-222222222222"));
 }
 
-/// A table with nothing validated yet keys nothing.
-TEST(IcebergTrustedTableUuid, NothingIsCacheKeyedBeforeTheFirstValidation)
+/// An ordinary revalidation that confirms the current UUID is not a replacement and must not
+/// invalidate the pins taken before it, or every query would pay for an uncached read.
+TEST(IcebergTrustedTableUuid, ConfirmingTheSameUuidKeepsThePinsValid)
 {
     TrustedTableUuid uuid("11111111-1111-1111-1111-111111111111");
-    EXPECT_EQ(uuid.getForValidatedFile("metadata/v1.metadata.json"), std::nullopt);
+    const auto pinned = uuid.getIncarnation();
+
+    ASSERT_FALSE(uuid.commitValidated("11111111-1111-1111-1111-111111111111", 2, "metadata/v2.metadata.json", identity("etag-v2")));
+    EXPECT_EQ(uuid.getForPinnedIncarnation(pinned), std::optional<String>("11111111-1111-1111-1111-111111111111"));
+}
+
+/// A pin that carries no incarnation - one deserialized on another server, whose cell counts its
+/// own incarnations - is never cache-keyed.
+TEST(IcebergTrustedTableUuid, APinWithoutAnIncarnationIsNeverCacheKeyed)
+{
+    TrustedTableUuid uuid("11111111-1111-1111-1111-111111111111");
+    uuid.markValidated(1, "metadata/v1.metadata.json", identity("etag-v1"));
+    EXPECT_EQ(uuid.getForPinnedIncarnation(std::nullopt), std::nullopt);
 }
 
 /// A file whose identity the storage cannot report is never assumed unchanged.
