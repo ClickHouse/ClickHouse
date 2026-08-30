@@ -1608,6 +1608,18 @@ KeyCondition::KeyCondition(
     /// atom, which can put a relaxed atom back into a negated multi-atom group. Run the cleanup
     /// once more so such a group keeps pruning through its exact atoms.
     dropRelaxedAtomsFromNegatedMultiAtomGroups();
+
+    /// When a multi-atom group mixes an exact atom with relaxed siblings, the siblings make the
+    /// whole condition relaxed and force `can_be_false` to `true`, although the exact atom
+    /// already represents the predicate leaf exactly. Derive the exactness condition without
+    /// them, so that falsity consumers (see `exactnessCondition`) are not pessimized by atoms
+    /// that exist only for extra pruning.
+    if (auto exactness_rpn = dropCoveredRelaxedAtoms(rpn, /*only_negated_groups*/ false))
+    {
+        exactness_condition = std::make_shared<KeyCondition>(
+            ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore);
+        exactness_condition->rpn = std::move(*exactness_rpn);
+    }
 }
 
 KeyCondition::KeyCondition(
@@ -1619,6 +1631,11 @@ KeyCondition::KeyCondition(
     : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
 {
     key_order = KeyOrder(key_description.reverse_flags);
+
+    /// The exactness condition is evaluated with the same key ranges, so it must decompose them
+    /// with the same per-column sort directions.
+    if (exactness_condition)
+        exactness_condition->key_order = key_order;
 }
 
 KeyCondition::KeyCondition(
@@ -1637,38 +1654,73 @@ void KeyCondition::dropRelaxedAtomsFromNegatedMultiAtomGroups()
     /// `true`, and that force propagates through the ANDs of a multi-atom group, so one relaxed
     /// atom would also disable pruning through the exact atoms of its group under `NOT`. (Such a
     /// `NOT` reaches the RPN for the leaves with no complement function — for example, a negated
-    /// `has`, unlike `NOT IN`, which arrives as the complement leaf `notIn`.)
-    ///
-    /// An exact (non-relaxed) atom is an exact index approximation of the whole predicate leaf on
-    /// its own, so in a group that stands directly under `NOT` and has at least one exact atom,
-    /// the relaxed atoms only pessimize the group: drop them. This keeps the extra pruning of the
-    /// relaxed atoms for the non-negated groups and restores the pruning of the exact atoms for
-    /// the negated ones.
+    /// `has`, unlike `NOT IN`, which arrives as the complement leaf `notIn`.) Dropping the
+    /// relaxed atoms of such groups keeps their extra pruning for the non-negated groups and
+    /// restores the pruning of the exact atoms for the negated ones.
+    if (auto filtered = dropCoveredRelaxedAtoms(rpn, /*only_negated_groups*/ true))
+        rpn = std::move(*filtered);
+}
+
+std::optional<KeyCondition::RPN> KeyCondition::dropCoveredRelaxedAtoms(const RPN & rpn, bool only_negated_groups)
+{
+    const auto find_group_end = [&](size_t i)
+    {
+        size_t group_end = i + 1;
+        while (group_end < rpn.size() && rpn[group_end].continues_multi_atom_group)
+            ++group_end;
+        return group_end;
+    };
+
+    const auto group_qualifies = [&](size_t i, size_t group_end)
+    {
+        if (group_end - i <= 1)
+            return false;
+
+        if (only_negated_groups && !(group_end < rpn.size() && rpn[group_end].function == RPNElement::FUNCTION_NOT))
+            return false;
+
+        bool has_exact_atom = false;
+        bool has_relaxed_atom = false;
+        for (size_t j = i; j < group_end; ++j)
+        {
+            const auto & element = rpn[j];
+
+            if (element.function == RPNElement::FUNCTION_AND)
+                continue;
+
+            /// A constant-folded element proves nothing about the leaf: a fold of a candidate
+            /// with a transformed constant is not marked relaxed, yet e.g. its ALWAYS_TRUE
+            /// variant only bounds the superset of the leaf's matches. It neither counts as an
+            /// exact atom nor needs to be dropped.
+            if (element.function == RPNElement::ALWAYS_TRUE || element.function == RPNElement::ALWAYS_FALSE)
+                continue;
+
+            (element.relaxed ? has_relaxed_atom : has_exact_atom) = true;
+        }
+
+        return has_exact_atom && has_relaxed_atom;
+    };
+
+    bool any_group_qualifies = false;
+    for (size_t i = 0; i < rpn.size() && !any_group_qualifies;)
+    {
+        const size_t group_end = find_group_end(i);
+        any_group_qualifies = group_qualifies(i, group_end);
+        i = group_end;
+    }
+
+    if (!any_group_qualifies)
+        return std::nullopt;
+
     RPN filtered;
     filtered.reserve(rpn.size());
 
     size_t i = 0;
     while (i < rpn.size())
     {
-        size_t group_end = i + 1;
-        while (group_end < rpn.size() && rpn[group_end].continues_multi_atom_group)
-            ++group_end;
+        const size_t group_end = find_group_end(i);
 
-        const bool group_is_negated = group_end < rpn.size() && rpn[group_end].function == RPNElement::FUNCTION_NOT;
-
-        bool has_exact_atom = false;
-        bool has_relaxed_atom = false;
-        if (group_end - i > 1 && group_is_negated)
-        {
-            for (size_t j = i; j < group_end; ++j)
-            {
-                if (rpn[j].function == RPNElement::FUNCTION_AND)
-                    continue;
-                (rpn[j].relaxed ? has_relaxed_atom : has_exact_atom) = true;
-            }
-        }
-
-        if (has_exact_atom && has_relaxed_atom)
+        if (group_qualifies(i, group_end))
         {
             size_t emitted = 0;
             for (size_t j = i; j < group_end; ++j)
@@ -1676,7 +1728,7 @@ void KeyCondition::dropRelaxedAtomsFromNegatedMultiAtomGroups()
                 if (rpn[j].function == RPNElement::FUNCTION_AND || rpn[j].relaxed)
                     continue;
 
-                auto element = std::move(rpn[j]);
+                auto element = rpn[j];
                 element.continues_multi_atom_group = (emitted > 0);
                 filtered.push_back(std::move(element));
 
@@ -1693,13 +1745,13 @@ void KeyCondition::dropRelaxedAtomsFromNegatedMultiAtomGroups()
         else
         {
             for (size_t j = i; j < group_end; ++j)
-                filtered.push_back(std::move(rpn[j]));
+                filtered.push_back(rpn[j]);
         }
 
         i = group_end;
     }
 
-    rpn = std::move(filtered);
+    return filtered;
 }
 
 bool KeyCondition::isRelaxed() const

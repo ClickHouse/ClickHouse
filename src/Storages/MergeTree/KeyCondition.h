@@ -471,6 +471,15 @@ public:
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
 
+    /// The condition to consult for falsity decisions (`BoolMask::can_be_false` and `isRelaxed`),
+    /// e.g. by the exact-ranges collection in `MergeTreeDataSelectExecutor::markRangesFromPKRange`.
+    /// Usually this is the condition itself. But when a multi-atom group mixes an exact atom with
+    /// relaxed siblings, those siblings force `can_be_false` to `true` and make `isRelaxed` return
+    /// `true` even though the exact atom already represents the predicate leaf exactly. The
+    /// returned condition then has such relaxed atoms dropped: its `can_be_false` stays exact,
+    /// while the full condition keeps the atoms for stronger pruning (`can_be_true`).
+    const KeyCondition & exactnessCondition() const { return exactness_condition ? *exactness_condition : *this; }
+
     bool isSinglePoint() const { return single_point; }
 
     /// Does the filter condition have any ORs?
@@ -780,6 +789,15 @@ private:
     /// `true`, which would disable pruning through the exact atoms of the group under `NOT`.
     void dropRelaxedAtomsFromNegatedMultiAtomGroups();
 
+    /// Returns `rpn` with the relaxed atoms dropped from every multi-atom group that contains
+    /// both an exact atom and a relaxed one (with `only_negated_groups`, only from the groups
+    /// standing directly under `FUNCTION_NOT`), or nothing when no group qualifies. Every atom
+    /// of a group is a necessary condition of the same predicate leaf, and an exact atom is an
+    /// exact index approximation of that leaf on its own, so the result describes the same
+    /// predicate: the dropped atoms only added pruning (`can_be_true`) at the cost of an
+    /// unreliable `can_be_false`.
+    static std::optional<RPN> dropCoveredRelaxedAtoms(const RPN & rpn, bool only_negated_groups);
+
     /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
       * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.
       */
@@ -846,5 +864,8 @@ private:
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
+
+    /// See `exactnessCondition`. Null when the condition is its own exactness condition.
+    std::shared_ptr<KeyCondition> exactness_condition;
 };
 }
