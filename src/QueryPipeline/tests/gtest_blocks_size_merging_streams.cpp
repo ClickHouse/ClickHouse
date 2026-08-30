@@ -310,47 +310,85 @@ TEST(MergingSortedTest, RowlessChunkFromUnfinishedInput)
     EXPECT_EQ(keys, (std::vector<UInt64>{0, 1, 2, 3, 100, 101, 102, 103}));
 }
 
-/// Runs a `ColumnGathererTransform` over one block per source with the given row-sources mask.
-/// Returns the number of rows gathered and the error code the merge failed with, or 0 for success.
-static std::pair<size_t, int> gatherRows(const std::vector<Block> & blocks, const std::vector<size_t> & row_sources)
+namespace
 {
-    Pipes pipes;
-    for (const auto & block : blocks)
-    {
-        BlocksList list;
-        list.push_back(block);
-        pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(list)));
-    }
-    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+struct GatherResult
+{
+    size_t rows = 0;
+    /// Error code the merge threw, 0 if it did not throw.
+    int code = 0;
+    /// Whether the merge reported completion, as opposed to still asking for a source at the step bound.
+    bool finished = false;
+};
+
+}
+
+/// Steps a real `ColumnGathererTransform` through its ports the way the executor does, for a bounded
+/// number of rounds. Each source is given its one block and then finished, so a source the merge asks
+/// for again is exhausted: a port reports finished only once its data has been pulled.
+static GatherResult gatherRows(const std::vector<Block> & blocks, const std::vector<size_t> & row_sources)
+{
+    /// One round per mask entry plus a few per source finishes every case here, with room to spare.
+    static constexpr size_t max_rounds = 1000;
 
     std::string mask;
     for (size_t source : row_sources)
         mask.push_back(static_cast<char>(RowSourcePart(source).data));
 
-    pipe.addTransform(std::make_shared<ColumnGathererTransform>(
-        pipe.getSharedHeader(),
-        pipe.numOutputPorts(),
+    auto header = std::make_shared<const Block>(blocks.front().cloneEmpty());
+    auto transform = std::make_shared<ColumnGathererTransform>(
+        header,
+        blocks.size(),
         std::make_unique<ReadBufferFromOwnString>(mask),
-        /*block_preferred_size_rows=*/ 8192,
-        /*block_preferred_size_bytes=*/ 1UL << 30,
-        /*max_dynamic_subcolumns=*/ std::nullopt,
-        /*is_result_sparse=*/ false));
+        /*block_preferred_size_rows_=*/ 8192,
+        /*block_preferred_size_bytes_=*/ 1UL << 30,
+        /*max_dynamic_subcolumns_=*/ std::nullopt,
+        /*is_result_sparse_=*/ false);
+    IProcessor * processor = transform.get();
 
-    QueryPipeline pipeline(std::move(pipe));
-    PullingPipelineExecutor executor(pipeline);
+    std::vector<std::unique_ptr<OutputPort>> feeders;
+    auto input_it = transform->getInputs().begin();
+    for (size_t i = 0; i < blocks.size(); ++i, ++input_it)
+    {
+        feeders.emplace_back(std::make_unique<OutputPort>(header));
+        connect(*feeders.back(), *input_it);
+        feeders.back()->push(Chunk(blocks[i].getColumns(), blocks[i].rows()));
+        feeders.back()->finish();
+    }
 
-    size_t rows = 0;
+    auto consumer = std::make_unique<InputPort>(transform->getOutputs().front().getSharedHeader());
+    connect(transform->getOutputs().front(), *consumer);
+
+    GatherResult result;
     try
     {
-        Block block;
-        while (executor.pull(block))
-            rows += block.rows();
+        for (size_t round = 0; round < max_rounds; ++round)
+        {
+            consumer->setNeeded();
+            auto status = processor->prepare();
+
+            while (consumer->hasData())
+            {
+                consumer->setNeeded();
+                result.rows += consumer->pull().getNumRows();
+            }
+
+            if (status == IProcessor::Status::Finished)
+            {
+                result.finished = true;
+                break;
+            }
+
+            if (status == IProcessor::Status::Ready)
+                processor->work();
+        }
     }
     catch (const Exception & e)
     {
-        return {rows, e.code()};
+        result.code = e.code();
     }
-    return {rows, 0};
+    return result;
 }
 
 /// A single source read without a mask is passed through block by block, so its exhaustion ends the
@@ -360,10 +398,11 @@ TEST(ColumnGathererTest, SingleSourcePassThrough)
     std::vector<std::string> key_columns{"K1"};
     size_t start = 0;
 
-    auto [rows, code] = gatherRows({getBlockWithSize(key_columns, 3, 1, start)}, {});
+    auto result = gatherRows({getBlockWithSize(key_columns, 3, 1, start)}, {});
 
-    EXPECT_EQ(code, 0);
-    EXPECT_EQ(rows, 3u);
+    EXPECT_TRUE(result.finished) << "the merge kept asking for the exhausted source";
+    EXPECT_EQ(result.code, 0);
+    EXPECT_EQ(result.rows, 3u);
 }
 
 /// With a mask, a source is re-requested only while the mask still maps rows to it, so a source that
@@ -378,7 +417,7 @@ TEST(ColumnGathererTest, RequiredSourceExhausted)
 
     /// Alternate the sources so that gather() cannot copy a whole block at once, then ask for one
     /// row more from the second source than it delivered.
-    auto code = gatherRows({first, second}, {0, 1, 0, 1, 1}).second;
+    auto code = gatherRows({first, second}, {0, 1, 0, 1, 1}).code;
 
     EXPECT_EQ(code, DB::ErrorCodes::RECEIVED_EMPTY_DATA);
 }
@@ -391,7 +430,7 @@ TEST(ColumnGathererTest, SingleSourceWithRemainingMask)
     size_t start = 0;
     auto only = getBlockWithSize(key_columns, 2, 1, start);
 
-    auto code = gatherRows({only}, {0, 0, 0}).second;
+    auto code = gatherRows({only}, {0, 0, 0}).code;
 
     EXPECT_EQ(code, DB::ErrorCodes::RECEIVED_EMPTY_DATA);
 }
