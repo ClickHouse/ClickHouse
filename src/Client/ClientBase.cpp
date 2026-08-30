@@ -3,6 +3,7 @@
 
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/ClientSlashCommands.h>
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
@@ -64,10 +65,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <IO/Ask.h>
@@ -651,11 +651,17 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             throw;
         }
     }
+    else if (dialect == Dialect::kusto)
+    {
+        /// KQL is lexically a different language, so it does not go through the SQL
+        /// tokenizer at all. Any failure is thrown; the interactive path below already
+        /// reports a thrown exception the same way it reports a returned message.
+        res = parseKQLQuery(
+            pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
     else
     {
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-        else if (dialect == Dialect::prql)
+        if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
@@ -669,10 +675,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             String message;
             try
             {
-                if (dialect == Dialect::kusto)
-                    res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-                else
-                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             }
             catch (const Exception & e)
             {
@@ -689,10 +692,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         }
         else
         {
-            if (dialect == Dialect::kusto)
-                res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-            else
-                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
     }
 
@@ -3413,6 +3413,25 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 is_first = false;
                 have_error |= buzz_house;
                 error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
+
+                /// The AST fuzzer feeds whole test files to one session, often several files in
+                /// a row, so a statement that does not parse is expected rather than a finding -
+                /// e.g. SQL DDL of the next file read under a `dialect = 'kusto'` a previous file
+                /// left behind. Skip the statement and keep fuzzing (the per-query parse in
+                /// `processWithASTFuzzer` tolerates syntax errors the same way).
+                if (query_fuzzer_runs && !buzz_house)
+                {
+                    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
+                    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    Tokens tokens(this_query_begin, all_queries_end);
+                    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                        ++token_iterator;
+                    this_query_begin = token_iterator->end;
+                    current_exception.reset();
+                    continue;
+                }
+
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -3686,6 +3705,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
     /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
     /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    /// The `/`-form is also offered by the completion of the line editor - keep the `/`-commands
+    /// dispatched here in sync with `clientSlashCommands`.
     if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
         && (is_interactive || supportsLocalMetaCommands()))
     {
@@ -3758,6 +3779,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Interactive `help`/`man` command (in all of the forms `help`, `/help`, `man`, `/man`): render the
     /// embedded documentation for a word from `system.documentation`. Gated like the other meta-commands,
     /// so that batch `clickhouse-client` still parses a query starting with `help`/`man` as SQL.
+    /// The `/`-forms are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
     if (is_interactive || supportsLocalMetaCommands())
     {
         for (const std::string_view prefix : {"help", "/help", "man", "/man"})
@@ -3817,6 +3840,15 @@ bool ClientBase::processQueryText(const String & text)
         return true;
     }
 #endif
+
+    /// A mistake in the name of a `/`-command would otherwise be parsed as SQL and reported as a
+    /// syntax error at the `/`, which tells the user nothing about the command they meant. Gated
+    /// like the commands themselves, so batch `clickhouse-client` still treats the input as SQL.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
+    }
 
     if (query_fuzzer_runs)
     {
@@ -4365,7 +4397,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
-        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
+        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight (hints need color). The suggestion hints also need the suggestions, so --disable_suggestion turns those off, while the client's /-commands are a static list and stay hinted. Disable with --hints 0.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -4806,12 +4838,14 @@ void ClientBase::runInteractive()
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
-        /// Hints need color, so they are enabled only together with highlighting.
-        /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
-        /// turns off autocompletion entirely, including the hints.
+        /// Hints need color, so they are enabled only together with highlighting. Client slash
+        /// commands have a static list and can therefore remain hinted when suggestions are off.
         .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
-            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
-            && !getClientConfiguration().getBool("disable_suggestion", false),
+            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
+        .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
+        /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
+        /// `processQueryText`, so offer them here.
+        .enable_slash_commands = true,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
