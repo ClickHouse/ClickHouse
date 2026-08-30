@@ -57,6 +57,7 @@ extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 namespace DB::FailPoints
 {
 extern const char iceberg_writes_cleanup[];
+extern const char iceberg_mutation_pause_before_metadata_reread[];
 }
 
 namespace DB::Iceberg
@@ -667,6 +668,9 @@ void mutate(
     {
         auto log = getLogger("IcebergMutations");
 
+        /// Lets a test change the table between the validation of the mutation and its execution.
+        FailPointInjection::pauseFailPoint(FailPoints::iceberg_mutation_pause_before_metadata_reread);
+
         auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
@@ -727,6 +731,22 @@ void mutate(
             if (snapshot_id_val >= 0)
                 current_iceberg_snapshot.snapshot_id = snapshot_id_val;
         }
+        /// The mutation was validated against one incarnation of the table, and the columns and
+        /// the sample block below still come from it. Committing on top of a metadata file that
+        /// describes a different schema would execute a mutation that was never validated for it,
+        /// so fail instead: the statement can be retried against the new schema.
+        if (storage_metadata->datalake_table_state.has_value())
+        {
+            const auto * validated_state = std::get_if<TableStateSnapshot>(&*storage_metadata->datalake_table_state);
+            if (validated_state && validated_state->schema_id != static_cast<Int32>(current_schema_id))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The schema of table {} changed from {} to {} while the mutation was running. Retry the mutation.",
+                    storage_id.getNameForLogs(),
+                    validated_state->schema_id,
+                    current_schema_id);
+        }
+
         auto fresh_storage_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_metadata);
         fresh_storage_metadata->setDataLakeTableState(DataLakeTableStateSnapshot{current_iceberg_snapshot});
 
