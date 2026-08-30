@@ -273,8 +273,16 @@ settings `enable_reads_from_query_cache_on_disk` and `enable_writes_to_query_cac
 by default). If reads are enabled for both caches, the lookup is attempted first from memory and only on a miss from disk. If writes
 are enabled for both caches, the result is stored in both. Entries on disk are compressed with the codec specified by setting
 `query_cache_on_disk_codec` (`ZSTD(3)` by default). All
-other query cache settings (e.g. `query_cache_ttl`, `query_cache_min_query_duration`, `query_cache_share_between_users`) apply to the
-query cache on disk in the same way as to the in-memory query cache.
+other query cache settings (e.g. `query_cache_ttl`, `query_cache_min_query_duration`) apply to the query cache on disk in the same way as
+to the in-memory query cache.
+
+Setting `query_cache_share_between_users` is an exception: it has the same meaning for both backends - an entry written with it is served
+to every user - but non-shared entries are isolated differently. The in-memory query cache keeps a single entry per query and rejects it
+on read if it belongs to another user, so a non-shared entry of user A shadows the writes of user B until the entry expires or is
+evicted. The query cache on disk instead makes the user and the set of the user's current roles part of the key of a non-shared entry, so
+user B misses on the entry of user A and stores its own copy of the result. The same holds for one user under different sets of current
+roles, e.g. after `SET ROLE`: the roles carry privileges and row policies, so results computed under different roles are cached
+separately.
 
 The entries of the query cache on disk are ordinary entries of the filesystem cache, indistinguishable from other data cached in the
 same filesystem cache: they are not held from deletion and they are evicted by the same rules (e.g. least-recently-used) when the
