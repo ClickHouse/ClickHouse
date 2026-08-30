@@ -62,6 +62,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
+
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
