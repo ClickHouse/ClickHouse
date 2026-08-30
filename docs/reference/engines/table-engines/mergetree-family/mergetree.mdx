@@ -349,8 +349,6 @@ These indices aggregate some information about the specified expression on block
 
 The `GRANULARITY` clause can be omitted, the default value of `granularity_value` is 1.
 
-Deserialized granules of `bloom_filter`, `ngrambf_v1` and `tokenbf_v1` indexes are kept in the skipping index cache, so repeated queries do not re-read and re-deserialize them from disk. The cache size is controlled by the server setting `skipping_index_cache_size`, its usage is reported by the metrics `SkippingIndexCacheBytes` and `SkippingIndexCacheCells` and the profile events `SkippingIndexCacheHits` and `SkippingIndexCacheMisses`, and it can be cleared with [`SYSTEM DROP SKIPPING INDEX CACHE`](/reference/statements/system#drop-skipping-index-cache).
-
 **Example**
 
 ```sql

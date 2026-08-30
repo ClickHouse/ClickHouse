@@ -31,10 +31,10 @@ struct SkippingIndexCacheKey
     String path_to_data_part;
     /// A part with the same path can be replaced by another one with the same name (e.g. detached and fetched again)
     /// while a block is being loaded, so the content of the part is a part of the key as well.
-    UInt128 part_checksum;
+    UInt128 part_checksum{};
     String index_name;
     /// Index of the block of granules: index_mark / SkippingIndexCache::GRANULES_PER_ENTRY.
-    size_t block_number;
+    size_t block_number = 0;
 
     bool operator==(const SkippingIndexCacheKey & rhs) const
     {
@@ -110,9 +110,14 @@ public:
         return cell;
     }
 
-    void removeEntriesFromCache(const String & path_to_data_part)
+    /// Removes the entries of one index of one part by key. This runs in the background cleanup of outdated parts,
+    /// so it must not scan the whole cache (which may hold millions of entries) under the cache mutex.
+    void removeEntriesFromCache(const String & path_to_data_part, UInt128 part_checksum, const String & index_name, size_t marks_count)
     {
-        Base::remove([path_to_data_part](const Key & key, const MappedPtr &) { return key.path_to_data_part == path_to_data_part; });
+        Key key{path_to_data_part, part_checksum, index_name, 0};
+        size_t blocks_count = (marks_count + GRANULES_PER_ENTRY - 1) / GRANULES_PER_ENTRY;
+        for (key.block_number = 0; key.block_number < blocks_count; ++key.block_number)
+            Base::remove(key);
     }
 
 private:
