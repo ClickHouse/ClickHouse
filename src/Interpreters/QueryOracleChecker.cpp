@@ -81,6 +81,11 @@ const std::unordered_set<String> non_deterministic_functions = {
     "now", "now64", "today", "yesterday",
     "rowNumberInBlock", "blockNumber", "blockSize",
     "runningDifference", "runningDifferenceStartingWithFirstValue",
+    /// `neighbor` and `runningAccumulate` read across rows in physical block
+    /// order (offset neighbours / a running state), so any rewrite that reorders,
+    /// repartitions or reblocks the input (TLP partitions, NoREC, DQP setting
+    /// toggles, multi-thread reads) changes their per-row output legitimately.
+    "neighbor", "runningAccumulate",
     "currentDatabase", "queryID", "serverUUID",
     "getSetting", "fuzzBits", "throwIf",
     /// `indexHint` filters at granule granularity: the rows that survive it
