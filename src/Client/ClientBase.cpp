@@ -167,6 +167,7 @@ namespace Setting
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsBool use_client_time_zone;
     extern const SettingsTimezone session_timezone;
@@ -4327,7 +4328,12 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// including credentials, when the user enabled `format_display_secrets_in_show_and_select`
         /// (and the server allows it). The unconfirmed read-only tool feeds its result straight to
         /// the AI provider, so the secrets are masked for it regardless of the session setting.
-        client_context->setSetting("format_display_secrets_in_show_and_select", false);
+        /// Only an enabled setting is turned off: the setting is `IMPORTANT`, so sending it to a
+        /// server that predates it fails the query with `UNKNOWN_SETTING`, and sending a value the
+        /// session already has would break the agent against such a server for nothing. A session
+        /// that does display secrets is talking to a server that knows the setting anyway.
+        if (client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+            client_context->setSetting("format_display_secrets_in_show_and_select", false);
 
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
@@ -4607,10 +4613,12 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
 
     /// The results of the internal queries of the agent (`show_create_table` among them) are sent
     /// to the AI provider without the user seeing them, so the secrets of external-engine table
-    /// definitions are masked even if the session enabled their display. The setting is sent
-    /// unconditionally: under `readonly = 1` an unchanged value costs nothing, while a session
-    /// that really displays secrets makes the internal query fail instead of leaking them.
-    if (from_ai_agent)
+    /// definitions are masked even if the session enabled their display. Only an enabled setting is
+    /// turned off: it is `IMPORTANT`, so a server that predates it answers `UNKNOWN_SETTING` rather
+    /// than ignoring it, and the agent must not break against such a server just to re-send the
+    /// value the session already has. A session that does display secrets is talking to a server
+    /// that knows the setting, and under `readonly = 1` the query then fails instead of leaking.
+    if (from_ai_agent && client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
     {
         if (!settings_to_send)
             settings_to_send.emplace();

@@ -339,10 +339,10 @@ void AIAgent::trimHistory()
 
     messages.erase(messages.begin(), messages.begin() + drop);
 
-    elideOldestToolResults(total_bytes);
+    truncateCurrentQuestion(elideOldestToolResults(total_bytes));
 }
 
-void AIAgent::elideOldestToolResults(size_t total_bytes)
+size_t AIAgent::elideOldestToolResults(size_t total_bytes)
 {
     /// Dropping whole turns cannot bound a single long turn: its steps keep appending tool calls
     /// and their results after the question of the turn, which must stay. Give up the payload of
@@ -395,6 +395,51 @@ void AIAgent::elideOldestToolResults(size_t total_bytes)
             if (auto * result = std::get_if<ai::ToolResultContentPart>(&content[i]))
                 elide(*result);
     }
+
+    return total_bytes;
+}
+
+void AIAgent::truncateCurrentQuestion(size_t total_bytes)
+{
+    static constexpr std::string_view QUESTION_CUT_NOTICE
+        = "\n\n[The question was cut here: {} of its {} bytes did not fit the conversation. "
+          "Answer what is left, or ask the user to send the rest in smaller parts.]";
+
+    /// The question of the current turn is never dropped and never elided - it is what the model
+    /// is asked about - so a single oversized question (a pasted log, a long instruction) keeps
+    /// the prompt over the budget however much of the older history is given up. Cut it instead,
+    /// keeping its beginning, and say by how much: the model then sees a question it can answer
+    /// rather than a request the provider rejects for its size.
+    if (total_bytes <= max_history_bytes)
+        return;
+
+    size_t question = messages.size();
+    while (question > 0
+           && (messages[question - 1].role != ai::kMessageRoleUser || messages[question - 1].has_tool_results()))
+        --question;
+    if (question == 0)
+        return;
+    --question;
+
+    auto & content = messages[question].content;
+    if (content.empty())
+        return;
+    auto * text_part = std::get_if<ai::TextContentPart>(&content.front());
+    if (!text_part)
+        return;
+
+    const size_t original_size = text_part->text.size();
+    const size_t excess = total_bytes - max_history_bytes;
+
+    /// The notice is appended to the kept part, so it has to fit in the budget as well. Its size
+    /// is measured with the largest numbers it can carry, so the final one is never longer.
+    const size_t notice_bytes = fmt::format(QUESTION_CUT_NOTICE, original_size, original_size).size();
+    const size_t keep = original_size > excess + notice_bytes ? original_size - excess - notice_bytes : 0;
+    if (keep >= original_size)
+        return;
+
+    truncateToUTF8Boundary(text_part->text, keep);
+    text_part->text += fmt::format(QUESTION_CUT_NOTICE, original_size - text_part->text.size(), original_size);
 }
 
 void AIAgent::reset()

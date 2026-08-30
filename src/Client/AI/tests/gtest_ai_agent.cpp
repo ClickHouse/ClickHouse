@@ -464,6 +464,26 @@ TEST(AIAgent, HistoryIsTrimmedWhenOneStepReturnsManyLargeResults)
     EXPECT_FALSE(last.back().get_tool_results().back().result.contains("elided"));
 }
 
+TEST(AIAgent, HistoryIsTrimmedWhenTheQuestionItselfIsOversized)
+{
+    /// The question of the current turn is never dropped, so an oversized one (a pasted log) is
+    /// the only thing left to cut once the older turns and the tool results are given up. It is
+    /// truncated, with a notice of how much was left out, so that the prompt of the next model
+    /// call still fits the budget.
+    AgentWithMock harness({textStep("done")});
+    harness.agent->chat(String(1024 * 1024, 'x'));
+
+    ASSERT_EQ(harness.transport->conversations.size(), 1u);
+    const auto & sent = harness.transport->conversations.back();
+    EXPECT_LE(conversationBytes(sent), 256 * 1024);
+
+    ASSERT_FALSE(sent.empty());
+    const String question = sent.front().get_text();
+    EXPECT_NE(question.find("The question was cut here"), String::npos);
+    /// What is kept is the beginning of the question.
+    EXPECT_TRUE(question.starts_with("xxxx"));
+}
+
 TEST(AIAgent, DisplaySanitizesControlCharacters)
 {
     EXPECT_EQ(

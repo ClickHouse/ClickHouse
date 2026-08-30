@@ -74,8 +74,12 @@ private:
     /// size of the history at the call) is within the byte budget. The results of the newest
     /// tool-results message go last, and only its final result is guaranteed to survive: one
     /// step may return several large results at once, so keeping the whole message would leave
-    /// the budget broken.
-    void elideOldestToolResults(size_t total_bytes);
+    /// the budget broken. Returns the size of the history that is left.
+    size_t elideOldestToolResults(size_t total_bytes);
+    /// Cut the question of the current turn down to the byte budget, with a notice of what was
+    /// left out. This is the last resort: the question itself is never dropped, so an oversized
+    /// one (a pasted log) would otherwise break the budget on its own.
+    void truncateCurrentQuestion(size_t total_bytes);
     static ai::JsonValue truncateOversizedToolResult(ai::JsonValue value);
     ai::ToolResult executeToolCall(const ai::ToolCall & call);
 };
