@@ -5656,15 +5656,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn,
     bool optimistic_unknowns) const
 {
-    /// `optimistic_unknowns` treats `FUNCTION_UNKNOWN` as the AND-identity `(true, false)`
-    /// instead of the neutral `(true, true)`. Under that rewrite `UNKNOWN` no longer pollutes
-    /// `can_be_false = true` through an enclosing `AND`, which lets callers prove that no
-    /// point in the hyperrectangle falsifies the RPN *assuming the unknown parts are always
-    /// true*. That stronger statement is sound for subsumption-style pruning: under the real
-    /// `UNKNOWN = (true, true)` evaluator, `UNKNOWN` contributes `can_be_true = true`
-    /// unconditionally, and "always true" preserves that domination through `AND` / `OR`.
-    /// The rewrite breaks under `FUNCTION_NOT` (which swaps `can_be_true` / `can_be_false`),
-    /// so callers must pre-check `hasFunctionNot` before opting in.
+    /// Treating `UNKNOWN` as `(true, false)` is sound only without `FUNCTION_NOT`, which swaps the two flags.
     chassert(!optimistic_unknowns || !hasFunctionNot());
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
@@ -5687,7 +5679,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
-            /// See `optimistic_unknowns` at the top of this function.
             rpn_stack.emplace_back(true, !optimistic_unknowns);
         }
         else if (element.function == RPNElement::FUNCTION_IN_RANGE

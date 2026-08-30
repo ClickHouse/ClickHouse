@@ -70,7 +70,6 @@ public:
 private:
     DataTypes index_data_types;
     KeyCondition condition;
-    /// Cached at construction so `alwaysTrueOnHyperrectangle` doesn't scan the RPN per part.
     bool condition_has_function_not;
 };
 

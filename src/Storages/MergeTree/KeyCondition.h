@@ -139,12 +139,12 @@ public:
         const DataTypes & data_types,
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
         const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr,
+        /// Treat `FUNCTION_UNKNOWN` as `(true, false)` instead of `(true, true)`, so an unknown leaf
+        /// under `AND` does not force `can_be_false`. The result then means "true assuming the unknown
+        /// parts are true", which is what `alwaysTrueOnHyperrectangle`-style checks need.
+        /// Requires `!hasFunctionNot()`.
         bool optimistic_unknowns = false) const;
 
-    /// Returns true iff the RPN contains at least one `FUNCTION_NOT` element. Provided so
-    /// callers that rely on the monotone-under-UNKNOWN behavior of
-    /// `checkInHyperrectangle(..., optimistic_unknowns=true)` can guard against `NOT`,
-    /// which breaks that assumption.
     bool hasFunctionNot() const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.

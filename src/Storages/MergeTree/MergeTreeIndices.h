@@ -167,9 +167,7 @@ public:
     using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
 
-    /// Whether the condition is provably true for every value inside the given hyperrectangle,
-    /// aligned to the index's own key columns in the index's declared order. A `true` answer
-    /// lets callers skip per-granule evaluation for the range it describes.
+    /// Whether the condition holds for every value in the hyperrectangle, whose axes are the index columns in declared order.
     virtual bool alwaysTrueOnHyperrectangle(const Hyperrectangle & /*hyperrectangle*/) const
     {
         return false;

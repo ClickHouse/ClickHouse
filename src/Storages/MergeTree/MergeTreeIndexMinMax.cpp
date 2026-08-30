@@ -236,9 +236,6 @@ bool MergeTreeIndexConditionMinMax::alwaysTrueOnHyperrectangle(const Hyperrectan
 {
     if (hyperrectangle.size() != index_data_types.size())
         return false;
-    /// Opt into the optimistic `UNKNOWN` walker when the RPN has no `FUNCTION_NOT`, so that
-    /// an `UNKNOWN` leaf on a non-index column does not pollute `can_be_false = true` through
-    /// an enclosing `AND`. See `checkInHyperrectangle` for the soundness argument.
     const auto mask = condition.checkInHyperrectangle(hyperrectangle, index_data_types, {}, {}, !condition_has_function_not);
     return mask.can_be_true && !mask.can_be_false;
 }

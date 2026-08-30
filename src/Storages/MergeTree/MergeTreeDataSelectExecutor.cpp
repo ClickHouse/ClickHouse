@@ -1049,16 +1049,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         return use_skip_indexes_on_data_read_;
     };
 
-    /// For each useful skip index, if every column of the index is also a column of the
-    /// part-level minmax (i.e. required by the partition key), record the positions of
-    /// those columns in the part's minmax hyperrectangle. Empty means the index is not
-    /// a candidate for the "always true from part-level minmax" short-circuit below.
+    /// Positions in the part-level minmax hyperrectangle of each skip index's columns, when all of them
+    /// are covered by it; empty otherwise.
     std::vector<std::vector<size_t>> index_to_partition_minmax_positions(skip_indexes.useful_indices.size());
     if (metadata_snapshot->hasPartitionKey() && !parts_with_ranges.empty())
     {
         std::unordered_map<String, size_t> partition_minmax_col_pos;
-        /// `PARTITION_KEY_ONLY` keeps the slot numbering aligned with the leading part of the part's
-        /// minmax hyperrectangle regardless of whether `_block_number` / `_block_offset` were appended.
+        /// `PARTITION_KEY_ONLY` keeps positions aligned regardless of appended `_block_number` / `_block_offset`.
         const auto partition_minmax_names = MergeTreeData::getMinMaxColumns(
             metadata_snapshot->getPartitionKey(),
             parts_with_ranges.front().data_part->storage.getSettings(),
@@ -1209,10 +1206,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         continue;
                     }
 
-                    /// If the part-level minmax already proves the index condition is true for
-                    /// the whole part, every granule must pass — skip the granule loop entirely.
-                    /// Only touch the part's minmax index when this index is a candidate: `getMinMaxIndex`
-                    /// may lazy-load `minmax_*.idx` from disk.
+                    /// `getMinMaxIndex` may lazy-load from disk, so only call it for candidate indexes.
                     const auto & partition_minmax_positions = index_to_partition_minmax_positions[index_idx];
                     const auto part_minmax_index
                         = partition_minmax_positions.empty() ? nullptr : ranges.data_part->getMinMaxIndex();
