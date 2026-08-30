@@ -174,10 +174,14 @@ class Shell:
         return cls.get_output(command, verbose=verbose, strict=True).strip()
 
     @classmethod
-    def get_output(cls, command, strict=False, verbose=False, retries=1, delay=2):
+    def get_output(
+        cls, command, strict=False, verbose=False, retries=1, delay=2, timeout=None
+    ):
         if verbose:
             print(f"Run command [{command}]")
         for attempt in range(retries):
+            # On timeout subprocess.run kills the child before raising
+            # TimeoutExpired, so a bounded call cannot leak the process.
             res = subprocess.run(
                 command,
                 shell=True,
@@ -186,6 +190,7 @@ class Shell:
                 text=True,
                 executable="/bin/bash",
                 errors="ignore",
+                timeout=timeout,
             )
             if res.stderr:
                 print(f"WARNING: stderr: {res.stderr.strip()}")

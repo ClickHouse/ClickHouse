@@ -26,12 +26,15 @@ class Secret:
         def is_gh_var(self):
             return self.type == Secret.Type.GH_VAR
 
-        def get_value(self):
+        def get_value(self, timeout=None):
+            # timeout bounds the underlying AWS CLI call for the SSM
+            # parameter paths (subprocess.run kills the child on expiry);
+            # the other secret types ignore it.
             if self.type == Secret.Type.AWS_SSM_PARAMETER:
                 if isinstance(self.name, list):
-                    return self.get_aws_ssm_parameters()
+                    return self.get_aws_ssm_parameters(timeout=timeout)
                 else:
-                    return self.get_aws_ssm_parameter()
+                    return self.get_aws_ssm_parameter(timeout=timeout)
             if self.type == Secret.Type.AWS_SSM_SECRET:
                 if isinstance(self.name, list):
                     return self.get_aws_ssm_secrets_batched()
@@ -48,17 +51,18 @@ class Secret:
             else:
                 assert False, f"Not supported secret type, secret [{self}]"
 
-        def get_aws_ssm_parameter(self):
+        def get_aws_ssm_parameter(self, timeout=None):
             region = ""
             if self.region:
                 region = f" --region {self.region}"
             res = Shell.get_output(
                 f"aws ssm get-parameter --name {self.name} --with-decryption --output text --query Parameter.Value {region}",
                 strict=True,
+                timeout=timeout,
             )
             return res
 
-        def get_aws_ssm_parameters(self):
+        def get_aws_ssm_parameters(self, timeout=None):
             """
             Request multiple parameters at once to avoid rate limiting
             """
@@ -69,6 +73,7 @@ class Secret:
             res = Shell.get_output(
                 f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}",
                 strict=True,
+                timeout=timeout,
             )
             name_value_pairs = res.split("\n")
             names = [n.split("\t")[0].strip() for n in name_value_pairs]
