@@ -460,13 +460,23 @@ class ReleaseE2E:
                 check(False, f"origin has no {ref} after the release run")
                 return
 
-        # The cut and the bump both land on `26.8`, and the bump alone would CREATE the ref:
-        # only the update history distinguishes a real cut from a bump that stood in for it.
-        cut = [
+        updates = [
             line.split()
             for line in self.reflog.read_text(encoding="utf-8").splitlines()
-            if line.split()[2:3] == ["refs/heads/26.8"]
         ]
+
+        # `release_job.py` stops at the first failing step, so pushing the tag first is
+        # what keeps a run that dies there from having published a branch or a bump.
+        tags = [i for i, u in enumerate(updates) if u[2].startswith("refs/tags/")]
+        heads = [i for i, u in enumerate(updates) if u[2].startswith("refs/heads/")]
+        check(
+            bool(tags) and bool(heads) and max(tags) < min(heads),
+            f"the tag did not precede every branch update: {[u[2] for u in updates]}",
+        )
+
+        # The cut and the bump both land on `26.8`, and the bump alone would CREATE the ref:
+        # only the update history distinguishes a real cut from a bump that stood in for it.
+        cut = [u for u in updates if u[2:3] == ["refs/heads/26.8"]]
         check(len(cut) == 2, f"want 2 pushes to 26.8 (cut, then bump), got {len(cut)}")
         if len(cut) == 2:
             check(cut[0][0] == "0" * 40, "the first 26.8 push did not create the ref")
