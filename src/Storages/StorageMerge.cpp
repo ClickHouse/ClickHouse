@@ -22,7 +22,10 @@
 #include <Columns/ColumnString.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
@@ -125,6 +128,7 @@ extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
 extern const int PARAMETER_OUT_OF_BOUND;
 extern const int UNSUPPORTED_METHOD;
+extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -476,6 +480,76 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
     return supported_columns;
 }
 
+namespace
+{
+
+/// Does converting a column from `from` to `to` keep the order AND map distinct values to distinct
+/// ones? The `Array` branch composes this elementwise, so a collapsing pair would reorder arrays.
+/// Unrecognised pairs are refused: a false "safe" gives wrong results, a false "unsafe" a pushdown.
+bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
+{
+    if (from.equals(to))
+        return true;
+
+    const WhichDataType which_from(from);
+    const WhichDataType which_to(to);
+
+    /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
+    /// mapping is the identity: the target must agree on the values AND be wide enough not to
+    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
+    if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
+    {
+        if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
+        {
+            if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
+                return true;
+        }
+        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
+            return true;
+    }
+
+    /// Widening an integer keeps the order when the signedness is preserved or the target is
+    /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
+    /// sign bit and a narrowing wraps, so both stay refused. `isInteger` covers the wide types as
+    /// well: `getLeastSupertype` derives `Int128`/`UInt128`/`Int256`/`UInt256` for an ordinary
+    /// column-list-less `Merge` over mixed integer widths, and those casts are just as injective.
+    if (which_from.isInteger() && which_to.isInteger()
+        && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
+        && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
+            || !to.isValueRepresentedByUnsignedInteger()))
+        return true;
+
+    /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
+    /// column orders exactly like its nested type. The wrapper is therefore stripped from either
+    /// side; it never nests, so the stripped side is not `LowCardinality` again.
+    const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
+    const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
+    if (from_lc || to_lc)
+        return conversionPreservesOrder(
+            from_lc ? *from_lc->getDictionaryType() : from, to_lc ? *to_lc->getDictionaryType() : to);
+
+    /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
+    /// place, so only the nested pair matters. Removing it falls through, because a nullable value
+    /// then has to become a concrete one and NULL placement changes.
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
+    {
+        const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
+        return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
+    }
+
+    /// `ColumnArray::compareAt` compares elementwise then by length, so a strictly monotonic element
+    /// conversion orders arrays the same way. Both sides must be `Array`: wrapping or unwrapping one
+    /// changes what is compared. `Tuple` and `Map` need their own analysis and stay refused.
+    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
+    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
+    if (from_array && to_array)
+        return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
+
+    return false;
+}
+
+}
+
 bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
 {
     /// The filter is re-derived against every child, so a subcolumn rides its origin column
@@ -491,7 +565,7 @@ bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
     /// In case of JOIN or ARRAY JOIN the first stage (which includes JOIN/ARRAY JOIN)
@@ -515,6 +589,12 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     DatabaseTablesIterators database_table_iterators = database_name_or_regexp.getDatabaseIterators(local_context);
 
     size_t selected_table_size = 0;
+    bool any_child_conversion_breaks_order = false;
+    /// These are the types `convertAndFilterSourceStream` casts every child stream to, because the
+    /// same snapshot builds the common header (see `read`). Aliases cross that boundary as well, so
+    /// they are compared too; `Ephemeral` is not, since it is never read from a source table.
+    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+    const auto & declared_columns = storage_snapshot->metadata->getColumns();
 
     for (const auto & iterator : database_table_iterators)
     {
@@ -532,6 +612,13 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
                         table->getStorageSnapshot(table_metadata, local_context), query_info));
+
+                for (const auto & child_column : table_metadata->getColumns().get(order_relevant_columns))
+                {
+                    auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
+                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                        any_child_conversion_breaks_order = true;
+                }
             }
 
             iterator->next();
@@ -554,6 +641,12 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// under serialize_query_plan).
     if (to_stage == QueryProcessingStage::WithMergeableState && stage > to_stage)
         stage = QueryProcessingStage::WithMergeableState;
+
+    /// Gated on the effective stage, not on `to_stage`: a single-node `Distributed` child returns
+    /// `Complete` even for a `FetchColumns` request, and that is deliberately kept above.
+    if (stage > QueryProcessingStage::FetchColumns && any_child_conversion_breaks_order)
+        return QueryProcessingStage::FetchColumns;
+
     return stage;
 }
 
@@ -1039,6 +1132,36 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     "Table {} matched by the regexp of {} has no columns to read",
                     storage->getStorageID().getNameForLogs(),
                     storage_merge->getStorageID().getNameForLogs());
+            }
+
+            /// `StorageMerge::getQueryProcessingStage` refuses a delegated stage when a child's type
+            /// converts to the declared one without preserving the order, but it decides that from
+            /// its own child enumeration and metadata snapshots. This loop reads a later, frozen
+            /// set, so a concurrent `ALTER` of a child, or a table that starts matching the regexp
+            /// in between, can present a child the refusal never saw. `common_processed_stage` is
+            /// already baked into the plan above and cannot be lowered here, and
+            /// `convertAndFilterSourceStream` would put the order-breaking cast above the child's
+            /// own sort or aggregation, so this fails the query instead of returning wrong rows.
+            if (common_processed_stage > QueryProcessingStage::FetchColumns)
+            {
+                const auto & declared_columns = merge_storage_snapshot->metadata->getColumns();
+                const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+                for (const auto & child_column : storage_metadata_snapshot->getColumns().get(order_relevant_columns))
+                {
+                    auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
+                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                        throw Exception(
+                            ErrorCodes::INCOMPATIBLE_COLUMNS,
+                            "Column {} of table {} has type {}, which does not preserve the order when converted to "
+                            "the type {} declared by {}. The query processing stage was chosen before this type was "
+                            "visible, most likely because the table was altered, or started matching the regexp, "
+                            "while the query was being planned. Retry the query",
+                            backQuoteIfNeed(child_column.name),
+                            storage->getStorageID().getNameForLogs(),
+                            child_column.type->getName(),
+                            declared_column->type->getName(),
+                            storage_merge->getStorageID().getNameForLogs());
+                }
             }
 
             auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
@@ -1863,8 +1986,13 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 continue;
             }
 
+            /// The `_table` and `_database` values of the rows are stamped by the table that
+            /// actually produces the rows. If the child table reads from other tables, its rows
+            /// carry those tables' names, not the child's own name, so pruning the child by its
+            /// name could incorrectly discard the rows the predicate selects. Such children are
+            /// always read, and the predicate is applied to the rows.
             if (storage.get() != storage_merge.get())
-                if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
+                if (!table_filter || storage->readsFromOtherTables() || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
                         if  (!granted_select_on_all_tables)
@@ -2428,7 +2556,7 @@ SELECT * FROM WatchLog;
 
 - `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
 
-    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
+    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read. A table that itself reads from other tables (`Distributed`, `Merge`, `Buffer`, `Alias`) returns rows carrying the name of the table that actually produced them, so such tables are always read and the filter is applied to their rows.
 
 - `_database` — Contains the name of the database from which data was read. Type: [String](/reference/data-types/string).
 
