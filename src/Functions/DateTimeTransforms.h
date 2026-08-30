@@ -141,6 +141,229 @@ auto extendedFactorForMonotonicity(ArgType arg, const DateLUTImpl & date_lut)
         return FactorTransform::execute(arg, date_lut);
 }
 
+enum class DateRoundingInterval : UInt8
+{
+    Day,
+    Week,
+    Month,
+    LastDayOfMonth,
+    Quarter,
+    Year,
+    ISOYear,
+};
+
+/// A `DateTime` without an explicit time zone keeps the one captured when the type was created, but
+/// literals compared against such a column are parsed in the session one.
+inline const DateLUTImpl & preimageParseTimeZone(const DataTypeDateTime & type)
+{
+    return type.hasExplicitTimeZone() ? type.getTimeZone() : DateLUT::instance();
+}
+
+/// `transform_time_zone` is the one the rounding function itself runs in; it differs from the parse
+/// time zone for implicit-time-zone columns, where `DateTimeTransformImpl` takes `Date` results from
+/// the argument type but `DateTime` results from the session-resolved result type.
+inline FieldIntervalPtr makeDateOrDateTimePreimageForDayRange(
+    const IDataType & type, ExtendedDayNum start_day, ExtendedDayNum end_day,
+    const DateLUTImpl * transform_time_zone = nullptr)
+{
+    /// Limited to `Date` and `DateTime`: `Date32` and `DateTime64` bounds clamp, wrap or depend on
+    /// the scale, so they need result-type-aware bounds and sometimes several intervals.
+    const auto & utc_time_zone = DateLUT::instance("UTC");
+    if (isDate(type))
+    {
+        /// `Date` is already a civil day number, so its preimage does not require time-zone conversion.
+        if (start_day.toUnderType() < 0 || end_day.toUnderType() > DATE_LUT_MAX_DAY_NUM)
+            return nullptr;
+
+        return std::make_shared<FieldInterval>(
+            Field(utc_time_zone.fromDayNum(start_day)), Field(utc_time_zone.fromDayNum(end_day)));
+    }
+
+    const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(&type);
+    if (!date_time_type || start_day.toUnderType() <= 0 || end_day.toUnderType() > DATE_LUT_MAX_DAY_NUM)
+        return nullptr;
+
+    /// Do not optimize partial civil days at the edges of the `DateTime` domain.
+    const auto & source_time_zone = transform_time_zone ? *transform_time_zone : date_time_type->getTimeZone();
+    const auto source_start = source_time_zone.fromDayNum(start_day);
+    const auto source_end = source_time_zone.fromDayNum(end_day);
+    if (source_start < 0 || source_end > std::numeric_limits<UInt32>::max())
+        return nullptr;
+
+    /// The optimizer renders the bounds as UTC civil strings that are parsed back in the column's
+    /// parse time zone, so carry the local components of that time zone over. Boundaries need not be
+    /// midnight (`America/Lima` started 1994 at 01:00:00), and ambiguous local times may not
+    /// round-trip, in which case decline.
+    const auto & parse_time_zone = preimageParseTimeZone(*date_time_type);
+    const auto make_utc_civil_time_surrogate =
+        [&](DateLUTImpl::Time source_time) -> std::optional<DateLUTImpl::Time>
+    {
+        const auto components = parse_time_zone.toDateTimeComponents(source_time);
+        const auto reparsed_source_time = parse_time_zone.makeDateTime(
+            components.date.year,
+            components.date.month,
+            components.date.day,
+            static_cast<UInt8>(components.time.hour),
+            components.time.minute,
+            components.time.second);
+
+        if (reparsed_source_time != source_time)
+            return std::nullopt;
+
+        return utc_time_zone.makeDateTime(
+            components.date.year,
+            components.date.month,
+            components.date.day,
+            static_cast<UInt8>(components.time.hour),
+            components.time.minute,
+            components.time.second);
+    };
+
+    const auto start_surrogate = make_utc_civil_time_surrogate(source_start);
+    const auto end_surrogate = make_utc_civil_time_surrogate(source_end);
+    if (!start_surrogate || !end_surrogate)
+        return nullptr;
+
+    return std::make_shared<FieldInterval>(
+        Field(*start_surrogate), Field(*end_surrogate));
+}
+
+inline FieldIntervalPtr getPreimageForDateRounding(
+    const IDataType & type, const Field & point, DateRoundingInterval interval)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 day_num = point.safeGet<UInt64>();
+    if (day_num > DATE_LUT_MAX_DAY_NUM)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const ExtendedDayNum point_day(static_cast<Int32>(day_num));
+    ExtendedDayNum start_day = point_day;
+    ExtendedDayNum end_day = point_day;
+
+    switch (interval)
+    {
+        case DateRoundingInterval::Day:
+            end_day = ExtendedDayNum(point_day.toUnderType() + 1);
+            break;
+        case DateRoundingInterval::Week:
+            start_day = calendar.toFirstDayNumOfWeek(point_day);
+            end_day = ExtendedDayNum(start_day.toUnderType() + 7);
+            break;
+        case DateRoundingInterval::Month:
+            start_day = calendar.toFirstDayNumOfMonth(point_day);
+            end_day = calendar.addMonths(start_day, 1);
+            break;
+        case DateRoundingInterval::LastDayOfMonth:
+            start_day = calendar.toFirstDayNumOfMonth(point_day);
+            end_day = calendar.addMonths(start_day, 1);
+            break;
+        case DateRoundingInterval::Quarter:
+            start_day = calendar.toFirstDayNumOfQuarter(point_day);
+            end_day = calendar.addQuarters(start_day, 1);
+            break;
+        case DateRoundingInterval::Year:
+            start_day = calendar.toFirstDayNumOfYear(point_day);
+            end_day = calendar.addYears(start_day, 1);
+            break;
+        case DateRoundingInterval::ISOYear:
+            start_day = calendar.toFirstDayNumOfISOYear(point_day);
+            end_day = calendar.toFirstDayNumOfISOYear(ExtendedDayNum(start_day.toUnderType() + 371));
+            break;
+    }
+
+    const auto result_day = interval == DateRoundingInterval::LastDayOfMonth
+        ? calendar.toLastDayNumOfMonth(point_day)
+        : start_day;
+
+    /// Values which cannot be produced by this rounding function have an empty preimage.
+    if (result_day != point_day)
+        return nullptr;
+
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+}
+
+inline FieldIntervalPtr getPreimageForISOYear(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 iso_year = point.safeGet<UInt64>();
+    if (iso_year < DATE_LUT_MIN_YEAR || iso_year >= DATE_LUT_MAX_YEAR)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const auto january_fourth = calendar.makeDayNum(static_cast<Int16>(iso_year), 1, 4);
+    const auto next_january_fourth = calendar.makeDayNum(static_cast<Int16>(iso_year + 1), 1, 4);
+    const auto start_day = calendar.toFirstDayNumOfISOYear(january_fourth);
+    const auto end_day = calendar.toFirstDayNumOfISOYear(next_january_fourth);
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+}
+
+inline FieldIntervalPtr getPreimageForYYYYMMDD(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 yyyymmdd = point.safeGet<UInt64>();
+    const UInt64 year = yyyymmdd / 10000;
+    const UInt64 month = yyyymmdd / 100 % 100;
+    const UInt64 day = yyyymmdd % 100;
+    if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day < 1 || day > 31)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const auto point_day = calendar.tryToMakeDayNum(
+        static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day));
+    if (!point_day || calendar.toNumYYYYMMDD(*point_day) != yyyymmdd)
+        return nullptr;
+
+    return makeDateOrDateTimePreimageForDayRange(
+        type, *point_day, ExtendedDayNum(point_day->toUnderType() + 1));
+}
+
+inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    /// The default `DateTime` result for extended source types can have a non-contiguous preimage.
+    const DateLUTImpl * source_time_zone = nullptr;
+    if (const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(&type))
+        source_time_zone = &preimageParseTimeZone(*date_time_type);
+    else if (isDate(type))
+        source_time_zone = &DateLUT::instance();
+    else
+        return nullptr;
+
+    const UInt64 timestamp = point.safeGet<UInt64>();
+    if (timestamp > std::numeric_limits<UInt32>::max())
+        return nullptr;
+
+    /// Round through the transform itself rather than through day starts: a day skipped by a
+    /// time-zone shift shares its start with a neighbour (`Pacific/Apia` skipped 2011-12-30), and
+    /// days starting before the epoch saturate into the first representable one.
+    const auto rounds_to_point = [&](Int32 day)
+    {
+        return day >= 0 && day <= DATE_LUT_MAX_DAY_NUM
+            && source_time_zone->toDate(DayNum(static_cast<UInt16>(day))) == static_cast<DateLUTImpl::Time>(timestamp);
+    };
+
+    ExtendedDayNum start_day(static_cast<Int32>(source_time_zone->toDayNum(static_cast<UInt32>(timestamp)).toUnderType()));
+    if (!rounds_to_point(start_day.toUnderType()))
+        return nullptr;
+
+    ExtendedDayNum end_day(start_day.toUnderType() + 1);
+    while (rounds_to_point(start_day.toUnderType() - 1))
+        start_day = ExtendedDayNum(start_day.toUnderType() - 1);
+    while (rounds_to_point(end_day.toUnderType()))
+        end_day = ExtendedDayNum(end_day.toUnderType() + 1);
+
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day, source_time_zone);
+}
+
 template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateImpl
 {
@@ -241,7 +464,9 @@ struct ToStartOfDayImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toDate(static_cast<time_t>(t.whole)));
+        /// Clamped, not wrapped: the seconds value must stay monotonic because the primary index treats
+        /// this transform as always monotonic.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(static_cast<time_t>(t.whole)), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
     {
@@ -257,7 +482,8 @@ struct ToStartOfDayImpl
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toDate(DayNum(d)));
+        /// Clamped: a Date past 2106-02-07 has a start-of-day beyond UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -270,6 +496,13 @@ struct ToStartOfDayImpl
     static Int64 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return common::mulIgnoreOverflow(time_zone.fromDayNum(ExtendedDayNum(d)), DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForStartOfDay(type, point);
     }
 
     using FactorTransform = ZeroTransform;
@@ -305,6 +538,13 @@ struct ToMondayImpl
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
     }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Week);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -337,6 +577,13 @@ struct ToStartOfMonthImpl
     static Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Month);
     }
 
     using FactorTransform = ZeroTransform;
@@ -372,6 +619,14 @@ struct ToLastDayOfMonthImpl
     {
         return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
     }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::LastDayOfMonth);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -405,6 +660,13 @@ struct ToStartOfQuarterImpl
     {
         return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
     }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Quarter);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -437,6 +699,13 @@ struct ToStartOfYearImpl
     static Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Year);
     }
 
     using FactorTransform = ZeroTransform;
@@ -805,7 +1074,8 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
 {
     static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+        /// Clamped: a Date past 2106-02-07 floors to a value beyond UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days), 0, std::numeric_limits<UInt32>::max()));
     }
     static Int64 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
@@ -973,7 +1243,8 @@ struct ToStartOfMinuteImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfMinute(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfMinute(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1278,7 +1549,8 @@ struct ToStartOfFiveMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfFiveMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfFiveMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1318,7 +1590,8 @@ struct ToStartOfTenMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfTenMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfTenMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1362,7 +1635,8 @@ struct ToStartOfFifteenMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfFifteenMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfFifteenMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1407,7 +1681,8 @@ struct TimeSlotImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
-        return static_cast<UInt32>(t.whole / 1800 * 1800);
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(t.whole / 1800 * 1800, 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
@@ -1463,7 +1738,8 @@ struct ToStartOfHourImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfHour(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfHour(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
@@ -2063,7 +2339,12 @@ struct ToISOYearImpl
     {
         return time_zone.toISOYear(DayNum(d));
     }
-    static constexpr bool hasPreimage() { return false; }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForISOYear(type, point);
+    }
 
     using FactorTransform = ZeroTransform;
 };
@@ -2104,6 +2385,13 @@ struct ToStartOfISOYearImpl
     static Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::ISOYear);
     }
 
     using FactorTransform = ZeroTransform;
@@ -2190,7 +2478,8 @@ struct ToYearNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toYearSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toYearSinceEpoch(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toYearSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2286,7 +2575,8 @@ struct ToMonthNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toMonthNumSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toMonthNumSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2318,7 +2608,8 @@ struct ToRelativeWeekNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toRelativeWeekNum(t);
         else
-            return static_cast<UInt16>(time_zone.toRelativeWeekNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toRelativeWeekNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2350,7 +2641,8 @@ struct ToRelativeDayNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toDayNum(t));
         else
-            return static_cast<UInt16>(time_zone.toDayNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toDayNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2382,7 +2674,8 @@ struct ToRelativeHourNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(t));
         else
-            return static_cast<UInt32>(time_zone.toRelativeHourNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(t), 0, std::numeric_limits<UInt32>::max()));
     }
     ALWAYS_INLINE static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2420,7 +2713,8 @@ struct ToRelativeMinuteNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toRelativeMinuteNum(t));
         else
-            return static_cast<UInt32>(time_zone.toRelativeMinuteNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(t), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2447,9 +2741,13 @@ struct ToRelativeSecondNumImpl
 {
     static constexpr auto name = "toRelativeSecondNum";
 
-    static Int64 execute(Int64 t, const DateLUTImpl &)
+    static auto execute(Int64 t, const DateLUTImpl &)
     {
-        return t;
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return t;
+        else
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(t, 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 t, const DateLUTImpl &)
     {
@@ -2464,7 +2762,8 @@ struct ToRelativeSecondNumImpl
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
+        /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -2578,7 +2877,12 @@ struct ToYYYYMMDDImpl
     {
         return time_zone.toNumYYYYMMDD(DayNum(d));
     }
-    static constexpr bool hasPreimage() { return false; }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForYYYYMMDD(type, point);
+    }
 
     using FactorTransform = ZeroTransform;
 };
