@@ -30,13 +30,16 @@ SET make_distributed_plan = 0;
 
 SYSTEM FLUSH LOGS query_log, text_log;
 
--- The filter must reach the probe-scan tasks (stage_0) and be registered there. Registration is
--- logged by the receive branch when the merged filter arrives, so this holds even if the filter
--- arrives near the end of the scan. When the delivery to the scan stage is not wired, the only
--- registrations happen in the join-stage tasks and the scan tasks log nothing.
-SELECT count() > 0 FROM system.text_log
+-- The filter must reach the probe-scan tasks and be registered there. Registration is logged by
+-- the receive branch when the merged filter arrives, so this holds even if the filter arrives
+-- near the end of the scan. Every task registers under its own rendezvous key, so the count of
+-- distinct keys counts the tasks that received the filter (with local execution all fragments
+-- share one query id, so the tasks cannot be told apart by query id). Without the delivery the
+-- count is zero: the join-stage build registers nothing in this plan, and the scan tasks have no
+-- receive branch at all.
+SELECT uniqExact(extract(message, 'under key .(_rf_rnd_[0-9a-f_]+).')) >= 3 FROM system.text_log
 WHERE logger_name = 'RuntimeFilter' AND message LIKE 'Registered runtime filter%' AND query_id IN (
     SELECT query_id FROM system.query_log
-    WHERE type = 'QueryFinish' AND query LIKE 'stage_0_%' AND log_comment = '04950_delivery_from_join_stage'
+    WHERE type = 'QueryFinish' AND query LIKE 'stage_%' AND log_comment = '04950_delivery_from_join_stage'
         AND event_date >= yesterday())
     AND event_date >= yesterday();
