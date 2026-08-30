@@ -3,6 +3,7 @@
 
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/ClientSlashCommands.h>
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
@@ -64,11 +65,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/Kusto/KQLLexer.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/Kusto/Utilities.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <IO/Ask.h>
@@ -652,11 +652,17 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             throw;
         }
     }
+    else if (dialect == Dialect::kusto)
+    {
+        /// KQL is lexically a different language, so it does not go through the SQL
+        /// tokenizer at all. Any failure is thrown; the interactive path below already
+        /// reports a thrown exception the same way it reports a returned message.
+        res = parseKQLQuery(
+            pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
     else
     {
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-        else if (dialect == Dialect::prql)
+        if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
@@ -670,10 +676,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             String message;
             try
             {
-                if (dialect == Dialect::kusto)
-                    res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-                else
-                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             }
             catch (const Exception & e)
             {
@@ -690,10 +693,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         }
         else
         {
-            if (dialect == Dialect::kusto)
-                res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-            else
-                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
     }
 
@@ -3414,6 +3414,25 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 is_first = false;
                 have_error |= buzz_house;
                 error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
+
+                /// The AST fuzzer feeds whole test files to one session, often several files in
+                /// a row, so a statement that does not parse is expected rather than a finding -
+                /// e.g. SQL DDL of the next file read under a `dialect = 'kusto'` a previous file
+                /// left behind. Skip the statement and keep fuzzing (the per-query parse in
+                /// `processWithASTFuzzer` tolerates syntax errors the same way).
+                if (query_fuzzer_runs && !buzz_house)
+                {
+                    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
+                    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    Tokens tokens(this_query_begin, all_queries_end);
+                    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                        ++token_iterator;
+                    this_query_begin = token_iterator->end;
+                    current_exception.reset();
+                    continue;
+                }
+
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -3716,8 +3735,10 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// and, after each successfully parsed `SET`, apply its changes to that
         /// copy and rebuild the parser before probing the next statement. Nothing
         /// is executed -- the changes are applied only to the local copy.
-        /// Tokenization is dialect-independent (every dialect consumes the same
-        /// token stream), so only the parser is rebuilt; the token iterator stays.
+        /// Only the parser is rebuilt on such a `SET`; the token iterator stays.
+        /// (KQL and `clickhouse_json` are lexically their own languages: their
+        /// statements are probed on the raw text below, and the shared tokens
+        /// only track the position across statements.)
         Settings effective_settings = settings;
 
         /// A setting value can be a query parameter, e.g. `SET dialect = {d:String}`,
@@ -3729,11 +3750,12 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// statements here exactly as it does during execution.
         NameToNameMap effective_query_parameters = client_context->getQueryParameters();
 
+        /// The Kusto dialect has no entry here: KQL is lexically a different language and is
+        /// not parsed through an `IParser` (see `parseQuery` above) -- the probe loop below
+        /// hands it to `parseKQLQuery` directly instead of using this parser.
         auto make_parser = [&]() -> std::unique_ptr<IParserBase>
         {
             const Dialect dialect = effective_settings[Setting::dialect];
-            if (dialect == Dialect::kusto)
-                return std::make_unique<ParserKQLStatement>(end, effective_settings[Setting::allow_settings_after_format_in_insert]);
             if (dialect == Dialect::prql)
                 return std::make_unique<ParserPRQLQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks]);
             if (dialect == Dialect::promql)
@@ -3742,20 +3764,6 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 return std::make_unique<ParserPolyglotQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks], effective_settings[Setting::polyglot_dialect], end, effective_settings[Setting::allow_experimental_polyglot_dialect]);
             return std::make_unique<ParserQuery>(end, effective_settings[Setting::allow_settings_after_format_in_insert], effective_settings[Setting::implicit_select]);
         };
-
-        /// The Kusto parser is not a pure probe: `ParserKQLStatement::parseImpl`
-        /// records `let` bindings in a thread-local map (and clears it on a
-        /// `SET dialect = ...`). This function only checks whether the buffer is an
-        /// incomplete query -- nothing has been submitted yet -- so snapshot and
-        /// restore that map to keep the probe free of side effects. Otherwise
-        /// probing e.g. `let x = 1; print (` and then discarding the buffer
-        /// (without submitting it) would leak `x` into subsequent queries in
-        /// `clickhouse-local`, where parsing and execution share the same
-        /// thread-local state. Snapshot unconditionally: a `SET dialect = 'kusto'`
-        /// earlier in the buffer can switch the parser to Kusto below even when the
-        /// session dialect is not Kusto.
-        std::unordered_map<String, String> saved_kql_bindings = kqlLetBindings();
-        SCOPE_EXIT({ kqlLetBindings() = std::move(saved_kql_bindings); });
 
         std::unique_ptr<IParserBase> parser = make_parser();
 
@@ -3772,12 +3780,46 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// it does not count.) The scan runs to the end of the buffer because a failed
         /// parse leaves no reliable statement end.
         ///
-        /// Under the Kusto dialect the KQL variant of the bracket check is used: the
-        /// plain one stops at the first token the SQL lexer rejects, and KQL's negative
-        /// operators (`!between`, `!in`, ...) begin with such a token, which would hide
-        /// the very brackets to look at.
+        /// Under the Kusto dialect the scan runs on the KQL lexer's tokens: the SQL lexer
+        /// stops making sense of KQL at the first KQL-only spelling (the negative operators
+        /// `!between`, `!in`, ..., or a timespan literal such as `5m`), which could hide both
+        /// a `;` and the very brackets to look at.
         auto has_unclosed_opener = [&](const char * statement_begin)
         {
+            if (effective_settings[Setting::dialect] == Dialect::kusto)
+            {
+                /// `KQLLexer` never throws; on a malformed literal it stops, and the scan
+                /// judges by the tokens before it (an unclosed opener in front of the error
+                /// still counts, like the SQL check's early stop below).
+                const std::vector<KQLToken> kql_tokens = KQLLexer(statement_begin, end).tokenize();
+                for (const auto & token : kql_tokens)
+                    if (token.type == KQLTokenType::Semicolon)
+                        return false;
+                std::vector<KQLTokenType> openers;
+                for (const auto & token : kql_tokens)
+                {
+                    if (token.type == KQLTokenType::OpeningRoundBracket || token.type == KQLTokenType::OpeningSquareBracket)
+                    {
+                        openers.push_back(token.type);
+                    }
+                    else if (token.type == KQLTokenType::ClosingRoundBracket || token.type == KQLTokenType::ClosingSquareBracket)
+                    {
+                        /// An excess closing bracket is a real syntax error to submit; a
+                        /// closer that does not match the innermost opener ends the scan
+                        /// (like the SQL check), so an opener before it still counts.
+                        if (openers.empty())
+                            return false;
+                        const KQLTokenType expected_opener = token.type == KQLTokenType::ClosingRoundBracket
+                            ? KQLTokenType::OpeningRoundBracket
+                            : KQLTokenType::OpeningSquareBracket;
+                        if (openers.back() != expected_opener)
+                            break;
+                        openers.pop_back();
+                    }
+                }
+                return !openers.empty();
+            }
+
             {
                 Tokens terminator_tokens(statement_begin, end, 0, true);
                 for (TokenIterator it(terminator_tokens); !it->isEnd(); ++it)
@@ -3786,9 +3828,7 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             }
 
             Tokens statement_tokens(statement_begin, end, 0, true);
-            const UnmatchedParentheses unmatched = effective_settings[Setting::dialect] == Dialect::kusto
-                ? checkKQLUnmatchedParentheses(TokenIterator(statement_tokens))
-                : checkUnmatchedParentheses(TokenIterator(statement_tokens));
+            const UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(statement_tokens));
             for (const auto & token : unmatched)
                 if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
                     return true;
@@ -3945,17 +3985,73 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             ASTPtr ast;
             Expected expected;
             bool parsed = false;
+            /// Captured before the `SET` mirroring below can change the dialect: it says how
+            /// this statement is parsed, and the catch and the tail of the loop still need
+            /// that after a `SET dialect = ...` has been applied.
+            const bool kql_statement = effective_settings[Setting::dialect] == Dialect::kusto;
             try
             {
-                parsed = parser->parse(token_iterator, ast, expected);
+                if (kql_statement)
+                {
+                    /// KQL is lexically a different language and is not parsed through an
+                    /// `IParser`: mirror `parseQuery` above and hand the raw text to
+                    /// `parseKQLQuery` (`max_query_size` is 0 like in the rest of the probe;
+                    /// exceeding it is an error for the executor to report). Its
+                    /// `SET name = ...` fast path returns an `ASTSetQuery`, so a dialect
+                    /// switch flows into the mirroring below like in any other dialect.
+                    const char * kql_pos = statement_begin;
+                    ast = parseKQLQuery(
+                        kql_pos,
+                        end,
+                        /*allow_multi_statements=*/ true,
+                        /*max_query_size=*/ 0,
+                        effective_settings[Setting::max_parser_depth],
+                        effective_settings[Setting::max_parser_backtracks]);
+                    parsed = true;
+                    /// Advance the shared position past the consumed statement
+                    /// (`parseKQLQuery` works on raw characters, not on these tokens).
+                    while (!token_iterator->isEnd() && token_iterator->begin < kql_pos)
+                        ++token_iterator;
+                }
+                else
+                {
+                    parsed = parser->parse(token_iterator, ast, expected);
+                }
             }
             catch (...)
             {
-                /// Not every parser reports a syntax error by returning false: the
-                /// Kusto operators throw on an unfinished parenthesized operator, so
-                /// e.g. `T | where x !between (` never reaches the check below and,
-                /// without this, would be committed -- executing the statements that
-                /// precede it in the buffer while its last one is still being typed.
+                /// Not every parser reports a syntax error by returning false: the KQL
+                /// parser reports every failure by throwing, so e.g.
+                /// `T | where x !between (` never reaches the checks below and, without
+                /// this, would be committed -- executing the statements that precede it
+                /// in the buffer while its last one is still being typed.
+                if (kql_statement)
+                {
+                    /// `KQLParser::failAt` ends the message with what it found at the point
+                    /// of failure -- "end of query" exactly when that is the end of input --
+                    /// which substitutes for the `token_iterator.max()` signal of the SQL
+                    /// parser (the PRQL probe below recognizes end of input by the
+                    /// compiler's message the same way). The terminator scan is not
+                    /// consulted first: a KQL statement contains `;` legitimately
+                    /// (`let x = 1; print (` is one statement still being typed), and a `;`
+                    /// the user really typed after the failing point makes the bracket scan
+                    /// below submit instead.
+                    try
+                    {
+                        throw;
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.message().ends_with("found end of query"))
+                            return true;
+                    }
+                    catch (...)
+                    {
+                        /// Judged by the bracket scan below, like a non-EOF failure.
+                    }
+                    return has_unclosed_opener(statement_begin);
+                }
+
                 /// An unclosed opener is still a reliable "needs continuation" signal
                 /// here, but `token_iterator.max()` is not: the parse was abandoned
                 /// at an arbitrary point, so anything else is committed and reported
@@ -4061,6 +4157,12 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 return false;
             if (token_iterator->type == TokenType::Semicolon)
                 continue;
+            /// `parseKQLQuery` consumed the statement together with its `;` separator (its
+            /// `SET` fast path eats the whitespace after it too), so whatever it left is the
+            /// next statement to probe, not trailing junk -- exactly what the executor's own
+            /// loop resumes on.
+            if (kql_statement)
+                continue;
             /// Tokens remain after a fully parsed statement that are not a new
             /// statement (e.g. INSERT data, or a real syntax error). Submit and
             /// let the normal query-processing path handle it.
@@ -4084,6 +4186,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
     /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
     /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    /// The `/`-form is also offered by the completion of the line editor - keep the `/`-commands
+    /// dispatched here in sync with `clientSlashCommands`.
     if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
         && (is_interactive || supportsLocalMetaCommands()))
     {
@@ -4156,6 +4260,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Interactive `help`/`man` command (in all of the forms `help`, `/help`, `man`, `/man`): render the
     /// embedded documentation for a word from `system.documentation`. Gated like the other meta-commands,
     /// so that batch `clickhouse-client` still parses a query starting with `help`/`man` as SQL.
+    /// The `/`-forms are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
     if (is_interactive || supportsLocalMetaCommands())
     {
         for (const std::string_view prefix : {"help", "/help", "man", "/man"})
@@ -4215,6 +4321,15 @@ bool ClientBase::processQueryText(const String & text)
         return true;
     }
 #endif
+
+    /// A mistake in the name of a `/`-command would otherwise be parsed as SQL and reported as a
+    /// syntax error at the `/`, which tells the user nothing about the command they meant. Gated
+    /// like the commands themselves, so batch `clickhouse-client` still treats the input as SQL.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
+    }
 
     if (query_fuzzer_runs)
     {
@@ -4763,7 +4878,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
-        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
+        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight (hints need color). The suggestion hints also need the suggestions, so --disable_suggestion turns those off, while the client's /-commands are a static list and stay hinted. Disable with --hints 0.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -5204,12 +5319,14 @@ void ClientBase::runInteractive()
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
-        /// Hints need color, so they are enabled only together with highlighting.
-        /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
-        /// turns off autocompletion entirely, including the hints.
+        /// Hints need color, so they are enabled only together with highlighting. Client slash
+        /// commands have a static list and can therefore remain hinted when suggestions are off.
         .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
-            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
-            && !getClientConfiguration().getBool("disable_suggestion", false),
+            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
+        .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
+        /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
+        /// `processQueryText`, so offer them here.
+        .enable_slash_commands = true,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,

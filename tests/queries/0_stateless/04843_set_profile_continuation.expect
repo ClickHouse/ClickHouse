@@ -65,7 +65,10 @@ sleep 1
 # keeps the assertion above from passing for the wrong reason (a profile that
 # carries nothing the parser cares about).
 send -- "SELECT 1;\r"
-expect "KQL Statement"
+expect {
+    "Multi-statements are not allowed" {}
+    "Syntax error in KQL query" {}
+}
 expect ":) "
 
 send -- "\4"
