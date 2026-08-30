@@ -442,6 +442,20 @@ Possible values:
 - `partition_key_only` — only the partition-key columns are tracked.
 - `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
 
+## patch_parts_version {#patch_parts_version}
+<SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "v2"},{"label": "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."}]}]}/>
+
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
+
 ## propagate_types_serialization_versions_to_nested_types {#propagate_types_serialization_versions_to_nested_types}
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "Propagate data types serialization version to nested types by default"}]}]}/>

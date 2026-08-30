@@ -206,9 +206,20 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
+zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time`, `zk_cnt_leader_unavailable_time`, `zk_sum_election_time`, and `zk_cnt_election_time` are cumulative leader-only metrics. They are per-server observations, not cluster-wide availability measurements: tracking starts when that server stops observing a live leader. During a network partition, this can include time while an old leader remains live in another partition. The election metrics record only a successful election that follows such a locally observed no-leader window; a leadership transfer that does not expose a sampled no-leader state is intentionally not counted.
+
+Keeper samples its local NuRaft leader state once per `heart_beat_interval_ms`, but never more frequently than every 100 milliseconds. Each boundary can differ from that local state transition by up to the effective interval, and windows shorter than that interval can be missed. Keeper records local election completion at NuRaft `BecomeLeader`. `srst` resets all four values.
+
+The duration of the most recent locally observed window of each kind is also exported to `system.asynchronous_metrics` as `KeeperLastLeaderElectionTime` and `KeeperLastLeaderUnavailableTime`, in milliseconds. `KeeperLastLeaderElectionTime` follows the same no-leader-window definition as `zk_sum_election_time`. Both are leader-only as well: a node that is not the active leader, or that has not completed a window yet, reports `0`. `srst` resets them together with the cumulative counters.
 
 - `srvr`: Lists full details for the server.
 

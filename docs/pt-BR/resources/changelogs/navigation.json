@@ -7,7 +7,7 @@
         "pt-BR/resources/changelogs/cloud/index",
         "pt-BR/resources/changelogs/cloud/2026",
         {
-          "group": "Archive",
+          "group": "Arquivo",
           "pages": [
             "pt-BR/resources/changelogs/cloud/archive/2025",
             "pt-BR/resources/changelogs/cloud/archive/2024",
@@ -17,7 +17,7 @@
         },
         "pt-BR/resources/changelogs/cloud/release-status",
         {
-          "group": "Cloud database release changelog",
+          "group": "Changelog de lançamentos do banco de dados Cloud",
           "pages": [
             "pt-BR/resources/changelogs/cloud/release-notes-index",
             {
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "dropdown": "Open source",
+      "dropdown": "Código aberto",
       "icon": "/images/icons/icon-server.svg",
       "pages": [
         "pt-BR/resources/changelogs/oss/2026",
         {
           "expanded": false,
-          "group": "Archive",
+          "group": "Arquivo",
           "pages": [
             "pt-BR/resources/changelogs/oss/2025",
             "pt-BR/resources/changelogs/oss/2024",
