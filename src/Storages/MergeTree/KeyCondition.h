@@ -86,12 +86,41 @@ public:
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
     /// Any condition over a key that can be reverse-sorted (a MergeTree primary key) must be
     /// constructed this way, otherwise a reverse key would be analyzed as ascending.
+    ///
+    /// `expand_tuple_key_elements_`: analyze tuple key elements, e.g. `(id, other)` in
+    /// ORDER BY (name, (id, other)), as if they were expanded into their components,
+    /// i.e. exactly like ORDER BY (name, id, other). A tuple orders lexicographically by its
+    /// components, so both keys sort rows identically and predicates over the components
+    /// (`id = 3`) can prune by the key. Pass true only when the key has lexicographic-order
+    /// semantics (a MergeTree primary key) AND the caller feeds `checkInRange` per-column index
+    /// data in the same expanded form (see getKeyTupleExpansion and the expansion of the loaded
+    /// primary index in MergeTreeDataSelectExecutor::markRangesFromPKRange). It must stay false
+    /// for point-semantics keys whose values are fed unexpanded (e.g. PartitionPruner).
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const KeyDescription & key_description,
         bool single_point_ = false,
-        bool skip_analysis_ = false);
+        bool skip_analysis_ = false,
+        bool expand_tuple_key_elements_ = false);
+
+    /// How tuple key elements were expanded into their components (see the constructor above).
+    struct KeyTupleExpansion
+    {
+        /// For each original key element, the number of key columns it expands to (1 = kept as is).
+        std::vector<size_t> num_components;
+        /// Expanded key column names, e.g. (name, id, other) for the key (name, (id, other)).
+        Names column_names;
+        /// Expanded key column types.
+        DataTypes data_types;
+        /// Expanded per-column reverse (DESC) flags; empty if the original key had none.
+        std::vector<bool> reverse_flags;
+    };
+
+    /// Non-null iff the condition was built with `expand_tuple_key_elements_` and some key element
+    /// was actually expanded. All key column positions in this condition (RPN atoms, checkInRange
+    /// inputs, getNumKeyColumns, ...) are then positions in the expanded key.
+    const KeyTupleExpansion * getKeyTupleExpansion() const { return key_tuple_expansion ? &*key_tuple_expansion : nullptr; }
 
     struct BloomFilterData
     {
@@ -503,6 +532,15 @@ private:
         const bool require_ready_sets = false;
     };
 
+    /// Shared tail of the public constructors: builds the RPN from the filter over the
+    /// already-registered `key_columns`.
+    void initRPN(
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        const ContextPtr & context,
+        const ExpressionActionsPtr & key_expr,
+        bool skip_analysis,
+        bool require_ready_sets);
+
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
@@ -683,5 +721,8 @@ private:
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
+
+    /// See getKeyTupleExpansion.
+    std::optional<KeyTupleExpansion> key_tuple_expansion;
 };
 }

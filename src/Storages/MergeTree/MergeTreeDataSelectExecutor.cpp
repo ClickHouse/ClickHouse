@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <optional>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
+#include <Common/assert_cast.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
 #include <boost/functional/hash.hpp>
@@ -1988,11 +1990,63 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
 
+    /// If the key condition was built with tuple key elements expanded into their components
+    /// (the primary key (name, (id, other)) analyzed as the key columns (name, id, other)),
+    /// present the primary key and the loaded in-memory index in the same expanded form:
+    /// a `ColumnTuple` index column is replaced by references to its element columns.
+    /// Everything below is positional over the (possibly expanded) key columns.
+    const KeyCondition::KeyTupleExpansion * key_expansion = key_condition.getKeyTupleExpansion();
+    const Names & pk_column_names = key_expansion ? key_expansion->column_names : primary_key.column_names;
+    const DataTypes & pk_data_types = key_expansion ? key_expansion->data_types : primary_key.data_types;
+
     /// Which key columns are reverse-sorted.
     const KeyOrder & key_order = key_condition.getKeyOrder();
-    chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
+    if (key_expansion)
+        chassert(key_order.matchesPrefix(key_expansion->reverse_flags, pk_column_names.size()));
+    else
+        chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
 
-    const auto index = part->getIndex();
+    auto index = part->getIndex();
+    std::vector<std::optional<size_t>> expanded_pk_to_minmax_slot;
+    if (key_expansion)
+    {
+        Columns expanded_index;
+        expanded_index.reserve(pk_column_names.size());
+        for (size_t i = 0; i < index->size(); ++i)
+        {
+            const size_t components = i < key_expansion->num_components.size() ? key_expansion->num_components[i] : 1;
+            if (components == 1)
+            {
+                expanded_index.push_back(index->at(i));
+            }
+            else
+            {
+                const auto & tuple_column = assert_cast<const ColumnTuple &>(*index->at(i));
+                chassert(tuple_column.tupleSize() == components);
+                for (size_t j = 0; j < components; ++j)
+                    expanded_index.push_back(tuple_column.getColumnPtr(j));
+            }
+        }
+        index = std::make_shared<Columns>(std::move(expanded_index));
+
+        if (pk_to_minmax_slot)
+        {
+            /// Re-index the partition-minmax mapping by expanded key position. A component of an
+            /// expanded tuple gets no bound: the mapping was built over whole-element names, and a
+            /// tuple element is never a partition minmax column.
+            expanded_pk_to_minmax_slot.reserve(pk_column_names.size());
+            for (size_t i = 0; i < pk_to_minmax_slot->size(); ++i)
+            {
+                const size_t components = i < key_expansion->num_components.size() ? key_expansion->num_components[i] : 1;
+                if (components == 1)
+                    expanded_pk_to_minmax_slot.push_back((*pk_to_minmax_slot)[i]);
+                else
+                    expanded_pk_to_minmax_slot.resize(expanded_pk_to_minmax_slot.size() + components);
+            }
+            pk_to_minmax_slot = &expanded_pk_to_minmax_slot;
+        }
+    }
+
     const bool use_sparse_pk_representation
         = settings[Setting::use_lightweight_primary_key_index_analysis];
 
@@ -2085,7 +2139,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         {
             chassert(i < index->size());
             chassert(index->at(i));
-            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+            index_columns->emplace_back(index->at(i), pk_data_types[i], pk_column_names[i]);
         }
 
         /// Keep used_key_indices entries that are loaded, plus unloaded ones covered by a partition-minmax bound.
@@ -2118,7 +2172,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
         {
             size_t key_col = used_key_indices[sparse_pos];
-            sparse_key_types.emplace_back(primary_key.data_types[key_col]);
+            sparse_key_types.emplace_back(pk_data_types[key_col]);
         }
 
         /// Equality bitmap for the key columns present in the in-memory index (not only sparse):
@@ -2136,12 +2190,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             for (size_t i = 0; i < num_analyzed_key_columns; ++i)
             {
                 if (i < index->size())
-                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+                    index_columns->emplace_back(index->at(i), pk_data_types[i], pk_column_names[i]);
                 else
                     /// The column of the primary key was not loaded in memory - we'll skip it.
                     index_columns->emplace_back();
 
-                key_types.emplace_back(primary_key.data_types[i]);
+                key_types.emplace_back(pk_data_types[i]);
             }
         }
 
@@ -2185,7 +2239,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     Hyperrectangle index_bounds;
     index_bounds.reserve(num_analyzed_key_columns);
     for (size_t i = 0; i < num_analyzed_key_columns; ++i)
-        index_bounds.push_back(Range::createWholeUniverseTypeAware(primary_key.data_types[i]));
+        index_bounds.push_back(Range::createWholeUniverseTypeAware(pk_data_types[i]));
 
     /// pk_to_minmax_slot maps each PK column to its slot in the part's partition-minmax index.
     if (part_has_minmax_index)
