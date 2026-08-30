@@ -367,8 +367,11 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         = num_direct_gather == 0 || num_direct_gather < num_columnar_dst;
     if constexpr (from_columns)
     {
-        many_columns.reserve(size_to_reserve);
-        row_nums.reserve(size_to_reserve);
+        if (need_columnar_collect)
+        {
+            many_columns.reserve(size_to_reserve);
+            row_nums.reserve(size_to_reserve);
+        }
     }
 
     [[maybe_unused]] RowStorePointers row_store_ptrs;

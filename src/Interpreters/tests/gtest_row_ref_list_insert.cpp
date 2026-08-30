@@ -140,7 +140,7 @@ TEST(RowRefList, SaturatedCountIsNotTruncatedTo32Bits)
 {
     Arena pool;
 
-    /// `Batch::total_rows` is 56 bits, so a saturated count above 2^32 must survive `rows()` intact:
+    /// `Batch::total_rows` is 56 bits, so a saturated count above 2^32 must survive `rows` intact:
     /// a caller sizing an exact allocation from it writes one value per ref, so a narrowed count
     /// under-allocates. Inserting that many refs is not feasible, so the field is set directly.
     RowRefList list(/*block_no=*/0, /*row_no=*/0);

@@ -31,6 +31,6 @@ arm5b_mixed_limit_offset	0
 arm5c_mixed_by_blocks	1
 arm6_nullable	0
 arm7_replicated	0
-arm8_row_store	1
+arm8_row_store	1000
 arm9_reranged	0
 arm_asof	0

@@ -200,10 +200,9 @@ RIGHT JOIN
 SETTINGS enable_lazy_columns_replication = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0,
     join_use_nulls = 0, log_comment = 'dg_arm7_replicated', ast_fuzzer_runs = 0;
 
--- Arm 8: the row store and the gather coexisting. A fanout of ten with three qualifying columns
--- (the saved key counts) initializes the row store, which claims the narrow columns; `FixedString(40)`
--- is the only fixed and contiguous width above the row store's inclusive 32-byte limit, so it is the
--- one column left on the columnar path and it is gathered.
+-- Arm 8: the row store and the gather coexisting. A ratio of zero admits the row store without
+-- consulting any row-count estimate; `USING` saves no right key, so `n1` and `n2` are the two
+-- row-store-useful columns `initRowStore` needs, leaving `w` at 40 bytes as the one gathered column.
 CREATE TABLE dg_rowstore (k UInt64, n1 UInt64, n2 UInt64, w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_rowstore SELECT number, number * 1000003, number * 7, toFixedString(leftPad(toString(number), 40, 'y'), 40)
 FROM numbers(100);
@@ -212,6 +211,7 @@ INSERT INTO dg_rowstore_probe SELECT number % 100 FROM numbers(1000);
 
 SELECT 'arm8 row store mixed', count(), sum(cityHash64(*)) FROM dg_rowstore_probe JOIN dg_rowstore USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 1, min_rows_ratio_for_hash_join_row_store = 0,
     log_comment = 'dg_arm8_row_store', ast_fuzzer_runs = 0;
 
 -- Arm 9: a reranged build side is emitted by `buildOutputFromRowRefLists`, which this change leaves
@@ -244,7 +244,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     replaceOne(log_comment, 'dg_', '') AS arm,
-    if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval'),
+    if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval', 'dg_arm8_row_store'),
        toString(max(ProfileEvents['HashJoinDirectGatheredRows'])),
        toString(max(ProfileEvents['HashJoinDirectGatheredRows']) > 0)) AS gathered
 FROM system.query_log
