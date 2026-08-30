@@ -1,167 +1,15 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/re2.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/types.h>
 
-#include <algorithm>
 #include <array>
 #include <limits>
-#include <memory>
 #include <optional>
-
-namespace DB::ErrorCodes
-{
-extern const int CANNOT_COMPILE_REGEXP;
-}
 
 namespace DB::JSONPathValues
 {
-
-class PathMatcher
-{
-public:
-    PathMatcher(
-        VectorWithMemoryTracking<String> include_paths_,
-        VectorWithMemoryTracking<String> include_path_regexps_,
-        VectorWithMemoryTracking<String> skip_paths_,
-        VectorWithMemoryTracking<String> skip_path_regexps_)
-        : include_paths(normalizePaths(std::move(include_paths_)))
-        , include_path_regexps(normalizeStrings(std::move(include_path_regexps_)))
-        , skip_paths(normalizePaths(std::move(skip_paths_)))
-        , skip_path_regexps(normalizeStrings(std::move(skip_path_regexps_)))
-    {
-        compileRegexps(include_path_regexps, include_regexps);
-        compileRegexps(skip_path_regexps, skip_regexps);
-    }
-
-    bool shouldIndex(std::string_view path) const
-    {
-        if (matchesAnyPathOrSubtree(path, skip_paths) || matchesAnyRegexp(path, skip_regexps))
-            return false;
-
-        return !hasIncludeFilter()
-            || matchesAnyPathOrSubtree(path, include_paths)
-            || matchesAnyRegexp(path, include_regexps);
-    }
-
-    bool shouldVisit(std::string_view path) const
-    {
-        if (matchesAnyPathOrSubtree(path, skip_paths))
-            return false;
-
-        /// An arbitrary include or skip regexp can match a descendant differently from its ancestor.
-        return !hasIncludeFilter()
-            || matchesAnyPathOrSubtree(path, include_paths)
-            || matchesAnyAncestor(path, include_paths)
-            || !include_regexps.empty();
-    }
-
-    const VectorWithMemoryTracking<String> & getIncludePaths() const { return include_paths; }
-    const VectorWithMemoryTracking<String> & getIncludePathRegexps() const { return include_path_regexps; }
-    const VectorWithMemoryTracking<String> & getSkipPaths() const { return skip_paths; }
-    const VectorWithMemoryTracking<String> & getSkipPathRegexps() const { return skip_path_regexps; }
-
-private:
-    using Regexps = VectorWithMemoryTracking<std::unique_ptr<re2::RE2>>;
-
-    bool hasIncludeFilter() const { return !include_paths.empty() || !include_regexps.empty(); }
-
-    static VectorWithMemoryTracking<String> normalizePaths(VectorWithMemoryTracking<String> paths)
-    {
-        std::sort(paths.begin(), paths.end());
-        paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
-
-        VectorWithMemoryTracking<String> result;
-        result.reserve(paths.size());
-        for (auto & path : paths)
-        {
-            if (!matchesAnyPathOrSubtree(path, result))
-                result.emplace_back(std::move(path));
-        }
-        return result;
-    }
-
-    static VectorWithMemoryTracking<String> normalizeStrings(VectorWithMemoryTracking<String> values)
-    {
-        std::sort(values.begin(), values.end());
-        values.erase(std::unique(values.begin(), values.end()), values.end());
-        return values;
-    }
-
-    static bool matchesAnyPathOrSubtree(std::string_view path, const VectorWithMemoryTracking<String> & paths)
-    {
-        while (true)
-        {
-            const auto it = std::lower_bound(
-                paths.begin(),
-                paths.end(),
-                path,
-                [](const String & lhs, std::string_view rhs) { return lhs.compare(rhs) < 0; });
-            if (it != paths.end() && *it == path)
-                return true;
-
-            const auto separator = path.find_last_of(".[");
-            if (separator == std::string_view::npos)
-                return false;
-            path = path.substr(0, separator);
-        }
-    }
-
-    static bool matchesAnyAncestor(std::string_view path, const VectorWithMemoryTracking<String> & paths)
-    {
-        String descendant_prefix(path);
-        descendant_prefix += '.';
-        auto it = std::lower_bound(paths.begin(), paths.end(), descendant_prefix);
-        if (it != paths.end() && it->starts_with(descendant_prefix))
-            return true;
-
-        descendant_prefix.back() = '[';
-        it = std::lower_bound(paths.begin(), paths.end(), descendant_prefix);
-        return it != paths.end() && it->starts_with(descendant_prefix);
-    }
-
-    static bool matchesAnyRegexp(std::string_view path, const Regexps & regexps)
-    {
-        return std::any_of(
-            regexps.begin(),
-            regexps.end(),
-            [&](const auto & regexp) { return re2::RE2::PartialMatch(path, *regexp); });
-    }
-
-    static void compileRegexps(const VectorWithMemoryTracking<String> & regexp_strings, Regexps & regexps)
-    {
-        regexps.reserve(regexp_strings.size());
-        for (const auto & regexp_string : regexp_strings)
-        {
-            auto regexp = std::make_unique<re2::RE2>(regexp_string, regexpOptions());
-            if (!regexp->ok())
-                throw Exception(
-                    DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
-                    "Invalid regexp '{}': {}",
-                    regexp_string,
-                    regexp->error());
-            regexps.emplace_back(std::move(regexp));
-        }
-    }
-
-    static re2::RE2::Options regexpOptions()
-    {
-        re2::RE2::Options options;
-        options.set_log_errors(false);
-        return options;
-    }
-
-    VectorWithMemoryTracking<String> include_paths;
-    VectorWithMemoryTracking<String> include_path_regexps;
-    VectorWithMemoryTracking<String> skip_paths;
-    VectorWithMemoryTracking<String> skip_path_regexps;
-    Regexps include_regexps;
-    Regexps skip_regexps;
-};
 
 inline constexpr UInt64 DEFAULT_MAX_TOKEN_BYTES = 1024;
 inline constexpr UInt64 MAX_TOKEN_BYTES = 1024 * 1024;
@@ -180,7 +28,6 @@ struct IndexConfiguration
     UInt64 token_format_version;
     UInt64 max_token_bytes;
     String source_type_name;
-    std::shared_ptr<const PathMatcher> path_matcher;
 };
 
 /// `jsonPathValues` tokens are persisted as text-index dictionary keys. Path, type, and map-key

@@ -28,11 +28,6 @@
 namespace DB
 {
 
-namespace JSONPathValues
-{
-class PathMatcher;
-}
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -420,12 +415,7 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 /// tokenizer interface and are not used for `JSON` values.
 struct JSONPathValuesTokenizer final : public ITokenizerHelper<JSONPathValuesTokenizer>
 {
-    explicit JSONPathValuesTokenizer(
-        size_t max_token_bytes_,
-        VectorWithMemoryTracking<String> include_paths_ = {},
-        VectorWithMemoryTracking<String> include_path_regexps_ = {},
-        VectorWithMemoryTracking<String> skip_paths_ = {},
-        VectorWithMemoryTracking<String> skip_path_regexps_ = {});
+    explicit JSONPathValuesTokenizer(size_t max_token_bytes_);
 
     static const char * getName() { return "jsonPathValues"; }
     static const char * getExternalName() { return getName(); }
@@ -443,11 +433,9 @@ struct JSONPathValuesTokenizer final : public ITokenizerHelper<JSONPathValuesTok
 
     bool supportsStringLike() const override { return false; }
     size_t getMaxTokenBytes() const { return max_token_bytes; }
-    const std::shared_ptr<const JSONPathValues::PathMatcher> & getPathMatcher() const { return path_matcher; }
 
 private:
     size_t max_token_bytes;
-    std::shared_ptr<const JSONPathValues::PathMatcher> path_matcher;
 };
 
 /// Parser extracting sparse grams (the same as function sparseGrams).

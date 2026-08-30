@@ -1199,33 +1199,18 @@ SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 
 The `jsonPathValues` tokenizer creates opaque, path-qualified tokens for exact and fuzzy searches on JSON subcolumns. Nulls and empty strings are omitted. The token-size limit must be between 1 byte and 1 MiB. Specify it in production schemas so the schema does not depend on the default.
 
-Its arguments are:
-
-- `max_token_bytes`: maximum token size, default `1024`.
-- `include_paths`: paths whose values should be indexed. A path also includes its descendants. When neither include option is specified, all paths are included.
-- `include_paths_regexp`: RE2 regular expressions for paths whose values should be indexed. The expressions use partial matching.
-- `skip_paths`: paths whose values should not be indexed. A path also skips its descendants, like `SKIP` in a `JSON` type declaration.
-- `skip_paths_regexp`: RE2 regular expressions for paths whose values should not be indexed. The expressions use partial matching, like the default behavior of `SKIP REGEXP` in a `JSON` type declaration.
-
-The include options are combined, and then the skip options are applied. Therefore, a skipped path is not indexed even when it also matches an include option. Use named arguments when specifying path filters. The positional form `jsonPathValues([max_token_bytes])` remains supported.
+Its optional `max_token_bytes` argument sets the maximum token size. The default is `1024`.
 
 ```sql
 CREATE TABLE events
 (
     id UInt64,
     data JSON(level String),
-    INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(
-        max_token_bytes = 1024,
-        include_paths = ['message', 'attributes', 'level'],
-        include_paths_regexp = ['(?:^|\\.)(?:title|description)$'],
-        skip_paths = ['attributes.raw'],
-        skip_paths_regexp = ['(?:^|\\.)debug_']))
+    INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(1024))
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
-
-Queries on paths that are not included or are skipped read the source `JSON` column without using this index. Changing any path filter requires rebuilding or materializing the index for existing data parts.
 
 `startsWith` uses the index when the standard [`text_index_like_min_pattern_length`](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length) setting allows it. Other supported pattern predicates also require [`use_text_index_like_evaluation_by_dictionary_scan`](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan).
 

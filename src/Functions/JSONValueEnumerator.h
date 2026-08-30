@@ -83,9 +83,6 @@ void enumerateJSONValues(
 
     auto consume_shared = [&](std::string_view path, std::string_view value_data)
     {
-        if (!consumer.shouldConsumePath(path))
-            return;
-
         ReadBufferFromMemory buffer(value_data);
 
         char type_index = 0;
@@ -97,9 +94,6 @@ void enumerateJSONValues(
         const auto & cache = getSimpleDataTypesCache();
         const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
         const bool has_cached_type = cache.hasElement(binary_type_index);
-
-        if (has_cached_type && !consumer.shouldConsumeValue(path, *cache.getElement(binary_type_index).type))
-            return;
 
         if (binary_type_index == BinaryTypeIndex::String)
         {
@@ -159,8 +153,6 @@ void enumerateJSONValues(
 
         if (isNothing(type))
             return;
-        if (!has_cached_type && !consumer.shouldConsumeValue(path, *type))
-            return;
 
         auto [column_it, inserted] = shared_columns_cache.try_emplace(*type_name);
         if (inserted)
@@ -174,9 +166,6 @@ void enumerateJSONValues(
 
     auto consume_path = [&](PathInfo & entry, size_t row)
     {
-        if (!consumer.shouldConsumePath(entry.path))
-            return;
-
         if ((entry.is_dynamic || entry.is_nullable) && entry.column->isNullAt(row))
         {
             consumer.consumeNull(entry.path, entry.is_nullable);

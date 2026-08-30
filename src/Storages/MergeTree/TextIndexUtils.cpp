@@ -283,15 +283,9 @@ bool canReuseTextIndexForMerge(
     if (!target_configuration)
         return true;
 
-    const auto & target_matcher = *target_configuration->path_matcher;
-    const auto & source_matcher = *source_configuration->path_matcher;
     return target_configuration->token_format_version == source_configuration->token_format_version
         && target_configuration->max_token_bytes == source_configuration->max_token_bytes
-        && target_configuration->source_type_name == source_configuration->source_type_name
-        && target_matcher.getIncludePaths() == source_matcher.getIncludePaths()
-        && target_matcher.getIncludePathRegexps() == source_matcher.getIncludePathRegexps()
-        && target_matcher.getSkipPaths() == source_matcher.getSkipPaths()
-        && target_matcher.getSkipPathRegexps() == source_matcher.getSkipPathRegexps();
+        && target_configuration->source_type_name == source_configuration->source_type_name;
 }
 
 MergeTextIndexesTask::MergeTextIndexesTask(

@@ -1190,28 +1190,6 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-namespace
-{
-
-void serializeStrings(const VectorWithMemoryTracking<String> & values, WriteBuffer & ostr)
-{
-    writeVarUInt(values.size(), ostr);
-    for (const auto & value : values)
-        writeStringBinary(value, ostr);
-}
-
-VectorWithMemoryTracking<String> deserializeStrings(ReadBuffer & istr)
-{
-    UInt64 size = 0;
-    readVarUInt(size, istr);
-    VectorWithMemoryTracking<String> values(size);
-    for (auto & value : values)
-        readStringBinary(value, istr);
-    return values;
-}
-
-}
-
 void TextIndexSerialization::serializeHeader(
     MergeTreeTextIndexSerializationVersion version,
     const DictionarySparseIndex & sparse_index,
@@ -1248,10 +1226,6 @@ void TextIndexSerialization::serializeHeader(
             writeVarUInt(configuration.token_format_version, ostr);
             writeVarUInt(configuration.max_token_bytes, ostr);
             writeStringBinary(configuration.source_type_name, ostr);
-            serializeStrings(configuration.path_matcher->getIncludePaths(), ostr);
-            serializeStrings(configuration.path_matcher->getIncludePathRegexps(), ostr);
-            serializeStrings(configuration.path_matcher->getSkipPaths(), ostr);
-            serializeStrings(configuration.path_matcher->getSkipPathRegexps(), ostr);
         }
     }
 
@@ -1316,19 +1290,10 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
             if (!JSONPathValues::isValidMaxTokenBytes(max_token_bytes))
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid `jsonPathValues` max token size in text index header: {}", max_token_bytes);
 
-            auto include_paths = deserializeStrings(istr);
-            auto include_path_regexps = deserializeStrings(istr);
-            auto skip_paths = deserializeStrings(istr);
-            auto skip_path_regexps = deserializeStrings(istr);
             header.json_path_values_configuration = JSONPathValues::IndexConfiguration{
                 .token_format_version = token_format_version,
                 .max_token_bytes = max_token_bytes,
                 .source_type_name = std::move(source_type_name),
-                .path_matcher = std::make_shared<JSONPathValues::PathMatcher>(
-                    std::move(include_paths),
-                    std::move(include_path_regexps),
-                    std::move(skip_paths),
-                    std::move(skip_path_regexps)),
             };
         }
     }
@@ -1990,7 +1955,6 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         JSONPathValuesTextIndexConsumer consumer(granule_builder);
         JSONPathValues::Extractor<JSONPathValuesTextIndexConsumer> extractor(
             json_tokenizer.getMaxTokenBytes(),
-            *json_tokenizer.getPathMatcher(),
             consumer);
         enumerateJSONValues(column_object, type_object, extractor, *pos, rows_read);
         ProfileEvents::increment(ProfileEvents::JSONPathValuesTextIndexInputRows, rows_read);
@@ -2357,7 +2321,6 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
             .token_format_version = JSONPathValues::TOKEN_FORMAT_VERSION,
             .max_token_bytes = json_tokenizer.getMaxTokenBytes(),
             .source_type_name = index.data_types.front()->getName(),
-            .path_matcher = json_tokenizer.getPathMatcher(),
         };
     }
 
