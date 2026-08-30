@@ -1,5 +1,7 @@
 """Tests for the Prometheus /api/v1/format_query endpoint."""
 
+import time
+
 import pytest
 import requests
 
@@ -15,10 +17,29 @@ node = cluster.add_instance(
 )
 
 
+def wait_for_prometheus_handlers(timeout=120):
+    # cluster.start() waits for the native TCP port, and the Prometheus protocols port
+    # can start accepting connections slightly later, so poll it before running the tests.
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            requests.get(
+                f"http://{node.ip_address}:9093/api/v1/format_query",
+                params={"query": "up"},
+                timeout=5,
+            )
+            return
+        except requests.exceptions.ConnectionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.5)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def setup():
     try:
         cluster.start()
+        wait_for_prometheus_handlers()
         yield cluster
     finally:
         cluster.shutdown()
