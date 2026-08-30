@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
@@ -15,8 +16,10 @@
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -27,6 +30,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int SYNTAX_ERROR;
     extern const int THERE_IS_NO_QUERY;
     extern const int BAD_ARGUMENTS;
@@ -208,6 +212,18 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         throw_missing_dictionary_if_remasked();
 
         auto & ast_create_query = create_query->as<ASTCreateQuery &>();
+
+        /// A table is a `StorageAlias` exactly when its definition names the `Alias` engine, so the
+        /// create query answers that without opening the storage object, which can throw on its own.
+        if (!is_dictionary && ast_create_query.storage && ast_create_query.storage->engine
+            && ast_create_query.storage->engine->name == "Alias")
+        {
+            auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+            if (const auto * alias = table ? table->as<StorageAlias>() : nullptr;
+                alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to show metadata exposed by {}", table_id.getNameForLogs());
+        }
+
         if (query_ptr->as<ASTShowCreateViewQuery>())
         {
             if (!ast_create_query.isView())

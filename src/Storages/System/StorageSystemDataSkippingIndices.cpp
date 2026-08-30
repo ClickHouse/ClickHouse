@@ -10,6 +10,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -121,12 +122,16 @@ protected:
                 if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, database_name, table_name, table))
                     continue;
 
+                if (const auto * alias = table->as<StorageAlias>();
+                    alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
+                    continue;
+
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
 
-                auto secondary_index_sizes = table->getSecondaryIndexSizes();
+                const auto secondary_index_sizes = table->getSecondaryIndexSizes();
                 for (const auto & index : indices)
                 {
                     ++rows_count;
@@ -173,19 +178,34 @@ protected:
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
 
-                    auto & secondary_index_size = secondary_index_sizes[index.name];
+                    auto secondary_index_size = secondary_index_sizes.find(index.name);
 
                     // 'compressed bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_compressed);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.data_compressed);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
 
                     // 'uncompressed bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.data_uncompressed);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
 
                     /// 'marks_bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.marks);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.marks);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
             }
         }

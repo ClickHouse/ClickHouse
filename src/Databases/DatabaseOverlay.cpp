@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_, bool readonly_)
@@ -760,19 +761,28 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOverlay::getDetachedTablesIter
     /// In `clickhouse-local` the overlay owns its underlying databases and a `DETACH` goes to one of
     /// them, so report the union of their detached tables, as for the attached ones. The first
     /// listed source wins for a name detached in several of them. A source that does not implement
-    /// detached tables at all (`DatabaseFilesystem`) still propagates its own error, exactly as it
-    /// does when it is queried directly.
+    /// detached tables at all (`DatabaseFilesystem`) is skipped, so that it does not hide the
+    /// detached tables of the sources that do implement them.
     SnapshotDetachedTables detached_tables;
     for (const auto & db : resolveDatabases())
     {
-        for (auto table_it = db->getDetachedTablesIterator(context_, filter_by_table_name, skip_not_loaded);
-             table_it->isValid();
-             table_it->next())
+        DatabaseDetachedTablesSnapshotIteratorPtr table_it;
+        try
+        {
+            table_it = db->getDetachedTablesIterator(context_, filter_by_table_name, skip_not_loaded);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                continue;
+            throw;
+        }
+        for (; table_it->isValid(); table_it->next())
         {
             detached_tables.emplace(
                 table_it->table(),
                 SnapshotDetachedTable{
-                    .database = table_it->database(),
+                    .database = getDatabaseName(),
                     .table = table_it->table(),
                     .uuid = table_it->uuid(),
                     .metadata_path = table_it->metadataPath(),

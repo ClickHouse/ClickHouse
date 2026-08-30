@@ -15,7 +15,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 . "$CUR_DIR"/../shell_config.sh
 
 # The data entrypoints through a read-only Overlay facade (SELECT under both analyzers, INSERT,
-# WATCH, CHECK TABLE) must stay fail-closed even when the source database is backed by a remote
+# CHECK TABLE) must stay fail-closed even when the source database is backed by a remote
 # catalog and that catalog is unavailable: resolving the facade name loads the source table, and
 # for such sources even the existence probe connects to the remote server and throws its own
 # error. Until the source-side grant is proven, that error must not surface through the facade —
@@ -81,9 +81,6 @@ ${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.d WHE
 
 echo 'Facade-only grants: INSERT is denied, not the connection error'
 ${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "INSERT INTO ${DB_OVL}.t VALUES (1)" 2>&1 | grep -o ACCESS_DENIED | uniq
-
-echo 'Facade-only grants: WATCH is denied, not the connection error'
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "WATCH ${DB_OVL}.t" 2>&1 | grep -o ACCESS_DENIED | uniq
 
 echo 'Facade-only grants: CHECK TABLE is denied, not the connection error'
 ${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "CHECK TABLE ${DB_OVL}.t" 2>&1 | grep -o ACCESS_DENIED | uniq

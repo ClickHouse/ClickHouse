@@ -12,6 +12,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -121,6 +122,10 @@ protected:
                 /// visibility. The facade-side database shortcut above does not cover the source database,
                 /// so this check runs regardless of `check_access_for_tables`.
                 if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, database_name, table_name, table))
+                    continue;
+
+                if (const auto * alias = table->as<StorageAlias>();
+                    alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
                     continue;
 
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

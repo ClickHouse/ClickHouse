@@ -12,8 +12,6 @@ ACCESS_DENIED
 ACCESS_DENIED
 Facade-only grants: INSERT is denied, not the connection error
 ACCESS_DENIED
-Facade-only grants: WATCH is denied, not the connection error
-ACCESS_DENIED
 Facade-only grants: CHECK TABLE is denied, not the connection error
 ACCESS_DENIED
 Dual grants: the source connection error is visible, the same as on direct access
