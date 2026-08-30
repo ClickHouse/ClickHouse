@@ -19,12 +19,6 @@ You can also set all the values from the specified settings profile in a single 
 SET profile = 'profile-name-from-the-settings-file'
 ```
 
-The profile can add restrictions to the current session, but it cannot remove or
-weaken a restriction that already applies. For example, if your configured
-profile limits `max_threads` to `8`, then applying a profile with a limit of `16`
-does not let you use more than `8` threads. A profile with a limit of `1` reduces
-the session limit to `1`. See [Constraints on settings](/concepts/features/configuration/settings/constraints-on-settings).
-
 For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
 
 ```sql
