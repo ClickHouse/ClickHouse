@@ -5,6 +5,9 @@
 
 #include <DataTypes/DataTypeFactory.h>
 
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
 #include <boost/geometry.hpp>
 
 #include <vector>
@@ -174,14 +177,16 @@ struct GroupPolygonIntersectData
         total_points = recomputed;
     }
 
-    CartesianMultiPolygon getResult(const char * function_name)
+    const CartesianMultiPolygon & getResult(const char * function_name)
     {
+        static const CartesianMultiPolygon empty_result;
+
         if (mode == IntersectMode::Uninitialized || mode == IntersectMode::Empty)
-            return {};
+            return empty_result;
 
         reduce(function_name);
         if (mode == IntersectMode::Empty || chunks.empty())
-            return {};
+            return empty_result;
 
         return chunks[0];
     }
@@ -215,21 +220,20 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        Field field;
-        columns[0]->get(row_num, field);
+        auto & state = AggregateFunctionGroupPolygonIntersect::data(place);
+        if (state.mode == IntersectMode::Empty)
+            return;
 
-        GeometryColumnType current_type = geo_type;
+        const auto value = getGeometryColumnValue(columns[0], row_num, geo_type, is_variant, variant_type_map);
+        auto current_type = value.type;
         if (is_variant)
-        {
-            current_type = resolveGeometryVariantType(columns[0], row_num, variant_type_map);
             current_type = normalizePolygonalVariantType(current_type);
-        }
 
         if (current_type == GeometryColumnType::Null)
             return;
 
-        auto mp = fieldToMultiPolygon(field, current_type, name);
-        AggregateFunctionGroupPolygonIntersect::data(place).add(std::move(mp), name);
+        auto mp = columnToMultiPolygon(*value.column, value.row_num, current_type, name);
+        state.add(std::move(mp), name);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -309,7 +313,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto result = AggregateFunctionGroupPolygonIntersect::data(place).getResult(name);
+        const auto & result = AggregateFunctionGroupPolygonIntersect::data(place).getResult(name);
         insertMultiPolygonIntoColumn(result, to);
     }
 };
