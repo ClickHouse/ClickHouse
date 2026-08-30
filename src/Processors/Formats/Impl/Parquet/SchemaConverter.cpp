@@ -214,7 +214,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     if (schema_idx >= file_metadata.schema.size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
     node.element = &file_metadata.schema.at(schema_idx);
-    std::cerr << "field!!! " << node.element->name << " " << node.element->type << " " << node.element->repetition_type << " " << node.element->logicalType.__isset.VARIANT << "\n";
     schema_idx += 1;
 
     std::optional<size_t> idx_in_output_block;
@@ -300,7 +299,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         !processSubtreeArrayInner(node) &&
         !processSubtreeDynamic(node))
     {
-        std::cerr << "possible variant " << node.element->logicalType.__isset.VARIANT << "\n";
         processSubtreeTuple(node);
     }
 
@@ -698,40 +696,8 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     nullable_tuple_group_depth += nullable_group ? 1 : 0;
     SCOPE_EXIT({ nullable_tuple_group_depth -= nullable_group ? 1 : 0; });
 
-#if 0
-    const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
-    if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
-#endif
-    /// 3 modes:
-    ///  * If type_hint has element names, we match elements from parquet to elements from type
-    ///    hint tuple by name. If some elements are not in type hint, we skip them.
-    ///    If elements are in different order, we reorder them to match type_hint.
-    ///  * If type_hint has no names, we match elements sequentially and preserve order.
-    ///  * If there's no type_hint, we preserve order, produce tuple with names.
-    ///    Only in this mode, we allow skipping unsupported elements if
-    ///    skip_columns_with_unsupported_types_in_schema_inference is true.
-    ///    In other modes, we skip the whole tuple if any element is unsupported.
-
     bool lookup_by_name = false;
     std::vector<size_t> elements;
-#if 0
-    if (tuple_type_hint)
-    {
-        if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
-            node.schema_context != SchemaContext::MapTuple)
-        {
-            /// Allow reading a subset of tuple elements, matched by name, possibly reordered.
-            lookup_by_name = true;
-            elements.resize(tuple_type_hint->getElements().size(), UINT64_MAX);
-        }
-        else
-        {
-            if (tuple_type_hint->getElements().size() != size_t(node.element->num_children))
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple with {} elements, requested type is Tuple with {} elements", node.getNameForLogging(), node.element->num_children, tuple_type_hint->getElements().size());
-        }
-    }
-#endif
     if (!lookup_by_name && node.requested)
         elements.resize(size_t(node.element->num_children), UINT64_MAX);
 
@@ -744,9 +710,6 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     }
 
     size_t primitive_start = primitive_columns.size();
-#if 0
-    size_t output_start = output_columns.size();
-#endif
     size_t skipped_unsupported_columns = 0;
     std::vector<String> element_names_in_file;
 
@@ -755,9 +718,8 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
 
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        bool not_in_schema = false;
         const String & element_name = element_names_in_file.emplace_back(
-            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
+            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
@@ -775,8 +737,6 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
             subnode.schema_context = SchemaContext::MapKey;
 
         processSubtree(subnode);
-        std::cerr << "VARIANT POSSIBLE " << subnode.name << " "  << "\n";
-        subnode.element->printTo(std::cerr);
         has_metadata |= subnode.name == node.name + ".metadata";
         has_value |= subnode.name == node.name + ".value";
         auto element_idx = subnode.output_idx;
@@ -785,17 +745,6 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
         {
             if (!element_idx.has_value())
             {
-#if 0
-                if (tuple_type_hint || node.schema_context == SchemaContext::MapTuple)
-                {
-                    /// If one of the elements is skipped, skip the whole tuple.
-                    /// Remove previous elements.
-                    primitive_columns.resize(primitive_start);
-                    output_columns.resize(output_start);
-                    return false;
-                }
-                else
-#endif
                 {
                     skipped_unsupported_columns += 1;
                     elements.pop_back();
@@ -808,15 +757,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
             elements.at(idx_in_output_tuple.value()) = element_idx.value();
 
             const auto & type = output_columns.at(element_idx.value()).output_type;
-#if 0
-            if (tuple_type_hint)
             {
-                chassert(type->equals(*element_type_hint));
-            }
-            else
-#endif
-            {
-                std::cerr << "VARIANT POSSIBLE " << idx_in_output_tuple.value() << " " << type->getName() << "\n";
                 names.at(idx_in_output_tuple.value()) = element_name;
                 types.at(idx_in_output_tuple.value()) = type;
             }
@@ -832,44 +773,10 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
         names = {"keys", "values"};
 
     DataTypePtr output_type;
-#if 0
-    if (tuple_type_hint)
     {
-        std::cerr << "TUPLE TYPE HINT\n";
-        chassert(elements.size() == tuple_type_hint->getElements().size());
-        for (size_t i = 0; i < elements.size(); ++i)
-        {
-            if (elements[i] != UINT64_MAX)
-                continue;
-            if (!options.format.parquet.allow_missing_columns)
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), node.getNameForLogging(), element_names_in_file);
-
-            elements[i] = output_columns.size();
-            OutputColumnInfo & missing_output = output_columns.emplace_back();
-            missing_output.name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
-            missing_output.input_type = tuple_type_hint->getElement(i);
-            missing_output.output_type = missing_output.input_type;
-            missing_output.is_missing_column = true;
-        }
-        output_type = node.type_hint;
-    }
-    else
-#endif
-    {
-        std::cerr << "TUPLE TYPE NO HINT " << types.size() << " " << names.size() << "\n";
-        for (const auto & type : types)
-            std::cerr << "TUPLE TYPE NO HINT ELEMENT " << type->getName() << "\n";
         output_type = std::make_shared<DataTypeDynamic>();
     }
 
-    /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
-    /// wrapped in ColumnNullable using the group null map. Make input_type Nullable(Tuple(...)) so
-    /// the outer restore in processSubtree sees no type change (needs_cast stays off); the wrapping
-    /// is done in Reader::formOutputColumn keyed by OutputColumnInfo::nullable_group.
-    /// The group null map is reconstructed from a physical leaf's definition levels, so at least one
-    /// leaf must actually be read. With allow_missing_columns, every requested element can be a
-    /// synthetic default (no physical leaf); then the null map is unrecoverable, so reject rather
-    /// than fabricate an all-non-null map that silently drops the struct nulls.
     if (nullable_group && primitive_start == primitive_columns.size())
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
@@ -887,7 +794,6 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     output.output_type = output.input_type;
     output.nested_columns = elements;
     output.nullable_group = nullable_group;
-    std::cerr << "DEBUG: processSubtreeVariant: node.name=" << node.name << ", output.input_type=" << output.input_type->getName() << has_metadata << ' ' << has_value << std::endl;
     return true;
 }
 
@@ -1107,7 +1013,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     output.output_type = output.input_type;
     output.nested_columns = elements;
     output.nullable_group = nullable_group;
-    std::cerr << "DEBUG: processSubtreeTuple: node.name=" << node.name << ", output.input_type=" << output.input_type->getName() << std::endl;
 }
 
 void SchemaConverter::processPrimitiveColumn(
@@ -1133,8 +1038,6 @@ void SchemaConverter::processPrimitiveColumn(
     /// out_inferred_type is Int16 based on schema inference, and castColumn does the conversion.
 
     parq::Type::type type = element.type;
-    std::cerr << "DEBUG "  << std::endl;
-    element.printTo(std::cerr);
     std::optional<parq::ConvertedType::type> converted =
         element.__isset.converted_type ? std::make_optional(element.converted_type) : std::nullopt;
     const parq::LogicalType & logical = element.logicalType;
