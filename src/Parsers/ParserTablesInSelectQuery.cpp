@@ -565,6 +565,8 @@ Additional join types available in ClickHouse are:
 
 <Note>
 When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
+
+`INNER ANY JOIN` is supported, but the partial merge algorithm keeps the legacy behavior of [`any_join_distinct_right_table_keys`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys): it returns every matching row from whichever input the plan uses as its left side, rather than one row per key. This applies whenever the partial merge algorithm ends up running, not only when `join_algorithm` is spelled `partial_merge`. At the default `any_join_distinct_right_table_keys = 0`, the `hash`, `full_sorting_merge` and `grace_hash` algorithms return one row per key.
 </Note>
 
 ## Settings {#settings}

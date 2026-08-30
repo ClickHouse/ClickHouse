@@ -2690,7 +2690,7 @@ When the legacy behaviour is enabled:
 When the legacy behaviour is disabled:
 
 - Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
-- Results of `ANY INNER JOIN` operations contain one row per key from both the left and right tables, except with the `partial_merge` join algorithm, which keeps the legacy behaviour described above. See [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
+- Results of `ANY INNER JOIN` operations contain one row per key from both the left and right tables, except when the partial merge join algorithm ends up running, which returns every matching row from whichever input the plan uses as its left side. See [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
 Possible values:
 
@@ -3800,7 +3800,7 @@ Possible values:
 
  The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 
- `INNER ANY JOIN` is supported, but with the legacy semantics that `any_join_distinct_right_table_keys` describes: the result contains all matching rows from the left table, like `SEMI LEFT JOIN`, rather than one row per key. `hash`, `full_sorting_merge` and `grace_hash` return one row per key at that setting's default of `0`; setting it to `1` rewrites `INNER ANY` into `SEMI LEFT` before the algorithm is chosen, so `hash` and `grace_hash` return all matching left rows too, and `full_sorting_merge` declines the combination and fails with `NOT_IMPLEMENTED` unless another algorithm is enabled. This applies whenever the partial merge algorithm ends up running, so it also applies to `prefer_partial_merge`, to any `join_algorithm` list naming `partial_merge` ahead of an algorithm that supports the combination, and to `auto` when it falls back to the partial merge algorithm after exceeding `default_max_bytes_in_join`, `max_rows_in_join` or `max_bytes_in_join`.
+ `INNER ANY JOIN` is supported, but with the legacy semantics that `any_join_distinct_right_table_keys` describes: the result contains every matching row from whichever input the plan uses as its left side, like `SEMI LEFT JOIN`, rather than one row per key. `hash`, `full_sorting_merge` and `grace_hash` return one row per key at that setting's default of `0`; setting it to `1` rewrites `INNER ANY` into `SEMI LEFT` before the algorithm is chosen, so `hash` and `grace_hash` return all matching left rows too, and `full_sorting_merge` declines the combination and fails with `NOT_IMPLEMENTED` unless another enabled algorithm supports it. This applies whenever the partial merge algorithm ends up running. The planner picks the algorithm from this setting together with the join inputs, so the value alone does not decide it.
 
  When using the `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by the `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
 
