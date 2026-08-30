@@ -56,8 +56,15 @@ ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
             return column;
 
         auto columns = tuple->getColumnsCopy();
+        bool changed = false;
         for (auto & element : columns)
-            element = materializeObjectTypedPaths(element);
+        {
+            auto materialized = materializeObjectTypedPaths(element);
+            changed |= materialized.get() != element.get();
+            element = std::move(materialized);
+        }
+        if (!changed)
+            return column;
         return ColumnTuple::create(columns);
     }
 
@@ -66,7 +73,7 @@ ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
         auto nested = materializeObjectTypedPaths(nullable->getNestedColumnPtr());
         if (nested.get() == nullable->getNestedColumnPtr().get())
             return column;
-        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+        return ColumnNullable::create(recursiveRemoveSparse(nested), nullable->getNullMapColumnPtr());
     }
 
     if (typeid_cast<const ColumnObject *>(column.get()))
@@ -149,7 +156,7 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
 {
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
-        ColumnPtr result_column = column.column->convertToFullColumnIfConst();
+        ColumnPtr result_column = column.column->convertToFullColumnIfConst()->decompress();
         if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
             result_column = result_column->convertToFullColumnIfReplicated();
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
