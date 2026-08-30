@@ -198,7 +198,7 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
     });
 }
 
-void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
+bool TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
     all_token_infos[token] = token_info;
 
@@ -218,7 +218,7 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
             });
 
             queries_by_token.erase(token);
-            return;
+            return false;
         }
 
         token_rows_range = *clipped_range;
@@ -235,6 +235,8 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         addPostings(token, embedded);
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
     }
+
+    return true;
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)

@@ -698,13 +698,15 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
         for (size_t i = 0; i < matched_indices.size(); ++i)
         {
             String token(block_tokens.getDataAt(matched_indices[i]));
+            /// Charge after clipping: a token an earlier predicate ruled out is never read, so it
+            /// must not spend the budget that bounds the work remaining after that pruning.
+            const bool readable = analyzer->addTokenInfo(token, infos[i]);
             /// Charge non-embedded postings by rows (real read work), not just by count.
-            if (!(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
+            if (readable && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
             {
                 ++postings_to_read;
                 postings_rows_to_read += infos[i]->cardinality;
             }
-            analyzer->addTokenInfo(token, infos[i]);
         }
 
         if (postings_to_read > max_postings_to_read || postings_rows_to_read > max_postings_rows_to_read)
