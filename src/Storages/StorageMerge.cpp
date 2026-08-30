@@ -128,6 +128,7 @@ extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
 extern const int PARAMETER_OUT_OF_BOUND;
 extern const int UNSUPPORTED_METHOD;
+extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -1131,6 +1132,36 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     "Table {} matched by the regexp of {} has no columns to read",
                     storage->getStorageID().getNameForLogs(),
                     storage_merge->getStorageID().getNameForLogs());
+            }
+
+            /// `StorageMerge::getQueryProcessingStage` refuses a delegated stage when a child's type
+            /// converts to the declared one without preserving the order, but it decides that from
+            /// its own child enumeration and metadata snapshots. This loop reads a later, frozen
+            /// set, so a concurrent `ALTER` of a child, or a table that starts matching the regexp
+            /// in between, can present a child the refusal never saw. `common_processed_stage` is
+            /// already baked into the plan above and cannot be lowered here, and
+            /// `convertAndFilterSourceStream` would put the order-breaking cast above the child's
+            /// own sort or aggregation, so this fails the query instead of returning wrong rows.
+            if (common_processed_stage > QueryProcessingStage::FetchColumns)
+            {
+                const auto & declared_columns = merge_storage_snapshot->metadata->getColumns();
+                const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+                for (const auto & child_column : storage_metadata_snapshot->getColumns().get(order_relevant_columns))
+                {
+                    auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
+                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                        throw Exception(
+                            ErrorCodes::INCOMPATIBLE_COLUMNS,
+                            "Column {} of table {} has type {}, which does not preserve the order when converted to "
+                            "the type {} declared by {}. The query processing stage was chosen before this type was "
+                            "visible, most likely because the table was altered, or started matching the regexp, "
+                            "while the query was being planned. Retry the query",
+                            backQuoteIfNeed(child_column.name),
+                            storage->getStorageID().getNameForLogs(),
+                            child_column.type->getName(),
+                            declared_column->type->getName(),
+                            storage_merge->getStorageID().getNameForLogs());
+                }
             }
 
             auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
