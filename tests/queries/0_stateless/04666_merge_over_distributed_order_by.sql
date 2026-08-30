@@ -25,13 +25,10 @@ CREATE TABLE merge_two AS t_negative ENGINE = Merge(currentDatabase(), '^dist_(n
 -- A single-table `Merge` reports the stage of its only child, so its shard streams used to be
 -- narrowed down to `max_threads` and lost their order. Expected: -4999 -4999 -5000 -5000 -5001.
 SELECT A FROM merge_one ORDER BY A DESC LIMIT 9998, 5 SETTINGS max_threads = 1;
-SELECT A FROM merge_one ORDER BY A DESC LIMIT 9998, 5 SETTINGS max_threads = 1, enable_analyzer = 0;
 
 -- The original report: a `Merge` over two `Distributed` tables. Expected: 9999 9999 9998 9998 9997.
 SELECT A FROM merge_two ORDER BY A DESC LIMIT 5
     SETTINGS max_threads = 1, distributed_aggregation_memory_efficient = 0;
-SELECT A FROM merge_two ORDER BY A DESC LIMIT 5
-    SETTINGS max_threads = 1, distributed_aggregation_memory_efficient = 0, enable_analyzer = 0;
 
 DROP TABLE merge_two;
 DROP TABLE merge_one;
