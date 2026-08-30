@@ -10,7 +10,7 @@ integration:
   - website: 'https://github.com/ClickHouse/dbt-clickhouse'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -218,7 +218,7 @@ dbt에서 ClickHouse에 연결하는 데 문제가 발생하면 다음 사항을
 * `dbt-adapter`를 동시에 실행하면 충돌이 발생할 수 있습니다. 내부적으로 동일한 작업에 같은 테이블 이름을 사용할 수 있기 때문입니다. 자세한 내용은 이슈 [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420)을 확인하십시오.
 * 현재 어댑터는 [INSERT INTO SELECT](/ko/reference/statements/insert-into#inserting-the-results-of-select)를 사용하여 모델을 테이블로 머티리얼라이즈합니다. 즉, 실행을 다시 수행하면 데이터가 중복될 수 있습니다. 매우 큰 데이터셋(PB)의 경우 실행 시간이 매우 길어져 일부 모델은 사실상 사용하기 어려울 수 있습니다. 성능을 개선하려면 뷰를 `materialized: materialization_view`로 구현하여 ClickHouse Materialized Views를 사용하십시오. 또한 가능하면 `GROUP BY`를 활용해 각 쿼리가 반환하는 행 수를 최소화하십시오. 소스의 행 수를 그대로 유지한 채 단순 변환만 수행하는 모델보다, 데이터를 요약하는 모델을 우선하는 것이 좋습니다.
 * 모델을 나타내기 위해 분산 테이블을 사용하려면 각 노드에 기반이 되는 복제된 테이블을 수동으로 생성해야 합니다. 그런 다음 그 위에 분산 테이블을 생성할 수 있습니다. 어댑터는 클러스터 생성을 관리하지 않습니다.
-* dbt가 데이터베이스에 릴레이션(테이블/뷰)을 생성할 때는 일반적으로 `{{ database }}.{{ schema }}.{{ table/view id }}` 형식으로 생성합니다. ClickHouse에는 schema 개념이 없습니다. 따라서 어댑터는 `{{schema}}.{{ table/view id }}`를 사용하며, 여기서 `schema`는 ClickHouse 데이터베이스를 의미합니다.
+* dbt가 데이터베이스에 릴레이션(테이블/뷰)을 생성할 때는 일반적으로 `{{ database }}.{{ schema }}.{{ table/view id }}` 형식으로 생성합니다. ClickHouse에는 스키마 개념이 없습니다. 따라서 어댑터는 `{{schema}}.{{ table/view id }}`를 사용하며, 여기서 `schema`는 ClickHouse 데이터베이스를 의미합니다.
 * Ephemeral 모델/CTE는 ClickHouse 삽입 SQL 문에서 `INSERT INTO` 앞에 배치하면 동작하지 않습니다. https://github.com/ClickHouse/ClickHouse/issues/30323을 참조하십시오. 이는 대부분의 모델에는 영향을 주지 않지만, 모델 정의와 기타 SQL 문에서 ephemeral 모델의 배치 위치에는 주의가 필요합니다. {/* TODO 이 제한 사항을 검토하십시오. 이슈가 이미 닫혔고 수정 사항이 24.10에 도입된 것으로 보입니다. */}
 
 <div id="fivetran">

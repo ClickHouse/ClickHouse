@@ -1,6 +1,7 @@
 import dataclasses
 import hashlib
 import json
+import os
 import platform
 import shlex
 import sys
@@ -13,6 +14,8 @@ from .cidb import CIDB
 from .digest import Digest
 from .docker import Docker
 from .gh import GH
+from .gh_auth import GHAuth
+from .git import Git
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
@@ -24,16 +27,6 @@ from .settings import Settings
 from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
-
-
-# TODO: find the right place to not dublicate
-def _GH_Auth(force=False):
-    if not Settings.USE_CUSTOM_GH_AUTH:
-        return
-    from .gh_auth import GHAuth
-
-    if force or not Shell.check("gh auth status", verbose=True):
-        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -48,7 +41,11 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
-    timeout=600,
+    # On a submodule-cache miss this job does a full shallow clone of all
+    # submodules (see _prepare_submodule_cache), which can take well over 10
+    # minutes. Keep a generous timeout so the config job doesn't get killed
+    # mid-clone.
+    timeout=1800,
 )
 
 _docker_build_manifest_job = Job.Config(
@@ -222,7 +219,22 @@ def _clean_buildx_volumes():
     )
 
 
-def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
+def _submodule_auth_env(workflow) -> dict:
+    """Prepare the environment and access permissions for submodule clones."""
+    env = os.environ.copy()
+    if not Settings.ENABLE_SUBMODULE_CLONE_AUTH:
+        return env
+    if not GHAuth.auth(workflow, no_strict=True):
+        print("WARNING: no GH token available, submodule clones run anonymously")
+        return env
+    token = Shell.get_output("gh auth token", strict=True)
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = f"url.https://x-access-token:{token}@github.com/.insteadOf"
+    env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+    return env
+
+
+def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     """Compute a content-addressed hash of submodule SHAs and ensure a cache
     archive exists in S3.  Stores the hash in workflow_config so that downstream
     jobs with needs_submodules=True can restore it."""
@@ -256,6 +268,7 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
                 verbose=True,
                 strict=True,
                 retries=3,
+                env=_submodule_auth_env(workflow),
             )
             archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
             Shell.check(
@@ -263,9 +276,27 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
                 verbose=True,
                 strict=True,
             )
-            S3.copy_file_to_s3(s3_path=s3_path, local_path=archive_path, with_rename=True)
+            # Write-once conditional create (If-None-Match: *) instead of an
+            # unconditional overwrite. The object is content-addressed by the
+            # submodule SHAs, so it never legitimately changes; making it
+            # immutable closes a race where two concurrent writers (both saw a
+            # cache miss above) overwrite the same key while a third job is
+            # downloading it, causing the reader's multipart download to abort
+            # with an ETag mismatch. On a lost race S3.put returns False
+            # (PreconditionFailed) — the other writer already populated the
+            # object, so this is a success, not an error.
+            created = S3.put(
+                s3_path=s3_path,
+                local_path=archive_path,
+                if_none_matched=True,
+                no_strict=True,
+            )
             Shell.check(f"rm -f {archive_path}")
-            info = f"cache miss, created: {cache_hash}"
+            info = (
+                f"cache miss, created: {cache_hash}"
+                if created
+                else f"cache miss, created concurrently: {cache_hash}"
+            )
 
         workflow_config.submodule_cache_hash = cache_hash
         workflow_config.dump()
@@ -495,27 +526,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
         pushed = False
         if new_commit:
-            # Push with the GitHub App token rather than the default GITHUB_TOKEN that
-            # the checkout action persists: only a push authenticated as the App (or a
-            # PAT) re-triggers workflows, so the regenerated YAML is actually picked up
-            # by a fresh CI run. The token is read from the gh auth session and kept out
-            # of the logs (verbose=False), and the inherited http extraheader is cleared
-            # so the tokenized URL is the one that authenticates.
-            # `repo` and `branch` are attacker-controlled on fork PRs, so pass them as
-            # shell-quoted data. The token expands at runtime, so its literal `${token}`
-            # is kept outside the f-string and the URL is assembled by concatenation.
-            repo_url = (
-                "https://x-access-token:${token}@github.com/"
-                + shlex.quote(repo)
-                + ".git"
-            )
-            refspec = shlex.quote(f"{new_commit}:refs/heads/{branch}")
-            push_cmd = (
-                'token="$(gh auth token)" && '
-                "git -c http.https://github.com/.extraheader= push "
-                f"{repo_url} {refspec}"
-            )
-            pushed = Shell.check(push_cmd, verbose=False)
+            # Push with the GitHub App token rather than the default GITHUB_TOKEN
+            # the checkout action persists: only a push authenticated as the App
+            # (or a PAT) re-triggers workflows, so the regenerated YAML is picked
+            # up by a fresh CI run. `repo`/`branch` are attacker-controlled on fork
+            # PRs, so Git.push passes them shell-quoted.
+            pushed = Git.push(repo, f"{new_commit}:refs/heads/{branch}")
 
         if pushed:
             return _result(
@@ -594,10 +610,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         env.dump()
 
-    try:
-        _GH_Auth(force=True)
-    except Exception as e:
-        print(f"WARNING: Failed to auth with GH: [{e}]")
+    if not GHAuth.auth(workflow, force=True, no_strict=True):
+        print("WARNING: Failed to auth with GH")
 
     # refresh PR data
     if env.PR_NUMBER > 0:
@@ -630,6 +644,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 "param_1": "",
                 "summary": "",
                 "review": "",
+                "coverage": "",
             },
         )
         res1 = GH.post_commit_status(
@@ -751,12 +766,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             status = Result.Status.ERROR
             print(f"ERROR: Exception in workflow config hook: {e}")
             traceback.print_exc()
-            info = f"{traceback.print_exc()}"
+            info = traceback.format_exc()
         results.append(
             Result.create_from(
                 name="Filter Hooks", status=status, stopwatch=sw_, info=info
             )
         )
+        # Reload the environment because workflow filter hooks may have written
+        # report messages through a separate Info instance.
+        env = _Environment.get()
 
     if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
         print("Filter not affected jobs")
@@ -825,7 +843,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     if results[-1].is_ok() and workflow.enable_cache and Settings.ENABLE_SUBMODULE_CACHE:
-        result = _prepare_submodule_cache(workflow_config)
+        result = _prepare_submodule_cache(workflow, workflow_config)
         results.append(result)
 
     if workflow.enable_slack_feed:
@@ -898,6 +916,27 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 env.COMMIT_AUTHORS = list(commit_authors)
                 env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
                 env.dump()
+        elif not env.COMMIT_AUTHORS:
+            # A push event already has COMMIT_AUTHORS seeded from the webhook
+            # payload by `_Environment.from_env`, so only fill it here when it is
+            # still empty (workflow_dispatch / scheduled runs, e.g. releases).
+            # Those have no PR author, so the Slack feed would notify no one and a
+            # failure would be silent; fall back to the head commit's author so
+            # failures still reach a human. Never overwrite an already-populated
+            # author set — that would drop the full authors of a multi-commit push.
+            author_email = ""
+            try:
+                head_email = Shell.get_output(
+                    f"git log -1 --format='%ae' {env.SHA}", verbose=True
+                ).strip()
+                if head_email and "@" in head_email and "+" not in head_email:
+                    author_email = head_email
+            except Exception as e:
+                print(f"WARNING: Failed to get head commit author: {e}")
+            authors = [author_email] if author_email else []
+            env.COMMIT_AUTHORS = authors
+            env.JOB_KV_DATA["commit_authors"] = authors
+            env.dump()
 
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
@@ -985,7 +1024,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth()
+        GHAuth.auth(workflow, no_strict=True)
 
     update_final_report = False
     results = []
@@ -1074,6 +1113,7 @@ def _finish_workflow(workflow, job_name):
                     f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
                 )
                 result.status = Result.Status.ERROR
+                result.add_error(ResultInfo.NOT_FINALIZED)
                 # dump workflow result after update - to have an updated result in post
                 workflow_result.dump()
                 # Attribute the error to the failed job (not Finish Workflow)
@@ -1154,7 +1194,7 @@ if __name__ == "__main__":
             result = _finish_workflow(workflow, job_name)
         else:
             assert False, f"BUG, job name [{job_name}]"
-    except Exception:
+    except Exception as e:
         error_traceback = traceback.format_exc()
         print("Failed with Exception:")
         print(error_traceback)
@@ -1162,8 +1202,13 @@ if __name__ == "__main__":
             name=job_name,
             status=Result.Status.ERROR,
             stopwatch=sw,
-            # try out .info generated in runner._run() which works for all jobs automatically
-            # info=f"Failed with Exception [{e}]\n{error_traceback}",
+            info=f"Failed with Exception:\n{error_traceback}",
+        )
+        # An exception message can embed command output of any size, so the traceback is
+        # truncated from the top, which discards the leading lines that name the exception.
+        first_message_line = (str(e).splitlines() or [""])[0][:500]
+        result.info = f"Failed with {type(e).__name__}: {first_message_line}\n" + (
+            result.get_info_truncated(max_info_lines_cnt=100, max_line_length=1000)
         )
 
     result.dump().complete_job(with_job_summary_in_info=False)

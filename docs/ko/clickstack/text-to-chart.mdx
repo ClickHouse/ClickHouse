@@ -61,23 +61,17 @@ Text-to-Chart를 사용하려면 [Anthropic API Key](https://console.anthropic.c
 </div>
 
 <Steps>
-  <Step>
-    ### Chart Explorer로 이동하기
-
+  <Step title="Chart Explorer로 이동하기" id="navigate-chart-explorer">
     HyperDX의 왼쪽 메뉴에서 **Chart Explorer**를 선택합니다.
   </Step>
 
-  <Step>
-    ### 데이터 소스 선택하기
-
+  <Step title="데이터 소스 선택하기" id="select-data-source">
     시각화할 데이터 소스를 선택합니다. 예를 들어 **Logs**, **Traces**, **메트릭**가 있습니다.
 
     <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart Explorer" />
   </Step>
 
-  <Step>
-    ### 텍스트 프롬프트 입력하기
-
+  <Step title="텍스트 프롬프트 입력하기" id="enter-text-prompt">
     Chart Explorer 상단에서 **AI 어시스턴트** 입력란을 찾습니다. 만들려는 차트를 자연어로 설명해 입력합니다. 예를 들면 다음과 같습니다.
 
     * `Show error rates by service over the last 24 hours`
@@ -109,7 +103,7 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 
 <Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="연결 생성" />
 
-그런 다음 각 소스인 **Logs**, **Traces**, **메트릭**, **Sessions**가 `otel_v2` 데이터베이스를 사용하도록 수정합니다. 소스 구성에 대한 자세한 내용은 [원격 데모 데이터셋 가이드](/ko/clickstack/example-datasets/remote-demo-data)를 참조하십시오.
+그런 다음 각 소스인 **Logs**, **Traces**, **메트릭**, **Sessions**가 `otel_v2` 데이터베이스를 사용하도록 수정합니다. 소스 구성에 대한 자세한 내용은 [원격 데모 데이터세트 가이드](/ko/clickstack/example-datasets/remote-demo-data)를 참조하십시오.
 
 연결한 후 **Chart Explorer**를 열고 사용 가능한 로그, 트레이스, 메트릭에 대해 프롬프트를 시도해 보십시오.
 
@@ -137,10 +131,10 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * 차트의 정확도는 프롬프트의 명확성과 기반이 되는 데이터 구조에 따라 달라집니다. 생성된 차트가 기대와 일치하지 않으면 프롬프트를 다시 작성하거나 컬럼 이름을 명시해 보십시오.
 
 <div id="further-reading">
-  ## 추가로 읽어보기
+  ## 추가 자료
 </div>
 
-* [텍스트에서 차트까지: ClickStack으로 더 빠르게 시각화하는 방법](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — 기능을 소개하는 블로그 게시물
-* [대시보드 및 시각화](/ko/clickstack/features/dashboards/overview) — Chart Explorer를 사용한 수동 차트 생성
+* [텍스트에서 차트로: ClickStack으로 더 빠르게 시각화하기](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — 기능을 소개하는 블로그 글
+* [대시보드와 시각화](/ko/clickstack/features/dashboards/overview) — Chart Explorer를 사용해 차트를 수동으로 생성하는 방법
 * [검색](/ko/clickstack/features/search) — 전체 텍스트 검색 및 속성 검색 구문
 * [구성](/ko/clickstack/managing/config) — ClickStack의 모든 환경 변수

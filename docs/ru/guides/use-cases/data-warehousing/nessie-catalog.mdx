@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -50,7 +50,7 @@ Nessie — это транзакционный каталог с открыты�
   ### Настройка локального каталога Nessie
 </div>
 
-Вы можете использовать официальный [docker-compose setup для Nessie](https://projectnessie.org/guides/setting-up/), который предоставляет полноценное окружение с Nessie, хранилищем версий в памяти и MinIO в качестве объектного хранилища.
+Вы можете использовать официальную [конфигурацию docker-compose для Nessie](https://projectnessie.org/guides/), которая предоставляет полноценное окружение с Nessie, хранилищем версий в памяти и MinIO в качестве объектного хранилилища.
 
 **Шаг 1:** Создайте новую папку, в которой будете запускать пример, затем создайте файл `docker-compose.yml` со следующей конфигурацией:
 
@@ -108,13 +108,13 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:head
     container_name: nessie-clickhouse
-    user: '0:0'  # Обеспечивает права root
+    user: '0:0'  # Ensures root permissions
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Монтирование папки с набором данных
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
     networks:
       - iceberg_net
     environment:

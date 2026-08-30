@@ -5,6 +5,7 @@
 
 #if USE_ARROWFLIGHT
 #include <Common/Logger.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -71,6 +72,11 @@ StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & ar
             configuration.password = checkAndGetLiteralArgument<String>(args[3], "password");
         }
     }
+
+    /// Enforce <remote_url_allow_hosts> before any connection is established.
+    context_->getGlobalContext()->getRemoteHostFilter().checkHostAndPort(
+        configuration.host, std::to_string(configuration.port));
+
     return configuration;
 }
 
@@ -356,10 +362,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 
 **Engine Parameters**
 
-- `host:port` — Address of the remote Arrow Flight server. If the port is omitted, the default port `8815` is used.
-- `dataset_name` — Identifier of the dataset on the Flight server (used as a PATH descriptor or in a `SELECT *` query depending on the `arrow_flight_request_descriptor_type` setting).
-- `username` — Username for basic HTTP authentication.
-- `password` — Password for basic HTTP authentication.
+- `host:port` — Address of the remote Arrow Flight server. If the port is omitted, the default port `8815` is used. [String](/reference/data-types/string).
+- `dataset_name` — Identifier of the dataset on the Flight server (used as a PATH descriptor or in a `SELECT *` query depending on the `arrow_flight_request_descriptor_type` setting). [String](/reference/data-types/string).
+- `username` — Username for basic HTTP authentication. [String](/reference/data-types/string).
+- `password` — Password for basic HTTP authentication. [String](/reference/data-types/string).
 
 If `username` and `password` are omitted, authentication is not used (this works only if the Arrow Flight server allows unauthenticated access).
 
@@ -367,15 +373,26 @@ The column list is optional — if omitted, the schema is inferred from the remo
 
 ## Named Collections {#named-collections}
 
-The engine supports [named collections](/operations/named-collections) for storing connection parameters:
+The engine supports [named collections](/concepts/features/configuration/server-config/named-collections) for storing connection parameters:
 
 ```sql
 CREATE TABLE remote_flight_data
     ENGINE = ArrowFlight(named_collection_name);
 ```
 
-Named collection parameters: `host`/`hostname`, `port` (required), `dataset`, `use_basic_authentication`,
-`user`/`username`, `password`, `enable_ssl`, `ssl_ca`, `ssl_override_hostname`.
+Named collection parameters:
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `host` or `hostname` | No | `""` | Server hostname. |
+| `port` | Yes | — | Server port. |
+| `dataset` | No | `""` | Dataset name or descriptor. |
+| `use_basic_authentication` | No | `true` | Enable basic authentication. |
+| `user` or `username` | If auth enabled | — | Username for authentication. |
+| `password` | No | `""` | Password for authentication. |
+| `enable_ssl` | No | `false` | Enable TLS encryption. |
+| `ssl_ca` | No | `""` | Path to the CA certificate file for TLS verification. |
+| `ssl_override_hostname` | No | `""` | Override the hostname checked during TLS verification. |
 
 ## Settings {#settings}
 
@@ -419,9 +436,10 @@ INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 
 ## See Also {#see-also}
 
-- [arrowFlight table function](/sql-reference/table-functions/arrowflight)
+- [arrowFlight table function](/reference/functions/table-functions/arrowflight)
+- [Arrow Flight Interface](/concepts/features/interfaces/arrowflight)
 - [Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
-- [Arrow format integration in ClickHouse](/interfaces/formats/Arrow)
+- [Arrow format integration in ClickHouse](/reference/formats/Arrow/Arrow)
 )DOCS_MD",
             .syntax = "ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password'])",
         });

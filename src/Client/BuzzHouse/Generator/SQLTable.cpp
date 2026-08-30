@@ -285,7 +285,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_tags"}));
             }
         }
-        else if (t.isDistributedEngine())
+        else if (t.isDistributedEngine() || t.isAnyRemoteEngine())
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}, size_tp.get()));
         }
@@ -1232,6 +1232,14 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileEngine())
     {
+        if (b.integration == IntegrationCall::Dolor)
+        {
+            /// Ask Spark to write the data file before ClickHouse creates the table over it
+            if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
+            {
+                connections.createExternalDatabaseTable(rg, *t, entries, te);
+            }
+        }
         if (b.file_format.has_value())
         {
             te->add_params()->set_in_out(b.file_format.value());
@@ -1298,7 +1306,7 @@ void StatementGenerator::generateEngineDetails(
         }
         te->add_params()->set_svalue(std::move(mergeDesc));
     }
-    else if (te->has_engine() && (b.isDistributedEngine() || b.isBufferEngine() || b.isAliasEngine()))
+    else if (te->has_engine() && (b.isDistributedEngine() || b.isAnyRemoteEngine() || b.isBufferEngine() || b.isAliasEngine()))
     {
         SQLTable * bt = dynamic_cast<SQLTable *>(&b);
         const SQLTable * tt = nullptr;
@@ -1313,7 +1321,14 @@ void StatementGenerator::generateEngineDetails(
 
         if (b.isDistributedEngine())
         {
+            /// `Distributed` reads from a configured cluster.
             te->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
+        }
+        else if (b.isAnyRemoteEngine())
+        {
+            /// `Remote` / `RemoteSecure` build a cluster on the fly from an addresses expression,
+            /// exactly like the `remote` / `remoteSecure` table functions.
+            te->add_params()->set_svalue(getNextTestingAddress(rg, b.isRemoteSecureEngine()));
         }
         rg.pickWeighted(
             {{dist_table,
@@ -1373,6 +1388,22 @@ void StatementGenerator::generateEngineDetails(
             if (!fc.storage_policies.empty() && rg.nextBool())
             {
                 te->add_params()->set_svalue(rg.pickRandomly(fc.storage_policies));
+            }
+        }
+        else if (b.isAnyRemoteEngine() && rg.nextBool())
+        {
+            /// Optional positional `user[, password[, sharding_key]]`, matching the `remote` function.
+            const bool with_password = rg.nextBool();
+
+            te->add_params()->set_svalue("default");
+            if (with_password)
+            {
+                te->add_params()->set_svalue("");
+            }
+            /// The sharding key is only reachable positionally once user (and here password) precede it.
+            if (with_password && rg.nextBool())
+            {
+                setRandomShardKey(rg, bt ? std::make_optional<SQLTable>(*bt) : std::nullopt, te->add_params()->mutable_expr());
             }
         }
         else if (b.isBufferEngine())
@@ -1743,7 +1774,7 @@ String StatementGenerator::addTableColumn(
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
-            this->next_type_mask &= ~(set_any_datetime_precision);
+            this->next_type_mask &= ~set_any_datetime_precision;
         }
     }
     if ((t.isSQLiteEngine() && (t.isDeterministic() || rg.nextSmallNumber() < 8)) || t.hasSQLitePeer())
@@ -1766,7 +1797,7 @@ String StatementGenerator::addTableColumn(
     if (t.hasDatabasePeer())
     {
         /// ClickHouse's UUID sorting order is different from other databases
-        this->next_type_mask &= ~(allow_uuid);
+        this->next_type_mask &= ~allow_uuid;
     }
     addTableColumnInternal(rg, t, modify, is_pk, special, col, cd);
 
@@ -1957,7 +1988,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
             static const DB::Strings tokenizerVals
-                = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams", "asciiCJK", "unicodeWord"};
+                = {"splitByNonAlpha", "splitByString", "ngrams", "array", "keyword", "sparseGrams", "asciiCJK", "unicodeWord"};
             const auto & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
             buf += fmt::format("tokenizer = {}", nt);
@@ -2026,7 +2057,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                idef->add_params()->set_unescaped_sval("positions = " + std::to_string(rg.nextBool() ? 1 : 0));
+                idef->add_params()->set_unescaped_sval("support_phrase_search = " + std::to_string(rg.nextBool() ? 1 : 0));
             }
             if (rg.nextBool())
             {
@@ -2316,6 +2347,13 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(Distributed);
         }
+        /// Remote / RemoteSecure build a cluster on the fly from addresses, so (unlike Distributed)
+        /// they don't need a configured cluster — only a target table on the (local) remote server.
+        if ((fc.engine_mask & allow_remote) != 0)
+        {
+            this->ids.emplace_back(Remote);
+            this->ids.emplace_back(RemoteSecure);
+        }
         if ((fc.engine_mask & allow_alias) != 0)
         {
             this->ids.emplace_back(Alias);
@@ -2423,7 +2461,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(Kafka);
         }
-        if (allow_mysql_tbl || allow_postgresql_tbl)
+        if ((allow_mysql_tbl || allow_postgresql_tbl) && (fc.engine_mask & allow_external_distributed) != 0)
         {
             this->ids.emplace_back(ExternalDistributed);
         }
@@ -2668,7 +2706,11 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     setClusterClause(rg, next.cluster, ct->mutable_cluster());
     if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
-        || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96))
+        /// Alias never accepts an explicit column list (StorageAlias throws), so always omit it
+        || next.isAliasEngine()
+        /// Distributed/Remote/Buffer infer their schema from the target, but also accept an
+        /// explicit one, so exercise both by omitting it only most of the time
+        || ((next.isDistributedEngine() || next.isAnyRemoteEngine() || next.isBufferEngine()) && rg.nextMediumNumber() < 96))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();
@@ -3020,6 +3062,15 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
         sv->set_property("SIZE_IN_CELLS");
         sv->set_value(std::to_string(rg.randomInt<uint64_t>(0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))));
+    }
+    else if (is_polygon)
+    {
+        /// SELECT * from a polygon dictionary is UNSUPPORTED_METHOD without this
+        svs = svs ? svs : layout->mutable_setting_values();
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+        sv->set_property("STORE_POLYGON_KEY_COLUMN");
+        sv->set_value("1");
     }
 
     /// Add Primary Key

@@ -2,17 +2,17 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'クエリインサイト'
 title: 'Postgres のクエリインサイト'
-description: 'Managed Postgres 向けのステートメント単位のテレメトリーです。データベースで実行されるすべてのクエリパターンを影響度順に表示し、それぞれが遅い理由を示す診断カウンターを確認できます'
+description: 'ClickHouse Managed Postgres 向けのステートメント単位のテレメトリーです。データベースで実行されるすべてのクエリパターンを影響度順に表示し、それぞれが遅い理由を示す診断カウンターを確認できます'
 keywords: ['Managed Postgres', 'クエリインサイト', 'pg_stat_ch', '遅いクエリ', 'p99 レイテンシ', 'クエリパターン', 'Postgres パフォーマンス', 'temp blocks', '並列ワーカー', 'wal']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
-クエリインサイトは、[Managed Postgres](/ja/products/managed-postgres/overview) インスタンスから
+クエリインサイトは、[ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) インスタンスから
 ステートメントごとのテレメトリーを取得し、すべてのクエリ
 パターンを影響度順にランク付けします。これにより、&quot;p99 がじわじわ悪化している&quot; という状態から &quot;このパターン
 はディスクにスピルしている&quot; という原因特定まで、Cloud Console を離れることなく行えます。
@@ -27,7 +27,7 @@ ClickHouse Cloud にストリーミングするオープンソースの Postgres
   ## クエリインサイトを開く
 </div>
 
-Cloud Console で Managed Postgres インスタンスを開き、左側のサイドバーで
+Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左側のサイドバーで
 **クエリインサイト** をクリックします。ページは、実際に使う順に
 4 つの領域に分かれています。
 
@@ -54,7 +54,7 @@ Cloud Console で Managed Postgres インスタンスを開き、左側のサイ
 | **クエリレイテンシ**        | 平均、p50、p95、p99 を1つのチャートにまとめて表示し、中央値に対してテールがいつ乖離するかを確認できます。               |
 | **操作の内訳**           | ワークロードが実際に `SELECT`、`INSERT`、`UPDATE`、その他の操作でどのように構成されているかを示すドーナツチャートです。 |
 | **返された / 影響を受けた行数** | その時間枠でワークロードが処理した合計行数です。                                                 |
-| **バッファヒット率**        | 共有 block のヒット数と読み取り数の比率を示すドーナツチャートで、凡例には合計 CPU 時間も表示されます。                |
+| **バッファヒット率**        | 共有ブロックのヒット数と読み取り数の比率を示すドーナツチャートで、凡例には合計 CPU 時間も表示されます。                   |
 | **エラー**             | エラーの総数を、時間の経過に沿って表示します。                                                  |
 
 この1画面で、データベースが健全かどうかを判断できます。健全なインスタンスには
@@ -116,7 +116,7 @@ Cloud Console で Managed Postgres インスタンスを開き、左側のサイ
   ## 最近のクエリ
 </div>
 
-パターン テーブルの下にある **Recent Queries** パネルには、個々の実行が
+パターン テーブルの下にある **最近のクエリ** パネルには、個々の実行が
 新しい順に表示されます。つまり、パターンごとに1行ではなく、実行された
 ステートメントごとに1行が表示されます。集計結果ではなく生のイベント
 ストリームを確認したいときに使用します。たとえば、修正が反映されたことを
@@ -187,9 +187,9 @@ patterns または 最近のクエリ テーブル内の任意の行をクリッ
 [ClickHouse Cloud OpenAPI](/ja/products/managed-postgres/openapi#query-insights) を通じて
 プログラムからも利用できます。
 [低速クエリパターン](#slow-patterns) テーブルは
-[list slow query patterns](/ja/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList)
+[list slow query patterns](/ja/products/cloud/api-reference/postgres/slow-query-patterns-get-list)
 エンドポイントに対応し、[詳細フライアウト](#detail) は
-[get slow query pattern](/ja/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet)
+[get slow query pattern](/ja/products/cloud/api-reference/postgres/slow-query-pattern-get)
 エンドポイントに対応しています。このエンドポイントは、1 つのパターンの集計メトリクスと
 その最近の実行を返します。
 
@@ -245,6 +245,6 @@ ClickHouse に送信できます。ソースコードと issue は
 
 * [監視ダッシュボード](/ja/products/managed-postgres/monitoring/dashboard) — 組み込みのリソースおよびアクティビティのチャート
 * [Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) — ホストレベルのメトリクスを独自のオブザーバビリティスタックに取り込めます
-* [Managed Postgres OpenAPI](/ja/products/managed-postgres/openapi#query-insights) — スローパターンや最近の実行履歴をプログラムから取得できます
-* [拡張機能](/ja/products/managed-postgres/extensions) — Managed Postgres インスタンスで利用可能な拡張機能
+* [ClickHouse Managed Postgres OpenAPI](/ja/products/managed-postgres/openapi#query-insights) — 低速クエリパターンや最近の実行履歴をプログラムから取得できます
+* [拡張機能](/ja/products/managed-postgres/extensions) — ClickHouse Managed Postgres インスタンスで利用可能な拡張機能
 * [GitHub 上の `pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch) — クエリインサイトを支えるオープンソースの拡張機能

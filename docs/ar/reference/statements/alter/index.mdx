@@ -1,6 +1,6 @@
 ---
 description: 'توثيق ALTER'
-sidebarTitle: 'ALTER'
+sidebarTitle: 'نظرة عامة'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -15,10 +15,13 @@ doc_type: 'reference'
 | [DELETE](/ar/reference/statements/alter/delete)                         |
 | [UPDATE](/ar/reference/statements/alter/update)                         |
 | [ORDER BY](/ar/reference/statements/alter/order-by)                     |
+| [SAMPLE BY](/ar/reference/statements/alter/sample-by)                   |
 | [INDEX](/ar/reference/statements/alter/skipping-index)                  |
+| [PROJECTION](/ar/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/ar/reference/statements/alter/constraint)                 |
 | [TTL](/ar/reference/statements/alter/ttl)                               |
 | [STATISTICS](/ar/reference/statements/alter/statistics)                 |
+| [SETTING](/ar/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/ar/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/ar/reference/statements/alter/apply-patches)           |
 
@@ -40,12 +43,14 @@ doc_type: 'reference'
 | [ROLE](/ar/reference/statements/alter/role)                         |
 | [QUOTA](/ar/reference/statements/alter/quota)                       |
 | [ROW POLICY](/ar/reference/statements/alter/row-policy)             |
+| [MASKING POLICY](/ar/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/ar/reference/statements/alter/settings-profile) |
 
-| Statement                                                              | Description                                                                                    |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| [ALTER TABLE ... MODIFY COMMENT](/ar/reference/statements/alter/comment)  | يضيف تعليقات إلى الجدول أو يعدّلها أو يزيلها، سواء كانت مُعيَّنة مسبقًا أم لا.                 |
-| [ALTER NAMED COLLECTION](/ar/reference/statements/alter/named-collection) | يُعدِّل [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). |
+| Statement                                                                         | Description                                                                                    |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ar/reference/statements/alter/comment)             | يضيف تعليقات إلى الجدول أو يعدّلها أو يزيلها، سواء أكانت مُعيَّنة مسبقًا أم لا.                |
+| [ALTER DATABASE ... MODIFY COMMENT](/ar/reference/statements/alter/database-comment) | يضيف تعليقات إلى قاعدة البيانات أو يعدّلها أو يزيلها، سواء أكانت مُعيَّنة مسبقًا أم لا.        |
+| [ALTER NAMED COLLECTION](/ar/reference/statements/alter/named-collection)            | يُعدِّل [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). |
 
 <div id="mutations">
   ## عمليات التعديل
@@ -68,15 +73,37 @@ doc_type: 'reference'
 
 بالنسبة إلى الجداول غير المكررة، تُنفَّذ جميع استعلامات `ALTER` بشكل متزامن. أما بالنسبة إلى الجداول المكررة، فلا يضيف الاستعلام سوى تعليمات بالإجراءات المناسبة إلى `ZooKeeper`، بينما تُنفَّذ هذه الإجراءات نفسها في أقرب وقت ممكن. ومع ذلك، يمكن أن ينتظر الاستعلام حتى تكتمل هذه الإجراءات على جميع النسخ المتماثلة.
 
-بالنسبة إلى استعلامات `ALTER` التي تُنشئ عمليات التعديل (مثل `UPDATE` و`DELETE` و`MATERIALIZE INDEX` و`MATERIALIZE PROJECTION` و`MATERIALIZE COLUMN` و`APPLY DELETED MASK` و`APPLY PATCHES` و`CLEAR STATISTIC` و`MATERIALIZE STATISTIC`، على سبيل المثال لا الحصر)، فإن التزامن يحدده الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync).
+بالنسبة إلى استعلامات `ALTER` التي تُنشئ عمليات التعديل (مثل `UPDATE` و`DELETE` و`MATERIALIZE INDEX` و`MATERIALIZE PROJECTION` و`MATERIALIZE COLUMN` و`APPLY DELETED MASK` و`APPLY PATCHES` و`CLEAR STATISTIC` و`MATERIALIZE STATISTIC`، على سبيل المثال لا الحصر)، فإن التزامن يحدده الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings/mutations#mutations_sync).
 
-أما استعلامات `ALTER` الأخرى التي لا تعدّل سوى البيانات الوصفية، فيمكنك استخدام الإعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) لضبط الانتظار.
+أما استعلامات `ALTER` الأخرى التي لا تعدّل سوى البيانات الوصفية، فيمكنك استخدام الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) لضبط الانتظار.
 
-يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة جميع استعلامات `ALTER` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة جميع استعلامات `ALTER` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
   بالنسبة إلى جميع استعلامات `ALTER`، إذا كانت قيمة `alter_sync = 2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.
 </Note>
+
+<div id="concurrent-alter-assignment-on-one-table">
+  ### إسناد `ALTER` متزامن لجدول واحد
+</div>
+
+في الجداول المكرّرة، قد يؤدي إرسال عدة عبارات `ALTER` منفصلة إلى الجدول نفسه على التوالي وبسرعة إلى الفشل بالخطأ `CANNOT_ASSIGN_ALTER` (الرمز 517). يحدث ذلك في المسار المنسوخ عندما لا تكون النسخة المتماثلة قد طبّقت بعض عمليات `ALTER` السابقة بعد (أي إن إصدار البيانات الوصفية لا يزال متأخرًا عن البيانات الوصفية المشتركة؛ وقد يذكر الخادم أن النسخة المتماثلة &quot;still not applied some of previous alters&quot; أو &quot;Probably too many alters executing concurrently&quot;). وقد تظل هذه الحالة قائمة حتى بعد إسناد عملية `ALTER` سابقة بالفعل. هذه حالة **عامة لعمليات `ALTER` المتزامنة للبيانات الوصفية / عمليات التعديل**، وليست مقتصرة على العبارات الخاصة بعمليات التعديل. ويمكن لعمليات تعديل البيانات الوصفية المتزامنة العادية (`ADD` / `DROP` / `MODIFY` وما شابهها) أن تؤدي إلى الرمز نفسه القابل لإعادة المحاولة (انظر، على سبيل المثال، مسار إعادة المحاولة الذي يغطيه `tests/queries/0_stateless/03518_alter_logical_race.sh`).
+
+الأساليب التي تتجنب حالة السباق:
+
+* ادمج عمليات البيانات الوصفية المستقلة في عبارة `ALTER` **واحدة** متعددة البنود، عندما تسمح القواعد بذلك (على سبيل المثال، عدة بنود `ADD INDEX`).
+* نفّذ عبارات `ALTER` تسلسليًا وأعِد المحاولة عند ظهور الرمز 517 إلى أن تُطبَّق عمليات `ALTER` السابقة على النسخة المتماثلة.
+* بالنسبة إلى عمليات `ALTER` التي تُنتج عمليات التعديل، انتظر حتى تنتهي عملية التعديل السابقة باستخدام مؤشر موثق قابل للرصد، مثل [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync) أو `is_done` في [`system.mutations`](/ar/reference/system-tables/mutations)، قبل إرسال العملية التالية.
+
+<div id="combining-materialize-index-clauses">
+  ### دمج بنود `MATERIALIZE INDEX`
+</div>
+
+يمكن أن تظهر عدة بنود `MATERIALIZE INDEX` ضمن تعليمة `ALTER` واحدة. الحالة التي يغطيها الاختبار ضمن الشجرة هي تجميع عدة بنود `ADD INDEX` مع `MATERIALIZE INDEX` للفهارس الجديدة نفسها في تعليمة واحدة (راجع `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). يجمع هذا الشكل المدمج، `ADD INDEX` + `MATERIALIZE INDEX`، بين مقطع `AlterCommand` ومقطع `MutationCommand`، لذا **يرفضه `DatabaseReplicated`** بالخطأ `QUERY_IS_PROHIBITED` (`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). اعتبر المثال `02911` صالحًا لقواعد البيانات العادية (غير `DatabaseReplicated`)؛ أما في `DatabaseReplicated`، فاجعل تغييرات البيانات الوصفية وعمليات التعديل الخاصة بـ materialize في عبارات منفصلة.
+
+في التنفيذ الحالي، يُحلّ كل بند `MATERIALIZE INDEX` بالرجوع إلى لقطة البيانات الوصفية للجدول عند تحضير عملية التعديل، لذلك تتبع الصيغ متعددة البنود التي تقتصر على materialize للفهارس الموجودة مسبقًا مسار التحضير نفسه (لعملية التعديل فقط، ومن ثم تبقى ضمن مقطع واحد). لا يوجد بعد اختبار عديم الحالة ومركّز يغطي هذا الشكل تحديدًا؛ لذا اعتبره سلوكًا للتنفيذ الحالي، وليس ضمانًا مستقلًا، إلى أن تتوفر هذه التغطية.
+
+إذا كنت بحاجة إلى تطبيق عمليات التعديل بالترتيب، فلا يزال بإمكانك إصدار `MATERIALIZE INDEX` واحدة في كل عبارة والانتظار باستخدام [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync).
 
 <div id="related-content">
   ## محتوى ذي صلة

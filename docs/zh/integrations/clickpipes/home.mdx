@@ -26,95 +26,45 @@ ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通过
   ## 支持的数据源
 </div>
 
-| 名称                                                          | 徽标                                                                                                   | 类型   | 状态          | 描述                                                                                                                                                 |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Apache Kafka](/zh/integrations/clickpipes/kafka/index)        | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 徽标" width="32" />                  | 流式   | 稳定版本        | 配置 ClickPipes，开始将 Apache Kafka 中的流式数据摄取到 ClickHouse Cloud。                                                                                         |
-| Confluent Cloud                                             | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 徽标" width="32" />           | 流式   | 稳定版本        | 通过我们的直接集成，充分发挥 Confluent 与 ClickHouse Cloud 的组合优势。                                                                                                 |
-| Redpanda                                                    | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 徽标" width="32" />              | 流式   | 稳定版本        | 配置 ClickPipes，开始将 Redpanda 中的流式数据摄取到 ClickHouse Cloud。                                                                                             |
-| AWS MSK                                                     | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 徽标" width="32" />                         | 流式   | 稳定版本        | 配置 ClickPipes，开始将 AWS MSK 中的流式数据摄取到 ClickHouse Cloud。                                                                                              |
-| Azure Event Hubs                                            | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 徽标" width="32" />   | 流式   | 稳定版本        | 配置 ClickPipes，开始将 Azure Event Hubs 中的流式数据摄取到 ClickHouse Cloud。有关说明，请参阅 [Azure Event Hubs FAQ](/zh/integrations/clickpipes/kafka/faq#azure-eventhubs)。 |
-| WarpStream                                                  | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 徽标" width="32" />               | 流式   | 稳定版本        | 配置 ClickPipes，开始将 WarpStream 中的流式数据摄取到 ClickHouse Cloud。                                                                                           |
-| Amazon S3                                                   | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 徽标" width="32" />            | 对象存储 | 稳定版本        | 配置 ClickPipes 以从对象存储摄取海量数据。                                                                                                                        |
-| Google Cloud Storage                                        | <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage 徽标" width="32" />            | 对象存储 | 稳定版本        | 配置 ClickPipes 以从对象存储摄取海量数据。                                                                                                                        |
-| DigitalOcean Spaces                                         | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 徽标" width="32" />          | 对象存储 | 稳定版本        | 配置 ClickPipes 以从对象存储摄取海量数据。                                                                                                                        |
-| Azure Blob 存储                                               | <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage 徽标" width="32" /> | 对象存储 | 稳定版本        | 配置 ClickPipes 以从对象存储摄取海量数据。                                                                                                                        |
-| [Amazon Kinesis](/zh/integrations/clickpipes/kinesis/overview) | <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Amazon Kenesis 徽标" width="32" />  | 流式   | 稳定版本        | 配置 ClickPipes，开始将 Amazon Kinesis 中的流式数据摄取到 ClickHouse Cloud。                                                                                       |
-| [GCP Pub/Sub](/zh/integrations/clickpipes/pubsub/overview)     | <img src="/images/integrations/logos/google_pubsub.svg" alt="Google Cloud Pub/Sub 徽标" width="32" />  | 流式   | Public Beta | 配置 ClickPipes，开始将 Google Cloud Pub/Sub 中的流式数据摄取到 ClickHouse Cloud。                                                                                 |
-| [Postgres](/zh/integrations/clickpipes/postgres/index)         | <img src="/images/integrations/logos/postgresql.svg" alt="Postgres 徽标" width="32" />                 | DBMS | 稳定版本        | 配置 ClickPipes，开始将 Postgres 中的数据摄取到 ClickHouse Cloud。                                                                                               |
-| [MySQL](/zh/integrations/clickpipes/mysql/index)               | <img src="/images/integrations/logos/mysql.svg" alt="MySQL 徽标" width="32" />                         | DBMS | Public Beta | 配置 ClickPipes，开始将 MySQL 中的数据摄取到 ClickHouse Cloud。                                                                                                  |
-| [MongoDB](/zh/integrations/clickpipes/mongodb/index)           | <img src="/images/integrations/logos/mongodb.svg" alt="MongoDB 徽标" width="32" />                     | DBMS | 私有预览        | 配置 ClickPipes，开始将 MongoDB 中的数据摄取到 ClickHouse Cloud。                                                                                                |
+| 名称                                                                                                                                                                                                                                     | 类型                                 | 状态                                        | 描述                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 徽标" className="integration-table-logo" width="24" height="24" /> [Apache Kafka](/zh/integrations/clickpipes/kafka/index)                                                | <Badge color="blue">流式</Badge>     | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，开始将 Apache Kafka 中的流式数据摄取到 ClickHouse Cloud。                                                                                          |
+| <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 标志" className="integration-table-logo" width="24" height="24" /> Confluent Cloud                                                                              | <Badge color="blue">流式</Badge>     | <Badge color="green">稳定版本</Badge>         | 通过我们的直连集成，释放 Confluent 与 ClickHouse Cloud 的强大协同能力。                                                                                                  |
+| <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 徽标" className="integration-table-logo" width="24" height="24" /> Redpanda                                                                                       | <Badge color="blue">流式</Badge>     | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，开始将来自 Redpanda 的流式数据摄取到 ClickHouse Cloud。                                                                                             |
+| <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 徽标" className="integration-table-logo" width="24" height="24" /> AWS MSK                                                                                                    | <Badge color="blue">流式</Badge>     | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，开始将 AWS MSK 的流式数据摄取到 ClickHouse Cloud。                                                                                                |
+| <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 徽标" className="integration-table-logo" width="24" height="24" /> Azure Event Hubs                                                                     | <Badge color="blue">流式</Badge>     | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，开始将 Azure Event Hubs 的流式数据摄取到 ClickHouse Cloud。有关详细说明，请参阅 [Azure Event Hubs FAQ](/zh/integrations/clickpipes/kafka/faq#azure-eventhubs)。 |
+| <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 徽标" className="integration-table-logo" width="24" height="24" /> WarpStream                                                                                       | <Badge color="blue">流式</Badge>     | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，开始将 WarpStream 的流式数据摄取到 ClickHouse Cloud。                                                                                             |
+| <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Amazon Kinesis 徽标" className="integration-table-logo" width="24" height="24" /> [Amazon Kinesis](/zh/integrations/clickpipes/kinesis/overview)                         | <Badge color="blue">流式</Badge>     | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，并开始将 Amazon Kinesis 中的流式数据摄取到 ClickHouse Cloud。                                                                                       |
+| <img src="/images/integrations/logos/google_pubsub.svg" alt="Google Cloud Pub/Sub 标志" className="integration-table-logo" width="24" height="24" /> [GCP Pub/Sub](/zh/integrations/clickpipes/pubsub/overview)                             | <Badge color="blue">流式</Badge>     | <Badge color="purple">私有预览</Badge>        | 配置 ClickPipes，并开始将 Google Cloud Pub/Sub 中的流式数据摄取到 ClickHouse Cloud。                                                                                 |
+| <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="亚马逊 S3 标志" className="integration-table-logo" width="24" height="24" /> [亚马逊 S3](/zh/integrations/clickpipes/object-storage/amazon-s3/overview)                             | <Badge color="orange">对象存储</Badge> | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，以便从对象存储摄取海量数据。                                                                                                                        |
+| <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage 标志" className="integration-table-logo" width="24" height="24" /> [Google Cloud Storage](/zh/integrations/clickpipes/object-storage/google-cloud-storage/overview) | <Badge color="orange">对象存储</Badge> | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，以便从对象存储摄取海量数据。                                                                                                                        |
+| <img src="/images/integrations/logos/digitalocean.svg" alt="DigitalOcean 标志" className="integration-table-logo" width="24" height="24" /> DigitalOcean Spaces                                                                          | <Badge color="orange">对象存储</Badge> | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，以便从对象存储中摄取海量数据。                                                                                                                       |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob 存储标志" className="integration-table-logo" width="24" height="24" /> [Azure Blob 存储](/zh/integrations/clickpipes/object-storage/azure-blob-storage/overview)     | <Badge color="orange">对象存储</Badge> | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，以便从对象存储中摄取海量数据。                                                                                                                       |
+| <img src="/images/integrations/logos/postgresql.svg" alt="Postgres 徽标" className="integration-table-logo" width="24" height="24" /> [Postgres](/zh/integrations/clickpipes/postgres/index)                                                | <Badge color="purple">DBMS</Badge> | <Badge color="green">稳定版本</Badge>         | 配置 ClickPipes，开始将 Postgres 数据摄取到 ClickHouse Cloud。                                                                                                  |
+| <img src="/images/integrations/logos/mysql.svg" alt="MySQL 标志" className="integration-table-logo" width="24" height="24" /> [MySQL](/zh/integrations/clickpipes/mysql/index)                                                              | <Badge color="purple">DBMS</Badge> | <Badge color="yellow">Public Beta</Badge> | 配置 ClickPipes，开始将 MySQL 数据摄取到 ClickHouse Cloud。                                                                                                     |
+| <img src="/images/integrations/logos/mongodb.svg" alt="MongoDB 标志" className="integration-table-logo" width="24" height="24" /> [MongoDB](/zh/integrations/clickpipes/mongodb/index)                                                      | <Badge color="purple">DBMS</Badge> | <Badge color="purple">私有预览</Badge>        | 配置 ClickPipes，并开始将 MongoDB 数据摄取到 ClickHouse Cloud。                                                                                                  |
 
 更多连接器将陆续加入 ClickPipes，更多信息请[联系我们](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="aws-iam-database-authentication">
+  ## AWS IAM 数据库身份验证
+</div>
+
+ClickPipes 支持对 Amazon RDS 和 Aurora 使用 AWS IAM 数据库身份验证。具体配置因数据库引擎和 AWS 服务而异，因此请选择与您的数据库对应的源端设置指南：
+
+| 数据库引擎      | AWS 服务        | 设置指南                                                                                                       |
+| ---------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL | Amazon RDS    | [RDS for PostgreSQL](/zh/integrations/clickpipes/postgres/source/rds#iam-authentication)                      |
+| PostgreSQL | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/zh/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL      | Amazon RDS    | [RDS for MySQL](/zh/integrations/clickpipes/mysql/source/rds#iam-authentication)                              |
+| MySQL      | Amazon Aurora | [Aurora MySQL-Compatible Edition](/zh/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB    | Amazon RDS    | [RDS for MariaDB](/zh/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                      |
 
 <div id="list-of-static-ips">
   ## 静态 IP 列表
 </div>
 
-下表列出了 ClickPipes 用于连接您的外部服务的静态 NAT IP 地址。请将为您的 ClickHouse Cloud 服务提供支持的 ClickPipes 区域对应的 IP 地址添加到 IP allow list 中。对于对象存储管道，您还应将 [ClickHouse 集群 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api) 添加到 IP allow list 中。
-
-下方 Google Cloud 表中列出的 Google Cloud 区域内的服务，只有在 2026 年 6 月 15 日之前不存在预先已有的 ClickPipes 时，才会使用这些 Google Cloud IP。对于在 2026 年 6 月 15 日之前已存在 ClickPipes 的这些区域中的服务，则会继续使用下方列出的默认区域 IP。
-
-对于其他服务，ClickPipes 流量会根据服务所在位置从默认区域发出：
-
-* **eu-central-1**：适用于所有未明确列出的 EU 区域，以及 Azure EU 区域和在 2026 年 6 月 15 日之前已存在 ClickPipes 的 Google Cloud EU 服务。
-* **eu-west-1**：适用于 AWS `eu-west-1` 中所有在 2026 年 1 月 20 日或之后创建的服务 (在此日期之前创建的服务使用 `eu-central-1` IP) 。
-* **us-east-1**：适用于 AWS `us-east-1` 中的所有服务。
-* **ap-south-1**：适用于 AWS `ap-south-1` 中所有在 2025 年 6 月 25 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **ap-northeast-2**：适用于 AWS `ap-northeast-2` 中所有在 2025 年 11 月 14 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **af-south-1**：适用于 AWS `af-south-1` 中所有在 2026 年 4 月 15 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **ap-east-1**：适用于 AWS `ap-east-1` 中所有在 2026 年 4 月 15 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **ap-northeast-1**：适用于 AWS `ap-northeast-1` 中所有在 2026 年 4 月 15 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **ap-southeast-1**：适用于 AWS `ap-southeast-1` 中所有在 2026 年 3 月 18 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **ap-southeast-2**：适用于 AWS `ap-southeast-2` 中所有在 2025 年 6 月 25 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **ap-southeast-3**：适用于 AWS `ap-southeast-3` 中所有在 2026 年 3 月 6 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **ca-central-1**：适用于 AWS `ca-central-1` 中所有在 2026 年 4 月 15 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **eu-north-1**：适用于 AWS `eu-north-1` 中所有在 2026 年 4 月 15 日或之后创建的服务 (在此日期之前创建的服务使用 `eu-central-1` IP) 。
-* **eu-west-2**：适用于 AWS `eu-west-2` 中所有在 2026 年 4 月 15 日或之后创建的服务 (在此日期之前创建的服务使用 `eu-central-1` IP) 。
-* **il-central-1**：适用于 AWS `il-central-1` 中所有在 2026 年 4 月 15 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **mx-central-1**：适用于 AWS `mx-central-1` 中所有在 2026 年 5 月 19 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **sa-east-1**：适用于 AWS `sa-east-1` 中所有在 2026 年 4 月 15 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **us-west-2**：适用于 AWS `us-west-2` 中所有在 2025 年 6 月 24 日或之后创建的服务 (在此日期之前创建的服务使用 `us-east-2` IP) 。
-* **us-east-2**：适用于所有不符合上述规则的其他区域，包括 Azure 区域以及在 2026 年 6 月 15 日之前已存在 ClickPipes 的 Google Cloud 服务。
-
-<div id="aws-static-nat-ips">
-  ### AWS 静态 NAT IP 地址
-</div>
-
-| AWS 区域                                        | IP 地址                                                                                                                                       |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **eu-central-1** - 法兰克福                       | `18.195.233.217`, `3.127.86.90`, `35.157.23.2`, `18.197.167.47`, `3.122.25.29`, `52.28.148.40`                                              |
-| **eu-west-1** - 爱尔兰 (自 2026 年 1 月 20 日起)      | `54.228.1.92` , `54.72.101.254`, `54.228.16.208`, `54.76.200.104`, `52.211.2.177`, `54.77.10.134`                                           |
-| **us-east-1** - 弗吉尼亚北部                        | `54.82.38.199`, `3.90.133.29`, `52.5.177.8`, `3.227.227.145`, `3.216.6.184`, `54.84.202.92`, `3.131.130.196`, `3.23.172.68`, `3.20.208.150` |
-| **us-east-2** - 俄亥俄州                          | `3.131.130.196`, `3.23.172.68`, `3.20.208.150`, `3.132.20.192`, `18.119.76.110`, `3.134.185.180`                                            |
-| **ap-south-1** - 孟买 (自 2025 年 6 月 25 日起)      | `13.203.140.189`, `13.232.213.12`, `13.235.145.208`, `35.154.167.40`, `65.0.39.245`, `65.1.225.89`                                          |
-| **ap-northeast-2** - 首尔 (2025 年 11 月 14 日起)   | `3.38.68.69`, `52.78.68.128`, `13.209.152.13`, `3.38.24.84`, `3.37.159.31`, `3.34.25.104`                                                   |
-| **ap-southeast-1** - 新加坡 (自 2026 年 3 月 18 日起) | `13.215.65.134`, `18.139.118.108`, `47.130.197.47`, `54.251.134.219`, `54.254.98.29`, `54.255.153.106`                                      |
-| **ap-southeast-2** - 悉尼 (自 2025 年 6 月 25 日起)  | `3.106.48.103`, `52.62.168.142`, `13.55.113.162`, `3.24.61.148`, `54.206.77.184`, `54.79.253.17`                                            |
-| **af-south-1** - 开普敦 (自 2026 年 4 月 15 日起)     | `13.245.187.24`, `15.240.60.178`, `15.240.81.191`, `13.245.25.101`, `13.245.91.225`, `15.240.54.195`                                        |
-| **ap-east-1** - 香港 (自 2026 年 4 月 15 日起)       | `18.166.168.168`, `43.199.224.85`, `95.40.0.242`, `16.162.107.229`, `43.199.125.240`, `54.46.86.27`                                         |
-| **ap-northeast-1** - 东京 (自 2026 年 4 月 15 日起)  | `54.168.88.92`, `35.76.97.79`, `54.64.100.89`, `54.178.40.17`, `52.195.101.208`, `13.193.109.245`                                           |
-| **ap-southeast-1** - 新加坡 (2026 年 3 月 18 日起)   | `47.130.197.47`, `54.251.134.219`, `18.139.118.108`, `54.255.153.106`, `54.254.98.29`, `13.215.65.134`                                      |
-| **ap-southeast-3** - 雅加达 (2026 年 3 月 6 日起)    | `16.78.195.195`, `43.218.184.235`, `16.79.88.54`, `16.78.153.162`, `16.79.6.125`, `108.137.52.155`                                          |
-| **ca-central-1** - 加拿大 (自2026年4月15日起)         | `52.60.123.235`, `3.97.222.98`, `3.99.62.248`, `15.223.61.186`, `3.96.255.101`, `3.97.29.96`                                                |
-| **eu-north-1** - 斯德哥尔摩 (自 2026 年 4 月 15 日起)   | `13.63.1.65`, `16.171.127.30`, `56.228.76.44`, `13.63.101.248`, `16.170.124.188`, `13.60.109.201`                                           |
-| **eu-west-2** - 伦敦 (自 2026 年 4 月 15 日起)       | `13.134.82.158`, `16.60.209.167`, `18.134.221.203`, `16.60.139.176`, `13.43.66.75`, `3.11.78.183`                                           |
-| **il-central-1** - 特拉维夫 (自 2026 年 4 月 15 日起)  | `16.164.25.13`, `51.84.162.29`, `51.85.90.183`, `51.84.36.146`, `51.84.72.29`, `51.85.28.184`                                               |
-| **mx-central-1** - 墨西哥 (自 2026 年 5 月 19 日起)   | `78.12.67.220`, `78.12.117.175`, `78.13.186.238`, `78.13.219.184`, `78.13.224.212`, `78.13.248.162`                                         |
-| **sa-east-1** - 圣保罗 (自2026年4月15日起)            | `18.230.164.131`, `56.126.1.234`, `18.230.39.24`, `15.229.102.116`, `18.230.174.204`, `18.229.237.116`                                      |
-| **us-west-2** - 俄勒冈州 (自 2025 年 6 月 24 日起)     | `52.42.100.5`, `44.242.47.162`, `52.40.44.52`, `44.227.206.163`, `44.246.241.23`, `35.83.230.19`                                            |
-
-<div id="google-cloud-static-nat-ips">
-  ### Google Cloud 静态 NAT IP 地址
-</div>
-
-| Google Cloud 区域                                 | IP 地址                                                                                 |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------- |
-| **asia-northeast1** - 东京 (自 2026 年 5 月 27 日起)   | `104.198.114.210`, `35.221.66.81`, `35.243.126.127`, `136.110.107.86`, `34.85.18.112` |
-| **asia-southeast1** - 新加坡 (自 2026 年 5 月 27 日起)  | `34.21.197.28`, `35.197.141.23`, `35.197.157.90`, `136.110.17.200`, `35.185.179.231`  |
-| **europe-west2** - 伦敦 (自 2026 年 5 月 27 日起)      | `35.242.131.178`, `34.39.77.101`, `34.39.47.179`, `34.89.53.234`, `8.228.63.151`      |
-| **europe-west4** - 荷兰 (自 2026 年 5 月 27 日起)      | `34.34.86.3`, `34.6.175.56`, `34.178.6.187`, `34.91.204.220`, `34.12.85.206`          |
-| **us-central1** - 爱荷华州 (自 2026 年 5 月 27 日起)     | `34.28.24.54`, `34.42.56.195`, `34.63.141.9`, `35.238.146.37`, `34.10.251.49`         |
-| **us-east1** - 南卡罗来纳州 (自 2026 年 5 月 27 日起)      | `34.24.134.232`, `34.24.214.165`, `34.24.20.1`, `35.243.193.248`, `34.23.98.76`       |
+ClickPipes 静态 NAT IP 地址列表已移至 [ClickPipes 网络文档](/zh/integrations/clickpipes/networking/static-ips)。
 
 <div id="adjusting-clickhouse-settings">
   ## 调整 ClickHouse 设置
@@ -138,18 +88,18 @@ ClickPipes 提供了适用于大多数场景的合理默认设置。如果你的
   ### 对象存储 ClickPipes
 </div>
 
-| Setting                              | Default value | Description                                                                                                 |
-| ------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10 GB         | 单个插入批次中处理的字节数。                                                                                              |
-| `Max file count`                     | 100           | 单个插入批次中处理的最大文件数。                                                                                            |
-| `Max threads`                        | auto(3)       | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings#max_threads)。                                         |
-| `Max insert threads`                 | 1             | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings#max_insert_threads)。                                |
-| `Min insert block size bytes`        | 1 GB          | 可插入表的[块最小字节数](/zh/reference/settings/session-settings#min_insert_block_size_bytes)。                            |
-| `Max download threads`               | 4             | [最大并发下载线程数](/zh/reference/settings/session-settings#max_download_threads)。                                     |
-| `Object storage polling interval`    | 30 s          | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                              |
-| `Parallel distributed insert select` | 2             | [并行 Distributed insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false         | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)方式推送到已附加视图。                     |
-| `Use cluster function`               | true          | 是否在多个节点上并行处理文件。                                                                                             |
+| Setting                              | Default value | Description                                                                                                          |
+| ------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10 GB         | 单个插入批次中处理的字节数。                                                                                                       |
+| `Max file count`                     | 100           | 单个插入批次中处理的最大文件数。                                                                                                     |
+| `Max threads`                        | auto(3)       | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings/max-threads#max_threads)。                                      |
+| `Max insert threads`                 | 1             | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings/max-insert#max_insert_threads)。                              |
+| `Min insert block size bytes`        | 1 GB          | 可插入表的[块最小字节数](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。                          |
+| `Max download threads`               | 4             | [最大并发下载线程数](/zh/reference/settings/session-settings/max-download#max_download_threads)。                                 |
+| `Object storage polling interval`    | 30 s          | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                       |
+| `Parallel distributed insert select` | 2             | [并行 Distributed insert select 设置](/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false         | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings/parallel#parallel_view_processing)方式推送到已附加视图。                     |
+| `Use cluster function`               | true          | 是否在多个节点上并行处理文件。                                                                                                      |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 的高级设置" size="lg" border />
 
@@ -166,6 +116,10 @@ ClickPipes 提供了适用于大多数场景的合理默认设置。如果你的
 </div>
 
 ClickPipes 会根据摄取过程中遇到的错误类型，将错误分别存储在两个独立的表中。
+
+<Note>
+  这目前不适用于 CDC 管道 (Postgres、MySQL 和 MongoDB) ；这些管道的运行日志和错误日志可直接在 ClickHouse Cloud 控制台中查看。
+</Note>
 
 <div id="record-errors">
   ### 记录错误

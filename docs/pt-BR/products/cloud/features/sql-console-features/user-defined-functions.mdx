@@ -7,14 +7,16 @@ doc_type: 'guide'
 keywords: ['função definida pelo usuário', 'UDF']
 ---
 
-import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
-Funções Definidas pelo Usuário (UDF) permitem que os usuários ampliem o comportamento do ClickHouse para além do que é oferecido por mais de mil [funções](/pt-BR/reference/functions/regular-functions/regular-functions-index) nativas.
+Funções Definidas pelo Usuário (UDF) permitem que os usuários ampliem o comportamento do ClickHouse para além do que é oferecido por mais de mil [funções](/pt-BR/reference/functions/regular-functions/overview) nativas.
 
-No ClickHouse Cloud, há duas maneiras de criar funções definidas pelo usuário:
+No ClickHouse Cloud, há várias maneiras de criar e gerenciar funções definidas pelo usuário:
 
 1. Usando SQL
 2. Usando a UI e seu próprio código (beta pública)
+3. Usando a [Cloud API](#manage-udfs-with-the-cloud-api) (beta)
+4. Usando o [Terraform](#manage-udfs-with-terraform) (alpha)
 
 <div id="sql-udfs">
   ## Funções Definidas pelo Usuário em SQL
@@ -76,9 +78,7 @@ Neste exemplo, vamos criar a mesma função definida pelo usuário executável s
 Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python e configurá-la pela UI.
 
 <Steps>
-  <Step>
-    ### Crie o arquivo Python
-
+  <Step title="Crie o arquivo Python" id="create-python-file">
     Crie localmente um novo arquivo `main.py`:
 
     ```python
@@ -107,9 +107,7 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
     </Note>
   </Step>
 
-  <Step>
-    ### Empacote as dependências e os arquivos locais
-
+  <Step title="Empacote as dependências e os arquivos locais" id="bundle-dependencies">
     Para incluir pacotes de dependência e quaisquer arquivos locais adicionais (como arquivos wheel, arquivos de configuração ou arquivos de dados), coloque-os no mesmo diretório que `main.py` e `requirements.txt`. Ao criar o arquivo ZIP, inclua todos os arquivos:
 
     ```bash
@@ -145,9 +143,7 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
     </Warning>
   </Step>
 
-  <Step>
-    ### Criar uma UDF pela UI
-
+  <Step title="Criar uma UDF pela UI" id="create-udf-via-ui">
     1. Na página inicial do Cloud Console, clique no nome da sua organização no menu no canto inferior esquerdo.
     2. Selecione **Funções Definidas pelo Usuário** no menu.
     3. Na página de funções definidas pelo usuário, clique em **Set up a UDF**. Um painel de configuração é aberto no lado direito da tela.
@@ -165,9 +161,7 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
         * Quando a implantação for concluída, o status muda para **deployed**.
   </Step>
 
-  <Step>
-    ### Teste sua UDF
-
+  <Step title="Teste sua UDF" id="test-your-udf">
     1. volte à página inicial do SQL Console clicando em **Settings - voltar para a visão do seu serviço** no canto superior esquerdo da página
     2. clique em **SQL Console** no menu à esquerda
     3. escreva a seguinte consulta:
@@ -183,9 +177,7 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
     ```
   </Step>
 
-  <Step>
-    ### Criar uma nova versão
-
+  <Step title="Criar uma nova versão" id="create-new-version">
     Para alterar o código de uma UDF, crie uma nova versão. O painel **Edit** gerencia apenas a quais serviços uma UDF está atribuída; fazer upload de um arquivo ali não substituirá o código implantado.
 
     1. Na página inicial do Cloud Console, clique no nome da sua organização no menu no canto inferior esquerdo.
@@ -196,3 +188,80 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
     Você adicionou com sucesso sua primeira função definida pelo usuário pela UI, confirmou que ela é executada e viu como criar uma nova versão, se necessário.
   </Step>
 </Steps>
+
+<div id="manage-udfs-with-the-cloud-api">
+  ## Gerencie UDFs com a Cloud API
+</div>
+
+<BetaBadge />
+
+Tudo o que está disponível na UI também pode ser acessado programaticamente por meio da [ClickHouse Cloud API](/pt-BR/products/cloud/features/admin-features/api/api-overview).
+Os endpoints de UDF permitem automatizar todo o ciclo de vida de uma UDF: fazer upload de arquivos de origem, criar funções e versões, anexá-las a serviços e removê-las.
+
+<Note>
+  Estes endpoints estão em beta, e o contrato da API pode mudar.
+</Note>
+
+O fluxo de trabalho típico para criar e implantar uma UDF pela API é:
+
+1. [Crie uma URL de upload](/pt-BR/products/cloud/api-reference/udf/udf-upload-session-create) para obter uma URL pré-assinada para upload de `application/zip` e, em seguida, faça upload do seu arquivo ZIP. Cada ID de upload pode ser usado em apenas uma tentativa de criação ou versionamento; solicite uma nova URL de upload ao tentar novamente.
+2. [Crie a UDF](/pt-BR/products/cloud/api-reference/udf/udf-create) a partir do arquivo enviado, especificando o nome da função, o runtime, os argumentos e o tipo de retorno.
+3. [Anexe a UDF a um serviço](/pt-BR/products/cloud/api-reference/udf/udf-attach). Quando a versão é omitida, a versão pronta mais recente é anexada. O serviço deve estar em execução; serviços inativos podem ser ativados antes.
+
+O conjunto completo de endpoints:
+
+| Endpoint                                                                                  | Descrição                                                                            |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [Criar URL de upload de UDF](/pt-BR/products/cloud/api-reference/udf/udf-upload-session-create) | Cria uma URL pré-assinada para upload de `application/zip` com escopo de organização |
+| [Criar UDF](/pt-BR/products/cloud/api-reference/udf/udf-create)                                 | Cria uma nova UDF a partir de um arquivo enviado                                     |
+| [Listar UDFs](/pt-BR/products/cloud/api-reference/udf/udf-list)                                 | Retorna a versão mais recente de cada UDF na organização                             |
+| [Obter UDF](/pt-BR/products/cloud/api-reference/udf/udf-get)                                    | Retorna a versão mais recente de uma UDF                                             |
+| [Excluir UDF](/pt-BR/products/cloud/api-reference/udf/udf-delete)                               | Exclui todas as versões de uma UDF e a desanexa de todos os serviços                 |
+| [Criar versão de UDF](/pt-BR/products/cloud/api-reference/udf/udf-version-create)               | Usa um arquivo de origem, atribui uma versão e inicia a compilação da UDF            |
+| [Listar versões de UDF](/pt-BR/products/cloud/api-reference/udf/udf-version-list)               | Retorna todas as versões de uma UDF                                                  |
+| [Excluir versão de UDF](/pt-BR/products/cloud/api-reference/udf/udf-version-delete)             | Exclui uma versão de UDF que não está anexada a nenhum serviço                       |
+| [Anexar UDF ao serviço](/pt-BR/products/cloud/api-reference/udf/udf-attach)                     | Anexa uma versão de UDF a um serviço, substituindo a versão atual quando necessário  |
+| [Listar anexos de UDF](/pt-BR/products/cloud/api-reference/udf/udf-attachment-list)             | Retorna os anexos atuais de uma UDF a serviços                                       |
+| [Obter anexo de UDF](/pt-BR/products/cloud/api-reference/udf/udf-attachment-get)                | Retorna o anexo atual de uma UDF a um serviço                                        |
+| [Desanexar UDF do serviço](/pt-BR/products/cloud/api-reference/udf/udf-detach)                  | Desanexa uma UDF de um serviço                                                       |
+
+Consulte a [referência da API de UDF](/pt-BR/products/cloud/api-reference/udf/udf-create) para ver os schemas de solicitação e resposta.
+
+<div id="manage-udfs-with-terraform">
+  ## Gerencie UDFs com o Terraform
+</div>
+
+O [provider Terraform oficial do ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) inclui dois recursos para gerenciar UDFs como infraestrutura como código:
+
+* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) gerencia a própria função. Ele aceita um arquivo ZIP com o código-fonte da função e publica uma nova versão sempre que o hash do arquivo é alterado, aguardando a conclusão da compilação.
+* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) anexa uma versão de UDF a um serviço. Um serviço comporta no máximo uma versão de uma função por vez. Você pode fixar um número de versão específico ou fazer referência a `clickhouse_udf.<name>.version` para atualizar automaticamente os serviços para a versão mais recente.
+
+<Note>
+  Esses recursos estão disponíveis na versão 3.24.0 e posteriores do provider. Eles estão em status alpha, e seu comportamento pode mudar em futuras versões do provider.
+</Note>
+
+Por exemplo, para implantar com o Terraform a UDF `isBusinessHours` do exemplo anterior:
+
+```terraform
+resource "clickhouse_udf" "is_business_hours" {
+  function_name = "isBusinessHours"
+  runtime       = "python3.11"
+  type          = "executable_pool"
+  return_type   = "Bool"
+
+  arguments = [
+    { name = "timestamp", type = "DateTime" },
+  ]
+
+  source_archive_path = "${path.module}/is_business_hours.zip"
+  source_archive_hash = filebase64sha256("${path.module}/is_business_hours.zip")
+}
+
+resource "clickhouse_udf_attachment" "production" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+```
+
+A anexação só é concluída para versões prontas e pode levar vários minutos; serviços inativos são ativados automaticamente. A exclusão de um recurso `clickhouse_udf` remove todas as versões da função e a desanexa de todos os serviços.

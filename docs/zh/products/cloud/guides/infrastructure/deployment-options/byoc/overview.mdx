@@ -15,7 +15,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 自备 Cloud (BYOC) 使您能够直接在自己的云账户中部署 ClickHouse 服务并存储数据，而无需依赖默认的 ClickHouse Cloud 基础设施。这种方式尤其适合那些具有严格安全策略或监管合规要求、需要对数据拥有完全控制权和主权的组织。
 
-总体而言，BYOC 将 ClickHouse 控制平面 (运行在 ClickHouse VPC 中并由 ClickHouse Cloud 管理) 与数据平面分离；数据平面则完全运行在您的云账户中，包含您的 ClickHouse 集群、数据和备份。有关所涉组件及其之间流量流向的详细说明，请参阅[架构](/zh/products/bring-your-own-cloud/overview/architecture)页面。
+总体而言，BYOC 将 ClickHouse 控制平面 (运行在 ClickHouse VPC 中并由 ClickHouse Cloud 管理) 与数据平面分离；数据平面则完全运行在您的云账户中，包含您的 ClickHouse 集群、数据和 Backup。有关所涉组件及其之间流量流向的详细说明，请参阅[架构](/zh/products/bring-your-own-cloud/overview/architecture)页面。
 
 > **如果您希望获得访问权限，请[联系我们](https://clickhouse.com/cloud/bring-your-own-cloud)。** 如需更多信息，请参阅我们的[服务条款](https://clickhouse.com/legal/agreements/terms-of-service)。
 
@@ -27,10 +27,22 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * AWS (GA)
 * GCP (GA)
-* Azure (私有预览) 。如果您感兴趣，请在[这里](https://clickhouse.com/cloud/bring-your-own-cloud)加入等候名单。
+* Azure (GA)
 
 **支持的 Cloud 区域：**
 我们在[支持的区域](/zh/products/cloud/reference/supported-regions)文档中列出的所有**公共区域**均可用于 BYOC 部署。目前暂不支持私有区域。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+以下要求是 BYOC 构建和运营的基本条件，适用于所有部署，无法豁免或规避：
+
+* **受支持的区域。** BYOC 仅部署在[支持的区域](/zh/products/cloud/reference/supported-regions)文档列出的公共区域中。不支持 AWS Local Zones 和单可用区区域。如果您需要的区域未列出，请在规划部署前咨询 ClickHouse 代表。
+* **三个可用区。** 每个 BYOC 基础设施均跨越三个可用区，以此为 ClickHouse 服务器和 ClickHouse Keeper 提供高可用性。少于三个可用区的区域无法托管 BYOC，且不提供单可用区或双可用区部署。
+* **原样应用 onboarding 制品。** 必须严格按原样应用 CloudFormation 模板或 Terraform 模块——资源名称 (例如 `ClickHouseManagementRole` IAM 角色) 和[文档中规定的基线权限](/zh/products/bring-your-own-cloud/reference/privilege)已硬编码到 ClickHouse 的自动化流程中。任何修改都必须获得 ClickHouse 的明确批准；支持的自定义项通过模板参数提供。请参阅[标准 onboarding](/zh/products/bring-your-own-cloud/onboarding/standard)。
+* **由 ClickHouse 管理的 Kubernetes 集群。** EKS/GKE/AKS 集群由 ClickHouse 创建并全面运营。不支持安装到现有 Kubernetes 集群中，也不得在其上安装集群级 admission controller 或策略引擎。
+* **网络基本要求。** 每种部署都需要正常的 DNS 解析和出站互联网访问 (直接访问或通过 NAT) 。对于由 ClickHouse 管理的 VPC/VNet，在 AWS 和 Azure 上 CIDR 范围至少必须为 `/23`，在 GCP 上至少必须为 `/20`，其中一半范围会分配给 GKE 集群的 Pod 范围。这些是最低要求，而非建议值：每个副本都会占用 IP 地址，因此规模较大的部署需要更大的地址范围。客户管理的 VPC 则有各云平台对应的子网要求——请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/customization-aws) 和 [GCP](/zh/products/bring-your-own-cloud/onboarding/customization-gcp) 自定义指南。
 
 <div id="features">
   ## 功能
@@ -56,6 +68,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * **S3 安全访问**
 * **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
 * **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
+* **[Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview)**
 * **Integrations**：完整列表请参见[此页面](/zh/integrations/home)。
 
 <div id="planned-features-currently-unsupported">
@@ -64,10 +77,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 以下功能在自备 Cloud (BYOC) 部署中存在限制，或尚未获得完整支持。
 
-* SQL 控制台：BYOC 部署目前不提供标准 SQL 控制台，但该功能已列入我们的路线图。
-* ClickPipes 支持：目前以私有预览形式提供，支持 Kafka、Kinesis 等流式集成。更多集成 (如 CDC、对象存储等) 已列入路线图。
+* SQL 控制台：BYOC 部署目前不提供，但该功能已列入路线图。
+* ClickPipes：BYOC 部署目前不提供，但该功能已列入路线图。
 * 自动扩缩容：已列入路线图，后续发行版中将提供。
 * MySQL 接口
 * AWS KMS，也称 CMEK (客户管理的加密密钥)
-* 高级仪表板：这是一个纯客户端 UI，要求你的浏览器能够直接访问，并可通过其端点直接连接到你的 ClickHouse server。如果你的 VPC 网络策略限制浏览器入站访问 ClickHouse 端点，高级仪表板将无法正常工作。
+* 高级仪表板：这是一个纯客户端 UI，要求你的浏览器能够直接访问，并可通过其端点直接连接到你的 ClickHouse 服务器。如果你的 VPC 网络策略限制浏览器入站访问 ClickHouse 端点，高级仪表板将无法正常工作。
 * 监控仪表盘：目前，监控仪表盘中仅提供内存分配指标。对更多指标的支持正在开发中，预计将在未来的发行版中提供。

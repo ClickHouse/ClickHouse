@@ -1,5 +1,6 @@
 ---
 sidebarTitle: 'clickhouse-client로 데이터 삽입'
+searchable: true
 title: 'clickhouse-client로 ClickHouse Cloud에 데이터 삽입'
 useCases: ['All']
 products: ['Cloud']
@@ -41,9 +42,7 @@ clickhouse-client를 설치하고, 샘플 데이터셋을 준비하고, Cloud �
 이 과정을 마치면 clickhouse-client를 사용해 로컬 파일을 ClickHouse Cloud에 로드하는 방법을 익히게 됩니다. 이 워크플로는 CSV, Parquet, JSON을 비롯한 다양한 포맷에서 사용할 수 있습니다.
 
 <Steps titleSize="h3">
-  <Step>
-    ### clickhouse-client 설치
-
+  <Step title="clickhouse-client 설치" id="install-clickhouse-client">
     `clickhouse-client`는 ClickHouse에 연결하는 공식 CLI입니다. ClickHouse 바이너리에 포함되어 있습니다.
 
     범용 설치 프로그램을 사용해 설치합니다:
@@ -61,9 +60,7 @@ clickhouse-client를 설치하고, 샘플 데이터셋을 준비하고, Cloud �
     ClickHouse 버전 번호가 표시되면 `clickhouse-client`를 사용할 준비가 되었음을 확인할 수 있습니다.
   </Step>
 
-  <Step>
-    ### 샘플 CSV 파일 준비
-
+  <Step title="샘플 CSV 파일 준비" id="prepare-a-sample-csv-file">
     이 quickstart만으로 진행할 수 있도록 작은 샘플 CSV 파일을 만듭니다. 터미널에서 다음을 실행하세요:
 
     ```bash
@@ -83,9 +80,7 @@ clickhouse-client를 설치하고, 샘플 데이터셋을 준비하고, Cloud �
     ```
   </Step>
 
-  <Step>
-    ### Cloud 서비스에 연결
-
+  <Step title="Cloud 서비스에 연결" id="connect-to-your-cloud-service">
     아래 명령은 [Cloud 연결 세부 정보 확인](/ko/get-started/quickstarts/obtain-your-cloud-connection-details) 빠른 시작에 설명된 대로 `CLICKHOUSE_HOST`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`를 환경 변수로 내보내 두었다고 가정합니다. 아직 그렇게 하지 않았다면 해당 값을 직접 사용해 대체할 수 있습니다.
 
     간단한 쿼리를 실행해 Cloud 서비스 연결을 테스트합니다:
@@ -107,9 +102,7 @@ clickhouse-client를 설치하고, 샘플 데이터셋을 준비하고, Cloud �
     </Note>
   </Step>
 
-  <Step>
-    ### 대상 테이블 생성 및 데이터 삽입
-
+  <Step title="대상 테이블 생성 및 데이터 삽입" id="create-a-target-table-and-insert-data">
     먼저, 데이터를 받을 테이블을 Cloud 서비스에 생성하세요:
 
     ```bash
@@ -147,9 +140,7 @@ clickhouse-client를 설치하고, 샘플 데이터셋을 준비하고, Cloud �
     `clickhouse-client`는 CSV 파일의 내용을 Cloud 서비스로 직접 전송합니다. `CSVWithNames` 포맷은 첫 번째 행에 컬럼 헤더가 들어 있음을 ClickHouse에 알려줍니다.
   </Step>
 
-  <Step>
-    ### 데이터가 삽입되었는지 확인
-
+  <Step title="데이터가 삽입되었는지 확인" id="verify-the-data-was-inserted">
     행이 정상적으로 들어왔는지 확인하려면 Cloud 서비스에 쿼리하십시오:
 
     ```bash
@@ -180,7 +171,9 @@ clickhouse-client를 설치하고, 샘플 데이터셋을 준비하고, Cloud �
   </Step>
 </Steps>
 
-## 다음 단계
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 이 빠른 시작에서는 `clickhouse-client`를 설치하고, 이를 ClickHouse Cloud 서비스에 연결한 다음, 로컬 CSV 파일의 데이터를 Cloud로 스트리밍했습니다. 이와 동일한 방식으로 Parquet, JSON 및 그 밖의 수십 가지 포맷도 사용할 수 있습니다.
 

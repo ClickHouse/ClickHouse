@@ -10,7 +10,7 @@ integration:
   - website: 'https://github.com/ClickHouse/dbt-clickhouse'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -216,7 +216,7 @@ El adaptador actual de ClickHouse para dbt tiene varias limitaciones que debe te
 * El plugin usa una sintaxis que requiere ClickHouse versión 25.3 o posterior. No probamos versiones anteriores de ClickHouse. Actualmente tampoco probamos tablas Replicated.
 * Distintas ejecuciones de `dbt-adapter` pueden entrar en conflicto si se ejecutan al mismo tiempo, ya que internamente pueden usar los mismos nombres de tabla para las mismas operaciones. Para más información, consulte el issue [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420).
 * Actualmente, el adaptador materializa los modelos como tablas mediante [INSERT INTO SELECT](/es/reference/statements/insert-into#inserting-the-results-of-select). En la práctica, esto implica duplicación de datos si la ejecución vuelve a realizarse. Los datasets muy grandes (PB) pueden dar lugar a tiempos de ejecución extremadamente largos, lo que hace inviables algunos modelos. Para mejorar el rendimiento, use vistas materializadas de ClickHouse implementando la vista como `materialized: materialization_view`. Además, procure minimizar el número de filas que devuelve cualquier consulta usando `GROUP BY` siempre que sea posible. Priorice modelos que resuman los datos frente a los que simplemente los transforman manteniendo el mismo número de filas del source.
-* Para usar tablas Distributed para representar un modelo, debe crear manualmente las tablas replicadas subyacentes en cada nodo. La tabla Distributed puede, a su vez, crearse sobre ellas. El adaptador no gestiona la creación del cluster.
+* Para usar tablas distribuidas para representar un modelo, debe crear manualmente las tablas replicadas subyacentes en cada nodo. La tabla distribuida puede, a su vez, crearse sobre ellas. El adaptador no gestiona la creación del clúster.
 * Cuando dbt crea una relación (table/view) en una database, normalmente la crea como: `{{ database }}.{{ schema }}.{{ table/view id }}`. ClickHouse no tiene el concepto de esquemas. Por lo tanto, el adaptador usa `{{schema}}.{{ table/view id }}`, donde `schema` es la database de ClickHouse.
 * Los modelos efímeros/CTE no funcionan si se colocan antes de `INSERT INTO` en una sentencia insert de ClickHouse; consulte https://github.com/ClickHouse/ClickHouse/issues/30323. Esto no debería afectar a la mayoría de los modelos, pero debe prestarse atención a dónde se coloca un modelo efímero en las definiciones de modelos y otras sentencias SQL. {/* TODO revisar esta limitación, parece que el issue ya se cerró y la corrección se introdujo en la 24.10 */}
 

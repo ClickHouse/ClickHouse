@@ -58,7 +58,9 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
-     {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
+     {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH},
+     {"ie_join",              JoinAlgorithm::IE_JOIN}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
@@ -123,7 +125,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+    {{"kusto",   FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
 IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -153,7 +155,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DA
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64},
      {"date2Date32", MySQLDataTypesSupport::DATE2DATE32},
-     {"date2String", MySQLDataTypesSupport::DATE2STRING}})
+     {"date2String", MySQLDataTypesSupport::DATE2STRING},
+     {"geometry",    MySQLDataTypesSupport::GEOMETRY}})
 
 IMPLEMENT_SETTING_ENUM(SetOperationMode, ErrorCodes::UNKNOWN_UNION,
     {{"",         SetOperationMode::Unspecified},
@@ -179,6 +182,10 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(SnappyMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"basic",  SnappyMode::Basic},
+     {"framed", SnappyMode::Framed}})
+
 IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
     {{"async",          TransactionsWaitCSNMode::ASYNC},
      {"wait",           TransactionsWaitCSNMode::WAIT},
@@ -201,7 +208,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
      {"promql", Dialect::promql},
-     {"polyglot", Dialect::polyglot}})
+     {"polyglot", Dialect::polyglot},
+     {"clickhouse_json", Dialect::clickhouse_json}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -232,6 +240,10 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"throw", DeduplicateMergeProjectionMode::THROW},
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
+
+IMPLEMENT_SETTING_ENUM(UniqueKeyProbeImplementation, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", UniqueKeyProbeImplementation::Auto},
+     {"simple", UniqueKeyProbeImplementation::Simple}})
 
 IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", AlterColumnSecondaryIndexMode::THROW},
@@ -334,6 +346,13 @@ IMPLEMENT_SETTING_ENUM(
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 
 IMPLEMENT_SETTING_ENUM(
+    AsynchronousMetricsKeyValuesMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"key_values", AsynchronousMetricsKeyValuesMode::KeyValues},
+     {"legacy_names", AsynchronousMetricsKeyValuesMode::LegacyNames},
+     {"both", AsynchronousMetricsKeyValuesMode::Both}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
@@ -365,6 +384,8 @@ IMPLEMENT_SETTING_ENUM(
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
+     {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
@@ -452,6 +473,12 @@ IMPLEMENT_SETTING_ENUM(
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreePatchPartsVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreePatchPartsVersion::V1},
+     {"v2", MergeTreePatchPartsVersion::V2}})
+
+IMPLEMENT_SETTING_ENUM(
     SearchOrphanedPartsDisks,
     ErrorCodes::BAD_ARGUMENTS,
     {{"any", SearchOrphanedPartsDisks::ANY},
@@ -465,10 +492,23 @@ IMPLEMENT_SETTING_ENUM(
      {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreeTextIndexSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v0_initial", MergeTreeTextIndexSerializationVersion::V0_Initial},
+     {"v1_with_codec", MergeTreeTextIndexSerializationVersion::V1_WithCodec},
+     {"v2_with_positions", MergeTreeTextIndexSerializationVersion::V2_WithPositions}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,
     ErrorCodes::BAD_ARGUMENTS,
     {{"partition_key_only", MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY},
      {"with_block_number_offset", MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeCoordinatorDistributionAlgorithm,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"water_filling", MergeCoordinatorDistributionAlgorithm::WATER_FILLING},
+     {"sainte_lague", MergeCoordinatorDistributionAlgorithm::SAINTE_LAGUE}})
 
 IMPLEMENT_SETTING_ENUM(
     DecorrelationJoinKind,

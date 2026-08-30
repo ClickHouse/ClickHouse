@@ -7,7 +7,7 @@ title: 'التجسيدات'
 doc_type: 'guide'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -202,7 +202,16 @@ models:
   ### الإسقاطات
 </div>
 
-يمكنك إضافة [الإسقاطات](/ar/concepts/features/projections/projections) إلى نمطي الـ التجسيد `table` و`distributed_table` باستخدام إعداد `projections`:
+يمكنك إضافة [الإسقاطات](/ar/concepts/features/projections/projections) إلى نمطي الـ التجسيد `table` و`distributed_table` باستخدام إعداد `projections`. يتطلب كل إدخال إسقاط مفتاح `query` أو `index`، وليس كليهما.
+
+**ملاحظة**: بالنسبة إلى الجداول الموزعة، يُطبَّق الإسقاط على الجداول `_local`، لا على جدول الوكيل الموزَّع.
+**ملاحظة**: يؤدي تحديد كل من `query` و`index` في إدخال الإسقاط نفسه إلى ظهور خطأ في وقت الترجمة البرمجية.
+
+<div id="query-projections">
+  #### إسقاطات الاستعلامات
+</div>
+
+استخدم `query` لتعريف استعلام إسقاط كامل:
 
 ```sql
 {{ config(
@@ -216,7 +225,42 @@ models:
 ) }}
 ```
 
-**ملاحظة**: بالنسبة إلى الجداول الموزعة، يُطبَّق الإسقاط على الجداول `_local`، لا على جدول الوكيل الموزَّع.
+<div id="index-projections">
+  #### إسقاطات الفهارس
+</div>
+
+استخدم `index` كاختصار نحوي لإسقاطات [الفهارس](https://clickhouse.com/blog/clickhouse-release-25-06#index-projections) خفيفة الوزن التي تستخدم العمود الافتراضي `_part_offset`. مرّر اسم عمود واحد أو قائمة أعمدة للترتيب وفقًا لها:
+
+```sql
+{{ config(
+       materialized='table',
+       projections=[
+           {
+               'name': 'proj_by_age',
+               'index': 'age'
+           }
+       ]
+) }}
+```
+
+```sql
+{{ config(
+       materialized='table',
+       projections=[
+           {
+               'name': 'proj_by_dept_age',
+               'index': ['department', 'age']
+           }
+       ]
+) }}
+```
+
+ينشئ dbt-clickhouse تلقائيًا عبارات DDL المناسبة لكل إصدار:
+
+| إصدار ClickHouse | SQL المُنشأ                                                     |
+| ---------------- | --------------------------------------------------------------- |
+| 26.1+            | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
+| 25.8 – 26.0      | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
 
 <div id="materialization-incremental">
   ## التجسيد: incremental

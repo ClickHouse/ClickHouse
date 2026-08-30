@@ -12,8 +12,11 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/ErrorCodes.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
@@ -27,9 +30,11 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
+#include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
@@ -51,7 +56,9 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/getMappedArea.h>
+#include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -62,6 +69,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/createServer.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
@@ -100,6 +108,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
+#include <Parsers/registerStatements.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
@@ -131,6 +140,7 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/KeeperHTTPHandlerFactory.h>
@@ -142,6 +152,7 @@
 
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
+#include <Common/JemallocMergeTreeArena.h>
 
 #include "config.h"
 #include <Common/config_version.h>
@@ -237,11 +248,13 @@ namespace ServerSetting
     extern const ServerSettingsBool concurrent_threads_lazy_allocation;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
-    extern const ServerSettingsBool message_queue_disable_insertion;
+    extern const ServerSettingsBool enable_read_through_distributed_cache;
+    extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -254,6 +267,7 @@ namespace ServerSetting
     extern const ServerSettingsInt32 dns_cache_update_period;
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
+    extern const ServerSettingsBool enable_silk_runtime;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -288,6 +302,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString paimon_metadata_files_cache_policy;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_size;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_max_entries;
+    extern const ServerSettingsDouble paimon_metadata_files_cache_size_ratio;
     extern const ServerSettingsString parquet_metadata_cache_policy;
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
@@ -426,6 +444,7 @@ namespace ServerSetting
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsBool abort_on_logical_error;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
+    extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_on_memory_exceeded_interval;
     extern const ServerSettingsString allowed_disks_for_table_engines;
@@ -433,7 +452,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_open_files;
     extern const ServerSettingsString path;
     extern const ServerSettingsString user_files_path;
-    extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
     extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
@@ -572,6 +590,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -650,6 +669,21 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
     return getListenHosts(config);
 }
 
+bool isIntrospectionProtocol(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    return config.getBool("protocols." + protocol + ".introspection", false);
+}
+
+bool hasIntrospectionProtocols(const Poco::Util::AbstractConfiguration & config)
+{
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+    return std::any_of(protocols.begin(), protocols.end(), [&](const auto & protocol)
+    {
+        return isIntrospectionProtocol(config, protocol);
+    });
+}
+
 bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
 {
     bool listen_try = server_settings[ServerSetting::listen_try];
@@ -667,6 +701,30 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config, const Server
     return listen_try;
 }
 
+#if USE_GRPC || USE_ARROWFLIGHT
+bool isWildcardListenHost(const std::string & listen_host)
+{
+    Poco::Net::IPAddress address;
+    return Poco::Net::IPAddress::tryParse(listen_host, address) && address.isWildcard();
+}
+
+/// gRPC treats `::` and `0.0.0.0` as one family-agnostic wildcard: for either of them it binds a
+/// dual-stack `::` socket and falls back to `0.0.0.0` only on a host without IPv6 (see
+/// `add_wildcard_addrs_to_server` in `contrib/grpc`). A wildcard listener therefore overlaps every
+/// listener on that port, not only another wildcard listener. Normalize the gRPC-based listeners to
+/// the first wildcard address so a configuration such as `127.0.0.1`, `0.0.0.0`, `::1` creates one
+/// listener instead of creating overlapping sockets. This applies independently to each gRPC-based
+/// port because all such ports use the same `listen_host` configuration.
+Strings getGRPCListenHosts(const Strings & listen_hosts)
+{
+    const auto wildcard_it = std::ranges::find_if(listen_hosts, isWildcardListenHost);
+    if (wildcard_it == listen_hosts.end())
+        return listen_hosts;
+
+    return {*wildcard_it};
+}
+#endif
+
 }
 
 
@@ -679,7 +737,8 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
-    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger()))
+    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger())
+        && (start_server || !servers.back().bindsOnStart()))
     {
         /// Register the configured port rather than the actual bound port. `getServerPort` keeps a
         /// single value per `port_name`, so with `tcp_port=0` (OS-assigned) and several `listen_host`
@@ -855,6 +914,21 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
+    if (!PerCPU::haveRSeq())
+        server.context()->addOrUpdateWarningMessage(
+            Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
+            PreformattedMessage::create(
+                "The Linux 'restartable sequences' (rseq) feature is not enabled for this process. "
+                "ClickHouse uses it to cheaply detect which CPU core a thread is running on, which keeps "
+                "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
+                "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
+                "making these counters more expensive and slightly degrading performance. "
+                "This means the runtime C library or the kernel did not register a usable rseq area for this process. "
+                "Possible causes: the kernel does not support rseq (it was introduced in Linux 4.18); "
+                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help; "
+                "other libraries, such as musl, do not register it); "
+                "or registration was disabled or failed at startup (with glibc, see the 'glibc.pthread.rseq' tunable)."));
+
     try
     {
         const char * filename = "/proc/sys/vm/overcommit_memory";
@@ -870,7 +944,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readLine(filename).find("[always]") != std::string::npos)
+        if (readLine(filename).contains("[always]"))
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
@@ -1179,6 +1253,14 @@ void initializeAzureSDKLogger(
 
 }
 
+namespace
+{
+/// Defined next to `resolveHTTPHandlersKey` below, which they walk the `impl` chain with; declared here
+/// because the configuration reload callback of `Server::main` validates a configuration with them.
+Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config);
+bool hasPrometheusListener(const Poco::Util::AbstractConfiguration & config);
+}
+
 #if defined(SANITIZER)
 namespace
 {
@@ -1278,8 +1360,88 @@ try
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
-        size_t size = remapExecutable();
-        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
+        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
+        /// the window faults (and the signal handler's code is unmapped too, so it dies silently).
+        ///
+        /// Restart the async logging threads even if remapExecutable throws, so the exception unwinding
+        /// through Server::main is logged by a fully running logger (a stopped channel falls back to
+        /// synchronous delivery, but anything already queued waits until the threads run again).
+        /// The remap exception is stashed rather than rethrown directly, so the restart happens outside the
+        /// signal-blocking scope: the mask is restored first, and the logging threads get the same mask as
+        /// during a normal startup.
+        std::exception_ptr remap_exception;
+        size_t remapped_size = 0;
+#if USE_JEMALLOC
+        bool jemalloc_background_threads_were_enabled = false;
+#endif
+        {
+            /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
+            /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
+            /// thread first, so that no new record can be queued into the signal pipe from here on. Nothing is
+            /// lost: the signal stays pending for the process and is delivered once the mask is restored below.
+            BlockSignalsScope block_signals(asynchronousHandledSignals());
+
+#if USE_JEMALLOC
+            /// `Jemalloc::setup` in `BaseDaemon::initialize` has already started jemalloc background threads
+            /// (`jemalloc_enable_background_threads` defaults to true). They execute allocator code from the text
+            /// segment, and they were created with an unblocked signal mask, so they could also take a handled
+            /// signal inside the remap window. Writing `false` into the `background_thread` mallctl stops *and
+            /// joins* every background thread before returning, so after this call they are fully quiesced.
+            /// They are restarted below, after the remap. `max_background_threads` is a separate mallctl and is
+            /// left untouched, so re-enabling restores the configured limit.
+            if (Jemalloc::tryGetValue("background_thread", jemalloc_background_threads_were_enabled)
+                && jemalloc_background_threads_were_enabled)
+                Jemalloc::setBackgroundThreads(false);
+#endif
+
+            /// Blocking the signals is not enough by itself: a signal that arrived just before the mask was set
+            /// may already have written a record into the signal pipe, and the listener thread would execute the
+            /// corresponding callback at an arbitrary later moment - possibly inside the remap window. Stop and
+            /// join the listener thread: it drains every record already queued (they are ordered in the pipe
+            /// before the stop request) while the code is still mapped, and then exits. It is restarted below.
+            stopSignalListener();
+
+            /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
+            /// This fails closed: if any logging thread cannot be joined, the exception propagates and the remap
+            /// is aborted, instead of rewriting the text segment under a thread that may still execute from it.
+            stopAsyncLoggingThreads();
+
+            /// At this point the process is single-threaded again and all handled signals are blocked,
+            /// so no code other than this thread can possibly run while the text segment is rewritten.
+            try
+            {
+                remapped_size = remapExecutable();
+            }
+            catch (...)
+            {
+                remap_exception = std::current_exception();
+            }
+        }
+
+#if USE_JEMALLOC
+        /// Restarted outside the signal-blocking scope, so the new background threads inherit the same
+        /// (unblocked) signal mask they had before the remap. Restarted even if remapExecutable threw,
+        /// for the same reason the logging threads are: the allocator must be back in its configured
+        /// state while the exception unwinds. `verifySetup` below cross-checks the state against the
+        /// server settings, so a failure to restore would not go unnoticed.
+        if (jemalloc_background_threads_were_enabled)
+            Jemalloc::setBackgroundThreads(true);
+#endif
+
+        /// Fail closed if the restart itself throws: continuing with only part of the logging threads
+        /// running would keep accepting messages into queues that no consumer drains. open() tears the
+        /// partially opened channel back down before rethrowing, and a stopped channel delivers messages
+        /// synchronously, so the exception propagating out of Server::main still reaches the log.
+        startAsyncLoggingThreads();
+
+        /// Restarted after the logging threads, so that if this throws, the exception is still logged normally.
+        /// A pending signal delivered when the mask was restored above only writes a record into the signal
+        /// pipe; the record waits there until the restarted listener thread picks it up, so it is not lost.
+        startSignalListener();
+
+        if (remap_exception)
+            std::rethrow_exception(remap_exception);
+        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
     }
 
     if (server_settings[ServerSetting::mlock_executable])
@@ -1404,6 +1566,7 @@ try
 #endif
 
     registerInterpreters();
+    registerStatements();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -1469,10 +1632,11 @@ try
     bool has_trace_collector = config().has("trace_log");
     LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
 #else
-    bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
-    if (!hasPHDRCache())
-        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
-            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+    bool has_trace_collector = hasAsyncSignalSafeUnwind() && config().has("trace_log");
+    if (!hasAsyncSignalSafeUnwind())
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because async-signal-safe stack unwinding"
+            " is not available in this build (on Linux this requires the lock-free PHDR cache, otherwise"
+            " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 #endif
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
@@ -1504,6 +1668,13 @@ try
         server_settings[ServerSetting::thread_pool_queue_size],
         has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
         has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
+
+#if USE_SILK
+    if (server_settings[ServerSetting::enable_silk_runtime])
+    {
+        Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
+    }
+#endif
 
     if (has_trace_collector)
     {
@@ -1538,10 +1709,22 @@ try
         server_settings[ServerSetting::global_profiler_real_time_period_ns],
         server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
+    std::unique_ptr<Poco::ThreadPool> introspection_server_pool;
+
     std::mutex servers_lock;
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+    std::vector<ProtocolServerAdapter> introspection_servers;
 
+    auto stop_silk_fiber_scheduler = [&]{
+#if USE_SILK
+        if (server_settings[ServerSetting::enable_silk_runtime])
+        {
+            LOG_INFO(log, "Stopping silk fiber scheduler");
+            Silk::destroyFiberScheduler();
+        }
+#endif
+    };
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT_SAFE({
         Stopwatch watch;
@@ -1549,6 +1732,8 @@ try
         DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
+
+        stop_silk_fiber_scheduler();
     });
 
     if (page_cache_max_size != 0)
@@ -1587,12 +1772,15 @@ try
         std::vector<ProtocolServerMetrics> metrics;
 
         std::lock_guard lock(servers_lock);
-        metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+        metrics.reserve(servers_to_start_before_tables.size() + servers.size() + introspection_servers.size());
 
         for (const auto & server : servers_to_start_before_tables)
             metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
 
         for (const auto & server : servers)
+            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+
+        for (const auto & server : introspection_servers)
             metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
         return metrics;
     };
@@ -1629,6 +1817,20 @@ try
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
+        /// Required for the startup exception case where the termination block that should set is_cancelled=true never runs.
+        is_cancelled = true;
+
+        /// Stop accepting connections on the regular servers. In the normal shutdown path they are
+        /// already stopped, but on startup failure some of them can still be running: the Prometheus
+        /// endpoint is started before tables are loaded. Otherwise `server_pool.joinAll()` below
+        /// would wait forever for their listener threads.
+        {
+            std::lock_guard lock(servers_lock);
+            for (auto & server : servers)
+                if (!server.isStopping())
+                    server.stop();
+        }
+
         async_metrics->stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1759,6 +1961,15 @@ try
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
+    /// Zero means the number of CPU cores.
+    const size_t shutdown_concurrency = server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        ? server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        : getNumberOfCPUCoresToUse();
+    getDatabaseCatalogShutdownTablesThreadPool().initialize(
+        shutdown_concurrency,
+        0, // Threads are only needed during server shutdown.
+        shutdown_concurrency);
+
     getMergeTreePrefixesDeserializationThreadPool().initialize(
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
@@ -1809,11 +2020,34 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+    /// Validate the loaded XML config directly (not the layered config) so that command-line
+    /// options injected by `argsToConfig` (`--config-file`, `--daemon`, `-C`, ...) and Poco-internal
+    /// layers (`system`, `application`) are not mistaken for unknown top-level config keys.
+    /// The `skip_check_for_incorrect_settings` escape hatch is resolved from the layered `config()`,
+    /// so it works when supplied from the command line as well as from the config file.
+    ServerSettings::checkUnknownSettings(
+        *loaded_config.configuration, config_path, config().getBool("skip_check_for_incorrect_settings", false));
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
     validate_insert_deduplication_version(server_settings);
     global_context->configureServerWideThrottling();
+
+    /// Create the dedicated MergeTree metadata arena pool. Placed after the ZooKeeper-include reload
+    /// above so a `from_zk` value of the setting is honored, and still well before any parts are loaded.
+    JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
+    const size_t created_arenas = JemallocMergeTreeArena::getArenaIndices().size();
+    const size_t intended_arenas = JemallocMergeTreeArena::getIntendedArenaCount();
+    if (created_arenas < intended_arenas)
+    {
+        global_context->addOrUpdateWarningMessage(
+            Context::WarningType::MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
+            PreformattedMessage::create(
+                "Could only create {} of the {} requested dedicated jemalloc arena(s) for MergeTree metadata; {}.",
+                created_arenas, intended_arenas,
+                created_arenas > 0 ? "the pool runs with the created arenas"
+                                   : "MergeTree metadata falls back to the default arenas"));
+    }
 
 #if defined(OS_LINUX)
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
@@ -1929,7 +2163,7 @@ try
 
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
-        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
+        auto cancellation_task_holder = global_context->getSchedulePool()->createTask(
             StorageID::createEmpty(), "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
@@ -2028,13 +2262,6 @@ try
             ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
-    }
-
-    {
-        const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
-        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
-            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
-        global_context->setDictionariesLibPath(dictionaries_lib_path);
     }
 
     {
@@ -2326,6 +2553,17 @@ try
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+
+    String paimon_metadata_files_cache_policy = server_settings[ServerSetting::paimon_metadata_files_cache_policy];
+    size_t paimon_metadata_files_cache_size = server_settings[ServerSetting::paimon_metadata_files_cache_size];
+    size_t paimon_metadata_files_cache_max_entries = server_settings[ServerSetting::paimon_metadata_files_cache_max_entries];
+    double paimon_metadata_files_cache_size_ratio = server_settings[ServerSetting::paimon_metadata_files_cache_size_ratio];
+    if (paimon_metadata_files_cache_size > max_cache_size)
+    {
+        paimon_metadata_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(paimon_metadata_files_cache_size));
+    }
+    global_context->setPaimonMetadataFilesCache(paimon_metadata_files_cache_policy, paimon_metadata_files_cache_size, paimon_metadata_files_cache_max_entries, paimon_metadata_files_cache_size_ratio);
 #endif
 #if USE_PARQUET
     String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
@@ -2390,6 +2628,7 @@ try
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
+    SQLDefinedHandlersFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// Initialize main config reloader.
@@ -2461,6 +2700,22 @@ try
         dns_cache_updater->start();
     }
 
+    /// Whether `--skip_check_for_incorrect_settings=1` was passed on the *command line*, captured
+    /// independently of any config file layer. Reusing the layered `config()` here would conflate
+    /// the command-line value with whatever the *previously loaded* file set: a config that once
+    /// contained `<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>` would
+    /// leave that flag live in `config()`, so a reload that *removes* the flag while adding an
+    /// unknown key would still be skipped — diverging from a fresh startup with the same file,
+    /// which would reject it. Re-parsing `argv()` with `argsToConfig` (exactly as `BaseDaemon`
+    /// populates the command-line layer) reproduces the command-line-only view; the priority is
+    /// irrelevant because the throwaway config has a single layer.
+    bool command_line_skip_check = false;
+    {
+        Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line_config(new Poco::Util::LayeredConfiguration);
+        argsToConfig(argv(), *command_line_config, PRIO_DEFAULT);
+        command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2469,6 +2724,20 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
+            /// Validate the new config BEFORE installing it into the global layered config, so a
+            /// failed reload does not leave `config()` partially mutated with unvalidated changes.
+            /// The escape hatch is honored when it is either passed on the command line (persisted
+            /// across reloads) or present in the *new* file being validated — never inherited from
+            /// the previously loaded file layer (see `command_line_skip_check` above). This matches
+            /// startup: validating the same file fresh must reach the same accept/reject decision.
+            const bool skip_check
+                = command_line_skip_check || loaded_config->getBool("skip_check_for_incorrect_settings", false);
+            if (!skip_check)
+                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
+            /// Same as on initial load: validate the reloaded XML config rather than the layered
+            /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
+            ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
+
             /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
             /// Validate the incoming config BEFORE config().replace below: validating after would mutate
             /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
@@ -2479,9 +2748,18 @@ try
                 validate_insert_deduplication_version(incoming_server_settings);
             }
 
-            config().replace("default", loaded_config, PRIO_DEFAULT, true);
+            /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
+            /// itself. `asynchronous_metrics_key_values_mode` takes part in this check, because it decides
+            /// whether the key of a key-value asynchronous metric is written as a label (`device="sda"`),
+            /// so the same set of constant labels can be unambiguous under one form and not under another.
+            /// Validate the incoming config BEFORE config().replace below, for the same reason as above:
+            /// the form is read from the live configuration on every update of the asynchronous metrics,
+            /// so validating afterwards would leave a rejected reload publishing the new form while the
+            /// endpoints keep serving with the labels of the old one.
+            validatePrometheusConstantLabels(
+                *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
 
-            Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+            config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
@@ -2617,7 +2895,8 @@ try
                     : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
-            global_context->setMessageQueueDisableInsertion(new_server_settings[ServerSetting::message_queue_disable_insertion]);
+            global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
+            global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -2696,11 +2975,11 @@ try
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
-            global_context->getSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
-            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
-            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
-            global_context->getStreamingSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
+            global_context->getBufferFlushSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
+            global_context->getSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
+            global_context->getMessageBrokerSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
+            global_context->getDistributedSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
+            global_context->getStreamingSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
 
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings[ServerSetting::tables_loader_foreground_pool_size]);
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);
@@ -2813,6 +3092,7 @@ try
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
                 global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updatePaimonMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
 #if USE_PARQUET
                 global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -2975,66 +3255,76 @@ try
 
             /// HTTP control endpoints
             port_name = "keeper_server.http_control.port";
-            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-            servers_to_start_before_tables,
-            [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config().getString(port_name, "").empty())
             {
-                auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
+                auto handler_factory = createKeeperHTTPHandlerFactory(
+                    *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory");
+                createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    auto http_context = httpContext();
+                    Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
+                    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+                    http_params->setTimeout(http_context->getReceiveTimeout());
+                    http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(http_context->getReceiveTimeout());
-                socket.setSendTimeout(http_context->getSendTimeout());
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "HTTP Control: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(http_context),
-                        createKeeperHTTPHandlerFactory(
-                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-            });
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(http_context->getReceiveTimeout());
+                    socket.setSendTimeout(http_context->getSendTimeout());
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "HTTP Control: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::move(http_context),
+                            handler_factory,
+                            server_pool,
+                            socket,
+                            http_params));
+                });
+            }
 
             /// HTTPS control endpoints
             port_name = "keeper_server.http_control.secure_port";
-            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-            servers_to_start_before_tables,
-            [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config().getString(port_name, "").empty())
             {
 #if USE_SSL
-                auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
-
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(http_context->getReceiveTimeout());
-                socket.setSendTimeout(http_context->getSendTimeout());
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "HTTPS Control: https://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(http_context),
-                        createKeeperHTTPHandlerFactory(
-                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-#else
-                UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+                auto handler_factory = createKeeperHTTPHandlerFactory(
+                    *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory");
 #endif
-            });
+                createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSL
+                    auto http_context = httpContext();
+                    Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
+                    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+                    http_params->setTimeout(http_context->getReceiveTimeout());
+                    http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                    socket.setReceiveTimeout(http_context->getReceiveTimeout());
+                    socket.setSendTimeout(http_context->getSendTimeout());
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "HTTPS Control: https://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::move(http_context),
+                            handler_factory,
+                            server_pool,
+                            socket,
+                            http_params));
+#else
+                    UNUSED(port);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+                });
+            }
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
@@ -3074,10 +3364,11 @@ try
 
     {
         std::lock_guard lock(servers_lock);
-        for (auto & server : servers_to_start_before_tables)
+        startServers(servers_to_start_before_tables, listen_try, log);
+        for (const auto & server : servers_to_start_before_tables)
         {
-            server.start();
-            LOG_INFO(log, "Listening for {}", server.getDescription());
+            if (server.bindsOnStart())
+                global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
         }
     }
 
@@ -3138,6 +3429,17 @@ try
         throw;
     }
 
+    auto disable_config_reload_callbacks = [&]
+    {
+        global_context->setConfigReloadCallback([]
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cannot reload config because the server is shutting down");
+        });
+        if (cgroups_memory_usage_observer)
+            cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([] {});
+    };
+    SCOPE_EXIT({ disable_config_reload_callbacks(); });
+
     if (cgroups_memory_usage_observer)
     {
         cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
@@ -3160,11 +3462,19 @@ try
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
         std::lock_guard lock(servers_lock);
+        /// Introspection server can run SYSTEM START LISTEN before other servers' startup or after other servers' shutdown.
+        /// In either case, we need to return an error.
+        if (is_cancelled || !global_context->isServerCompletelyStarted())
+            throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
+        /// The config may have been reloaded since startup, so recompute the listener
+        /// configuration from the current config instead of the startup snapshot.
+        ServerSettings current_server_settings;
+        current_server_settings.loadSettingsFromConfig(config());
         createServers(
             config(),
-            server_settings,
-            listen_hosts,
-            listen_try,
+            current_server_settings,
+            getListenHosts(config()),
+            getListenTry(config(), current_server_settings),
             server_pool,
             *async_metrics,
             servers,
@@ -3217,10 +3527,21 @@ try
     {
         /// All settings can be changed in the global config
         bool allowed_experimental = true;
+        bool allowed_private_preview = true;
         bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(
+            background_pool_tasks,
+            allowed_experimental,
+            allowed_private_preview,
+            allowed_beta,
+            global_context->wasBackgroundPoolAutoLowered());
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(
+            background_pool_tasks,
+            allowed_experimental,
+            allowed_private_preview,
+            allowed_beta,
+            global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -3233,6 +3554,40 @@ try
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
+
+    /// Start collecting asynchronous metrics before loading tables, so that the Prometheus endpoint
+    /// (started below) exposes meaningful values during the potentially long metadata loading phase.
+    /// This includes the OS/jemalloc metrics and the per-table metrics such as
+    /// `TotalIndexGranularityBytesInMemoryAllocated`, which let one observe memory growth as tables
+    /// are loaded. The metric computation skips not-yet-loaded tables (just like with
+    /// `async_load_databases`), and writing to `system.asynchronous_metric_log` is skipped until the
+    /// system logs are initialized below. The asynchronous metrics thread reads the `servers` lists
+    /// under `servers_lock`, so it is safe to start before the main `servers` exist.
+    async_metrics->start();
+    global_context->setAsynchronousMetrics(async_metrics.get());
+
+    /// Start the Prometheus endpoint before loading tables, so that metrics stay observable during
+    /// the potentially long metadata loading phase. Only do it for metrics-only configurations:
+    /// custom `prometheus.handlers` may serve queries (`remote_write`, `remote_read`, `query`,
+    /// `api_v1`) and must follow the regular `servers` lifecycle. The server is created in the
+    /// regular `servers` list, so runtime reconfiguration and `SYSTEM START/STOP LISTEN` handle it
+    /// as usual. The later `createServers` call skips it (`createServer` does not recreate a live
+    /// server), and the start loop for `servers` skips it too (`ProtocolServerAdapter::start` does
+    /// nothing for an already started server).
+    if (!config().has("prometheus.handlers"))
+    {
+        std::lock_guard lock(servers_lock);
+        createServers(
+            config(),
+            server_settings,
+            listen_hosts,
+            listen_try,
+            server_pool,
+            *async_metrics,
+            servers,
+            /* start_servers= */ true,
+            ServerType(ServerType::Type::PROMETHEUS));
+    }
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
@@ -3248,6 +3603,72 @@ try
         // Waits for all currently running jobs to finish and do not run any other pending jobs.
         global_context->getAsyncLoader().shutdown();
     );
+
+    /// The introspection servers accept TCP connections while the server is otherwise unreachable:
+    /// before attaching and after detaching of tables.
+    if (hasIntrospectionProtocols(config()))
+    {
+        global_context->setStopIntrospectionServersCallback([&]
+        {
+            if (introspection_servers.empty())
+                return;
+
+            LOG_DEBUG(log, "Waiting for current connections to introspection servers to finish.");
+            size_t current_connections = 0;
+            {
+                std::lock_guard lock(servers_lock);
+                for (auto & server : introspection_servers)
+                {
+                    server.stop();
+                    current_connections += server.currentConnections();
+                }
+            }
+
+            if (current_connections)
+                LOG_INFO(log, "Closed all introspection listening sockets. Waiting for {} outstanding connections.", current_connections);
+            else
+                LOG_INFO(log, "Closed all introspection listening sockets.");
+
+            global_context->getProcessList().killAllQueries();
+
+            if (current_connections)
+                current_connections = waitServersToFinish(
+                    introspection_servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
+
+            if (current_connections)
+            {
+                dumpCoverageReportIfPossible();
+                LOG_WARNING(log, "Closed connections to introspection servers. But {} remain. Will shutdown forcefully.", current_connections);
+                /// No leak check: remaining connection handlers still own memory it would report as
+                /// leaked. Reported, because here stderr is the server log.
+                safeExit(0, LeakCheck::SkipAndReport);
+            }
+
+            LOG_INFO(log, "Closed connections to introspection servers.");
+            introspection_server_pool->joinAll();
+        });
+
+        introspection_server_pool = std::make_unique<Poco::ThreadPool>(
+            /* minCapacity */ 1,
+            /* maxCapacity */ server_settings[ServerSetting::max_connections],
+            /* idleTime */ 60,
+            /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
+            server_settings[ServerSetting::global_profiler_real_time_period_ns],
+            server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
+
+        std::lock_guard lock(servers_lock);
+        createServers(
+            config(),
+            server_settings,
+            listen_hosts,
+            listen_try,
+            *introspection_server_pool,
+            *async_metrics,
+            introspection_servers,
+            /* start_servers= */ true,
+            ServerType(ServerType::Type::QUERIES_ALL),
+            /* only_introspection_protocols= */ true);
+    }
 
     try
     {
@@ -3373,10 +3794,6 @@ try
         CertificateReloader::instance().tryLoadClient(config());
 #endif
 
-        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-        async_metrics->start();
-        global_context->setAsynchronousMetrics(async_metrics.get());
-
         main_config_reloader->start();
         access_control.startPeriodicReloading();
 
@@ -3494,6 +3911,7 @@ try
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
+            disable_config_reload_callbacks();
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
 
@@ -3513,6 +3931,7 @@ try
                 }
             }
 
+            global_context->getBackgroundQueryPool().finish();
             global_context->getRefreshSet().setRefreshesStopped(true);
 
             if (current_connections)
@@ -3536,21 +3955,26 @@ try
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
+            auto shutdown_deadline = wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000);
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
-                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>300</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
 
-            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
+            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(shutdown_deadline);
+            bool joined_background_queries = global_context->getBackgroundQueryPool().waitUntil(shutdown_deadline);
+
+            if (!joined_background_queries)
+                LOG_WARNING(log, "{} background queries remain.", global_context->getBackgroundQueryPool().active());
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks)
+            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
@@ -3560,7 +3984,9 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                safeExit(0);
+                /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
+                /// it would report as leaked. Reported, because here stderr is the server log.
+                safeExit(0, LeakCheck::SkipAndReport);
             }
         });
 
@@ -3597,11 +4023,15 @@ try
                 }
             }
 
-            for (auto & server : servers)
+            startServers(servers, listen_try, log);
+            for (const auto & server : servers)
             {
-                server.start();
-                LOG_INFO(log, "Listening for {}", server.getDescription());
+                if (server.bindsOnStart())
+                    global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
             }
+            if (servers.empty())
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                    "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
 
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
@@ -3648,6 +4078,153 @@ catch (...)
     return static_cast<UInt8>(code) ? code : -1;
 }
 
+namespace
+{
+
+/// Walk a composable protocol's `impl` chain and return the effective `default_session_user`:
+/// the value closest to the endpoint wins. Used both when the protocol stack is built and when it is
+/// decided whether a configuration reload has to restart the endpoint.
+/// Returns an empty optional if no module in the chain sets it (the handlers then fall back to the
+/// `default_session_user` server setting).
+std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    std::string conf_name = protocol;
+    std::string prefix = protocol + ".";
+    std::unordered_set<std::string> pset {conf_name};
+    while (true)
+    {
+        if (config.has(prefix + "default_session_user"))
+            return config.getString(prefix + "default_session_user");
+
+        if (!config.has(prefix + "impl"))
+            return {};
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+        if (!pset.insert(conf_name).second)
+            return {};
+    }
+}
+
+/// Resolve the `http_handlers`-style section a composable `http` endpoint serves: the
+/// `handlers` key of the module carrying `type = http`, found by walking the `impl` chain
+/// (mirrors `buildProtocolStackFromConfig`). Returns an empty optional when the chain does
+/// not reach an `http` module in this configuration (e.g. the endpoint did not exist or had
+/// a different type before a reload).
+std::optional<String> resolveHTTPHandlersKey(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    std::string conf_name = protocol;
+    std::string prefix = protocol + ".";
+    std::unordered_set<std::string> pset {conf_name};
+    while (true)
+    {
+        if (config.getString(prefix + "type", "") == "http")
+            return config.getString(conf_name + ".handlers", "http_handlers");
+
+        if (!config.has(prefix + "impl"))
+            return {};
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+        if (!pset.insert(conf_name).second)
+            return {};
+    }
+}
+
+/// The `<http_handlers>`-style sections the HTTP listeners of a configuration serve: the default
+/// `http_handlers` for `http_port` and `https_port`, and the section each composable `http` endpoint
+/// references. A section no listener serves is left out, so that validating a configuration accepts
+/// exactly what starting the server with it would.
+Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config)
+{
+    std::unordered_set<String> keys;
+
+    if (config.has("http_port") || config.has("https_port"))
+        keys.insert("http_handlers");
+
+    if (config.has("protocols"))
+    {
+        Poco::Util::AbstractConfiguration::Keys protocols;
+        config.keys("protocols", protocols);
+        for (const auto & protocol : protocols)
+        {
+            if (auto handlers_key = resolveHTTPHandlersKey(config, "protocols." + protocol))
+                keys.insert(*handlers_key);
+        }
+    }
+
+    return {keys.begin(), keys.end()};
+}
+
+/// Whether a listener of this configuration serves the `prometheus` section on a port of its own: the
+/// standalone `prometheus.port` listener, or a composable `type = prometheus` endpoint (whose type is
+/// found by walking the `impl` chain, as in `buildProtocolStackFromConfig`).
+bool hasPrometheusListener(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.getInt("prometheus.port", 0))
+        return true;
+
+    if (!config.has("protocols"))
+        return false;
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+
+    for (const auto & protocol : protocols)
+    {
+        std::string conf_name = "protocols." + protocol;
+        std::string prefix = conf_name + ".";
+        std::unordered_set<std::string> pset {conf_name};
+        while (true)
+        {
+            if (config.getString(prefix + "type", "") == "prometheus")
+                return true;
+
+            if (!config.has(prefix + "impl"))
+                break;
+
+            conf_name = "protocols." + config.getString(prefix + "impl");
+            prefix = conf_name + ".";
+
+            /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+            if (!pset.insert(conf_name).second)
+                break;
+        }
+    }
+
+    return false;
+}
+
+/// Whether a non-keeper `prometheus` endpoint (serving the global `prometheus` section)
+/// consults the default session user. Only the time-series handlers without a fixed `user`
+/// authenticate; the plain metrics exposition served without a `handlers` section does not.
+bool prometheusHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.has("prometheus.handlers"))
+        return false;
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys("prometheus.handlers", keys);
+    for (const auto & key : keys)
+    {
+        const std::string handler_prefix = "prometheus.handlers." + key + ".handler";
+        const std::string type = config.getString(handler_prefix + ".type", "");
+        /// The metrics exposition aliases accepted by `parseHandlerType`.
+        if (type == "prometheus" || type == "metrics" || type == "expose_metrics"
+            || type == "prometheus_metrics" || type == "prometheus_expose_metrics")
+            continue;
+        if (!config.has(handler_prefix + ".user"))
+            return true;
+    }
+    return false;
+}
+
+}
+
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
@@ -3656,10 +4233,19 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     AsynchronousMetrics & async_metrics,
     bool & is_secure)
 {
+    /// The default session user for the endpoint: the `default_session_user` key looked up
+    /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
+    /// closest to the endpoint wins. If not set anywhere in the chain, the handlers fall back
+    /// to the `default_session_user` server setting.
+    /// It is resolved for the whole `impl` chain up front, because a module can be both typed
+    /// (so its handler factory is created while walking the chain) and inherit the setting from
+    /// a module it references, which the walk reaches only later.
+    const std::optional<String> default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
+
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
-            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes));
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes, default_session_user));
 
         if (type == "tls")
 #if USE_SSL
@@ -3671,12 +4257,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, server_settings[ServerSetting::mysql_require_secure_transport], ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, server_settings[ServerSetting::mysql_require_secure_transport], ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes, default_session_user));
         if (type == "postgres")
 #if USE_SSL
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes, default_session_user));
 #else
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes, default_session_user));
 #endif
         if (type == "http")
         {
@@ -3686,14 +4272,14 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (config.has(conf_name + ".handlers"))
                 handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key, protocol, default_session_user), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         }
         if (type == "prometheus")
         {
             const std::string handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name, /* http_handlers_key= */ {}, protocol, default_session_user), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
         }
         if (type == "interserver")
@@ -3708,7 +4294,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     std::string prefix = conf_name + ".";
     std::unordered_set<std::string> pset {conf_name};
 
-    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+    const bool is_introspection = isIntrospectionProtocol(config, protocol);
+    std::string innermost_type;
+
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name, is_introspection);
+
+    bool has_interserver = false;
 
     while (true)
     {
@@ -3722,7 +4313,16 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
                 is_secure = true;
             }
+            if (type == "interserver")
+                has_interserver = true;
 
+            if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Introspection protocol '{}' contains a '{}' layer, but only 'tcp' optionally wrapped "
+                    "into 'tls' and 'proxy1' layers is supported", protocol, type);
+
+            innermost_type = type;
             stack->append(create_factory(type, conf_name));
         }
 
@@ -3735,6 +4335,17 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (!pset.insert(conf_name).second)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
     }
+
+    /// Interserver connections are authenticated by the cluster secret and the initial user
+    /// and never use the default session user, so such a configuration is an error.
+    if (has_interserver && default_session_user)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Protocol '{}': 'default_session_user' cannot be used with the 'interserver' protocol", protocol);
+
+    if (is_introspection && innermost_type != "tcp")
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Introspection protocol '{}' must end in a 'tcp' layer", protocol);
 
     return stack;
 }
@@ -3753,9 +4364,13 @@ void Server::createServers(
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     bool start_servers,
-    const ServerType & server_type)
+    const ServerType & server_type,
+    bool only_introspection_protocols)
 {
     const Settings & settings = global_context->getSettingsRef();
+#if USE_GRPC || USE_ARROWFLIGHT
+    const auto grpc_listen_hosts = getGRPCListenHosts(listen_hosts);
+#endif
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings[Setting::http_receive_timeout]);
@@ -3776,6 +4391,10 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
+        const bool is_introspection = isIntrospectionProtocol(config, protocol);
+        if (is_introspection != only_introspection_protocols)
+            continue;
+
         if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
             continue;
 
@@ -3818,10 +4437,14 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(server_settings),
-                        connection_filter));
+                        is_introspection ? TCPServerConnectionFilter::Ptr() : connection_filter));
             });
         }
     }
+
+    /// Introspection ports can only be configured in the protocols config section.
+    if (only_introspection_protocols)
+        return;
 
     for (const auto & listen_host : listen_hosts)
     {
@@ -3831,44 +4454,57 @@ void Server::createServers(
         {
             /// HTTP
             port_name = "http_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            /// Handler configuration is parsed outside the callback: anything the callback throws is
+            /// reported as a listener bind failure, and only logged when `listen_try` is set. The port
+            /// check matches the early return in `createServer`.
+            if (!config.getString(port_name, "").empty())
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory");
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
 
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-            });
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                });
+            }
         }
 
         if (server_type.shouldStart(ServerType::Type::HTTPS))
         {
             /// HTTPS
             port_name = "https_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config.getString(port_name, "").empty())
             {
 #if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "https://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-#else
-                UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory");
 #endif
-            });
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSL
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "https://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+#else
+                    UNUSED(port);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+                });
+            }
         }
 
         if (server_type.shouldStart(ServerType::Type::TCP))
@@ -3918,20 +4554,22 @@ void Server::createServers(
         }
 
 #if USE_ARROWFLIGHT
-        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT))
+        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT)
+            && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
         {
             port_name = "arrowflight_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(Poco::Timespan());
-                socket.setSendTimeout(settings[Setting::send_timeout]);
+                /// Do not bind a Poco socket here: gRPC owns the listening socket of an Arrow Flight
+                /// server and binds it in `start`. A pre-bind would both bind the address twice and
+                /// defeat the family-agnostic handling of a wildcard address by gRPC, which falls
+                /// back to `0.0.0.0` for `::` on a host without IPv6.
+                auto address = makeSocketAddress(listen_host, port, &logger());
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
                     "Arrow Flight compatibility protocol: " + address.toString(),
-                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, address)),
                     true);
             });
         }
@@ -4053,7 +4691,8 @@ void Server::createServers(
         }
 
 #if USE_GRPC
-        if (server_type.shouldStart(ServerType::Type::GRPC))
+        if (server_type.shouldStart(ServerType::Type::GRPC)
+            && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
         {
             port_name = "grpc_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
@@ -4074,19 +4713,23 @@ void Server::createServers(
 
             const char * handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
 
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            if (!config.getString(port_name, "").empty())
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port);
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "Prometheus: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, handler_name), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
-            });
+                auto handler_factory = createHandlerFactory(*this, config, async_metrics, handler_name);
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "Prometheus: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                });
+            }
         }
     }
 }
@@ -4192,6 +4835,9 @@ void Server::updateServers(
     const auto listen_hosts = getListenHosts(config);
     const auto interserver_listen_hosts = getInterserverListenHosts(config);
     const auto listen_try = getListenTry(config, server_settings);
+#if USE_GRPC || USE_ARROWFLIGHT
+    const auto grpc_listen_hosts = getGRPCListenHosts(listen_hosts);
+#endif
 
     /// Remove servers once all their connections are closed
     auto check_server = [&log](const char prefix[], auto & server)
@@ -4226,11 +4872,23 @@ void Server::updateServers(
             std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
+            bool is_non_keeper_prometheus = false;
+            bool is_prometheus = false;
+            bool default_session_user_changed = false;
             String handlers_key = "http_handlers";
+            String previous_handlers_key = handlers_key;
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
                 has_host = config.has(protocol + ".host");
+
+                /// Whether any handler in the `impl` chain actually consumes the default session
+                /// user, so that a `default_session_user` change does not restart listeners that
+                /// ignore it: keeper-metrics-only `prometheus` listeners serve metrics without
+                /// authentication (`KeeperPrometheusHandler-factory` only exposes `MetricsImpl`),
+                /// and `prometheus` endpoints whose configured handler set consists only of
+                /// fixed-user and non-authenticating handlers never consult the setting either.
+                bool consumes_default_session_user = false;
 
                 std::string conf_name = protocol;
                 std::string prefix = protocol + ".";
@@ -4245,7 +4903,40 @@ void Server::updateServers(
                             is_http = true;
                             if (config.has(conf_name + ".handlers"))
                                 handlers_key = config.getString(conf_name + ".handlers");
+                            /// This reload may re-point the endpoint at a different `<handlers>` section
+                            /// (through the endpoint's `handlers` reference or its `impl` chain), while
+                            /// the running factory still serves the previously referenced section. Resolve
+                            /// the old reference too: the consumer check must consider the old *or* the
+                            /// new handler set, and the changed-configuration check below must notice the
+                            /// reference switch itself — comparing only the new section on both sides of
+                            /// the reload would miss a switch between two sections that are themselves
+                            /// unchanged.
+                            previous_handlers_key = resolveHTTPHandlersKey(previous_config, protocol).value_or(handlers_key);
+                            /// `SQLDefinedHTTPHandlerFactory` is appended to every HTTP handler
+                            /// factory. It caches the endpoint override, while the SQL handler
+                            /// registry itself is read on every request, so an SQL-defined handler
+                            /// can start consuming the setting after the listener was created even
+                            /// when all XML handlers have fixed users.
+                            consumes_default_session_user = true;
                             break;
+                        }
+                        if (type == "tcp" || type == "mysql" || type == "postgres")
+                            consumes_default_session_user = true;
+                        /// The running listener still serves the handler set of the *previous*
+                        /// configuration (the shared `prometheus.handlers` section), so consider the
+                        /// setting consumed when either the old or the new set consumes it. A change
+                        /// of the section itself forces a restart below, like a change of an `http`
+                        /// endpoint's `handlers` section.
+                        if (type == "prometheus")
+                        {
+                            is_prometheus = true;
+                            if (!server_settings[ServerSetting::prometheus_keeper_metrics_only])
+                            {
+                                is_non_keeper_prometheus = true;
+                                consumes_default_session_user = consumes_default_session_user
+                                    || prometheusHandlersConsumeDefaultSessionUser(previous_config)
+                                    || prometheusHandlersConsumeDefaultSessionUser(config);
+                            }
                         }
                     }
 
@@ -4258,6 +4949,15 @@ void Server::updateServers(
                     if (!pset.insert(conf_name).second)
                         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
                 }
+
+                /// The per-endpoint default session user is fixed in the protocol handler factory,
+                /// so the endpoint must be restarted when its effective value changes. Compare the
+                /// effective value (the one closest to the endpoint wins, as in
+                /// `buildProtocolStackFromConfig`) rather than every node in the `impl` chain, so
+                /// that editing a shadowed base module does not force a needless restart.
+                default_session_user_changed = consumes_default_session_user
+                    && getEffectiveDefaultSessionUser(previous_config, protocol)
+                        != getEffectiveDefaultSessionUser(config, protocol);
             }
             else
             {
@@ -4265,14 +4965,84 @@ void Server::updateServers(
                 /// dynamic_cast<> since HTTPServer is also used for prometheus and
                 /// internal replication communications.
                 is_http = server->getPortName() == "http_port" || server->getPortName() == "https_port";
+                is_prometheus = server->getPortName() == "prometheus.port";
+                /// The standalone `prometheus.port` listener is built from the same shared
+                /// `prometheus.handlers` section as a composable `type = prometheus` endpoint
+                /// (`createPrometheusMainHandlerFactory` bakes it into the handler factory), and
+                /// there is no other reconfiguration hook for it, so it needs the same restart
+                /// check. In keeper-metrics-only mode the section is not served at all, and a
+                /// change of the mode itself is handled by the check below.
+                is_non_keeper_prometheus = is_prometheus && !server_settings[ServerSetting::prometheus_keeper_metrics_only];
             }
 
             if (!has_host)
-                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
+            {
+                const auto & server_listen_hosts =
+#if USE_GRPC || USE_ARROWFLIGHT
+                    (port_name == "grpc_port" || port_name == "arrowflight_port") ? grpc_listen_hosts :
+#endif
+                    listen_hosts;
+                has_host = std::find(server_listen_hosts.begin(), server_listen_hosts.end(), server->getListenHost()) != server_listen_hosts.end();
+            }
             bool has_port = !config.getString(port_name, "").empty();
-            bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
-            if (force_restart)
+            bool force_restart = false;
+            if (is_http && previous_handlers_key != handlers_key)
+            {
+                force_restart = true;
+                LOG_TRACE(log, "The handlers reference had been changed from <{}> to <{}>, will reload {}",
+                    previous_handlers_key, handlers_key, server->getDescription());
+            }
+            else if (is_http && !isSameConfiguration(previous_config, config, handlers_key))
+            {
+                force_restart = true;
                 LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
+            }
+            /// A non-keeper `prometheus` listener (a composable `type = prometheus` endpoint as well
+            /// as the standalone `prometheus.port` one) serves the shared `prometheus.handlers`
+            /// section, which is baked into its handler factory, so the listener must be restarted
+            /// when the section changes (a fixed `user`, a route, or a handler type may have changed).
+            if (is_non_keeper_prometheus && !isSameConfiguration(previous_config, config, "prometheus.handlers"))
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<prometheus.handlers> had been changed, will reload {}", server->getDescription());
+            }
+            /// `prometheus.keeper_metrics_only` selects the handler factory baked into a `prometheus`
+            /// listener: `KeeperPrometheusHandler-factory` exposes the keeper metrics without
+            /// authentication, while `PrometheusHandler-factory` also serves the authenticating
+            /// time-series handlers of `prometheus.handlers`. A change of the mode itself must restart
+            /// the listener in either direction — the port and the handler section may well stay the
+            /// same, and neither of the checks above can notice the switched factory then.
+            if (is_prometheus
+                && previous_config.getBool("prometheus.keeper_metrics_only", false)
+                    != server_settings[ServerSetting::prometheus_keeper_metrics_only])
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<prometheus.keeper_metrics_only> had been changed, will reload {}", server->getDescription());
+            }
+            /// `asynchronous_metrics_key_values_mode` decides whether the keys of the key-value asynchronous
+            /// metrics are written as Prometheus labels (`device="sda"`) or mangled into the metric name. A
+            /// listener that exposes metrics is built with the constant labels and the form of its
+            /// configuration, and neither is re-read while it runs, so it has to be rebuilt for the new form
+            /// to be published with a label set that matches it. Only listeners that can actually serve the
+            /// metrics protocol are rebuilt: a keeper-metrics-only `prometheus` listener exposes no
+            /// asynchronous metrics at all, and an HTTP listener does so only through a rule with a
+            /// `prometheus` handler type or through the default `/metrics` route - a change of the mode must
+            /// not stop the HTTP interface of a server that only answers queries over it. The old and the new
+            /// handler set are both consulted, because a rule may have just been added or removed.
+            if (getAsynchronousMetricsKeyValuesMode(previous_config) != getAsynchronousMetricsKeyValuesMode(config)
+                && (is_non_keeper_prometheus
+                    || (is_http
+                        && (httpHandlersCanExposePrometheusMetrics(previous_config, previous_handlers_key)
+                            || httpHandlersCanExposePrometheusMetrics(config, handlers_key)))))
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<asynchronous_metrics_key_values_mode> had been changed, will reload {}", server->getDescription());
+            }
+            if (default_session_user_changed)
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<default_session_user> had been changed, will reload {}", server->getDescription());
+            }
 
             if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {

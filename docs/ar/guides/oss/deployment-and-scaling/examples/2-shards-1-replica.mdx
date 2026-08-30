@@ -38,9 +38,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 * Docker مُثبَّت على جهازك
 
 <Steps>
-  <Step>
-    ## إعداد بنية الدليل وبيئة الاختبار
-
+  <Step title="إعداد بنية الدليل وبيئة الاختبار" id="set-up">
     <ExampleFiles />
 
     في هذا الدليل العملي، ستستخدم [Docker compose](https://docs.docker.com/compose/) لإعداد مجموعة ClickHouse. يمكن تعديل هذا الإعداد ليعمل على أجهزة محلية منفصلة، أو أجهزة افتراضية، أو نسخ سحابية كذلك.
@@ -162,9 +160,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## تهيئة عقد ClickHouse
-
+  <Step title="تهيئة عقد ClickHouse" id="configure-clickhouse-servers">
     ### إعداد الخادم
 
     قم الآن بتعديل كل ملف تهيئة فارغ `config.xml` الموجود في
@@ -378,7 +374,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | Directory                                                | File                                                                                                                                                                          |
+    | الدليل                                                   | File                                                                                                                                                                          |
     | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
@@ -391,9 +387,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## تكوين ClickHouse Keeper
-
+  <Step title="تكوين ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     ### إعداد ClickHouse Keeper
 
     <KeeperConfig />
@@ -409,9 +403,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## اختبر الإعداد
-
+  <Step title="اختبر الإعداد" id="test-the-setup">
     تأكد من أن Docker قيد التشغيل على جهازك.
     ابدأ تشغيل الـcluster باستخدام الأمر `docker-compose up` من جذر الدليل `cluster_2S_1R`:
 
@@ -490,9 +482,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     في الخطوة التالية، ستُنشئ جدولًا في العنقود.
   </Step>
 
-  <Step>
-    ## أنشئ قاعدة بيانات
-
+  <Step title="أنشئ قاعدة بيانات" id="creating-a-database">
     الآن بعد أن تحققت من أن العنقود مُعَدّ بشكل صحيح ويعمل، ستعيد إنشاء الجدول نفسه المستخدم في الدليل العملي الخاص بمجموعة البيانات النموذجية [UK property prices](/ar/get-started/sample-datasets/uk-price-paid).
     ويتكوّن من نحو 30 مليون صف لأسعار العقارات المدفوعة
     في إنجلترا وويلز منذ عام 1995.
@@ -548,9 +538,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## إنشاء جدول على العنقود
-
+  <Step title="إنشاء جدول على العنقود" id="creating-a-table">
     الآن بعد أن أُنشئت قاعدة البيانات، ستُنشئ جدولًا.
     شغّل الاستعلام التالي من أي عميل من عملاء المضيف:
 
@@ -652,9 +640,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     محرك الجدول [`Distributed`](/ar/reference/engines/table-engines/special/distributed). لنلقِ نظرة على كيفية عمله.
   </Step>
 
-  <Step>
-    ## إنشاء جدول موزّع
-
+  <Step title="إنشاء جدول موزّع" id="create-distributed-table">
     أنشئ جدولًا موزّعًا باستخدام الاستعلام التالي:
 
     ```sql
@@ -690,9 +676,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## إدراج البيانات في جدول موزّع
-
+  <Step title="إدراج البيانات في جدول موزّع" id="inserting-data-into-distributed-table">
     الآن اتصل بأيٍّ من المضيفَين وأدرج البيانات:
 
     ```sql
@@ -786,7 +770,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     clickhouse-keeper-03   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-03   X minutes ago    Up X minutes    127.0.0.1:9183->9181/tcp
     ```
 
-    الآن من `clickhouse-02` نفِّذ نفس استعلام SELECT الذي أجريناه سابقًا على الجدول الموزَّع:
+    الآن من `clickhouse-02` نفِّذ نفس استعلام select الذي أجريناه سابقًا على الجدول الموزَّع:
 
     ```sql
     SELECT count(*)

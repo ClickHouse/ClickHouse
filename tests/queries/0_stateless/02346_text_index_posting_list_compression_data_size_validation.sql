@@ -38,7 +38,7 @@ SETTINGS
    max_compress_block_size = 1048576,
    ratio_of_defaults_for_sparse_serialization = 0.95,
    serialization_info_version = 'basic',
-   auto_statistics_types = 'minmax';
+   auto_statistics_types = 'basic';
 
 CREATE TABLE tab_uncompressed
 (
@@ -64,7 +64,7 @@ SETTINGS
    max_compress_block_size = 1048576,
    ratio_of_defaults_for_sparse_serialization = 0.95,
    serialization_info_version = 'basic',
-   auto_statistics_types = 'minmax';
+   auto_statistics_types = 'basic';
 
 INSERT INTO tab_bitpacking
 SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') AS str

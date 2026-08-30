@@ -3,10 +3,10 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationArrayOffsets.h>
 #include <DataTypes/Serializations/SerializationMapKeysOrValues.h>
 #include <DataTypes/Serializations/SerializationMapSize.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 
 #include <Columns/ColumnArray.h>
@@ -294,6 +294,35 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
     return ReturnType(true);
 }
 
+void SerializationMap::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_map = assert_cast<const ColumnMap &>(column);
+
+    const auto & nested_array = column_map.getNestedColumn();
+    const auto & nested_tuple = column_map.getNestedData();
+    const auto & offsets = nested_array.getOffsets();
+
+    size_t offset = offsets[row_num - 1];
+    size_t next_offset = offsets[row_num];
+
+    const size_t level = settings.hive_text.nesting_level;
+    const char entry_separator = getHiveTextDelimiter(settings, level);
+    const char key_value_separator = getHiveTextDelimiter(settings, level + 1);
+
+    auto child_settings = settings;
+    child_settings.hive_text.nesting_level = level + 2;
+
+    for (size_t i = offset; i < next_offset; ++i)
+    {
+        if (i != offset)
+            writeChar(entry_separator, ostr);
+
+        key_serialization->serializeTextHive(nested_tuple.getColumn(0), i, ostr, child_settings);
+        writeChar(key_value_separator, ostr);
+        value_serialization->serializeTextHive(nested_tuple.getColumn(1), i, ostr, child_settings);
+    }
+}
+
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto writer = [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
@@ -525,15 +554,17 @@ struct SerializeBinaryBulkStateMapWithBuckets : public ISerialization::Serialize
     /// Per-bucket nested serialization states.
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> bucket_nested_states;
 
+    /// Bucket index stream state (used when buckets > 1 to preserve original key order).
+    DataTypePtr bucket_index_type;
+    SerializationPtr bucket_index_serialization;
+    ISerialization::SerializeBinaryBulkStatePtr bucket_index_state;
+
     SerializeBinaryBulkStateMapWithBuckets() = default;
 };
 
 /// Unified deserialization state for `SerializationMap`, used for both BASIC and WITH_BUCKETS modes.
 struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryBulkState
 {
-    /// Shared reading info state, cached at the current substream path.
-    ISerialization::DeserializeBinaryBulkStatePtr reading_info_state;
-
     /// --- BASIC mode fields ---
     /// Nested deserialization state for the single Array(Tuple(K, V)) stream.
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
@@ -544,14 +575,20 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
     /// Per-bucket nested deserialization states.
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_nested_states;
 
+    /// Bucket index stream state (used to preserve original key order).
+    DataTypePtr bucket_index_type;
+    SerializationPtr bucket_index_serialization;
+    ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
+    bool has_bucket_index = false;
+
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMap>(*this);
-        new_state->reading_info_state = reading_info_state ? reading_info_state->clone() : nullptr;
         new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
         new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone() : nullptr;
         for (size_t bucket = 0; bucket != bucket_nested_states.size(); ++bucket)
             new_state->bucket_nested_states[bucket] = bucket_nested_states[bucket] ? bucket_nested_states[bucket]->clone() : nullptr;
+        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone() : nullptr;
         return new_state;
     }
 };
@@ -622,7 +659,7 @@ void SerializationMap::enumerateStreams(
         /// and sums them to produce the total map size per row.
         settings.path.push_back(Substream::ArraySizes);
         auto subcolumn_name = "size" + std::to_string(settings.array_level);
-        auto array_size_serialization = SerializationNamed::create(SerializationArrayOffsets::create(), subcolumn_name, SubstreamType::NamedOffsets);
+        auto array_size_serialization = SerializationNamed::create(SerializationNumber<UInt64>::create(), subcolumn_name, SubstreamType::NamedOffsets);
         auto map_size_serialization = SerializationMapSize::create(array_size_serialization, serialization_version);
         settings.path.back().data = SubstreamData(map_size_serialization)
             .withType(map_type ? std::make_shared<DataTypeUInt64>() : nullptr)
@@ -656,6 +693,25 @@ void SerializationMap::enumerateStreams(
         buckets = checkAndGetState<DeserializeBinaryBulkStateBucketsInfo>(map_deserialize_state->buckets_info_state)->buckets;
     else if (map_column)
         buckets = calculateNumberOfBuckets(map_column->getOrCalculateStatistics(), settings.max_buckets_in_map, settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
+
+    /// Enumerate the bucket index stream (used to preserve original key order).
+    /// Only needed when there are multiple buckets — single-bucket serialization
+    /// preserves order trivially. When a check_stream_exists_callback is set (e.g. in
+    /// compact parts determining deserialization order), skip the stream if it does not
+    /// exist in the part — old parts written before the bucket index fix lack this stream.
+    if (buckets > 1)
+    {
+        settings.path.push_back(Substream::MapBucketIndexes);
+        bool enumerate_bucket_index = !settings.check_stream_exists_callback || settings.check_stream_exists_callback(settings.path);
+        if (enumerate_bucket_index)
+        {
+            auto bucket_index_serialization = getSmallestIndexesType(buckets)->getDefaultSerialization();
+            auto bucket_index_data = SubstreamData(bucket_index_serialization)
+                .withDeserializeState(map_deserialize_state ? map_deserialize_state->bucket_index_state : nullptr);
+            bucket_index_serialization->enumerateStreams(settings, callback, bucket_index_data);
+        }
+        settings.path.pop_back();
+    }
 
     /// Enumerate a nested Array(Tuple(K, V)) stream for each bucket.
     for (size_t bucket = 0; bucket < buckets; ++bucket)
@@ -717,6 +773,19 @@ void SerializationMap::serializeBinaryBulkStatePrefix(
     else if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::SUFFIX)
     {
         map_state->recalculate_statistics = true;
+    }
+
+    /// Initialize bucket index serialization state for multi-bucket parts.
+    /// Single-bucket parts don't need a bucket index stream (order is trivially preserved).
+    if (map_state->buckets > 1)
+    {
+        map_state->bucket_index_type = getSmallestIndexesType(map_state->buckets);
+        map_state->bucket_index_serialization = map_state->bucket_index_type->getDefaultSerialization();
+
+        settings.path.push_back(Substream::MapBucketIndexes);
+        map_state->bucket_index_serialization->serializeBinaryBulkStatePrefix(
+            *map_state->bucket_index_type->createColumn(), settings, map_state->bucket_index_state);
+        settings.path.pop_back();
     }
 
     /// Initialize nested serialization state for each bucket sub-stream.
@@ -817,29 +886,12 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
     return state;
 }
 
-ISerialization::DeserializeBinaryBulkStatePtr
-SerializationMap::deserializeMapReadingInfoStatePrefix(SubstreamsDeserializeStatesCache * cache, const ISerialization::SubstreamPath & path)
-{
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, path))
-        return cached_state;
-
-    auto new_state = std::make_shared<DeserializeBinaryBulkStateMapReadingInfo>();
-    addToSubstreamsDeserializeStatesCache(cache, path, new_state);
-    return new_state;
-}
-
 void SerializationMap::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsDeserializeStatesCache * cache) const
 {
     auto map_state = std::make_shared<DeserializeBinaryBulkStateMap>();
-
-    /// Create or get the shared reading info state cached at the current substream path.
-    /// Set the flag so that `SerializationMapKeyValue` knows the full Map is being read
-    /// and must keep the intermediate nested column for cache sharing.
-    map_state->reading_info_state = deserializeMapReadingInfoStatePrefix(cache, settings.path);
-    checkAndGetState<DeserializeBinaryBulkStateMapReadingInfo>(map_state->reading_info_state)->reading_full_map = true;
 
     /// BASIC format stores the Map as a plain Array(Tuple(K, V)) — no bucketing.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
@@ -852,6 +904,20 @@ void SerializationMap::deserializeBinaryBulkStatePrefix(
     /// Read the bucket count and optional statistics from the buckets info stream.
     map_state->buckets_info_state = deserializeBucketsInfoStatePrefix(settings, cache);
     const auto * buckets_info_state_concrete = checkAndGetState<DeserializeBinaryBulkStateBucketsInfo>(map_state->buckets_info_state);
+
+    /// Initialize bucket index deserialization state.
+    /// Only needed for multi-bucket parts; single-bucket parts preserve order trivially.
+    if (buckets_info_state_concrete->buckets > 1)
+    {
+        map_state->bucket_index_type = getSmallestIndexesType(buckets_info_state_concrete->buckets);
+        map_state->bucket_index_serialization = map_state->bucket_index_type->getDefaultSerialization();
+
+        settings.path.push_back(Substream::MapBucketIndexes);
+        map_state->has_bucket_index = settings.check_stream_exists_callback && settings.check_stream_exists_callback(settings.path);
+        if (map_state->has_bucket_index)
+            map_state->bucket_index_serialization->deserializeBinaryBulkStatePrefix(settings, map_state->bucket_index_state, cache);
+        settings.path.pop_back();
+    }
 
     /// Initialize nested deserialization state for each bucket sub-stream.
     map_state->bucket_nested_states.resize(buckets_info_state_concrete->buckets);
@@ -948,7 +1014,7 @@ namespace
 /// We use `static_cast` here because the dispatch macro guarantees the correct type,
 /// and `assert_cast` would fail in debug builds for the `IColumn` fallback case
 /// (it requires exact `typeid` match, but the runtime type is a concrete column).
-template <typename KeyColumn, typename ValueColumn>
+template <typename KeyColumn, typename ValueColumn, typename IndexColumn>
 void splitMapToBucketsTyped(
     const IColumn & src_keys_col,
     const IColumn & src_values_col,
@@ -956,6 +1022,7 @@ void splitMapToBucketsTyped(
     std::vector<IColumn *> & dst_keys_raw,
     std::vector<IColumn *> & dst_values_raw,
     std::vector<ColumnArray::Offsets *> & dst_offsets,
+    IndexColumn & bucket_index_col,
     size_t start, size_t end, size_t num_buckets)
 {
     const auto & src_keys = static_cast<const KeyColumn &>(src_keys_col);
@@ -978,6 +1045,7 @@ void splitMapToBucketsTyped(
             size_t bucket = getBucketForKeyImpl(src_keys, j, num_buckets);
             dst_keys[bucket]->insertFrom(src_keys, j);
             dst_values[bucket]->insertFrom(src_values, j);
+            bucket_index_col.getData().push_back(static_cast<typename IndexColumn::ValueType>(bucket));
         }
 
         for (size_t bucket = 0; bucket < num_buckets; ++bucket)
@@ -985,26 +1053,64 @@ void splitMapToBucketsTyped(
     }
 }
 
-/// Second level of the two-level type dispatch for `splitMapToBuckets`.
+/// Dispatch macro for bucket index column types (only unsigned integer types).
+/// Unlike DISPATCH_MAP_COLUMN_TYPE, this only covers UInt8/16/32/64 since bucket
+/// indexes are always unsigned integers chosen by `getSmallestIndexesType`.
+// clang-format off
+#define DISPATCH_BUCKET_INDEX_COLUMN_TYPE(type_index, CALL) \
+    switch (type_index) \
+    { \
+        case TypeIndex::UInt8: { CALL(ColumnVector<UInt8>); break; } \
+        case TypeIndex::UInt16: { CALL(ColumnVector<UInt16>); break; } \
+        case TypeIndex::UInt32: { CALL(ColumnVector<UInt32>); break; } \
+        case TypeIndex::UInt64: { CALL(ColumnVector<UInt64>); break; } \
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected bucket index column type"); \
+    }
+// clang-format on
+
+/// Third level of the three-level type dispatch for `splitMapToBuckets`.
+/// Key and value column types are already fixed; this dispatches on the bucket index column type.
+template <typename KeyColumn, typename ValueColumn>
+void splitMapToBucketsDispatchByIndex(
+    const IColumn & src_keys, const IColumn & src_values,
+    const ColumnArray::Offsets & src_offsets,
+    std::vector<IColumn *> & dst_keys, std::vector<IColumn *> & dst_values,
+    std::vector<ColumnArray::Offsets *> & dst_offsets,
+    IColumn & bucket_index_column,
+    size_t start, size_t end, size_t num_buckets)
+{
+// NOLINTBEGIN(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
+#define CALL_SPLIT(IndexColumn) splitMapToBucketsTyped<KeyColumn, ValueColumn, IndexColumn>( \
+    src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, \
+    static_cast<IndexColumn &>(bucket_index_column), start, end, num_buckets)
+// NOLINTEND(bugprone-macro-parentheses)
+    DISPATCH_BUCKET_INDEX_COLUMN_TYPE(bucket_index_column.getDataType(), CALL_SPLIT)
+#undef CALL_SPLIT
+}
+
+/// Second level of the three-level type dispatch for `splitMapToBuckets`.
 /// The key column type is already fixed as `KeyColumn`; this function dispatches
-/// on the value column `TypeIndex` and calls `splitMapToBucketsTyped<KeyColumn, ValueColumn>`.
+/// on the value column `TypeIndex`.
 template <typename KeyColumn>
 void splitMapToBucketsDispatchByValue(
     const IColumn & src_keys, const IColumn & src_values,
     const ColumnArray::Offsets & src_offsets,
     std::vector<IColumn *> & dst_keys, std::vector<IColumn *> & dst_values,
     std::vector<ColumnArray::Offsets *> & dst_offsets,
+    IColumn & bucket_index_column,
     size_t start, size_t end, size_t num_buckets)
 {
-#define CALL_SPLIT(ValueColumn) splitMapToBucketsTyped<KeyColumn, ValueColumn>( \
-    src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, start, end, num_buckets)
+// NOLINTNEXTLINE(bugprone-macro-parentheses) -- ValueColumn is a type used as a template argument
+#define CALL_SPLIT(ValueColumn) splitMapToBucketsDispatchByIndex<KeyColumn, ValueColumn>( \
+    src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, bucket_index_column, start, end, num_buckets)
     DISPATCH_MAP_COLUMN_TYPE(src_values.getDataType(), CALL_SPLIT)
 #undef CALL_SPLIT
 }
 
-/// Entry point of the two-level type dispatch for splitting a Map column into buckets.
+/// Entry point of the three-level type dispatch for splitting a Map column into buckets.
 /// Dispatches on the key column `TypeIndex`, then delegates to
-/// `splitMapToBucketsDispatchByValue` which dispatches on the value column type.
+/// `splitMapToBucketsDispatchByValue` which dispatches on the value column type,
+/// then to `splitMapToBucketsDispatchByIndex` for the bucket index column type.
 /// For recognized concrete types (integer/float `ColumnVector` variants, `ColumnString`,
 /// `ColumnFixedString`) the call resolves to a fully devirtualized `splitMapToBucketsTyped`;
 /// for any other type it falls back to the `IColumn` interface (virtual dispatch).
@@ -1013,14 +1119,92 @@ void splitMapToBucketsDispatch(
     const ColumnArray::Offsets & src_offsets,
     std::vector<IColumn *> & dst_keys, std::vector<IColumn *> & dst_values,
     std::vector<ColumnArray::Offsets *> & dst_offsets,
+    IColumn & bucket_index_column,
     size_t start, size_t end, size_t num_buckets)
 {
+// NOLINTNEXTLINE(bugprone-macro-parentheses) -- KeyColumn is a type used as a template argument
 #define CALL_KEY_SPLIT(KeyColumn) splitMapToBucketsDispatchByValue<KeyColumn>( \
-    src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, start, end, num_buckets)
+    src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, bucket_index_column, start, end, num_buckets)
     DISPATCH_MAP_COLUMN_TYPE(src_keys.getDataType(), CALL_KEY_SPLIT)
 #undef CALL_KEY_SPLIT
 }
 
+/// Devirtualized inner loop for collecting Map from buckets in original insertion order.
+/// Uses the bucket index array to pull key-value pairs from the correct bucket
+/// in the order they were originally inserted.
+template <typename IndexColumn>
+void collectMapFromBucketsWithOrderImpl(
+    const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
+    const IndexColumn & bucket_index_col,
+    IColumn & map_column)
+{
+    if (map_buckets.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
+
+    VectorWithMemoryTracking<ColumnPtr> map_keys_buckets(map_buckets.size());
+    VectorWithMemoryTracking<ColumnPtr> map_values_buckets(map_buckets.size());
+    std::vector<const ColumnArray::Offsets *> map_offsets_buckets(map_buckets.size());
+    for (size_t bucket = 0; bucket != map_buckets.size(); ++bucket)
+    {
+        const auto & nested_column = assert_cast<const ColumnMap &>(*map_buckets[bucket]).getNestedColumn();
+        const auto & nested_data = assert_cast<const ColumnTuple &>(nested_column.getData());
+        map_offsets_buckets[bucket] = &nested_column.getOffsets();
+        map_keys_buckets[bucket] = nested_data.getColumnPtr(0);
+        map_values_buckets[bucket] = nested_data.getColumnPtr(1);
+    }
+
+    auto & nested_column = assert_cast<ColumnMap &>(map_column).getNestedColumn();
+    auto & nested_data = assert_cast<ColumnTuple &>(nested_column.getData());
+    auto & map_keys_column = nested_data.getColumn(0);
+    auto & map_values_column = nested_data.getColumn(1);
+    auto & map_offsets = nested_column.getOffsets();
+    size_t num_rows = map_buckets[0]->size();
+    map_offsets.reserve(map_offsets.size() + num_rows);
+
+    const auto & bucket_index_data = bucket_index_col.getData();
+    std::vector<size_t> bucket_positions(map_buckets.size());
+    size_t bucket_index_offset = 0;
+
+    for (size_t i = 0; i != num_rows; ++i)
+    {
+        size_t total_size = 0;
+        for (size_t bucket = 0; bucket < map_buckets.size(); ++bucket)
+        {
+            size_t offset_start = (*map_offsets_buckets[bucket])[ssize_t(i) - 1];
+            size_t offset_end = (*map_offsets_buckets[bucket])[ssize_t(i)];
+            bucket_positions[bucket] = offset_start;
+            total_size += offset_end - offset_start;
+        }
+
+        for (size_t j = 0; j < total_size; ++j)
+        {
+            size_t bucket_idx = bucket_index_data[bucket_index_offset++];
+            if (bucket_idx >= map_buckets.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket_idx, map_buckets.size());
+            size_t pos = bucket_positions[bucket_idx]++;
+            map_keys_column.insertFrom(*map_keys_buckets[bucket_idx], pos);
+            map_values_column.insertFrom(*map_values_buckets[bucket_idx], pos);
+        }
+
+        map_offsets.push_back(map_keys_column.size());
+    }
+}
+
+/// Dispatch wrapper for collectMapFromBucketsWithOrderImpl — dispatches on the index column type.
+void collectMapFromBucketsWithOrderDispatch(
+    const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
+    const IColumn & bucket_index_column,
+    IColumn & map_column)
+{
+// NOLINTBEGIN(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
+#define CALL_COLLECT(IndexColumn) collectMapFromBucketsWithOrderImpl<IndexColumn>( \
+    map_buckets, static_cast<const IndexColumn &>(bucket_index_column), map_column)
+// NOLINTEND(bugprone-macro-parentheses)
+    DISPATCH_BUCKET_INDEX_COLUMN_TYPE(bucket_index_column.getDataType(), CALL_COLLECT)
+#undef CALL_COLLECT
+}
+
+#undef DISPATCH_BUCKET_INDEX_COLUMN_TYPE
 #undef DISPATCH_MAP_COLUMN_TYPE
 
 }
@@ -1030,7 +1214,7 @@ void splitMapToBucketsDispatch(
 /// one per bucket. Each key-value pair is assigned to a bucket by hashing the key via
 /// `getBucketForKeyImpl`. Uses two-level type dispatch (`splitMapToBucketsDispatch`) to
 /// devirtualize `insertFrom` and hash computation for common key/value column types.
-VectorWithMemoryTracking<ColumnPtr> SerializationMap::splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets) const
+VectorWithMemoryTracking<ColumnPtr> SerializationMap::splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets, IColumn & bucket_index_column) const
 {
     VectorWithMemoryTracking<ColumnPtr> map_buckets(buckets);
     std::vector<IColumn *> map_keys_buckets(buckets);
@@ -1056,6 +1240,7 @@ VectorWithMemoryTracking<ColumnPtr> SerializationMap::splitMapToBuckets(const IC
     splitMapToBucketsDispatch(
         *map_keys_column, *map_values_column, map_offsets,
         map_keys_buckets, map_values_buckets, map_offsets_buckets,
+        bucket_index_column,
         start, end, buckets);
 
     return map_buckets;
@@ -1105,6 +1290,18 @@ void SerializationMap::collectMapFromBuckets(const VectorWithMemoryTracking<Colu
     }
 }
 
+/// Reassembles a single Map column from per-bucket Map columns, restoring the original
+/// insertion order using the bucket index array. Each entry in the index array indicates
+/// which bucket the corresponding key-value pair came from, allowing us to pull elements
+/// from buckets in their original order instead of bucket-ascending order.
+void SerializationMap::collectMapFromBucketsWithOrder(
+    const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
+    const IColumn & bucket_index_column,
+    IColumn & map_column) const
+{
+    collectMapFromBucketsWithOrderDispatch(map_buckets, bucket_index_column, map_column);
+}
+
 void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
@@ -1131,9 +1328,11 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
     }
     /// Multiple buckets. Split the Map column by key hash, then serialize each bucket independently.
+    /// Also write the bucket index stream to preserve original key order during deserialization.
     else
     {
-        auto map_buckets = splitMapToBuckets(column, offset, end, map_state->buckets);
+        auto bucket_index_column = map_state->bucket_index_type->createColumn();
+        auto map_buckets = splitMapToBuckets(column, offset, end, map_state->buckets, *bucket_index_column);
         for (size_t bucket = 0; bucket < map_state->buckets; ++bucket)
         {
             settings.path.push_back(SubstreamType::Bucket);
@@ -1141,24 +1340,28 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
             nested_serialization->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(*map_buckets[bucket]), 0, map_buckets[bucket]->size(), settings, map_state->bucket_nested_states[bucket]);
             settings.path.pop_back();
         }
+
+        /// Write the bucket index stream.
+        settings.path.push_back(Substream::MapBucketIndexes);
+        map_state->bucket_index_serialization->serializeBinaryBulkWithMultipleStreams(
+            *bucket_index_column, 0, bucket_index_column->size(), settings, map_state->bucket_index_state);
+        settings.path.pop_back();
     }
 
     /// Accumulate statistics from each serialized range.
     /// They will be written to the stream in `serializeBinaryBulkStateSuffix`.
     if (map_state->recalculate_statistics)
-        map_state->statistics.merge(*assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
+        map_state->statistics.merge(assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
 }
 
 void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto mutable_column = column->assumeMutable();
-    auto & column_map = assert_cast<ColumnMap &>(*mutable_column);
+    auto & column_map = assert_cast<ColumnMap &>(column);
 
     if (!state)
         return;
@@ -1168,20 +1371,11 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     /// BASIC format delegates directly to the nested Array(Tuple(K, V)) serialization.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
-        ColumnPtr nested_ptr = column_map.getNestedColumnPtr();
-        /// Try to get data from the substreams cache before reading from disk.
-        if (!insertDataFromSubstreamsCacheIfAny(cache, settings, nested_ptr))
-        {
-            size_t prev_size = column->size();
-            nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, map_state->nested_state, cache);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_ptr, nested_ptr->size() - prev_size);
-        }
-
-        /// Write back: nested_ptr may have been reassigned to a cached column
-        /// by insertDataFromSubstreamsCacheIfAny or by the nested deserialization.
-        /// Without this, the Map column would remain empty while its data lives
-        /// only in the local nested_ptr variable.
-        column_map.getNestedColumnPtr() = std::move(nested_ptr);
+        IColumn & nested_col = column_map.getNestedColumn();
+        size_t prev_size = nested_col.size();
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_col, limit, settings, map_state->nested_state, cache);
+        /// Cache the whole nested column so key subcolumn reads (map['key'] via SerializationMapKeyValue) reuse it.
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_col.getPtr(), nested_col.size() - prev_size);
         return;
     }
 
@@ -1193,21 +1387,17 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         settings.path.push_back(Substream::Bucket);
         settings.path.back().bucket = 0;
 
-        ColumnPtr nested_ptr = column_map.getNestedColumnPtr();
-        /// Try to get data from the substreams cache before reading from disk.
-        if (!insertDataFromSubstreamsCacheIfAny(cache, settings, nested_ptr))
-        {
-            size_t prev_size = column->size();
-            nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, map_state->bucket_nested_states[0], cache);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_ptr, nested_ptr->size() - prev_size);
-        }
+        IColumn & nested_col = column_map.getNestedColumn();
+        size_t prev_size = nested_col.size();
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_col, limit, settings, map_state->bucket_nested_states[0], cache);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_col.getPtr(), nested_col.size() - prev_size);
 
-        /// Write back: nested_ptr may have been reassigned (same reason as BASIC path above).
-        column_map.getNestedColumnPtr() = std::move(nested_ptr);
         settings.path.pop_back();
     }
     /// Multiple buckets. Deserialize each bucket into a separate Map column,
-    /// then reassemble them into a single column via `collectMapFromBuckets`.
+    /// then reassemble them into a single column.
+    /// If bucket index data is available, use it to restore original insertion order;
+    /// otherwise fall back to bucket-ascending order (old parts without the index stream).
     else
     {
         VectorWithMemoryTracking<ColumnPtr> map_buckets(buckets_info_state->buckets);
@@ -1215,13 +1405,40 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            map_buckets[bucket] = column_map.cloneEmpty();
-            ColumnPtr nested_ptr = assert_cast<const ColumnMap &>(*map_buckets[bucket]).getNestedColumnPtr();
-            nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, map_state->bucket_nested_states[bucket], cache);
+            auto mutable_bucket = column_map.cloneEmpty();
+            IColumn & bucket_nested = assert_cast<ColumnMap &>(*mutable_bucket).getNestedColumn();
+            nested_serialization->deserializeBinaryBulkWithMultipleStreams(bucket_nested, limit, settings, map_state->bucket_nested_states[bucket], cache);
+            /// Put each bucket's nested column into the cache so that a key subcolumn read of the same bucket reuses it.
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, bucket_nested.getPtr(), bucket_nested.size());
+            map_buckets[bucket] = std::move(mutable_bucket);
             settings.path.pop_back();
         }
 
-        collectMapFromBuckets(map_buckets, column_map);
+        if (map_state->has_bucket_index)
+        {
+            /// Compute total key-value pairs from per-bucket offsets.
+            size_t total_kv_pairs = 0;
+            for (size_t bucket = 0; bucket != buckets_info_state->buckets; ++bucket)
+            {
+                const auto & bucket_nested = assert_cast<const ColumnMap &>(*map_buckets[bucket]).getNestedColumn();
+                const auto & bucket_offsets = bucket_nested.getOffsets();
+                if (!bucket_offsets.empty())
+                    total_kv_pairs += bucket_offsets.back();
+            }
+
+            /// Read bucket indexes (flat array, one per key-value pair).
+            auto bucket_index_column = map_state->bucket_index_type->createColumn();
+            settings.path.push_back(Substream::MapBucketIndexes);
+            map_state->bucket_index_serialization->deserializeBinaryBulkWithMultipleStreams(
+                *bucket_index_column, total_kv_pairs, settings, map_state->bucket_index_state, cache);
+            settings.path.pop_back();
+
+            collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, column_map);
+        }
+        else
+        {
+            collectMapFromBuckets(map_buckets, column_map);
+        }
     }
 }
 

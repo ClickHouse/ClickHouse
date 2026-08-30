@@ -14,6 +14,8 @@ sqlite3 "$DB" 'CREATE TABLE t2(id INTEGER, category TEXT);'
 sqlite3 "$DB" "INSERT INTO t2 VALUES (1, 'x'), (2, 'y'), (4, 'z');"
 sqlite3 "$DB" 'CREATE TABLE t3("Mixed Id" INTEGER, val TEXT);'
 sqlite3 "$DB" "INSERT INTO t3 VALUES (7, 'seven');"
+sqlite3 "$DB" 'CREATE TABLE t_esc(id INTEGER PRIMARY KEY, s TEXT);'
+sqlite3 "$DB" "INSERT INTO t_esc VALUES (1, 'it''s'), (2, 'a' || char(9) || 'b');"
 
 ${CLICKHOUSE_LOCAL} --multiquery "
 SELECT '-- baseline: table name still works';
@@ -88,6 +90,10 @@ SELECT '-- type mismatch: a text value read into a declared Date is a query erro
 CREATE TABLE type_mismatch (id Int64, name Date) ENGINE = SQLite('${DB}', query('SELECT id, name FROM t1'));
 SELECT * FROM type_mismatch; -- { serverError CANNOT_PARSE_DATE }
 DROP TABLE type_mismatch;
+
+SELECT '-- subquery form: special-character string literals are escaped for SQLite';
+SELECT id FROM sqlite('${DB}', (SELECT id FROM t_esc WHERE s = 'it''s')) ORDER BY id;
+SELECT id FROM sqlite('${DB}', (SELECT id FROM t_esc WHERE s = 'a\tb')) ORDER BY id;
 "
 
 rm -f "$DB"
