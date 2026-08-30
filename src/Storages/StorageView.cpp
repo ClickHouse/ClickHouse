@@ -510,7 +510,15 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// If the table is itself a view, recursively check its inner query.
                     const auto * nested_view = typeid_cast<const StorageView *>(storage.get());
                     if (nested_view)
+                    {
+                        /// A view is a parallel-replicas carrier only while the (sub)query reading it
+                        /// allows a view over MergeTree: that same setting decides, per replica, whether
+                        /// the expansion of this view keeps reading a share of the table or all of it.
+                        if (!current_context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree])
+                            return nullptr;
+
                         return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(current_context);
+                    }
 
                     if (!isTableNodeEligibleForParallelReplicas(table_node, storage, current_context))
                         return nullptr;

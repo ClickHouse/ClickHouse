@@ -4,6 +4,9 @@
 -- replica read the whole table locally, so the query returned max_parallel_replicas times too many
 -- rows.
 --
+-- Both parallel_replicas_for_non_replicated_merge_tree and parallel_replicas_allow_view_over_mergetree
+-- carry that opt-out, the latter only once the body reads a further view.
+--
 -- index_granularity = 1 makes the inflation deterministic: every replica receives marks, so a
 -- broken run returns exactly rows * max_parallel_replicas.
 
@@ -14,6 +17,10 @@ DROP VIEW IF EXISTS v_union;
 DROP VIEW IF EXISTS v_union_both;
 DROP VIEW IF EXISTS v_union_second;
 DROP VIEW IF EXISTS v_final;
+DROP VIEW IF EXISTS v_plain_over_plain;
+DROP VIEW IF EXISTS v_av_top;
+DROP VIEW IF EXISTS v_av_body;
+DROP VIEW IF EXISTS v_av_leaf;
 DROP TABLE IF EXISTS mt_g;
 DROP TABLE IF EXISTS mt_g2;
 DROP TABLE IF EXISTS rmt_g;
@@ -41,6 +48,10 @@ CREATE VIEW v_union_second AS
     UNION ALL
     SELECT a FROM mt_g2 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 CREATE VIEW v_final AS SELECT a FROM rmt_g FINAL;
+CREATE VIEW v_av_leaf AS SELECT a FROM mt_g;
+CREATE VIEW v_av_body AS SELECT a FROM v_av_leaf SETTINGS parallel_replicas_allow_view_over_mergetree = 0;
+CREATE VIEW v_av_top AS SELECT a FROM v_av_body;
+CREATE VIEW v_plain_over_plain AS SELECT a FROM v_av_leaf;
 
 SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
@@ -62,6 +73,9 @@ SELECT count() FROM v_union;
 SELECT count() FROM v_union_both;
 SELECT count() FROM v_union_second;
 SELECT count() FROM v_final;
+SELECT count() FROM v_av_body;
+SELECT count() FROM v_av_top;
+SELECT count() FROM v_plain_over_plain;
 
 -- Which relation is shipped to the replicas. An empty array means the query is not read through
 -- the coordinated remote path at all, which is the expected verdict once a view body opts out.
@@ -91,6 +105,18 @@ SELECT 'v_final', arraySort(groupUniqArray(if(explain LIKE '%v_final%', 'v_final
 FROM viewExplain('EXPLAIN', '', (SELECT count() FROM v_final))
 WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
 
+SELECT 'v_av_body', arraySort(groupUniqArray(if(explain LIKE '%v_av_body%', 'v_av_body', if(explain LIKE '%v_av_leaf%', 'v_av_leaf', if(explain LIKE '%mt_g%', 'mt_g', 'other')))))
+FROM viewExplain('EXPLAIN', '', (SELECT count() FROM v_av_body))
+WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
+
+SELECT 'v_av_top', arraySort(groupUniqArray(if(explain LIKE '%v_av_top%', 'v_av_top', if(explain LIKE '%v_av_body%', 'v_av_body', if(explain LIKE '%mt_g%', 'mt_g', 'other')))))
+FROM viewExplain('EXPLAIN', '', (SELECT count() FROM v_av_top))
+WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
+
+SELECT 'v_plain_over_plain', arraySort(groupUniqArray(if(explain LIKE '%v_plain_over_plain%', 'v_plain_over_plain', if(explain LIKE '%v_av_leaf%', 'v_av_leaf', if(explain LIKE '%mt_g%', 'mt_g', 'other')))))
+FROM viewExplain('EXPLAIN', '', (SELECT count() FROM v_plain_over_plain))
+WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
+
 DROP VIEW v_plain;
 DROP VIEW v_set;
 DROP VIEW v_nested;
@@ -98,6 +124,10 @@ DROP VIEW v_union;
 DROP VIEW v_union_both;
 DROP VIEW v_union_second;
 DROP VIEW v_final;
+DROP VIEW v_plain_over_plain;
+DROP VIEW v_av_top;
+DROP VIEW v_av_body;
+DROP VIEW v_av_leaf;
 DROP TABLE mt_g;
 DROP TABLE mt_g2;
 DROP TABLE rmt_g;
