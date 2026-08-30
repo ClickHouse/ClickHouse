@@ -1,6 +1,7 @@
--- Regression tests for three KQL fixes: a lone unbound name inside `in (...)` reads as a
--- column rather than a physical table, `bin` over a datetime takes a per-row bin size, and
--- a timespan divided by a timespan is their real-valued ratio.
+-- Regression tests for four KQL fixes: a lone unbound name inside `in (...)` reads as a
+-- column rather than a physical table, `bin` over a datetime takes a per-row bin size,
+-- a timespan divided by a timespan is their real-valued ratio, and a `LowCardinality`
+-- argument answers the same as its unwrapped form.
 
 SET allow_experimental_kusto_dialect = 1;
 SET dialect = 'kusto';
@@ -58,6 +59,17 @@ print '-- integer and real division are unchanged --';
 print 7 / 2;
 print 7.0 / 2;
 
+print '-- LowCardinality is transparent to /, bin and bin_at --';
+print toLowCardinality(7) / 2;
+print 7 / toLowCardinality(2);
+print toLowCardinality(7.5) / 2;
+print bin(toLowCardinality(4), 1);
+print bin(4, toLowCardinality(1));
+print bin(toLowCardinality(-5), 3);
+print bin_at(toLowCardinality(6), 2, 1);
+print bin_at(6, 2, toLowCardinality(1));
+print toLowCardinality(1h) / 30m;
+
 SET dialect = 'clickhouse';
 
 SELECT '-- kqlDivide over intervals from SQL --';
@@ -68,3 +80,19 @@ SELECT kqlDivide(toIntervalMonth(1), toIntervalHour(1)); -- { serverError ILLEGA
 SELECT '-- kqlBin over a datetime with a non-constant interval from SQL --';
 SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), materialize(toIntervalHour(1)));
 SELECT kqlBin(toDateTime64('2026-08-01 12:34:56.123', 3, 'UTC'), toIntervalMicrosecond(700));
+
+SELECT '-- LowCardinality arguments are transparent --';
+SELECT toTypeName(kqlDivide(toLowCardinality(7), 2)), kqlDivide(toLowCardinality(7), 2);
+SELECT kqlDivide(toLowCardinality(toIntervalHour(15)), toIntervalHour(10));
+SELECT kqlDivide(toIntervalHour(15), toLowCardinality(toIntervalHour(10)));
+SELECT kqlDivide(toLowCardinality(toNullable(toIntervalHour(15))), toIntervalHour(10));
+SELECT kqlBin(toLowCardinality(toIntervalHour(16)), toIntervalHour(7));
+SELECT kqlBin(materialize(toLowCardinality(4)), 1);
+SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toLowCardinality(toIntervalHour(1)));
+SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toLowCardinality(toIntervalMonth(1)));
+SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toLowCardinality(toIntervalMonth(-1)));
+SELECT kqlBinAt(materialize(toLowCardinality(6)), 2, 1);
+
+SELECT '-- a carrier the unwrapped form also rejects stays rejected --';
+SELECT kqlBin(toLowCardinality('x'), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT kqlBin(toLowCardinality(toDate('2026-01-01')), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
