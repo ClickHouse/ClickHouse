@@ -143,6 +143,9 @@ INSERT INTO json_pv_fixed_string_width VALUES
 SELECT count() FROM json_pv_fixed_string_width
 WHERE json.k IN (SELECT toFixedString('a', 3))
 SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM json_pv_fixed_string_width
+WHERE json.k = toFixedString('a', 3)
+SETTINGS force_data_skipping_indices = 'idx';
 
 -- Different widths compare equal after zero-padding, but their token bytes differ. The index must
 -- decline this predicate instead of pruning the matching row.
