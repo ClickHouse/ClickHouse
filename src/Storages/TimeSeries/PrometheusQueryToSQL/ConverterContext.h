@@ -14,6 +14,8 @@ struct ConverterContext
 {
     const std::shared_ptr<const PrometheusQueryTree> promql_tree;
     const StorageID time_series_storage_id;
+    const String cluster_name;
+    const StorageID remote_time_series_storage_id;
     DataTypePtr timestamp_data_type;
     UInt32 timestamp_scale;
     DataTypePtr scalar_data_type;

@@ -12,6 +12,8 @@ ConverterContext::ConverterContext(std::shared_ptr<const PrometheusQueryTree> pr
                                    const PrometheusQueryEvaluationSettings & settings_)
     : promql_tree(promql_tree_)
     , time_series_storage_id(settings_.time_series_storage_id)
+    , cluster_name(settings_.cluster_name)
+    , remote_time_series_storage_id(settings_.remote_time_series_storage_id)
     , timestamp_data_type(settings_.timestamp_data_type)
     , timestamp_scale(tryGetDecimalScale(*timestamp_data_type).value_or(0))
     , scalar_data_type(settings_.scalar_data_type)

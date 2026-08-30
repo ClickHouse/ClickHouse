@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
 #include <Parsers/ASTExpressionList.h>
@@ -23,6 +24,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -116,13 +118,27 @@ ASTPtr makeSelectFromSubquery(ASTs select_list, ASTPtr subquery, bool distinct, 
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
     return select_with_union_query;
 }
+
+/// The metadata endpoints read the Tags and Metrics target tables of a TimeSeries table directly,
+/// which a Distributed table doesn't have.
+void checkTargetIsNotDistributed(const IStorage & storage, std::string_view endpoint)
+{
+    if (resolvePrometheusQueryTarget(storage))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The Prometheus {} endpoint is not supported over a Distributed table: table {} is a Distributed table, "
+            "and merging the results of this endpoint across the shards is not implemented",
+            endpoint, storage.getStorageID().getNameForLogs());
+}
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext{context_}
-    , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
+    , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
+    /// Check the engine of the target table early, before any endpoint is called.
+    resolvePrometheusQueryTarget(*time_series_storage);
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
@@ -134,6 +150,14 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
+    if (auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage))
+    {
+        evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
+        evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
+    }
+
+    /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,
+    /// so the data types are taken from the target's own metadata in both cases.
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
         = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -463,7 +487,9 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
 
     /// Like the query path, filter by the [min_time, max_time] stored in the tags table; without stored bounds the range is ignored (a superset is allowed).
-    auto time_series_settings = time_series_storage->getStorageSettings();
+    /// Both callers reject a Distributed target, so the target is a TimeSeries table here.
+    const auto & time_series_table = typeid_cast<const StorageTimeSeries &>(*time_series_storage);
+    auto time_series_settings = time_series_table.getStorageSettings();
     if (!(*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
         || !(*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
     {
@@ -471,7 +497,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
         max_time.reset();
     }
 
-    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
+    auto tags_table_id = time_series_table.getTargetTableID(ViewTarget::Tags, getContext());
 
     /// Each `match[]` value must be an instant selector; the result is the union of the series matched by each selector.
     auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
@@ -516,6 +542,8 @@ void PrometheusHTTPProtocolAPI::getSeries(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
+    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/series");
+
     /// Prometheus requires at least one `match[]` selector here; without it the endpoint would scan the whole tags table.
     if (match_params.empty())
         throw Exception(
@@ -615,6 +643,8 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     Int64 limit_per_metric,
     QueryFinishCallback query_finish_callback)
 {
+    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/metadata");
+
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
     /// The Metrics target table may declare its columns as String, LowCardinality(String) or Nullable(String),
@@ -770,6 +800,8 @@ void PrometheusHTTPProtocolAPI::getLabels(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
+    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/labels");
+
     /// Unlike /api/v1/series, the `match[]` selectors are optional here: without them the endpoint
     /// returns the label names of all the time series stored in the table.
     Strings selectors = match_params;

@@ -137,6 +137,8 @@ public:
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
+    /// Returns "<remote>" for a table created over remote()/cluster(), which has no cluster name.
+    std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery
@@ -223,7 +225,6 @@ private:
     bool hasShardingKeyForReads() const { return has_sharding_key && !is_remote_database_proxy; }
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
-    std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 
     const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }
 
