@@ -2816,9 +2816,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist. In scope {}{}",
-                            function_name, scope.scope_node->formatASTForErrorMessage(),
-                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist{}. In scope {}",
+                            function_name,
+                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)),
+                            scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -2945,10 +2946,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name {} does not exist. In scope {}{}",
+                "Function with name {} does not exist{}. In scope {}",
                 backQuote(function_name),
-                scope.scope_node->formatASTForErrorMessage(),
-                getHintsErrorMessageSuffix(hints));
+                getHintsErrorMessageSuffix(hints),
+                scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())
