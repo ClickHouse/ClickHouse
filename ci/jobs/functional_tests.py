@@ -25,44 +25,26 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
-# Wall-clock budget of a functional-test job, mirroring `common_ft_job_config`'s
-# `timeout` in `ci/defs/job_configs.py`. Used to bound the diagnostics stage; keep
-# the two in sync.
+# Mirrors `common_ft_job_config`'s `timeout` in `ci/defs/job_configs.py`; keep the
+# two in sync.
 DIAGNOSTICS_JOB_TIMEOUT = int(3600 * 2.5)
 
-# Time left unspent by the diagnostics stage so the job can still merge coverage
-# and upload its results. A job that hits its own timeout is recorded as ERROR
-# and skips artifact upload entirely, which starves the downstream coverage job.
-# The outer `Shell.run` timeout bounds the stage only while no process a rerun
-# spawns outlives it holding the runner's stdout: a per-test wrapper started
-# without its own stdio keeps that pipe open and the output reader then waits
-# for it. Bounding that is a separate `tests/clickhouse-test` concern, not this
-# stage's: the reserve is what keeps the overshoot from eating the coverage
-# finalization window.
+# Time the diagnostics stage must leave unspent. A job that hits its own timeout
+# is recorded as ERROR and skips artifact upload entirely, which starves the
+# downstream coverage job.
 DIAGNOSTICS_RESERVE_S = 15 * 60
 
 # `clickhouse-test`'s own `--timeout` default, which the main run does not
-# override (see `run_tests`), so every failed test already had exactly this
-# bound. The rerun gets the same, never more and never less: with more time it
-# can pass a test the main pass timed out on (`Failed 0 out of 3 reruns`), with
-# less time a test near the limit fails only some of the reruns (`Failed 1 out
-# of 3`) - both read as `flaky`, which coverage jobs force to `OK`. A smaller
-# value would also shorten the per-test cleanup, sized from the same `--timeout`
-# (`_cleanup`), whose failure against a live server propagates as a FAIL.
+# override (see `run_tests`). The rerun must use exactly this bound: any other
+# value changes a verdict through the timeout alone, and reads as `flaky`.
 DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S = 600
 
 
-def diagnostics_budget(elapsed_s, num_tests):
-    """Time budget for the DIAGNOSTICS stage rerun of `num_tests` failed tests.
+def diagnostics_budget(elapsed_s):
+    """Time budget for the DIAGNOSTICS stage rerun.
 
-    Returns `(stage_timeout_s, test_timeout_s)`, or `None` when the job has too
-    little time left to fund even one full-timeout rerun. Only the stage bound is
-    derived from the remaining time: truncating the stage is reported honestly as
-    `diagnosed N out of M failed test(s)`, while a per-test value differing from
-    the main run's fabricates a `flaky` label (see
-    `DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S`), so `num_tests` is deliberately not
-    part of the arithmetic - the `> 10` SKIPPED arm is the count-sensitive
-    control.
+    Returns `(stage_timeout_s, test_timeout_s)`, or `None` when too little job
+    time is left to fund one full-timeout rerun.
     """
     stage = DIAGNOSTICS_JOB_TIMEOUT - int(elapsed_s) - DIAGNOSTICS_RESERVE_S
     if stage < DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S:
@@ -1216,14 +1198,10 @@ def main():
                 )
                 break
 
-        # Read the clock once for the budget: the budget truncates `elapsed_s`,
-        # so evaluating it for the guard and again for the unpacking can
-        # straddle a whole second and unpack `None`.
-        diag_budget = (
-            diagnostics_budget(stop_watch.duration, len(failed_tests))
-            if failed_tests
-            else None
-        )
+        # Read the clock once: the budget truncates `elapsed_s`, so evaluating it
+        # for the guard and again for the unpacking can straddle a second and
+        # unpack `None`.
+        diag_budget = diagnostics_budget(stop_watch.duration) if failed_tests else None
 
         if has_errors:
             pass
@@ -1247,9 +1225,8 @@ def main():
             diag_stage_timeout, diag_test_timeout = diag_budget
             memory_limit = stateless_memory_limit(Info().job_name)
             # The rerun must mirror the main run's environment or its verdict is
-            # meaningless. shard/zookeeper default as in `run_tests` (passing both
-            # forms of a pair is an argparse error); options go BEFORE `--`
-            # (after it, `test` is `nargs="*"` and eats them).
+            # meaningless. Pass one form of a shard/zookeeper pair, not both
+            # (argparse error); options after `--` are parsed as test names.
             diag_options = runner_options
             if "--no-shard" not in diag_options:
                 diag_options += " --shard"
