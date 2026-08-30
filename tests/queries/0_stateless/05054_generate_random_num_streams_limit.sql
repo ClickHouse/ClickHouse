@@ -28,13 +28,13 @@ SETTINGS optimize_trivial_count_query = 0, max_block_size = 17, preferred_block_
 -- The rounded-up source count for this `LIMIT` and block size is above the maximum, so the read is
 -- refused. The two values are chosen so that `query_limit + max_block_size - 1` is exactly 2^64: a
 -- ceiling computed in that form wraps to zero sources and answers an empty result instead.
--- `max_memory_usage` bounds this statement alone: the refusal happens while building the read, before
--- any source exists, but a single source at this block size would be 4 GiB, so an environment that
--- lowers `max_streams` to 1 and leaves the ratio unapplied must fail here instead of allocating it.
+-- `max_rows_to_read = 0` keeps the `LIMIT` as the count that reaches the read: a smaller row limit
+-- replaces it with `1 + max_rows_to_read`, and then one source suffices. The other two settings
+-- bound the statement in memory and in source count if it is not refused.
 SELECT count() FROM (SELECT n FROM generateRandom('n UInt8') LIMIT 18446744069414584833)
 SETTINGS optimize_trivial_count_query = 0, max_block_size = 4294966784, preferred_block_size_bytes = 0,
-    max_threads = 4, max_streams_to_max_threads_ratio = 1073741952,
-    max_memory_usage = '100Mi'; -- { serverError PARAMETER_OUT_OF_BOUND }
+    max_threads = 4, max_streams_to_max_threads_ratio = 1073741952, max_rows_to_read = 0,
+    parallelize_output_from_storages = 0, max_memory_usage = '100Mi'; -- { serverError PARAMETER_OUT_OF_BOUND }
 
 -- With `max_rows_to_read` the planner asks for one row more than the limit it enforces, so the source
 -- count must be rounded up: one source is still needed when that limit is far below one block.
