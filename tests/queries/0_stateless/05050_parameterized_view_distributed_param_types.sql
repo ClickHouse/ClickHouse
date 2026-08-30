@@ -78,7 +78,7 @@ INSERT INTO t_pv VALUES ('a1', 'y', '2020-01-02', '00000000-0000-0000-0000-00000
 -- serialized plan instead of the re-rendered SQL whose text this test is about.
 SELECT 'forwarded-in', count() FROM t_pv_dist
 WHERE (name, val) IN (SELECT name, val FROM v_pv_array(tuples = [('a1', 'y'), ('a2', 'x')]))
-SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, enable_analyzer = 1;
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, enable_analyzer = 1, log_comment = 'pv_forwarded_array';
 
 -- The scalar view forwards every CAST-wrapped parameter type at once, so a regression in
 -- forwarded scalar re-serialization cannot hide behind the array-tuple case above.
@@ -90,7 +90,7 @@ WHERE (name, val, d, u, ip, dec) IN (SELECT * FROM v_pv(
     u = '00000000-0000-0000-0000-000000000001',
     ip = '1.2.3.4',
     dec = 1.25))
-SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, enable_analyzer = 1;
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, enable_analyzer = 1, log_comment = 'pv_forwarded_scalar';
 
 -- The legacy analyzer resolves parameters via FunctionParameterValuesVisitor; feed it the rendered
 -- CAST forms directly — a forwarded legacy case cannot run (the call is forwarded unqualified).
@@ -112,16 +112,29 @@ SETTINGS enable_analyzer = 0;
 SYSTEM FLUSH LOGS query_log;
 
 -- The shard really received both view calls as text: non-initial queries mentioning them ran.
+-- Each probe is pinned to the initiator this run just issued, found by its log_comment and taken
+-- newest-first: the stateless database name and the query_log history are both reused across runs,
+-- so matching on the view name alone would also be satisfied by an earlier run's shard rows.
 SELECT 'shard saw the view call', count() > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
-    AND has(databases, currentDatabase()) AND query LIKE '%v_pv_array%';
+    AND has(databases, currentDatabase()) AND query LIKE '%v_pv_array%'
+    AND initial_query_id = (
+        SELECT query_id FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 1
+            AND has(databases, currentDatabase()) AND log_comment = 'pv_forwarded_array'
+        ORDER BY event_time_microseconds DESC LIMIT 1);
 
 -- The analyzer renders the call as `db.v_pv`(...), so the paren cannot follow the name directly.
 SELECT 'shard saw the scalar view call', count() > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
-    AND has(databases, currentDatabase()) AND query LIKE '%v_pv%' AND query NOT LIKE '%v_pv_array%';
+    AND has(databases, currentDatabase()) AND query LIKE '%v_pv%' AND query NOT LIKE '%v_pv_array%'
+    AND initial_query_id = (
+        SELECT query_id FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 1
+            AND has(databases, currentDatabase()) AND log_comment = 'pv_forwarded_scalar'
+        ORDER BY event_time_microseconds DESC LIMIT 1);
 
 DROP VIEW v_pv_array;
 DROP VIEW v_pv;
