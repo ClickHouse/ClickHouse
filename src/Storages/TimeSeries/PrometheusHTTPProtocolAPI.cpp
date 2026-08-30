@@ -20,6 +20,7 @@
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
@@ -596,6 +597,160 @@ void PrometheusHTTPProtocolAPI::getSeries(
         /// Finalize the query result cache write before the executor's destructor cancels the pipeline; a truncated (incomplete) result must not be cached.
         if (!truncated)
             io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Release the query slot early, flush the response and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
+}
+
+void PrometheusHTTPProtocolAPI::getMetadata(
+    WriteBuffer & response,
+    const String & metric_param,
+    Int64 limit,
+    Int64 limit_per_metric,
+    QueryFinishCallback query_finish_callback)
+{
+    const auto time_series_storage_id = time_series_storage->getStorageID();
+
+    /// The Metrics target table may declare its columns as String, LowCardinality(String) or Nullable(String),
+    /// so normalize them to plain strings with NULL meaning an empty string.
+    auto normalize_column = [](const char * column_name)
+    {
+        return makeASTFunction(
+            "ifNull",
+            makeASTFunction("toString", make_intrusive<ASTIdentifier>(column_name)),
+            make_intrusive<ASTLiteral>(String{}));
+    };
+
+    /// groupUniqArray() deduplicates the metadata entries of each metric family: the Metrics target table typically
+    /// contains duplicate rows until they're merged. With `limit_per_metric` set it also caps the number of entries
+    /// per family, choosing an arbitrary subset like Prometheus does. arraySort() and ORDER BY make the result deterministic.
+    auto group_uniq_array = makeASTFunction(
+        "groupUniqArray",
+        makeASTFunction(
+            "tuple",
+            normalize_column(TimeSeriesColumnNames::Type),
+            normalize_column(TimeSeriesColumnNames::Help),
+            normalize_column(TimeSeriesColumnNames::Unit)));
+    if (limit_per_metric > 0)
+        group_uniq_array = addParametersToAggregateFunction(std::move(group_uniq_array), make_intrusive<ASTLiteral>(limit_per_metric));
+
+    auto metric_family = normalize_column(TimeSeriesColumnNames::MetricFamilyName);
+    metric_family->setAlias("metric_family");
+    auto metadata_entries = makeASTFunction("arraySort", std::move(group_uniq_array));
+    metadata_entries->setAlias("metadata");
+
+    /// SELECT ifNull(toString(metric_family_name), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
+    /// FROM timeSeriesMetrics(database, table) [WHERE metric_family_name = metric]
+    /// GROUP BY ... ORDER BY ... [LIMIT limit]
+    PrometheusQueryToSQL::SelectQueryBuilder builder;
+    builder.select_list.push_back(std::move(metric_family));
+    builder.select_list.push_back(std::move(metadata_entries));
+    builder.from_table_function = makeASTFunction(
+        "timeSeriesMetrics",
+        make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
+        make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()));
+
+    /// Filter on the raw column so the primary key of the Metrics target table can be used.
+    if (!metric_param.empty())
+        builder.where = makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName),
+            make_intrusive<ASTLiteral>(metric_param));
+
+    builder.group_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
+    builder.order_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
+    builder.order_direction = 1;
+
+    /// LIMIT 0 returns an empty result, matching how Prometheus handles `limit=0`.
+    if (limit >= 0)
+        builder.limit = static_cast<size_t>(limit);
+
+    auto sql_query = builder.getSelectQuery();
+
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+
+        /// Pull the first non-empty block before writing the header so an early exception still produces the correct error response.
+        bool has_output = false;
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() > 0)
+            {
+                has_output = true;
+                break;
+            }
+        }
+
+        writeString(R"({"status":"success","data":{)", response);
+
+        bool first_metric_family = true;
+
+        auto write_block = [&](const Block & result_block)
+        {
+            const auto & metric_family_column = *result_block.getByName("metric_family").column;
+            const auto & metadata_column = typeid_cast<const ColumnArray &>(*result_block.getByName("metadata").column);
+            const auto & offsets = metadata_column.getOffsets();
+            const auto & entry_column = typeid_cast<const ColumnTuple &>(metadata_column.getData());
+            const auto & type_column = entry_column.getColumn(0);
+            const auto & help_column = entry_column.getColumn(1);
+            const auto & unit_column = entry_column.getColumn(2);
+
+            for (size_t i = 0; i < result_block.rows(); ++i)
+            {
+                if (!first_metric_family)
+                    writeString(",", response);
+                first_metric_family = false;
+
+                writeJSONString(metric_family_column.getDataAt(i), response, format_settings);
+                writeString(":[", response);
+
+                size_t start = (i == 0) ? 0 : offsets[i - 1];
+                size_t end = offsets[i];
+
+                for (size_t j = start; j < end; ++j)
+                {
+                    if (j > start)
+                        writeString(",", response);
+
+                    writeString(R"({"type":)", response);
+                    writeJSONString(type_column.getDataAt(j), response, format_settings);
+                    writeString(R"(,"help":)", response);
+                    writeJSONString(help_column.getDataAt(j), response, format_settings);
+                    writeString(R"(,"unit":)", response);
+                    writeJSONString(unit_column.getDataAt(j), response, format_settings);
+                    writeString("}", response);
+                }
+
+                writeString("]", response);
+            }
+        };
+
+        if (has_output)
+        {
+            write_block(block);
+            while (executor.pull(block))
+            {
+                if (block.rows() > 0)
+                    write_block(block);
+            }
+        }
+
+        writeString("}}", response);
+
+        /// Finalize the query result cache write before the executor's destructor cancels the pipeline.
+        io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)
     {

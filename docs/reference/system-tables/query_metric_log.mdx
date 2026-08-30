@@ -310,6 +310,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/reference/data-types/int-uint)) — Total number of read tasks for which there was any mutation applied on fly
 - `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied mutations on-fly among all read tasks
 - `ProfileEvent_PatchesAcquireLockTries` ([UInt64](/reference/data-types/int-uint)) — Total number of tries to acquire lock for executing lightweight updates
+- `ProfileEvent_PatchesAcquireLockBadVersionRetries` ([UInt64](/reference/data-types/int-uint)) — Total number of retries while acquiring the lock for lightweight updates caused by a concurrent update committing first
 - `ProfileEvent_PatchesAcquireLockMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total number of microseconds spent to acquire lock for executing lightweight updates
 - `ProfileEvent_DiskObjectStorageWaitBlobRemovalMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting for pending blob removal after committing metadata transaction
 - `ProfileEvent_SchedulerIOReadRequests` ([UInt64](/reference/data-types/int-uint)) — Resource requests passed through scheduler for IO reads.

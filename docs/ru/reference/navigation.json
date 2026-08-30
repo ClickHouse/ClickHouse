@@ -185,8 +185,7 @@
             "ru/reference/statements/truncate",
             "ru/reference/statements/undrop",
             "ru/reference/statements/update",
-            "ru/reference/statements/use",
-            "ru/reference/statements/watch"
+            "ru/reference/statements/use"
           ]
         },
         {
