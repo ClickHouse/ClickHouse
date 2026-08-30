@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -27,6 +28,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -63,6 +65,7 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ServerSetting
@@ -84,6 +87,35 @@ namespace ErrorCodes
 
 namespace
 {
+
+void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command = child->as<ASTAlterCommand>();
+
+        /// Every slot that reaches table metadata, so that a reload re-derives the same spelling the
+        /// statement resolved. Mutation expressions (`predicate`, `update_assignments`, the
+        /// `IN PARTITION` value in `partition`) need it too: they are persisted in mutation entries
+        /// and resolved by the background executor and by replicas with the server default settings,
+        /// not with the settings of this session.
+        for (IAST * payload : {command->col_decl,
+                               command->order_by,
+                               command->sample_by,
+                               command->index_decl,
+                               command->constraint_decl,
+                               command->projection_decl,
+                               command->ttl,
+                               command->select,
+                               command->predicate,
+                               command->update_assignments,
+                               command->partition})
+        {
+            if (payload)
+                replaceLegacyToTime(*payload);
+        }
+    }
+}
 
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
@@ -386,7 +418,8 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextM
 BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
-    const auto & alter = query_ptr->as<ASTAlterQuery &>();
+    auto & alter = query_ptr->as<ASTAlterQuery &>();
+
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);
@@ -417,6 +450,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
+    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
@@ -508,7 +544,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateReplicatedDatabaseSegments(segments, database);
 
     if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
+    {
+        /// The patch part is committed while the pipeline runs, so the share lock must outlive this
+        /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
+        QueryPlanResourceHolder update_resources;
+        update_resources.table_locks.emplace_back(std::move(table_lock));
+        lightweight_result->pipeline.addResources(std::move(update_resources));
         return std::move(lightweight_result.value());
+    }
 
     return runCommandSegments(segments, table, getContext());
 }
@@ -748,6 +791,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_PROJECTION:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_PROJECTION, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_PROJECTION:
+        {
+            required_access.emplace_back(AccessType::ALTER_MODIFY_PROJECTION, database, table);
             break;
         }
         case ASTAlterCommand::DROP_PROJECTION:

@@ -371,6 +371,49 @@ public:
     }
 };
 
+/// Snowflake Horizon Catalog embeds Apache Polaris and exposes the Iceberg REST API at
+/// `https://<account>.snowflakecomputing.com/polaris/api/catalog`.
+///
+/// Horizon auth differs from Open Catalog / self-hosted Polaris in two ways:
+/// 1. Programmatic Access Tokens (PAT) and key-pair JWTs are passed as OAuth `client_secret` only
+///    (no `client_id`), with scope `session:role:<ROLE>`.
+/// 2. External OAuth / pre-exchanged access tokens can be supplied as a bearer `auth_header`.
+///
+/// `catalog_credential` is always the OAuth `client_secret` (PAT or key-pair JWT). Unlike
+/// `catalog_type = 'rest'`, it is not split on `:`, because Snowflake PATs may contain colons.
+/// For a pre-exchanged access token, use `auth_header` instead.
+class HorizonCatalog : public RestCatalog
+{
+public:
+    explicit HorizonCatalog(
+        const std::string & warehouse_,
+        const std::string & base_url_,
+        const std::string & catalog_credential_,
+        const std::string & auth_scope_,
+        const std::string & auth_header_,
+        const std::string & oauth_server_uri_,
+        bool oauth_server_use_request_body_,
+        DB::ContextPtr context_);
+
+    DB::DatabaseDataLakeCatalogType getCatalogType() const override
+    {
+        return DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON;
+    }
+
+    static void validateSettingsChanges(const DB::SettingsChanges & changes, bool credential_mode, bool header_mode);
+
+    /// Horizon credentials are secret-only: the whole string is the OAuth client_secret.
+    static std::pair<std::string, std::string> parseHorizonCredential(const std::string & catalog_credential);
+
+protected:
+    void applySettingsChangesToState(
+        const DB::SettingsChanges & changes,
+        const CatalogState & old_state,
+        CatalogState & new_state,
+        std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
+        std::unique_ptr<AccessToken> & new_access_token) override;
+};
+
 }
 
 #endif

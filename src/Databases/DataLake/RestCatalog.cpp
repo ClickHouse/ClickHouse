@@ -324,10 +324,10 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
         return DB::HTTPHeaderEntries{catalog_state.auth_header.value()};
     }
 
-    /// Option 2: user provided grant_type, client_id and client_secret.
-    /// We would make OAuthClientCredentialsRequest
+    /// Option 2: user provided grant_type and client credentials for OAuthClientCredentialsRequest.
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
-    if (!catalog_state.client_id.empty())
+    /// Horizon accepts a secret-only credential (PAT/JWT as `client_secret` with empty `client_id`).
+    if (!catalog_state.client_id.empty() || !catalog_state.client_secret.empty())
     {
         /// The cached token may have been minted with other credentials than the ones in
         /// `catalog_state` (e.g. right after `ALTER DATABASE ... MODIFY SETTING`); then the
@@ -485,7 +485,8 @@ void RestCatalog::applySettingsChangesToState(
     std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
     std::unique_ptr<AccessToken> & new_access_token)
 {
-    const bool credential_mode = !old_state.client_id.empty();
+    /// Secret-only credentials (Horizon PAT/JWT) also count as credential mode.
+    const bool credential_mode = !old_state.client_id.empty() || !old_state.client_secret.empty();
     const bool header_mode = old_state.auth_header.has_value();
 
     validateSettingsChanges(changes, credential_mode, header_mode);
@@ -629,6 +630,87 @@ void OneLakeCatalog::applySettingsChangesToState(
     }
 }
 
+std::pair<std::string, std::string> HorizonCatalog::parseHorizonCredential(const std::string & catalog_credential)
+{
+    /// Always secret-only. Snowflake PATs may contain `:`, so we must not split like RestCatalog.
+    return {"", catalog_credential};
+}
+
+HorizonCatalog::HorizonCatalog(
+    const std::string & warehouse_,
+    const std::string & base_url_,
+    const std::string & catalog_credential_,
+    const std::string & auth_scope_,
+    const std::string & auth_header_,
+    const std::string & oauth_server_uri_,
+    bool oauth_server_use_request_body_,
+    DB::ContextPtr context_)
+    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
+{
+    CatalogState initial_state;
+    if (!catalog_credential_.empty())
+    {
+        std::tie(initial_state.client_id, initial_state.client_secret) = parseHorizonCredential(catalog_credential_);
+        if (initial_state.client_id.empty() && initial_state.client_secret.empty())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Horizon catalog credential is empty");
+        update_token_if_expired = true;
+    }
+    else if (!auth_header_.empty())
+    {
+        initial_state.auth_header = parseAuthHeader(auth_header_);
+        validateAuthHeaders(initial_state.auth_header.value());
+    }
+    else
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Horizon catalog requires either `catalog_credential` (PAT or key-pair JWT as OAuth client_secret) "
+            "or `auth_header` (Authorization: Bearer <token>)");
+    }
+
+    initial_state.config = loadConfig(initial_state);
+    state.set(std::make_unique<const CatalogState>(std::move(initial_state)));
+}
+
+void HorizonCatalog::validateSettingsChanges(const DB::SettingsChanges & changes, bool credential_mode, bool header_mode)
+{
+    RestCatalog::validateSettingsChanges(changes, credential_mode, header_mode);
+}
+
+void HorizonCatalog::applySettingsChangesToState(
+    const DB::SettingsChanges & changes,
+    const CatalogState & old_state,
+    CatalogState & new_state,
+    std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
+    std::unique_ptr<AccessToken> & new_access_token)
+{
+    const bool credential_mode = !old_state.client_id.empty() || !old_state.client_secret.empty();
+    const bool header_mode = old_state.auth_header.has_value();
+
+    validateSettingsChanges(changes, credential_mode, header_mode);
+
+    for (const auto & change : changes)
+    {
+        if (change.name == DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::catalog_credential))
+        {
+            std::tie(new_state.client_id, new_state.client_secret) = parseHorizonCredential(change.value.safeGet<String>());
+        }
+        else if (change.name == DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::auth_header))
+        {
+            new_state.auth_header = parseAuthHeader(change.value.safeGet<String>());
+            validateAuthHeaders(new_state.auth_header.value());
+        }
+        else
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected setting `{}` after validation", change.name);
+    }
+
+    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret))
+    {
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+    }
+}
+
 namespace
 {
 
@@ -659,6 +741,19 @@ namespace
     return true;
 }();
 
+[[maybe_unused]] const bool horizon_settings_alter_validator_registered = []
+{
+    CatalogSettingsAlterValidatorFactory::instance().registerValidator(
+        DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON,
+        [](const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)
+        {
+            const bool credential_mode = !current_settings[DB::DatabaseDataLakeSetting::catalog_credential].value.empty();
+            const bool header_mode = !current_settings[DB::DatabaseDataLakeSetting::auth_header].value.empty();
+            HorizonCatalog::validateSettingsChanges(changes, credential_mode, header_mode);
+        });
+    return true;
+}();
+
 }
 
 AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, const std::string & client_secret) const
@@ -681,23 +776,29 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
         Poco::URI::QueryParameters params = {
             {"grant_type", "client_credentials"},
             {"scope", auth_scope},
-            {"client_id", client_id},
             {"client_secret", client_secret},
         };
+        /// Snowflake Horizon OAuth uses secret-only credentials (PAT/JWT); omit empty client_id.
+        if (!client_id.empty())
+            params.emplace_back("client_id", client_id);
         url.setQueryParameters(params);
     }
     else
     {
         String encoded_auth_scope;
-        String encoded_client_id;
         String encoded_client_secret;
         Poco::URI::encode(auth_scope, auth_scope, encoded_auth_scope);
-        Poco::URI::encode(client_id, client_id, encoded_client_id);
         Poco::URI::encode(client_secret, client_secret, encoded_client_secret);
 
         body = fmt::format(
-            "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
-            encoded_auth_scope, encoded_client_id, encoded_client_secret);
+            "grant_type=client_credentials&scope={}&client_secret={}",
+            encoded_auth_scope, encoded_client_secret);
+        if (!client_id.empty())
+        {
+            String encoded_client_id;
+            Poco::URI::encode(client_id, client_id, encoded_client_id);
+            body += "&client_id=" + encoded_client_id;
+        }
         body_size = body.size();
         out_stream_callback = [&](std::ostream & os)
         {
@@ -732,12 +833,26 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
     std::string json_str;
     Poco::StreamCopier::copyToString(rs, json_str);
 
+    /// The body of a failed response is an OAuth error object, safe to show.
+    /// The URL is omitted: its query string can carry `client_secret`.
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "OAuth token request failed with status {} ({}): {}",
+            static_cast<int>(response.getStatus()), response.getReason(), json_str);
+
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var res_json = parser.parse(json_str);
     const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
 
+    if (!object->has("access_token"))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "OAuth token response has no `access_token` field: {}",
+            json_str);
+
     AccessToken token;
-    token.token = object->get("access_token").extract<String>();
+    token.token = object->getValue<String>("access_token");
 
     if (object->has("expires_in"))
     {
@@ -1666,8 +1781,11 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
+    LOG_TEST(log, "REST catalog {} {} body ({} bytes): {}", method, endpoint, body_str.size(), body_str);
+
     DB::HTTPHeaderEntries headers = getAuthHeaders(catalog_state, /* update_token = */ true);
     headers.emplace_back("Content-Type", "application/json");
+    headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
 
     const auto & context = getContext();
 
@@ -1691,6 +1809,9 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)
         .withOutCallback(out_stream_callback)
+        /// Send the JSON body with an explicit Content-Length: Snowflake Horizon rejects
+        /// chunked transfer encoding on catalog commits with HTTP 500 and an empty body.
+        .withOutCallbackFixedContentLength(body_str.size())
         .withSkipNotFound(false)
         .create(credentials);
 
@@ -1761,7 +1882,8 @@ bool RestCatalog::createTable(
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
-    request_body->set("location", location);
+    if (!managesTableLocation())
+        request_body->set("location", location);
     {
         Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
         Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
@@ -1823,21 +1945,22 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("identifier", identifier);
     }
 
-    if (new_snapshot->has("parent-snapshot-id"))
     {
-        auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
-        if (parent_snapshot_id != -1)
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-ref-snapshot-id");
+        requirement->set("ref", "main");
+
+        if (new_snapshot->has("parent-snapshot-id"))
         {
-            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-            requirement->set("type", "assert-ref-snapshot-id");
-            requirement->set("ref", "main");
-            requirement->set("snapshot-id", parent_snapshot_id);
-
-            Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-            requirements->add(requirement);
-
-            request_body->set("requirements", requirements);
+            auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
+            if (parent_snapshot_id != -1)
+                requirement->set("snapshot-id", parent_snapshot_id);
         }
+
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+
+        request_body->set("requirements", requirements);
     }
 
     {
@@ -1868,8 +1991,19 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (const DB::HTTPException & ex)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
+        /// 409 Conflict: caller retries after re-reading the latest metadata tip.
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            return false;
+        }
+        LOG_ERROR(log, "updateMetadata failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Iceberg catalog commit failed for table {}.{}: {}",
+            namespace_name,
+            table_name,
+            ex.displayText());
     }
     return true;
 }

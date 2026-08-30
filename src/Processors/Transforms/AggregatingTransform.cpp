@@ -1096,7 +1096,9 @@ AggregatingTransform::AggregatingTransform(
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
 {
-    if (many_data->adaptive_session)
+    /// `AggregatingStep` leaves its engagement verdict in the flag. Without a producer nothing is ever
+    /// staged, so the merge-time drains find empty backlogs and do nothing.
+    if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
         adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
 }
 
@@ -1113,12 +1115,9 @@ void AggregatingTransform::onCancel() noexcept
 size_t AggregatingTransform::getGeneratingStepGroup() const
 {
     /// After consumption finishes, this transform generates the child processors that perform
-    /// the merge / final part of aggregation. Those children belong to the corresponding
-    /// generating stage, not to the AggregatingTransform's own (partial) aggregation stage,
-    /// which is why we map the current group to its generating counterpart here.
-    return AggregatingStep::AggregatingStage::PartialAggregation == static_cast<AggregatingStep::AggregatingStage>(getQueryPlanStepGroup())
-        ? static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation)
-        : static_cast<size_t>(AggregatingStep::AggregatingStage::AggregatingSharded);
+    /// the merge / final part of aggregation. Those children belong to the generating stage,
+    /// not to the AggregatingTransform's own (partial) aggregation stage.
+    return static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation);
 }
 
 IProcessor::Status AggregatingTransform::prepare()
@@ -1314,7 +1313,7 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
     }
 
-    if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
+    if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
         /// Note: we reset aggregation state here to release memory earlier.
         /// It might cause extra memory usage for complex queries othervise.
@@ -1369,7 +1368,9 @@ void AggregatingTransform::initGenerate()
         if (shared.early_drain_variants->hasData())
         {
             /// Early-drained records live in the routing table: it holds part of the result
-            /// and joins the merge set like any other variant.
+            /// and joins the merge set like any other variant. Only the last finisher gets
+            /// here, so growing `variants` is safe as long as nothing else reads it - hence
+            /// the barrier above counts `num_producers` rather than the size of this vector.
             many_data->variants.push_back(shared.early_drain_variants);
         }
     }

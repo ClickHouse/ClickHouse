@@ -325,7 +325,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     const auto & table_name = read_step.getStorageID().getTableName();
 
     statistics.min_row_count = 0;
-    statistics.max_row_count = Float64(read_step.getStorageSnapshot()->storage.totalRows(nullptr).value_or(std::numeric_limits<UInt64>::max()));
+    statistics.max_row_count = Float64(read_step.getStorageSnapshot()->storage.totalRows(read_step.getContext()).value_or(std::numeric_limits<UInt64>::max()));
 
     ReadFromMergeTree::AnalysisResultPtr analyzed_result = read_step.getAnalyzedResult();
     analyzed_result = analyzed_result ? analyzed_result : read_step.selectRangesToRead();

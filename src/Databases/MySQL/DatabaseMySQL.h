@@ -6,6 +6,7 @@
 #include <mysqlxx/Pool.h>
 
 #include <Common/ThreadPool.h>
+#include <Core/LogsLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -27,6 +28,11 @@ class Context;
 struct AlterCommand;
 struct MySQLSettings;
 enum class MySQLDataTypesSupport : uint8_t;
+
+/// Log level for an exception that `DatabaseMySQL` tolerates: Warning for a connection failure to
+/// the (unreachable) remote, Error for anything else. Must be called from within a catch block.
+/// Exposed so that `gtest_mysql_tolerated_connection_failure` can pin the classification.
+LogsLevel mysqlToleratedConnectionFailureLogLevel();
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
@@ -78,6 +84,8 @@ public:
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
+    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync, bool if_exists) override;
 
@@ -105,7 +113,7 @@ private:
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 
-    std::unordered_set<String> remove_or_detach_tables;
+    mutable std::unordered_set<String> remove_or_detach_tables;
 
     void cleanOutdatedTables();
 

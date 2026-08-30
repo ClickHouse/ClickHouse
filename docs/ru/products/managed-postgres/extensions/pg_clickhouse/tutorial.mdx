@@ -509,7 +509,7 @@ Postgres возвращается только одна строка. Чтобы
    его данными из CSV-файла в S3:
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -520,67 +520,67 @@ Postgres возвращается только одна строка. Чтобы
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  Значение `LIFETIME`, равное 0, отключает автоматические обновления, чтобы избежать
-  лишнего трафика к нашему S3 бакету. В других случаях вы можете настроить его
-  иначе. Подробнее см. в разделе [Обновление данных словаря с помощью
-  LIFETIME](/ru/reference/statements/create/dictionary/lifetime).
-</Note>
+   <Note>
+     Значение `LIFETIME`, равное 0, отключает автоматические обновления, чтобы избежать
+     лишнего трафика к нашему S3 бакету. В других случаях вы можете настроить его
+     иначе. Подробнее см. в разделе [Обновление данных словаря с помощью
+     LIFETIME](/ru/reference/statements/create/dictionary/lifetime).
+   </Note>
 
-2. Теперь импортируйте его:
+   2. Теперь импортируйте его:
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. Убедитесь, что запрос к нему выполняется:
+   3. Убедитесь, что запрос к нему выполняется:
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. Отлично. Теперь используйте функцию `dictGet`, чтобы получить
-   название боро в запросе. Этот запрос суммирует количество поездок на такси
-   по каждому боро, которые заканчиваются либо в аэропорту LaGuardia, либо в JFK:
+   4. Отлично. Теперь используйте функцию `dictGet`, чтобы получить
+      название боро в запросе. Этот запрос суммирует количество поездок на такси
+      по каждому боро, которые заканчиваются либо в аэропорту LaGuardia, либо в JFK:
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-Этот запрос подсчитывает количество поездок на такси по каждому боро, которые заканчиваются
-в аэропорту Ла-Гуардия или JFK. Обратите внимание, что довольно много поездок, в которых
-район посадки неизвестен.
+   Этот запрос подсчитывает количество поездок на такси по каждому боро, которые заканчиваются
+   в аэропорту Ла-Гуардия или JFK. Обратите внимание, что довольно много поездок, в которых
+   район посадки неизвестен.
 
 <div id="perform-a-join">
   ## Выполните JOIN
@@ -616,32 +616,32 @@ Postgres возвращается только одна строка. Чтобы
    Time: 48.449 ms
    ```
 
-<Note>
-  Обратите внимание: результат приведённого выше запроса `JOIN` совпадает с
-  результатом запроса `dictGet` выше (за исключением того, что значения `Unknown`
-  в него не входят). Фактически ClickHouse вызывает функцию `dictGet` для
-  словаря `taxi_zone_dictionary`, но синтаксис `JOIN` более привычен для
-  SQL-разработчиков.
-</Note>
+   <Note>
+     Обратите внимание: результат приведённого выше запроса `JOIN` совпадает с
+     результатом запроса `dictGet` выше (за исключением того, что значения `Unknown`
+     в него не входят). Фактически ClickHouse вызывает функцию `dictGet` для
+     словаря `taxi_zone_dictionary`, но синтаксис `JOIN` более привычен для
+     SQL-разработчиков.
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. Этот запрос возвращает строки для 1000 поездок с самыми большими
    чаевыми, а затем выполняет JOIN каждой строки со словарём:
