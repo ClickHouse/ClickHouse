@@ -129,7 +129,7 @@ ReachableFilesResult collectReachableFiles(
     ContextPtr context,
     LoggerPtr log)
 {
-    auto [version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [version, metadata_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,

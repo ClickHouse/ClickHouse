@@ -183,7 +183,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ContextPtr context_,
     LoggerPtr log)
 {
-    const auto [metadata_version, metadata_file_path, compression_method]
+    const auto [metadata_version, metadata_file_path, compression_method, metadata_file_identity]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
@@ -209,7 +209,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     auto table_path = configuration->getPathForRead().path;
     /// The UUID was just read from the metadata file we selected, so that file is already validated.
     auto trusted_table_uuid = std::make_shared<TrustedTableUuid>(table_uuid);
-    trusted_table_uuid->markValidated(metadata_version, metadata_file_path);
+    trusted_table_uuid->markValidated(metadata_version, metadata_file_path, metadata_file_identity);
     return PersistentTableComponents{
         .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
         .metadata_cache = cache_ptr,
@@ -224,7 +224,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
@@ -239,9 +239,15 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 
 void IcebergMetadata::update(const ContextPtr & local_context)
 {
+    /// One update at a time per metadata object. Revalidation below is a read-modify-write of the
+    /// trusted UUID - select the metadata file, read its own `table-uuid`, commit it - and two
+    /// concurrent queries interleaving those steps could commit their observations out of order,
+    /// moving the trusted UUID back to a table that was already known to have been replaced.
+    std::lock_guard update_lock(update_mutex);
+
     auto & trusted_table_uuid = *persistent_components.trusted_table_uuid;
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method, metadata_file_identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
@@ -252,8 +258,17 @@ void IcebergMetadata::update(const ContextPtr & local_context)
         persistent_components.metadata_compression_method,
         /*force_fetch_latest_metadata=*/false);
 
-    if (!trusted_table_uuid.needsRevalidation(metadata_version, metadata_file_path))
+    if (!trusted_table_uuid.needsRevalidation(metadata_version, metadata_file_path, metadata_file_identity))
+    {
+        /// Either the selected version advanced strictly past the last validated one, which no
+        /// replacement restarting the numbering can do, or the selected file is the very same
+        /// unchanged file that was validated before. Either way the trusted UUID still describes
+        /// it and the extra uncached read is skipped. The file still has to become the new
+        /// watermark: leaving the watermark behind would let every later `update` take this same
+        /// branch, and a replacement reusing the version would never be revalidated at all.
+        trusted_table_uuid.markValidated(metadata_version, metadata_file_path, metadata_file_identity);
         return;
+    }
 
     /// Read the selected metadata file bypassing the UUID-keyed content cache: the whole point of
     /// this read is that the currently trusted UUID may belong to a previous table at this root,
@@ -266,7 +281,7 @@ void IcebergMetadata::update(const ContextPtr & local_context)
         actual_table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
 
     auto previous_table_uuid = trusted_table_uuid.get();
-    if (trusted_table_uuid.set(actual_table_uuid))
+    if (trusted_table_uuid.commitValidated(actual_table_uuid, metadata_version, metadata_file_path, metadata_file_identity))
     {
         LOG_INFO(
             log,
@@ -285,8 +300,6 @@ void IcebergMetadata::update(const ContextPtr & local_context)
                 persistent_components.metadata_cache->remove(*previous_table_uuid);
         }
     }
-
-    trusted_table_uuid.markValidated(metadata_version, metadata_file_path);
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -969,7 +982,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,

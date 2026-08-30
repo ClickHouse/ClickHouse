@@ -231,7 +231,9 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
     return MetadataFileWithInfo{
         .version = parseMetadataVersion(version_str, file_name),
         .path = path,
-        .compression_method = getCompressionMethodFromMetadataFile(path)};
+        .compression_method = getCompressionMethodFromMetadataFile(path),
+        /// The name alone says nothing about the file's size or modification time.
+        .identity = std::nullopt};
 }
 
 /// Resolve metadata filename from version hint content.
@@ -495,6 +497,7 @@ struct ShortMetadataFileInfo
     Int32 version;
     UInt64 last_updated_ms;
     String path;
+    std::optional<Iceberg::MetadataFileIdentity> identity;
 };
 
 std::string normalizeUuid(const std::string & uuid)
@@ -1150,10 +1153,10 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
 
-        std::vector<String> metadata_files;
+        RelativePathsWithMetadata metadata_files;
         for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
         {
-            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+            metadata_files = listFilesWithMetadata(*object_storage, table_path, "metadata", ".metadata.json");
             if (!metadata_files.empty())
                 break;
             LOG_DEBUG(
@@ -1170,12 +1173,21 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
-        for (const auto & path : metadata_files)
+        for (const auto & file : metadata_files)
         {
+            const auto & path = file->relative_path;
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
                 continue;
-            auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+            auto [version, metadata_file_path, compression_method, _] = getMetadataFileAndVersion(path);
+
+            /// A storage that cannot report a modification time gives no way to tell this file
+            /// apart from a later rewrite of itself, so it reports no identity at all rather than
+            /// an identity that compares equal across a rewrite.
+            std::optional<Iceberg::MetadataFileIdentity> identity;
+            if (file->metadata && file->metadata->is_size_known && file->metadata->is_last_modified_known)
+                identity = Iceberg::MetadataFileIdentity{
+                    file->metadata->size_bytes, file->metadata->last_modified.epochMicroseconds()};
 
             if (need_all_metadata_files_parsing)
             {
@@ -1189,7 +1201,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                         if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
                         {
                             metadata_files_with_versions.emplace_back(
-                                version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                                version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path, identity);
                         }
                     }
                     else
@@ -1203,12 +1215,12 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 }
                 else
                 {
-                    metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                    metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path, identity);
                 }
             }
             else
             {
-                metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
+                metadata_files_with_versions.emplace_back(version, 0, metadata_file_path, identity);
             }
         }
 
@@ -1246,7 +1258,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                     [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
             }
         }();
-        return MetadataFileWithInfo{latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+        return MetadataFileWithInfo{
+            latest_metadata_file_info.version,
+            latest_metadata_file_info.path,
+            getCompressionMethodFromMetadataFile(latest_metadata_file_info.path),
+            latest_metadata_file_info.identity};
     };
 
     /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness

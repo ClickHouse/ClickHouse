@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
 namespace DB::Iceberg
 {
@@ -38,14 +39,27 @@ public:
         return uuid;
     }
 
-    /// Returns true if the value actually changed, i.e. the table was replaced in place.
-    bool set(std::optional<String> new_uuid)
+    /// Commit the `table-uuid` that was just read from the metadata file at
+    /// {`metadata_version`, `metadata_file_path`}, and record that file as validated.
+    ///
+    /// Returns true if the trusted value actually changed, i.e. the table was replaced in place.
+    /// A replacement resets the watermark to the recreated table's own version, which is normally
+    /// lower: keeping the previous table's higher watermark would force an uncached read on every
+    /// query until the new table caught up with it.
+    bool commitValidated(
+        std::optional<String> new_uuid,
+        Int32 metadata_version,
+        const String & metadata_file_path,
+        const std::optional<MetadataFileIdentity> & identity)
     {
         std::lock_guard lock(mutex);
-        if (uuid == new_uuid)
-            return false;
+        bool changed = uuid != new_uuid;
         uuid = std::move(new_uuid);
-        return true;
+        if (changed)
+            last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity};
+        else
+            advanceWatermark(metadata_version, metadata_file_path, identity);
+        return changed;
     }
 
     /// Whether the `table-uuid` of the selected metadata file has to be re-read from storage
@@ -56,32 +70,59 @@ public:
     /// that restarted the numbering, and the extra uncached read is skipped. A version that does
     /// not advance is the signature of a possible in-place replacement - a recreated table
     /// restarts the numbering, and the `<V>-<random-uuid>.metadata.json` naming even lets it
-    /// reuse a version number under a different path - and is revalidated.
+    /// reuse a version number under a different path.
+    ///
+    /// The steady state - the same query re-selecting the very same file, over and over, with no
+    /// writer in sight - must stay free, or the metadata content cache would be defeated on every
+    /// read. So a non-advancing version is still trusted when the selected file is byte-for-byte
+    /// the one that was validated: same path, and the same size and modification time as the
+    /// listing reported back then. Replacing a table in place rewrites `metadata.json`, which
+    /// changes that identity. A file whose identity the storage cannot report is always
+    /// revalidated rather than assumed unchanged.
     ///
     /// A table with no `table-uuid` at all is never content-cached under a UUID key, so there is
     /// nothing to revalidate.
-    bool needsRevalidation(Int32 metadata_version, const String & /*metadata_file_path*/) const
+    bool needsRevalidation(
+        Int32 metadata_version, const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity) const
     {
         SharedLockGuard lock(mutex);
         if (!uuid.has_value())
             return false;
         if (!last_validated.has_value())
             return true;
-        return metadata_version <= last_validated->version;
+        if (metadata_version > last_validated->version)
+            return false;
+        return !identity.has_value() || !last_validated->identity.has_value() || metadata_file_path != last_validated->path
+            || *identity != *last_validated->identity;
     }
 
-    /// Record the metadata file whose own `table-uuid` was just confirmed to be the trusted one.
-    void markValidated(Int32 metadata_version, const String & metadata_file_path)
+    /// Record the metadata file whose own `table-uuid` is trusted, either because it was just
+    /// read from that file or because the selected version advanced strictly past the previously
+    /// validated one, which no replacement restarting the numbering can do.
+    ///
+    /// The watermark only ever moves forward here: two concurrent `update` calls can observe
+    /// different metadata files, and the older observation must not undo the newer one by
+    /// lowering the watermark and letting an already-seen version pass unchecked. Only a
+    /// confirmed replacement, through `commitValidated`, moves it back.
+    void markValidated(Int32 metadata_version, const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity)
     {
         std::lock_guard lock(mutex);
-        last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path};
+        advanceWatermark(metadata_version, metadata_file_path, identity);
     }
 
 private:
+    void advanceWatermark(
+        Int32 metadata_version, const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity) TSA_REQUIRES(mutex)
+    {
+        if (!last_validated.has_value() || last_validated->version <= metadata_version)
+            last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity};
+    }
+
     struct ValidatedMetadataFile
     {
         Int32 version;
         String path;
+        std::optional<MetadataFileIdentity> identity;
     };
 
     mutable SharedMutex mutex;

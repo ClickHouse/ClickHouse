@@ -33,11 +33,26 @@ namespace DB
 
 namespace Iceberg
 {
+/// What the object listing reported about a metadata file, used as a cache validator: an
+/// external writer that replaces a table in place rewrites `metadata.json` at a path that was
+/// already read, and the listing is the only place where that rewrite is visible for free.
+struct MetadataFileIdentity
+{
+    UInt64 size_bytes{};
+    Poco::Timestamp::TimeVal last_modified{};
+
+    bool operator==(const MetadataFileIdentity &) const = default;
+};
+
 struct MetadataFileWithInfo
 {
     Int32 version{};
     String path;
     CompressionMethod compression_method{};
+    /// Absent when the file was not reached through a listing (an explicit
+    /// `iceberg_metadata_file_path`, a version hint) or when the storage cannot report a
+    /// modification time, in which case the file cannot be told apart from a rewrite of itself.
+    std::optional<MetadataFileIdentity> identity;
 };
 }
 

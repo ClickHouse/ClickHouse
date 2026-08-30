@@ -313,7 +313,7 @@ Pipe executeRemoveOrphanFiles(
     /// between queries. Read the latest metadata file to get the authoritative version
     /// for this command gate.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [_metadata_version, latest_metadata_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,

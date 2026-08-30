@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
+#include <mutex>
 #include <optional>
 #include <base/defines.h>
 
@@ -204,6 +205,12 @@ public:
     }
 
 private:
+    /// Serializes `update`, whose revalidation of the trusted `table-uuid` is a read-modify-write
+    /// spanning several steps. `DataLakeConfiguration::update` reuses one metadata object across
+    /// concurrent queries, so without this two of them could commit their observations out of
+    /// order and move the trusted UUID back to an already replaced table.
+    std::mutex update_mutex;
+
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,
