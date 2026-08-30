@@ -996,10 +996,19 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     ElementWrappers element_wrappers;
     VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
 
-    /// For named tuples allow conversions for tuples with
-    /// different sets of elements. If element exists in @to_type
-    /// and doesn't exist in @to_type it will be filled by default values.
-    if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
+    /// For named tuples with at least one element name in common allow conversions for tuples
+    /// with different sets of elements: elements are matched by name, source elements without
+    /// a counterpart are dropped, and target elements without a counterpart are filled by default
+    /// values (schema evolution: adding, dropping and renaming elements of a Tuple or a Nested
+    /// column with ALTER).
+    /// For named tuples with disjoint sets of element names, matching by name cannot be meant,
+    /// and elements are converted positionally, as for unnamed tuples (e.g. the result of function
+    /// tuple with enable_named_columns_in_function_tuple inserted into a column whose tuple
+    /// elements are named differently). Previously such conversions silently filled the whole
+    /// result by default values, losing all the data (see issue #70830).
+    bool convert_positionally = !(from_type->hasExplicitNames() && to_type->hasExplicitNames());
+
+    if (!convert_positionally)
     {
         const auto & from_names = from_type->getElementNames();
         UnorderedMapWithMemoryTracking<String, size_t> from_positions;
@@ -1008,40 +1017,53 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             from_positions[from_names[i]] = i;
 
         const auto & to_names = to_type->getElementNames();
-        element_wrappers.reserve(to_names.size());
-        to_reverse_index.reserve(from_names.size());
 
-        size_t num_from_fields = 0;
-        for (size_t i = 0; i < to_names.size(); ++i)
+        size_t common_names_count = 0;
+        for (const auto & to_name : to_names)
+            common_names_count += from_positions.contains(to_name);
+
+        if (common_names_count == 0)
         {
-            auto it = from_positions.find(to_names[i]);
-            if (it != from_positions.end())
-            {
-                element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
-                to_reverse_index.emplace_back(it->second);
-                ++num_from_fields;
-            }
-            else
-            {
-                element_wrappers.emplace_back();
-                to_reverse_index.emplace_back();
-            }
+            convert_positionally = true;
         }
-
-        /// When `allow_named_tuple_conversion_with_extra_source_fields` is disabled, named tuple conversions will
-        /// throw an exception if any fields are lost, helping prevent silent data loss. Otherwise, named tuple
-        /// conversions allow different sets of elements, filling missing elements with default values.
-        if (!settings.allow_named_tuple_conversion_with_extra_source_fields && num_from_fields < from_names.size())
+        else
         {
-            throw Exception(
-                ErrorCodes::CANNOT_CONVERT_TYPE,
-                "Some fields from source tuple are lost when casting {} to {} (allow_named_tuple_conversion_with_extra_source_fields "
-                "is disabled)",
-                from_type->getName(),
-                to_type->getName());
+            element_wrappers.reserve(to_names.size());
+            to_reverse_index.reserve(from_names.size());
+
+            for (size_t i = 0; i < to_names.size(); ++i)
+            {
+                auto it = from_positions.find(to_names[i]);
+                if (it != from_positions.end())
+                {
+                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
+                    to_reverse_index.emplace_back(it->second);
+                }
+                else
+                {
+                    element_wrappers.emplace_back();
+                    to_reverse_index.emplace_back();
+                }
+            }
+
+            /// When `allow_named_tuple_conversion_with_extra_source_fields` is disabled, named tuple conversions will
+            /// throw an exception if any fields are lost, helping prevent silent data loss. Otherwise, named tuple
+            /// conversions allow different sets of elements, filling missing elements with default values.
+            /// (Element names within a tuple are unique, so `common_names_count` is also the number of source
+            /// fields consumed by the conversion; disjoint name sets are converted positionally and lose nothing.)
+            if (!settings.allow_named_tuple_conversion_with_extra_source_fields && common_names_count < from_names.size())
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE,
+                    "Some fields from source tuple are lost when casting {} to {} (allow_named_tuple_conversion_with_extra_source_fields "
+                    "is disabled)",
+                    from_type->getName(),
+                    to_type->getName());
+            }
         }
     }
-    else
+
+    if (convert_positionally)
     {
         if (from_element_types.size() != to_element_types.size())
             throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "

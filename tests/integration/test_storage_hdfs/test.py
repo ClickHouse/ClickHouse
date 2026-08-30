@@ -1430,7 +1430,7 @@ def test_hive_partitioning_without_setting(started_cluster):
         == "Elizabeth\tGordon\n"
     )
     pattern = re.compile(
-        r"DB::Exception: Unknown expression identifier `.*` in scope.*", re.DOTALL
+        r"DB::Exception: Unknown expression identifier .*In scope.*", re.DOTALL
     )
 
     with pytest.raises(QueryRuntimeException, match=pattern):
