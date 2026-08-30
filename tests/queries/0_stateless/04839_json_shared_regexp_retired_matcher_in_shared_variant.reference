@@ -1,0 +1,6 @@
+after retirement	999	1
+after retirement	2000	1
+after widening	999	1
+after widening	2000	1
+values intact	999	['{"tag_x":1}']
+values intact	2000	['{"tag_y":2}']
