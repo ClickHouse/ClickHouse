@@ -503,14 +503,16 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
             if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
                 return true;
         }
-        else if (which_to.isNativeInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
+        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
             return true;
     }
 
-    /// Widening a native integer keeps the order when the signedness is preserved or the target is
+    /// Widening an integer keeps the order when the signedness is preserved or the target is
     /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
-    /// sign bit and a narrowing wraps, so both stay refused.
-    if (which_from.isNativeInteger() && which_to.isNativeInteger()
+    /// sign bit and a narrowing wraps, so both stay refused. `isInteger` covers the wide types as
+    /// well: `getLeastSupertype` derives `Int128`/`UInt128`/`Int256`/`UInt256` for an ordinary
+    /// column-list-less `Merge` over mixed integer widths, and those casts are just as injective.
+    if (which_from.isInteger() && which_to.isInteger()
         && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
         && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
             || !to.isValueRepresentedByUnsignedInteger()))

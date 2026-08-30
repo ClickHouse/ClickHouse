@@ -163,6 +163,26 @@ CREATE TABLE m_e16_narrow (`A` Enum8('c' = 0, 'd' = -128)) ENGINE = Merge(curren
 SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_e16_narrow ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
 SELECT DISTINCT A FROM m_e16_narrow ORDER BY A ASC LIMIT 2;
 
+SELECT '-- widening into the wide integer types keeps the stage as well';
+-- `getLeastSupertype` derives these for an ordinary column-list-less `Merge` over mixed integer
+-- widths, so refusing them would cost pushdown on tables that are correct today.
+CREATE TABLE m_wide_i128 (`A` Int128)  ENGINE = Merge(currentDatabase(), '^dist_neg$');
+CREATE TABLE m_wide_i256 (`A` Int256)  ENGINE = Merge(currentDatabase(), '^dist_pos$');
+CREATE TABLE m_wide_u128 (`A` UInt128) ENGINE = Merge(currentDatabase(), '^dist_pos$');
+CREATE TABLE m_e8_i128   (`A` Int128)  ENGINE = Merge(currentDatabase(), '^dist_e8$');
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_wide_i128 ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_wide_i256 ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_wide_u128 ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_e8_i128   ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT DISTINCT A FROM m_wide_i128 ORDER BY A ASC LIMIT 3;
+SELECT DISTINCT A FROM m_wide_i256 ORDER BY A ASC LIMIT 3;
+SELECT DISTINCT A FROM m_wide_u128 ORDER BY A ASC LIMIT 3;
+SELECT DISTINCT A FROM m_e8_i128   ORDER BY A ASC LIMIT 3;
+
+-- A signed source into a wider UNSIGNED target still wraps, so it stays refused.
+CREATE TABLE m_wide_u256_neg (`A` UInt256) ENGINE = Merge(currentDatabase(), '^dist_neg$');
+SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_wide_u256_neg ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+
 SELECT '-- element widening inside Array keeps the stage';
 -- No column list, so `getLeastSupertype` recurses into `Array` and derives the target itself.
 -- The declared type is asserted, so a resolver change reddens instead of going vacuous.

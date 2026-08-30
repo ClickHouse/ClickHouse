@@ -110,6 +110,24 @@ Nullable(String)
 0
 d
 c
+-- widening into the wide integer types keeps the stage as well
+1
+1
+1
+1
+-999
+-998
+-997
+100000
+100001
+100002
+100000
+100001
+100002
+1
+2
+3
+0
 -- element widening inside Array keeps the stage
 Array(Int64)
 1
