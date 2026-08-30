@@ -5,6 +5,9 @@
 
 #include <DataTypes/DataTypeFactory.h>
 
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
 #include <boost/geometry.hpp>
 
 #include <vector>
@@ -123,16 +126,18 @@ struct GroupPolygonUnionData
         total_points = recomputed;
     }
 
-    CartesianMultiPolygon getResult(const char * function_name)
+    const CartesianMultiPolygon & getResult(const char * function_name)
     {
+        static const CartesianMultiPolygon empty_result;
+
         if (chunks.empty())
-            return {};
+            return empty_result;
         reduceChunksPairwiseUnion(chunks, function_name);
         /// `insertResultInto` may be followed by further `add`/`merge`/`insertResultInto`
         /// calls (for example in `runningAccumulate` or window execution), so keep
         /// `total_points` consistent with the reduced `chunks` instead of leaving a stale count.
         recountPoints(function_name);
-        return chunks.empty() ? CartesianMultiPolygon{} : chunks[0];
+        return chunks[0];
     }
 };
 
@@ -163,20 +168,15 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        Field field;
-        columns[0]->get(row_num, field);
-
-        GeometryColumnType current_type = geo_type;
+        const auto value = getGeometryColumnValue(columns[0], row_num, geo_type, is_variant, variant_type_map);
+        auto current_type = value.type;
         if (is_variant)
-        {
-            current_type = resolveGeometryVariantType(columns[0], row_num, variant_type_map);
             current_type = normalizePolygonalVariantType(current_type);
-        }
 
         if (current_type == GeometryColumnType::Null)
             return;
 
-        auto mp = fieldToMultiPolygon(field, current_type, getName().c_str());
+        auto mp = columnToMultiPolygon(*value.column, value.row_num, current_type, getName().c_str());
         AggregateFunctionGroupPolygonUnion::data(place).add(std::move(mp), getName().c_str());
     }
 
@@ -238,7 +238,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto result = AggregateFunctionGroupPolygonUnion::data(place).getResult(getName().c_str());
+        const auto & result = AggregateFunctionGroupPolygonUnion::data(place).getResult(getName().c_str());
         insertMultiPolygonIntoColumn(result, to);
     }
 };

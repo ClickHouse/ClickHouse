@@ -1,0 +1,6 @@
+convex_hull_large_multilinestring
+0
+union_large_multipolygon
+MULTIPOLYGON()
+intersection_large_multipolygon
+MULTIPOLYGON()

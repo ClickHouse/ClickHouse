@@ -5,7 +5,14 @@
 
 #include <Common/AllocatorWithMemoryTracking.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+
 #include <DataTypes/DataTypeFactory.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <boost/geometry.hpp>
 
@@ -28,6 +35,9 @@ namespace
 {
 
 constexpr size_t CONVEX_HULL_COMPRESSION_THRESHOLD = 10000;
+/// `maybeCompress` triggers after the threshold is exceeded, so a full ingestion
+/// batch includes one extra point and is compressed before the next batch.
+constexpr size_t CONVEX_HULL_INGESTION_BATCH_SIZE = CONVEX_HULL_COMPRESSION_THRESHOLD + 1;
 constexpr UInt8 GROUP_CONVEX_HULL_SERDE_VERSION = 2;
 
 using CartesianMultiPoint = boost::geometry::model::multi_point<CartesianPoint, std::vector, AllocatorWithMemoryTracking>;
@@ -42,12 +52,6 @@ struct GroupConvexHullData
     /// `CONVEX_HULL_COMPRESSION_THRESHOLD` does not force a full hull recomputation on every
     /// subsequent row.
     size_t size_after_compression = 0;
-
-    void addOne(CartesianPoint && point, const char * function_name)
-    {
-        points.push_back(std::move(point));
-        finishAdd(function_name);
-    }
 
     void finishAdd(const char * function_name)
     {
@@ -154,111 +158,6 @@ struct GroupConvexHullData
 };
 
 
-void validateConvexHullPoint(const CartesianPoint & point)
-{
-    Float64 x = point.get<0>();
-    Float64 y = point.get<1>();
-    if (std::isnan(x) || std::isnan(y))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point coordinates must not be NaN");
-    if (std::isinf(x) || std::isinf(y))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point coordinates must not be infinite");
-}
-
-
-void extractPointsFromField(
-    const Field & field,
-    GeometryColumnType geo_type,
-    CartesianMultiPoint & out)
-{
-    switch (geo_type)
-    {
-        case GeometryColumnType::Point: {
-            auto pt = getPointFromField<CartesianPoint>(field);
-            validateConvexHullPoint(pt);
-            out.push_back(pt);
-            break;
-        }
-        case GeometryColumnType::MultiPoint: {
-            auto multipoint = getMultiPointFromField<CartesianPoint>(field);
-            for (const auto & pt : multipoint)
-                validateConvexHullPoint(pt);
-            out.insert(out.end(), multipoint.begin(), multipoint.end());
-            break;
-        }
-        case GeometryColumnType::Ring: {
-            auto ring = getRingFromField<CartesianPoint>(field);
-            for (const auto & pt : ring)
-                validateConvexHullPoint(pt);
-            out.insert(out.end(), ring.begin(), ring.end());
-            break;
-        }
-        case GeometryColumnType::Linestring: {
-            auto ls = getLineStringFromField<CartesianPoint>(field);
-            for (const auto & pt : ls)
-                validateConvexHullPoint(pt);
-            out.insert(out.end(), ls.begin(), ls.end());
-            break;
-        }
-        case GeometryColumnType::MultiLinestring: {
-            auto mls = getMultiLineStringFromField<CartesianPoint>(field);
-            size_t point_count = 0;
-            for (const auto & ls : mls)
-            {
-                point_count += ls.size();
-                for (const auto & pt : ls)
-                    validateConvexHullPoint(pt);
-            }
-            out.reserve(out.size() + point_count);
-            for (const auto & ls : mls)
-                out.insert(out.end(), ls.begin(), ls.end());
-            break;
-        }
-        case GeometryColumnType::Polygon: {
-            auto poly = getPolygonFromField<CartesianPoint>(field);
-            /// Only outer-ring points contribute to the hull, but the whole polygon must satisfy
-            /// the same input invariant as the polygonal aggregates: an empty outer ring with
-            /// non-empty inner rings is malformed, and inner-ring (hole) coordinates must be finite
-            /// even though they are not used for the hull.
-            if (poly.outer().empty() && !poly.inners().empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Argument of aggregate function groupConvexHull has a polygon with an empty outer ring but "
-                    "non-empty inner rings");
-            for (const auto & inner : poly.inners())
-                for (const auto & pt : inner)
-                    validateConvexHullPoint(pt);
-            for (const auto & pt : poly.outer())
-                validateConvexHullPoint(pt);
-            out.insert(out.end(), poly.outer().begin(), poly.outer().end());
-            break;
-        }
-        case GeometryColumnType::MultiPolygon: {
-            auto mpoly = getMultiPolygonFromField<CartesianPoint>(field);
-            size_t point_count = 0;
-            for (const auto & poly : mpoly)
-            {
-                if (poly.outer().empty() && !poly.inners().empty())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Argument of aggregate function groupConvexHull has a polygon with an empty outer ring but "
-                        "non-empty inner rings");
-                for (const auto & inner : poly.inners())
-                    for (const auto & pt : inner)
-                        validateConvexHullPoint(pt);
-                for (const auto & pt : poly.outer())
-                    validateConvexHullPoint(pt);
-                point_count += poly.outer().size();
-            }
-            out.reserve(out.size() + point_count);
-            for (const auto & poly : mpoly)
-                out.insert(out.end(), poly.outer().begin(), poly.outer().end());
-            break;
-        }
-        case GeometryColumnType::Null: break;
-    }
-}
-
-
 class AggregateFunctionGroupConvexHull final : public IAggregateFunctionDataHelper<GroupConvexHullData, AggregateFunctionGroupConvexHull>
 {
 private:
@@ -285,27 +184,19 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        Field field;
-        columns[0]->get(row_num, field);
-
-        GeometryColumnType current_type = geo_type;
-        if (is_variant)
-            current_type = resolveGeometryVariantType(columns[0], row_num, variant_type_map);
-
-        if (current_type == GeometryColumnType::Null)
+        const auto value = getGeometryColumnValue(columns[0], row_num, geo_type, is_variant, variant_type_map);
+        if (value.type == GeometryColumnType::Null)
             return;
-
-        if (current_type == GeometryColumnType::Point)
-        {
-            auto point = getPointFromField<CartesianPoint>(field);
-            validateConvexHullPoint(point);
-            AggregateFunctionGroupConvexHull::data(place).addOne(std::move(point), name);
-            return;
-        }
 
         auto & data = AggregateFunctionGroupConvexHull::data(place);
-        extractPointsFromField(field, current_type, data.points);
-        data.finishAdd(name);
+        ConvexHullPointsCursor cursor;
+        while (!cursor.finished)
+        {
+            const size_t appended = appendConvexHullPointsBatchFromColumn(
+                *value.column, value.row_num, value.type, data.points, cursor, CONVEX_HULL_INGESTION_BATCH_SIZE, name);
+            if (appended != 0)
+                data.finishAdd(name);
+        }
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
