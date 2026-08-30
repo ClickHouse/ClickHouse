@@ -4,8 +4,11 @@
 5
 5
 5
+5
+5
 0
 0
+5
 5
 5
 5
@@ -17,5 +20,7 @@ SELECT count() FROM tab WHERE hasToken(s, \'token5\');	1	0
 SELECT count() FROM tab WHERE hasToken(s, \'token5\');	0	1
 SELECT count() FROM tab WHERE s LIKE \'%ken50 %\';	1	0
 SELECT count() FROM tab WHERE s LIKE \'%ken50 %\';	0	1
+SELECT count() FROM tab WHERE t LIKE \'%arse50 %\';	1	0
+SELECT count() FROM tab WHERE t LIKE \'%arse50 %\';	0	1
 SELECT count() FROM tab WHERE id BETWEEN 2000 AND 2100 AND key = 123;	0	1
 SELECT count() FROM tab WHERE id BETWEEN 4600 AND 4799 AND key = 123;	0	1

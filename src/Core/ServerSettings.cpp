@@ -634,7 +634,7 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
     DECLARE(String, skipping_index_cache_policy, DEFAULT_SKIPPING_INDEX_CACHE_POLICY, "Skipping index cache policy name.", 0) \
-    DECLARE(UInt64, skipping_index_cache_size, DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE, R"(Size of cache for deserialized granules of data skipping indexes (`bloom_filter`, `ngrambf_v1`, `tokenbf_v1`). Zero means disabled.
+    DECLARE(UInt64, skipping_index_cache_size, DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE, R"(Size of cache for deserialized granules of data skipping indexes (`bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`). Zero means disabled.
 
 :::note
 This setting can be modified at runtime and will take effect immediately.

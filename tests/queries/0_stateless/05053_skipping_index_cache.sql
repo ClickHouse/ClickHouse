@@ -17,15 +17,17 @@ CREATE TABLE tab
     id UInt64,
     key UInt64,
     s String,
+    t String,
     INDEX idx_key key TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_key_coarse key TYPE bloom_filter(0.01) GRANULARITY 4,
     INDEX idx_tokens s TYPE tokenbf_v1(512, 3, 0) GRANULARITY 1,
-    INDEX idx_ngrams s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
+    INDEX idx_ngrams s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1,
+    INDEX idx_sparse_grams t TYPE sparse_grams(3, 20, 512, 3, 0) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
-INSERT INTO tab SELECT number, number * 7919 % 1000, concat('token', toString(number % 997), ' text') FROM numbers(4800);
+INSERT INTO tab SELECT number, number * 7919 % 1000, concat('token', toString(number % 997), ' text'), concat('sparse', toString(number % 997), ' text') FROM numbers(4800);
 
 SYSTEM DROP SKIPPING INDEX CACHE;
 
@@ -35,6 +37,8 @@ SELECT count() FROM tab WHERE hasToken(s, 'token5');
 SELECT count() FROM tab WHERE hasToken(s, 'token5');
 SELECT count() FROM tab WHERE s LIKE '%ken50 %';
 SELECT count() FROM tab WHERE s LIKE '%ken50 %';
+SELECT count() FROM tab WHERE t LIKE '%arse50 %';
+SELECT count() FROM tab WHERE t LIKE '%arse50 %';
 
 SELECT count() FROM tab WHERE id BETWEEN 2000 AND 2100 AND key = 123;
 SELECT count() FROM tab WHERE id BETWEEN 4600 AND 4799 AND key = 123;
@@ -42,6 +46,7 @@ SELECT count() FROM tab WHERE id BETWEEN 4600 AND 4799 AND key = 123;
 SELECT count() FROM tab WHERE key = 123 SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasToken(s, 'token5') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE s LIKE '%ken50 %' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE t LIKE '%arse50 %' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE id BETWEEN 2000 AND 2100 AND key = 123 SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE id BETWEEN 4600 AND 4799 AND key = 123 SETTINGS use_skip_indexes = 0;
 

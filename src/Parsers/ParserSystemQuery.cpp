@@ -1309,6 +1309,10 @@ Clears the userspace page cache, ClickHouse's own in-memory cache of data read f
 
 Clears the vector similarity index cache.
 
+## SYSTEM CLEAR|DROP SKIPPING INDEX CACHE {#drop-skipping-index-cache}
+
+Clears the cache of deserialized data skipping index granules (`bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`).
+
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
 Clears the cache of HTTP connection pools used for outgoing connections.
