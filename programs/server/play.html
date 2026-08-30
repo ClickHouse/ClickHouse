@@ -1914,8 +1914,6 @@ function freshResourceState()
         cpu_sampled_ns: 0, /// Value of `cpu_ns` at the last sample, so packets arriving between samples are not lost.
         /// Cumulative IO (disk + object storage + network) bytes, sampled like CPU for the live rate.
         io_bytes: 0,
-        /// The rate meter state, shared by CPU and IO (both derive a rate from a cumulative counter).
-        rate_at_ns: 0,     /// Elapsed time at which the rates were last sampled, in nanoseconds.
         io_at_ns: 0,
         io_sampled: 0,
         io: 0, /// Smoothed IO rate, in bytes/second.
