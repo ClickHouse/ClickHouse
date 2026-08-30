@@ -50,6 +50,14 @@ SortDescription buildSortDescription(const Block & header, const ColumnNumbers &
     return description;
 }
 
+/// Whether all the non-key columns of the header are constants, so that at spill time the first run
+/// can be assembled from the keys extracted out of the hash set (see buildChunkFromKeys). True e.g.
+/// for `SELECT DISTINCT 7 AS c, k FROM t`: `c` is a constant excluded from the DISTINCT key. False
+/// when a non-key column carries per-row data: for `SELECT DISTINCT k FROM t ORDER BY k + 1` the
+/// final DISTINCT runs above the sort and its header carries the `k + 1` column, and a deduplication
+/// by a subset of the columns (the shape of `OPTIMIZE TABLE t DEDUPLICATE BY a, b`) must keep the
+/// whole surviving rows. Such values exist only in the rows themselves, so the emitted chunks are
+/// buffered for the first run instead (see emitted_buffer).
 bool nonKeyColumnsAreRebuildable(const Block & header, const ColumnNumbers & key_columns_pos)
 {
     std::vector<UInt8> is_key(header.columns(), 0);
@@ -68,7 +76,38 @@ bool nonKeyColumnsAreRebuildable(const Block & header, const ColumnNumbers & key
     return true;
 }
 
-SharedHeader buildSpillHeader(const Block & header)
+/// Positions of the columns that are written to the spilled runs: all the non-constant columns of the
+/// header, in the header order. The constant columns are not spilled - their values are known from the
+/// header, so they are re-attached to the merged stream instead (see restoreConstantColumns).
+ColumnNumbers calculateSpillColumnsPositions(const Block & header)
+{
+    ColumnNumbers positions;
+    positions.reserve(header.columns());
+    for (size_t pos = 0; pos < header.columns(); ++pos)
+    {
+        const auto & column = header.getByPosition(pos).column;
+        if (!column || !isColumnConst(*column))
+            positions.push_back(pos);
+    }
+    return positions;
+}
+
+/// Positions of the key columns within the spill layout. Every key column is spilled (the keys are
+/// non-constant by construction), so each key position is present among the spill positions.
+ColumnNumbers mapKeysToSpillPositions(const ColumnNumbers & key_columns_pos, const ColumnNumbers & spill_columns_pos)
+{
+    ColumnNumbers spill_positions;
+    spill_positions.reserve(key_columns_pos.size());
+    for (const auto key_pos : key_columns_pos)
+    {
+        const auto it = std::find(spill_columns_pos.begin(), spill_columns_pos.end(), key_pos);
+        chassert(it != spill_columns_pos.end());
+        spill_positions.push_back(it - spill_columns_pos.begin());
+    }
+    return spill_positions;
+}
+
+SharedHeader buildSpillHeader(const Block & header, const ColumnNumbers & spill_columns_pos)
 {
     /// The flag column only needs a name that is unique within the spill header (everything addresses
     /// it by position); a user column may legitimately be named like the flag, so uniquify by prepending
@@ -77,9 +116,10 @@ SharedHeader buildSpillHeader(const Block & header)
     while (header.has(flag_name))
         flag_name = "_" + flag_name;
 
-    /// Constant (and other special) column representations cannot be written to temporary files in the
-    /// Native format, and the input chunks are materialized before spilling anyway.
-    Block spill_header = materializeBlock(header);
+    Block spill_header;
+    for (const auto pos : spill_columns_pos)
+        spill_header.insert(header.getByPosition(pos));
+
     auto flag_type = std::make_shared<DataTypeUInt8>();
     spill_header.insert({flag_type->createColumn(), flag_type, flag_name});
     return std::make_shared<const Block>(std::move(spill_header));
@@ -198,9 +238,11 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , min_free_disk_space(min_free_disk_space_)
     , max_block_size_rows(max_block_size_rows_)
     , description(buildSortDescription(*header_, distinct_set.getKeyColumnsPositions()))
-    , spill_header(buildSpillHeader(*header_))
-    , run_dedup(distinct_set.getKeyColumnsPositions(), description, header_->columns())
-    , merge_dedup(distinct_set.getKeyColumnsPositions(), description, header_->columns())
+    , spill_columns_pos(calculateSpillColumnsPositions(*header_))
+    , spill_key_columns_pos(mapKeysToSpillPositions(distinct_set.getKeyColumnsPositions(), spill_columns_pos))
+    , spill_header(buildSpillHeader(*header_, spill_columns_pos))
+    , run_dedup(spill_key_columns_pos, description, spill_columns_pos.size())
+    , merge_dedup(spill_key_columns_pos, description, spill_columns_pos.size())
 {
     chassert(max_bytes_before_external_distinct > 0);
     /// DistinctStep never uses this transform when all the distinct columns are constant.
@@ -216,38 +258,81 @@ bool ExternalDistinctTransform::firstRunFromExtraction() const
 
 Chunk ExternalDistinctTransform::buildChunkFromKeys(MutableColumns && key_columns) const
 {
-    const auto & header = inputs.front().getHeader();
-    const auto & key_positions = distinct_set.getKeyColumnsPositions();
+    /// The extraction requires every non-key column to be a rebuildable constant, so the spilled
+    /// columns are exactly the keys (in the header order).
+    chassert(spill_columns_pos.size() == key_columns.size());
+
     const size_t num_rows = key_columns[0]->size();
+    Columns columns(spill_columns_pos.size());
+    for (size_t i = 0; i < key_columns.size(); ++i)
+        columns[spill_key_columns_pos[i]] = std::move(key_columns[i]);
+
+    return Chunk(std::move(columns), num_rows);
+}
+
+Chunk ExternalDistinctTransform::restoreConstantColumns(Chunk chunk) const
+{
+    const auto & header = inputs.front().getHeader();
+    if (spill_columns_pos.size() == header.columns())
+        return chunk;
+
+    const size_t num_rows = chunk.getNumRows();
+    auto spilled_columns = chunk.detachColumns();
 
     Columns columns(header.columns());
-    for (size_t i = 0; i < key_positions.size(); ++i)
-        columns[key_positions[i]] = std::move(key_columns[i]);
+    for (size_t i = 0; i < spill_columns_pos.size(); ++i)
+        columns[spill_columns_pos[i]] = std::move(spilled_columns[i]);
 
     for (size_t pos = 0; pos < columns.size(); ++pos)
     {
         if (!columns[pos])
-            columns[pos] = header.getByPosition(pos).column->cloneResized(num_rows)->convertToFullColumnIfConst();
+            columns[pos] = header.getByPosition(pos).column->cloneResized(num_rows);
     }
+
+    return Chunk(std::move(columns), num_rows);
+}
+
+Chunk ExternalDistinctTransform::stripConstantColumns(Chunk chunk) const
+{
+    const auto & header = inputs.front().getHeader();
+    if (spill_columns_pos.size() == header.columns())
+        return chunk;
+
+    const size_t num_rows = chunk.getNumRows();
+    auto input_columns = chunk.detachColumns();
+
+    /// The constant columns are not spilled: they are re-attached from the header after the merge of
+    /// the runs (see restoreConstantColumns).
+    Columns columns;
+    columns.reserve(spill_columns_pos.size());
+    for (const auto pos : spill_columns_pos)
+        columns.push_back(std::move(input_columns[pos]));
 
     return Chunk(std::move(columns), num_rows);
 }
 
 Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emitted) const
 {
+    chassert(chunk.getNumColumns() == spill_columns_pos.size());
     const size_t num_rows = chunk.getNumRows();
 
-    /// The chunk columns follow the input header; sortBlock needs a Block to resolve the sort description.
-    /// The sort must be stable: the deduplication of the merged runs keeps the first row of each range of
-    /// equal keys, and the first row must stay the first-received one - both for the non-key columns of a
-    /// row (when the DISTINCT key is a subset of the columns) and for the choice among values that compare
-    /// equal but differ in the binary representation (0. and -0., NaN payloads).
-    Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+    /// Special column representations cannot be written to the temporary files in the Native format.
+    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfConst(chunk);
+
+    auto columns = chunk.detachColumns();
+    columns.emplace_back(ColumnUInt8::create(num_rows, static_cast<UInt8>(already_emitted)));
+
+    /// sortBlock needs a Block to resolve the sort description; the flag column (equal in every row of
+    /// the chunk) just follows the permutation. The sort must be stable: the deduplication of the merged
+    /// runs keeps the first row of each range of equal keys, and the first row must stay the
+    /// first-received one - both for the non-key columns of a row (when the DISTINCT key is a subset of
+    /// the columns) and for the choice among values that compare equal but differ in the binary
+    /// representation (0. and -0., NaN payloads).
+    Block block = spill_header->cloneWithColumns(std::move(columns));
     sortBlock(block, description, /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
 
-    auto columns = block.getColumns();
-    columns.emplace_back(ColumnUInt8::create(num_rows, static_cast<UInt8>(already_emitted)));
-    return Chunk(std::move(columns), num_rows);
+    return Chunk(block.getColumns(), num_rows);
 }
 
 void ExternalDistinctTransform::startFirstSpill()
@@ -270,10 +355,9 @@ void ExternalDistinctTransform::startFirstSpill()
     if (firstRunFromExtraction())
     {
         /// The rows of the first run only suppress the equal rows during the merge and are never
-        /// emitted themselves, so the keys extracted from the set (plus the constant columns rebuilt
-        /// from the header) are all it needs. The set is freed right after the extraction, before the
-        /// sorting: this way the transient peak is the set plus the raw keys, not plus the sorted
-        /// copies.
+        /// emitted themselves, so the keys extracted from the set are all it needs. The set is freed
+        /// right after the extraction, before the sorting: this way the transient peak is the set plus
+        /// the raw keys, not plus the sorted copies.
         auto key_batches = distinct_set.extractKeyColumns(max_block_size_rows);
         distinct_set.clear();
 
@@ -287,7 +371,7 @@ void ExternalDistinctTransform::startFirstSpill()
         distinct_set.clear();
 
         for (auto & chunk : emitted_buffer)
-            add_run_chunk(std::move(chunk));
+            add_run_chunk(stripConstantColumns(std::move(chunk)));
         emitted_buffer.clear();
     }
 
@@ -584,10 +668,7 @@ void ExternalDistinctTransform::consume(Chunk chunk)
     }
     else
     {
-        removeSpecialColumnRepresentations(chunk);
-        convertToFullIfConst(chunk);
-
-        auto prepared = prepareSpillChunk(std::move(chunk), /*already_emitted=*/ false);
+        auto prepared = prepareSpillChunk(stripConstantColumns(std::move(chunk)), /*already_emitted=*/ false);
         sum_bytes_in_chunks += prepared.allocatedBytes();
         chunks.push_back(std::move(prepared));
 
@@ -658,6 +739,7 @@ void ExternalDistinctTransform::generate()
     if (!filtered.hasRows())
         return;
 
+    filtered = restoreConstantColumns(std::move(filtered));
     emitted_rows += filtered.getNumRows();
     generated_chunk = std::move(filtered);
 

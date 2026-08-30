@@ -58,15 +58,18 @@ private:
 /// hash set of the seen keys and streams the first occurrence of each key downstream immediately. If a
 /// spill happens, the set of the already emitted rows must be recoverable: for most set methods the keys
 /// are extracted back from the hash table itself (DistinctSetFilter::extractKeyColumns) - no memory
-/// overhead before the spill, one transient copy of the keys at the spill moment. Only when the chosen
-/// method is irreversible (`hashed` keeps just a 128-bit hash per key) the transform retains the emitted
-/// chunks in a buffer instead (only column pointers are copied, but the emitted columns stay referenced
-/// (in memory) until the first spill).
+/// overhead before the spill, one transient copy of the keys at the spill moment. When the extraction
+/// cannot rebuild the rows - the chosen method is irreversible (`hashed` keeps just a 128-bit hash per
+/// key), or a non-key column carries per-row data (see nonKeyColumnsAreRebuildable) - the transform
+/// retains the emitted chunks in a buffer instead (only column pointers are copied, but the emitted
+/// columns stay referenced in memory until the first spill).
 ///
 /// When the memory usage of the query exceeds the threshold, the transform switches to the external mode:
-///  - The already emitted rows (extracted from the set, or taken from the buffer for the `hashed`
-///    method) are sorted by the key columns and written to a temporary file as the first "run", each row
-///    carrying an "already emitted" flag; the hash set (and the buffer) is freed.
+///  - The already emitted rows (extracted from the set, or taken from the buffer when the extraction
+///    cannot rebuild them) are sorted by the key columns and written to a temporary file as the first
+///    "run", each row carrying an "already emitted" flag; the hash set (and the buffer) is freed. The
+///    runs contain only the non-constant columns - the constant columns are re-attached from the header
+///    after the merge.
 ///  - Nothing is emitted anymore until the input is exhausted. Incoming chunks are sorted and accumulated,
 ///    and written out as further runs (locally deduplicated, flag not set) each time the memory usage
 ///    exceeds the threshold again.
@@ -114,15 +117,22 @@ private:
     void serialize();
     void generate();
 
-    /// Sorts the chunk by the key columns and appends the "already emitted" flag column.
+    /// Keeps only the spilled columns of an input-header chunk (drops the constant columns).
+    Chunk stripConstantColumns(Chunk chunk) const;
+    /// Takes a spill-layout chunk (see stripConstantColumns, buildChunkFromKeys), appends the
+    /// "already emitted" flag column and sorts by the key columns.
     Chunk prepareSpillChunk(Chunk chunk, bool already_emitted) const;
 
     /// Whether the first run can be rebuilt from the set at spill time (then the emitted chunks do not
     /// have to be retained in memory). Meaningful once at least one chunk was filtered.
     bool firstRunFromExtraction() const;
-    /// Assembles a full-width chunk from extracted key columns (the non-key columns are constants
-    /// rebuilt from the header; the rows of the first run are never emitted, so this is sufficient).
+    /// Assembles a spill-layout chunk (without the flag column) from the extracted key columns. Only
+    /// used when every non-key column is a rebuildable constant, so the spilled columns are exactly
+    /// the keys.
     Chunk buildChunkFromKeys(MutableColumns && key_columns) const;
+    /// Re-attaches the constant columns that are not written to the spilled runs, turning a merged
+    /// spill-layout chunk back into an input-header chunk.
+    Chunk restoreConstantColumns(Chunk chunk) const;
 
     void startFirstSpill();
     void startSpillRun(Chunks run_chunks, size_t run_bytes, bool is_first_run);
@@ -141,7 +151,14 @@ private:
 
     /// Ascending sort over the (non-constant) key columns; defines the order of the spilled runs.
     SortDescription description;
-    /// Header of the spilled runs: materialized input header plus the flag column.
+    /// Positions (in the input header) of the columns written to the spilled runs: all the non-constant
+    /// columns. The constant columns are re-attached from the header after the merge of the runs - their
+    /// values carry no information, and the Native format of the temporary files could not keep them
+    /// constant anyway.
+    const ColumnNumbers spill_columns_pos;
+    /// Positions of the key columns within the spill layout.
+    const ColumnNumbers spill_key_columns_pos;
+    /// Header of the spilled runs: the spilled columns plus the flag column.
     SharedHeader spill_header;
 
     /// Copies of the emitted chunks, the future first run (freed when the first spill happens).
