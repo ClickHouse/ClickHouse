@@ -1,0 +1,6 @@
+-- warm the cache with the same subquery, planned without a distributed plan
+4
+1
+-- the distributed outer query must not read the entry despite the local setting override
+4
+0	0
