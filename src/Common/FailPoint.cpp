@@ -40,6 +40,8 @@ static struct InitFiu
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(merge_tree_sink_on_start_random_sleep) \
+    REGULAR(merge_tree_sequential_source_sleep_before_read) \
+    REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
@@ -56,8 +58,10 @@ static struct InitFiu
     ONCE(smt_restore_attach_retry) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
+    PAUSEABLE_ONCE(smt_get_status_pause_before_keeper_read) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
+    ONCE(smt_detach_part_replica_set_change_before_commit) \
     ONCE(smt_add_part_sleep_after_add_before_commit) \
     ONCE(smt_sleep_in_constructor) \
     ONCE(meta_in_keeper_create_metadata_failure) \
@@ -96,12 +100,12 @@ static struct InitFiu
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
     ONCE(distributed_cache_fail_simple_request) \
+    REGULAR(distributed_cache_write_simulate_mid_segment_failover) \
     ONCE(distributed_cache_server_fail_read_request) \
     ONCE(distributed_cache_server_fail_metrics_request) \
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
-    REGULAR(distributed_cache_cancel_query_in_response_wait) \
     REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
     REGULAR(distributed_cache_simulate_undrained_leftovers) \
     REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
@@ -125,6 +129,7 @@ static struct InitFiu
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
+    REGULAR(smt_simulate_part_removed_during_load) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
     REGULAR(file_cache_background_eviction_push_fail) \
@@ -135,7 +140,9 @@ static struct InitFiu
     REGULAR(database_catalog_throw_on_table_shutdown) \
     REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
     REGULAR(database_replicated_throw_on_stop_replication) \
+    REGULAR(database_catalog_shutdown_sleep_per_table) \
     REGULAR(dummy_failpoint) \
+    ONCE(system_log_pipeline_fail_after_smt_restore) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
@@ -147,11 +154,16 @@ static struct InitFiu
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
+    PAUSEABLE_ONCE(smt_select_sequential_consistency_before_keeper_fence) \
+    PAUSEABLE_ONCE(smt_select_sequential_consistency_after_keeper_get) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
     PAUSEABLE_ONCE(delta_lake_write_commit_pause) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_analysis) \
+    PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_block_allocation) \
+    PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
@@ -229,6 +241,7 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(iceberg_slow_manifest_read) \
@@ -240,6 +253,7 @@ static struct InitFiu
     ONCE(backup_from_snapshot_fail_before_manifest_init) \
     ONCE(backup_from_snapshot_fail_before_progress_cleanup) \
     ONCE(backup_fail_before_writing_metadata) \
+    ONCE(backup_fail_after_writing_encryption_config) \
     ONCE(backup_fail_lock_file_removal) \
     PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
     PAUSEABLE(backup_from_snapshot_pause_holding_admin_lock) \
@@ -251,6 +265,7 @@ static struct InitFiu
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
     PAUSEABLE(sc_state_fetch_pause_before_version_check) \
+    PAUSEABLE(sc_inner_table_drop_pause) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
@@ -316,13 +331,17 @@ static struct InitFiu
     REGULAR(compact_part_writer_fail_in_add_streams) \
     ONCE(grace_hash_join_fail_in_delayed_block_read) \
     PAUSEABLE_ONCE(smt_clone_partition_pause_before_commit) \
+    PAUSEABLE_ONCE(smt_check_part_pause_after_check_data) \
+    PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(mt_pause_before_register_mutation) \
+    ONCE(transaction_rollback_reset_removal_tid_fail) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
-    PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
+    PAUSEABLE(iceberg_compaction_merge_pause_in_step) \
+    PAUSEABLE_ONCE(iceberg_compaction_pause_before_metadata_commit) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     PAUSEABLE(keeper_changelog_read_plan_resolved) \
@@ -343,7 +362,13 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause)
+    PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
+    PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
+    ONCE(hash_join_throw_after_data_release) \
+    REGULAR(smt_force_takeover_predicate_true) \
+    REGULAR(smt_takeover_fake_hardware_error_after_set) \
+    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
 
 namespace FailPoints
 {
