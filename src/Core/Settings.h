@@ -162,6 +162,18 @@ struct Settings
     void setCustom(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
+    /// Remember the current value of a setting before adjustSettingsForMakeDistributedPlan
+    /// overrides it for a derived distributed plan, so the override can be undone when the plan
+    /// turns off. The memory is local to the object it was recorded on - copies do not inherit
+    /// it, so a context cloned from a distributed query keeps the adjusted values when it turns
+    /// `make_distributed_plan` off to run a local fragment: for a fragment the adjustments are
+    /// the point, not a leftover. An explicit change of a remembered setting revokes its memory,
+    /// so the restore never overwrites a value the user set in the meantime. `name` is kept as
+    /// a key past the call and must point to static storage, such as the setting-name literals
+    /// the adjustment passes.
+    void rememberBeforeDistributedPlanAdjustment(std::string_view name);
+    void restoreDistributedPlanAdjustments();
+
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.
     bool hasSettingsChangedByCompatibility() const;
 

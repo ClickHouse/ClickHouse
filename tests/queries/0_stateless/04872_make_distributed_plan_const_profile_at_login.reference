@@ -1,0 +1,8 @@
+derived at login without the constraint
+OK
+vetoed at login by the const constraint
+OK
+the vetoed plan does not latch its adjustments
+OK
+still derived in a readonly session
+OK

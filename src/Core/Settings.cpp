@@ -20,6 +20,9 @@
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+
+#include <utility>
 #include <Common/typeid_cast.h>
 
 #include <boost/program_options.hpp>
@@ -9006,6 +9009,8 @@ Method to compress `.metadata.json` file.
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 
+It is enabled automatically when `distributed_plan_workers_num` is not zero, unless it is set explicitly or a settings constraint forbids enabling it.
+
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
@@ -9028,7 +9033,9 @@ Used by the rule-based distributed planner. The cost-based optimizer chooses the
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
-How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
+How many Stateless Workers will be used to execute this query. Zero disables Stateless Worker leasing for distributed plans.
+
+A non-zero value enables `make_distributed_plan` unless that setting is set explicitly or a settings constraint forbids enabling it.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
 Total wall-clock time, in milliseconds, a query may spend provisioning stateless workers before execution: leasing them from the discovery service and verifying they are reachable. The query blocks up to this budget for the leased workers to become ready; when it elapses the query proceeds with the workers verified so far, or fails if none became available. Zero waits only for the initial lease-and-verify pass (no retries).
@@ -9340,14 +9347,24 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
+    void setDefaultValue(std::string_view name);
 
     bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
     void resetSettingsChangedByCompatibility();
+
+    void rememberBeforeDistributedPlanAdjustment(std::string_view name);
+    void restoreDistributedPlanAdjustments();
+    void dropDistributedPlanAdjustmentMemory() { settings_adjusted_for_distributed_plan.clear(); }
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
     UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
+
+    /// The pre-override (value, changed) of the settings force-adjusted for a derived distributed
+    /// plan, so the overrides can be undone when the plan turns off. Not serialized: a receiver
+    /// re-derives the plan and re-adjusts from the changes it gets.
+    UnorderedMapWithMemoryTracking<std::string_view, std::pair<Field, bool>> settings_adjusted_for_distributed_plan;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -9500,7 +9517,42 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
         settings_changed_by_compatibility_setting.erase(final_name);
 
+    /// An explicit change takes the setting out of the distributed-plan adjustment memory, so
+    /// turning the derived plan off does not overwrite the new value with the remembered one.
+    if (!settings_adjusted_for_distributed_plan.empty())
+        settings_adjusted_for_distributed_plan.erase(SettingsTraits::resolveName(name));
+
     BaseSettings::set(name, value);
+}
+
+void SettingsImpl::setDefaultValue(std::string_view name)
+{
+    /// `SET name = DEFAULT` is an explicit change like any other - see the note in set().
+    if (!settings_adjusted_for_distributed_plan.empty())
+        settings_adjusted_for_distributed_plan.erase(SettingsTraits::resolveName(name));
+
+    resetToDefault(name);
+}
+
+void SettingsImpl::rememberBeforeDistributedPlanAdjustment(std::string_view name)
+{
+    auto final_name = SettingsTraits::resolveName(name);
+    if (settings_adjusted_for_distributed_plan.contains(final_name))
+        return;
+
+    settings_adjusted_for_distributed_plan.emplace(final_name, std::pair{get(final_name), isChanged(final_name)});
+}
+
+void SettingsImpl::restoreDistributedPlanAdjustments()
+{
+    const auto remembered = std::exchange(settings_adjusted_for_distributed_plan, {});
+    for (const auto & [name, value_and_changed] : remembered)
+    {
+        if (value_and_changed.second)
+            BaseSettings::set(name, value_and_changed.first);
+        else
+            resetToDefault(name);
+    }
 }
 
 void SettingsImpl::resetSettingsChangedByCompatibility()
@@ -9560,7 +9612,10 @@ Settings::Settings()
 
 Settings::Settings(const Settings & settings)
     : impl(std::make_unique<SettingsImpl>(*settings.impl))
-{}
+{
+    /// The adjustment memory is local to the object it was recorded on - see the note in Settings.h.
+    impl->dropDistributedPlanAdjustmentMemory();
+}
 
 Settings::Settings(Settings && settings) noexcept = default;
 
@@ -9571,6 +9626,7 @@ Settings & Settings::operator=(const Settings & other)
     if (&other == this)
         return *this;
     *impl = *other.impl;
+    impl->dropDistributedPlanAdjustmentMemory();
     return *this;
 }
 
@@ -9633,7 +9689,17 @@ void Settings::setCustom(std::string_view name, const Field & value)
 
 void Settings::setDefaultValue(std::string_view name)
 {
-    impl->resetToDefault(name);
+    impl->setDefaultValue(name);
+}
+
+void Settings::rememberBeforeDistributedPlanAdjustment(std::string_view name)
+{
+    impl->rememberBeforeDistributedPlanAdjustment(name);
+}
+
+void Settings::restoreDistributedPlanAdjustments()
+{
+    impl->restoreDistributedPlanAdjustments();
 }
 
 bool Settings::hasSettingsChangedByCompatibility() const

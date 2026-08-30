@@ -143,6 +143,10 @@ public:
         pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, max_concurrency)
     {
         global_context->makeGlobalContext();
+        /// A client-side context: the settings applied here are sent with every benchmarked query,
+        /// and server-side derivations (e.g. make_distributed_plan and its adjustments) must not
+        /// run on them - this context has no settings constraints to veto anything.
+        global_context->setApplicationType(Context::ApplicationType::CLIENT);
         global_context->setSettings(settings);
         global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
         global_context->setQueryKindInitial();

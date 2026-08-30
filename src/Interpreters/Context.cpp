@@ -2547,9 +2547,16 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
-    applySettingsChangesWithLock(profiles_info.settings, lock);
+
+    /// Apply the profile's settings without finalizing: deriving make_distributed_plan under the
+    /// outgoing constraints could latch the distributed-plan adjustments even though the incoming
+    /// constraints veto the plan. Finalize once the profile's own constraints are in place.
+    for (const SettingChange & change : profiles_info.settings)
+        applySettingChangeWithLock(change, lock);
+
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -3498,6 +3505,7 @@ void Context::setSettings(const Settings & settings_)
     *settings = settings_;
     need_recalculate_access = true;
     contextSanityClampSettings(*this, *settings);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -3545,18 +3553,35 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     }
 }
 
+void Context::finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex> &)
+{
+    applySettingsQuirks(*settings);
+
+    /// Deriving the plan and adjusting for it is the server's call. clickhouse-client applies the
+    /// session settings the server pushes after the handshake onto a context that has no settings
+    /// constraints, so deriving here would enable the plan the server may have just vetoed, and the
+    /// adjustments would ride back to the server as explicit changes of the client.
+    if (getApplicationType() == ApplicationType::CLIENT)
+        return;
+
+    /// A constraint that forbids enabling `make_distributed_plan` also vetoes the derived value.
+    const bool derivation_allowed = getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.allowsValue("make_distributed_plan", Field(true));
+
+    adjustSettingsForMakeDistributedPlan(*settings, derivation_allowed);
+}
+
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
 {
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
-    applySettingsQuirks(*settings);
-    adjustSettingsForMakeDistributedPlan(*settings);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setSetting(std::string_view name, const String & value)
 {
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setSetting(std::string_view name, const Field & value)
@@ -3564,6 +3589,7 @@ void Context::setSetting(std::string_view name, const Field & value)
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setServerSetting(std::string_view name, const Field & value)
@@ -3687,6 +3713,7 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
     std::lock_guard lock(mutex);
     for (const String & name: names)
         settings->setDefaultValue(name);
+    finalizeSettingsWithLock(lock);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -7864,7 +7891,6 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
-    adjustSettingsForMakeDistributedPlan(*settings);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 
     makeBackgroundContext(config);

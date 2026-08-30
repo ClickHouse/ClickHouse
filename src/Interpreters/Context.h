@@ -2098,6 +2098,9 @@ private:
 
     void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock);
 
+    /// Re-applies cross-setting invariants; must run last in every public mutator of `settings`.
+    void finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex> & lock);
+
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);

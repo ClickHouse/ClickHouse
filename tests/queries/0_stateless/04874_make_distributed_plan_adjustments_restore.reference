@@ -1,0 +1,8 @@
+the derived plan adjusts an explicitly set value, unless pinned const
+1
+the explicitly set value returns when the workers num goes back to zero
+true
+and no other setting keeps a trace of the derived window
+0
+a value set explicitly during the window survives the restore
+false

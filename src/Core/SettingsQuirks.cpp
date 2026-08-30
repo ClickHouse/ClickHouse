@@ -51,6 +51,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -145,43 +146,67 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 /// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
 /// distributed plans support the corresponding feature - e.g. for the text index direct read,
 /// let the worker re-run the rewrite over its pinned part list instead of disabling it.
-void adjustSettingsForMakeDistributedPlan(Settings & settings)
+void adjustSettingsForMakeDistributedPlan(Settings & settings, bool derivation_allowed)
 {
+    /// Stateless Workers only run the stages of a distributed plan, so asking for Workers implies
+    /// asking for the plan. Deriving instead of assigning keeps a later zero count from pinning it on.
+    const bool derived = !settings[Setting::make_distributed_plan].changed;
+    if (derived)
+        settings[Setting::make_distributed_plan].value = derivation_allowed && settings[Setting::distributed_plan_workers_num] != 0;
+
     if (!settings[Setting::make_distributed_plan])
+    {
+        /// A derived plan must leave no trace once it is off; an explicitly enabled plan never
+        /// remembers, so its adjustments stay, as they always have.
+        settings.restoreDistributedPlanAdjustments();
         return;
+    }
 
     Strings adjusted;
 
+    auto override_for_plan = [&](std::string_view name, auto && apply, const char * description)
+    {
+        if (derived)
+            settings.rememberBeforeDistributedPlanAdjustment(name);
+        apply();
+        adjusted.emplace_back(description);
+    };
+
     if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
-    {
-        settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
-        adjusted.emplace_back("enable_parallel_replicas = 0");
-    }
+        override_for_plan(
+            "allow_experimental_parallel_reading_from_replicas",
+            [&] { settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0; },
+            "enable_parallel_replicas = 0");
+
     if (settings[Setting::automatic_parallel_replicas_mode] != 0)
-    {
-        settings[Setting::automatic_parallel_replicas_mode] = 0;
-        adjusted.emplace_back("automatic_parallel_replicas_mode = 0");
-    }
+        override_for_plan(
+            "automatic_parallel_replicas_mode",
+            [&] { settings[Setting::automatic_parallel_replicas_mode] = 0; },
+            "automatic_parallel_replicas_mode = 0");
+
     if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
-    {
-        settings[Setting::correlated_subqueries_use_in_memory_buffer] = false;
-        adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
-    }
+        override_for_plan(
+            "correlated_subqueries_use_in_memory_buffer",
+            [&] { settings[Setting::correlated_subqueries_use_in_memory_buffer] = false; },
+            "correlated_subqueries_use_in_memory_buffer = 0");
+
     if (settings[Setting::use_skip_indexes_on_data_read])
-    {
-        settings[Setting::use_skip_indexes_on_data_read] = false;
-        adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
-    }
+        override_for_plan(
+            "use_skip_indexes_on_data_read",
+            [&] { settings[Setting::use_skip_indexes_on_data_read] = false; },
+            "use_skip_indexes_on_data_read = 0");
+
     if (settings[Setting::compile_expressions])
-    {
-        settings[Setting::compile_expressions] = false;
-        adjusted.emplace_back("compile_expressions = 0");
-    }
+        override_for_plan(
+            "compile_expressions",
+            [&] { settings[Setting::compile_expressions] = false; },
+            "compile_expressions = 0");
+
     if (settings[Setting::query_plan_direct_read_from_text_index])
-    {
-        settings[Setting::query_plan_direct_read_from_text_index] = false;
-        adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
-    }
+        override_for_plan(
+            "query_plan_direct_read_from_text_index",
+            [&] { settings[Setting::query_plan_direct_read_from_text_index] = false; },
+            "query_plan_direct_read_from_text_index = 0");
 
     if (!adjusted.empty())
         LOG_DEBUG(
