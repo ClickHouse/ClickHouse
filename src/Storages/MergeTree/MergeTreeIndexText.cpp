@@ -700,12 +700,18 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             String token(block_tokens.getDataAt(matched_indices[i]));
             /// Charge after clipping: a token an earlier predicate ruled out is never read, so it
             /// must not spend the budget that bounds the work remaining after that pruning.
-            const bool readable = analyzer->addTokenInfo(token, infos[i]);
-            /// Charge non-embedded postings by rows (real read work), not just by count.
-            if (readable && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
+            const auto readable_range = analyzer->addTokenInfo(token, infos[i]);
+            /// Charge non-embedded postings by rows (real read work), not just by count - and only
+            /// the blocks the surviving rows can reach, which is what readPostingsBlocksForToken
+            /// goes on to read. Blocks are fixed size, so their share of the token is proportional.
+            if (readable_range && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
             {
                 ++postings_to_read;
-                postings_rows_to_read += infos[i]->cardinality;
+                const size_t total_blocks = infos[i]->ranges.size();
+                const size_t blocks_to_read = infos[i]->getBlocksToRead(*readable_range).size();
+                postings_rows_to_read += (total_blocks && blocks_to_read < total_blocks)
+                    ? infos[i]->cardinality * blocks_to_read / total_blocks
+                    : infos[i]->cardinality;
             }
         }
 
