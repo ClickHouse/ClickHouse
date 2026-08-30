@@ -51,10 +51,15 @@ LATE_DMESG_LOG = "./ci/tmp/dmesg-after-merge.log"
 DMESG_FOLLOW_LOG = "./ci/tmp/dmesg-follow.log"
 
 # Rides a dmesg-derived NEGATIVE that is not a proven one, where `oom_memcg` scoping cannot help:
-# a record that starts after the kill simply does not hold it. The converse caveat belongs on the
-# positive: an uncleared buffer can show another job's kill, but its silence still covers this run.
+# a record that starts after the kill simply does not hold it.
 PARTIAL_DMESG_CAVEAT = (
     " (the record does not cover the whole run, so an earlier kill would not be in it)"
+)
+
+# Rides the POSITIVE, which is unsound in the opposite direction: a buffer still holding a
+# previous job's records can show a kill that is not this run's, while its silence still covers it.
+UNCLEARED_DMESG_CAVEAT = (
+    " (buffer not cleared for this run, so a kill may be a previous job's)"
 )
 
 # `docker_in_docker.sh`'s own output, which holds the containment decision and any refusal.
@@ -502,9 +507,12 @@ def start_dmesg_follow() -> Optional[subprocess.Popen]:
     The clear-to-here window needs no marker: `--follow` prints the buffer it starts with
     before following, so anything logged in between is still there and is captured.
 
-    The argv is a list, not a shell string: a shell in between would make `poll()` report the
-    shell rather than `dmesg`, and `poll()` is what coverage rests on. `sudo` forks a child of
+    The argv is a list, not a shell string: a shell in between would make `poll` report the
+    shell rather than `dmesg`, and `poll` is what coverage rests on. `sudo` forks a child of
     its own regardless, hence the new session, so both can be signalled as one group.
+
+    A refusal that takes longer to surface than the delay below is not lost: coverage is decided
+    by polling this process again where the record is read, not by what is returned here.
     """
     with open(DMESG_FOLLOW_LOG, "w") as log_file:
         proc = subprocess.Popen(
@@ -513,10 +521,13 @@ def start_dmesg_follow() -> Optional[subprocess.Popen]:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+    # `Popen` reports only that the fork happened, so a `sudo` or `dmesg` that exits at once is
+    # still running here. `start_docker_in_docker` waits the same way before trusting its daemon.
+    time.sleep(1)
     if proc.poll() is not None:
         print(
             f"WARNING: could not follow dmesg (rc={proc.returncode}); the kernel record will "
-            f"cover only what the ring buffer still holds at the end of the run"
+            "cover only what the ring buffer still holds at the end of the run"
         )
         return None
     print(f"Following dmesg into {DMESG_FOLLOW_LOG} with PID {proc.pid}")
@@ -538,25 +549,23 @@ def read_dmesg_follow() -> bytes:
         return follow_file.read()
 
 
-def stop_dmesg_follow(proc: Optional[subprocess.Popen]) -> bool:
-    """Stop the follower, and say whether it was still running when asked.
+def stop_dmesg_follow(proc: Optional[subprocess.Popen]) -> None:
+    """Stop the follower.
 
     `Utils.terminate_process_group` neither waits nor reports the outcome, so the wait is what
-    makes the stop observable and what keeps the child from being left unreaped. Escalating to
-    `SIGKILL` bounds the job: this runs after the last diagnostic, where a stuck child would
-    otherwise hold the job open for as long as it liked.
+    makes the stop observable and what keeps the child from being left unreaped. `SIGKILL` needs
+    no second wait to confirm it, and this runs one statement before the job's report is written,
+    where waiting again on a child that already ignored `SIGTERM` would cost the run that report.
     """
     if proc is None or proc.poll() is not None:
         # Signalling a group whose leader is already reaped only logs an ESRCH error.
-        return False
+        return
     Utils.terminate_process_group(proc.pid)
     try:
         proc.wait(timeout=30)
     except subprocess.TimeoutExpired:
         print("WARNING: dmesg follower ignored SIGTERM; killing it")
         Utils.terminate_process_group(proc.pid, force=True)
-        proc.wait(timeout=30)
-    return True
 
 
 def print_oom_lines(dmesg: str, caveat: str = "", partial: str = "") -> None:
@@ -583,7 +592,9 @@ def print_oom_lines(dmesg: str, caveat: str = "", partial: str = "") -> None:
         print(f"No kernel memory kill in dmesg{partial}")
 
 
-def print_timeout_diagnostics(env, follow_proc=None, cgroup_root=DIND_CGROUP_ROOT) -> None:
+def print_timeout_diagnostics(
+    env, follow_proc=None, dmesg_cleared=False, cgroup_root=DIND_CGROUP_ROOT
+) -> None:
     """Print what a run killed by the time budget was doing, to stdout.
 
     Everything else on this path is an uploaded artifact, and an upload needs the job to survive
@@ -596,17 +607,22 @@ def print_timeout_diagnostics(env, follow_proc=None, cgroup_root=DIND_CGROUP_ROO
     follower's record is read with it, since the snapshot alone reaches back only as far as the
     ring buffer still holds.
 
-    `follow_proc=None` is UNCOVERED rather than "no follower wanted": the only caller runs when
-    the clear succeeded, which is also when the follower is started, so its absence means the
-    start failed. The file's existence cannot stand in for the process, either - a follower that
-    died early leaves a file that begins right where a healthy one would.
+    Both defaults are UNCOVERED and UNCLEARED, because this runs on every non-local hard timeout
+    whatever the clear did. The file's existence cannot stand in for the follower, either - one
+    that died early leaves a file that begins right where a healthy one would.
+
+    An empty snapshot is read as a failed one, since `Shell.get_output` returns `""` for both a
+    failure and a genuinely empty buffer. That conflation over-warns, which is the safe direction.
     """
     print_leaf_peak_usage(env, cgroup_root=cgroup_root)
-    covers_run = follow_proc is not None and follow_proc.poll() is None
-    dmesg = read_dmesg_follow().decode(errors="replace") + Shell.get_output(
-        "dmesg -T", verbose=True
+    follow_dmesg = read_dmesg_follow().decode(errors="replace")
+    snapshot = Shell.get_output("dmesg -T", verbose=True)
+    covers_run = follow_proc is not None and follow_proc.poll() is None and bool(snapshot)
+    print_oom_lines(
+        follow_dmesg + snapshot,
+        caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+        partial="" if covers_run else PARTIAL_DMESG_CAVEAT,
     )
-    print_oom_lines(dmesg, partial="" if covers_run else PARTIAL_DMESG_CAVEAT)
 
 
 ncpu = Utils.cpu_count()
@@ -1906,6 +1922,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Follows the buffer this clears, because the tests below wrap it long before it is read.
     dmesg_follow_proc = None
     if not info.is_local_run:
+        # `ci/tmp` is git-ignored, so the clean between jobs on a runner leaves this file behind
+        # and a previous job's kernel record would be read and uploaded as this run's. Before the
+        # clear, because the writer below is only started when the clear succeeds.
+        Path(DMESG_FOLLOW_LOG).unlink(missing_ok=True)
         try:
             dmesg_cleared = Utils.clear_dmesg()
         except Exception as ex:
@@ -2107,7 +2127,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # Before the archive below, which on this path is what the cancellation cuts off.
     if hard_killed and not info.is_local_run:
-        print_timeout_diagnostics(os.environ, follow_proc=dmesg_follow_proc)
+        print_timeout_diagnostics(
+            os.environ, follow_proc=dmesg_follow_proc, dmesg_cleared=dmesg_cleared
+        )
 
     # Collect logs before re-run
     attached_files = []
@@ -2201,29 +2223,29 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Whether this dump succeeded. Neither the buffer nor the path answers that: a successful
     # dump can legitimately be empty, and a failed one still leaves the redirect's empty file.
     dmesg_dumped = False
-    # Whether the record spans the run, which only a follower still running here establishes. The
-    # dump's own success cannot: it succeeds just the same on a buffer that wrapped long ago.
+    # Whether the record spans the run. Both halves are needed: a follower still running proves
+    # the earlier window, and only the snapshot proves the tail it has not consumed yet.
     dmesg_covers_run = False
     if not info.is_local_run:
         print("Dumping dmesg")
         follow_dmesg = read_dmesg_follow()
-        dmesg_covers_run = (
-            dmesg_follow_proc is not None and dmesg_follow_proc.poll() is None
-        )
+        # Polled where the record is read, so a follower alive here consumed the buffer up to it.
+        follow_alive = dmesg_follow_proc is not None and dmesg_follow_proc.poll() is None
         # Not `strict`: raising here would skip the report this dump feeds, so a run whose dmesg
         # is unreadable would lose the counter-based reports too, which do not need dmesg at all.
         if Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True):
             dmesg_dumped = True
             with open("./ci/tmp/dmesg.log", "rb") as dmesg_file:
-                # A superset of the snapshot alone, so no detector below can lose a signal it
-                # would have had. The overlapping lines stay: every consumer returns a set or a
-                # boolean, and `-T`'s one-second resolution makes deduping merge same-second kills.
+                # A superset of the snapshot alone, so no detector below can lose a signal. The
+                # overlap stays: only `print_oom_lines` renders per match, and deduping at `-T`'s
+                # one-second resolution would merge distinct same-second kills.
                 dmesg = follow_dmesg + dmesg_file.read()
         else:
             print(
                 "WARNING: could not dump dmesg; leaf OOMs will be reported from the counters only"
             )
             dmesg = follow_dmesg
+        dmesg_covers_run = follow_alive and dmesg_dumped
 
     # `ERROR` plus `has_error` matches the existing OOM treatment on every path, not just
     # bugfix validation - a resource kill is never a test verdict, and the `ERROR` keeps the
@@ -2293,10 +2315,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 and any(r.has_label(Result.Label.INFRA) for r in test_results)
             )
         ):
-            uncleared = " (buffer not cleared for this run, so a kill may be a previous job's)"
             print_oom_lines(
                 dmesg.decode(errors="replace"),
-                caveat="" if dmesg_cleared else uncleared,
+                caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
                 partial="" if dmesg_covers_run else PARTIAL_DMESG_CAVEAT,
             )
             if dmesg_dumped:
@@ -2531,7 +2552,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     late_dmesg_covers_run = False
     if not info.is_local_run and dmesg_cleared:
         late_follow_dmesg = read_dmesg_follow()
-        late_dmesg_covers_run = (
+        late_follow_alive = (
             dmesg_follow_proc is not None and dmesg_follow_proc.poll() is None
         )
         # Read only what this re-dump wrote: a surviving earlier file would report a kill
@@ -2546,6 +2567,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 "is only reportable from the counters"
             )
             late_dmesg = late_follow_dmesg
+        late_dmesg_covers_run = late_follow_alive and late_dmesg_dumped
     for meaning in dind_unreportable_ooms(os.environ, late_dmesg_covers_run):
         print(
             f"WARNING: {meaning} cannot be detected on this run (cgroup v1 charges the kill to "
