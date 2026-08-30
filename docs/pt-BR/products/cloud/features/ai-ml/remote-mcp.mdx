@@ -1,0 +1,138 @@
+---
+sidebarTitle: 'Servidor MCP remoto'
+slug: /cloud/features/ai-ml/remote-mcp
+title: 'MCP remoto no Cloud'
+description: 'Descrição da funcionalidade de MCP remoto no ClickHouse Cloud'
+keywords: ['AI', 'ClickHouse Cloud', 'MCP', 'Model Context Protocol', 'MCP remoto']
+doc_type: 'reference'
+---
+
+Nem todos os usuários interagem com o ClickHouse por meio do console do Cloud.
+Por exemplo, muitos desenvolvedores trabalham diretamente em seus editores de código preferidos, em agentes de CLI ou se conectam ao banco de dados por meio de configurações personalizadas, enquanto outros dependem de assistentes de IA de uso geral, como o Anthropic Claude, para a maior parte de suas explorações.
+Esses usuários e as cargas de trabalho agentivas que atuam em seu nome precisam de uma forma de acessar e consultar o ClickHouse Cloud com segurança, sem configurações complexas nem infraestrutura personalizada.
+
+O recurso de servidor MCP remoto no ClickHouse Cloud resolve isso ao expor uma interface padrão que agentes externos podem usar para recuperar contexto analítico.
+MCP, ou Model Context Protocol, é um padrão para acesso estruturado a dados por aplicações de IA baseadas em LLMs.
+Com essa integração, agentes externos podem listar bancos de dados e tabelas, inspecionar esquemas e executar consultas SELECT com escopo limitado e em modo somente leitura.
+A autenticação é feita via OAuth. O servidor é totalmente gerenciado no ClickHouse Cloud, portanto não requer configuração nem manutenção.
+
+Isso facilita que ferramentas agentivas se integrem ao ClickHouse e recuperem os dados de que precisam, seja para análise, sumarização, geração de código ou exploração.
+
+<div id="remote-vs-oss">
+  ## servidor MCP remoto vs servidor MCP de código aberto
+</div>
+
+O ClickHouse oferece dois servidores MCP.
+
+|                  | servidor MCP remoto (Cloud)                                                                                               | Servidor MCP de código aberto                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Origem**       | Totalmente gerenciado pelo ClickHouse Cloud                                                                               | [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) no GitHub |
+| **Transporte**   | HTTP por streaming (`https://mcp.clickhouse.cloud/mcp`)                                                                   | stdio local                                                              |
+| **Funciona com** | serviços do ClickHouse Cloud                                                                                              | Qualquer instância do ClickHouse (self-hosted ou Cloud)                  |
+| **Autenticação** | OAuth 2.0 com suas credenciais do Cloud                                                                                   | Variáveis de ambiente                                                    |
+| **Ferramentas**  | 13 ferramentas que abrangem consultas, exploração de esquema, gerenciamento de serviços, backups, ClickPipes e faturamento | 3 ferramentas: `run_select_query`, `list_databases`, `list_tables`       |
+| **Configuração** | Nenhuma instalação. Aponte seu cliente MCP para o endpoint e autentique-se.                                               | Instale e execute o servidor localmente                                  |
+
+O servidor MCP remoto oferece a integração mais completa com o ClickHouse Cloud, incluindo gerenciamento de serviços, monitoramento de backups, visibilidade do ClickPipe e dados de faturamento, sem necessidade de gerenciar infraestrutura.
+Para instâncias self-hosted do ClickHouse, consulte os [guias do servidor MCP de código aberto](/pt-BR/guides/use-cases/ai-ml/MCP/index).
+
+<div id="enabling">
+  ## Habilitando o servidor MCP remoto
+</div>
+
+O servidor MCP remoto deve ser habilitado para cada serviço antes de poder aceitar conexões.
+No console do ClickHouse Cloud, abra o serviço, clique no botão **Connect**, selecione **MCP** e habilite-o.
+Para ver o passo a passo detalhado com capturas de tela, consulte o [guia de configuração](/pt-BR/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server).
+
+<div id="endpoint">
+  ## Endpoint
+</div>
+
+Após ser habilitado, o servidor MCP remoto fica disponível em:
+
+```text
+https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="authentication">
+  ## Autenticação
+</div>
+
+Todo acesso ao servidor MCP remoto é autenticado via OAuth 2.0.
+Quando um cliente MCP se conecta pela primeira vez, ele inicia um fluxo do OAuth que abre uma janela do navegador para que o usuário faça login com suas credenciais do ClickHouse Cloud.
+O acesso é restrito às organizações e aos serviços aos quais o usuário autenticado tem permissão de acesso. Nenhuma configuração adicional de chave de API é necessária.
+
+<div id="safety">
+  ## Segurança
+</div>
+
+Todas as ferramentas expostas pelo servidor MCP remoto são **somente leitura**. Cada ferramenta é marcada com `readOnlyHint: true` nos metadados do MCP. Nenhuma ferramenta pode modificar dados, alterar a configuração do serviço nem realizar qualquer operação destrutiva.
+
+<div id="available-tools">
+  ## Ferramentas disponíveis
+</div>
+
+O servidor MCP remoto disponibiliza 13 ferramentas organizadas nas seguintes categorias.
+
+<div id="query-and-schema">
+  ### Exploração de consultas e esquema
+</div>
+
+Essas ferramentas permitem que os agentes descubram quais dados estão disponíveis e executem consultas analíticas.
+
+| Ferramenta         | Descrição                                                                     | Parâmetros                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `run_select_query` | Executa uma consulta SELECT somente leitura em um serviço do ClickHouse.      | `query`, uma consulta SELECT válida em ClickHouse SQL; `serviceId`                                          |
+| `list_databases`   | Lista todos os bancos de dados disponíveis em um serviço do ClickHouse.       | `serviceId`                                                                                                 |
+| `list_tables`      | Lista todas as tabelas em um banco de dados, incluindo definições de colunas. | `serviceId`; `database`; opcionalmente `like` ou `notLike` (padrões SQL LIKE para filtrar nomes de tabelas) |
+
+<div id="organizations">
+  ### Organizações
+</div>
+
+| Ferramenta                 | Descrição                                                                                  | Parâmetros       |
+| -------------------------- | ------------------------------------------------------------------------------------------ | ---------------- |
+| `get_organizations`        | Lista todas as organizações do ClickHouse Cloud às quais o usuário autenticado tem acesso. | Nenhum           |
+| `get_organization_details` | Retorna os detalhes de uma organização específica.                                         | `organizationId` |
+
+<div id="services">
+  ### Serviços
+</div>
+
+| Tool                  | Descrição                                                       | Parâmetros                    |
+| --------------------- | --------------------------------------------------------------- | ----------------------------- |
+| `get_services_list`   | Lista todos os serviços em uma organização do ClickHouse Cloud. | `organizationId`              |
+| `get_service_details` | Retorna os detalhes de um serviço específico.                   | `organizationId`; `serviceId` |
+
+<div id="backups">
+  ### Backups
+</div>
+
+| Ferramenta                         | Descrição                                                                                 | Parâmetros                                |
+| ---------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `list_service_backups`             | Lista todos os backups de um serviço, do mais recente para o mais antigo.                 | `organizationId`; `serviceId`             |
+| `get_service_backup_details`       | Retorna os detalhes de um único backup.                                                   | `organizationId`; `serviceId`; `backupId` |
+| `get_service_backup_configuration` | Retorna a configuração de backup de um serviço (agendamento e configurações de retenção). | `organizationId`; `serviceId`             |
+
+<div id="clickpipes">
+  ### ClickPipes
+</div>
+
+| Ferramenta        | Descrição                                               | Parâmetros                                   |
+| ----------------- | ------------------------------------------------------- | -------------------------------------------- |
+| `list_clickpipes` | Lista todos os ClickPipes configurados para um serviço. | `organizationId`; `serviceId`                |
+| `get_clickpipe`   | Retorna os detalhes de um ClickPipe específico.         | `organizationId`; `serviceId`; `clickPipeId` |
+
+<div id="billing">
+  ### Faturamento
+</div>
+
+| Ferramenta              | Descrição                                                                                                                            | Parâmetros                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `get_organization_cost` | Recupera dados de faturamento e custos de uso de uma organização. Retorna um total geral e registros diários de custos por entidade. | `organizationId`; opcionalmente `from_date` e `to_date` (AAAA-MM-DD, intervalo máximo de 31 dias) |
+
+<div id="getting-started">
+  ## Primeiros passos
+</div>
+
+Consulte o [guia de configuração](/pt-BR/products/cloud/features/ai-ml/mcp/remote-mcp) para ver instruções passo a passo sobre como habilitar o servidor MCP remoto e conectá-lo a um cliente MCP.

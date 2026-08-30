@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Tableau Online'
+slug: /integrations/tableau-online
+keywords: ['clickhouse', 'tableau', 'online', 'mysql', 'connect', 'integrate', 'ui']
+description: 'Tableau Online은 어디서나 더 빠르고 자신 있게 의사결정을 내릴 수 있도록 데이터의 힘을 활용합니다.'
+title: 'Tableau Online'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import MySQLCloudSetup from '/snippets/ko/_clickhouse_mysql_cloud_setup.mdx';
+import MySQLOnPremiseSetup from '/snippets/ko/_clickhouse_mysql_on_premise_setup.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Tableau Online은 공식 MySQL 데이터 소스를 사용해 MySQL 인터페이스를 통해 ClickHouse Cloud 또는 온프레미스 ClickHouse 환경에 연결할 수 있습니다.
+
+<div id="clickhouse-cloud-setup">
+  ## ClickHouse Cloud 설정
+</div>
+
+<MySQLCloudSetup />
+
+<div id="on-premise-clickhouse-server-setup">
+  ## 온프레미스 ClickHouse 서버 설정
+</div>
+
+<MySQLOnPremiseSetup />
+
+<div id="connecting-tableau-online-to-clickhouse-on-premise-without-ssl">
+  ## SSL 없이 ClickHouse에 Tableau Online 연결하기(온프레미스)
+</div>
+
+Tableau Cloud 사이트에 로그인한 후 새 Published 데이터 소스를 추가합니다.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="'New' 버튼으로 게시된 데이터 소스를 생성하는 Tableau Online 인터페이스" border />
+
+<br />
+
+사용 가능한 커넥터 목록에서 &quot;MySQL&quot;을 선택합니다.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="MySQL 옵션이 강조 표시된 Tableau Online 커넥터 선택 화면" border />
+
+<br />
+
+ClickHouse 설정 과정에서 확인한 연결 정보를 입력합니다.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="server, port, database 및 자격 증명 필드가 있는 Tableau Online MySQL 연결 구성 화면" border />
+
+<br />
+
+Tableau Online은 데이터베이스를 분석하여 사용 가능한 테이블 목록을 표시합니다. 원하는 테이블을 오른쪽 캔버스로 끌어다 놓습니다. 또한 &quot;Update Now&quot;를 클릭해 데이터를 미리 보고, 자동으로 인식된 필드 타입이나 이름을 세부 조정할 수도 있습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="왼쪽에 데이터베이스 테이블이, 오른쪽에 드래그 앤 드롭 기능이 있는 캔버스가 표시된 Tableau Online 데이터 소스 페이지" border />
+
+<br />
+
+그다음에는 오른쪽 상단의 &quot;Publish As&quot;를 클릭하기만 하면 되며, 새로 생성한 데이터셋을 Tableau Online에서 평소처럼 사용할 수 있습니다.
+
+참고: Tableau Online을 Tableau Desktop과 함께 사용하면서 ClickHouse 데이터셋을 서로 공유하려면, 데이터 소스 드롭다운에서 MySQL을 선택했을 때 [여기](https://www.tableau.com/support/drivers)에 표시되는 설정 가이드를 따라 Tableau Desktop에서도 기본 MySQL 커넥터를 사용해야 합니다. M1 Mac을 사용 중이라면 드라이버 설치 우회 방법은 [이 문제 해결 스레드](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac)에서 확인하십시오.
+
+<div id="connecting-tableau-online-to-clickhouse-cloud-or-on-premise-setup-with-ssl">
+  ## Tableau Online을 ClickHouse에 연결하기(SSL을 사용하는 Cloud 또는 온프레미스 설정)
+</div>
+
+Tableau Online의 MySQL 연결 설정 마법사에서는 SSL 인증서를 제공할 수 없으므로,
+Tableau Desktop에서 연결을 설정한 다음 Tableau Online으로 내보내는 방법만 사용할 수 있습니다. 다만 이 과정은 매우 간단합니다.
+
+Windows 또는 Mac 컴퓨터에서 Tableau Desktop을 실행한 다음 &quot;Connect&quot; -&gt; &quot;To a Server&quot; -&gt; &quot;MySQL&quot;을 선택하십시오.
+대부분 먼저 컴퓨터에 MySQL 드라이버를 설치해야 합니다.
+데이터 소스 드롭다운에서 MySQL을 선택하면 [여기](https://www.tableau.com/support/drivers)에 표시되는 설정 가이드를 따라 설치할 수 있습니다.
+M1 Mac을 사용하는 경우 드라이버 설치 우회 방법은 [이 문제 해결 스레드](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac)를 확인하십시오.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="MySQL 옵션이 강조 표시된 Connect 메뉴를 보여주는 Tableau Desktop 인터페이스" border />
+
+<br />
+
+<Note>
+  MySQL 연결 설정 UI에서 &quot;SSL&quot; 옵션이 활성화되어 있는지 확인하십시오.
+  ClickHouse Cloud의 SSL 인증서는 [Let&#39;s Encrypt](https://letsencrypt.org/certificates/)에서 서명한 인증서입니다.
+  이 루트 인증서는 [여기](https://letsencrypt.org/certs/isrgrootx1.pem)에서 다운로드할 수 있습니다.
+</Note>
+
+ClickHouse Cloud 인스턴스의 MySQL 사용자 자격 증명과 다운로드한 루트 인증서의 경로를 입력하십시오.
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="SSL 옵션이 활성화되어 있고 server, username, password 및 certificate 입력 필드가 있는 Tableau Desktop MySQL 연결 대화 상자" border />
+
+<br />
+
+평소처럼 원하는 테이블을 선택하고(Tableau Online과 비슷함),
+&quot;Server&quot; -&gt; &quot;Publish 데이터 소스&quot; -&gt; Tableau Cloud를 선택하십시오.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Publish 데이터 소스 옵션이 강조 표시된 Server 메뉴를 보여주는 Tableau Desktop" border />
+
+<br />
+
+중요: &quot;Authentication&quot; 옵션에서 &quot;Embedded password&quot;를 선택해야 합니다.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="Embedded password가 선택된 Authentication 옵션을 보여주는 Tableau Desktop 게시 대화 상자" border />
+
+<br />
+
+추가로 &quot;Update workbook to use the published data source&quot;를 선택하십시오.
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="'Update workbook to use the published data source' 옵션이 선택된 Tableau Desktop 게시 대화 상자" border />
+
+<br />
+
+마지막으로 &quot;Publish&quot;를 클릭하면, 자격 증명이 포함된 데이터 소스가 Tableau Online에서 자동으로 열립니다.
+
+<div id="known-limitations-clickhouse-2311">
+  ## 알려진 제한 사항 (ClickHouse 23.11)
+</div>
+
+알려진 모든 제한 사항은 ClickHouse `23.11`에서 해결되었습니다. 그 밖에 다른 호환성 문제가 있으면 [문의해 주십시오](https://clickhouse.com/company/contact) 또는 [새 이슈](https://github.com/ClickHouse/ClickHouse/issues)를 생성해 주십시오.

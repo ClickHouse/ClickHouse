@@ -4,16 +4,21 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
+#include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -41,14 +46,6 @@ StorageAlias::StorageAlias(
     , target_database(target_database_)
     , target_table(target_table_)
 {
-    StorageID target_id(target_database, target_table);
-    if (table_id_ == target_id)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
-
-    // Disallow target is also an alias
-    auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, context_);
-    if (target_storage && target_storage->getName() == "Alias")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
@@ -62,6 +59,18 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     }
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+}
+
+bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
+{
+    if (!query_context)
+        return false;
+
+    auto access = query_context->getAccess();
+    if (column_name.empty())
+        return access->isGranted(access_type, target_database, target_table);
+
+    return access->isGranted(access_type, target_database, target_table, column_name);
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
@@ -82,6 +91,24 @@ public:
     {
     }
 
+    ~AliasSink() override
+    {
+        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
+        /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
+        if (executor)
+        {
+            try
+            {
+                executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("AliasSink");
+            }
+        }
+    }
+
     String getName() const override { return "AliasSink"; }
 
     void onStart() override
@@ -94,7 +121,16 @@ public:
 
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
+        if (getContext()->hasQueryContext())
+            insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);
+
+        /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only
+        /// stream). Keep the nested INSERT single-stream: with the outer fan-out already in place,
+        /// letting every branch fan out again would multiply the number of real sink branches (part
+        /// writers, squashing and compression buffers) up to `max_insert_threads^2`, exceeding the
+        /// budget the user allowed for this INSERT.
+        insert_context->setSetting("max_insert_threads", 1);
 
         /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
         /// Alias matches a direct insert: async batches select async dedup settings and skip the
@@ -126,6 +162,16 @@ public:
 
         Chunk non_materialized_chunk(non_materialized_block.getColumns(), non_materialized_block.rows());
         non_materialized_chunk.setChunkInfos(chunk.getChunkInfos().clone());
+
+        /// The nested INSERT re-anchors the deduplication info to its own chunks (its squashing and
+        /// `AddDeduplicationInfoTransform` call `updateOriginalBlock`). When this sink is fed by a
+        /// dependent materialized view whose inner query changed the number of rows, those chunks
+        /// no longer match the rows the info's offsets describe, and computing a data hash after
+        /// that re-anchoring would read out of the block's bounds. Cache the hashes now, while the
+        /// info is still consistent.
+        if (auto deduplication_info = non_materialized_chunk.getChunkInfos().get<DeduplicationInfo>())
+            deduplication_info->cacheDataHashes(data_hash_cache);
+
         executor->push(std::move(non_materialized_chunk));
     }
 
@@ -153,6 +199,9 @@ private:
     bool async_insert;
     BlockIO block_io;
     std::unique_ptr<PushingPipelineExecutor> executor;
+    /// Memoizes the deduplication data hashes across the sibling chunks of one source block, so a
+    /// row-count-changing view fanned out into many chunks does not re-hash the source per chunk.
+    DeduplicationInfo::DataHashCache data_hash_cache;
 };
 
 void StorageAlias::read(
@@ -287,7 +336,20 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    return target_storage->updateLightweight(commands, local_context);
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto pipeline = target_storage->updateLightweight(commands, local_context);
+
+    /// The caller locks the alias, not the target, so the target needs its own share lock held
+    /// until the pipeline has committed the patch part.
+    QueryPlanResourceHolder target_resources;
+    target_resources.storage_holders.emplace_back(target_storage);
+    target_resources.table_locks.emplace_back(std::move(lock));
+    pipeline.addResources(std::move(target_resources));
+
+    return pipeline;
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
@@ -303,6 +365,39 @@ void StorageAlias::waitForMutation(const String & mutation_id, bool wait_for_ano
 void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
 {
     getTargetTable()->setMutationCSN(mutation_id, csn);
+}
+
+namespace
+{
+
+/// Holds the resolved target StoragePtr alongside its task list
+struct AliasCheckTasks : IStorage::DataValidationTasksBase
+{
+    StoragePtr target;
+    IStorage::DataValidationTasksPtr inner;
+
+    AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
+        : target(std::move(target_)), inner(std::move(inner_))
+    {
+        chassert(inner);
+    }
+
+    size_t size() const override { return inner->size(); }
+};
+
+}
+
+IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
+{
+    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
+    auto inner = target->getCheckTaskList(filter, query_context);
+    return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
+}
+
+std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
+{
+    auto * tasks = assert_cast<AliasCheckTasks *>(check_task_list.get());
+    return tasks->target->checkDataNext(tasks->inner);
 }
 
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
@@ -328,6 +423,46 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & m
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+}
+
+bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    if (!storage_snapshot)
+        return false;
+
+    bool has_select_access = false;
+    for (const auto & column : storage_snapshot->metadata->getColumns())
+    {
+        if (isTargetTableGranted(query_context, AccessType::SELECT, column.name))
+        {
+            has_select_access = true;
+            break;
+        }
+    }
+
+    if (!has_select_access)
+        return false;
+
+    auto target = tryGetTargetTable();
+    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+}
+
+std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
+{
+    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
+        return {};
+
+    auto target = tryGetTargetTable();
+    return target ? target->totalRows(query_context) : std::optional<UInt64>{};
+}
+
+std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
+{
+    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
+        return {};
+
+    auto target = tryGetTargetTable();
+    return target ? target->totalBytes(query_context) : std::optional<UInt64>{};
 }
 
 void StorageAlias::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
@@ -410,6 +545,26 @@ void registerStorageAlias(StorageFactory & factory)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Storage Alias does not support explicit column definitions");
+        }
+
+        if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+            local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
+
+        /// The restrictions below read the catalog, so they may only judge freshly supplied input:
+        /// an already accepted definition must stay loadable, because a rejection while loading
+        /// metadata fails the whole load rather than the one table. They run after the access check
+        /// so that a caller without access to the target cannot learn its engine from the message.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (fresh_user_definition)
+        {
+            StorageID target_id(target_database, target_table);
+            if (args.table_id == target_id)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
+
+            auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, local_context);
+            if (target_storage && target_storage->getName() == "Alias")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
         }
 
         return std::make_shared<StorageAlias>(

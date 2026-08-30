@@ -100,7 +100,7 @@ $CLICKHOUSE_LOCAL -q "SELECT count(*) FROM '$dir/*?*_num*e?s_{1..3}.jsonl'"
 $CLICKHOUSE_LOCAL -q "SELECT count(*) FROM '$dir/*?*_num*e?s_{1,2}.jsonl'"
 
 echo "Test 4f: recursive search"
-# /**/* pattern does not look in current directory
+# `**/` matches zero or more directory components, so `/**/*` also looks in the current directory
 $CLICKHOUSE_LOCAL -q "SELECT count(*) FROM '$dir/**/*.jsonl'"
 $CLICKHOUSE_LOCAL -q "SELECT count(*) FROM '$dir/nested/**/*.jsonl'"
 

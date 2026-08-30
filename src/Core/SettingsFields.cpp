@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Columns/IColumn.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
@@ -18,6 +19,7 @@
 #pragma clang diagnostic pop
 
 #include <cmath>
+#include <limits>
 
 
 namespace DB
@@ -269,6 +271,9 @@ namespace
 {
     UInt64 stringToMaxThreads(const String & str)
     {
+        /// Accept both the clean `auto(N)` form and the legacy `'auto(N)'` form (quotes included in the
+        /// value). The latter is what older replicas send over the wire; keeping it parseable is what lets
+        /// `toString` emit the clean form without breaking mixed-version clusters. Do not remove it.
         if (startsWith(str, "auto") || startsWith(str, "'auto"))
             return 0;
         return parseFromString<UInt64>(str);
@@ -295,8 +300,13 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
-        /// Removing quotes here will introduce an incompatibility between replicas with different versions.
-        return "'auto(" + ::DB::toString(value) + ")'";
+        /// The surrounding quotes are an unfortunate historical artifact: for a long time this returned the
+        /// string `'auto(N)'` (quotes included in the value itself), which leaks into `system.settings` and
+        /// looks like garbage. We emit the clean `auto(N)` form now. This is safe across versions because
+        /// `stringToMaxThreads` accepts both `auto(...)` and the legacy `'auto(...)'` form, so a server
+        /// receiving settings from an older replica still parses them, and every released version can parse
+        /// the unquoted form we send (see issue #68748 and the history below).
+        return "auto(" + ::DB::toString(value) + ")";
     return ::DB::toString(value);
 }
 
@@ -394,13 +404,27 @@ template <>
 void SettingFieldSeconds::parseFromString(const String & str)
 {
     Float64 n = parse<Float64>(str.data(), str.size());
-    *this = Poco::Timespan{static_cast<Int64>(n * microseconds_per_unit)};
+    *this = Poco::Timespan{float64AsSecondsToTimespan(n)};
 }
 
 template <>
 void SettingFieldMilliseconds::parseFromString(const String & str)
 {
     *this = stringToNumber<UInt64>(str);
+}
+
+template <SettingFieldTimespanUnit unit_>
+Int64 SettingFieldTimespan<unit_>::microsecondsFromUnits(UInt64 units)
+{
+    constexpr std::string_view unit_name = unit == SettingFieldTimespanUnit::Millisecond ? "milliseconds" : "seconds";
+    if (units > static_cast<UInt64>(std::numeric_limits<Int64>::max() / static_cast<Int64>(microseconds_per_unit)))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot convert {} to microseconds: the setting's value in {} is too big: {}",
+            unit_name,
+            unit_name,
+            units);
+    return static_cast<Int64>(units * microseconds_per_unit);
 }
 
 template <SettingFieldTimespanUnit unit_>

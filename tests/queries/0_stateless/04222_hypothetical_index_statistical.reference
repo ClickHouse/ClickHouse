@@ -1,0 +1,15 @@
+--- statistical: range query on column with stats ---
+  status:       applicable
+  source:           statistical
+  empirical_status: disabled
+--- statistical: no stats, falls back to applicability_only ---
+  status:       applicable
+  source:           applicability_only
+  empirical_status: disabled
+--- default: empirical preferred over statistical when both available ---
+  source:           empirical
+  empirical_status: ok
+--- unknown setting is rejected ---
+UNKNOWN_SETTING
+--- invalid value for empirical is rejected ---
+INVALID_SETTING_VALUE

@@ -1,0 +1,514 @@
+---
+description: '테이블 관련 문서'
+keywords: ['스키마', 'DDL']
+sidebarTitle: 'CREATE TABLE'
+slug: /sql-reference/statements/create/table
+title: 'CREATE TABLE'
+doc_type: '참고'
+---
+
+새로운 테이블을 생성합니다. 기본적으로 테이블은 현재 서버에서만 생성됩니다.
+분산 DDL 쿼리는 `ON CLUSTER` 절로 구현되며, 이에 대해서는 [별도로 설명합니다](/ko/reference/statements/distributed-ddl).
+
+<div id="syntax-forms">
+  ## 구문 형식
+</div>
+
+이 쿼리는 사용 사례에 따라 다양한 구문 형식을 가질 수 있습니다.
+
+<div id="with-explicit-schema">
+  ### 명시적 스키마로 테이블 생성
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [COMMENT 'comment for column'] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [COMMENT 'comment for column'] [compression_codec] [TTL expr2],
+    ...
+) ENGINE = engine
+  [COMMENT 'comment for table']
+```
+
+`db`가 설정되어 있으면 `db` 데이터베이스에, 설정되어 있지 않으면 현재 데이터베이스에, 대괄호 안에 지정된 구조와 `engine` 엔진으로 `table_name`이라는 이름의 테이블을 생성합니다.
+테이블의 구조는 컬럼 설명, 보조 인덱스, 프로젝션, 제약 조건의 목록입니다. 엔진이 [기본 키(primary key)](#primary-key)를 지원하는 경우, 이는 테이블 엔진의 매개변수로 지정됩니다.
+
+가장 단순한 경우 컬럼 설명은 `name type` 형식입니다. 예시: `RegionID UInt32`.
+
+유형 뒤에 오는 수정자 `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` 및 컬럼별 `SETTINGS`는 임의의 순서로 작성할 수 있으며, 각각 최대 한 번만 사용할 수 있습니다. 예를 들어 `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'`과 `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)`는 동일합니다. `SHOW CREATE TABLE`은 컬럼 선언을 정규화합니다. 선언에 남아 있는 수정자는 항상 `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`의 정규 순서로 출력되며, 컬럼별 `PRIMARY KEY`는 컬럼 선언에서 테이블 수준 `PRIMARY KEY` 절로 이동합니다.
+
+기본값에 대한 표현식도 정의할 수 있습니다(아래 참조).
+
+필요한 경우 하나 이상의 키 표현식과 함께 기본 키를 지정할 수 있습니다.
+
+컬럼과 테이블에 주석을 추가할 수 있습니다.
+
+<div id="with-a-schema-similar-to-other-table">
+  ### 기존 테이블 스키마를 사용하여 테이블 생성
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
+```
+
+ClickHouse는 기존 테이블의 스키마와 데이터를 복사할 수 있습니다.
+
+기존 테이블의 스키마를 복제하려면:
+
+이 구문은 다른 테이블과 동일한 구조의 테이블을 생성합니다.
+
+<div id="with-a-schema-and-data-cloned-from-another-table">
+  ### 기존 테이블의 스키마와 데이터로 테이블 생성
+</div>
+
+기존 테이블의 스키마와 데이터를 복제하려면:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
+```
+
+기존 테이블과 동일한 스키마(schema)와 데이터를 가진 테이블을 생성합니다. 새 테이블이 생성된 후 `db.table`의 모든 파티션이 이 테이블에 ATTACH됩니다. 즉, 생성과 동시에 `db.table`의 데이터가 `db2.table_clone`으로 복제됩니다. 이 쿼리는 다음과 동일합니다.
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+```
+
+두 기능 모두에서 테이블에 다른 엔진을 지정할 수 있습니다. 엔진을 지정하지 않으면 원본 테이블(`db.table`)과 동일한 엔진이 사용됩니다.
+
+<div id="from-a-table-function">
+  ### 테이블 함수를 사용하여 테이블 생성
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
+```
+
+지정된 [테이블 함수](/ko/reference/functions/table-functions/index)와 동일한 결과를 반환하는 테이블을 생성합니다. 생성된 테이블은 지정한 해당 테이블 함수와 동일한 방식으로 동작합니다.
+
+<div id="from-select-query">
+  ### SELECT 쿼리로 테이블 생성
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
+```
+
+`SELECT` 쿼리 결과와 같은 구조의 테이블을 `engine` 엔진으로 생성하고, `SELECT`의 데이터로 채웁니다. 또한 컬럼 정의를 명시적으로 지정할 수도 있습니다.
+
+테이블이 이미 존재하고 `IF NOT EXISTS`가 지정된 경우, 쿼리는 아무 작업도 수행하지 않습니다.
+
+쿼리에서는 `ENGINE` 절 뒤에 다른 절이 올 수 있습니다. 테이블을 생성하는 방법에 대한 자세한 내용은 [테이블 엔진](/ko/reference/engines/table-engines/index) 설명서를 참조하십시오.
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+```text title="Response"
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
+
+<div id="default_values">
+  ## 컬럼 기본값 지정
+</div>
+
+컬럼 설명에는 `DEFAULT expr`, `MATERIALIZED expr` 또는 `ALIAS expr` 형태의 기본값 표현식을 지정할 수 있습니다. 예시: `URLDomain String DEFAULT domain(URL)`.
+
+표현식 `expr`은 선택 사항입니다. 이를 생략하면 컬럼 타입을 명시적으로 지정해야 하며, 기본값은 숫자 컬럼은 `0`, 문자열 컬럼은 `''`(빈 문자열), 배열 컬럼은 `[]`(빈 배열), 날짜 컬럼은 `1970-01-01`, 널 허용 컬럼은 `NULL`이 됩니다.
+
+기본값 컬럼의 컬럼 타입은 생략할 수 있으며, 이 경우 `expr`의 타입에서 추론됩니다. 예를 들어 `EventDate DEFAULT toDate(EventTime)` 컬럼의 타입은 Date가 됩니다.
+
+데이터 타입과 기본값 표현식을 모두 지정하면, 표현식을 지정된 타입으로 변환하는 암시적 형 변환 함수가 삽입됩니다. 예시: `Hits UInt32 DEFAULT 0`은 내부적으로 `Hits UInt32 DEFAULT toUInt32(0)`으로 표현됩니다.
+
+기본값 표현식 `expr`은 임의의 테이블 컬럼과 상수를 참조할 수 있습니다. ClickHouse는 테이블 구조 변경으로 인해 표현식 계산에 루프가 생기지 않는지 확인합니다. INSERT에서는 표현식을 해석할 수 있는지, 즉 해당 표현식을 계산하는 데 필요한 모든 컬럼이 전달되었는지 확인합니다.
+
+<div id="default">
+  ### DEFAULT
+</div>
+
+`DEFAULT expr`
+
+일반적인 기본값입니다. 이러한 컬럼의 값이 INSERT 쿼리에서 지정되지 않으면 `expr`에서 계산됩니다.
+
+예시:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime DEFAULT now(),
+    updated_at_date Date DEFAULT toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id) VALUES (1);
+
+SELECT * FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:06:46 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
+<div id="materialized">
+  ### MATERIALIZED
+</div>
+
+`MATERIALIZED expr`
+
+구체화된 표현식입니다. 이러한 컬럼의 값은 행이 삽입될 때 지정된 구체화된 표현식에 따라 자동으로 계산됩니다. `INSERT` 시에는 값을 명시적으로 지정할 수 없습니다.
+
+또한 이 유형의 기본값 컬럼은 `SELECT *` 결과에 포함되지 않습니다. 이는 `SELECT *`의 결과를 항상 `INSERT`를 사용해 다시 테이블에 삽입할 수 있다는 조건을 유지하기 위한 것입니다. 이 동작은 설정 `asterisk_include_materialized_columns`으로 비활성화할 수 있습니다.
+
+예시:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime MATERIALIZED now(),
+    updated_at_date Date MATERIALIZED toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test VALUES (1);
+
+SELECT * FROM test;
+┌─id─┐
+│  1 │
+└────┘
+
+SELECT id, updated_at, updated_at_date FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
+<div id="ephemeral">
+  ### EPHEMERAL
+</div>
+
+`EPHEMERAL [expr]`
+
+임시 컬럼입니다. 이 유형의 컬럼은 테이블에 저장되지 않으며 `SELECT`할 수도 없습니다. 임시 컬럼의 유일한 용도는 이를 사용해 다른 컬럼의 기본값 표현식을 구성하는 것입니다.
+
+컬럼을 명시적으로 지정하지 않고 수행하는 삽입은 이 유형의 컬럼을 건너뜁니다. 이는 `SELECT *`의 결과를 항상 `INSERT`를 사용해 다시 테이블에 삽입할 수 있다는 불변성을 유지하기 위한 것입니다.
+
+예시:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    unhexed String EPHEMERAL,
+    hexed FixedString(4) DEFAULT unhex(unhexed)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id, unhexed) VALUES (1, '5a90b714');
+
+SELECT
+    id,
+    hexed,
+    hex(hexed)
+FROM test
+FORMAT Vertical;
+
+Row 1:
+──────
+id:         1
+hexed:      Z��
+hex(hexed): 5A90B714
+```
+
+<div id="alias">
+  ### ALIAS
+</div>
+
+`ALIAS expr`
+
+계산된 컬럼의 동의어입니다. 이 유형의 컬럼은 테이블에 저장되지 않으며, 여기에 값을 INSERT할 수 없습니다.
+
+SELECT 쿼리에서 이 유형의 컬럼을 명시적으로 참조하면 값은 `expr`로부터 쿼리 시점에 계산됩니다. 기본적으로 `SELECT *`에는 ALIAS 컬럼이 포함되지 않습니다. 이 동작은 설정 `asterisk_include_alias_columns`로 비활성화할 수 있습니다.
+
+ALTER 쿼리를 사용해 새 컬럼을 추가하면 해당 컬럼의 기존 데이터는 기록되지 않습니다. 대신 기본적으로는 새 컬럼 값이 없는 기존 데이터를 읽을 때 표현식이 즉시 계산됩니다. 하지만 표현식을 실행하는 데 쿼리에 지정되지 않은 다른 컬럼이 필요하면 해당 컬럼도 추가로 읽히며, 필요한 데이터 블록에 대해서만 읽습니다.
+
+테이블에 새 컬럼을 추가한 뒤 나중에 해당 컬럼의 기본 표현식을 변경하면, 기존 데이터에 사용되는 값도 변경됩니다(디스크에 값이 저장되지 않은 데이터의 경우). 백그라운드 머지가 실행될 때 머지되는 파트 중 하나에 없는 컬럼의 데이터는 병합된 파트에 기록된다는 점에 유의하십시오.
+
+중첩 데이터 구조의 요소에는 기본값을 설정할 수 없습니다.
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    size_bytes Int64,
+    size String ALIAS formatReadableSize(size_bytes)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test VALUES (1, 4678899);
+
+SELECT id, size_bytes, size FROM test;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+```
+
+<div id="null-or-not-null-modifiers">
+  ## `NULL` 또는 `NOT NULL` 수정자 사용
+</div>
+
+컬럼 정의에서 데이터 타입 뒤에 오는 `NULL` 및 `NOT NULL` 수정자는 해당 타입을 [널 허용(Nullable)](/ko/reference/data-types/nullable)으로 만들거나 그렇지 않게 만듭니다.
+
+타입이 `Nullable`이 아닌 상태에서 `NULL`이 지정되면 `Nullable`로 처리되며, `NOT NULL`이 지정되면 그렇게 처리되지 않습니다. 예를 들어 `INT NULL`은 `Nullable(INT)`와 같습니다. 타입이 이미 `Nullable`인데 `NULL` 또는 `NOT NULL` 수정자를 지정하면 예외가 발생합니다.
+
+관련 항목: [data&#95;type&#95;default&#95;nullable](/ko/reference/settings/session-settings/other#data_type_default_nullable) 설정.
+
+<div id="primary-key">
+  ## 기본 키
+</div>
+
+테이블을 생성할 때 [기본 키](/ko/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)를 정의할 수 있습니다. 기본 키는 다음 두 가지 방식으로 지정할 수 있습니다.
+
+<Columns cols={2}>
+  <div>
+    **컬럼 목록 안에서**
+
+    ```sql
+    CREATE TABLE [db.]table_name
+    (
+        name1 type1, name2 type2, ...,
+        PRIMARY KEY(expr1[, expr2,...])
+    )
+    ENGINE = engine;
+    ```
+  </div>
+
+  <div>
+    **컬럼 목록 밖**
+
+    ```sql
+    CREATE TABLE [db.]table_name
+    (
+        name1 type1, name2 type2, ...
+    )
+    ENGINE = engine
+    PRIMARY KEY(expr1[, expr2,...]);
+    ```
+  </div>
+</Columns>
+
+<Tip>
+  하나의 쿼리에서 두 방식을 함께 사용할 수는 없습니다.
+</Tip>
+
+<div id="constraints">
+  ## 테이블 제약 조건 지정
+</div>
+
+컬럼 설명과 함께 제약 조건을 정의할 수도 있습니다:
+
+<div id="constraint">
+  ### CONSTRAINT
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    ...
+    CONSTRAINT constraint_name_1 CHECK boolean_expr_1,
+    ...
+) ENGINE = engine
+```
+
+`boolean_expr_1`에는 임의의 불리언 표현식이 올 수 있습니다. 테이블에 제약 조건이 정의되어 있으면 `INSERT` 쿼리에서 각 행마다 모든 제약 조건을 검사합니다. 제약 조건 중 하나라도 충족되지 않으면 서버는 제약 조건 이름과 검사 표현식을 포함한 예외를 발생시킵니다.
+
+제약 조건을 너무 많이 추가하면 대규모 `INSERT` 쿼리의 성능에 부정적인 영향을 줄 수 있습니다.
+
+모든 테이블의 기존 제약 조건은 [`system.constraints`](/ko/reference/system-tables/constraints) 테이블에서 확인할 수 있습니다.
+
+<div id="assume">
+  ### ASSUME
+</div>
+
+`ASSUME` 절은 테이블에서 참이라고 가정하는 `CONSTRAINT`를 정의하는 데 사용됩니다. 이렇게 정의한 제약 조건은 이후 최적화기가 SQL 쿼리 성능을 향상하는 데 활용할 수 있습니다.
+
+다음은 `ASSUME CONSTRAINT`를 사용해 `users_a` 테이블을 생성하는 예시입니다:
+
+```sql
+CREATE TABLE users_a (
+    uid Int16, 
+    name String, 
+    age Int16, 
+    name_len UInt8 MATERIALIZED length(name), 
+    CONSTRAINT c1 ASSUME length(name) = name_len
+) 
+ENGINE=MergeTree 
+ORDER BY (name_len, name);
+```
+
+여기서는 `ASSUME CONSTRAINT`를 사용해 `length(name)` 함수의 결과가 항상 `name_len` 컬럼 값과 같다고 가정합니다. 즉, 쿼리에서 `length(name)`가 호출될 때마다 ClickHouse는 이를 `name_len`으로 대체할 수 있으며, `length()` 함수를 호출할 필요가 없으므로 더 빠를 수 있습니다.
+
+그다음 `SELECT name FROM users_a WHERE length(name) < 5;` 쿼리를 실행하면 ClickHouse는 `ASSUME CONSTRAINT`를 바탕으로 이를 `SELECT name FROM users_a WHERE name_len < 5`로 최적화할 수 있습니다. 이렇게 하면 각 행마다 `name`의 길이를 계산하지 않아도 되므로 쿼리가 더 빠르게 실행될 수 있습니다.
+
+`ASSUME CONSTRAINT`는 **제약 조건을 강제하지 않으며**, 단지 해당 제약 조건이 참이라고 옵티마이저에 알려 줄 뿐입니다. 제약 조건이 실제로 참이 아니면 쿼리 결과가 올바르지 않을 수 있습니다. 따라서 제약 조건이 참이라고 확신할 때만 `ASSUME CONSTRAINT`를 사용해야 합니다.
+
+<div id="ttl-expression">
+  ## TTL로 보관 기간 정의
+</div>
+
+값의 보관 기간을 정의합니다. MergeTree 계열 테이블에만 지정할 수 있습니다. 자세한 내용은 [컬럼 및 테이블의 TTL](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)을 참조하십시오.
+
+<div id="column_compression_codec">
+  ## 컬럼 압축 코덱 선택
+</div>
+
+{/* /reference/statements/create/table/codec로 이동한 섹션 링크를 위한 앵커 */}
+
+<a id="general-purpose-codecs" />
+
+<a id="none" />
+
+<a id="lz4" />
+
+<a id="lz4hc" />
+
+<a id="zstd" />
+
+<a id="zxc" />
+
+<a id="zstd_qat" />
+
+<a id="deflate_qpl" />
+
+<a id="specialized-codecs" />
+
+<a id="delta" />
+
+<a id="doubledelta" />
+
+<a id="gcd" />
+
+<a id="gorilla" />
+
+<a id="alp" />
+
+<a id="fpc" />
+
+<a id="sz3" />
+
+<a id="t64" />
+
+<a id="quantized" />
+
+<a id="encryption-codecs" />
+
+<a id="aes_128_gcm_siv" />
+
+<a id="aes-256-gcm-siv" />
+
+<a id="adaptive-codec-selection" />
+
+기본적으로 ClickHouse는 자가 관리형 버전에서 `lz4` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다. `CREATE TABLE` 쿼리에서 각 컬럼의 압축 메서드를 지정할 수도 있습니다:
+
+```sql
+CREATE TABLE codec_example
+(
+    dt Date CODEC(ZSTD),
+    ts DateTime CODEC(LZ4HC),
+    float_value Float32 CODEC(NONE),
+    double_value Float64 CODEC(LZ4HC(9)),
+    value Float32 CODEC(Delta, ZSTD)
+)
+ENGINE = <Engine>
+...
+```
+
+사용 가능한 범용, 특수 용도 및 암호화 코덱은 [컬럼 압축 코덱](/ko/reference/statements/create/table/codec)을 참조하십시오.
+
+<div id="temporary-tables">
+  ## 임시 테이블 만들기
+</div>
+
+ClickHouse는 세션이 종료되면 자동으로 삭제되는 임시 테이블을 지원합니다. 자세한 내용은 [CREATE TEMPORARY TABLE](/ko/reference/statements/create/table/temporary-table)을 참조하십시오.
+
+<div id="replace-table">
+  ## REPLACE TABLE로 테이블을 원자적으로 업데이트하기
+</div>
+
+{/* /reference/statements/create/table/replace-table로 이동한 섹션 링크의 앵커 */}
+
+<a id="syntax" />
+
+<a id="examples" />
+
+`REPLACE` 문을 사용하면 테이블을 [원자적으로](/ko/concepts/core-concepts/glossary#atomicity) 업데이트할 수 있습니다. 자세한 내용은 [REPLACE TABLE](/ko/reference/statements/create/table/replace-table)을 참조하십시오.
+
+<div id="comment-clause">
+  ## 테이블 주석 추가
+</div>
+
+테이블을 생성할 때 COMMENT를 추가할 수 있습니다.
+
+**구문**
+
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+COMMENT 'Comment'
+```
+
+<Note>
+  `COMMENT` 절은 `PARTITION BY`, `ORDER BY`, 스토리지별 `SETTINGS`와 같은 모든 스토리지 관련 절 **뒤에** 지정해야 합니다.
+
+  `COMMENT` 절 뒤에서는 스토리지 관련 설정이 아니라 `max_threads` 등과 같은 쿼리별 `SETTINGS`만 구문 분석됩니다.
+
+  즉, 올바른 절 순서는 다음과 같습니다.
+
+  * `ENGINE`
+  * 스토리지 절
+  * `COMMENT`
+  * 쿼리 설정(있는 경우)
+</Note>
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+SELECT name, comment FROM system.tables WHERE name = 't1';
+```
+
+```text title="Response"
+┌─name─┬─comment─────────────┐
+│ t1   │ The temporary table │
+└──────┴─────────────────────┘
+```
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* 블로그: [스키마와 코덱으로 ClickHouse 최적화하기](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* 블로그: [ClickHouse에서 시계열 데이터 다루기](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

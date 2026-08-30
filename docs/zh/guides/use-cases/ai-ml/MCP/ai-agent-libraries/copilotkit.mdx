@@ -1,0 +1,107 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/copilotkit
+sidebarTitle: '集成 CopilotKit'
+title: '如何使用 CopilotKit 和 ClickHouse MCP 服务器构建 AI 智能体'
+description: '了解如何利用存储在 ClickHouse 中的数据，并结合 ClickHouse MCP 与 CopilotKit 构建智能体应用'
+keywords: ['ClickHouse', 'MCP', 'copilotkit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+这是一个示例，演示如何使用存储在
+ClickHouse 中的数据构建智能体应用。它使用 [ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse)
+从 ClickHouse 查询数据，并根据这些数据生成图表。
+
+[CopilotKit](https://github.com/CopilotKit/CopilotKit) 用于构建 UI，
+并为用户提供聊天界面。
+
+<Info>
+  **示例代码**
+
+  此示例的代码可在[示例仓库](https://github.com/ClickHouse/examples/edit/main/ai/mcp/copilotkit)中找到。
+</Info>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* `Node.js >= 20.14.0`
+* `uv >= 0.1.0`
+
+<div id="install-dependencies">
+  ## 安装依赖项
+</div>
+
+在本地克隆项目：`git clone https://github.com/ClickHouse/examples`，然后
+进入 `ai/mcp/copilotkit` 目录。
+
+跳过本节并运行脚本 `./install.sh` 即可安装依赖项。如果
+你想手动安装依赖项，请按以下说明操作。
+
+<div id="install-dependencies-manually">
+  ## 手动安装依赖
+</div>
+
+1. 安装依赖：
+
+运行 `npm install` 安装 Node 依赖。
+
+2. 安装 mcp-clickhouse：
+
+新建一个 `external` 文件夹，并将 mcp-clickhouse 仓库克隆到其中。
+
+```sh
+mkdir -p external
+git clone https://github.com/ClickHouse/mcp-clickhouse external/mcp-clickhouse
+```
+
+安装 Python 依赖，并添加 fastmcp CLI 工具。
+
+```sh
+cd external/mcp-clickhouse
+uv sync
+uv add fastmcp
+```
+
+<div id="configure-the-application">
+  ## 配置应用程序
+</div>
+
+将 `env.example` 文件复制为 `.env`，并编辑该文件，填入你的 `ANTHROPIC_API_KEY`。
+
+<div id="use-your-own-llm">
+  ## 使用你自己的 LLM
+</div>
+
+如果你想使用 Anthropic 以外的其他 LLM 提供商，可以修改
+Copilotkit runtime，以使用不同的 LLM adapter。
+[这里](https://docs.copilotkit.ai/guides/bring-your-own-llm)列出了支持的
+提供商。
+
+<div id="use-your-own-clickhouse-cluster">
+  ## 使用你自己的 ClickHouse 集群
+</div>
+
+默认情况下，此示例已配置为连接到
+[ClickHouse 演示集群](https://sql.clickhouse.com/)。你也可以通过设置以下环境变量来使用你自己的
+ClickHouse 集群：
+
+* `CLICKHOUSE_HOST`
+* `CLICKHOUSE_PORT`
+* `CLICKHOUSE_USER`
+* `CLICKHOUSE_PASSWORD`
+* `CLICKHOUSE_SECURE`
+
+<div id="run-the-application">
+  ## 运行应用程序
+</div>
+
+运行 `npm run dev` 以启动开发服务器。
+
+你可以使用如下 prompt 来测试 Agent：
+
+> &quot;给我看看
+> Manchester 过去 10 年的价格变化趋势。&quot;
+
+在浏览器中打开 [http://localhost:3000](http://localhost:3000) 查看
+结果。

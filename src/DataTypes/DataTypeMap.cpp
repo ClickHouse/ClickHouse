@@ -257,12 +257,12 @@ Data type `Map(K, V)` stores key-value pairs.
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
 (The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)
 
-You can use use syntax `m[k]` to obtain the value for key `k` in map `m`.
+You can use syntax `m[k]` to obtain the value for key `k` in map `m`.
 Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the size of the map.
 
 **Parameters**
 
-- `K` — The type of the Map keys. Arbitrary type except [Nullable](../../sql-reference/data-types/nullable.md) and [LowCardinality](../../sql-reference/data-types/lowcardinality.md) nested with [Nullable](../../sql-reference/data-types/nullable.md) types.
+- `K` — The type of the Map keys. Arbitrary type except [Nullable](/reference/data-types/nullable) and [LowCardinality](/reference/data-types/lowcardinality) nested with [Nullable](/reference/data-types/nullable) types.
 - `V` — The type of the Map values. Arbitrary type.
 
 **Examples**
@@ -289,7 +289,7 @@ SELECT m['key2'] FROM tab;
 ```
 
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
-To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
+To check whether a key exists in a map, you can use function [mapContains](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey).
 
 ```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
@@ -306,7 +306,7 @@ SELECT m['key1'] FROM tab;
 
 ## Converting Tuple to Map {#converting-tuple-to-map}
 
-Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#CAST):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST):
 
 **Example**
 
@@ -392,7 +392,9 @@ The serialization layer computes which bucket the requested key belongs to and r
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
 
 :::note
-The order of keys within a map value may differ from the original insertion order when using `with_buckets` serialization. Keys are distributed across buckets by hash and are reassembled in bucket order, not insertion order. With `basic` serialization, the key order from inserted maps is preserved.
+Since version 26.8, `with_buckets` serialization preserves the original key order: an additional `bucket_indexes` substream records which bucket every key-value pair was taken from, so the map is reassembled in the order it was written instead of in bucket order.
+
+Parts written by earlier versions do not contain that substream. Their maps are still reassembled in bucket order, and the original key order cannot be restored for them because it was never stored on disk — rewriting such a part (by a merge or `OPTIMIZE FINAL`) freezes the bucket order it currently has instead of recovering the insertion order. With `basic` serialization, the key order from inserted maps has always been preserved.
 :::
 
 The bucket count can vary between parts. When parts with different bucket counts are merged, the new part's bucket count is recalculated from the merged statistics. Parts with `basic` and `with_buckets` serialization can coexist in the same table and are merged transparently.
@@ -434,7 +436,7 @@ If bucketed `Map` serialization does not fit your use case, there are two altern
 
 #### Using the JSON Data Type {#using-the-json-data-type}
 
-The [JSON](/sql-reference/data-types/newjson) data type stores each frequent path as a separate dynamic subcolumn. Paths that exceed the `max_dynamic_paths` limit go into a [shared data structure](/sql-reference/data-types/newjson#shared-data-structure), which can use `advanced` serialization for optimized single-path reads. See the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better) for a detailed overview of the `advanced` serialization.
+The [JSON](/reference/data-types/newjson) data type stores each frequent path as a separate dynamic subcolumn. Paths that exceed the `max_dynamic_paths` limit go into a [shared data structure](/reference/data-types/newjson#shared-data-structure), which can use `advanced` serialization for optimized single-path reads. See the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better) for a detailed overview of the `advanced` serialization.
 
 | Aspect             | `Map` with buckets                                                                             | `JSON`                                                                                                                                                           |
 |--------------------|------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -475,9 +477,9 @@ Manual sharding is beneficial when vertical merges are important for reducing me
 
 **See Also**
 
-- [map()](/sql-reference/functions/tuple-map-functions#map) function
-- [CAST()](/sql-reference/functions/type-conversion-functions#CAST) function
-- [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
+- [map()](/reference/functions/regular-functions/tuple-map-functions#map) function
+- [CAST()](/reference/functions/regular-functions/type-conversion-functions#CAST) function
+- [-Map combinator for Map datatype](/reference/functions/aggregate-functions/combinators#-map)
 
 ## Related content {#related-content}
 

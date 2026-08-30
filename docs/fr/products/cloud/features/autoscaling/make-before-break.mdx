@@ -1,0 +1,40 @@
+---
+sidebarTitle: 'Make before break (MBB)'
+slug: /cloud/features/mbb
+description: 'Page décrivant les opérations « Make before break » (MBB) dans ClickHouse Cloud'
+keywords: ['Make before break', 'MBB', 'Mise à l’échelle', 'ClickHouse Cloud']
+title: 'Opérations « Make before break » (MBB) dans ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse Cloud effectue les mises à niveau et la mise à l’échelle des clusters selon une approche **Make Before Break** (MBB).
+Dans cette approche, de nouvelles répliques sont ajoutées au cluster avant d’en retirer les anciennes.
+Cela s’oppose à l’approche break-first, dans laquelle les anciennes répliques seraient d’abord supprimées avant d’ajouter les nouvelles.
+
+L’approche MBB présente plusieurs avantages :
+
+* Comme de la capacité est ajoutée au cluster avant d’en retirer, la **capacité globale du cluster ne diminue pas**, contrairement à l’approche break-first. Bien sûr, des événements imprévus, tels que des pannes de nœud ou de disque, peuvent toujours se produire dans un environnement cloud.
+* Cette approche est particulièrement utile lorsque le cluster est fortement sollicité, car elle **évite de surcharger les répliques existantes**, comme ce serait le cas avec une approche break-first.
+* Comme les répliques peuvent être ajoutées rapidement sans devoir attendre la suppression préalable d’autres répliques, cette approche offre une expérience de mise à l’échelle **plus rapide et plus réactive**.
+
+L’image ci-dessous montre comment cela peut se produire pour un cluster de 3 répliques lorsque le service fait l’objet d’une mise à l’échelle verticale :
+
+<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="Schéma d’exemple pour un cluster de 3 répliques faisant l’objet d’une mise à l’échelle verticale" />
+
+Dans l’ensemble, MBB offre une expérience de mise à l’échelle et de mise à niveau fluide et moins perturbatrice que l’approche break-first utilisée auparavant.
+
+Avec MBB, vous devez connaître certains comportements importants :
+
+1. Les opérations MBB attendent que les charges de travail en cours se terminent sur les répliques actuelles avant leur arrêt.
+   Cette période est actuellement fixée à 1 heure, ce qui signifie que les opérations de mise à l’échelle ou de mise à niveau peuvent attendre jusqu’à une heure qu’une requête de longue durée sur une réplique se termine avant que cette réplique ne soit supprimée.
+   De plus, si un processus de sauvegarde est en cours sur une réplique, il est autorisé à se terminer avant l’arrêt de la réplique.
+2. En raison du délai d’attente avant l’arrêt d’une réplique, il peut arriver qu’un cluster dépasse le nombre maximal de répliques défini pour ce cluster.
+   Par exemple, vous pouvez avoir un service avec 6 répliques au total, mais avec une opération MBB en cours, 3 répliques supplémentaires peuvent être ajoutées au cluster, portant le total à 9 répliques, tandis que les anciennes répliques continuent de traiter les requêtes.
+   Cela signifie que, pendant un certain temps, le cluster aura plus de répliques que prévu.
+   De plus, plusieurs opérations MBB peuvent elles-mêmes se chevaucher, entraînant une accumulation de répliques. Cela peut se produire, par exemple, lorsque plusieurs demandes de mise à l’échelle verticale sont envoyées au cluster via l’API.
+   ClickHouse Cloud a mis en place des contrôles pour limiter le nombre de répliques qu’un cluster peut accumuler.
+3. Avec les opérations MBB, les données des tables système sont conservées pendant 30 jours. Cela signifie qu’à chaque opération MBB sur un cluster, 30 jours de données de tables système sont répliqués des anciennes répliques vers les nouvelles.
+
+Si vous souhaitez en savoir plus sur le fonctionnement des opérations MBB, consultez ce [billet de blog](https://clickhouse.com/blog/make-before-break-faster-scaling-mechanics-for-clickhouse-cloud) de l’équipe d’ingénierie ClickHouse.

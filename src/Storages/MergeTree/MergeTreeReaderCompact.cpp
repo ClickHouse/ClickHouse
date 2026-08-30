@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <ranges>
@@ -57,7 +58,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings.read_settings,
         settings_.load_marks_asynchronously ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
         data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams
-            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size()))
+            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size(),
+        settings.use_streaming_marks_compression))
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , has_substream_marks(data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams)
@@ -78,8 +80,8 @@ void MergeTreeReaderCompact::fillColumnPositions()
         auto & column_to_read = columns_to_read[i];
         auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
 
-        /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
-        if (position.has_value() && isColumnDroppedByPendingMutation(i))
+        /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
+        if (position.has_value() && (isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i)))
             position.reset();
 
         if (position.has_value() && column_to_read.isSubcolumn())
@@ -88,7 +90,15 @@ void MergeTreeReaderCompact::fillColumnPositions()
             auto subcolumn_name = column_to_read.getSubcolumnName();
             auto storage_column_from_part = part_columns.getColumn(GetColumnsOptions::All, name_in_storage);
 
-            if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
+            /// The `Quantize` codec's custom serialization exposes companion `quantized`/`pq_codebook` subcolumns that
+            /// the part's plain columns list cannot represent - they round-trip to the bare type name and are lost, so
+            /// the subcolumn would be treated as missing and recomputed/defaulted after a reload. Decide presence from
+            /// the requested column's storage type in that case. Restricted to that specific serialization so it does
+            /// not change presence decisions for ordinary subcolumns (e.g. of sparse columns).
+            const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
+            const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
+            const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
+            if (!type_for_subcolumn->hasSubcolumn(subcolumn_name))
                 position.reset();
         }
 
@@ -185,9 +195,8 @@ static ColumnPtr getFullColumnFromCache(std::unordered_map<String, ColumnPtr> * 
 
 void MergeTreeReaderCompact::readData(
     size_t column_idx,
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_to_read,
-    size_t rows_offset,
     size_t from_mark,
     size_t column_size_before_reading,
     MergeTreeReaderStream & stream,
@@ -256,7 +265,10 @@ void MergeTreeReaderCompact::readData(
         auto it = columns_cache.find(name);
         if (it != columns_cache.end() && it->second != nullptr)
         {
-            column = it->second;
+            /// The same physical column was already read for another requested column in this granule
+            /// (e.g. shared Nested offsets). Copy only the newly-read rows from it instead of re-reading.
+            chassert(column.size() <= it->second->size());
+            column.insertRangeFrom(*it->second, column.size(), it->second->size() - column.size());
             return;
         }
 
@@ -265,7 +277,7 @@ void MergeTreeReaderCompact::readData(
             if (has_substream_marks)
             {
                 const auto & serialization = serializations[column_idx];
-                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name], substreams_cache);
+                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name], substreams_cache);
             }
             else
             {
@@ -277,37 +289,29 @@ void MergeTreeReaderCompact::readData(
 
                 if (!temp_full_column)
                 {
-                    temp_full_column = type_in_storage->createColumn(*serialization);
-                    serialization->deserializeBinaryBulkWithMultipleStreams(temp_full_column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], substreams_cache);
+                    auto mutable_temp = type_in_storage->createColumn(*serialization);
+                    serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_temp, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], substreams_cache);
+                    temp_full_column = std::move(mutable_temp);
 
                     if (columns_cache_for_subcolumns)
                         columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
                 }
 
                 auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column);
-
-                /// TODO: Avoid extra copying.
-                if (column->empty())
-                {
-                    column = IColumn::mutate(subcolumn);
-                }
-                else
-                {
-                    auto mutable_column = IColumn::mutate(std::move(column));
-                    mutable_column->insertRangeFrom(*subcolumn, 0, subcolumn->size());
-                    column = std::move(mutable_column);
-                }
+                column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
             }
         }
         else
         {
             const auto & serialization = serializations[column_idx];
-            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], substreams_cache);
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], substreams_cache);
         }
 
-        columns_cache[name] = column;
+        /// Cache the just-read column so other requested columns mapping to the same physical column in this
+        /// granule (e.g. shared Nested offsets) can copy from it. The cache lives only for the current granule.
+        columns_cache[name] = column.getPtr();
 
-        size_t read_rows_in_column = column->size() - column_size_before_reading;
+        size_t read_rows_in_column = column.size() - column_size_before_reading;
         if (read_rows_in_column != rows_to_read)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Cannot read all data in MergeTreeReaderCompact. Rows read: {}. Rows expected: {}.",
@@ -320,7 +324,7 @@ void MergeTreeReaderCompact::readData(
     }
 }
 
-void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark)
+void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark)
 {
     if (!has_subcolumns || !has_substream_marks)
         return;
@@ -329,7 +333,7 @@ void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t cur
     /// We don't call it during prefixes deserialization because we can get prefixes from cache and
     /// don't call it at all.
     for (auto index : column_to_subcolumns_indexes | std::views::values | std::views::join)
-        getStream(columns_to_read[index]).adjustRightMark(current_task_last_mark);
+        getStream(columns_to_read[index]).adjustRightMark(last_mark_to_read);
 
     /// Second, deserialize prefixes of get the from cache.
     auto deserialize = [&]() -> DeserializeBinaryBulkStateMap
@@ -399,6 +403,13 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
             }
         }
 
+        /// Set check_stream_exists_callback so that enumerateStreams can skip substreams
+        /// that do not exist in this part (e.g. MapBucketIndexes in old bucketed Map parts).
+        enumerate_settings.check_stream_exists_callback = [&, column_pos = *pos](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            return columns_substreams.tryGetSubstreamPosition(column_pos, column_from_part, substream_path, storage_settings).has_value();
+        };
+
         auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
         deserialization_order.reserve(subcolumns_indexes.size());
         for (size_t i : order)
@@ -441,13 +452,23 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
         return stream.getDataBuffer();
     };
 
+    /// Build check_stream_exists_callback for this column if we have a column position.
+    ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback;
+    if (column_positions[column_idx])
+    {
+        check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            return columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings).has_value();
+        };
+    }
+
     if (column.isSubcolumn())
     {
         if (has_substream_marks)
         {
             const auto & serialization = serializations[column_idx];
             auto & state = deserialize_binary_bulk_state_map_for_subcolumns[column.name];
-            readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr);
+            readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr, check_stream_exists_callback);
         }
         else
         {
@@ -457,14 +478,14 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
             const auto & serialization = serializations_of_full_columns.at(name_in_storage);
             auto & state = deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage];
-            readPrefix(column, serialization, state, buffer_getter, nullptr);
+            readPrefix(column, serialization, state, buffer_getter, nullptr, check_stream_exists_callback);
         }
     }
     else
     {
         const auto & serialization = serializations[column_idx];
         auto & state = deserialize_binary_bulk_state_map[column.name];
-        readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr);
+        readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr, check_stream_exists_callback);
     }
 }
 
@@ -473,7 +494,8 @@ void MergeTreeReaderCompact::readPrefix(
     const SerializationPtr & serialization,
     ISerialization::DeserializeBinaryBulkStatePtr & state,
     const InputStreamGetter & buffer_getter,
-    ISerialization::SubstreamsDeserializeStatesCache * cache)
+    ISerialization::SubstreamsDeserializeStatesCache * cache,
+    ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback)
 {
     try
     {
@@ -482,6 +504,7 @@ void MergeTreeReaderCompact::readPrefix(
         deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+        deserialize_settings.check_stream_exists_callback = std::move(check_stream_exists_callback);
 
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state, cache);
     }
@@ -492,7 +515,7 @@ void MergeTreeReaderCompact::readPrefix(
     }
 }
 
-void MergeTreeReaderCompact::createColumnsForReading(Columns & res_columns) const
+void MergeTreeReaderCompact::createColumnsForReading(MutableColumns & res_columns) const
 {
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {

@@ -1,0 +1,66 @@
+---
+slug: /dictionary/best-practices
+title: 'Boas práticas para dicionários'
+sidebarTitle: 'Boas práticas'
+description: 'Diretrizes para escolher layouts de dicionário, quando usar dicionários em vez de JOINs e como monitorar o uso de dicionários.'
+doc_type: 'guide'
+keywords: ['dictionary', 'dictionaries', 'layout', 'dictGet', 'JOIN', 'hashed', 'flat', 'performance']
+---
+
+Esta página apresenta orientações práticas para escolher o layout de dicionário adequado, entender quando dicionários têm melhor desempenho que JOINs (e quando não têm) e monitorar o uso de dicionários.
+
+Para uma introdução a dicionários com exemplos práticos, consulte o [guia principal de Dicionários](/pt-BR/concepts/features/dictionaries/index).
+
+<div id="when-to-use-dictionaries-vs-joins">
+  ## Quando usar dicionários vs JOINs
+</div>
+
+Os dicionários funcionam melhor quando um dos lados de um JOIN é uma tabela de consulta que cabe em memória. Em um JOIN padrão, o ClickHouse cria uma tabela hash a partir do lado direito antes de consultá-la com o lado esquerdo — mesmo que a maioria das linhas depois seja descartada pelos filtros de `WHERE`. Embora as versões mais recentes (24.12+) apliquem filtros antes de JOINs em muitos casos, isso nem sempre elimina essa sobrecarga. Com um dicionário, você chama `dictGet` inline, então as consultas só acontecem nas linhas que já passaram pela filtragem.
+
+No entanto, `dictGet` nem sempre é a melhor escolha. Se você precisar chamar `dictGet` em uma grande porcentagem das linhas de uma tabela — por exemplo, em uma condição `WHERE` como `dictGet('dict', 'elevation', id) > 1800` — pode ser melhor usar uma coluna comum com índices nativos. O ClickHouse pode usar `PREWHERE` para ignorar grânulos em uma coluna comum, mas `dictGet` é avaliado linha por linha, sem suporte a índice.
+
+Como regra geral:
+
+* Use dicionários para substituir JOINs com tabelas de dimensão pequenas, em que a chave de consulta já está disponível.
+* Use colunas comuns e índices ao filtrar pelo valor consultado em muitas linhas.
+
+<div id="choosing-a-layout">
+  ## Escolhendo um layout
+</div>
+
+A cláusula `LAYOUT` controla a estrutura de dados interna do dicionário. Todos os layouts disponíveis estão documentados na [referência de layouts](/pt-BR/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory).
+
+Ao escolher um layout, use as seguintes diretrizes:
+
+* **`flat`** — o layout mais rápido (consulta simples por deslocamento em array), mas as chaves devem ser `UInt64` e, por padrão, são limitadas a 500.000 (`max_array_size`). É o melhor para chaves inteiras com crescimento monotônico em tabelas de pequeno a médio porte. Distribuições esparsas de chaves (por exemplo, valores de chave 1 e 500.000) desperdiçam memória, já que o array é dimensionado com base na maior chave. Se você estiver esbarrando no limite de 500 mil, isso é um sinal para mudar para `hashed_array`.
+* **`hashed_array`** — o padrão recomendado para a maioria dos casos de uso. Armazena atributos em arrays com uma tabela hash que mapeia chaves para índices no array. É quase tão rápido quanto `hashed`, mas usa memória de forma mais eficiente, especialmente quando há muitos atributos.
+* **`hashed`** — armazena o dicionário completo em uma tabela hash. Pode ser mais rápido que `hashed_array` quando há pouquíssimos atributos, mas consome mais memória à medida que o número de atributos cresce.
+* **`complex_key_hashed` / `complex_key_hashed_array`** — use-os quando as chaves não puderem ser convertidas para `UInt64` (por exemplo, chaves `String`). Eles seguem os mesmos trade-offs de desempenho que as versões sem chave complexa.
+* **`sparse_hashed`** — troca CPU por menor uso de memória em comparação com `hashed`. Raramente é a melhor escolha — só é eficiente quando há um único atributo. Na maioria dos casos, `hashed_array` é mais adequado.
+* **`cache` / `ssd_cache`** — armazenam em cache apenas as chaves acessadas com frequência. São úteis quando o conjunto de dados completo não cabe na memória, mas as consultas podem consultar a fonte em caso de cache miss. Não são recomendados para workloads sensíveis à latência.
+* **`direct`** — consulta a fonte a cada consulta, sem armazenamento em memória. Use quando os dados mudam com frequência demais para serem armazenados em cache ou quando o dicionário é grande demais para caber na memória.
+
+<div id="monitoring-dictionary-usage">
+  ## Monitoramento do uso de dicionários
+</div>
+
+Acompanhe o consumo de memória e a saúde por meio da tabela [`system.dictionaries`](/pt-BR/reference/system-tables/dictionaries):
+
+```sql
+SELECT
+    name,
+    status,
+    element_count,
+    formatReadableSize(bytes_allocated) AS size,
+    query_count,
+    hit_rate,
+    found_rate,
+    last_exception
+FROM system.dictionaries
+```
+
+Colunas principais:
+
+* `bytes_allocated` — memória consumida pelo dicionário. Os dicionários armazenam dados sem compressão, portanto esse valor pode ser significativamente maior que o tamanho da tabela comprimida.
+* `hit_rate` e `found_rate` — úteis para avaliar a eficácia do layout `cache`.
+* `last_exception` — verifique este campo quando um dicionário não conseguir ser carregado ou atualizado.

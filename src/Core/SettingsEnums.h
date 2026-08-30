@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -16,9 +17,11 @@
 #include <IO/DistributedCacheLogMode.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/ReadMethod.h>
+#include <IO/SnappyMode.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -55,8 +58,8 @@ constexpr auto getEnumValues();
 #define IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, PAIRS_TYPE, ...) \
     const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
     { \
-        static const std::unordered_map<EnumType, String> map = [] { \
-            std::unordered_map<EnumType, String> res; \
+        static const UnorderedMapWithMemoryTracking<EnumType, String> map = [] { \
+            UnorderedMapWithMemoryTracking<EnumType, String> res; \
             for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
                 res.emplace(val, name); \
             return res; \
@@ -70,8 +73,8 @@ constexpr auto getEnumValues();
     \
     typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
     { \
-        static const std::unordered_map<std::string_view, EnumType> map = [] { \
-            std::unordered_map<std::string_view, EnumType> res; \
+        static const UnorderedMapWithMemoryTracking<std::string_view, EnumType> map = [] { \
+            UnorderedMapWithMemoryTracking<std::string_view, EnumType> res; \
             for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
                 res.emplace(name, val); \
             return res; \
@@ -244,12 +247,21 @@ enum class CleanDeletedRows : uint8_t
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
+enum class UniqueKeyProbeImplementation : uint8_t
+{
+    Auto = 0, /// Pick the default; currently the simple baseline.
+    Simple,   /// Single-threaded baseline probe.
+};
+
+DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
+
 enum class MySQLDataTypesSupport : uint8_t
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
     DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
     DATE2DATE32, // convert MySQL's date type to ClickHouse Date32
-    DATE2STRING  // convert MySQL's date type to ClickHouse String(This is usually used when your mysql date is less than 1925)
+    DATE2STRING, // convert MySQL's date type to ClickHouse String(This is usually used when your mysql date is less than 1925)
+    GEOMETRY // convert MySQL's spatial types to the corresponding ClickHouse geometric types (LineString, Polygon, MultiLineString, MultiPolygon); the generic GEOMETRY type maps to the umbrella Geometry type
 };
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
@@ -279,6 +291,8 @@ DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
+
+DECLARE_SETTING_ENUM(SnappyMode)
 
 enum class TransactionsWaitCSNMode : uint8_t
 {
@@ -310,6 +324,7 @@ enum class Dialect : uint8_t
     prql,
     promql,
     polyglot,
+    clickhouse_json,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -411,6 +426,14 @@ enum class ObjectStorageQueueBucketingMode : uint8_t
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueBucketingMode)
 
+enum class QueryRunnerMode : uint8_t
+{
+    SYNCHRONOUS,
+    ASYNCHRONOUS,
+};
+
+DECLARE_SETTING_ENUM(QueryRunnerMode)
+
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
@@ -430,6 +453,8 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
+DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
+
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
@@ -442,6 +467,9 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
+    S3_TABLES,
+    ICEBERG_DELTA_SHARING,
+    ICEBERG_HORIZON,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -473,6 +501,21 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+/// Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled.
+enum class SkipUnavailableShardsMode : uint8_t
+{
+    /// Ignore only connection-related errors.
+    UNAVAILABLE = 0,
+    /// Additionally ignore errors caused by a missing table or database on the shard
+    /// (the historical behavior of `skip_unavailable_shards`, and the default).
+    UNAVAILABLE_OR_TABLE_MISSING,
+    /// Additionally ignore any exception received from the shard before it returned any data block to the initiator.
+    /// Note: a shard performing a blocking computation (aggregation, sort, ...) may process rows and fail before
+    /// emitting a block, so its partial work can still be silently discarded. This is the most permissive mode.
+    UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING,
+};
+
+DECLARE_SETTING_ENUM(SkipUnavailableShardsMode)
 
 DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
@@ -480,6 +523,7 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreePatchPartsVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
 
@@ -501,6 +545,17 @@ enum class TextIndexPostingListCodec : uint8_t
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
 
+/// On-disk serialization format version of text indexes.
+/// These are the on-disk version numbers and must remain stable.
+enum class MergeTreeTextIndexSerializationVersion : uint8_t
+{
+    V0_Initial = 0,
+    V1_WithCodec = 1,
+    V2_WithPositions = 2,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeTextIndexSerializationVersion)
+
 /// NOTE: Part level min-max index depends on strict columns order.
 ///       That means if you want to add new columns segment to index - it will not be materialized until
 ///       previous segment will be materialized in all data parts via mutation or merge.
@@ -512,6 +567,14 @@ enum class MergeTreePartMinMaxIndexColumns : uint64_t
 };
 
 DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
+
+enum class MergeCoordinatorDistributionAlgorithm : uint64_t
+{
+    WATER_FILLING = 0,
+    SAINTE_LAGUE = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeCoordinatorDistributionAlgorithm)
 
 enum class DecorrelationJoinKind : uint8_t
 {
@@ -566,15 +629,6 @@ enum class DeduplicateInsertMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateInsertMode)
 
-enum class InsertDeduplicationVersions : uint8_t
-{
-    OLD_SEPARATE_HASHES = 0,
-    COMPATIBLE_DOUBLE_HASHES,
-    NEW_UNIFIED_HASHES,
-};
-
-DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
-
 enum class JemallocProfileFormat : uint8_t
 {
     Raw = 0,
@@ -592,6 +646,13 @@ enum class S3UriStyle : uint8_t
 };
 
 DECLARE_SETTING_ENUM(S3UriStyle)
+
+enum class ExplainQueryPlanDefault : uint8_t
+{
+    LEGACY,
+    PRETTY,
+};
+DECLARE_SETTING_ENUM(ExplainQueryPlanDefault)
 
 enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
 {

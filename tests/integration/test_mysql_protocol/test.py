@@ -5,6 +5,8 @@ import fnmatch
 import logging
 import math
 import os
+import socket
+import struct
 import time
 from typing import Literal
 
@@ -270,7 +272,7 @@ def test_mysql_client_secure(started_cluster):
     )
 
     assert node_secure.contains_in_log(
-        f"<Error> MySQLHandler: DB::Exception: SSL connection required."
+        "<Error> MySQLHandler: DB::Exception: SSL connection required."
     ) 
 
 
@@ -439,6 +441,161 @@ def test_mysql_replacement_query(started_cluster):
         "currentdatabase()\ndefault\n",
         "database()\ndefault\n",
     ]
+
+
+def test_mysql_replacement_query_injection(started_cluster):
+    # The MySQL handler rewrites a few client commands (SHOW TABLE STATUS LIKE, SET <mysql_setting>,
+    # KILL QUERY <id>) into ClickHouse SQL. The client-supplied argument must be parsed and re-quoted,
+    # never concatenated verbatim, otherwise a client can inject arbitrary SQL over the MySQL wire.
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+
+    # SHOW TABLE STATUS LIKE: a benign pattern returns exactly the matching table. The lookup is
+    # scoped to the session's current database (MySQL semantics), so the table must live in
+    # `default`; the previously observed `system.one` no longer leaks across databases.
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("DROP TABLE IF EXISTS default.one")
+    cursor.execute("CREATE TABLE default.one (dummy UInt8) ENGINE = Memory")
+    cursor.execute("SHOW TABLE STATUS LIKE 'one'")
+    rows = cursor.fetchall()
+    assert [r["Name"] for r in rows] == ["one"], rows
+
+    # SHOW TABLE STATUS LIKE: an injected UNION must not leak system.users. The whole argument is
+    # parsed as one string literal, so the UNION tail becomes part of the LIKE pattern and matches
+    # nothing (the literal is unterminated -> parse fails -> empty pattern).
+    cursor.execute(
+        "SHOW TABLE STATUS LIKE '' "
+        "UNION ALL SELECT name,'','','',0,0,0,0,0,0,'',now(),now(),now(),'','','','' "
+        "FROM system.users"
+    )
+    leaked = [r["Name"] for r in cursor.fetchall()]
+    assert "default" not in leaked, "SHOW TABLE STATUS LIKE injection leaked system.users: %s" % leaked
+
+    # SHOW TABLE STATUS LIKE: a single trailing ';' is a statement terminator that programmatic
+    # MySQL clients pass through (the mysql CLI strips it). executeQuery treats it as end-of-query,
+    # so it must be accepted and produce the same result as without it.
+    cursor.execute("SHOW TABLE STATUS LIKE 'one'")
+    no_semicolon = [r["Name"] for r in cursor.fetchall()]
+    cursor.execute("SHOW TABLE STATUS LIKE 'one';")
+    with_semicolon = [r["Name"] for r in cursor.fetchall()]
+    assert with_semicolon == no_semicolon and "one" in with_semicolon, with_semicolon
+
+    # A second statement after the ';' must still be rejected (only a single terminator is allowed),
+    # so the UNION tail cannot leak system.users.
+    cursor.execute(
+        "SHOW TABLE STATUS LIKE '' ; "
+        "UNION ALL SELECT name,'','','',0,0,0,0,0,0,'',now(),now(),now(),'','','','' "
+        "FROM system.users"
+    )
+    leaked = [r["Name"] for r in cursor.fetchall()]
+    assert "default" not in leaked, "SHOW TABLE STATUS LIKE injection (trailing statement) leaked: %s" % leaked
+
+    # SET <mysql_setting>: an injected value tail must be REJECTED, and a malformed input must not
+    # change session state. Before the fix "SET SQL_SELECT_LIMIT=1, max_threads=42" became
+    # "SET limit=1, max_threads=42" (injecting max_threads); an intermediate fix instead silently
+    # reset the mapped `limit` to DEFAULT. Now any tail that is not exactly "= <literal|DEFAULT>"
+    # (with an optional single trailing ';') is rejected, leaving both `limit` and `max_threads`
+    # untouched. Use a fresh connection so the prior valid `limit` value is known to survive.
+    set_client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    set_cursor = set_client.cursor(pymysql.cursors.DictCursor)
+    set_cursor.execute("SET SQL_SELECT_LIMIT=4242")
+    set_cursor.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+    assert set_cursor.fetchone()["changed"] == 1, "SET SQL_SELECT_LIMIT did not apply"
+    for injected in (
+        "SET SQL_SELECT_LIMIT=1, max_threads=42",
+        "SET SQL_SELECT_LIMIT=1, max_threads=42;",
+    ):
+        with pytest.raises(pymysql.Error):
+            set_cursor.execute(injected)
+        set_cursor.execute("SELECT value FROM system.settings WHERE name = 'max_threads'")
+        assert set_cursor.fetchone()["value"] != "42", "SET replacement injected max_threads: %s" % injected
+        set_cursor.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+        assert set_cursor.fetchone()["changed"] == 1, "rejected SET silently reset `limit`: %s" % injected
+    set_client.close()
+
+    # A normal SET still works (value is re-serialized, not dropped).
+    cursor.execute("SET SQL_SELECT_LIMIT=1234567")
+    cursor.execute("SET NET_WRITE_TIMEOUT=60")
+    cursor.execute("SET SQL_SELECT_LIMIT=DEFAULT")
+
+    # SET name boundary: the prefix check is byte-wise, so a longer variable that merely starts
+    # with a mapped name (SQL_SELECT_LIMITED vs SQL_SELECT_LIMIT) must NOT be translated and must
+    # not touch the mapped `limit` setting. Without the boundary check the value parser failed on
+    # the "ED=1" tail and the fallback emitted "SET limit = DEFAULT", silently resetting limit.
+    # (`limit` reads back as 0 regardless of value, so assert on `changed`, not `value`.) Use a
+    # fresh connection so the earlier SETs on `client` do not bleed into this check.
+    boundary_client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    boundary = boundary_client.cursor(pymysql.cursors.DictCursor)
+    boundary.execute("SET SQL_SELECT_LIMIT=4242")
+    boundary.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+    assert boundary.fetchone()["changed"] == 1, "SET SQL_SELECT_LIMIT did not apply"
+    try:
+        boundary.execute("SET SQL_SELECT_LIMITED=1")
+    except pymysql.Error:
+        pass  # an unrelated variable passes through untranslated and errors as an unknown setting
+    boundary.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+    assert boundary.fetchone()["changed"] == 1, "SET SQL_SELECT_LIMITED reset the unrelated `limit` setting"
+    boundary_client.close()
+
+    # SET <mysql_setting> with a trailing ';' must still apply the value. Before accepting the
+    # terminator, "SET SQL_SELECT_LIMIT=2;" failed the value parser and reset limit to DEFAULT.
+    # Use a fresh connection so `limit` starts unchanged and we can assert on `changed`.
+    semicolon_client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    semicolon = semicolon_client.cursor(pymysql.cursors.DictCursor)
+    semicolon.execute("SET SQL_SELECT_LIMIT=2;")
+    semicolon.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+    assert semicolon.fetchone()["changed"] == 1, "SET SQL_SELECT_LIMIT=2; did not apply"
+    semicolon_client.close()
+
+    # KILL QUERY: a numeric (possibly multi-digit) connection id is translated; previously the
+    # "^[0-9]" check silently dropped every multi-digit id. A single trailing ';' is accepted
+    # (programmatic clients pass it through), but a non-numeric tail or a second statement is not,
+    # so it stays injection-safe and never falls through to the unsupported raw "KILL QUERY <id>".
+    cursor.execute("KILL QUERY 12")
+    cursor.execute("KILL QUERY 12;")
+    with pytest.raises(pymysql.Error):
+        cursor.execute("KILL QUERY 12; SELECT 1")
+    cursor.execute("KILL QUERY WHERE query_id = 'mysql:0'")
+
+    # KILL QUERY separator: the dispatcher matches the key "KILL QUERY" (no separator) but the
+    # handler slices at len("KILL QUERY ") (with the space). Without a separator check a malformed
+    # command would skip the non-space byte and be coerced into a valid cancel: "KILL QUERY;12" and
+    # "KILL QUERYx12" both reached the digit regex as "12". They must instead be rejected (passed
+    # through and erroring), so the id must be preceded by a real separator.
+    for malformed in ("KILL QUERY;12", "KILL QUERYx12", "KILL QUERY12"):
+        with pytest.raises(pymysql.Error):
+            cursor.execute(malformed)
+
+    # SHOW TABLE STATUS LIKE separator: same dispatcher-key vs prefix-length mismatch. Without the
+    # separator check "SHOW TABLE STATUS LIKEx'one'" would skip the stray byte and look up 'one'.
+    # It must instead match nothing (the malformed command is not coerced into a lookup).
+    cursor.execute("SHOW TABLE STATUS LIKEx'one'")
+    assert [r["Name"] for r in cursor.fetchall()] == [], "SHOW TABLE STATUS LIKE accepted a missing separator"
+    cursor.execute("DROP TABLE default.one")
+    client.close()
 
 
 def test_mysql_select_user(started_cluster):
@@ -716,6 +873,260 @@ def test_python_client(started_cluster):
     cursor.execute("DROP DATABASE x")
 
 
+def test_collation_consistency(started_cluster):
+    # The MySQL compatibility surface must advertise a single collation everywhere:
+    # the handshake, SHOW COLLATION, INFORMATION_SCHEMA, and result-set column metadata.
+    utf8mb4_0900_ai_ci = 255
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+
+    # Handshake: the charset id sent in the initial handshake packet.
+    assert client.server_language == utf8mb4_0900_ai_ci
+
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+
+    # SHOW COLLATION enumerates every collation the server stamps on the wire:
+    # the advertised one for strings and the binary pseudo-collation for non-string
+    # columns. Connector/NET builds its charset-id dictionary from this result, so
+    # a charset id missing here breaks reading any result set that uses it.
+    cursor.execute("SHOW COLLATION")
+    collations = cursor.fetchall()
+    assert {
+        "Collation": "utf8mb4_0900_ai_ci",
+        "Charset": "utf8mb4",
+        "Id": utf8mb4_0900_ai_ci,
+        "Default": "Yes",
+        "Compiled": "Yes",
+        "Sortlen": 0,
+        "Pad_attribute": "NO PAD",
+    } in collations
+    assert {
+        "Collation": "binary",
+        "Charset": "binary",
+        "Id": 63,
+        "Default": "Yes",
+        "Compiled": "Yes",
+        "Sortlen": 1,
+        "Pad_attribute": "NO PAD",
+    } in collations
+
+    # The filtered forms of the statement are honored server-side: the dispatcher is
+    # prefix-based, so a LIKE / WHERE tail must narrow the result, not be dropped.
+    cursor.execute("SHOW COLLATION LIKE 'utf8mb4%'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    # MySQL matches collation names case-insensitively.
+    cursor.execute("SHOW COLLATION LIKE 'UTF8MB4%'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION LIKE 'no_such_collation%'")
+    assert list(cursor.fetchall()) == []
+
+    cursor.execute("SHOW COLLATION WHERE Charset = 'binary'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["binary"]
+
+    # MySQL string comparisons in the WHERE form are case-insensitive too, for both
+    # the literal values and the column names.
+    cursor.execute("SHOW COLLATION WHERE Charset = 'UTF8MB4'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Collation = 'UTF8MB4_0900_AI_CI'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE collation IN ('UTF8MB4_0900_AI_CI', 'BINARY')")
+    assert sorted(row["Collation"] for row in cursor.fetchall()) == [
+        "binary",
+        "utf8mb4_0900_ai_ci",
+    ]
+
+    cursor.execute("SHOW COLLATION WHERE Charset LIKE 'UTF8%' AND Id = 255")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Charset = 'no_such_charset'")
+    assert list(cursor.fetchall()) == []
+
+    # Quoted numeric filters keep MySQL's numeric/string coercion: the case-folding
+    # rewrite applies only to string-valued columns, so `Id` and `Sortlen` must never
+    # be wrapped in a string-only function (which would throw instead of matching).
+    cursor.execute("SHOW COLLATION WHERE Id = '255'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Id IN ('255', '63')")
+    assert sorted(row["Collation"] for row in cursor.fetchall()) == [
+        "binary",
+        "utf8mb4_0900_ai_ci",
+    ]
+
+    cursor.execute("SHOW COLLATION WHERE Sortlen != '1'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    # INFORMATION_SCHEMA.COLLATIONS contains it with the same charset and id.
+    cursor.execute(
+        "SELECT CHARACTER_SET_NAME, ID FROM INFORMATION_SCHEMA.COLLATIONS "
+        "WHERE COLLATION_NAME = 'utf8mb4_0900_ai_ci'"
+    )
+    assert cursor.fetchall() == [
+        {"CHARACTER_SET_NAME": "utf8mb4", "ID": utf8mb4_0900_ai_ci}
+    ]
+
+    # INFORMATION_SCHEMA.SCHEMATA advertises the same default collation.
+    cursor.execute(
+        "SELECT DEFAULT_COLLATION_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
+        "WHERE SCHEMA_NAME = 'default'"
+    )
+    assert cursor.fetchall() == [{"DEFAULT_COLLATION_NAME": "utf8mb4_0900_ai_ci"}]
+
+    # Result-set metadata: textual columns are stamped with the same charset id
+    # in ColumnDefinition41 packets, not with utf8_general_ci or binary.
+    cursor.execute("SELECT 'text' AS t, 1 AS n")
+    fields = {f.name: f.charsetnr for f in cursor._result.fields}
+    assert fields["t"] == utf8mb4_0900_ai_ci
+    binary_charset = 63
+    assert fields["n"] == binary_charset
+
+    client.close()
+
+
+def test_show_table_status_matches_information_schema(started_cluster):
+    # SHOW TABLE STATUS and INFORMATION_SCHEMA.TABLES describe the same MySQL metadata
+    # family, so both surfaces must share one mapping: a client mixing the two
+    # introspection paths must see identical values for one object.
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute(
+        "CREATE TABLE default.table_status_consistency (n UInt64) "
+        "ENGINE = MergeTree ORDER BY n"
+    )
+    try:
+        cursor.execute("INSERT INTO default.table_status_consistency VALUES (1), (2)")
+
+        cursor.execute("SHOW TABLE STATUS LIKE 'table_status_consistency'")
+        status_rows = cursor.fetchall()
+        assert len(status_rows) == 1, status_rows
+        status = status_rows[0]
+
+        cursor.execute(
+            "SELECT * FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE table_schema = 'default' AND table_name = 'table_status_consistency'"
+        )
+        info = cursor.fetchall()[0]
+
+        for status_column, info_column in [
+            ("Name", "table_name"),
+            ("Engine", "engine"),
+            ("Version", "version"),
+            ("Row_format", "row_format"),
+            ("Rows", "table_rows"),
+            ("Avg_row_length", "avg_row_length"),
+            ("Data_length", "data_length"),
+            ("Max_data_length", "max_data_length"),
+            ("Index_length", "index_length"),
+            ("Data_free", "data_free"),
+            ("Auto_increment", "auto_increment"),
+            ("Create_time", "create_time"),
+            ("Update_time", "update_time"),
+            ("Check_time", "check_time"),
+            ("Collation", "table_collation"),
+            ("Checksum", "checksum"),
+            ("Create_options", "create_options"),
+            ("Comment", "table_comment"),
+        ]:
+            assert status[status_column] == info[info_column], (
+                status_column,
+                status[status_column],
+                info[info_column],
+            )
+
+        assert status["Engine"] == "MergeTree"
+        assert status["Rows"] == 2
+        assert status["Collation"] == "utf8mb4_0900_ai_ci"
+
+        # Engine must be reported for real table engines that don't store data
+        # on disk (classified as FOREIGN TABLE), not only for BASE TABLE rows;
+        # only view-like objects report a NULL Engine, as in MySQL.
+        cursor.execute(
+            "CREATE TABLE default.table_status_memory (n UInt64) ENGINE = Memory"
+        )
+        try:
+            cursor.execute("SHOW TABLE STATUS LIKE 'table_status_memory'")
+            memory_rows = cursor.fetchall()
+            assert len(memory_rows) == 1, memory_rows
+            assert memory_rows[0]["Engine"] == "Memory", memory_rows[0]
+
+            cursor.execute(
+                "SELECT table_type, engine FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE table_schema = 'default' AND table_name = 'table_status_memory'"
+            )
+            memory_info = cursor.fetchall()[0]
+            assert memory_info["table_type"] == "FOREIGN TABLE", memory_info
+            assert memory_info["engine"] == "Memory", memory_info
+        finally:
+            cursor.execute("DROP TABLE default.table_status_memory")
+    finally:
+        cursor.execute("DROP TABLE default.table_status_consistency")
+        client.close()
+
+
+def test_show_table_status_scoped_to_current_database(started_cluster):
+    # MySQL scopes SHOW TABLE STATUS to the session's default database. With the same
+    # table name present in two databases, the statement must return only the row of the
+    # session's current database, and must follow USE to the other one.
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("CREATE DATABASE db_status_scope_1")
+    try:
+        cursor.execute("CREATE DATABASE db_status_scope_2")
+        cursor.execute(
+            "CREATE TABLE db_status_scope_1.status_scope (a UInt8) "
+            "ENGINE = MergeTree ORDER BY a"
+        )
+        cursor.execute(
+            "CREATE TABLE db_status_scope_2.status_scope (a UInt8) ENGINE = Log"
+        )
+
+        client.select_db("db_status_scope_1")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        rows = cursor.fetchall()
+        assert len(rows) == 1, rows
+        assert rows[0]["Name"] == "status_scope"
+        assert rows[0]["Engine"] == "MergeTree"
+
+        # USE switches the session database; the same statement must now see the other table.
+        client.select_db("db_status_scope_2")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        rows = cursor.fetchall()
+        assert len(rows) == 1, rows
+        assert rows[0]["Engine"] == "Log"
+
+        # A database without a match must return an empty set even though the
+        # name matches tables elsewhere.
+        client.select_db("default")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        assert list(cursor.fetchall()) == []
+    finally:
+        cursor.execute("DROP DATABASE IF EXISTS db_status_scope_1")
+        cursor.execute("DROP DATABASE IF EXISTS db_status_scope_2")
+        client.close()
+
+
 def test_golang_client(started_cluster, golang_container):
     with open(os.path.join(SCRIPT_DIR, "golang.reference"), "rb") as fp:
         reference = fp.read()
@@ -796,7 +1207,7 @@ def test_mysqljs_client(started_cluster, nodejs_container):
         ),
         demux=True,
     )
-    assert code == 1
+    assert code == 1, stderr
     assert (
         "MySQL is requesting the sha256_password authentication method, which is not supported."
         in stderr.decode()
@@ -808,23 +1219,26 @@ def test_mysqljs_client(started_cluster, nodejs_container):
         ),
         demux=True,
     )
-    assert code == 0
+    assert code == 0, stderr
 
-    code, (_, _) = nodejs_container.exec_run(
+    code, (_, stderr) = nodejs_container.exec_run(
         "node test.js {host} {port} user_with_double_sha1 abacaba".format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
         demux=True,
     )
-    assert code == 0
+    assert code == 0, stderr
 
-    code, (_, _) = nodejs_container.exec_run(
+    code, (_, stderr) = nodejs_container.exec_run(
         "node test.js {host} {port} user_with_empty_password 123".format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
         demux=True,
     )
-    assert code == 1
+    assert code == 1, stderr
+    # An uncaught error anywhere in the client also exits 1, so the exit code alone
+    # does not tell a refused password from a client that never reached the server.
+    assert b"Authentication failed" in (stderr or b""), stderr
 
 
 def test_java_client_text(started_cluster, java_container):
@@ -960,3 +1374,183 @@ def test_mysql_dotnet_client(started_cluster):
     )
     # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
     assert reference in res
+
+
+def _com_field_list(client, table):
+    # COM_FIELD_LIST returns one ColumnDefinition41 packet per column, terminated by an EOF/OK
+    # packet. On access denial the server sends an ERR packet, which pymysql raises from read_packet().
+    # The payload is a NUL-terminated table name followed by an (empty) field wildcard.
+    client._execute_command(0x04, table + "\x00")
+    columns = []
+    packet = client._read_packet()
+    while not (packet.is_eof_packet() or packet.is_ok_packet()):
+        # ColumnDefinition41 layout: catalog, schema, table, org_table, name, org_name, ...
+        # The column name is the 5th length-encoded string.
+        for _ in range(4):
+            packet.read_length_coded_string()
+        columns.append(packet.read_length_coded_string().decode())
+        packet = client._read_packet()
+    return columns
+
+
+def test_mysql_metadata_commands_access_control(started_cluster):
+    # COM_FIELD_LIST (mysql_list_fields) and COM_INIT_DB (USE db) over the MySQL wire protocol
+    # must enforce the same access control as the equivalent SQL statements (DESCRIBE / USE).
+    node = cluster.instances["node"]
+    # The `default` user in this test's users.xml has password 123, so native queries need it.
+    creds = {"password": "123"}
+    node.query("DROP USER IF EXISTS mysql_lowpriv", settings=creds)
+    node.query(
+        "CREATE TABLE IF NOT EXISTS default.mysql_acl_employees "
+        "(id UInt64, name String, salary UInt64, ssn String) ENGINE=MergeTree ORDER BY id",
+        settings=creds,
+    )
+    node.query("CREATE USER mysql_lowpriv IDENTIFIED WITH no_password", settings=creds)
+    node.query(
+        "GRANT SELECT(id, name) ON default.mysql_acl_employees TO mysql_lowpriv",
+        settings=creds,
+    )
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_lowpriv",
+        password="",
+        database="default",
+        port=server_port,
+    )
+
+    # COM_FIELD_LIST on a table the user lacks SHOW COLUMNS on must be rejected (used to leak all
+    # column names regardless of column-level grants).
+    with pytest.raises(pymysql.err.MySQLError) as exc_info:
+        _com_field_list(client, "mysql_acl_employees")
+    assert "ACCESS_DENIED" in str(exc_info.value), str(exc_info.value)
+    assert "SHOW COLUMNS" in str(exc_info.value), str(exc_info.value)
+
+    # COM_INIT_DB to a database the user has no grants on must be rejected (used to switch the
+    # current database with no check, then COM_FIELD_LIST would leak system table schemas).
+    with pytest.raises(pymysql.err.MySQLError) as exc_info:
+        client.select_db("system")
+    assert "ACCESS_DENIED" in str(exc_info.value), str(exc_info.value)
+    assert "SHOW DATABASES" in str(exc_info.value), str(exc_info.value)
+
+    client.close()
+
+    # A user that is granted the table fully can still use both commands.
+    node.query(
+        "GRANT SHOW COLUMNS ON default.mysql_acl_employees TO mysql_lowpriv",
+        settings=creds,
+    )
+    granted = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_lowpriv",
+        password="",
+        database="default",
+        port=server_port,
+    )
+    assert sorted(_com_field_list(granted, "mysql_acl_employees")) == [
+        "id",
+        "name",
+        "salary",
+        "ssn",
+    ]
+    granted.close()
+
+    node.query("DROP USER mysql_lowpriv", settings=creds)
+    node.query("DROP TABLE default.mysql_acl_employees", settings=creds)
+
+
+def _mysql_recv_packet(sock):
+    header = b""
+    while len(header) < 4:
+        chunk = sock.recv(4 - len(header))
+        if not chunk:
+            return None
+        header += chunk
+    length = header[0] | (header[1] << 8) | (header[2] << 16)
+    body = b""
+    while len(body) < length:
+        chunk = sock.recv(length - len(body))
+        if not chunk:
+            return None
+        body += chunk
+    return body
+
+
+def _mysql_send_packet(sock, seq, body):
+    length = len(body)
+    sock.sendall(bytes([length & 0xFF, (length >> 8) & 0xFF, (length >> 16) & 0xFF, seq]) + body)
+
+
+def test_mysql_handshake_database_does_not_leak_columns(started_cluster):
+    # The initial database in the MySQL handshake (CLIENT_CONNECT_WITH_DB) behaves like the
+    # connection-time database of every other protocol (native --database, HTTP database=,
+    # PostgreSQL startup): it is set without a SHOW_DATABASES check, so a connection succeeds even
+    # to a database the user cannot otherwise see (only the explicit `USE` / COM_INIT_DB statement
+    # is access-checked, matching InterpreterUseQuery). Selecting a database in the handshake must
+    # not become a way to bypass COM_FIELD_LIST access control: even when connected to `system`,
+    # COM_FIELD_LIST on a system table the user lacks SHOW COLUMNS on must still be rejected.
+    # We drive the handshake over a raw socket so we can request a database with no grants on it.
+    node = cluster.instances["node"]
+    creds = {"password": "123"}
+    node.query("DROP USER IF EXISTS mysql_handshake_lowpriv", settings=creds)
+    node.query(
+        "CREATE USER mysql_handshake_lowpriv IDENTIFIED WITH no_password", settings=creds
+    )
+
+    CLIENT_LONG_PASSWORD = 0x1
+    CLIENT_LONG_FLAG = 0x4
+    CLIENT_CONNECT_WITH_DB = 0x8
+    CLIENT_PROTOCOL_41 = 0x200
+    CLIENT_SECURE_CONNECTION = 0x8000
+    CLIENT_PLUGIN_AUTH = 0x80000
+
+    def open_handshake(database):
+        sock = socket.create_connection(
+            (started_cluster.get_instance_ip("node"), server_port), timeout=10
+        )
+        # Read and discard the server greeting.
+        assert _mysql_recv_packet(sock) is not None
+        capabilities = (
+            CLIENT_LONG_PASSWORD
+            | CLIENT_LONG_FLAG
+            | CLIENT_CONNECT_WITH_DB
+            | CLIENT_PROTOCOL_41
+            | CLIENT_SECURE_CONNECTION
+            | CLIENT_PLUGIN_AUTH
+        )
+        body = struct.pack("<I", capabilities)
+        body += struct.pack("<I", 16 * 1024 * 1024)  # max packet size
+        body += bytes([0x21])  # charset utf8_general_ci
+        body += b"\x00" * 23  # reserved
+        body += b"mysql_handshake_lowpriv\x00"
+        body += bytes([0])  # empty auth response (no_password)
+        body += database.encode() + b"\x00"
+        body += b"mysql_native_password\x00"
+        _mysql_send_packet(sock, 1, body)
+        # The handshake completes with an OK packet (no SHOW_DATABASES check on the initial db).
+        ok = _mysql_recv_packet(sock)
+        assert ok is not None and ok[0] == 0x00, ok
+        return sock
+
+    def com_field_list(sock, table):
+        # COM_FIELD_LIST (0x04): NUL-terminated table name + empty field wildcard.
+        _mysql_send_packet(sock, 0, bytes([0x04]) + table.encode() + b"\x00")
+        # On access denial the server replies with a single ERR packet (first byte 0xFF).
+        pkt = _mysql_recv_packet(sock)
+        assert pkt is not None, "connection closed instead of replying to COM_FIELD_LIST"
+        return pkt
+
+    # Connecting to `system` in the handshake succeeds (parity with other protocols).
+    sock = open_handshake("system")
+    # ... but COM_FIELD_LIST on a system table the user cannot see is still rejected: the handshake
+    # database is not a way around the COM_FIELD_LIST access check.
+    pkt = com_field_list(sock, "users")
+    assert pkt[0] == 0xFF, pkt  # ERR packet
+    assert b"ACCESS_DENIED" in pkt or b"SHOW COLUMNS" in pkt, pkt
+    sock.close()
+
+    # Connecting to `default` (the user's accessible database) also succeeds.
+    sock = open_handshake("default")
+    sock.close()
+
+    node.query("DROP USER mysql_handshake_lowpriv", settings=creds)

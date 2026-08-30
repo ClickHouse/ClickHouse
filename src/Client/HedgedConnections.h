@@ -95,6 +95,8 @@ public:
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
+    bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
+
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
@@ -103,6 +105,11 @@ public:
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeReadTaskResponse in not supported with HedgedConnections");
+    }
+
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse &) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeAllRangesAnnouncementResponse is not supported with HedgedConnections");
     }
 
     Packet receivePacket() override;
@@ -114,8 +121,6 @@ public:
     void disconnect() override;
 
     void sendCancel() override;
-
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
 
     Packet drain() override;
 

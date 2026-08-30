@@ -1,0 +1,25 @@
+---
+title: Listen Host
+---
+
+يُفعَّل الاتصال الخارجي عبر واجهة الشبكة من خلال تفعيل إعداد listen
+host. ويضمن ذلك أن يكون خادم ClickHouse قابلاً للوصول من قِبل
+المضيفات الأخرى:
+
+```xml
+<listen_host>0.0.0.0</listen_host>
+```
+
+تم ضبط منفذ واجهة برمجة تطبيقات HTTP على `8123`:
+
+```xml
+<http_port>8123</http_port>
+```
+
+يُضبط منفذ TCP المستخدم للتواصل عبر البروتوكول الأصلي لـ ClickHouse بين clickhouse-client
+وأدوات ClickHouse الأصلية الأخرى، وبين clickhouse-server وخوادم clickhouse-server الأخرى
+على `9000`:
+
+```xml
+<tcp_port>9000</tcp_port>
+```

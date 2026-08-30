@@ -4,6 +4,9 @@
             <allow_experimental_database_iceberg>1</allow_experimental_database_iceberg>
             <allow_experimental_database_glue_catalog>1</allow_experimental_database_glue_catalog>
             <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+            <!-- The env-credentials Glue test creates a catalog that authenticates via the server's AWS
+                 environment credentials, which are blocked for user queries by default. Allow it here. -->
+            <s3_allow_server_credentials_in_user_queries>1</s3_allow_server_credentials_in_user_queries>
         </default>
     </profiles>
 </clickhouse>

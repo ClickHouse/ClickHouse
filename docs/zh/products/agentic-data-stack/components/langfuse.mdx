@@ -1,0 +1,33 @@
+---
+sidebarTitle: 'Langfuse'
+title: 'Langfuse'
+description: 'Langfuse 如何为智能体数据技术栈提供可观测性和追踪能力'
+doc_type: 'guide'
+keywords: ['智能体数据技术栈', 'Langfuse', '可观测性', '追踪', 'LLM']
+---
+
+Langfuse 是 [Agentic Data Stack](/zh/products/agentic-data-stack/overview) 的**可观测性层**。它会记录agent 在 LibreChat 中的操作，便于你调试、衡量质量并跟踪成本。Langfuse 基于 OpenTelemetry 构建，运行于 ClickHouse 之上。
+
+<div id="trace">
+  ## 跟踪并检查每次运行
+</div>
+
+每个对话都会被记录为一条 [Langfuse trace](https://langfuse.com/docs/observability/overview)：其中包含提示词、每次工具调用 (包括 agent 运行的 SQL) 以及响应。每条 trace 还会记录标记用量、成本和延迟。打开某次运行即可查看 agent 执行了哪些操作，以及失败发生在哪一步。按用户和会话排序，即可查看谁的花费最高。
+
+<div id="evals">
+  ## 为输出质量打分
+</div>
+
+模型输出具有非确定性，因此 Langfuse 可让您衡量质量，而不是凭猜测判断。您可以通过[人工标注](https://langfuse.com/docs/evaluation/evaluation-methods/annotation)或自动化的 [LLM-as-a-judge](https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge) 评估器为运行结果打分，例如在答案错误或分析没有帮助时将其标记出来。
+
+<div id="in-the-stack">
+  ## 在技术栈中
+</div>
+
+此技术栈会将 LibreChat 连接到 Langfuse，因此每次运行都会自动记录 trace，无需额外埋点。链路追踪数据存储在该技术栈自己的 ClickHouse 实例中，让你的可观测性数据与所查询的数据集中保存在一起。要将其作为技术栈的一部分运行，请参阅 [Docker 设置指南](/zh/products/agentic-data-stack/docker-setup)。
+
+如果要从独立的 LibreChat 实例发送链路追踪数据，或使用特定区域或符合 HIPAA 的 Langfuse 端点，请参阅 [Langfuse 配套指南](https://langfuse.com/integrations/agentic-data-stack)。如需了解 Langfuse 与 ClickHouse 的整体用法，请参阅 [Langfuse 概览](/zh/products/cloud/features/ai-ml/langfuse)。
+
+<Info>
+  **更希望使用托管服务？** [Langfuse Cloud](https://cloud.langfuse.com) 是由托管 ClickHouse cluster 提供支持的全托管部署，无需自行运维基础设施。
+</Info>

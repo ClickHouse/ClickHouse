@@ -1,0 +1,57 @@
+---
+description: 'Documentation de l’instruction CHECK GRANT'
+sidebarTitle: 'CHECK GRANT'
+slug: /sql-reference/statements/check-grant
+title: 'Instruction CHECK GRANT'
+doc_type: 'reference'
+---
+
+La requête `CHECK GRANT` permet de vérifier si l’utilisateur courant ou le rôle courant a reçu un privilège spécifique.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+La syntaxe de base de la requête est la suivante :
+
+```sql
+CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
+```
+
+* `privilege` — Type de privilège.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Si le privilège a été accordé à l’utilisateur, la valeur renvoyée par `check_grant` sera `1`. Sinon, la valeur renvoyée par `check_grant` sera `0`.
+
+Si `table_1.col1` existe et que l’utilisateur courant s’est vu accorder le privilège `SELECT`/`SELECT(con)` ou un rôle (avec ce privilège), la valeur renvoyée est `1`.
+
+```sql
+CHECK GRANT SELECT(col1) ON table_1;
+```
+
+```text
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+Si `table_2.col2` n&#39;existe pas, ou si le privilège `SELECT`/`SELECT(con)` ou le rôle (avec privilège) n&#39;a pas été accordé à l’utilisateur courant, la réponse est `0`.
+
+```sql
+CHECK GRANT SELECT(col2) ON table_2;
+```
+
+```text
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+<div id="wildcard">
+  ## Caractère générique
+</div>
+
+Lors de la définition des privilèges, vous pouvez utiliser l&#39;astérisque (`*`) à la place d&#39;un nom de table ou de base de données. Veuillez consulter [WILDCARD GRANTS](/fr/reference/statements/grant#wildcard-grants) pour connaître les règles applicables aux caractères génériques.

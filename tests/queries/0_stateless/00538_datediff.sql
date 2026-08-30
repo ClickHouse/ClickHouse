@@ -80,3 +80,8 @@ SELECT number = dateDiff('month', now() - INTERVAL number MONTH, now()) FROM sys
 SELECT dateDiff('second', reinterpret(toInt64(9223372036854775807), 'DateTime64(0)'), reinterpret(toInt64(-1356997800), 'DateTime64(0)'));
 -- Vector path:
 SELECT dateDiff('second', materialize(reinterpret(toInt64(9223372036854775807), 'DateTime64(0)')), materialize(reinterpret(toInt64(-1356997800), 'DateTime64(0)')));
+-- The 'hour' and 'minute' units route through DateLUTImpl::toStableRelativeHourNum / toRelativeMinuteNum, a different overflow site.
+SELECT dateDiff('hour', reinterpret(toInt64(9223372036854775807), 'DateTime64(0)'), reinterpret(toInt64(-1356997800), 'DateTime64(0)'));
+SELECT dateDiff('hour', materialize(reinterpret(toInt64(9223372036854775807), 'DateTime64(0)')), materialize(reinterpret(toInt64(-1356997800), 'DateTime64(0)')));
+SELECT dateDiff('minute', reinterpret(toInt64(9223372036854775807), 'DateTime64(0)'), reinterpret(toInt64(-1356997800), 'DateTime64(0)'));
+SELECT dateDiff('minute', materialize(reinterpret(toInt64(9223372036854775807), 'DateTime64(0)')), materialize(reinterpret(toInt64(-1356997800), 'DateTime64(0)')));

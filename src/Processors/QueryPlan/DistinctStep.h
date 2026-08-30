@@ -5,6 +5,12 @@
 namespace DB
 {
 
+/// Whether adding a hashing preliminary DISTINCT can pay off, given the effective number of threads the
+/// caller has already resolved. Such a step deduplicates each stream on its own so that the final,
+/// single-stream DISTINCT has fewer rows left to merge, which takes a second stream to be worth
+/// anything: at one thread it only hashes every row a second time.
+bool preliminaryDistinctIsUseful(size_t max_threads);
+
 /// Execute DISTINCT for specified columns.
 class DistinctStep : public ITransformingStep
 {
@@ -32,7 +38,7 @@ public:
     UInt64 getLimitHint() const { return limit_hint; }
     void updateLimitHint(UInt64 hint);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -40,10 +46,18 @@ public:
     static QueryPlanStepPtr deserializeNormal(Deserialization & ctx);
     static QueryPlanStepPtr deserializePre(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     const SizeLimits & getSetSizeLimits() const { return set_size_limits; }
 
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
     const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
+
+    /// Each input stream contains a disjoint set of the DISTINCT key values (e.g. because each stream
+    /// corresponds to a separate partition and the partition key is a function of the DISTINCT columns).
+    /// In that case the final DISTINCT can deduplicate every stream independently and skip merging them
+    /// into a single stream.
+    void skipStreamMerging() { skip_stream_merging = true; }
 
 private:
     void updateOutputHeader() override;
@@ -53,6 +67,7 @@ private:
     const Names columns;
     bool pre_distinct;
     SortDescription distinct_sort_desc;
+    bool skip_stream_merging = false;
 };
 
 }

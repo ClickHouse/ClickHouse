@@ -1,0 +1,43 @@
+<test>
+    <!-- A recursive CTE is produced by a single source, which used to pin every
+         downstream operator (here a GROUP BY over a large result) to one thread.
+         This is the "Mandelbrot set" query: the recursive CTE produces ~68M rows
+         that collapse to width * height = 1.12M groups. -->
+    <query><![CDATA[
+        WITH RECURSIVE
+            1400 AS width,
+            800 AS height,
+            256 AS max_iterations,
+            pixels AS
+            (
+                SELECT
+                    arrayJoin(range(width)) AS x,
+                    arrayJoin(range(height)) AS y,
+                    -2.5 + ((x * 3.5) / (width - 1)) AS cx,
+                    -1.0 + ((y * 2.0) / (height - 1)) AS cy
+            ),
+            mandelbrot_iterations AS
+            (
+                SELECT x, y, cx, cy, 0.0 AS zx, 0.0 AS zy, 0 AS iteration
+                FROM pixels
+                UNION ALL
+                SELECT
+                    x, y, cx, cy,
+                    (zx * zx - zy * zy) + cx,
+                    (2.0 * zx * zy) + cy,
+                    iteration + 1
+                FROM mandelbrot_iterations
+                WHERE (iteration < max_iterations) AND ((zx * zx + zy * zy) <= 4.0)
+            ),
+            max(iteration) AS it,
+            log2(0 + it) / 8 AS v
+        SELECT
+            v < 0.25 ? least(v, 0.25) * 4 : 0 AS b,
+            least(greatest(v, 0.25) - 0.25, 0.5) * 2 AS r,
+            (greatest(v, 0.75) - 0.75) * 4 AS g
+        FROM mandelbrot_iterations
+        GROUP BY x, y
+        ORDER BY y, x
+        FORMAT Null
+    ]]></query>
+</test>

@@ -1,0 +1,18 @@
+---
+sidebarTitle: '设置配置'
+slug: /manage/settings
+title: '设置配置'
+description: '如何为特定用户或角色配置 ClickHouse Cloud 服务的设置'
+keywords: ['ClickHouse Cloud', '设置配置', '云设置', '用户设置', '角色设置']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+要为特定的[用户](/zh/concepts/features/security/access-rights#user-account-management)或[角色](/zh/concepts/features/security/access-rights#role-management)指定 ClickHouse Cloud 服务的设置，必须使用[通过 SQL 管理的 Settings Profile](/zh/concepts/features/security/access-rights#settings-profiles-management)。应用 Settings Profile 可确保您配置的设置能够持续生效，即使服务停止、空闲或升级也是如此。要了解有关 Settings Profile 的更多信息，请参阅[此页面](/zh/concepts/features/configuration/settings/settings-profiles)。
+
+请注意，ClickHouse Cloud 目前不支持基于 XML 的 Settings Profile 和[配置文件](/zh/concepts/features/configuration/server-config/configuration-files)。
+
+要进一步了解可为 ClickHouse Cloud 服务指定的设置，请在[我们的文档](/zh/reference/settings/index)中按类别查看所有可用设置。
+
+<Image img="/images/cloud/manage/cloud-settings-sidebar.webp" size="sm" alt="Cloud 设置侧边栏" border />
