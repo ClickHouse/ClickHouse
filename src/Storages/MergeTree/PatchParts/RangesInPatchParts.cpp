@@ -2,6 +2,8 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -410,7 +412,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
 
     MergeTreeIndexReader reader(
         index_ptr,
-        patch_part,
+        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(patch_part, std::make_shared<AlterConversions>()),
         total_marks_without_final,
         index_mark_ranges,
         mark_cache.get(),
