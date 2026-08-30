@@ -45,23 +45,28 @@ $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --async_insert=
 # returned a number ends the wait, so a client that dies mid-read cannot end it.
 poll_err="${CLICKHOUSE_TMP}/05053_poll_err_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 trimmed=0
+pulled=0
+# Both conditions are polled and latched: log_pointer >= 8 is what distinguishes "one child after
+# a trim" from "a log that never grew", a trim can become visible before the queue updater has
+# pulled the last entry, and a merge entry can be logged after a trim.
 for _ in {1..120}; do
     count=$($CLICKHOUSE_CLIENT --query "SELECT numChildren FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r' AND name = 'log'" 2>"$poll_err")
     rc=$?
-    [[ $rc -eq 0 ]] && [[ $count =~ ^[0-9]+$ ]] && [[ $count -eq 1 ]] && { trimmed=1; break; }
+    [[ $rc -eq 0 ]] && [[ $count =~ ^[0-9]+$ ]] && [[ $count -eq 1 ]] && trimmed=1
+    pointer=$($CLICKHOUSE_CLIENT --query "SELECT log_pointer FROM system.replicas WHERE database = currentDatabase() AND table = 'max_logs_zero'" 2>>"$poll_err")
+    rc=$?
+    [[ $rc -eq 0 ]] && [[ $pointer =~ ^[0-9]+$ ]] && [[ $pointer -ge 8 ]] && pulled=1
+    [[ $trimmed -eq 1 ]] && [[ $pulled -eq 1 ]] && break
     sleep 1
 done
 
 echo "$trimmed"
-if [[ $trimmed != 1 ]]; then
-    echo "cleanup wait did not converge: last count='$count', last poll error:" >&2
+echo "$pulled"
+if [[ $trimmed != 1 ]] || [[ $pulled != 1 ]]; then
+    echo "cleanup wait did not converge: last count='$count', last log_pointer='$pointer', last poll error:" >&2
     cat "$poll_err" >&2
 fi
 rm -f "$poll_err"
-
-# At least 8 entries reached /log, so the single remaining child is the result of a trim rather than
-# of a log that was never longer than that.
-$CLICKHOUSE_CLIENT --query "SELECT log_pointer >= 8 FROM system.replicas WHERE database = currentDatabase() AND table = 'max_logs_zero'"
 
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r/replicas/1' AND name = 'is_lost'"
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r/replicas/2' AND name = 'is_lost'"
