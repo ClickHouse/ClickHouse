@@ -18,8 +18,8 @@ Para monitorar sua implantação do ClickHouse no Datadog, o ClickHouse oferece 
 
 | Integração                                                                                                      | Documentação                                                                                   | Implantação | Sinais                         |
 | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | ------------------------------ |
-| [Integração da API do Datadog para ClickHouse Cloud](#clickhouse-cloud-datadog-api-integration) *(recomendada)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | Métricas                       |
-| [Integração do Prometheus para ClickHouse Cloud](#clickhouse-cloud-prometheus-integration)                      | [clickhouse.com/docs](/integrations/prometheus)                                                | Cloud       | Métricas                       |
+| [Integração da API do Datadog com o ClickHouse Cloud](#clickhouse-cloud-datadog-api-integration) *(recomendada)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | Métricas                       |
+| [Integração do Prometheus com o ClickHouse Cloud](#clickhouse-cloud-prometheus-integration)                      | [clickhouse.com/docs](/pt-BR/products/cloud/features/monitoring/prometheus)                          | Cloud       | Métricas                       |
 | [Integração do Datadog Agent com o ClickHouse](#clickhouse-datadog-agent-integration)                           | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | Logs, Métricas                 |
 | [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                                               | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | Logs, Métricas, Query Insights |
 
@@ -46,7 +46,7 @@ Para as etapas de configuração inicial, consulte o [guia de integração do Cl
 
 A forma mais comum e universal de coletar telemetria no nível do serviço e da org no ClickHouse Cloud.
 
-Você configura o Datadog Agent com a [integração OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) para consultar periodicamente a ClickHouse Cloud API e coletar métricas. Consulte a [página de integração do Prometheus](/integrations/prometheus#integrating-with-datadog) para ver os detalhes de configuração.
+Você configura o Datadog Agent com a [integração OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) para consultar periodicamente a ClickHouse Cloud API e coletar métricas. Consulte a [página de integração do Prometheus](/pt-BR/products/cloud/features/monitoring/prometheus#integrating-with-datadog) para ver os detalhes de configuração.
 
 * **Somente Cloud** — não é compatível com o ClickHouse OSS
 * O Datadog trata as métricas como **métricas personalizadas**
