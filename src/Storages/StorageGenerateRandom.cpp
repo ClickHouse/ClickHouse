@@ -58,6 +58,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int TOO_LARGE_STRING_SIZE;
 }
@@ -1092,6 +1093,15 @@ Pipe StorageGenerateRandom::read(
         /// We want to avoid spawning more streams than necessary
         num_streams = std::min(num_streams, static_cast<size_t>(((query_limit + max_block_size - 1) / max_block_size)));
     }
+
+    /// This engine generates its data, so only a trivial `LIMIT` bounds the number of sources.
+    static constexpr size_t max_sources = 65536;
+    if (num_streams > max_sources)
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Too many streams for a `GenerateRandom` table read (the maximum is {}). "
+            "Lower `max_streams_to_max_threads_ratio` or `max_threads`",
+            max_sources);
+
     Pipes pipes;
     pipes.reserve(num_streams);
 
