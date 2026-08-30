@@ -522,8 +522,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 
 | Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
 |---|---|---|---|
-| `=` | yes | all | yes |
-| `IN` | yes | all | yes |
+| `=` | yes⁴ | all | yes⁴ |
+| `IN` | yes⁴ | all | yes⁴ |
 | [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken)                   | yes | all (designed for `splitByNonAlpha`) | yes |
 | [hasAnyTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | yes | all | yes |
 | [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
@@ -535,8 +535,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹, `jsonPathValues`⁴ | yes¹⁴ |
 | [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹, `jsonPathValues`⁴ | yes¹⁴ |
 | [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes²⁴ (`lower`/`upper` only) | `splitByNonAlpha`, `array`², `jsonPathValues`⁴ | no²⁴ |
-| [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
-| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
+| [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes⁴ | all | yes⁴ |
+| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes⁴ | all | yes⁴ |
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [has](/reference/functions/regular-functions/array-functions#has)                                     | yes | `array` | yes |
