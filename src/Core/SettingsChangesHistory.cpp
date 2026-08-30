@@ -1451,6 +1451,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
+            {"min_ttl_age_to_delete_merge_seconds", 0, 0, "New setting. Paces TTL delete merges from the part's own TTL metadata instead of the in-memory per-partition map behind `merge_with_ttl_timeout`, so the delay survives restarts and resolves identically on every replica. Defaults to 0, which disables the check and preserves the previous behavior."},
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
@@ -1461,7 +1462,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
-            {"min_ttl_age_to_delete_merge_seconds", 0, 0, "New setting. Paces TTL delete merges from the part's own TTL metadata instead of the in-memory per-partition map behind `merge_with_ttl_timeout`, so the delay survives restarts and resolves identically on every replica. Defaults to 0, which disables the check and preserves the previous behavior."},
             {"merge_use_batch_sorting_queue", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."},
             {"always_fetch_mutated_part", false, false, "New setting to make a replica fetch mutated parts instead of executing mutations locally"},
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
