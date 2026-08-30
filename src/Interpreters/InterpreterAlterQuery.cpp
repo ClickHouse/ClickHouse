@@ -323,6 +323,12 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
                 cache->clear();
             }
+            /// A data lake table refreshes its metadata - the schema, the pinned table state, and
+            /// the trusted `table-uuid` behind the metadata cache key - only here. It has to
+            /// happen before the snapshot below is captured, or the alter would be validated and
+            /// applied against the previous state of the table while its storage already holds
+            /// the new one.
+            table->updateExternalDynamicMetadataIfExists(context);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
