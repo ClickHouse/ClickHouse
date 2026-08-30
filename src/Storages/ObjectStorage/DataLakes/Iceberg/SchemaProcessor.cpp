@@ -22,6 +22,7 @@
 #include <base/scope_guard.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -529,6 +530,8 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
+    if (type_name == f_variant)
+        return std::make_shared<DataTypeDynamic>();
 
     if (type_name.starts_with(f_geometry) || type_name.starts_with(f_geography))
     {
