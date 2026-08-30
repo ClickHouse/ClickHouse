@@ -351,11 +351,10 @@ void WindowStep::serialize(Serialization & ctx) const
 
     /// The threshold decides between two algorithms whose results are not bit-identical for floating-point
     /// or tie-breaking aggregates, so a peer must apply the initiator's value rather than its own default.
-    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: serializing a WindowStep requires query plan serialization "
-            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD);
-    writeVarUInt(min_frame_rows_for_aggregate_tree, ctx.out);
+    /// A peer below this version has no aggregate tree at all, so the legacy layout without the field
+    /// maps exactly to the recompute path the peer will take.
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
+        writeVarUInt(min_frame_rows_for_aggregate_tree, ctx.out);
 }
 
 QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
@@ -392,12 +391,11 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 
     window_description.window_functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front());
 
-    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: deserializing a WindowStep requires query plan serialization "
-            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD);
-    UInt64 min_frame_rows_for_aggregate_tree = 0;
-    readVarUInt(min_frame_rows_for_aggregate_tree, ctx.in);
+    /// A stream written below this version comes from an initiator without the aggregate tree, whose
+    /// semantics are the recompute path: keep it by disabling the tree for this step.
+    UInt64 min_frame_rows_for_aggregate_tree = std::numeric_limits<UInt64>::max();
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
+        readVarUInt(min_frame_rows_for_aggregate_tree, ctx.in);
 
     return std::make_unique<WindowStep>(
         ctx.input_headers.front(),

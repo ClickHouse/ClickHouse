@@ -96,8 +96,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
 /// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
 /// or `WITH CUBE` can be shipped under `make_distributed_plan`.
-/// Version 10 adds the aggregate-tree frame threshold to `WindowStep`. The step throws on both sides
-/// below this version rather than let a peer misparse the stream or silently pick a threshold.
+/// Version 10 appends the aggregate-tree frame threshold to `WindowStep`. Below this version the field
+/// is absent on both sides: a peer that old has no aggregate tree, so the legacy layout maps exactly to
+/// its recompute semantics, and a newer reader disables the tree for such a step.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 10;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
