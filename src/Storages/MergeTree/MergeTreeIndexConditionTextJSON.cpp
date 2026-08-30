@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
@@ -337,15 +338,25 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         && !getContext()->getSettingsRef()[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         return false;
 
-    /// FixedString literals carry zero padding that participates in zero-pad-aware string
-    /// comparison but not in the exact tokens the index stores ('a' and toFixedString('a', 3)
-    /// compare equal, but their tokens differ), so the index cannot be used for them.
-    if (value_type && WhichDataType(removeLowCardinalityAndNullable(value_type)).isFixedString())
-        return false;
-
     DataTypePtr declared_type = json_path_values_configuration->json_type->tryGetSubcolumnType(json_info.path);
     if (declared_type)
         declared_type = removeNullableOrLowCardinalityNullable(declared_type);
+
+    /// FixedString literals carry zero padding that participates in zero-pad-aware string
+    /// comparison but not in the exact tokens the index stores. Equal-width FixedString
+    /// representations have identical padding and are safe to compare through the index.
+    if (value_type)
+    {
+        const auto * value_fixed_string = typeid_cast<const DataTypeFixedString *>(
+            removeLowCardinalityAndNullable(value_type).get());
+        if (value_fixed_string)
+        {
+            const auto * declared_fixed_string = typeid_cast<const DataTypeFixedString *>(declared_type.get());
+            if (!declared_fixed_string || value_fixed_string->getN() != declared_fixed_string->getN())
+                return false;
+        }
+    }
+
     const auto * map_type = declared_type && isSupportedJSONPathValuesMap(declared_type)
         ? typeid_cast<const DataTypeMap *>(declared_type.get())
         : nullptr;
