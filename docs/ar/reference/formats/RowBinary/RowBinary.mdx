@@ -227,7 +227,7 @@ SELECT CAST('2024-01-15', 'Date') AS d
 
 يُخزَّن بصيغة `Int32` (أربعة بايتات) ويمثّل عدد الأيام ***قبل*** `1970-01-01` ***أو بعده***.
 
-النطاق المدعوم للقيم: `[1900-01-01, 2299-12-31]`.
+النطاق المدعوم للقيم: `[0000-01-01, 9999-12-31]`.
 
 القيم الداخلية النموذجية لـ `Date32`:
 
@@ -580,7 +580,7 @@ SELECT
   يمكن تعريف عمود على أنه `LowCardinality(Nullable(T))`، ولكن لا يمكن تعريفه على أنه `Nullable(LowCardinality(T))` - إذ يؤدي ذلك دائمًا إلى ظهور خطأ من الخادم.
 </Note>
 
-أثناء الاختبار، يمكن ضبط [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ar/reference/settings/session-settings#allow_suspicious_low_cardinality_types) على `1` للسماح بمعظم أنواع البيانات داخل `LowCardinality` بهدف تحقيق تغطية أفضل.
+أثناء الاختبار، يمكن ضبط [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ar/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) على `1` للسماح بمعظم أنواع البيانات داخل `LowCardinality` بهدف تحقيق تغطية أفضل.
 
 <div id="array">
   ### Array
@@ -784,7 +784,7 @@ SELECT NULL :: Variant(UInt32, String)
 0xFF, // discriminant = NULL
 ```
 
-يمكن استخدام الإعداد [allow&#95;suspicious&#95;variant&#95;types](/ar/reference/settings/session-settings#allow_suspicious_variant_types) لإتاحة اختبار أشمل للنوع `Variant`.
+يمكن استخدام الإعداد [allow&#95;suspicious&#95;variant&#95;types](/ar/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) لإتاحة اختبار أشمل للنوع `Variant`.
 
 <div id="dynamic">
   ### Dynamic
@@ -995,13 +995,14 @@ Schema: `JSON(name String)`
 Geo هي فئة من أنواع البيانات التي تمثل البيانات الجغرافية. وتشمل:
 
 * `Point` - بصيغة `Tuple(Float64, Float64)`.
+* `MultiPoint` - بصيغة `Array(Point)`، أو `Array(Tuple(Float64, Float64))`.
 * `Ring` - بصيغة `Array(Point)`، أو `Array(Tuple(Float64, Float64))`.
 * `Polygon` - بصيغة `Array(Ring)`، أو `Array(Array(Tuple(Float64, Float64)))`.
 * `MultiPolygon` - بصيغة `Array(Polygon)`، أو `Array(Array(Array(Tuple(Float64, Float64))))`.
 * `LineString` - بصيغة `Array(Point)`، أو `Array(Tuple(Float64, Float64))`.
 * `MultiLineString` - بصيغة `Array(LineString)`، أو `Array(Array(Tuple(Float64, Float64)))`.
 
-wire format لقيم Geo مطابقة تمامًا لصيغة Tuple وArray. وستتضمن ترويسات صيغة `RowBinaryWithNamesAndTypes` الأسماء المستعارة لهذه الأنواع، مثل `Point` و`Ring` و`Polygon` و`MultiPolygon` و`LineString` و`MultiLineString`.
+wire format لقيم Geo مطابقة تمامًا لصيغة Tuple وArray. وستتضمن ترويسات صيغة `RowBinaryWithNamesAndTypes` الأسماء المستعارة لهذه الأنواع، مثل `Point` و`MultiPoint` و`Ring` و`Polygon` و`MultiPolygon` و`LineString` و`MultiLineString`.
 
 ```sql
 SELECT    (1.0, 2.0)                                       :: Point           AS point,
@@ -1078,9 +1079,9 @@ SELECT    (1.0, 2.0)                                       :: Point           AS
   ### Geometry
 </div>
 
-`Geometry` هو نوع `Variant` يمكنه احتواء أيًّا من أنواع Geo المذكورة أعلاه. في wire format، يُرمَّز تمامًا مثل `Variant`، مع بايت discriminant يحدِّد نوع Geo الذي يليه.
+`Geometry` هو نوع `Variant` يمكنه احتواء أيًّا من الأنواع الجغرافية المذكورة أعلاه. في wire format، يُرمَّز تمامًا مثل `Variant`، مع بايت تمييز يحدِّد نوع Geo الذي يليه.
 
-فهارس discriminant الخاصة بـ Geometry هي:
+فهارس تمييز الخاصة بـ Geometry هي:
 
 | الفهرس | النوع           |
 | ------ | --------------- |
@@ -1090,11 +1091,12 @@ SELECT    (1.0, 2.0)                                       :: Point           AS
 | 3      | Point           |
 | 4      | Polygon         |
 | 5      | Ring            |
+| 6      | MultiPoint      |
 
 بنية wire format:
 
 ```text
-// 1 byte discriminant (0-5)
+// 1 byte discriminant (0-6)
 // followed by the corresponding geo type data
 ```
 
